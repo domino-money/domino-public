@@ -40,7 +40,7 @@ async function openFunding({ balance = 0n, failed = false, bridge = true } = {})
     }
     return Response.json(data, { headers });
   }];
-  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, routes,
+  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, routes, zapOnRobinhood: true,
     intercept: async (method, params) => {
       walletMethods.push(method);
       if (method === 'personal_sign') return { result: await S2_ACCOUNT.signMessage({ message: { raw: params[0] } }) };

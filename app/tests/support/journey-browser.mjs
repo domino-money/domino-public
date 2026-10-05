@@ -24,7 +24,7 @@ export const WALLET_NAME = 'Journey Wallet';
  * `{ status, body }`, or undefined). `intercept(method, params)`: a reply that replaces the chain's for one request.
  * `originOpen` false leaves the gate closed (today's journey exactly).
  */
-export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 } } = {}) {
+export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false } = {}) {
   const fake = createFakeSession();
   const server = createWalletServer({ fake, dist, routes });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
@@ -43,8 +43,10 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
   });
   await context.exposeFunction('__dominoJourneyCsp', (text) => csp.push(text));
   const sets = Object.fromEntries(live.map((id) => [id, contracts[id]]));
-  await context.addInitScript(({ sets, liveOn, originOpen, name }) => {
-    window.__dominoV2Test = { originOpen, ...(liveOn ? { contracts: sets, backendOn: true } : {}), s1: { plan: (request) => window.__dominoJourneyPlan(request) } };
+  // `zapOnRobinhood` (2026-10-05): the zap path's screens on Robinhood Chain, which the owner's journey keeps out of every
+  // deployable build (src/v2in/journey/NewPositionV2.tsx).
+  await context.addInitScript(({ sets, liveOn, originOpen, name, zapOnRobinhood }) => {
+    window.__dominoV2Test = { originOpen, ...(liveOn ? { contracts: sets, backendOn: true } : {}), s1: { plan: (request) => window.__dominoJourneyPlan(request) }, journey: { zapOnRobinhood } };
     document.addEventListener('securitypolicyviolation', (event) => window.__dominoJourneyCsp(`${event.violatedDirective} ${event.blockedURI}`));
     const provider = {
       async request({ method, params }) {
@@ -59,7 +61,7 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
     const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail }));
     window.addEventListener('eip6963:requestProvider', announce);
     announce();
-  }, { sets, liveOn: live.length > 0, originOpen, name: WALLET_NAME });
+  }, { sets, liveOn: live.length > 0, originOpen, name: WALLET_NAME, zapOnRobinhood });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   const s = {

@@ -1,5 +1,5 @@
 import type { V2ChainId } from '../../../v2/types'
-import { SETUP_STAYS_WHILE_PREVIEW } from '../constants'
+import { JOURNEY_STAYS_ON_ROBINHOOD, SETUP_STAYS_WHILE_PREVIEW } from '../constants'
 
 /**
  * Which New position a network gets (the integrated journey, 2026-10-02):
@@ -15,8 +15,10 @@ export type JourneyRoute = 'setup' | 'zap' | 'closed'
 
 export const ROBINHOOD: V2ChainId = 4663
 
-export function routeFor(chainId: V2ChainId, mode: GateMode, setupFirstWhilePreview: boolean = SETUP_STAYS_WHILE_PREVIEW): JourneyRoute {
+export function routeFor(chainId: V2ChainId, mode: GateMode, setupFirstWhilePreview: boolean = SETUP_STAYS_WHILE_PREVIEW, journeyStays: boolean = JOURNEY_STAYS_ON_ROBINHOOD): JourneyRoute {
   if (chainId === ROBINHOOD) {
+    // The owner, 2026-10-05: his journey on Robinhood Chain, whatever the gate says (../constants.ts).
+    if (journeyStays) return 'setup'
     if (mode === 'live') return 'zap'
     if (mode === 'preview' && !setupFirstWhilePreview) return 'zap'
     return 'setup'

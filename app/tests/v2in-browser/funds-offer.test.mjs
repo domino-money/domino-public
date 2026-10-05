@@ -57,9 +57,9 @@ function walletAssets(ethWei) {
 
 /**
  * The build served with the read stub (TOKEN as USDG; no USDG, and `ethWei` of ETH, none unless said) and the test wallet
- * connected on Robinhood Chain, at New position's amount step; with V2's gate open, `amount` USDG typed there (none if null).
+ * connected on Robinhood Chain, at New position's amount step.
  */
-async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, bridge = false, amount = '100' } = {}) {
+async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, bridge = false } = {}) {
   const fake = createFakeSession();
   const errors = [];
   // The read stub's own fixture for each read (tests/support/read-stub.mjs), TOKEN as USDG, and the wallet's balances.
@@ -113,13 +113,7 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
       });
     });
   }
-  // The zap journey reads Robinhood Chain's balances through the wallet itself (src/v2in/funds/ZapFunds.tsx): no USDG, and
-  // `ethWei` of ETH, as the read stub says for V1's steps.
-  const wallet = await installS2Wallet(context, {
-    chainId: 4663,
-    native: { 4663: ethWei, ...balances.native },
-    tokens: { [`4663:${USDG}`]: { balance: 0n, decimals: 6 }, ...balances.tokens },
-  });
+  const wallet = await installS2Wallet(context, { chainId: 4663, ...balances });
   // The gate's test-build hook (src/v2/gate.ts): opens V2 options on this server's origin; S2 is then `preview` here.
   if (gateOpen) await context.addInitScript(() => { window.__dominoV2Test = { originOpen: true }; });
   const page = await context.newPage();
@@ -151,20 +145,6 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
     await page.locator(`[data-token-option="${USDG}"]`).click();
     await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
     await page.locator('[data-chosen-pool]').waitFor();
-    if (gateOpen) {
-      // Changed on purpose 2026-10-04 (the owner: every function runs on Domino V2's contracts): with V2's gate open, New
-      // position is the zap journey (src/v2in/journey, SETUP_STAYS_WHILE_PREVIEW false), whose amount stage carries the
-      // offer (src/v2in/funds/ZapFunds.tsx); V1's steps are what a closed gate keeps.
-      const zap = page.locator('[data-zap-journey="4663"]');
-      await zap.locator('[data-zap-continue="pool"]').click();
-      await zap.locator('[data-stage="range"]').waitFor();
-      await zap.locator('[data-zap-continue="range"]').click();
-      await zap.locator('[data-stage="amount"]').waitFor({ timeout: 30_000 });
-      // The zap journey offers funds for what was typed and the wallet cannot cover (src/v2in/funds/model.ts
-      // lackingZapTokens), not for an empty field.
-      if (amount !== null) await zap.locator(`[data-zap-amount="${USDG}"] input`).fill(amount);
-      return s;
-    }
     const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
     await pressContinue(current('pool'));
     await current('range').waitFor();
@@ -220,7 +200,7 @@ test('the current origin is read automatically once, with token amounts visible 
     assert.equal(await s.page.locator('[data-funds-bring]').first().isDisabled(), true, 'balances do not enable an unavailable bridge');
     const reads = () => s.wallet.state.log.filter((entry) => ['eth_call', 'eth_getBalance'].includes(entry.method)).length;
     const count = reads();
-    await s.page.locator(`[data-zap-amount="${USDG}"] input`).fill('250');
+    await s.page.locator('[data-pair-side="1"] input[inputmode="decimal"]').fill('100');
     await s.page.waitForTimeout(600);
     assert.equal(reads(), count, 'typing does not rescan or disturb the caret');
     await capture(s, 'funds-balances-after-local-fixture');
@@ -239,19 +219,15 @@ test('failed token reads show partial status, never nothing found or invented ze
   } finally { await s.close(); }
 });
 
-// Changed on purpose 2026-10-04 (the owner: every function runs on Domino V2's contracts): V1's one-token swap covered a
-// pool token from ETH; the zap journey deposits exactly what is typed, so the offer follows what the wallet can spend of
-// it (src/v2in/funds/model.ts lackingZapTokens: ETH less Review's gas allowance, 0.0005 ETH).
-test('what the wallet can spend keeps the cross-network offer out, and an amount past it brings the offer', async () => {
-  const s = await openNewPosition({ ethWei: 2500000000000000n, amount: null });
+test('a pool covered by the existing one-token swap keeps the cross-network offer out', async () => {
+  const s = await openNewPosition({ ethWei: 500000000000000n + 1000000n });
   try {
     await s.page.waitForTimeout(500);
     assert.equal(await s.page.locator('[data-funds-offer]').count(), 0);
-    await s.page.locator(`[data-zap-amount="${USDG}"] input`).fill('1000');
+    await s.page.locator('[data-pair-side="1"] input[inputmode="decimal"]').fill('1000');
     await s.page.locator('[data-funds-offer]').waitFor();
     assert.equal(await s.page.locator('[data-funds-lack]').getAttribute('data-funds-lack'), 'short');
-    await s.page.locator(`[data-zap-amount="${USDG}"] input`).fill('');
-    await s.page.locator(`[data-zap-amount="${ZERO}"] input`).fill('0.001');
+    await s.page.locator('[data-pair-side="1"] input[inputmode="decimal"]').fill('0.1');
     await s.page.locator('[data-funds-offer]').waitFor({ state: 'detached' });
   } finally { await s.close(); }
 });

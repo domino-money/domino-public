@@ -167,6 +167,7 @@ export const NEW_POSITION: DocPage = {
       title: 'Create position',
       blocks: [
         p(b('Create position'), ' is the last step: your wallet allows each token for the exact amount, if needed, then one transaction puts your tokens in, makes any swap and sends you the position NFT, with anything the range doesn’t use. Domino’s contract keeps nothing afterwards. Some wallets confirm it all at once: see ', doc('Wallet requests', 'wallet-requests'), '.'),
+        p('Domino V1 on Robinhood Chain lists approval, deposit and creation as separate wallet steps.'),
         note(['No Domino fee unless a swap is needed: then 0.65% of the amount swapped, shown on Review. Network gas still applies.']),
       ],
     },

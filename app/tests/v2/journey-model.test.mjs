@@ -27,14 +27,16 @@ const USDC_BASE = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
 const WETH_BASE = '0x4200000000000000000000000000000000000006';
 const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
 
-test('routing: Robinhood Chain takes the zap path whenever its gate is open (preview or live), today\'s journey only while it is off; Base and Arbitrum One open with their gate', () => {
-  // Changed on purpose 2026-10-04 (the owner: every function runs on Domino V2's contracts, now deployed and pinned):
-  // SETUP_STAYS_WHILE_PREVIEW is false, so Domino V1's Setup no longer opens positions wherever V2's gate is open.
-  assert.equal(constants.SETUP_STAYS_WHILE_PREVIEW, false, 'the zap path under preview too: no V1 create beside V2');
+// Changed on purpose 2026-10-05 (the owner: his New position screens, as he built them): Robinhood Chain keeps his journey
+// whatever its gate says; the zap path's screens only behind "Create a new pool (advanced)" (2026-10-04's switch undone).
+test('routing: Robinhood Chain keeps the owner\'s journey whatever its gate says; Base and Arbitrum One open with their gate', () => {
+  assert.equal(constants.SETUP_STAYS_WHILE_PREVIEW, true);
+  assert.equal(constants.JOURNEY_STAYS_ON_ROBINHOOD, true, 'his journey on Robinhood Chain, live gate included');
   assert.equal(routing.routeFor(4663, 'off'), 'setup');
-  assert.equal(routing.routeFor(4663, 'preview'), 'zap');
-  assert.equal(routing.routeFor(4663, 'live'), 'zap');
-  assert.equal(routing.routeFor(4663, 'preview', true), 'setup', 'the former reading, one constant away');
+  assert.equal(routing.routeFor(4663, 'preview'), 'setup');
+  assert.equal(routing.routeFor(4663, 'live'), 'setup');
+  assert.equal(routing.routeFor(4663, 'live', true, false), 'zap', 'the zap path\'s screens, one constant away');
+  assert.equal(routing.routeFor(4663, 'preview', false, false), 'zap', 'and under preview, two constants away');
   for (const chainId of [8453, 42161]) {
     assert.equal(routing.routeFor(chainId, 'off'), 'closed');
     assert.equal(routing.routeFor(chainId, 'preview'), 'zap');

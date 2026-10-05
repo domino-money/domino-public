@@ -57,21 +57,23 @@ test('(a) with the gate closed, New position is today\'s journey exactly: no net
   } finally { await s.close(); }
 });
 
-// Changed on purpose 2026-10-04 (the owner: every function runs on Domino V2's contracts): under preview, New position on
-// Robinhood Chain is the zap journey itself (SETUP_STAYS_WHILE_PREVIEW false), locked after its review, with its listed
-// pools and its advanced finder; V1's journey (Domino V1's Setup) is what a closed gate keeps.
-test('(b) preview opens the zap journey on Robinhood Chain, its listed pools and advanced finder, without a network picker or invented examples', async () => {
+// 2026-10-05 (the owner: his New position screens, as he built them): as before 2026-10-04's switch.
+test('(b) preview keeps Robinhood creation with the advanced finder, without a network picker or invented examples', async () => {
   const chain = createV2Chain({ chainId: 4663, timestamp: now() });
   const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, connect: false });
   try {
     const page = s.page;
+    await page.locator('#create-token-search').waitFor();
+    await page.locator('[data-pool-advanced] summary').click();
+    await page.locator('[data-network-find-other]').click();
     const zap = page.locator('[data-zap-journey="4663"][data-zap-gate="preview"]');
     await zap.waitFor();
-    await zap.locator('[data-zap-pool-stage="4663"]').waitFor();
-    assert.equal(await zap.locator('[data-pool-find]').count(), 1, 'the advanced finder (a v3 pool, a new pool)');
+    assert.equal(await zap.locator('[data-pool-finder="3"]').count(), 1);
     assert.equal(await page.locator('[data-network-choice], [data-examples], [data-test-data]').count(), 0);
     assert.equal(await zap.locator('[data-create-position]').count(), 0);
-    assert.equal(await page.locator('[data-create-journey]:not([data-zap-journey])').count(), 0, 'no V1 journey beside it');
+    await zap.locator('[data-network-back-to-list]').click();
+    await page.locator('#create-token-search').waitFor();
+    assert.equal(await page.locator('[data-zap-journey]').count(), 0);
     assert.equal(chain.sends.length, 0);
     assert.equal(chain.signed.length, 0);
     assert.equal(s.planned.length, 0);
@@ -89,6 +91,7 @@ test('(b2) a pool’s link opens the zap journey with that pool chosen, verified
     connect: false,
     hash: `#/new/${FIXTURE_POOL}/${FIXTURE_TOKEN}`,
     routes: [(request, url) => read.handle(request, url) ?? undefined],
+    zapOnRobinhood: true,
   });
   try {
     const zap = s.page.locator('[data-zap-journey="4663"][data-zap-gate="preview"]');
@@ -104,34 +107,11 @@ test('(b2) a pool’s link opens the zap journey with that pool chosen, verified
   } finally { await s.close(); }
 });
 
-// Added 2026-10-04: where V2 opens, today's journey drew while the gate was read, then gave way to the zap journey.
-test('(b3) while the gate is read, New position shows its header alone, never today’s journey for a moment', async () => {
-  const chain = createV2Chain({ chainId: 4663, timestamp: now() });
-  let asked = 0;
-  // The plan route's capabilities, answered late: the gate waits for its word before it says `preview`.
-  const late = async (request, url) => {
-    if (url.pathname !== '/api/position-plan/v1/capabilities') return undefined;
-    asked++;
-    await new Promise((done) => setTimeout(done, 1500));
-    return Response.json({ error: 'route_not_available' }, { status: 404 });
-  };
-  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, connect: false, routes: [late] });
-  try {
-    const page = s.page;
-    await page.locator('[data-journey-reading]').waitFor();
-    assert.equal(await page.locator('[data-create-journey]').count(), 0, 'no journey while the gate is read');
-    await page.locator('[data-zap-journey="4663"][data-zap-gate="preview"]').waitFor();
-    assert.equal(await page.locator('[data-journey-reading]').count(), 0);
-    assert.equal(await page.locator('[data-create-journey]:not([data-zap-journey])').count(), 0, 'no V1 journey at any point');
-    assert.ok(asked >= 1, 'the plan route was asked');
-  } finally { await s.close(); }
-});
-
 test('(c) Robinhood live fake-chain creation: review, exact approve and create on 0x1237, then receipt', async () => {
   const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);
   const answers = [];
-  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner(answers) });
+  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner(answers), zapOnRobinhood: true });
   try {
     const page = s.page;
     const zap = page.locator('[data-zap-journey="4663"][data-zap-gate="live"]');

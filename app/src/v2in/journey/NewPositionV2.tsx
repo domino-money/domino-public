@@ -3,9 +3,9 @@ import { Journey } from '../../components/create/Journey'
 import { PageHeader, PageShell } from '../../components/ui'
 import { CREATE } from '../../lib/create/copy'
 import { SlotBoundary, SlotFailed } from '../../lib/read/screens/slots'
-import { v2OriginOpen } from '../../v2/gate'
 import type { V2ChainId } from '../../v2/types'
 import { JourneyNetworkContext, type JourneyNetwork } from './context'
+import { JOURNEY_STAYS_ON_ROBINHOOD, SETUP_STAYS_WHILE_PREVIEW } from './constants'
 import { robinhoodFinderOpen, routeFor, ROBINHOOD, type GateMode } from './model/routing'
 import { journeyGates, type JourneyGates } from './source'
 import { ZapJourney } from './ZapJourney'
@@ -14,21 +14,26 @@ import { ZapJourney } from './ZapJourney'
  * New position in a build that carries Domino V2 (the integrated journey, 2026-10-02): the one screen New position opens
  * when `__DOMINO_V2__` is on (screens/NewPosition.tsx, its lazy mount point; production and development too since
  * 2026-10-04). Changed on purpose (data) 2026-10-02 (the owner, night): NO network choice; New position is Robinhood
- * Chain's: today's journey (components/create/Journey.tsx) while its S1 gate is `off`, the zap path's journey
- * (./ZapJourney.tsx) once it is `preview` or `live` (Changed on purpose 2026-10-04, the owner: every function runs on
- * Domino V2; SETUP_STAYS_WHILE_PREVIEW is false), a pool's link (`poolId`, `linkToken`) handed to it as to today's.
- * While its listed pools keep today's steps, the zap path's pool finder is reached only from "Create a new pool
- * (advanced)" at the foot of today's pool step (./PoolAdvanced.tsx `findOther`), for a pool today's journey cannot open
- * (a v3 pool, a pool with no price yet), and "Back to the pool list" returns. Other networks' positions come to the app
- * through the lists (read-v6) and the deposit from another network, never through a picker here. While the gate is read:
- * where V2 opens (domino.money), the page's header alone, as while this chunk loads (screens/NewPosition.tsx), never
- * today's journey for a moment (Changed on purpose 2026-10-04); elsewhere, or if the gate cannot be read, today's journey.
+ * Chain's, exactly today's journey (components/create/Journey.tsx). Changed on purpose 2026-10-05 (the owner: his screens,
+ * as he built them): whatever its S1 gate says (JOURNEY_STAYS_ON_ROBINHOOD); the zap path's journey (./ZapJourney.tsx)
+ * only in a test build that asks for it (`window.__dominoV2Test.journey.zapOnRobinhood`). The zap path's pool finder
+ * is reached only from "Create a new pool (advanced)" at the foot of today's pool step (./PoolAdvanced.tsx `findOther`),
+ * for a pool today's journey cannot open (a v3 pool, a pool with no price yet), and "Back to the pool list" returns.
+ * Other networks' positions come to the app through the lists (read-v6) and the deposit from another network, never
+ * through a picker here. While the gate is read, today's journey.
  *
  * Default export: the lazily mounted part.
  */
+// TEST builds only (the define folds every other build's branch away): the browser suites' look at the zap path's screens on
+// Robinhood Chain, which the owner's journey keeps out of every deployable build.
+declare const __DOMINO_TEST_HOOKS__: boolean | undefined
+const TEST_HOOKS: boolean = typeof __DOMINO_TEST_HOOKS__ === 'boolean' && __DOMINO_TEST_HOOKS__
+const zapOnRobinhood = (): boolean =>
+  TEST_HOOKS && typeof window !== 'undefined' &&
+  (window as unknown as { __dominoV2Test?: { journey?: { zapOnRobinhood?: unknown } } }).__dominoV2Test?.journey?.zapOnRobinhood === true
+
 export default function NewPositionV2({ flow, poolId, linkToken }: { flow: number; poolId: string; linkToken: string | null }) {
   const [gates, setGates] = useState<JourneyGates | null>(null)
-  const [unread, setUnread] = useState(false)
   const chainId: V2ChainId = ROBINHOOD
   const [finder, setFinder] = useState(false)
   useEffect(() => {
@@ -37,9 +42,7 @@ export default function NewPositionV2({ flow, poolId, linkToken }: { flow: numbe
       (read) => {
         if (alive) setGates(read)
       },
-      () => {
-        if (alive) setUnread(true)
-      },
+      () => undefined,
     )
     return () => {
       alive = false
@@ -52,7 +55,8 @@ export default function NewPositionV2({ flow, poolId, linkToken }: { flow: numbe
     setFinder(false)
   }
   const mode: GateMode = gates ? gates[chainId].mode : 'off'
-  const route = routeFor(chainId, mode)
+  const zapHook = zapOnRobinhood()
+  const route = routeFor(chainId, mode, SETUP_STAYS_WHILE_PREVIEW && !zapHook, JOURNEY_STAYS_ON_ROBINHOOD && !zapHook)
   const gate = gates?.[chainId]
   const robinhoodFinder = route === 'setup' && robinhoodFinderOpen(mode)
   const zap = gate !== undefined && gate.mode !== 'off' && (route === 'zap' || (robinhoodFinder && finder)) ? gate : null
@@ -66,13 +70,8 @@ export default function NewPositionV2({ flow, poolId, linkToken }: { flow: numbe
     setFinder(false)
     window.location.hash = `#/new/${id}`
   }
-  const reading = gates === null && !unread && v2OriginOpen(window.location.origin)
   const body: ReactNode = zap ? (
     <ZapJourney key={`${flow}:${chainId}:${finder ? 'finder' : 'zap'}`} chainId={chainId} gate={zap} finderOnly={robinhoodFinder} onListed={onListed} poolId={poolId} linkToken={linkToken} />
-  ) : reading ? (
-    <PageShell width="flow" data-journey-reading="">
-      <PageHeader size="display" title={CREATE.page.title} description={CREATE.page.description} />
-    </PageShell>
   ) : (
     <Journey key={flow} poolId={poolId} linkToken={linkToken} />
   )

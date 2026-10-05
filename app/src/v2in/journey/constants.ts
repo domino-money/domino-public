@@ -10,11 +10,16 @@
  * deploy), and where today's create works (Robinhood Chain), New position keeps today's steps and Create position (Setup)
  * exactly, so V1 stays fully testable there. The zap replaces Setup on Robinhood Chain once its gate says `live`. False:
  * the literal reading (the zap path, locked after the review, wherever the gate is `preview`).
- * Changed on purpose 2026-10-04 (the owner: every function runs on Domino V2's contracts, now deployed and pinned): false.
- * New position is the zap path on Robinhood Chain too, locked after its review until the plan service is on; Domino V1's
- * Setup no longer opens positions (its refund of a V1 deposit stays, under Positions).
  */
-export const SETUP_STAYS_WHILE_PREVIEW = false
+export const SETUP_STAYS_WHILE_PREVIEW = true
+
+/**
+ * The owner, 2026-10-05: New position on Robinhood Chain is HIS journey (components/create/Journey.tsx, the screens he
+ * built), exactly, whatever S1's gate says, the zap path's own screens only behind "Create a new pool (advanced)". V2
+ * connects behind his screens, never in place of them (2026-10-04's switch to the zap path's screens is undone). False:
+ * the zap path's screens on Robinhood Chain once its gate is `live` (./model/routing.ts).
+ */
+export const JOURNEY_STAYS_ON_ROBINHOOD = true
 
 /** [#2] The S1 slippage: 0.5% by default, editable from 0.1% to 5%, a warning above 2%. */
 export const JOURNEY_DEFAULT_SLIPPAGE_BPS = 50

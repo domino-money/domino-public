@@ -494,15 +494,15 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   const made = sectionText(create, 'create');
   assert.match(made, /your wallet allows each token for the exact amount, if needed, then one transaction puts your tokens in, makes any swap and sends you the position NFT, with anything the range doesn’t use\. Domino’s contract keeps nothing afterwards\./);
   assert.match(made, /No Domino fee unless a swap is needed: then 0\.65% of the amount swapped, shown on Review\. Network gas still applies\./);
-  // Changed on purpose 2026-10-04 (the owner: every function runs on Domino V2's contracts): no V1 create is offered beside
-  // the zap any more, so the page no longer describes V1's separate wallet steps.
-  assert.doesNotMatch(made, /Domino V1|separate wallet steps/);
+  // 2026-10-05 (the owner: his New position screens, as he built them): today's Create position again, so its steps again.
+  assert.match(made, /Domino V1 on Robinhood Chain lists approval, deposit and creation as separate wallet steps\./);
   assert.doesNotMatch(textOf(create), /Setup|deposit of both tokens|refunded|deposit-amount estimate|expected to take, and the most it may take|Hover a figure to see until when/);
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /deposit-amount estimate|expected to take, and the most it may take|Hover a figure to see until when/, entry.slug);
   // The zap journey's constants: the quote's life and the deadline, the slippage (src/v2in/journey/constants.ts).
   const journey = readText(join(APP, 'src/v2in/journey/constants.ts'));
   assert.match(journey, /JOURNEY_QUOTE_LIFETIME_S = 180/);
-  assert.match(journey, /SETUP_STAYS_WHILE_PREVIEW = false/, 'the zap path wherever the new-contract gate is open, as the page says');
+  assert.match(journey, /SETUP_STAYS_WHILE_PREVIEW = true/, 'the docs preserve the V1 wallet steps while the new-contract gate is preview');
+  assert.match(journey, /JOURNEY_STAYS_ON_ROBINHOOD = true/, 'and on Robinhood Chain whatever the gate says (the owner, 2026-10-05)');
   assert.match(journey, /JOURNEY_DEFAULT_SLIPPAGE_BPS = 50\nexport const JOURNEY_MIN_SLIPPAGE_BPS = 10\nexport const JOURNEY_MAX_SLIPPAGE_BPS = 500/);
   assert.match(journey, /NEW_POOL_TITLE = 'Create a new pool \(advanced\)'/);
   assert.match(sectionText(create, 'step-pool'), /Create a new pool \(advanced\)/);

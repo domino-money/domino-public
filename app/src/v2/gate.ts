@@ -124,11 +124,12 @@ export async function serviceRouteOpen(service: Exclude<V2Service, 's2'>, routes
 }
 
 /**
- * Where S1's plans go live once the plan route is on (rugged97, 2026-10-05: the planner plans on Robinhood Chain only until
- * Base and Arbitrum One pass their fork qualification; keep plans on those chains off meanwhile). Elsewhere S1 stays
- * `preview`, locked after its review, and its route is not asked. Widen it when he says a chain's plans are qualified.
+ * Where S1's plans go live once the plan route is on. Elsewhere S1 stays `preview`, locked after its review, and its route
+ * is not asked. rugged97, 2026-10-05: Robinhood Chain first; then, the same day, Base and Arbitrum One too ("pode ligar":
+ * his listener serves the three chains since 01:43 UTC, version f807cf9c, and their fork qualification planned 15 of 15
+ * exactly on each, with Trading API legs, #342). Narrow it here to close a chain again.
  */
-export const S1_PLAN_CHAINS: readonly V2ChainId[] = Object.freeze([4663])
+export const S1_PLAN_CHAINS: readonly V2ChainId[] = Object.freeze([4663, 8453, 42161])
 
 /** The gate for one service on one chain at `origin`, with the probe its backend word comes from (none: the table's word). */
 export async function v2Gate(service: V2Service, chainId: number, origin: string = pageOrigin(), routes: S2Routes = noRoutes): Promise<V2Gate> {
