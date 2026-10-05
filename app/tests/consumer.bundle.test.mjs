@@ -64,7 +64,7 @@ const ONBOARDING_MARKERS = [
 // deposit-specific markers above still require Setup's exclusive closure.
 const SHARED_CODE_MARKERS = ['preview_expired'];
 /** 2026-10-04 (the owner: the site runs on Domino V2): V2's lazy roots in the deployed build (src/v2in), and the viem chunks only they load. */
-const V2_ROOTS = /^(NewPositionV2|PoolAdvanced|PositionV2Actions|PositionAutomation|PositionPage|ManagedVaults|OwnedRows|Receipts|SetupEntry|AutomateProtection|FundsAmounts|MandateDialog|PositionDialog|VaultDialog|actions|ccip|secp256k1)-/;
+const V2_ROOTS = /^(NewPositionV2|JourneyCreateV2|PoolAdvanced|PositionV2Actions|PositionAutomation|PositionPage|ManagedVaults|OwnedRows|Receipts|SetupEntry|AutomateProtection|FundsAmounts|MandateDialog|PositionDialog|VaultDialog|actions|ccip|secp256k1)-/;
 // The labs, their synthetic catalogue and fixtures, and the lab's own wording: never in the build that deploys.
 const CONSUMER_MARKERS = [
   'position-preview.native',

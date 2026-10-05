@@ -1082,7 +1082,9 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // finder, a position's V2 actions, page, dialogs and automation, the lists' rows and receipts, the automation setup, the
     // protection card, the inline funds offer), and the viem chunks only they load (actions, ccip, secp256k1): one family of
     // their own, measured in the deployed build that carries them. The V1 wallet-test build carries none.
-    const v2Roots = js.filter((file) => /^(NewPositionV2|PoolAdvanced|PositionV2Actions|PositionAutomation|PositionPage|ManagedVaults|OwnedRows|Receipts|SetupEntry|AutomateProtection|FundsAmounts|MandateDialog|PositionDialog|VaultDialog|actions|ccip|secp256k1)-/.test(file));
+    // 2026-10-05 (the owner: his New position screens, with V2 connected behind them): and JourneyCreateV2, his journey's
+    // Review and Create position on the new contracts: 604,752 B gzip for the family then, so its budget 606,000.
+    const v2Roots = js.filter((file) => /^(NewPositionV2|JourneyCreateV2|PoolAdvanced|PositionV2Actions|PositionAutomation|PositionPage|ManagedVaults|OwnedRows|Receipts|SetupEntry|AutomateProtection|FundsAmounts|MandateDialog|PositionDialog|VaultDialog|actions|ccip|secp256k1)-/.test(file));
     if (dir === WALLET) assert.deepEqual(v2Roots, [], 'the V1 wallet-test build carries no V2');
     else assert.ok(v2Roots.length >= 14, `the deployed build carries V2's screens: ${v2Roots.join(', ')}`);
     const v2 = new Set([...staticClosure(dir, v2Roots)].filter((file) => !initial.has(file)));
@@ -1148,7 +1150,7 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // Raised to the next kB above the deployable build, with one more kB for financial and all lazy (Linux builds measure a
     // few hundred bytes apart): route screens 183,000 -> 184,000, session/public reads 161,000 -> 162,000, financial
     // 333,000 -> 341,000, all lazy 367,000 -> 378,000; Domino V2 601,000 (new). The 3 kB wallet-test allowance stays.
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 184_000], ['session/public reads', base, 162_000], ['financial', financial, 341_000], ['all lazy', allLazy, 378_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 6_000], ['domino v2', v2, 601_000]]) {
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 184_000], ['session/public reads', base, 162_000], ['financial', financial, 341_000], ['all lazy', allLazy, 378_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 6_000], ['domino v2', v2, 606_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir === WALLET && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import type { V2Gate } from '../../v2/gate'
 import type { V2ChainId } from '../../v2/types'
 
 /**
@@ -15,6 +16,11 @@ export interface JourneyNetwork {
   findOther: (() => void) | null
   /** Back from that finder to today's list (null elsewhere). */
   backToList: (() => void) | null
+  /**
+   * Robinhood Chain's S1 gate, for today's journey's own Review and Create position (./JourneyCreateV2.tsx: the plan and
+   * the zap behind the owner's screens once it is `live`, 2026-10-05); undefined while the wrapper still reads it.
+   */
+  s1?: V2Gate
 }
 
 export const JourneyNetworkContext = createContext<JourneyNetwork | null>(null)

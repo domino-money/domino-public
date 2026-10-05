@@ -42,6 +42,12 @@ function testPlanner(): Planner | null {
   return typeof plan === 'function' ? (plan as Planner) : null
 }
 
+/**
+ * Whether the browser suites' planner stands in for the plan route (TEST builds only): it answers without a session, as the
+ * zap path's suites run, so today's journey on V2 (./JourneyCreateV2.tsx) asks no sign-in before it there.
+ */
+export const testPlannerOn = (): boolean => testPlanner() !== null
+
 /** `{ status, body }` as scripted, or a bare body as a 200. */
 const isExchange = (value: unknown): value is { status: number; body: unknown } =>
   !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 2 && typeof (value as { status?: unknown }).status === 'number' && 'body' in value

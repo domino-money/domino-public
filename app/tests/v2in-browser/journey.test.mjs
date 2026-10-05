@@ -1,6 +1,6 @@
 /** Current owner-approved journey: Robinhood only, no example pools; fake-chain live create checks exact consent and calldata. */
 import assert from 'node:assert/strict';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -10,7 +10,8 @@ import { openJourney } from '../support/journey-browser.mjs';
 import { planAnswer, v4Path, ZERO } from '../support/s1-plans.mjs';
 import { launchBrowser } from '../support/s1-browser.mjs';
 import { WALLET_V2_DIST } from '../support/wallet-dist.mjs';
-import { contractsFor, createV2Chain } from '../support/v2-chain.mjs';
+import { contractsFor, createV2Chain, poolIdOf } from '../support/v2-chain.mjs';
+import { pressContinue } from '../support/new-position.mjs';
 import { createReadStub, FIXTURE_POOL, FIXTURE_TOKEN } from '../support/read-stub.mjs';
 
 const require = createRequire(import.meta.url);
@@ -190,5 +191,71 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
     assert.equal(createTx.data, answers[0].plan.call.data, 'the call data the plan carried, checked and sent as reviewed');
     assert.deepEqual(chain.offChain.filter((m) => m !== 'wallet_getCapabilities'), [], 'nothing of Robinhood Chain asked while the wallet was elsewhere');
     await page.screenshot({ path: join(shots(), 'journey-robinhood-live-created.png'), fullPage: true });
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-05 (the owner: his New position screens, with Domino V2 connected behind them). The read service lists
+// Robinhood's ETH/USDG 0.05% pool (read-v1's own fixtures, its pool made this one), the fake chain holds it, and the gate
+// is live: his journey runs every step, then Review asks the plan and Create position runs on the zap.
+const READ_FIXTURES = resolve(import.meta.dirname, '../../../api-contracts/read-v1/fixtures/gateway');
+const FIXTURE_POOL_ID = JSON.parse(readFileSync(join(READ_FIXTURES, 'pools.success.json'), 'utf8')).pools[0].poolId;
+function robinhoodRead(route, body) {
+  const name = { 'pool-market': 'pool-market.not-requested', 'wallet-assets': 'wallet-assets.zero', token: body.token === ZERO ? 'token.native' : 'token.success' }[route] ?? `${route}.success`;
+  const text = readFileSync(join(READ_FIXTURES, `${name}.json`), 'utf8').replaceAll(FIXTURE_TOKEN, USDG_RH).replaceAll('"TOKEN"', '"USDG"').replaceAll(FIXTURE_POOL_ID, poolIdOf(POOL_RH));
+  const answer = JSON.parse(text);
+  if (route === 'pools') {
+    for (const pool of answer.pools) Object.assign(pool, { currentLpFeePips: 500, tick: TICK, sqrtPriceX96: SQRT.toString(), poolKey: { ...pool.poolKey, fee_pips: 500, tick_spacing: 10 } });
+  }
+  if (route === 'wallet-assets') {
+    for (const item of answer.items) item.amountRaw = item.address === ZERO ? String(10n ** 19n) : String(5_000_000_000n);
+  }
+  return JSON.stringify(answer);
+}
+
+test('(d) the owner’s journey on V2: his steps, his preview and balances, the plan’s review on his Review, approve and create on the zap, then his created view', async () => {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const answers = [];
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner(answers),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    // His journey, never the zap path's screens, under a live gate.
+    await page.locator('[data-create-journey]').waitFor();
+    assert.equal(await page.locator('[data-zap-journey]').count(), 0, 'no zap path screens');
+    await page.getByRole('combobox', { name: 'Search a token' }).fill(USDG_RH);
+    await page.locator(`[data-token-option="${USDG_RH}"]`).click();
+    await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.locator('[data-chosen-pool]').waitFor();
+    const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+    await pressContinue(current('pool'));
+    await current('range').waitFor();
+    assert.equal(await page.locator('aside[data-preview]').count(), 1, 'his preview beside the steps');
+    await pressContinue(current('range'));
+    await current('amount').waitFor();
+    await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    assert.ok(await page.locator('li[data-step="amount"] [data-pair-max]').count() >= 1, 'his wallet balances with Max');
+    const field = 'li[data-step="amount"][aria-current="step"] [data-pair-side="1"] input[inputmode="decimal"]';
+    await page.locator(field).fill('1000');
+    await pressContinue(current('amount'));
+    // Review: the plan for what his journey chose, then Create position on the new contracts.
+    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]');
+    await review.waitFor({ timeout: 30_000 });
+    assert.equal(s.planned.length, 1, 'one plan');
+    assert.equal(s.planned[0].action, 'create');
+    // Both of the pool's tokens, as his amount step showed them: the 1,000 USDG he typed and the ETH it pairs with.
+    assert.deepEqual(s.planned[0].inputs.map((input) => input.token), [ZERO, USDG_RH]);
+    assert.equal(s.planned[0].inputs[1].amountRaw, '1000000000', 'the 1,000 USDG he typed');
+    assert.ok(BigInt(s.planned[0].inputs[0].amountRaw) > 0n, 'and the ETH it pairs with');
+    assert.equal(await page.locator('[data-create-position="idle"]').count(), 0, 'not Domino V1’s Create position');
+    await page.locator('[data-create-position="live"]:not([disabled])').click({ timeout: 30_000 });
+    await page.locator('[data-created-position]').waitFor({ timeout: 60_000 });
+    const createTx = chain.sends.map((entry) => entry.tx).find((tx) => tx.to === ZAP_V4);
+    assert.ok(createTx, 'the create went to the zap');
+    assert.equal(createTx.data, answers.at(-1).plan.call.data, 'the call data the plan carried');
+    assert.equal(await page.locator('a[href^="#/sequence/compound/"]').count() >= 1, true, 'his created view, with what comes next');
   } finally { await s.close(); }
 });

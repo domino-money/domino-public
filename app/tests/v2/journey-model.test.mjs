@@ -175,3 +175,40 @@ test('real data only (the owner, 2026-10-02): the model carries no test example 
   assert.equal(listed.source, 'list');
   assert.equal(listed.readAt, null, 'a list that did not say when it read: null, never a guess');
 });
+
+// Added 2026-10-05 (the owner: his New position screens, with Domino V2 connected behind them): what his journey chose,
+// read for the plan (src/v2in/journey/model/fromV1.ts), as JourneyCreateV2 asks it on his Review.
+test('the owner\'s journey on V2: its pool, range and slippage as chosen; what the wallet puts in from its own funding; the request the package admits', () => {
+  const fromV1 = require(`${BUILD}v2in/journey/model/fromV1.js`);
+  const option = {
+    key: '0x' + 'ab'.repeat(32),
+    currencies: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: USDG, symbol: 'USDG', decimals: 6 }],
+    feePips: 3000, tickSpacing: 60, hooks: ZERO, tick: -199020, sqrtPriceX96: '3756254281219003000000000', block: 78_000_000, readAt: 1,
+  };
+  const v1 = { pool: option, range: { lower: -199200, upper: -198840 }, slippageBps: '50' };
+  const zap = fromV1.zapStateFromV1(v1);
+  assert.equal(zap.chainId, 4663);
+  assert.deepEqual(zap.range, v1.range);
+  assert.equal(zap.slippage, '50');
+  assert.equal(zap.start, null, 'V1 lists priced pools only');
+  assert.equal(zap.pool.pool.dex, 4);
+  assert.equal(fromV1.zapStateFromV1({ ...v1, range: null }), null);
+  assert.equal(fromV1.zapStateFromV1({ ...v1, pool: { ...option, hooks: '0x00000000000000000000000000000000000000c0' } }), null, 'never a hooked pool');
+  // Both of the pool's tokens at the amounts the amount step showed (need), never the deposit's slippage room.
+  const both = fromV1.inputsFromV1(zap, { need: [10n ** 17n, 250_000_000n], plan: { kind: 'both', amount0: 10n ** 17n + 5n, amount1: 250_100_000n } });
+  assert.deepEqual(both, { kind: 'inputs', inputs: [{ token: ZERO, amount: 10n ** 17n }, { token: USDG, amount: 250_000_000n }] });
+  // One token alone: all of it, for the planner to swap in.
+  assert.deepEqual(fromV1.inputsFromV1(zap, { need: [0n, 0n], plan: { kind: 'swap', from: 1, deposit: 500_000_000n, swap: 250_000_000n, receive: 10n ** 17n } }), { kind: 'inputs', inputs: [{ token: USDG, amount: 500_000_000n }] });
+  assert.deepEqual(fromV1.inputsFromV1(zap, { need: [10n ** 17n, 0n], plan: { kind: 'both', amount0: 10n ** 17n, amount1: 0n } }), { kind: 'inputs', inputs: [{ token: ZERO, amount: 10n ** 17n }] }, 'a zero side is no input');
+  assert.deepEqual(fromV1.inputsFromV1(zap, { need: [0n, 0n], plan: { kind: 'short', token: 1, have: 5n, need: 9n } }), { kind: 'short', token: USDG, have: 5n, need: 9n });
+  assert.deepEqual(fromV1.inputsFromV1(zap, { need: [1n, 1n], plan: null }), { kind: 'wait' }, 'balances not read yet');
+  assert.deepEqual(fromV1.inputsFromV1(zap, null), { kind: 'wait' });
+  const request = fromV1.requestFromV1(zap, both, 'direct');
+  assert.deepEqual(
+    { action: request.action, chainId: request.chainId, tickLower: request.tickLower, tickUpper: request.tickUpper, slippageBps: request.slippageBps, inputs: request.inputs },
+    { action: 'create', chainId: 4663, tickLower: -199200, tickUpper: -198840, slippageBps: 50, inputs: both.inputs },
+  );
+  assert.ok(runtime.validateRequest('plan', planRequestWire(request)), 'the package takes it');
+  assert.equal(fromV1.requestFromV1(zap, { kind: 'wait' }, 'direct'), null);
+  assert.equal(fromV1.requestFromV1({ ...zap, range: { lower: -199201, upper: -198840 } }, both, 'direct'), null, 'off the pool\'s spacing');
+});

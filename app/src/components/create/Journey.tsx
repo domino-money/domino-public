@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import {
   back,
@@ -37,11 +37,12 @@ import { NATIVE_CURRENCY, addressKey, type AddressKey } from '../../lib/read/scr
 import { poolWarning } from '../../lib/read/screens/lookalike'
 import { optionUsableForDomino, type PoolOption } from '../../lib/read/screens/poolsList'
 import { useReadSource } from '../../lib/read/screens/readContext'
-import { usePairBalances } from './usePairBalances'
+import { usePairBalances, type PairBalancesState } from './usePairBalances'
 import { useCreated } from '../../lib/create/createProgress'
 import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
 import { useNow } from '../../lib/read/useNow'
 import { recovering } from '../../lib/staleRelease'
+import { deferred } from '../Deferred'
 import { Button, PageHeader, PageShell } from '../ui'
 import { StageAmount, StageRange } from './StageAmount'
 import { FinalControl, StageReview, preloadCreateControl } from './StageReview'
@@ -62,6 +63,17 @@ type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'uns
  * (lib/staleRelease.ts recovering).
  */
 const V2PoolAdvanced = __DOMINO_V2__ ? lazy(recovering(() => import('../../v2in/journey/PoolAdvanced'), () => ({ default: () => null }))) : null
+
+/**
+ * Changed on purpose 2026-10-05 (the owner: his screens, with Domino V2 connected behind them): in a build that carries
+ * V2, Review's body and its Create position come from src/v2in/journey/JourneyCreateV2.tsx, which draws the plan and runs
+ * the new contracts once Robinhood Chain's S1 gate is live, and hands back today's own Review and Create position (`v1`)
+ * everywhere else. Asked once a pool is chosen, as Create position's own code is; one that cannot load leaves today's own.
+ */
+type V2ReviewProps = { state: JourneyState; now: number; balances: PairBalancesState; v1: ReactElement }
+type V2CreateProps = { state: JourneyState; balances: PairBalancesState; onBusy?: (busy: boolean) => void; v1: ReactElement }
+const V2Review = __DOMINO_V2__ ? deferred<V2ReviewProps>(recovering(() => import('../../v2in/journey/JourneyCreateV2').then((module) => ({ default: module.ReviewV2 })), () => ({ default: ({ v1 }: V2ReviewProps) => v1 }))) : null
+const V2Create = __DOMINO_V2__ ? deferred<V2CreateProps>(recovering(() => import('../../v2in/journey/JourneyCreateV2').then((module) => ({ default: module.default })), () => ({ default: ({ v1 }: V2CreateProps) => v1 }))) : null
 
 /** How many times a failed verification of the linked pool is asked again on its own, and the first wait. */
 const VERIFY_ATTEMPTS = 3
@@ -264,6 +276,10 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   const poolChosen = state.pool !== null
   useEffect(() => {
     if (poolChosen) preloadCreateControl()
+    if (poolChosen && __DOMINO_V2__) {
+      V2Review?.preload()
+      V2Create?.preload()
+    }
   }, [poolChosen])
 
   /** Makes `updated` the state, with `nextPart` as the open half of the amount stage, and keeps the step it opens. */
@@ -393,7 +409,11 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
         </Button>
       )}
       {current === 'review' ? (
-        <FinalControl state={state} balances={pair} onBusy={setCreating} />
+        V2Create ? (
+          <V2Create state={state} balances={pair} onBusy={setCreating} v1={<FinalControl state={state} balances={pair} onBusy={setCreating} />} />
+        ) : (
+          <FinalControl state={state} balances={pair} onBusy={setCreating} />
+        )
       ) : (
         <>
           {!waiting && (
@@ -433,7 +453,11 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
       case 'amount':
         return <StageAmount state={state} balances={pair} onBudget={setBudget} onDeposit={setDeposit} onSlippage={setSlippage} />
       case 'review':
-        return <StageReview state={state} now={now} balances={pair} />
+        return V2Review ? (
+          <V2Review state={state} now={now} balances={pair} v1={<StageReview state={state} now={now} balances={pair} />} />
+        ) : (
+          <StageReview state={state} now={now} balances={pair} />
+        )
       default:
         return step satisfies never
     }

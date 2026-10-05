@@ -64,6 +64,7 @@ export default function NewPositionV2({ flow, poolId, linkToken }: { flow: numbe
     chainId,
     findOther: robinhoodFinder && !finder ? () => setFinder(true) : null,
     backToList: robinhoodFinder && finder ? () => setFinder(false) : null,
+    s1: gate,
   }
   // A pool the finder read that today's journey opens (a v4 pool with a price): today's own link, #/new/<id>.
   const onListed = (id: string) => {

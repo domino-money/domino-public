@@ -108,6 +108,9 @@ export const JOURNEY = {
     planUnavailable: 'The planning service isn’t available yet.',
     planInvalid: 'The quote came back in a form this app does not accept.',
     walletShort: (have: string, need: string) => `Your wallet has ${have}; this position needs ${need}.`,
+    /** Today's journey on Domino V2 (./JourneyCreateV2.tsx): the plan is asked for the signed-in wallet only. */
+    signInForQuote: 'Sign in with your wallet to get the quote. Signing in moves nothing.',
+    signIn: 'Sign in',
     custody: 'Your position stays in your wallet. Each action is a single transaction. Domino’s contract keeps nothing afterwards.',
     reviewAgain: 'Review again',
   },

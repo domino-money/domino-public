@@ -15,6 +15,7 @@
 import assert from 'node:assert/strict';
 import { createFakeSession } from './fake-session.mjs';
 import { createWalletServer } from './wallet-server.mjs';
+import { ARTWORK } from './new-position.mjs';
 
 export const WALLET_NAME = 'Journey Wallet';
 
@@ -24,7 +25,7 @@ export const WALLET_NAME = 'Journey Wallet';
  * `{ status, body }`, or undefined). `intercept(method, params)`: a reply that replaces the chain's for one request.
  * `originOpen` false leaves the gate closed (today's journey exactly).
  */
-export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false } = {}) {
+export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false } = {}) {
   const fake = createFakeSession();
   const server = createWalletServer({ fake, dist, routes });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
@@ -36,6 +37,9 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
     foreign.push(route.request().url());
     return route.abort('blockedbyclient');
   });
+  // `artwork` (2026-10-05): today's journey asks DexScreener for token artwork, as the V1 suites answer it (an empty list);
+  // registered after the refusal above, so it is asked first.
+  if (artwork) await context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await context.exposeFunction('__dominoJourneyWallet', async (method, params) => (await intercept(method, params)) ?? chain.request(method, params));
   await context.exposeFunction('__dominoJourneyPlan', async (request) => {
     planned.push(request);
