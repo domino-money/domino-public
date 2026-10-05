@@ -98,12 +98,17 @@ export function livePlanTransport(): S1PlanTransport {
 /**
  * The page's session (wallet/session.ts) as the plan transport takes it: signed in, for the connected account (the
  * session's owner), on any chain the session is kept across.
+ * Changed on purpose 2026-10-05 (the owner: "it keeps asking me to sign in"): on Base and Arbitrum One too. The view says
+ * wrong_network there, and only Robinhood Chain counted, so a plan or a deposit asked for a new signature at every
+ * network switch; the session held there (session/machine.ts heldAway) is the same session, for the same account.
  */
 const LIVE_SESSION: PlanSession = {
   csrfAccess: true,
   epoch() {
-    const { view, identity, epoch } = sessionController.getSnapshot()
-    if (view.status !== 'signed_in' || identity.kind !== 'connected') return null
+    const { view, identity, epoch, away } = sessionController.getSnapshot()
+    if (identity.kind !== 'connected') return null
+    if (away) return epoch
+    if (view.status !== 'signed_in') return null
     return identity.address.toLowerCase() === view.owner.toLowerCase() ? epoch : null
   },
   async withCsrf(epoch, fn) {

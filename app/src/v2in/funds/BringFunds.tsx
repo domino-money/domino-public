@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AmountField } from '../../components/create/fields'
-import { Button, Card, KeyValue, KeyValueList, Segmented, Select, Skeleton } from '../../components/ui'
+import { Button, Card, KeyValue, KeyValueList, Select, Skeleton } from '../../components/ui'
 import {
   browserDepositJournal,
   browserOriginWallet,
@@ -12,8 +12,9 @@ import {
   type UnsettledOffer,
   type UnsettledStore,
 } from '../../finance/v2/crosschain'
-import type { Holding } from '../../finance/v2/holdings'
+import { CANDIDATE_ORIGINS, readHoldingsReport, type Holding, type HoldingsReport } from '../../finance/v2/holdings'
 import { openWalletDialog } from '../../finance/signedOut'
+import { maxSpend } from '../../lib/create/reviewPlan'
 import { v2Chain } from '../../v2/chains'
 import { cleanSymbol, formatUnitsExact, knownDecimals } from '../../v2/crosschain/amounts'
 import { quoteDeadlineMono, type Timing } from '../../v2/crosschain/client'
@@ -23,14 +24,15 @@ import { SEND_MARGIN_MS } from '../../v2/crosschain/steps'
 import type { CrosschainRequests, OriginsList, QuotePlan } from '../../v2/crosschain/types'
 import type { V2Gate } from '../../v2/gate'
 import type { V2ChainId } from '../../v2/types'
-import { switchToOrigin, v2SwitchNotice, type ChainSwitchOutcome } from '../../wallet/port'
+import { switchToChain, switchToOrigin, v2SwitchNotice, type ChainSwitchOutcome } from '../../wallet/port'
 import { FUNDS_AUTO_REQUOTES, FUNDS_DEFAULT_SLIPPAGE_BPS, FUNDS_DESTINATION_GAS_DEFAULT_ON, FUNDS_RECEIPT_POLL_MS } from './constants'
 import { FUNDS_TEXT, senderCopy } from './copy'
 import { DepositStatus, type TrackedDeposit } from './DepositStatus'
 import { runDeposit, type FlowOutcome, type FlowStage } from './flow'
-import { Holdings, type BringOutcome } from './Holdings'
 import {
   amountRawOf,
+  convertUnits,
+  holdingFor,
   offerDestinationGas,
   originToken,
   quoteRequestOf,
@@ -39,6 +41,7 @@ import {
   slippageText,
   type Lack,
   type RequestFailure,
+  withMargin,
 } from './model'
 import { IDLE_STEPS, QuoteView, type StepsView } from './QuoteView'
 import type { FundsServices } from './services'
@@ -47,6 +50,21 @@ const ZERO = '0x0000000000000000000000000000000000000000'
 const lower = (value: string) => value.toLowerCase()
 
 type OriginsState = { state: 'loading' } | { state: 'ok'; list: OriginsList } | { state: 'failed'; failure: RequestFailure }
+
+/**
+ * Changed on purpose 2026-10-05 (the owner, testing the offer: "it keeps asking me to sign in ... the networks don't show
+ * ... very hard to understand; it has to happen behind the scenes, whoever uses Domino has no experience"): a deposit comes
+ * from Domino's own networks only, Robinhood Chain, Base and Arbitrum One, the ones the page keeps the session across
+ * (session/machine.ts keptChains), never the destination. Ethereum and OP Mainnet closed the session at each visit.
+ */
+const SOURCE_CHAINS: readonly V2ChainId[] = [4663, 8453, 42161]
+
+/** Where the one click "Bring it from {network}" stands: done for the person, said in one line. */
+type Pick =
+  | { chainId: V2ChainId; stage: 'signing' | 'switching' | 'reading' | 'quoting' }
+  | { chainId: V2ChainId; stage: 'empty'; copy: string }
+  | { chainId: V2ChainId; stage: 'failed'; copy: string; code: string }
+
 
 type QuoteState =
   | { state: 'idle' }
@@ -162,7 +180,6 @@ export function BringFunds({
   services,
   chainId,
   wallet,
-  walletKey,
   access,
   walletChainId,
   lacks,
@@ -170,6 +187,7 @@ export function BringFunds({
   poolTokens,
   onUse,
   onUseToken,
+  onArrived,
 }: {
   gate: Exclude<V2Gate, { mode: 'off' }>
   /** The crosschain-v1 client and clock, or null while the service is not wired: the card is then locked. */
@@ -178,7 +196,6 @@ export function BringFunds({
   chainId: V2ChainId
   /** The connected wallet (lowercase): the sender's owner on a live chain. */
   wallet: string
-  walletKey: string
   /** Read-only session state; changes invalidate the private listing and quote. */
   access: string
   /** The chain the connected wallet is on. */
@@ -192,6 +209,8 @@ export function BringFunds({
   onUse: (side: 0 | 1, text: string) => void
   /** V2 accepts an exact delivered token as the new deposit, including one outside the pool. */
   onUseToken?: (token: string, text: string) => void
+  /** Added 2026-10-05: a deposit arrived and the wallet is back on the position's chain; its balances are read again. */
+  onArrived?: () => void
 }) {
   const chain = v2Chain(chainId)
   // The whole offer runs only on a live chain with the service to ask; the closed sender is never built otherwise.
@@ -202,11 +221,10 @@ export function BringFunds({
   // Discovery starts with the insufficient-balance offer; it never waits for a disclosure click.
   const opened = lacks.length > 0
 
-  // The token to bring: the person's choice while the position still lacks it, else the first it lacks; kept while a
-  // quote or a deposit is about it.
-  const [chosen, setChosen] = useState<string | null>(null)
+  // The token to bring: the first the position lacks (Changed on purpose 2026-10-05: no choice of token to make), kept
+  // while a quote or a deposit is about it.
   const [kept, setKept] = useState<string | null>(null)
-  const target = lacks.some((l) => l.token === chosen) ? chosen : (lacks[0]?.token ?? kept)
+  const target = lacks[0]?.token ?? kept
   const lack = lacks.find((l) => l.token === target) ?? null
   const choice = useMemo(() => destinationChoices().find((d) => d.chainId === chainId)?.tokens.find((t) => lower(t.address) === target) ?? null, [chainId, target])
   const symbol = choice?.symbol ?? ''
@@ -580,32 +598,150 @@ export function BringFunds({
     }
   }
 
+  // ---- "Bring it from {network}": one click, the rest done for the person (Changed on purpose 2026-10-05) ----------------
+  const [pick, setPick] = useState<Pick | null>(null)
+  const pickTurn = useRef(0)
+  const latest = useRef({ access, list, slippage, gasChosen })
+  useEffect(() => {
+    latest.current = { access, list, slippage, gasChosen }
+  })
+  useEffect(
+    () => () => {
+      pickTurn.current += 1
+    },
+    [],
+  )
+
+  /** Waits until `check` holds, a little at a time, while this pick is the current one; false at `ms` or when let go. */
+  const until = async (check: () => boolean, alive: () => boolean, ms: number): Promise<boolean> => {
+    if (services === null) return false
+    const end = services.clock.monoMs() + ms
+    while (alive()) {
+      if (check()) return true
+      if (services.clock.monoMs() > end) return false
+      await services.wait(250)
+    }
+    return false
+  }
+
+  /**
+   * The person picked a network: signed in if needed (the wallet's own dialog, once: the session then holds across
+   * Domino's three networks), the wallet moved there, its balances read, the token and the amount chosen for them (what
+   * the position lacks, 1% more for the bridge's fees, never more than they hold, ETH's gas reserve kept), and the
+   * quote asked. What comes back is the quote and its one button.
+   */
+  const bringFrom = async (origin: V2ChainId) => {
+    if (!live || services === null || target === null || steps.running) return
+    const turn = ++pickTurn.current
+    const alive = () => turn === pickTurn.current
+    const ready = () => latest.current.access.startsWith('ready:')
+    const network = v2Chain(origin).name
+    const fail = (copy: string, code: string) => {
+      if (alive()) setPick({ chainId: origin, stage: 'failed', copy, code })
+    }
+    quoteAsk.current?.()
+    setQuote({ state: 'idle' })
+    setSteps(IDLE_STEPS)
+    if (!ready()) {
+      setPick({ chainId: origin, stage: 'signing' })
+      openWalletDialog()
+      if (!(await until(ready, alive, 180_000))) return fail(FUNDS_TEXT.signInFirst, 'signed_out')
+    }
+    if (walletChain.current !== origin) {
+      setPick({ chainId: origin, stage: 'switching' })
+      const switched = await switchToChain(origin)
+      if (!alive()) return
+      if (switched !== 'switched') return fail(switched === 'unknown_chain' ? fill(ADD_ORIGIN, { origin: network }) : v2SwitchNotice(switched, network), `switch_${switched}`)
+      // The session held there (session/machine.ts heldAway) is ready again once the move settles.
+      if (!(await until(ready, alive, 20_000))) return fail(FUNDS_TEXT.signInFirst, 'signed_out')
+    }
+    setPick({ chainId: origin, stage: 'reading' })
+    const candidate = CANDIDATE_ORIGINS.find((c) => c.chainId === origin)
+    if (!candidate) return fail(FUNDS_TEXT.readFailed(network), 'no_candidate')
+    let report: HoldingsReport
+    try {
+      report = await readHoldingsReport(await browserOriginWallet(), candidate)
+    } catch {
+      return fail(FUNDS_TEXT.readFailed(network), 'read_failed')
+    }
+    if (!alive()) return
+    const holdings: readonly Holding[] = report.holdings
+    // The listing for this token, asked again since the session moved with the wallet.
+    if (!(await until(() => latest.current.list !== null, alive, 20_000))) return fail(FUNDS_TEXT.readFailed(network), 'origins_unavailable')
+    const listing = latest.current.list
+    if (!alive() || listing === null) return
+    const tokens = candidate.tokens.map((t) => t.symbol)
+    const named = tokens.length > 1 ? `${tokens.slice(0, -1).join(', ')} or ${tokens[tokens.length - 1]}` : (tokens[0] ?? '')
+    // A balance that could not be read is never said to be zero.
+    if (holdings.every((h) => h.raw === 0n)) {
+      return report.unread.length > 0 ? fail(FUNDS_TEXT.readFailed(network), 'read_partial') : setPick({ chainId: origin, stage: 'empty', copy: FUNDS_TEXT.noneThere(named, network) })
+    }
+    const holding = holdingFor(holdings, target, chainId, origin, listing)
+    if (!holding) return setPick({ chainId: origin, stage: 'empty', copy: FUNDS_TEXT.notBridged(network) })
+    const listed = originToken(listing, origin, holding.token)
+    if (!listed) return setPick({ chainId: origin, stage: 'empty', copy: FUNDS_TEXT.notBridged(network) })
+    setPick({ chainId: origin, stage: 'quoting' })
+    const available = maxSpend(holding.raw, holding.token === ZERO)
+    if (available <= 0n) return setPick({ chainId: origin, stage: 'empty', copy: FUNDS_TEXT.noneThere(named, network) })
+    const slippageBps = slippageBpsOf(latest.current.slippage) ?? FUNDS_DEFAULT_SLIPPAGE_BPS
+    const requestFor = (raw: bigint) =>
+      quoteRequestOf({ originChainId: origin, originToken: listed.address, destinationChainId: chainId, destinationToken: target, amountRaw: raw.toString(), slippageBps, destinationGas: false })
+    // What to send: the same kind converts by decimals; another kind by one quote of everything held (its own rate).
+    const short = lack?.shortRaw ?? null
+    let amountRaw = available
+    if (short !== null && short > 0n && lack !== null) {
+      const etherAt = (chain: V2ChainId, token: string) => token === ZERO || token === v2Chain(chain).wrappedNative.address
+      if (etherAt(chainId, target) === etherAt(origin, holding.token)) {
+        amountRaw = withMargin(convertUnits(short, lack.decimals ?? holding.decimals, holding.decimals))
+      } else {
+        const probe = await services.client.quote(requestFor(available), { owner: services.owner })
+        if (!alive()) return
+        const winner = probe.ok ? probe.data.quote.candidates.find((c) => c.provider === probe.data.quote.decision) : undefined
+        const out = winner?.outputRaw ? BigInt(winner.outputRaw) : 0n
+        if (out > 0n) amountRaw = withMargin((short * available + out - 1n) / out)
+      }
+      if (amountRaw > available) amountRaw = available
+    }
+    const units = formatUnitsExact(amountRaw.toString(), holding.decimals)
+    if (units === null) return fail(FUNDS_TEXT.readFailed(network), 'units')
+    // The form takes what was chosen (the person may change it under "Change amount"); the quote is asked for exactly it.
+    setOriginChainId(origin)
+    setOriginAddress(lower(listed.address))
+    setAmount(units.replace(/,/g, ''))
+    setKept(target)
+    const wanted = requestFor(amountRaw)
+    autoRequotes.current = 0
+    askQuote(wanted, `${latest.current.access}|${JSON.stringify(wanted)}`, null)
+  }
+  const pickBusy = pick !== null && (pick.stage === 'signing' || pick.stage === 'switching' || pick.stage === 'reading' || (pick.stage === 'quoting' && quote.state === 'idle'))
+  const pickWords = (current: Pick): string => {
+    const network = v2Chain(current.chainId).name
+    switch (current.stage) {
+      case 'signing':
+        return FUNDS_TEXT.signingIn
+      case 'switching':
+        return FUNDS_TEXT.switchingTo(network)
+      case 'reading':
+        return FUNDS_TEXT.checking(network)
+      case 'quoting':
+        return FUNDS_TEXT.finding
+      case 'empty':
+      case 'failed':
+        return current.copy
+    }
+  }
+
   // Shown while the position lacks a token a deposit can deliver, or while something of the offer's own is under way.
   const underWay = deposits.length > 0 || held.length > 0 || heldNotice !== null || steps.running || quote.state !== 'idle'
   if ((lacks.length === 0 && !underWay) || target === null) return null
 
   const busy = steps.running
 
-  /**
-   * Bring a holding (./Holdings.tsx): while locked, the sentence; else the form prefilled with the holding's network,
-   * token and amount where the origins listing bridges that token from there to this chain, else said as not bridged.
-   * The amount goes in as the field takes it ("0.42", no grouping), or in raw units when the listing knows no decimals.
-   */
-  const bring = (holding: Holding): BringOutcome => {
-    if (locked !== null || busy) return 'locked'
-    const found = list ? originToken(list, holding.chainId, holding.token) : null
-    if (!found) return 'no_route'
-    setOriginChainId(holding.chainId)
-    setOriginAddress(lower(found.address))
-    const units = knownDecimals(found.decimals) ? formatUnitsExact(holding.raw.toString(), found.decimals) : null
-    setAmount(units !== null ? units.replace(/,/g, '') : holding.raw.toString())
-    setKept(target)
-    return 'prefilled'
-  }
-
-  const chains = originsView?.chains ?? []
+  // The form under "Change amount" offers Domino's own networks only, as the one click does.
+  const chains = (originsView?.chains ?? []).filter((c) => SOURCE_CHAINS.includes(c.chainId as V2ChainId) && c.chainId !== chainId)
   const tokens = chains.find((c) => c.chainId === originChainId)?.tokens ?? []
   const unit = listed ? (cleanSymbol(listed.symbol) ?? `${listed.address.slice(0, 6)}…${listed.address.slice(-4)}`) : ''
+  const sources = SOURCE_CHAINS.filter((id) => id !== chainId)
   const shortUnits = lack && lack.shortRaw !== null ? formatUnitsExact(lack.shortRaw.toString(), lack.decimals) : null
   const shortText = shortUnits !== null ? `${shortUnits} ${symbol}` : null
   return (
@@ -619,61 +755,69 @@ export function BringFunds({
     >
       <div className="dm-funds-heading">
         <span className="dm-funds-icon" aria-hidden="true">↗</span>
-        <div><h4 data-funds-title="">{FUNDS_TEXT.title(symbol, network)}</h4><p>{FUNDS_TEXT.lead(symbol, chain.name)}</p></div>
-      </div>
-      <div className="dm-funds-body" data-funds-body="">
-        <div className="grid gap-1">
+        <div>
+          <h4 data-funds-title="">{FUNDS_TEXT.title(symbol, network)}</h4>
           {lack && (
-            <p className="text-caption text-fg-muted" data-funds-lack={shortText !== null ? 'short' : lack.haveRaw === 0n ? 'none' : 'swap'}>
+            <p data-funds-lack={shortText !== null ? 'short' : lack.haveRaw === 0n ? 'none' : 'swap'}>
               {shortText !== null
-                ? FUNDS_TEXT.needMore(shortText, chain.name)
+                ? FUNDS_TEXT.youNeed(shortText, chain.name)
                 : onUseToken
                   ? `Use ${symbol} as a new deposit, then review the swap.`
-                : lack.haveRaw === 0n
-                  ? FUNDS_TEXT.holdsNone(symbol, chain.name)
-                  : FUNDS_TEXT.cantFund(chain.name)}
+                  : lack.haveRaw === 0n
+                    ? FUNDS_TEXT.holdsNone(symbol, chain.name)
+                    : FUNDS_TEXT.cantFund(chain.name)}
             </p>
           )}
         </div>
-        {locked ? <p role="status" className="dm-funds-unavailable" data-funds-locked="">{locked}</p> : <ol className="dm-funds-route" aria-label="How your funds arrive"><li><span>1</span>Choose funds</li><li><span>2</span>Bridge / swap</li><li><span>3</span>Use in this position</li></ol>}
-        {lacks.length > 1 && (
-          <Segmented
-            label={FUNDS_TEXT.which}
-            items={lacks.map((l) => ({ key: l.token, label: l.symbol, disabled: busy }))}
-            value={target}
-            onChange={(next) => {
-              setChosen(next)
-              setKept(next)
-            }}
-          />
-        )}
-
-        {/* What the wallet holds elsewhere, read through its own provider: in both modes; Bring is answered by `bring`. */}
-        <details className="dm-funds-discovery" open={originChainId === null}>
-          <summary hidden={originChainId === null}>Check other balances</summary>
-        <Holdings
-          chainId={chainId}
-          homeName={chain.name}
-          walletChainId={walletChainId}
-          walletKey={walletKey}
-          locked={locked !== null || !sessionReady}
-          busy={busy}
-          bringDisabled={busy || (services !== null && list === null)}
-          onBring={bring}
-        />
-        </details>
-
-        {featureOff ? (
+      </div>
+      <div className="dm-funds-body" data-funds-body="">
+        {locked ? (
+          <p role="status" className="dm-funds-unavailable" data-funds-locked="">
+            {locked}
+          </p>
+        ) : featureOff ? (
           <p role="status" className="text-body text-fg-muted" data-funds-off={featureOff.code ?? 'not_deployed'} data-error-code={featureOff.code ?? undefined}>
             {featureOff.copy}
           </p>
         ) : (
           services !== null && (
             <>
-              {!sessionReady && !steps.running && <div className="dm-funds-check" data-funds-session={access}>
-                <p className="dm-hint">{access === 'pending' ? 'Checking wallet access…' : access === 'signed_out' ? 'Sign in to see transfer options. This does not move funds.' : access === 'wrong_network' ? 'Open your wallet menu to continue on the required network.' : 'Wallet sign-in is unavailable right now. Transfer options will return when access is restored.'}</p>
-                {(access === 'signed_out' || access === 'wallet_account_differs' || access === 'wrong_network') && <Button variant="outline" size="sm" onClick={openWalletDialog} data-funds-signin="">{access === 'signed_out' ? 'Sign in' : 'Open wallet'}</Button>}
-              </div>}
+              {/* The one choice (Changed on purpose 2026-10-05): a network; signing in, the switch, the balance, the token
+                  and the amount follow by themselves (bringFrom). */}
+              {!steps.running && quote.state !== 'ok' && lacks.length > 0 && (
+                <div className="grid gap-2" data-funds-sources="">
+                  <p className="text-body">{FUNDS_TEXT.bringFrom}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {sources.map((id) => (
+                      <Button
+                        key={id}
+                        type="button"
+                        size="sm"
+                        variant={pick?.chainId === id ? 'secondary' : 'outline'}
+                        aria-pressed={pick?.chainId === id}
+                        disabled={pickBusy}
+                        onClick={() => void bringFrom(id)}
+                        data-funds-network={id}
+                      >
+                        {v2Chain(id).name}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="dm-hint">{FUNDS_TEXT.howItWorks(chain.name)}</p>
+                </div>
+              )}
+              {pick && quote.state === 'idle' && !steps.running && (
+                <p
+                  role="status"
+                  className={pick.stage === 'failed' ? 'dm-error' : 'text-body text-fg-muted'}
+                  aria-busy={pickBusy || undefined}
+                  data-funds-pick={pick.stage}
+                  data-funds-pick-network={pick.chainId}
+                  data-error-code={pick.stage === 'failed' ? pick.code : undefined}
+                >
+                  {pickWords(pick)}
+                </p>
+              )}
               {(deposits.length > 0 || held.length > 0 || heldNotice !== null) && (
                 <section className="grid gap-3" data-funds-deposits="">
                   <h4 className="dm-subtitle">{FUNDS_TEXT.onTheWay}</h4>
@@ -706,6 +850,8 @@ export function BringFunds({
                       journal={journal}
                       name={name}
                       walletChainId={walletChainId}
+                      access={access}
+                      onArrived={onArrived}
                       sender={sender}
                       poolTokens={poolTokens}
                       onUse={onUse}
@@ -723,9 +869,39 @@ export function BringFunds({
                 </section>
               )}
 
-              <div className="dm-funds-private" hidden={!sessionReady && !steps.running}>
-              <details className="dm-funds-edit" open={quote.state !== 'ok'} data-funds-edit="">
-                <summary hidden={quote.state !== 'ok'}>Change transfer</summary>
+              {quote.state === 'loading' && (
+                <p role="status" className="text-body text-fg-muted" data-funds-quote-loading="">
+                  {quote.note ?? FUNDS_TEXT.quoting}
+                </p>
+              )}
+              {quote.state === 'failed' && quote.failure.copy && (
+                <p role="alert" className="dm-error" data-error-code={quote.failure.code ?? undefined} data-funds-quote-error="">
+                  {quote.failure.copy}
+                </p>
+              )}
+              {quote.state === 'expired' && (
+                <p role="status" className="text-body" data-funds-quote-expired="">
+                  {FUNDS_TEXT.quoteExpired}
+                </p>
+              )}
+              {quote.state === 'ok' && (
+                <QuoteView
+                  quote={quote.quote}
+                  name={name}
+                  note={quote.note}
+                  walletChainId={live ? walletChainId : null}
+                  steps={steps}
+                  handedOver={handedOver(quote.quote)}
+                  locked={locked}
+                  onDeposit={() => void deposit()}
+                  onForget={() => void forgetHeld(quote.quote.request.originChainId)}
+                />
+              )}
+
+              {/* Once a network is chosen, its transfer can be changed (the quote then waits for Get a quote). */}
+              {originChainId !== null && !steps.running && (
+                <details className="dm-funds-edit" data-funds-edit="">
+                  <summary>{FUNDS_TEXT.changeTransfer}</summary>
                 <div className="dm-funds-form">
               <div className="grid gap-3" data-funds-origins={origins.state}>
                 {origins.state === 'loading' && (
@@ -870,37 +1046,8 @@ export function BringFunds({
                 </div>
               )}
                 </div>
-              </details>
-
-              {quote.state === 'loading' && (
-                <p role="status" className="text-body text-fg-muted" data-funds-quote-loading="">
-                  {quote.note ?? FUNDS_TEXT.quoting}
-                </p>
+                </details>
               )}
-              {quote.state === 'failed' && quote.failure.copy && (
-                <p role="alert" className="dm-error" data-error-code={quote.failure.code ?? undefined} data-funds-quote-error="">
-                  {quote.failure.copy}
-                </p>
-              )}
-              {quote.state === 'expired' && (
-                <p role="status" className="text-body" data-funds-quote-expired="">
-                  {FUNDS_TEXT.quoteExpired}
-                </p>
-              )}
-              {quote.state === 'ok' && (
-                <QuoteView
-                  quote={quote.quote}
-                  name={name}
-                  note={quote.note}
-                  walletChainId={live ? walletChainId : null}
-                  steps={steps}
-                  handedOver={handedOver(quote.quote)}
-                  locked={locked}
-                  onDeposit={() => void deposit()}
-                  onForget={() => void forgetHeld(quote.quote.request.originChainId)}
-                />
-              )}
-              </div>
             </>
           )
         )}

@@ -177,6 +177,30 @@ test('the v2-test build: the session is kept while the wallet is on Base or Arbi
   assert.deepEqual(routes(elsewhere.effects), ['logout']);
 });
 
+// Added 2026-10-05 (the owner, testing a deposit from another network: "it keeps asking me to sign in"): the session held on
+// Base or Arbitrum One is usable there (session/machine.ts heldAway; the controller lends its CSRF, finance/v2/http.ts
+// counts it), for its own account only, at rest only, and only in a build that carries V2.
+test('the session held on Base or Arbitrum One is usable there; never on another chain, for another account, or in a build without V2', () => {
+  const m = withV2(true, `${BUILD}session/machine.js`);
+  const env = { origin: ORIGIN, checksum: getAddress, chains: m.sessionChains(ORIGIN) };
+  const start = signedIn(m, env);
+  assert.equal(m.heldAway(start.machine, env), false, 'on Robinhood Chain the session is simply signed in');
+  for (const chainId of [8453, 42161]) {
+    const away = then(m, env, start, { type: 'identity', identity: wallet(chainId) });
+    assert.equal(away.machine.view.status, 'wrong_network');
+    assert.equal(m.heldAway(away.machine, env), true, `held on ${chainId}`);
+    assert.equal(m.heldAway(away.machine, { ...env, chains: [4663] }), false, 'not where the page keeps no session');
+    assert.equal(m.heldAway({ ...away.machine, flow: { kind: 'checking' } }, env), false, 'only at rest');
+    assert.equal(m.heldAway({ ...away.machine, session: { ...away.machine.session, owner: '0x' + '9'.repeat(40) } }, env), false, 'only for its own account');
+  }
+  const elsewhere = then(m, env, start, { type: 'identity', identity: wallet(1) });
+  assert.equal(m.heldAway(elsewhere.machine, env), false, 'Ethereum: the session is closed');
+  const v1 = withV2(false, `${BUILD}session/machine.js`);
+  const v1env = { origin: ORIGIN, checksum: getAddress, chains: v1.sessionChains(ORIGIN) };
+  const v1start = signedIn(v1, v1env);
+  assert.equal(v1.heldAway({ ...v1start.machine, identity: wallet(8453), view: { status: 'wrong_network', chainId: 8453 } }, { ...v1env, chains: [4663, 8453] }), false, 'a build without V2: never');
+});
+
 // ---------------------------------------------------------------------------
 // The signature journal
 // ---------------------------------------------------------------------------

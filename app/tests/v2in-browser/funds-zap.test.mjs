@@ -76,38 +76,27 @@ async function captureCard(s, suffix) {
   }
 }
 
-test('live V2 Amount automatically finds its exact shortfall and reaches the shared bridge quote after explicit sign-in', async () => {
+// Changed on purpose 2026-10-05 (the owner: "it has to happen behind the scenes"): the offer is one sentence and Domino's
+// other networks; what a click on one does (sign in once, move the wallet there, read, choose, quote) is
+// tests/v2in-browser/funds-offer.test.mjs's, whose wallet can move between networks.
+test('live V2 Amount automatically finds its exact shortfall and offers the other Domino networks, asking nothing before the choice', async () => {
   const s = await openFunding();
   try {
     const offer = s.zap.locator('[data-funds-offer][data-funds-mode="live"]');
     await offer.waitFor();
     assert.equal(await offer.getAttribute('data-funds-token'), USDG);
-    assert.equal(await offer.locator('[data-funds-lack]').innerText(), '50 USDG more needed.');
+    assert.equal(await offer.locator('[data-funds-lack]').innerText(), 'You need 50 USDG more on Robinhood Chain.');
     assert.equal(s.walletMethods.includes('wallet_switchEthereumChain'), false);
     assert.equal(s.walletMethods.includes('personal_sign'), false);
     assert.deepEqual(s.calls, []);
     await captureCard(s, 'offer');
     const readsBefore = s.walletMethods.filter((method) => method === 'eth_getBalance').length;
     await s.zap.locator(`[data-zap-amount="${USDG}"] input`).fill('60');
-    await offer.locator('[data-funds-lack]').getByText('60 USDG more needed.', { exact: true }).waitFor();
+    await offer.locator('[data-funds-lack]').getByText('You need 60 USDG more on Robinhood Chain.', { exact: true }).waitFor();
     assert.equal(s.walletMethods.filter((method) => method === 'eth_getBalance').length, readsBefore, 'typing reuses the destination read');
-    await offer.locator('[data-funds-signin]').click();
-    await s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Sign in', exact: true }).click();
-    await s.page.waitForFunction(() => window.__dominoSessionProbe.view().status === 'signed_in');
-    await s.page.keyboard.press('Escape');
-    await offer.locator('[data-funds-origins="ok"]').waitFor();
-    await s.page.locator('#funds-origin-chain').click();
-    await s.page.getByRole('option', { name: 'Arbitrum', exact: true }).click();
-    await s.page.locator('#funds-origin-token').click();
-    await s.page.getByRole('option', { name: /^USDC ·/ }).click();
-    await s.page.locator('#funds-amount').fill('100');
-    await offer.locator('[data-funds-get-quote]').click();
-    await offer.locator('[data-funds-quote]').waitFor();
-    assert.equal(await offer.locator('[data-funds-edit]').getAttribute('open'), null, 'quote keeps the sending form folded and editable');
-    assert.equal(await offer.locator('[data-funds-alternatives]').getAttribute('open'), null, 'the selected route gets focus');
-    assert.deepEqual(s.calls.map((call) => call.route), ['origins', 'quote']);
-    assert.equal(s.calls[1].body.destinationToken, USDG);
-    await captureCard(s, 'quote');
+    assert.deepEqual(await offer.locator('[data-funds-network]').evaluateAll((els) => els.map((el) => [el.getAttribute('data-funds-network'), el.textContent.trim()])), [['8453', 'Base'], ['42161', 'Arbitrum One']]);
+    assert.equal(await offer.locator('[data-funds-signin], #funds-origin-chain, [data-funds-scan]').count(), 0, 'no separate sign-in, no list of networks, no scan');
+    assert.deepEqual(s.calls, [], 'nothing asked before the choice');
     assert.equal(s.chain.sends.length, 0);
   } finally { await s.close(); }
 });

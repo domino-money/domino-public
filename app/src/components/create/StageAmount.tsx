@@ -21,7 +21,7 @@ import type { PairBalancesState } from './usePairBalances'
 // branches, and the chunk is only the offer under them, drawn as soon as it is in (components/Deferred.tsx, as
 // components/positions/OwnedPositions.tsx opens the lists' chunks: nothing while it loads, nothing should it fail), so
 // the inputs never remount and the caret is never lost when the chunk lands.
-type FundsOfferProps = { state: JourneyState; balances: PairBalancesState; onBudget: (text: string) => void; onDeposit: (candidate: TokenCandidate, text: string) => void }
+type FundsOfferProps = { state: JourneyState; balances: PairBalancesState; onBudget: (text: string) => void; onDeposit: (candidate: TokenCandidate, text: string) => void; onArrived?: () => void }
 const FundsOffer = __DOMINO_V2__ ? deferred<FundsOfferProps>(recovering(() => import('../../v2in/funds/FundsAmounts'), () => ({ default: NoOffer }))) : null
 if (__DOMINO_V2__ && FundsOffer) FundsOffer.preload()
 function NoOffer() {
@@ -83,6 +83,7 @@ export function StageAmount({
   onBudget,
   onDeposit,
   onSlippage,
+  onFundsArrived,
 }: {
   state: JourneyState
   balances: PairBalancesState
@@ -90,6 +91,8 @@ export function StageAmount({
   /** The other token's row: switch the independent token and set its amount in one change. */
   onDeposit: (candidate: TokenCandidate, text: string) => void
   onSlippage: (text: string) => void
+  /** Added 2026-10-05: funds brought from another network arrived; the balances are read again. */
+  onFundsArrived?: () => void
 }) {
   const value = slippageValue(state.slippageBps)
   // Read once: a disclosure whose open state followed the value would shut under the slider being dragged.
@@ -101,7 +104,7 @@ export function StageAmount({
       {__DOMINO_V2__ && FundsOffer ? (
         <>
           <PairedAmounts state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} />
-          <FundsOffer state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} />
+          <FundsOffer state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} onArrived={onFundsArrived} />
         </>
       ) : (
         <PairedAmounts state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} />

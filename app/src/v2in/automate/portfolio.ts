@@ -319,12 +319,54 @@ export function mergeCredits(indexed: readonly { token: Address; amount: bigint 
 export const WAITING_REASON_TEXT: Readonly<Record<string, string>> = Object.freeze({
   too_soon: 'Waiting for the minimum interval',
   gas_not_covered: 'Waiting until fees cover the network cost',
-  owner_benefit_insufficient: "Waiting: compounding now wouldn't pay off yet",
+  // Changed on purpose 2026-10-05 (rugged97's F7 delta of 5 Oct, §6.2): one text for a compound and for the next position's
+  // mint, which wait with the same code (it was "Waiting: compounding now wouldn't pay off yet").
+  owner_benefit_insufficient: "Waiting: running now wouldn't pay off yet",
   earnings_evidence_missing: 'Waiting for enough fee history',
   trigger_not_reached: 'Waiting for your trigger price',
   eligible: 'Running soon',
   triggered: 'Running soon',
+  // Added 2026-10-05 (rugged97's F7 delta of 5 Oct, §5.5 and §6.2: the automation mints Domino-compound's successors).
+  // max_positions_reached names the vault's own limit: maxPositionsWaiting below.
+  awaiting_successor: 'Waiting to open the next position',
+  successor_range_unavailable: "Waiting: the next position can't start at the current price within your overlap limit",
+  successor_anchor_unstable: 'Waiting for the reference price to settle before opening the next position',
+  // waiting.error InvalidTick: a range out of the tick bounds, which the backend never builds.
+  reverted_invalid_tick: "Waiting: the next position's range isn't valid at this price",
 })
+
+/** A share in basis points as a percent: 500 → "5", 250 → "2.5", 5000 → "50". */
+const percentOfBps = (bps: number): string => Number((bps / 100).toFixed(2)).toString()
+
+/**
+ * rugged97's F7 delta of 5 Oct, §5.5, "Na tela": a Domino-compound vault's next position in one sentence, "Opens when the
+ * price is within {trigger}% of #{tokenId}'s ceiling, starting at the current price, with a ceiling at least {upside}%
+ * higher." Only the sequence's newest member, the one with no successor yet, opens it (the root while it has none).
+ * Null for a vault that is not Domino-compound, or whose policy or limits were not read.
+ */
+export function nextPositionWords(view: {
+  mode: 1 | 2 | null
+  policy: { triggerDistanceBps: number } | null
+  limits: { upsideBps: number } | null
+  members: readonly Pick<VaultMemberView, 'tokenId' | 'role' | 'state' | 'parent'>[]
+  rootTokenId: bigint
+}): string | null {
+  if (view.mode !== 2 || !view.policy || !view.limits) return null
+  const live = view.members.filter((member) => member.state === 'armed' || member.state === 'active')
+  const parents = new Set(live.flatMap((member) => (member.role === 'successor' && member.parent !== null ? [member.parent.toString()] : [])))
+  const newest = live.find((member) => !parents.has(member.tokenId.toString()))?.tokenId ?? view.rootTokenId
+  return `Opens when the price is within ${percentOfBps(view.policy.triggerDistanceBps)}% of #${newest.toString()}'s ceiling, starting at the current price, with a ceiling at least ${percentOfBps(view.limits.upsideBps)}% higher.`
+}
+
+/**
+ * rugged97's F7 delta of 5 Oct, §6.2: `max_positions_reached`, with the sequence's own `maxPositions` (its policy). Without
+ * the policy read, the same sentence without the number.
+ */
+export function maxPositionsWaiting(maxPositions: number | null): string {
+  return maxPositions === null
+    ? 'Waiting: your sequence has reached its position limit. Raise the limit or withdraw a position to continue'
+    : `Waiting: your sequence has reached ${maxPositions} positions. Raise the limit or withdraw a position to continue`
+}
 
 /**
  * Spec rev4 §6.2 (#311): a vault whose root is closed, with reserves left. The automation returns them on its own pass
@@ -346,7 +388,7 @@ const SAID_ELSEWHERE = new Set(['vault_paused', 'root_disarmed'])
  * is §4.9's for `waiting.error` (its own words: "Waiting …", "Paused: …", "Not valid: …", "Blocked: …"), else §6.2's for
  * `waiting.reason`, else plainly "Waiting". `code` is for a data attribute.
  */
-export function waitingWords(waiting: Waiting | null, chainId: V2ChainId, nowSeconds: number): { text: string; code: string } | null {
+export function waitingWords(waiting: Waiting | null, chainId: V2ChainId, nowSeconds: number, vault: { maxPositions: number | null } | null = null): { text: string; code: string } | null {
   if (!waiting) return null
   // Changed on purpose 2026-10-04 (rugged97's delta of 4 Oct §2 item 5, #311): RootOpen and SuccessorActive are the
   // automatic reserves return waiting its turn (it runs only with the root closed and no active successor): the normal
@@ -365,7 +407,7 @@ export function waitingWords(waiting: Waiting | null, chainId: V2ChainId, nowSec
   }
   if (copy === null) {
     if (SAID_ELSEWHERE.has(waiting.reason)) return null
-    copy = WAITING_REASON_TEXT[waiting.reason] ?? 'Waiting'
+    copy = waiting.reason === 'max_positions_reached' ? maxPositionsWaiting(vault?.maxPositions ?? null) : (WAITING_REASON_TEXT[waiting.reason] ?? 'Waiting')
   }
   return { text: `${copy.replace(/\.$/, '')} · since ${agoWords(waiting.since, nowSeconds)}`, code: waiting.error ?? waiting.reason }
 }

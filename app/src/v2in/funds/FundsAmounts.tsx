@@ -37,11 +37,14 @@ export default function FundsAmounts({
   balances,
   onBudget,
   onDeposit,
+  onArrived,
 }: {
   state: JourneyState
   balances: PairBalancesState
   onBudget: (text: string) => void
   onDeposit: (candidate: TokenCandidate, text: string) => void
+  /** Added 2026-10-05: funds brought from another network arrived; the amount step reads its balances again. */
+  onArrived?: () => void
 }) {
   const pool = state.pool
   const found = pool ? pool.currencies[0].chainId : null
@@ -81,13 +84,13 @@ export default function FundsAmounts({
       services={services}
       chainId={chainId}
       wallet={wallet}
-      walletKey={`${identity.kind === 'connected' ? identity.connectorName : ''}|${wallet}`}
       access={access}
       walletChainId={identity.kind === 'connected' ? identity.chainId : null}
       lacks={lacks}
       nativeOnDestination={nativeOnDestination}
       poolTokens={[pool.currencies[0].address.toLowerCase(), pool.currencies[1].address.toLowerCase()]}
       onUse={use}
+      onArrived={onArrived}
     />
   )
 }

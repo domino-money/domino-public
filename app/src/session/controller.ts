@@ -1,5 +1,6 @@
 import { OutgoingContractError, type ApiOutcome, type SessionApi } from './api'
 import {
+  heldAway,
   initialMachine,
   reduce,
   sessionChains,
@@ -78,6 +79,11 @@ export interface Snapshot {
   identity: WalletIdentity
   epoch: number
   busy: boolean
+  /**
+   * Added 2026-10-05: the signed-in session is held while the account's wallet is on Base or Arbitrum One (machine.ts
+   * heldAway), where the view says wrong_network; Domino V2's private routes may use it there.
+   */
+  away: boolean
 }
 
 /**
@@ -229,7 +235,7 @@ export function createSessionController(ports: ControllerPorts): SessionControll
   let refreshAt: number | null = null
 
   function snapshotOf(m: Machine): Snapshot {
-    return { view: m.view, identity: m.identity, epoch: m.epoch, busy: m.flow.kind !== 'idle' }
+    return { view: m.view, identity: m.identity, epoch: m.epoch, busy: m.flow.kind !== 'idle', away: heldAway(m, env) }
   }
 
   function dispatch(event: Event) {
@@ -475,7 +481,8 @@ export function createSessionController(ports: ControllerPorts): SessionControll
     getSnapshot: () => snapshot,
     withSessionCsrf(epoch, fn) {
       const held = machine.session
-      if (machine.epoch !== epoch || machine.view.status !== 'signed_in' || held === null) return Promise.resolve(NO_SESSION)
+      // Changed on purpose 2026-10-05: signed in, or the same session held on Base or Arbitrum One (machine.ts heldAway).
+      if (machine.epoch !== epoch || held === null || (machine.view.status !== 'signed_in' && !heldAway(machine, env))) return Promise.resolve(NO_SESSION)
       return fn(held.csrf)
     },
   }

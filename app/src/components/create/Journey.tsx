@@ -389,7 +389,9 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   // as soon as a pool is chosen and is settled by the time Review reads it:
   // the amount step names the second token with it, and Review and Create
   // position plan the deposit from it.
-  const pair = usePairBalances(source, state.pool, others)
+  // Read again when funds brought from another network arrive (2026-10-05): the offer under the amounts says so.
+  const [balanceRevision, setBalanceRevision] = useState(0)
+  const pair = usePairBalances(source, state.pool, others, balanceRevision)
 
   const checkFor: Record<VisualStep, Check> = { pool: poolCheck, range: rangeCheck, amount: amountCheck, review: canContinue('review', state, now) }
   const check = checkFor[current]
@@ -456,7 +458,7 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
       case 'range':
         return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} others={others} />
       case 'amount':
-        return <StageAmount state={state} balances={pair} onBudget={setBudget} onDeposit={setDeposit} onSlippage={setSlippage} />
+        return <StageAmount state={state} balances={pair} onBudget={setBudget} onDeposit={setDeposit} onSlippage={setSlippage} onFundsArrived={() => setBalanceRevision((n) => n + 1)} />
       case 'review':
         return V2Review ? (
           <V2Review state={state} now={now} balances={pair} v1={<StageReview state={state} now={now} balances={pair} />} />

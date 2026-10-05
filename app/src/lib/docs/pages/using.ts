@@ -191,7 +191,8 @@ export const BRING_FUNDS: DocPage = {
       title: 'Where it appears',
       blocks: [
         p('When your wallet can’t fund the Amount step, even with a swap, an offer to bring funds appears automatically.'),
-        p('Domino checks the connected network for ETH, WETH and USDC. ', b('Check other networks'), ' asks your wallet to switch networks, then return. Nothing is sent.'),
+        // Changed on purpose 2026-10-05 (the owner: "it has to happen behind the scenes"): one choice, the rest done for you.
+        p('Pick the network to bring it from: Robinhood Chain, Base or Arbitrum One. Domino does the rest: you sign in once, your wallet moves there, and Domino reads your balance and picks the token and the amount. Nothing is sent until you confirm.'),
       ],
     },
     {
@@ -201,10 +202,10 @@ export const BRING_FUNDS: DocPage = {
         {
           kind: 'steps',
           items: [
-            { title: 'Choose', body: ['The network, the token to send and how much.'] },
+            { title: 'Choose', body: ['The network. Domino picks the token there and the amount: what the position lacks, 1% more for the bridges’ fees, never more than you hold. Change amount lets you set it yourself.'] },
             { title: 'Get a quote', body: ['Domino’s service asks two bridges, Relay and Across, and offers the one that delivers more after every fee. The quote shows Domino’s fee, the bridge’s fee, what you receive and the least you receive, and about how long it takes.'] },
             { title: 'Deposit', body: ['Your wallet switches to that network and sends it: a token takes two transactions, an approval of the exact amount and then the deposit; ETH takes one.'] },
-            { title: 'Use it', body: ['It arrives in your own wallet on Robinhood Chain, and the same position continues with it.'] },
+            { title: 'Use it', body: ['It arrives in your own wallet on the position’s network, your wallet goes back there, and the same position continues with it.'] },
           ],
         },
         p('A quote lasts 2 minutes; past it, the step asks for a new one. The step follows your deposit until it arrives, even after a reload. With no ETH on Robinhood Chain for network fees, ', b('Get gas on Robinhood Chain'), ' lets Relay deliver a little ETH out of the deposit; Across can’t.'),

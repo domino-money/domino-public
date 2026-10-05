@@ -10,6 +10,7 @@
  * unchanged in what they decide.
  */
 import type { DepositPlan } from '../../lib/create/depositPlan'
+import type { Holding } from '../../finance/v2/holdings'
 import { maxSpend } from '../../lib/create/reviewPlan'
 import { amountText, formatUnitsExact, knownDecimals } from '../../v2/crosschain/amounts'
 import type { CrosschainFailure } from '../../v2/crosschain/client'
@@ -17,6 +18,8 @@ import { FAILURE_COPY, PROVIDER_NAME } from '../../v2/crosschain/copy'
 import { errorDisposition } from '../../v2/crosschain/errors'
 import { destinationChoices, type Naming } from '../../v2/crosschain/present'
 import type { CrosschainRequests, OriginsList, OriginToken, QuotePlan } from '../../v2/crosschain/types'
+import { v2Chain } from '../../v2/chains'
+import type { V2ChainId } from '../../v2/types'
 import {
   FUNDS_MAX_SLIPPAGE_BPS,
   FUNDS_MIN_SLIPPAGE_BPS,
@@ -333,3 +336,30 @@ export function requestFailure(failure: CrosschainFailure, attempt: number): Req
     }
   }
 }
+
+// ---- the one click "Bring it from {network}" (Changed on purpose 2026-10-05, ./BringFunds.tsx bringFrom) ----------------
+
+/**
+ * The holding to send for `target` on `destination` (pure): one the listing bridges from that network, the same kind of
+ * token first (ETH or WETH for ether, the dollar for a dollar), native ETH before WETH; else the other kind.
+ */
+export function holdingFor(holdings: readonly Holding[], target: string, destination: V2ChainId, origin: V2ChainId, list: OriginsList): Holding | null {
+  const etherAt = (chain: V2ChainId, token: string) => token === ZERO || token === v2Chain(chain).wrappedNative.address
+  const wantsEther = etherAt(destination, target)
+  const rank = (holding: Holding) => {
+    const ether = etherAt(origin, holding.token)
+    const kind = ether === wantsEther ? 0 : 2
+    return kind + (ether && holding.token !== ZERO ? 1 : 0)
+  }
+  return holdings.filter((holding) => holding.raw > 0n && originToken(list, origin, holding.token) !== null).sort((a, b) => rank(a) - rank(b))[0] ?? null
+}
+
+/** `raw` in `from` decimals as `to` decimals (pure; rounding up, so a converted need is never short). */
+export function convertUnits(raw: bigint, from: number, to: number): bigint {
+  if (to >= from) return raw * 10n ** BigInt(to - from)
+  const scale = 10n ** BigInt(from - to)
+  return (raw + scale - 1n) / scale
+}
+
+/** A need with 1% more for the bridge's own fees (0.35% Domino's, the provider's), rounded up (pure). */
+export const withMargin = (raw: bigint): bigint => (raw * 101n + 99n) / 100n

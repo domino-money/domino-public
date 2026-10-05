@@ -20,6 +20,21 @@ export const FUNDS_TEXT = {
   holdsNone: (token: string, destination: string) => `Your wallet has no ${token} on ${destination}.`,
   /** The other token, which helps only through the swap: no figure claimed. */
   cantFund: (destination: string) => `Your wallet doesn't have enough on ${destination} for this position, even with a swap.`,
+  // Changed on purpose 2026-10-05 (the owner, testing it: "very hard to understand ... it has to happen behind the scenes;
+  // whoever uses Domino has no experience"): one sentence, one choice of network, the rest done for the person.
+  /** What the position lacks, where it is needed: "You need 0.0021 ETH more on Robinhood Chain." */
+  youNeed: (amount: string, destination: string) => `You need ${amount} more on ${destination}.`,
+  bringFrom: 'Bring it from:',
+  howItWorks: (destination: string) => `Your wallet goes to that network to send it, then comes back to ${destination}. You approve each step in your wallet.`,
+  signingIn: "Sign in with your wallet to continue. This doesn't move funds.",
+  signInFirst: 'Sign in with your wallet to bring funds from another network.',
+  switchingTo: (network: string) => `Switching your wallet to ${network}…`,
+  checking: (network: string) => `Checking your balance on ${network}…`,
+  finding: 'Finding the best route…',
+  noneThere: (tokens: string, network: string) => `You have no ${tokens} on ${network}.`,
+  notBridged: (network: string) => `Nothing in your wallet on ${network} can be brought here right now.`,
+  readFailed: (network: string) => `Your balance on ${network} couldn't be read. Try again.`,
+  changeTransfer: 'Change amount',
   /**
    * Decided [owner, 2026-10-02 evening]: while the crosschain-v1 route is not on (the gate's `preview`: the Worker not
    * deployed or switched off), a press of Bring is answered with S2's own plain sentence (in place of the gate's sentence

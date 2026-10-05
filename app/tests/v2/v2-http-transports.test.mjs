@@ -137,7 +137,9 @@ test('src/finance/v2/http.ts binds the routes to the page: the financial fetch, 
   assert.match(source, /financialFetch\(path, \{ \.\.\.REQUEST_INIT, method: 'GET', headers: options\.headers, signal: controller\.signal \}\)/, 'the capabilities GET likewise, same-origin, no redirect followed');
   assert.doesNotMatch(source, /\bfetch\(|XMLHttpRequest|localStorage|sessionStorage|\.request\(|eth_|wallet_/, 'no fetch of its own, no storage, no wallet');
   assert.match(source, /return answer === NO_SESSION \? \{ ok: false \} : \{ ok: true, value: answer \}/, 'the CSRF only while the session asked is the signed-in one');
-  assert.match(source, /if \(view\.status !== 'signed_in' \|\| identity\.kind !== 'connected'\) return null\n    return identity\.address\.toLowerCase\(\) === view\.owner\.toLowerCase\(\) \? epoch : null/, 'signed in, for the connected account');
+  // Changed on purpose 2026-10-05 (the owner: "it keeps asking me to sign in"): or the same session held on Base or
+  // Arbitrum One (session/machine.ts heldAway, its own account only; tests/v2/multichain-base.test.mjs).
+  assert.match(source, /if \(identity\.kind !== 'connected'\) return null\n    if \(away\) return epoch\n    if \(view\.status !== 'signed_in'\) return null\n    return identity\.address\.toLowerCase\(\) === view\.owner\.toLowerCase\(\) \? epoch : null/, 'signed in, for the connected account, or held away for it');
 });
 
 // Changed on purpose (data) 2026-10-02 (S2 wired): crosschain-v1 with the session, bound in the same module. Its transport

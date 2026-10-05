@@ -134,7 +134,7 @@ export function vaultViewFromListing(vault: Vault, body: PortfolioResponse, wall
     members: listedMembers(vault),
     quoteCurrency: state ? (state.quoteCurrency.toLowerCase() as Address) : null,
     reserves: reserves.known ? Object.freeze({ known: true as const, list: reserves.reserves, held: reserves.held }) : Object.freeze({ known: false as const, reason: reserves.reason }),
-    waiting: waitingWords(vault.waiting, vault.chainId, nowSeconds),
+    waiting: waitingWords(vault.waiting, vault.chainId, nowSeconds, { maxPositions: policy?.maxPositions ?? null }),
     autoExitEnabled: vault.autoExitEnabled,
     paused: state ? state.paused : vault.pausedBy !== null ? true : null,
     links: listedLinks(vault, body),
@@ -211,7 +211,7 @@ export function vaultViewFromChain(snapshot: VaultSnapshot, listed: Vault | null
     members: Object.freeze([...members].sort((a, b) => (a.role === 'root' ? -1 : b.role === 'root' ? 1 : 0))),
     quoteCurrency: snapshot.quoteCurrency,
     reserves: Object.freeze({ known: true as const, list: Object.freeze(snapshot.reserves.map((r) => Object.freeze({ token: r.token, total: r.total, idle: r.idle }))), held: snapshot.reserves.some((r) => r.total > 0n) }),
-    waiting: listed ? waitingWords(listed.waiting, snapshot.chainId, nowSeconds) : null,
+    waiting: listed ? waitingWords(listed.waiting, snapshot.chainId, nowSeconds, { maxPositions: snapshot.policy.maxPositions }) : null,
     autoExitEnabled: snapshot.autoExitEnabled,
     paused: snapshot.paused,
     links: Object.freeze({

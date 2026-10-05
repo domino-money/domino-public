@@ -44,7 +44,16 @@ const NOTHING: PairBalancesState = { status: 'waiting', balances: null, budgets:
  * network is read there, through the wallet (`others.balances`), never through the read service, whose wallet read is
  * Robinhood Chain's (it would answer Robinhood Chain's ETH for Base's). Everything else is as before.
  */
-export function usePairBalances(source: ReadSource | null, pool: PoolOption | null, others: OtherChains | null = null): PairBalancesState {
+export function usePairBalances(
+  source: ReadSource | null,
+  pool: PoolOption | null,
+  others: OtherChains | null = null,
+  /**
+   * Added 2026-10-05 (the owner: a deposit from another network should finish by itself): a new number reads the
+   * balances again, as when funds arrived from another network. 0 by default: read once, as before.
+   */
+  revision = 0,
+): PairBalancesState {
   const identity = useWalletIdentity()
   const connected = identity.kind === 'connected' ? identity.address : null
   const parsed = connected === null ? null : parseAddressInput(connected)
@@ -53,7 +62,7 @@ export function usePairBalances(source: ReadSource | null, pool: PoolOption | nu
   const tokensKey = pool ? pairTokens(pool).join(',') : ''
   const network = pool && poolOnOtherChain(pool) ? pool.currencies[0].chainId : null
   // Keyed by what the read was about: a page for another wallet or pool is never shown (another network's, with its chain).
-  const target = network === null ? `${wallet ?? ''}|${poolKey ?? ''}|${tokensKey}` : `${wallet ?? ''}|${network}|${poolKey ?? ''}|${tokensKey}`
+  const target = `${network === null ? `${wallet ?? ''}|${poolKey ?? ''}|${tokensKey}` : `${wallet ?? ''}|${network}|${poolKey ?? ''}|${tokensKey}`}#${revision}`
   const [page, setPage] = useState<{ target: string; snapshot: WalletSnapshot | null } | null>(null)
   const [read, setRead] = useState<{ target: string; balances: readonly [CurrencyBalance, CurrencyBalance] | null } | null>(null)
   // The pool as of the last draw, for the other network's read, which goes by the keys above, not by each new pool value.
@@ -66,7 +75,7 @@ export function usePairBalances(source: ReadSource | null, pool: PoolOption | nu
     const current = latest.current
     if (network === null || !others || wallet === null || poolKey === null || tokensKey === '' || !current) return
     const controller = new AbortController()
-    const at = `${wallet}|${network}|${poolKey}|${tokensKey}`
+    const at = `${wallet}|${network}|${poolKey}|${tokensKey}#${revision}`
     void others.balances(current, wallet, controller.signal).then(
       (balances) => {
         if (!controller.signal.aborted) setRead({ target: at, balances })
@@ -76,12 +85,12 @@ export function usePairBalances(source: ReadSource | null, pool: PoolOption | nu
       },
     )
     return () => controller.abort()
-  }, [others, network, wallet, poolKey, tokensKey])
+  }, [others, network, wallet, poolKey, tokensKey, revision])
 
   useEffect(() => {
     if (!source || wallet === null || poolKey === null || tokensKey === '' || network !== null) return
     const controller = new AbortController()
-    const at = `${wallet}|${poolKey}|${tokensKey}`
+    const at = `${wallet}|${poolKey}|${tokensKey}#${revision}`
     const settle = (snapshot: WalletSnapshot | null) => {
       if (!controller.signal.aborted) setPage({ target: at, snapshot })
     }
@@ -93,7 +102,7 @@ export function usePairBalances(source: ReadSource | null, pool: PoolOption | nu
       .then(settle)
       .catch(() => settle(null))
     return () => controller.abort()
-  }, [source, wallet, poolKey, tokensKey, network])
+  }, [source, wallet, poolKey, tokensKey, network, revision])
 
   if (connected === null || wallet === null) return { ...NOTHING, status: 'disconnected' }
   if (network !== null) {

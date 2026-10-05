@@ -165,3 +165,33 @@ test('a failed request: §3.8 words, its code apart, and whether it asks again b
   assert.equal(model.requestFailure({ kind: 'network' }, 3).retryMs, 20_000, 'growing waits, no Retry button');
   assert.equal(model.requestFailure({ kind: 'contract', detail: 'owner' }, 2).retryMs, null);
 });
+
+// Added 2026-10-05 (the owner: "it has to happen behind the scenes"): the one click "Bring it from {network}" chooses the
+// token and the amount itself (src/v2in/funds/BringFunds.tsx bringFrom over model.ts holdingFor, convertUnits, withMargin).
+test('the one click chooses what to send: the same kind of token first, native ETH before WETH, only what the listing bridges', () => {
+  const WETH_BASE = '0x4200000000000000000000000000000000000006';
+  const holding = (token, symbol, decimals, raw) => ({ chainId: 8453, chainName: 'Base', token, symbol, decimals, raw });
+  const listing = (tokens) => ({ chains: [{ chainId: 8453, name: 'Base', tokens: tokens.map((address) => ({ address, symbol: null, decimals: null, providers: ['relay'] })) }] });
+  const all = listing([ETH, WETH_BASE, USDC_BASE]);
+  const held = [holding(USDC_BASE, 'USDC', 6, 50_000_000n), holding(WETH_BASE, 'WETH', 18, ONE_ETH), holding(ETH, 'ETH', 18, ONE_ETH)];
+  // Ether lacking on Robinhood Chain: Base's ETH, then its WETH, then its dollar.
+  assert.equal(model.holdingFor(held, ETH, 4663, 8453, all).token, ETH);
+  assert.equal(model.holdingFor(held.filter((h) => h.token !== ETH), ETH, 4663, 8453, all).token, WETH_BASE);
+  assert.equal(model.holdingFor([held[0]], ETH, 4663, 8453, all).token, USDC_BASE, 'another kind when that is all there is');
+  // The dollar lacking: Base's USDC first, then ether.
+  assert.equal(model.holdingFor(held, USDG, 4663, 8453, all).token, USDC_BASE);
+  assert.equal(model.holdingFor(held.slice(1), USDG, 4663, 8453, all).token, ETH);
+  // Only what the listing bridges, and only a balance above zero.
+  assert.equal(model.holdingFor(held, ETH, 4663, 8453, listing([USDC_BASE])).token, USDC_BASE);
+  assert.equal(model.holdingFor([holding(ETH, 'ETH', 18, 0n)], ETH, 4663, 8453, all), null);
+  assert.equal(model.holdingFor(held, ETH, 4663, 8453, listing([])), null);
+});
+
+test('the amount: the need in the token sent, with 1% more for the bridge\'s fees, rounded up', () => {
+  assert.equal(model.convertUnits(2_100_000_000_000_000n, 18, 18), 2_100_000_000_000_000n);
+  assert.equal(model.convertUnits(5_000_000n, 6, 18), 5_000_000_000_000_000_000n, 'more decimals: exact');
+  assert.equal(model.convertUnits(1_000_000_000_000_000_001n, 18, 6), 1_000_001n, 'fewer decimals: rounded up, never short');
+  assert.equal(model.withMargin(100n), 101n);
+  assert.equal(model.withMargin(2_100_000_000_000_000n), 2_121_000_000_000_000n);
+  assert.equal(model.withMargin(1n), 2n, 'rounded up');
+});

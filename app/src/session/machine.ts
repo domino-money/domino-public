@@ -244,6 +244,21 @@ export function sessionChains(origin: string): readonly number[] {
  */
 export const keptChains = (): readonly number[] => (V2_ON ? [...REGISTRY_CHAIN_IDS, ...V2_CHAIN_IDS.filter((id) => !REGISTRY_CHAIN_IDS.includes(id))] : REGISTRY_CHAIN_IDS)
 
+/**
+ * Whether the session this tab holds may be used where the account's wallet is now, away from Robinhood Chain: Changed on
+ * purpose 2026-10-05 (the owner, testing a deposit from another network: "it keeps asking me to sign in"). A session
+ * kept across Base and Arbitrum One (moveChain) rests there on wrong_network, and nothing could use it: Domino V2's
+ * private routes (a plan for a position on that network, a deposit from it) asked for a signature again at every
+ * network switch. Held away: only in a build that carries V2, only on Base and Arbitrum One where the page keeps
+ * sessions, only at rest, only for the session's own account. Robinhood Chain's own screens still say wrong_network.
+ */
+export function heldAway(m: Machine, env: Env): boolean {
+  if (!V2_ON || m.view.status !== 'wrong_network' || m.session === null || m.flow.kind !== 'idle') return false
+  const id = m.identity
+  if (id.kind !== 'connected' || id.chainId === ROBINHOOD_CHAIN_ID || !V2_CHAIN_IDS.includes(id.chainId)) return false
+  return (env.chains ?? [ROBINHOOD_CHAIN_ID]).includes(id.chainId) && lower(id.address) === lower(m.session.owner)
+}
+
 export interface Step {
   machine: Machine
   effects: Effect[]

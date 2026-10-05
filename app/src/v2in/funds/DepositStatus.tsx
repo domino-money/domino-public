@@ -69,6 +69,8 @@ export function DepositStatus({
   journal,
   name,
   walletChainId,
+  access,
+  onArrived,
   sender,
   poolTokens,
   onUse,
@@ -82,6 +84,13 @@ export function DepositStatus({
   journal: DepositJournal | null
   name: Naming
   walletChainId: number | null
+  /**
+   * Added 2026-10-05: the session's state as the offer reads it. Tracking starts again whenever it changes (a network
+   * switch moves the session's epoch, and an answer refused for the moment stopped it for good).
+   */
+  access: string
+  /** Added 2026-10-05: called once, when the deposit arrived and the wallet is back on the position's chain. */
+  onArrived?: () => void
   sender: () => Promise<OriginSender>
   /** The position's two tokens (lowercase), in pool order: what arrived continues the same position on its side. */
   poolTokens: readonly string[]
@@ -95,9 +104,11 @@ export function DepositStatus({
   const [balances, setBalances] = useState<{ token: string; raw: string }[] | null>(null)
   const [picked, setPicked] = useState<string | null>(null)
   const [switchNote, setSwitchNote] = useState<string | null>(null)
+  // The record as tracking last left it: tracking starts again from there (Changed on purpose 2026-10-05).
   const initial = useRef(record)
 
   useEffect(() => {
+    if (!access.startsWith('ready:')) return
     const poller = createStatusPoller({
       client: services.client,
       runtime: services.runtime,
@@ -105,6 +116,7 @@ export function DepositStatus({
       owner,
       record: initial.current,
       onUpdate: (state) => {
+        initial.current = state.record
         setPoll(state)
         try {
           journal?.put(owner, state.record)
@@ -115,7 +127,7 @@ export function DepositStatus({
     })
     poller.start()
     return () => poller.stop()
-  }, [services, owner, journal])
+  }, [services, owner, journal, access])
 
   // The deposit transaction's own receipt on the origin, for a deposit this page sent: "Included", then "Finalized".
   useEffect(() => {
@@ -167,6 +179,27 @@ export function DepositStatus({
   const destination = name.destination(record.destinationChainId) ?? `network ${record.destinationChainId}`
   const filled = view.state === 'filled'
   const onDestination = walletChainId === record.destinationChainId
+
+  // Changed on purpose 2026-10-05 (the owner: "behind the scenes"): a deposit this page sent brings the wallet back to the
+  // position's chain by itself once it arrived (one wallet prompt), and the amount step reads its balances again.
+  const broughtBack = useRef(false)
+  useEffect(() => {
+    if (!filled || onDestination || deposit.review === null || broughtBack.current) return
+    broughtBack.current = true
+    void switchToChain(record.destinationChainId).then((outcome) => {
+      if (outcome !== 'switched') setSwitchNote(v2SwitchNotice(outcome, destination))
+    })
+  }, [filled, onDestination, deposit.review, record.destinationChainId, destination])
+  const arrived = useRef(onArrived)
+  useEffect(() => {
+    arrived.current = onArrived
+  })
+  const told = useRef(false)
+  useEffect(() => {
+    if (!filled || !onDestination || told.current) return
+    told.current = true
+    arrived.current?.()
+  }, [filled, onDestination])
 
   // After the fill: what is in the wallet on the position's chain, read through the wallet's provider (§3.7
   // recommendation): the delivered token when this page sent the deposit; otherwise the position's tokens a deposit may

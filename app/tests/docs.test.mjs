@@ -927,8 +927,10 @@ test('the docs source stays inside its budget in the entry bundle', (t) => {
   // Changed on purpose 2026-10-04 (V2 deployed, #327; the owner: the docs show the V2 contracts): 30,300 -> 30,800 for the
   // 13 V2 contract addresses on Contracts, hex that hardly compresses, in place of "Published when deployed"; measured at
   // 30,707 bytes.
-  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 30800)`);
-  assert.ok(size <= 30_800, `the docs source is ${size} bytes gzip, over the 30,800 byte budget`);
+  // Changed on purpose 2026-10-05 (New position on the three networks, #351; rugged97's F7 delta of 5 Oct, §5.5: the
+  // successors' rules and the code comments that date them): 30,800 -> 31,000; measured at 30,870 bytes.
+  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 31000)`);
+  assert.ok(size <= 31_000, `the docs source is ${size} bytes gzip, over the 31,000 byte budget`);
 });
 
 // ---------------------------------------------------------------------------

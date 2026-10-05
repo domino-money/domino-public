@@ -52,7 +52,8 @@ test('New position\'s amount step keeps V1\'s amounts itself and opens only the 
   const amounts = '<PairedAmounts state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} />';
   const mount = stage.slice(stage.indexOf('{__DOMINO_V2__ && FundsOffer ? ('), stage.indexOf('<details'));
   assert.ok(mount.startsWith('{__DOMINO_V2__ && FundsOffer ? ('), 'the mount is a ternary on the bare define');
-  assert.ok(mount.includes(`<>\n          ${amounts}\n          <FundsOffer state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} />\n        </>`), 'V1\'s amounts, mounted by the step itself, then the offer alone under them');
+  // Changed on purpose 2026-10-05: the offer also says when funds it brought arrived, so the step reads its balances again.
+  assert.ok(mount.includes(`<>\n          ${amounts}\n          <FundsOffer state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} onArrived={onFundsArrived} />\n        </>`), 'V1\'s amounts, mounted by the step itself, then the offer alone under them');
   assert.ok(mount.trimEnd().endsWith(`) : (\n        ${amounts}\n      )}`), 'the alternate is V1\'s expression exactly');
   // The chunk is the offer alone: it never mounts the amounts (so nothing remounts when it lands).
   const chunk = ALL.find(({ path }) => path === 'v2in/funds/FundsAmounts.tsx').code;
@@ -127,31 +128,28 @@ test('the offer\'s page module hands in the HTTP transport, the signed-in sessio
   assert.deepEqual(hits(MINE, /lockedCopy/), [], 'nor the gate\'s sentence about Domino\'s contracts');
 });
 
-test('the holdings section reads other networks only through the closed reader, and switches only through wallet/port', () => {
-  const holdings = ALL.find(({ path }) => path === 'v2in/funds/Holdings.tsx').code;
-  assert.match(holdings, /import \{ CANDIDATE_ORIGINS, createHoldingsCache, readHoldingsReport, scanHoldings, [^}]*\} from '\.\.\/\.\.\/finance\/v2\/holdings'/);
-  assert.match(holdings, /import \{ browserOriginWallet, type OriginWallet \} from '\.\.\/\.\.\/finance\/v2\/crosschain'/, 'the wallet handle, never a provider of its own');
-  assert.match(holdings, /id === chainId \? switchToChain\(chainId\) : switchToOrigin\(id\)/, 'the way home is switchToChain; an origin is only switched to, never added');
-  assert.match(holdings, /homeChainId: chainId/, 'the position\'s chain is home');
-  assert.doesNotMatch(holdings, /\.request\(|eth_|balanceOf/, 'no read of its own');
+// Changed on purpose 2026-10-05 (the owner, testing the offer: "it keeps asking me to sign in ... the networks don't show
+// ... it has to happen behind the scenes, whoever uses Domino has no experience"): the holdings scan across Ethereum, Base,
+// Arbitrum One and OP Mainnet (./Holdings.tsx, gone) is one click on one of Domino's own networks: the wallet moves there
+// through wallet/port's V2 switch, its balances are read through the closed reader, the rest follows by itself.
+test('one click on one of Domino\'s networks: switched through wallet/port, read through the closed reader, nothing else', () => {
+  assert.equal(ALL.some(({ path }) => path === 'v2in/funds/Holdings.tsx'), false, 'the scan is gone');
   const offer = ALL.find(({ path }) => path === 'v2in/funds/BringFunds.tsx').code;
-  assert.match(offer, /if \(locked !== null \|\| busy\) return 'locked'/, 'Bring while locked: the sentence, no form');
-  assert.match(offer, /originToken\(list, holding\.chainId, holding\.token\)/, 'Bring prefills only what the origins listing bridges');
+  assert.match(offer, /const SOURCE_CHAINS: readonly V2ChainId\[\] = \[4663, 8453, 42161\]/, 'Robinhood Chain, Base and Arbitrum One only, never Ethereum or OP Mainnet');
+  assert.match(offer, /const switched = await switchToChain\(origin\)/, 'a V2 network, through the port');
+  assert.doesNotMatch(offer, /scanHoldings|CANDIDATE_ORIGINS\.filter/, 'no scan of every network');
+  assert.match(offer, /report = await readHoldingsReport\(await browserOriginWallet\(\), candidate\)/, 'the closed reader, on the network the wallet is on');
+  assert.match(offer, /report\.unread\.length > 0 \? fail\(FUNDS_TEXT\.readFailed\(network\), 'read_partial'\)/, 'an unread balance is never said to be zero');
+  assert.match(offer, /const sources = SOURCE_CHAINS\.filter\(\(id\) => id !== chainId\)/, 'never the destination');
+  assert.doesNotMatch(offer, /\.request\(|eth_|balanceOf/, 'no read of its own');
   const copy = require('../../.test-build/app/src/v2in/funds/copy.js');
-  assert.equal(copy.FUNDS_TEXT.holdingsTitle, 'On your other networks');
-  assert.equal(copy.FUNDS_TEXT.scan, 'Check other networks');
-  assert.equal(
-    copy.FUNDS_TEXT.scanWhat('Ethereum, Base, Arbitrum One and OP Mainnet', 'Robinhood Chain'),
-    'Check ETH, WETH and USDC on Ethereum, Base, Arbitrum One and OP Mainnet. Approve network switches in your wallet; return to Robinhood Chain afterward. No funds move.',
-  );
-  assert.equal(copy.FUNDS_TEXT.holdingsOn('Base', ['0.42 ETH', '120 USDC']), 'Base: 0.42 ETH · 120 USDC');
-  assert.equal(copy.FUNDS_TEXT.bring('0.42 ETH', 'Base'), 'Bring 0.42 ETH from Base');
-  assert.equal(copy.FUNDS_TEXT.nothingFound('Ethereum and Base'), 'Nothing to bring: no ETH, WETH or USDC on Ethereum and Base.');
-  assert.equal(copy.FUNDS_TEXT.notInWallet('Arbitrum One'), "Arbitrum One isn't in your wallet.");
-  assert.equal(copy.FUNDS_TEXT.scanStopped, 'Your wallet declined the network switch, so the search stopped.');
-  assert.equal(copy.FUNDS_TEXT.switchBack('Robinhood Chain'), 'Switch your wallet back to Robinhood Chain.');
-  assert.equal(copy.FUNDS_TEXT.noRoute('USDC', 'OP Mainnet', 'Robinhood Chain'), "Relay and Across don't bridge USDC from OP Mainnet to Robinhood Chain right now.");
-  assert.equal(copy.FUNDS_TEXT.reading('Base'), 'Reading Base…');
+  assert.equal(copy.FUNDS_TEXT.youNeed('0.0021 ETH', 'Robinhood Chain'), 'You need 0.0021 ETH more on Robinhood Chain.');
+  assert.equal(copy.FUNDS_TEXT.bringFrom, 'Bring it from:');
+  assert.equal(copy.FUNDS_TEXT.howItWorks('Robinhood Chain'), 'Your wallet goes to that network to send it, then comes back to Robinhood Chain. You approve each step in your wallet.');
+  assert.equal(copy.FUNDS_TEXT.noneThere('ETH, WETH or USDC', 'Base'), 'You have no ETH, WETH or USDC on Base.');
+  assert.equal(copy.FUNDS_TEXT.switchingTo('Base'), 'Switching your wallet to Base…');
+  assert.equal(copy.FUNDS_TEXT.checking('Base'), 'Checking your balance on Base…');
+  assert.equal(copy.FUNDS_TEXT.signingIn, "Sign in with your wallet to continue. This doesn't move funds.");
 });
 
 test('the decided words: #16\'s discrete line, #29\'s "Get gas on {destination}" and S2\'s locked sentence, exactly; titles by token and network', () => {
@@ -174,15 +172,13 @@ test('the decided words: #16\'s discrete line, #29\'s "Get gas on {destination}"
 });
 
 
-test('the offer appears automatically, while wallet network changes remain behind an explicit action', () => {
+// Changed on purpose 2026-10-05: the network is the person's one choice; nothing switches the wallet before it.
+test('the offer appears automatically, while wallet network changes wait for the person\'s one choice of network', () => {
   const offer = ALL.find(({ path }) => path === 'v2in/funds/BringFunds.tsx').code;
-  const holdings = ALL.find(({ path }) => path === 'v2in/funds/Holdings.tsx').code;
   assert.match(offer, /const opened = lacks.length > 0/);
   assert.doesNotMatch(offer, /setOpened|open=\{opened/);
-  assert.match(holdings, /cachedRead\(hereKey/);
-  assert.match(holdings, /onClick=\{\(\) => void look\(\)\}/);
-  assert.match(holdings, /walletKey/);
-  assert.match(holdings, /result.read.length > 0 && !failed/);
+  assert.equal([...offer.matchAll(/bringFrom\(/g)].length, 1, 'called from one place only');
+  assert.match(offer, /onClick=\{\(\) => void bringFrom\(id\)\}/, 'from a network button alone');
 });
 
 

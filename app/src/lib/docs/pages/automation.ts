@@ -73,8 +73,10 @@ export const DOMINO_COMPOUNDER: DocPage = {
       title: 'How it works',
       blocks: [
         p('Domino-compound puts earned fees to work higher up the price.'),
-        p('Fees normally go back into the position that earned them. When the price nears the top of its range, they can instead open the next position one step higher in the same pool, or add to the one it already opened.'),
-        p('A next position is funded only from earned fees your automation holds, after the service fee. Automation never moves your principal; when a step does not pay off, it waits.'),
+        // Changed on purpose 2026-10-05 (rugged97's F7 delta of 5 Oct, §5.5, the owner's rules): near the top, fees go only
+        // to the next position, which starts at the current price; it is opened by the sequence's newest position alone.
+        p('Fees normally go back into the position that earned them. When the price nears the top of its range, they stop going back into it: the newest position opens the next one, one step higher in the same pool, starting at the current price, and its fees go there.'),
+        p('A next position is funded only from earned fees your automation holds, after the service fee. Automation never moves your principal; when a step does not pay off, or no more positions may open, it waits.'),
       ],
     },
     {
@@ -90,7 +92,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
             { label: 'Maximum overlap', value: 'Up to 20%', note: 'How far below the previous top the next position may start. 20% at first: with a top of 1, no lower than 0.80.' },
             // 2026-10-01 (audit E21): the setup's field names (screens/SequenceCreate.tsx).
             { label: 'Next range higher by', value: 'You set it; 50% at first', note: 'How far above the previous top the next position’s top sits, at least.' },
-            { label: 'Positions in the sequence', value: 'A cap you set; 3 at first', note: 'Counts the position it starts from. At the cap, fees fund an existing position or wait.' },
+            { label: 'Positions in the sequence', value: 'A cap you set; 3 at first', note: 'Counts the position it starts from. At the cap, no next position opens, and fees near the top wait.' },
           ],
         },
         p('Each position opens at most one next position. A trigger only lets a step be considered; it never orders one. The swap limits and fixed settings are Auto-compound’s: see ', doc('What you choose', 'auto-compound', 'choices'), '.'),

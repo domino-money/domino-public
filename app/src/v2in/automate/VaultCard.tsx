@@ -5,7 +5,7 @@ import { v2Chain } from '../../v2/chains'
 import type { PriceOrientation } from '../../v2/trigger'
 import { ChainBadge } from '../lists/parts'
 import { DISARM_UNKNOWN, RESERVES_TEXT } from './copy'
-import type { VaultMemberView } from './portfolio'
+import { nextPositionWords, type VaultMemberView } from './portfolio'
 import type { VaultDialogKind, VaultDialogSubject } from './VaultDialog'
 import { amountWords, rangeWords, referenceOrientation, shortAddress, type TokenView } from './tokens'
 import { Details } from './ui'
@@ -37,6 +37,8 @@ const PAUSED_TEXT = 'Nothing is reinvested while automation is paused.'
 const PROTECTION_TEXT = "Domino doesn't reinvest this position. It only watches your stop-loss and take-profit."
 const RETURN_HINT = 'Your position is closed. Return these fees now, or leave it: Domino returns them on its next pass. No fee either way.'
 const COLLECTED_LABEL = 'Fees collected, not yet reinvested'
+/** rugged97's F7 delta of 5 Oct, §5.5 ("Na tela"): a Domino-compound vault's next position, on its own line. */
+const NEXT_LABEL = 'Next position'
 const IDLE_LABEL = 'Not used by automation'
 const ADVANCED_TEXT = 'Rarely needed: take back something your automation holds outside its fees (another token, ETH, what a route left behind), or a position it holds without managing.'
 /** The primary way out, by state; the first offered wins (return and rearm never are at once). */
@@ -192,6 +194,9 @@ export function VaultCard({ view, tokens, variant, nowSeconds, positionHref, onA
     : view.status === 'protection' ? PROTECTION_TEXT : view.status === 'paused' ? PAUSED_TEXT : ON_TEXT
   // The one sentence: why it waits (rev4's reserves reasons first), else its state; the other goes under Details.
   const line = view.waiting ? view.waiting.text : state
+  // Added 2026-10-05 (rugged97's F7 delta of 5 Oct, §5.5: the automation mints Domino-compound's successors): when the next
+  // position opens, for a Domino-compound vault still running (a vault that is off or whose root closed opens none).
+  const next = off || view.rootClosed === true ? null : nextPositionWords(view)
   // §5.4's reason travels with its sentence, wherever that stands.
   const disarmReason = off ? String(view.disarm?.reason ?? 'unknown') : undefined
   const data = { 'data-vault-card': view.vault, 'data-vault-chain': view.chainId, 'data-vault-status': view.status ?? 'unknown', 'data-vault-armed': view.armed === null ? 'unknown' : view.armed ? 'yes' : 'no', 'data-vault-reserves': view.reserves.known ? (view.reserves.held ? 'held' : 'none') : 'unread', 'data-vault-source': view.source }
@@ -236,6 +241,11 @@ export function VaultCard({ view, tokens, variant, nowSeconds, positionHref, onA
         <KeyValue label={COLLECTED_LABEL} data-vault-held="">
           <ReservesWords view={view} tokens={tokens} />
         </KeyValue>
+        {next && (
+          <KeyValue label={NEXT_LABEL} data-vault-next="">
+            {next}
+          </KeyValue>
+        )}
       </KeyValueList>
       {(primary || leave) && (
         <div className="flex flex-wrap items-center gap-2" data-vault-actions="">

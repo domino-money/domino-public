@@ -64,9 +64,9 @@ export function ZapFunds({ state, onAmounts }: { state: JourneyState; onAmounts:
         {current === null && walletChainId === state.chainId ? 'Checking the tokens in your wallet…' : `Some balances on ${candidate.name} could not be checked. Your deposit will be checked again before confirmation.`}
       </p>}
       <BringFunds key={`${walletKey}|${state.chainId}|${state.pool?.id}`} gate={gate} services={services}
-        chainId={state.chainId} wallet={wallet} walletKey={walletKey} access={access} walletChainId={walletChainId}
+        chainId={state.chainId} wallet={wallet} access={access} walletChainId={walletChainId}
         lacks={lacks} nativeOnDestination={balances?.get(ZERO_ADDRESS)?.toString() ?? null}
-        poolTokens={targets} onUse={(side, text) => { if (targets[side]) useToken(targets[side], text) }} onUseToken={useToken} />
+        poolTokens={targets} onUse={(side, text) => { if (targets[side]) useToken(targets[side], text) }} onUseToken={useToken} onArrived={() => refresh((n) => n + 1)} />
     </div>
   )
 }
