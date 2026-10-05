@@ -178,7 +178,14 @@ def plan(files, commit, digest):
     if unit.exists() or unit.is_symlink():
         previous = read_installed(unit).decode()
         installed = release_of(previous)
-        require(installed is not None and previous == unit_text(installed), 'unit_drift')
+        require(installed is not None, 'unit_drift')
+        # The unit as this tool wrote it is the one its receipt keeps: the template moves on between releases
+        # (#333 added the TPM and the V2 RPC credentials), so rendering today's template for the running release
+        # would call every upgrade a drift (5 Oct 2026). Without a receipt, today's template is all there is.
+        receipt = RECEIPTS / f'{installed}.json'
+        written = (json.loads(read_installed(receipt))['unit'] if receipt.exists() or receipt.is_symlink()
+                   else unit_text(installed))
+        require(previous == written, 'unit_drift')
         require(installed != commit, 'release_already_running')
     hba = ident_rows(read_installed(install.CONFIG / 'pg_hba.conf'))
     require(HBA_ROW in hba, 'session_peer_rule_missing')

@@ -163,6 +163,23 @@ class HostTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '^release_directory_exists$'):
             installer.plan(archive(), NEXT, 'f' * 64)
 
+    def test_a_unit_written_by_an_older_template_is_judged_by_its_receipt(self):
+        # The running release's unit came from the template of its day (before #333: no TPM, no V2 RPC
+        # credentials). Its receipt keeps that text: an upgrade moves it, and a hand edit is still refused.
+        unit = self.root / 'units' / installer.UNIT
+        older = '\n'.join(line for line in installer.unit_text(COMMIT).splitlines()
+                           if not line.startswith(('DeviceAllow=', 'ImportCredential=v2-rpc-'))) + '\n'
+        unit.write_text(older)
+        with self.assertRaisesRegex(ValueError, '^unit_drift$'):
+            installer.plan(archive(), NEXT, 'f' * 64)  # no receipt: judged by today's template
+        (self.root / 'receipts' / f'{COMMIT}.json').write_text(json.dumps({'commit': COMMIT, 'unit': older}))
+        planned = installer.plan(archive(), NEXT, 'f' * 64)
+        self.assertEqual((planned['previousRelease'], planned['previousUnit']), (COMMIT, older))
+        self.assertIn('DeviceAllow=char-tpm rw\n', planned['unit'])
+        unit.write_text(older + 'Environment=DOMINO_UNISWAP_API_KEY=x\n')
+        with self.assertRaisesRegex(ValueError, '^unit_drift$'):
+            installer.plan(archive(), NEXT, 'f' * 64)
+
     def test_rollback_puts_back_the_unit_before_or_its_absence_and_refuses_a_changed_one(self):
         unit = self.root / 'units' / installer.UNIT
         locked = patch.object(installer, 'locked', lambda: __import__('contextlib').nullcontext())
