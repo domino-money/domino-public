@@ -206,7 +206,10 @@ The bridge owns the rest of the path (0xdecimal, 5 Oct 2026):
 - On the VM, without an Access assertion, `origins`, `quote` and `status` answer 403. So does `vm-crosschain.domino.money` from outside, without a token.
 - As `domino-crosschain`, through its hosts file and its nft chain, `api.relay.link` and `app.across.to` both answer 200.
 
-Until the listener reads F6's file (`chain-rpc.json`, the variable and the `chains` grant above), the fee on Base and Arbitrum is reported from Across' own record.
+**F6's fee proof since 5 Oct 2026, 16:42:58 UTC**, release `90540b1f` (#357):
+- The listener reads F6's file: `chain-rpc.json` in its private directory, owned by `domino-crosschain`, mode 0600, named by `DOMINO_V2_CHAIN_RPC_FILE`. The unit imports the sealed `v2-rpc-*` credentials with the TPM.
+- Its egress (`crosschain`, collected with `--v2-chains`) admits every Base and Arbitrum host F6's file names: Chainstack, Alchemy and the public endpoint. Each resolved address was checked in the role's set.
+- The fee on Base and Arbitrum is read from the destination's receipt, like Robinhood's, once a deposit fills. By 17:50 UTC only `origins` had been called (four answered 200, one 403 `origin_not_allowed`), so there is no fee proof on those chains yet.
 
 ## Operations
 
