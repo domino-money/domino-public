@@ -106,7 +106,9 @@ Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Co
 - **Cache:** pools for 15 s, balances for 10 s, the index's known tokens for 60 s.
 - **Lanes:** `chain-pools` and `chain-balances` take the reader's provider lane; `chain-tokens` reads no chain and takes the stored lane.
 - **Search sources:** the profile's currencies; the Uniswap Labs Default token list, pinned in `backend/data/token-lists` with its version, SHA-256 and GPL-3.0 license (`scripts/update-uniswap-token-list.py` refreshes it; the owner's decision of 5 Oct 2026); tokens the index read in full; tokens a `chain-pools` read found priced pools for. The last are kept in the reader's runtime (`v2-learned-tokens.json`), at most 5,000 per chain.
-- **Turning them on:** `install_read_activation.py --read-v6 --chain-reads` adds to the reader `DOMINO_V2_CHAIN_READS=1`, `DOMINO_V2_CHAIN_RPC_FILE` (the operator's copy of `/etc/domino/v2/chain-rpc.json` in its runtime directory) and `ImportCredential=v2-rpc-*` with the TPM, and adds the three routes to the gateway.
+- **Turning them on:** `install_read_activation.py --read-v6 --chain-reads` adds to the reader `DOMINO_V2_CHAIN_READS=1`, `DOMINO_V2_CHAIN_RPC_FILE` and `ImportCredential=v2-rpc-*` with the TPM, and adds the three routes to the gateway.
+  - **The file:** the operator copies `/etc/domino/v2/chain-rpc.json` into `/etc/domino/read`, owned by `domino-read`, directory 0700 and file 0600. The unit binds that directory read-only at `/run/domino-read-config`, because the file's loader refuses one inside a release tree, where the reader's runtime directory is, and `/etc/domino` is root's alone.
+  - **Order:** the activation refuses `--chain-reads` until the file is there. A missing directory leaves the reader up, with its chain reads unavailable.
   - The reader reaches the hosted endpoints once the egress is collected with `--v2-chains` (`read` is one of the `CHAIN_ROLES`).
   - A fault in that configuration leaves the three routes answering `upstream_unavailable` and the read path up.
 

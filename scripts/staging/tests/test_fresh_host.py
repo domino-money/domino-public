@@ -330,9 +330,13 @@ class ReadActivationTests(unittest.TestCase):
             activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=False, chain_reads=True)
         read = activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=True, chain_reads=True)
         gateway = activation.drop_in('gateway', COMMIT, Path('/runtime/gateway'), read_v6=True, chain_reads=True)
+        # The file outside every release (its loader refuses one inside a release tree), bound where the reader
+        # reaches it; a missing directory leaves the reader up.
         self.assertIn('Environment=DOMINO_V2_READ=1\nEnvironment=DOMINO_V2_CHAIN_READS=1\n'
-                      'Environment=DOMINO_V2_CHAIN_RPC_FILE=/runtime/read/chain-rpc.json\n'
-                      'ImportCredential=v2-rpc-*\nDeviceAllow=char-tpm rw\n', read)
+                      'Environment=DOMINO_V2_CHAIN_RPC_FILE=/run/domino-read-config/chain-rpc.json\n'
+                      'ImportCredential=v2-rpc-*\nDeviceAllow=char-tpm rw\n'
+                      'BindReadOnlyPaths=-/etc/domino/read:/run/domino-read-config\n', read)
+        self.assertNotIn('/runtime/read/chain-rpc.json', read)
         self.assertIn('Environment=DOMINO_BRIDGE_V6_READS=portfolio,activity,chain-pools,chain-balances,chain-tokens\n', gateway)
         self.assertNotIn('ImportCredential', gateway)
         self.assertEqual(gateway.count('Environment='), 5)
@@ -340,6 +344,17 @@ class ReadActivationTests(unittest.TestCase):
         self.assertEqual(activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=True),
                          activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=True, chain_reads=False))
         self.assertNotIn('chain', activation.drop_in('gateway', COMMIT, Path('/runtime/gateway'), read_v6=True))
+
+    def test_the_chain_reads_wait_for_the_private_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            private = Path(folder)
+            with patch.object(activation, 'CHAIN_RPC_DIRECTORY', private):
+                with self.assertRaisesRegex(ValueError, 'chain_rpc_file_missing'):
+                    activation.plan(COMMIT, read_v6=True, chain_reads=True)
+                (private / 'chain-rpc.json').write_text('{}')
+                # Past that check, the plan goes on to the release (none here).
+                with self.assertRaisesRegex(ValueError, 'read_release_not_installed'):
+                    activation.plan(COMMIT, read_v6=True, chain_reads=True)
 
     def test_the_release_must_be_installed_with_its_links(self):
         with tempfile.TemporaryDirectory() as folder:

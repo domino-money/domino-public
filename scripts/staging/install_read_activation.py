@@ -20,9 +20,11 @@ without it the drop-ins reproduce the live profile.
 
 `--chain-reads` (with `--read-v6`) adds read-v6's live chain reads (chain-pools,
 chain-balances, chain-tokens; backend/v2_chain_reads.py): on the reader
-DOMINO_V2_CHAIN_READS=1, the V2 chain RPC file in its runtime directory
-(chain-rpc.json, a copy of /etc/domino/v2/chain-rpc.json the operator writes)
-and the sealed URLs it names (ImportCredential=v2-rpc-*, with the TPM in the
+DOMINO_V2_CHAIN_READS=1, the V2 chain RPC file (the operator's copy of
+/etc/domino/v2/chain-rpc.json in /etc/domino/read, owned by the reader; the unit
+binds that directory read-only at /run/domino-read-config, because the file's
+loader refuses one inside a release tree, where the reader's runtime directory
+is, and /etc/domino is root's alone) and the sealed URLs it names (ImportCredential=v2-rpc-*, with the TPM in the
 device policy: systemd 255 adds it only for LoadCredentialEncrypted=); on the
 gateway the three routes in DOMINO_BRIDGE_V6_READS. The reader reaches Base's
 and Arbitrum's hosted RPC once the egress is collected with `--v2-chains`.
@@ -62,6 +64,9 @@ READ_V6 = {
 # read-v6's live chain reads, opt-in on top of READ_V6.
 CHAIN_READS_V6 = 'DOMINO_BRIDGE_V6_READS=portfolio,activity,chain-pools,chain-balances,chain-tokens'
 CHAIN_RPC_FILE = 'chain-rpc.json'
+# Crosschain's pattern: a private directory outside every release, bound where the reader can reach it. A missing
+# directory (`-`) leaves the reader up and its chain reads unavailable.
+CHAIN_RPC_DIRECTORY, CHAIN_RPC_MOUNT = Path('/etc/domino/read'), '/run/domino-read-config'
 
 
 def drop_in(component, commit, runtime, read_v6=False, chain_reads=False):
@@ -70,8 +75,10 @@ def drop_in(component, commit, runtime, read_v6=False, chain_reads=False):
     flags, environment = READ_V6[component] if read_v6 else ('', ())
     credentials = ()
     if chain_reads and component == 'read':
-        environment = (*environment, 'DOMINO_V2_CHAIN_READS=1', f'DOMINO_V2_CHAIN_RPC_FILE={runtime}/{CHAIN_RPC_FILE}')
-        credentials = ('ImportCredential=v2-rpc-*', 'DeviceAllow=char-tpm rw')
+        environment = (*environment, 'DOMINO_V2_CHAIN_READS=1',
+                       f'DOMINO_V2_CHAIN_RPC_FILE={CHAIN_RPC_MOUNT}/{CHAIN_RPC_FILE}')
+        credentials = ('ImportCredential=v2-rpc-*', 'DeviceAllow=char-tpm rw',
+                       f'BindReadOnlyPaths=-{CHAIN_RPC_DIRECTORY}:{CHAIN_RPC_MOUNT}')
     elif chain_reads:
         environment = tuple(CHAIN_READS_V6 if value.startswith('DOMINO_BRIDGE_V6_READS=') else value
                             for value in environment)
@@ -85,6 +92,7 @@ def drop_in(component, commit, runtime, read_v6=False, chain_reads=False):
 
 def plan(commit, read_v6=False, chain_reads=False):
     require(re.fullmatch('[0-9a-f]{40}', commit), 'commit must be a full lowercase Git SHA')
+    require(not chain_reads or (CHAIN_RPC_DIRECTORY / CHAIN_RPC_FILE).is_file(), 'chain_rpc_file_missing')
     files = {}
     for component, name in DROP_INS.items():
         root = RELEASES / commit / component
