@@ -1,0 +1,386 @@
+/**
+ * The Price range chart's maths (src/lib/chart/priceRange.ts), from the owner's point 10 (2026-10-03: "The Price range
+ * chart doesn't work. Tokens go from $0.001 to $1,000,000 and none of these charts work. Sometimes it sits way down at
+ * the bottom, sometimes it doesn't show the history … no beginner will understand it"): every failure reproduced on
+ * the chart as it stood (c3b41b8b, its axis copied below as `oldDomainOf`), and what the chart does now, for prices from
+ * 10^-12 to 10^9, decimals 6/8/9/18 in both orders, the pool's limits, one-sided ranges, prices inside, under and over
+ * the range, and closed positions.
+ */
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { test } from 'node:test';
+import { CASES, OWNER, TOKENS, decimalText, historyFor, rangeCase } from './support/price-range-cases.mjs';
+
+const require = createRequire(import.meta.url);
+const chart = require('../.test-build/app/src/lib/chart/priceRange.js');
+const { ledgerOpenedAt, activityOpenedAt } = require('../.test-build/app/src/lib/chart/positionOpened.js');
+const { spacedTimeTicks } = require('../.test-build/app/src/components/positions/visual/ticks.js');
+const { walletCard } = require('../.test-build/app/src/lib/walletCards.js');
+const { chainPoolPrice } = require('../.test-build/app/src/lib/read/screens/positions.js');
+const { sqrtPriceAtTick } = require('../.test-build/app/src/lib/read/screens/poolRange.js');
+const { readablePrice, priceFigure, rangeFacts, statusWords, moveText, priceDomain, placeLabels, figureWidth, historyLine, EDGE_ROOM, MIN_SPAN } = chart;
+
+/** The card and the page's price of a case, exactly as a position's page makes them (chainCardPrice's own read). */
+function factsOf(item) {
+  const position = item.spec.position;
+  const sqrtPriceX96 = position.tick === null ? null : sqrtPriceAtTick(position.tick).toString();
+  const card = walletCard({ ...position, sqrtPriceX96 }, OWNER);
+  return { card, price: chainPoolPrice(card, { sqrtPriceX96, tick: position.tick, block: item.spec.block }), facts: rangeFacts(card, chainPoolPrice(card, { sqrtPriceX96, tick: position.tick, block: item.spec.block })) };
+}
+
+/** The chart's axis at c3b41b8b (PriceVsRange.tsx domainOf), and how its band landed in a 208 px plot: the failures, measured. */
+function oldDomainOf(prices, lower, upper) {
+  const lo = Math.min(...prices);
+  const hi = Math.max(...prices);
+  const open = [lower > 0 && !Number.isFinite(upper) ? lower * 1.25 : 0, upper > 0 && Number.isFinite(upper) && !(lower > 0) ? upper / 1.25 : 0];
+  const ends = [lower, upper, ...open].filter((end) => end > 0 && Number.isFinite(end)).map((end) => Math.min(hi * 4, Math.max(lo / 4, end)));
+  const floor = Math.min(lo, ...ends);
+  const ceiling = Math.max(hi, ...ends);
+  const span = Math.log(ceiling / floor) || 0.02;
+  return [floor / Math.exp(span * 0.14), ceiling * Math.exp(span * 0.14)];
+}
+/** Where a price sits on a log axis, 0 at its foot and 1 at its top. */
+const share = ([lo, hi], value) => (Math.log(value) - Math.log(lo)) / (Math.log(hi) - Math.log(lo));
+/** The band's part of the plot, its edges held inside the plot as the chart drew them. */
+function band(domain, lower, upper) {
+  const top = Number.isFinite(upper) ? Math.min(1, Math.max(0, share(domain, upper))) : 1;
+  const foot = lower > 0 ? Math.min(1, Math.max(0, share(domain, lower))) : 0;
+  return { height: top - foot, topShown: Number.isFinite(upper) && share(domain, upper) <= 1 && share(domain, upper) >= 0, footShown: lower > 0 && share(domain, lower) >= 0 && share(domain, lower) <= 1 };
+}
+
+test('root cause (b): the old axis pinned a far range to one edge with no height, filled the plot with a wide one, and gave any range around the price 1/1.28 of it', () => {
+  // A range ten times over the price, one far under it, a range a hundred times wide, and the owner's ETH/MANY position.
+  const far = band(oldDomainOf([1], 10, 20), 10, 20);
+  assert.equal(far.height, 0, 'a range far over the price had no height at all');
+  assert.ok(!far.topShown && !far.footShown, 'and no number on either edge');
+  assert.ok(share(oldDomainOf([1], 10, 20), 1) < 0.15, 'the price alone near the plot’s foot ("it sits way down at the bottom")');
+  assert.equal(band(oldDomainOf([1], 0.05, 0.1), 0.05, 0.1).height, 0, 'and under it, the same');
+  const wide = band(oldDomainOf([1], 0.01, 100), 0.01, 100);
+  assert.equal(wide.height, 1, 'a wide range filled the plot edge to edge');
+  assert.ok(!wide.topShown && !wide.footShown, 'with no number at all');
+  const owner = band(oldDomainOf([7.10148e-7], 3.66503e-7, 7.99485e-7), 3.66503e-7, 7.99485e-7);
+  assert.ok(Math.abs(owner.height - 1 / 1.28) < 1e-9, `the owner's closed ETH/MANY band took ${owner.height} of the plot`);
+});
+
+test('the axis now holds the whole band, the whole line and the price now, with room above and below, at any price', () => {
+  const room = 1 / (1 + 2 * EDGE_ROOM);
+  for (const scale of [1e-12, 1e-7, 0.0025, 1, 120_345, 2.5e9]) {
+    for (const [lower, upper, now] of [[0.7, 1.5, 1], [10, 20, 1], [0.05, 0.1, 1], [0.01, 100, 1], [0.9995, 1.0005, 1.0001], [0.99999, 1.00001, 1]]) {
+      const [lo, hi, at] = [lower * scale, upper * scale, now * scale];
+      const line = [0.97, 1.02, 1.05, 0.95].map((move) => at * move);
+      const domain = priceDomain(lo, hi, [at, ...line]);
+      const what = `${lo}..${hi} at ${at}`;
+      assert.ok(domain.every((end) => end > 0 && Number.isFinite(end)), `a usable axis for ${what}`);
+      for (const value of [lo, hi, at, ...line]) {
+        const where = share(domain, value);
+        assert.ok(where > 0.05 && where < 0.95, `${value} away from the plot's edges (${where}) for ${what}`);
+      }
+      const drawn = band(domain, lo, hi);
+      assert.ok(drawn.topShown && drawn.footShown, `both edges of ${what} are on the plot`);
+      assert.ok(drawn.height <= room + 1e-9, `the band never fills the plot: ${drawn.height} for ${what}`);
+      assert.ok(drawn.height > 0, `and always has a height: ${what}`);
+    }
+  }
+});
+
+test('an end at 0 or ∞ is no place on the axis: the band runs off that edge, and the price and the line still have room', () => {
+  for (const [lower, upper] of [[0, Infinity], [0, 0.004], [0.0018, Infinity]]) {
+    const prices = [0.0025, 0.0024, 0.0027];
+    const domain = priceDomain(lower, upper, prices);
+    for (const price of prices) assert.ok(share(domain, price) > 0.05 && share(domain, price) < 0.95);
+    if (lower > 0) assert.ok(share(domain, lower) > 0.05, 'a price end is on the plot');
+    if (Number.isFinite(upper)) assert.ok(share(domain, upper) < 0.95, 'a price end is on the plot');
+  }
+  // A flat line in a full range: the narrowest window, the price in the middle.
+  const flat = priceDomain(0, Infinity, [5, 5, 5]);
+  assert.ok(Math.abs(Math.log(flat[1] / flat[0]) - MIN_SPAN * (1 + 2 * EDGE_ROOM)) < 1e-12);
+  assert.ok(Math.abs(share(flat, 5) - 0.5) < 1e-9);
+  assert.deepEqual(priceDomain(0, Infinity, []), [1 / 1.1, 1.1], 'nothing to draw still gives an axis');
+});
+
+test('root cause (a): the chart is drawn for every price the page can write, decimals 6/8/9/18 either way round, ticks at the pool’s limits', () => {
+  const tokens = [
+    { address: '0x1000000000000000000000000000000000000001', symbol: 'SIX', decimals: 6 },
+    { address: '0x2000000000000000000000000000000000000002', symbol: 'EIGHT', decimals: 8 },
+    { address: '0x3000000000000000000000000000000000000003', symbol: 'NINE', decimals: 9 },
+    { address: '0x4000000000000000000000000000000000000004', symbol: 'EIGHTEEN', decimals: 18 },
+  ];
+  const quotes = [TOKENS.USDG, TOKENS.ETH, ...tokens];
+  let id = 1;
+  for (const base of tokens) {
+    for (const quote of quotes) {
+      if (base === quote || (quote !== TOKENS.USDG && quote !== TOKENS.ETH && base.address > quote.address)) continue;
+      for (const now of [1e-12, 3.2e-9, 7.1e-7, 0.0025, 1, 120_345, 2.5e9]) {
+        for (const [low, high, where] of [[now * 0.7, now * 1.5, 'inside'], [now * 2, now * 3, 'under'], [now / 3, now / 2, 'over'], [0, Infinity, 'inside'], [0, now * 2, 'inside'], [now / 2, Infinity, 'inside']]) {
+          const item = rangeCase({ id: id++, base, quote, low, high, now, spacing: 10 });
+          const { price, facts } = factsOf(item);
+          const what = `${base.symbol}/${quote.symbol} at ${now}, ${low}..${high}`;
+          assert.equal(price.state, 'usable', what);
+          assert.ok(facts, `a chart for ${what}`);
+          assert.equal(facts.where, where, what);
+          assert.ok(Math.abs(facts.now / now - 1) < 0.001, `the price now as written: ${facts.now} for ${what}`);
+          assert.ok(facts.lower === 0 ? low === 0 : Math.abs(facts.lower / low - 1) < 0.01, `its low end ${facts.lower} for ${what}`);
+          assert.ok(facts.upper === Infinity ? high === Infinity : Math.abs(facts.upper / high - 1) < 0.01, `its high end ${facts.upper} for ${what}`);
+          assert.equal(facts.lowerText, low === 0 ? '0' : facts.lowerText);
+          assert.equal(facts.upperText, high === Infinity ? '∞' : facts.upperText);
+          assert.doesNotMatch(`${facts.nowText} ${facts.lowerText} ${facts.upperText}`, /e[+-]?\d|NaN|Infinity/, `plain figures for ${what}`);
+          const domain = priceDomain(facts.lower, facts.upper, [facts.now]);
+          assert.ok(share(domain, facts.now) > 0.05 && share(domain, facts.now) < 0.95, `the price now on the plot for ${what}`);
+        }
+      }
+    }
+  }
+});
+
+test('the chart stands aside only where the page cannot write the price: a decimal unread, or beyond 10^±24 (the bar and its ends stand in)', () => {
+  const item = CASES.inside;
+  const unread = { ...item.spec.position, currencies: [item.spec.position.currencies[0], { ...item.spec.position.currencies[1], decimals: null }] };
+  const sqrt = sqrtPriceAtTick(unread.tick).toString();
+  const card = walletCard({ ...unread, sqrtPriceX96: sqrt }, OWNER);
+  const price = chainPoolPrice(card, { sqrtPriceX96: sqrt, tick: unread.tick, block: 1 });
+  assert.equal(price.state, 'unavailable');
+  assert.equal(rangeFacts(card, price), null);
+  // A price of 10^30: 1.0001^tick × 10^(d0 − d1) far past what the page writes as a plain number.
+  const beyond = rangeCase({ id: 9, base: { address: '0x1000000000000000000000000000000000000001', symbol: 'A', decimals: 18 }, quote: { address: '0x2000000000000000000000000000000000000002', symbol: 'B', decimals: 18 }, low: 1e29, high: 1e31, now: 1e30, spacing: 10 });
+  const { price: far, facts } = factsOf(beyond);
+  assert.equal(far.state, 'unavailable');
+  assert.equal(far.problem, 'beyond_display');
+  assert.equal(facts, null);
+  assert.equal(rangeFacts(card, null), null, 'no price, no chart');
+});
+
+test('the owner’s closed ETH/MANY position: MANY’s price in ETH, closed, inside where its range was', () => {
+  const { facts } = factsOf(CASES.closed);
+  assert.equal(facts.where, 'closed');
+  assert.equal(facts.base.symbol, 'MANY');
+  assert.equal(facts.quote.symbol, 'ETH');
+  assert.equal(readablePrice(facts.nowText), '0.0₆710148');
+  assert.match(readablePrice(facts.lowerText), /^0\.0₆36\d+$/);
+  assert.match(readablePrice(facts.upperText), /^0\.0₆79\d+$/);
+  assert.deepEqual(statusWords(facts), { tone: 'closed', title: 'Closed', detail: 'this position no longer earns fees', move: null });
+});
+
+test('readablePrice: tiny prices count their zeros in a subscript, huge ones in billions, trillions or a power of ten, the rest as the page writes them', () => {
+  assert.equal(readablePrice('0.000000710148'), '0.0₆710148');
+  assert.equal(readablePrice('≈0.000000710148'), '0.0₆710148', 'its "≈" dropped, as the key figures drop it');
+  assert.equal(readablePrice('0.0000123'), '0.0₄123', 'from four zeros');
+  assert.equal(readablePrice('0.000123'), '0.000123', 'three zeros stay as they are');
+  assert.equal(readablePrice('0.0000000000032003'), '0.0₁₁32003');
+  assert.equal(readablePrice('0.00252025'), '0.00252025');
+  assert.equal(readablePrice('350.55'), '350.55');
+  assert.equal(readablePrice('120,345'), '120,345');
+  assert.equal(readablePrice('999,999,000'), '999,999,000');
+  assert.equal(readablePrice('2,500,000,000'), '2.5B');
+  assert.equal(readablePrice('2,499,940,000'), '2.49994B');
+  assert.equal(readablePrice('123,457,000,000'), '123.457B');
+  assert.equal(readablePrice('12,345,700,000,000'), '12.3457T');
+  assert.equal(readablePrice('1,000,000,000,000,000,000'), '1 × 10¹⁸');
+  assert.equal(readablePrice('1,234,570,000,000,000,000,000'), '1.23457 × 10²¹');
+  for (const kept of ['0', '∞', 'Tick 4', '1', '0.5']) assert.equal(readablePrice(kept), kept);
+  assert.equal(priceFigure(7.10148e-7), '0.0₆710148');
+  assert.equal(priceFigure(0.00252025123), '0.00252025');
+  assert.equal(priceFigure(2.5e9), '2.5B');
+  assert.equal(priceFigure(0), '—');
+  assert.equal(priceFigure(Number.NaN), '—');
+  assert.ok(figureWidth('0.0₆710148') < figureWidth('0.000000710148'), 'shorter on the plot too');
+});
+
+test('the status says in plain words where the price is, and how far it must move to come back', () => {
+  const at = (where, lower, upper, now = 1) => statusWords({ where, lower, upper, now });
+  assert.deepEqual(at('inside', 0.5, 2), { tone: 'in', title: 'Earning fees', detail: 'the price is inside your range', move: null });
+  assert.deepEqual(at('under', 1.25, 2), { tone: 'out', title: 'Not earning', detail: 'the price is below your range', move: 'It must rise 25% to come back into your range.' });
+  assert.deepEqual(at('over', 0.5, 0.8), { tone: 'out', title: 'Not earning', detail: 'the price is above your range', move: 'It must fall 20% to come back into your range.' });
+  assert.equal(at('over', 0.00001, 0.00002).move, 'It must fall more than 99% to come back into your range.');
+  assert.equal(at('under', 15, 20).move, 'It must rise 1,400% to come back into your range.');
+  assert.equal(at('under', 1.042, 2).move, 'It must rise 4.2% to come back into your range.');
+  assert.equal(at('under', 1.002, 2).move, 'It must rise less than 1% to come back into your range.');
+  assert.equal(moveText(0.6), '60%');
+  assert.equal(moveText(0), 'less than 1%');
+});
+
+test('the labels at the plot’s right never overlap, keep their order and the price now’s place, and stay inside', () => {
+  const asks = (max, now, min) => [{ key: 'max', at: max, size: 30 }, { key: 'now', at: now, size: 36, fixed: true }, { key: 'min', at: min, size: 30 }];
+  const check = (placed, list, from, to) => {
+    const order = list.map((ask) => placed[ask.key]);
+    for (let index = 1; index < list.length; index += 1) {
+      assert.ok(order[index] - order[index - 1] >= (list[index].size + list[index - 1].size) / 2 + 2 - 1e-9, `${list[index - 1].key} and ${list[index].key} apart: ${JSON.stringify(placed)}`);
+    }
+    list.forEach((ask) => assert.ok(placed[ask.key] - ask.size / 2 >= from - 1e-9 && placed[ask.key] + ask.size / 2 <= to + 1e-9, `${ask.key} inside: ${JSON.stringify(placed)}`));
+  };
+  // Room enough: everything where it is.
+  assert.deepEqual(placeLabels(asks(40, 100, 160), 0, 220), { max: 40, now: 100, min: 160 });
+  // The price just under the top end: the Max label steps up, the chip stays.
+  const tight = placeLabels(asks(90, 100, 160), 0, 220);
+  assert.equal(tight.now, 100);
+  check(tight, asks(90, 100, 160), 0, 220);
+  // A thin band far from the price (far over): Max and Min step apart, the chip where it is.
+  const thin = [{ key: 'now', at: 40, size: 36, fixed: true }, { key: 'max', at: 180, size: 30 }, { key: 'min', at: 186, size: 30 }];
+  const apart = placeLabels(thin, 0, 220);
+  assert.equal(apart.now, 40);
+  check(apart, thin, 0, 220);
+  // Squeezed at the foot: everything stays inside, in order.
+  const foot = placeLabels(asks(200, 210, 215), 0, 220);
+  check(foot, asks(200, 210, 215), 0, 220);
+  // At the very top.
+  const top = placeLabels(asks(0, 2, 5), 0, 220);
+  check(top, asks(0, 2, 5), 0, 220);
+  assert.deepEqual(placeLabels([], 0, 10), {});
+});
+
+const HOUR = 3_600;
+const END = 1_790_000_000 - (1_790_000_000 % HOUR) + 1_200;
+const BODY = (item) => ({ poolId: item.poolId, currency: item.base.address, windowSeconds: 604_800, resolutionSeconds: HOUR });
+const range = (facts) => ({ lower: facts.lower, upper: facts.upper });
+
+test('root cause (c): the line is the pool’s stored hourly closes (read-v3 history), in the page’s orientation, never altered', () => {
+  const item = CASES.inside;
+  const { facts } = factsOf(item);
+  const data = historyFor(item, BODY(item), { end: END });
+  const verdict = historyLine(data, { base: item.base.address, quote: item.quote.address }, range(facts), END + 30);
+  assert.equal(verdict.kind, 'line');
+  const { history } = verdict;
+  assert.equal(history.points.length, data.candles.length, 'one point per hourly close');
+  history.points.forEach((point, index) => {
+    const candle = data.candles[index];
+    assert.equal(point.price, Number(candle.close), 'the close as stored');
+    assert.equal(point.t, Math.min(candle.startTimestamp + HOUR, END), 'at the end of its hour');
+    assert.equal(point.inRange, point.price >= facts.lower && point.price < facts.upper);
+  });
+  assert.equal(history.runs.length, 1, 'every hour collected: one line');
+  assert.equal(history.points.at(-1).price, Number(data.candles.at(-1).close), 'the line ends at its own last close, not at the page’s price now');
+  assert.equal(history.start, data.requestedWindow.startTimestamp);
+  assert.equal(history.end, END + 30, 'to the page’s clock');
+  assert.equal(history.missing, false);
+  assert.equal(history.stale, false);
+});
+
+test('an hour with no trade keeps the last close (a flat step, never a slope), and an hour not collected breaks the line', () => {
+  const item = CASES.tiny;
+  const { facts } = factsOf(item);
+  const data = historyFor(item, BODY(item), { end: END, quiet: 0.6, gap: [60, 40] });
+  assert.equal(data.status, 'partial');
+  const verdict = historyLine(data, { base: item.base.address, quote: item.quote.address }, range(facts), END);
+  assert.equal(verdict.kind, 'line');
+  const { history } = verdict;
+  assert.equal(history.missing, true);
+  const gap = data.gaps[0];
+  assert.ok(history.runs.length >= 2, 'the line breaks at the hours not collected');
+  for (const run of history.runs) {
+    for (const point of run) assert.ok(point.t <= gap.startTimestamp || point.t >= gap.endTimestamp, `nothing drawn inside the gap: ${point.t}`);
+    for (let index = 1; index < run.length; index += 1) {
+      const [a, b] = [run[index - 1], run[index]];
+      // A move happens only within an hour that traded; any longer stretch is flat.
+      if (b.t - a.t > HOUR) assert.equal(b.price, a.price, `flat across quiet hours: ${a.t}→${b.t}`);
+    }
+  }
+  const closes = new Set(data.candles.map((candle) => Number(candle.close)));
+  for (const point of history.runs.flat()) assert.ok(closes.has(point.price), 'every price drawn is one of the closes');
+});
+
+test('the history is used only for the page’s pair and orientation, and says why when there is no line', () => {
+  const item = CASES.inside;
+  const { facts } = factsOf(item);
+  const ask = { base: item.base.address, quote: item.quote.address };
+  const data = historyFor(item, BODY(item), { end: END });
+  assert.deepEqual(historyLine({ ...data, currency: item.quote.address, quoteCurrency: item.base.address }, ask, range(facts), END), { kind: 'none', reason: 'mismatch' });
+  assert.deepEqual(historyLine({ ...data, quoteCurrency: '0x9999999999999999999999999999999999999999' }, ask, range(facts), END), { kind: 'none', reason: 'mismatch' });
+  assert.deepEqual(historyLine({ ...data, status: 'not_built', candles: [], covered: [], snapshot: null }, ask, range(facts), END), { kind: 'none', reason: 'not_built' });
+  assert.deepEqual(historyLine({ ...data, status: 'unavailable', candles: [] }, ask, range(facts), END), { kind: 'none', reason: 'unavailable' });
+  assert.deepEqual(historyLine({ ...data, candles: [] }, ask, range(facts), END), { kind: 'none', reason: 'no_trades' });
+  // A stale snapshot is said, and the window reaches the page's clock (a day at the most).
+  const stale = historyLine(data, ask, range(facts), END + 600);
+  assert.equal(stale.history.stale, true);
+  assert.equal(stale.history.end, END + 600);
+  assert.equal(historyLine(data, ask, range(facts), END + 10 * 86_400).history.end, END + 86_400);
+});
+
+test('stretches the service collected that touch are one stretch, and the last close holds to the end of what was collected', () => {
+  const item = CASES.huge;
+  const { facts } = factsOf(item);
+  const data = historyFor(item, BODY(item), { end: END });
+  const middle = data.requestedWindow.startTimestamp + 50 * HOUR;
+  const split = { ...data, covered: [{ startTimestamp: data.requestedWindow.startTimestamp, endTimestamp: middle }, { startTimestamp: middle, endTimestamp: END }] };
+  const verdict = historyLine(split, { base: item.base.address, quote: item.quote.address }, range(facts), END);
+  assert.equal(verdict.history.runs.length, 1);
+  // Only an hour long ago traded, and every hour since was collected: its close holds, flat, to the end.
+  const lone = { ...data, candles: [data.candles[3]] };
+  const held = historyLine(lone, { base: item.base.address, quote: item.quote.address }, range(facts), END).history;
+  assert.equal(held.runs.length, 1);
+  assert.deepEqual(held.runs[0].map((point) => point.t), [data.candles[3].startTimestamp + HOUR, END]);
+  assert.equal(held.runs[0][1].price, held.runs[0][0].price);
+});
+
+test('closes as the read service writes them (no exponent) are read exactly for tiny and huge prices', () => {
+  assert.equal(decimalText(7.10148e-7), '0.000000710148');
+  assert.equal(decimalText(3.2e-12), '0.0000000000032');
+  assert.equal(decimalText(2.5e9), '2500000000');
+  for (const name of ['micro', 'giant', 'narrow']) {
+    const item = CASES[name];
+    const { facts } = factsOf(item);
+    const verdict = historyLine(historyFor(item, BODY(item), { end: END }), { base: item.base.address, quote: item.quote.address }, range(facts), END);
+    assert.equal(verdict.kind, 'line', name);
+    for (const point of verdict.history.points) assert.doesNotMatch(point.text, /e[+-]?\d|NaN/, `${name}: ${point.text}`);
+  }
+});
+
+test('a new NFT never borrows pre-mint pool history, even the carried close of a quiet hour', () => {
+  const item = CASES.inside;
+  const { facts } = factsOf(item);
+  const data = historyFor(item, BODY(item), { end: END, quiet: 0.6, gap: [70, 40] });
+  const minted = END - 6 * HOUR + 537;
+  const result = historyLine(data, { base: item.base.address, quote: item.quote.address }, range(facts), END, minted);
+  assert.equal(result.kind, 'line');
+  const line = result.history;
+  assert.equal(line.start, minted);
+  assert.ok(line.points.length < data.candles.length);
+  assert.ok(line.points.every((point) => point.t >= minted));
+  assert.ok(line.runs.flat().every((point) => point.t >= line.points[0].t), 'no borrowed pre-mint close and no estimated mint price');
+  assert.equal(line.missing, false, 'a gap before mint does not belong to this position');
+  const expected = data.candles.filter((candle) => Math.min(candle.startTimestamp + HOUR, END) >= minted).map((candle) => Number(candle.close));
+  assert.deepEqual(line.points.map((point) => point.price), expected, 'kept prices are unchanged');
+});
+
+test('time labels keep space after the right-edge alignment: Opened and the latest time survive on a narrow plot', () => {
+  const narrow = [{ x: 0, label: 'Opened' }, { x: 95, label: '18:00' }, { x: 143, label: '20:00' }];
+  assert.deepEqual(spacedTimeTicks(narrow, 0, 148), [narrow[0], narrow[2]], '18:00 must not collide with the end-aligned 20:00');
+  const wide = [{ x: 0, label: 'Opened' }, { x: 100, label: '18:00' }, { x: 230, label: '20:00' }];
+  assert.deepEqual(spacedTimeTicks(wide, 0, 240), wide);
+  assert.deepEqual(spacedTimeTicks([narrow[0]], 0, 148), [narrow[0]]);
+  assert.deepEqual(spacedTimeTicks([], 0, 148), []);
+});
+
+test('an unknown mint, or a mint newer than stored prices, never produces a position-history line', () => {
+  const item = CASES.inside;
+  const { facts } = factsOf(item);
+  const data = historyFor(item, BODY(item), { end: END });
+  const run = (mint) => historyLine(data, { base: item.base.address, quote: item.quote.address }, range(facts), END, mint);
+  for (const mint of [null, 0, NaN, -1, 1.5]) assert.deepEqual(run(mint), { kind: 'none', reason: 'unknown_mint' });
+  assert.deepEqual(run(END + 1), { kind: 'none', reason: 'no_position_history' });
+  assert.equal(run(END - 30 * 86400).history.start, data.requestedWindow.startTimestamp, 'an older NFT still shows only the stored seven-day window');
+});
+
+test('the V1 opening time is the ledger mint, including a ledger with inexact settlements; never the current read or first visible event', () => {
+  assert.equal(ledgerOpenedAt({ phase: 'verified', history: { mintedAt: { timestamp: END } } }), END);
+  assert.equal(ledgerOpenedAt({ phase: 'cached', history: { mintedAt: { timestamp: END } } }), END);
+  assert.equal(ledgerOpenedAt({ phase: 'unclaimed-only', events: [{ kind: 'increase', timestamp: END + 1 }, { kind: 'mint', timestamp: END }] }), END);
+  assert.equal(ledgerOpenedAt({ phase: 'unclaimed-only', state: { timestamp: END }, events: [{ kind: 'increase', timestamp: END }] }), null);
+  for (const phase of ['idle', 'loading', 'unavailable']) assert.equal(ledgerOpenedAt({ phase, state: { timestamp: END } }), null);
+});
+
+test('V2 creation is matched by chain, DEX and new token ID; vault registration and the previous range are never its mint', () => {
+  const position = { chainId: 4663, dex: 4, tokenId: 42n, vault: null };
+  const create = { kind: 's1_action', chainId: 4663, action: 'create', tokenId: '42', previousTokenId: null, tx: { snapshot: { timestamp: END } }, steps: [{ tokenId: '42', pool: { dex: 4 } }] };
+  const run = (item, p = position) => activityOpenedAt({ items: [item] }, p);
+  assert.equal(run(create), END);
+  assert.equal(run({ ...create, action: 'change_range', previousTokenId: '41' }), END);
+  assert.equal(run({ ...create, action: 'increase' }), null);
+  assert.equal(run({ ...create, chainId: 8453 }), null);
+  assert.equal(run(create, { ...position, dex: 3 }), null);
+  assert.equal(run({ ...create, tokenId: '43', previousTokenId: '42' }), null);
+  assert.equal(run({ ...create, kind: 'vault_created', rootTokenId: '42' }), null);
+  const mint = { kind: 'vault_execution', chainId: 4663, action: 'mint', vault: '0xA', successor: { tokenId: '42', parentTokenId: '41' }, tx: create.tx };
+  assert.equal(run(mint), null);
+  assert.equal(run(mint, { ...position, vault: { address: '0xa', role: 'successor' } }), END);
+  assert.equal(run(mint, { ...position, vault: { address: '0xb', role: 'successor' } }), null);
+  assert.equal(run(mint, { ...position, vault: { address: '0xa', role: 'root' } }), null);
+});

@@ -1,206 +1,128 @@
-/* home (DESIGN-V2 §7): Home's layout and looks, P1's partial. The drawings themselves (hero horizon, vignettes)
-   are art.css's. Every colour is a token; the few page-local ones are scoped to their block and derived from global
+/* Home: original domino-effect hero with refined features and learning sections. Shared artwork stays in art.css.
+   Every colour is a token; the few page-local ones are scoped to their block and derived from global
    tokens. Entrances are .animate-rise (first load only, §5.5); no section
    box moves; nothing here tweens a number. */
 
 @layer components {
   /* ---- Rhythm (§7.1, §7.2): 24 / 64 / 96 between the blocks on a desktop, 16 / 56 / 56 on a phone --------- */
-  .dm-home-features { margin-top: 16px; }
-  .dm-home-pools { margin-top: 56px; }
-  .dm-home-section { margin-top: 56px; }
+  .dm-home-features { margin-top: 1rem; }
+  .dm-home-pools { margin-top: 3.5rem; }
+  .dm-home-section { margin-top: 3.5rem; }
   @media (min-width: 768px) {
-    .dm-home-features { margin-top: 24px; }
-    .dm-home-pools { margin-top: 64px; }
-    .dm-home-section { margin-top: 96px; }
+    .dm-home-features { margin-top: 1.5rem; }
+    .dm-home-pools { margin-top: 4rem; }
+    .dm-home-section { margin-top: 6rem; }
   }
 
   /* ---- Hero plate (§7.1-2) ----------------------------------------------------------------------------- */
   /* The words sit centred at the top; the horizon runs across the plate's bottom, edge to edge. On a phone the band
      keeps the drawing's last 520 units across the plate (the last tiles and the staircase) and grows no taller than
-     150px; a wider screen shows more of the run. */
-  .dm-hero { display: flex; flex-direction: column; align-items: center; min-height: 520px; padding: 40px 20px 0; border-radius: var(--radius-card); text-align: center; }
+     150px; a wider screen shows more of the run. Changed on purpose 2026-10-03 (the owner: no "On Robinhood Chain" chip):
+     the headline starts the plate, so the plate is the chip and its 20px shorter, with a little more air above the words. */
+  .dm-hero { display: flex; flex-direction: column; align-items: center; min-height: 29.5rem; padding: 2.5rem 1.25rem 0; border-radius: var(--radius-card); text-align: center; }
   /* The floor glow: a warm pool of light under the staircase, above the dots and under everything else. */
   .dm-hero { --hero-floor: var(--primary-glow); }
   .dm-hero::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(40% 60% at 82% 100%, var(--hero-floor), transparent 70%); }
-  .dm-hero-body { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 880px; padding-bottom: 24px; }
+  .dm-hero-body { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 55rem; padding-bottom: 1.5rem; }
   /* Two lines on every screen wider than a phone: the first line's clause is about 8em and the whole headline about
      14.5em, so at 10.5em it always breaks after the comma (balance keeps the accent phrase whole on the second). */
-  .dm-hero-title { max-width: 10.5em; margin-top: 20px; text-wrap: balance; }
+  .dm-hero-title { max-width: 10.5em; text-wrap: balance; }
   /* Large text (44 px and up): --primary-line, which equals --primary. */
   .dm-hero-accent { color: var(--primary-line); white-space: nowrap; }
-  .dm-hero-lede { max-width: 52ch; margin-top: 16px; text-wrap: pretty; }
-  .dm-hero-actions { display: flex; justify-content: center; gap: 12px; width: 100%; margin-top: 28px; }
+  .dm-hero-lede { max-width: 52ch; margin-top: 1rem; text-wrap: pretty; }
+  .dm-hero-actions { display: flex; justify-content: center; gap: 0.75rem; width: 100%; margin-top: 1.75rem; }
   .dm-hero-actions > .dm-btn { flex: 1 1 0; min-width: 0; }
-  .dm-hero-band { position: relative; z-index: 1; align-self: stretch; margin: auto -20px 0; aspect-ratio: 520 / 192; max-height: 150px; pointer-events: none; }
+  .dm-hero-band { position: relative; z-index: 1; align-self: stretch; margin: auto -1.25rem 0; aspect-ratio: 520 / 192; max-height: 9.375rem; pointer-events: none; }
   .dm-hero-band > .dm-hero-art { position: absolute; inset: 0; }
   @media (min-width: 768px) {
-    .dm-hero { padding: 56px 40px 0; border-radius: var(--radius-hero); }
-    .dm-hero-actions > .dm-btn { flex: 0 0 auto; min-width: 200px; }
-    .dm-hero-band { margin: auto -40px 0; aspect-ratio: auto; height: 192px; max-height: none; }
+    .dm-hero { padding: 4rem 2.5rem 0; border-radius: var(--radius-hero); }
+    .dm-hero-actions > .dm-btn { flex: 0 0 auto; min-width: 12.5rem; }
+    .dm-hero-band { margin: auto -2.5rem 0; aspect-ratio: auto; height: 12rem; max-height: none; }
   }
-  /* 580 on a laptop: 56 + the words (332) + the band (192), nothing between the buttons and the band's empty sky. */
+  /* 540 on a laptop: 64 + the words (about 280) + the band (192), nothing between the buttons and the band's empty sky. */
   @media (min-width: 1024px) {
-    .dm-hero { min-height: 580px; }
+    .dm-hero { min-height: 33.75rem; }
     .dm-hero-body { padding-bottom: 0; }
   }
 
+  .dm-home-eyebrow { color: var(--primary-ink); font-size: 0.75rem; line-height: 1.25rem; font-weight: 550; letter-spacing: 0.06em; }
+  .dm-home-section-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1.25rem 2.5rem; }
+  .dm-home-section-head > div { flex: 1 1 22rem; min-width: 0; }
+  .dm-home-section-head .dm-home-eyebrow + .dm-display { margin-top: 0.625rem; }
+
   /* ---- Feature cards (§7.1-3): one card each, the drawing on a dotted plate inset at the top ------------- */
-  .dm-features { display: grid; gap: 16px; }
+  .dm-features { display: grid; gap: 1rem; }
   @media (min-width: 768px) { .dm-features { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @media (min-width: 1024px) { .dm-features { gap: 24px; } }
+  @media (min-width: 1024px) { .dm-features { gap: 1.5rem; } }
   /* The card is not a link: hovering it lights its ring only (no lift) and slides its link's chevron. */
   .dm-feature { display: flex; flex-direction: column; overflow: hidden; transition: box-shadow var(--dur-hover) var(--ease-std), background-color var(--dur-hover) var(--ease-std); }
   .dm-feature:hover { background: var(--card-hover); box-shadow: var(--elev-card-hover); }
-  .dm-vig-plate { flex-shrink: 0; height: 168px; margin: 8px 8px 0; border-radius: calc(var(--radius-card) - 6px); }
+  .dm-vig-plate { flex-shrink: 0; height: 11rem; margin: 0.625rem 0.625rem 0; border-radius: calc(var(--radius-card) - 0.375rem); background-color: var(--surface-1); }
   /* Each drawing is one object that fills its plate: a size up from the shared vignette frame, about its lower
      middle, so it spans about 60% of the plate and stays clear of the pill in the top-left corner. Static. */
   .dm-vig-plate > .dm-vig { scale: 1.2; transform-origin: 50% 62%; }
-  .dm-feature-pill { position: absolute; left: 12px; top: 12px; z-index: 1; }
-  .dm-feature-body { display: flex; flex: 1 1 auto; flex-direction: column; align-items: flex-start; padding: 16px 20px 20px; }
-  .dm-feature-text { margin-top: 6px; margin-bottom: 16px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-feature-pill { position: absolute; left: 0.75rem; top: 0.75rem; z-index: 1; }
+  .dm-feature-body { display: flex; flex: 1 1 auto; flex-direction: column; align-items: flex-start; padding: 1.375rem 1.5rem 1.5rem; }
+  .dm-feature-kind { font-size: 0.75rem; line-height: 1.125rem; font-weight: 500; color: var(--primary-ink); }
+  .dm-feature-title { margin-top: 0.5rem; font-family: var(--font-display); font-size: 1.75rem; line-height: 1.875rem; font-weight: 400; letter-spacing: -0.02em; text-wrap: pretty; }
+  .dm-feature-text { margin-top: 0.75rem; margin-bottom: 1.25rem; font-size: 0.875rem; line-height: 1.375rem; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-feature .dm-vig-link { margin-top: auto; padding-top: 0.875rem; width: 100%; border-top: 0.0625rem solid var(--border); }
   /* The link sits on the card's bottom edge, so the three cards' links line up. */
-  .dm-vig-link { display: inline-flex; align-items: center; gap: 4px; margin-top: auto; border-radius: var(--radius-xs); font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-decoration: none; }
+  .dm-vig-link { display: inline-flex; align-items: center; gap: 0.25rem; margin-top: auto; border-radius: var(--radius-xs); font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-decoration: none; }
   .dm-vig-link .i-chev-r { color: var(--fg-subtle); transition: translate var(--dur-fast) var(--ease-fast), color var(--dur-hover) var(--ease-std); }
   .dm-feature:hover .dm-vig-link .i-chev-r,
   .dm-vig-link:focus-visible .i-chev-r { translate: 2px 0; color: var(--fg); }
 
   /* ---- Selected pools (§7.1-4): the table is Markets'; on Home its title is a serif section head ---------- */
-  #pools .dm-table-head h2 { font-family: var(--font-display); font-weight: 400; font-size: 28px; line-height: 32px; letter-spacing: -0.3px; }
-  @media (min-width: 768px) { #pools .dm-table-head h2 { font-size: 36px; line-height: 40px; letter-spacing: -0.4px; } }
+  #pools .dm-table-head h2 { font-family: var(--font-display); font-weight: 400; font-size: 1.75rem; line-height: 2rem; letter-spacing: -0.3px; }
+  @media (min-width: 768px) { #pools .dm-table-head h2 { font-size: 2.25rem; line-height: 2.5rem; letter-spacing: -0.4px; } }
 
-  /* ---- How it works (§7.1-5): three connected step cards ---------------------------------------------------- */
-  .dm-learn-eyebrow { font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--primary-ink); }
-  .dm-learn-title { max-width: 22ch; margin-top: 12px; text-wrap: balance; }
-  .dm-learn-steps { display: grid; gap: 12px; margin: 24px 0 0; padding: 0; list-style: none; }
-  .dm-learn-step { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; padding: 16px; }
-  .dm-learn-num { grid-area: 1 / 1; display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--radius-sm); background: var(--surface-3); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  /* ---- How it works: the same four steps as the creation flow. ---- */
+  .dm-learn-eyebrow { font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.16px; color: var(--primary-ink); }
+  .dm-learn-title { max-width: 26ch; margin-top: 0.75rem; text-wrap: balance; }
+  .dm-learn-steps { display: grid; gap: 0.75rem; margin: 1.5rem 0 0; padding: 0; list-style: none; }
+  .dm-learn-step { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; padding: 1rem; }
+  .dm-learn-num { grid-area: 1 / 1; display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: var(--radius-sm); background: var(--primary-wash); font-size: 0.75rem; line-height: 1rem; font-weight: 500; letter-spacing: 0; color: var(--primary-ink); font-variant-numeric: lining-nums tabular-nums; }
   /* The pill (step 03) follows its title in the DOM and sits at the card's top right, level with the numeral. */
   .dm-learn-pill { grid-area: 1 / 2; justify-self: end; align-self: center; }
   /* Natural wrap (pretty keeps a last word company), never balanced into a short first line. */
-  .dm-learn-step-title { grid-column: 1 / -1; margin-top: 16px; text-wrap: pretty; }
-  .dm-learn-step-body { grid-column: 1 / -1; margin-top: 6px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-learn-step-title { grid-column: 1 / -1; margin-top: 1rem; text-wrap: pretty; }
+  .dm-learn-step-body { grid-column: 1 / -1; margin-top: 0.375rem; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
   /* The connectors: a hairline from one step's numeral to the next card, down on a phone and across on a
      desktop, where it is dashed, level with the numerals. */
-  .dm-learn-step:not(:last-child)::after { content: ''; position: absolute; top: 100%; left: 32px; height: 12px; border-left: 1px solid var(--border-strong); pointer-events: none; }
+  .dm-learn-step:not(:last-child)::after { content: ''; position: absolute; top: 100%; left: 2rem; height: 0.75rem; border-left: 1px solid var(--border-strong); pointer-events: none; }
   @media (min-width: 768px) {
-    /* The three cards share their rows (subgrid), so the titles and the bodies start on one line across the
+    /* The cards share their rows (subgrid), so the titles and the bodies start on one line across the
        row whatever each title's length. */
-    .dm-learn-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto auto 1fr; gap: 0 16px; margin-top: 32px; }
-    .dm-learn-step { grid-row: span 3; grid-template-rows: subgrid; row-gap: 0; min-height: 200px; padding: 24px; }
+    .dm-learn-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto 1fr auto auto 1fr; gap: 1rem; margin-top: 2rem; }
+    .dm-learn-step { grid-row: span 3; grid-template-rows: subgrid; row-gap: 0; min-height: 12.5rem; padding: 1.5rem; }
     /* A one-line title sits on its body; the spare line of a shorter title becomes air under the numeral. */
-    .dm-learn-step-title { align-self: end; margin-top: 20px; }
-    .dm-learn-step:not(:last-child)::after { top: 40px; left: 100%; width: 16px; height: 0; border-left: 0; border-top: 1px dashed var(--border-strong); }
+    .dm-learn-step-title { align-self: end; margin-top: 1.25rem; }
+    .dm-learn-step:not(:last-child)::after { display: none; }
   }
-
-  /* ---- The range simulator (§7.1-6), redone for newcomers (owner, round 6, 2026-09-27) ---------------------- */
-  /* One card: the title and one plain sentence; the picture with its one control, the price; the two answers beside
-     it (under it below 1024px); and the automation in one line at the foot. */
-  .dm-sim { padding: 20px 16px; }
-  .dm-sim-title { text-wrap: balance; }
-  .dm-sim-lede { max-width: 62ch; margin-top: 8px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
-  .dm-sim-grid { display: grid; gap: 20px; }
-
-  /* The picture. --k is half the slider's invisible thumb: the native slider keeps the thumb centre that far in from
-     each end, so a point x (0 to 1) sits at --k + x × (width − 2 --k), right where the pointer puts the price. The
-     input covers the picture and the chip's row above it (--h, plus 44px), and is invisible; the picture never takes
-     a pointer. The thumb is the knob's whole column, a finger wide and the input's full height (review, 2026-09-28):
-     iOS drags a slider only from a touch that starts inside its thumb, and a 22px thumb centred in the input sat far
-     above the knob drawn on the axis. */
-  .dm-sim-stage { --k: 22px; --h: 176px; --axis: 36px; --top: 34px; position: relative; height: var(--h); margin-top: 52px; }
-  .dm-sim-input { position: absolute; top: -44px; left: 0; z-index: 1; width: 100%; height: calc(var(--h) + 44px); margin: 0; padding: 0; opacity: 0; cursor: ew-resize; touch-action: pan-y; -webkit-appearance: none; appearance: none; background: none; }
-  .dm-sim-input::-webkit-slider-thumb { width: calc(2 * var(--k)); height: calc(var(--h) + 44px); -webkit-appearance: none; appearance: none; }
-  .dm-sim-input::-moz-range-thumb { width: calc(2 * var(--k)); height: calc(var(--h) + 44px); border: 0; }
-  .dm-sim-art { position: absolute; inset: 0; pointer-events: none; }
-  .dm-sim-art > span { position: absolute; }
-  .dm-sim-zone, .dm-sim-tick, .dm-sim-now { left: calc(var(--k) + var(--x) * (100% - 2 * var(--k))); }
-  .dm-sim-dots { inset: 0 0 var(--axis); background-image: radial-gradient(circle at center, var(--dot-chart) 1px, transparent 1.2px); background-size: 16px 16px; background-position: 8px 4px; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 55%); mask-image: linear-gradient(to bottom, transparent, #000 55%); }
-  /* The range: a band rising from the axis. It warms to Tangerine (with a light under it) while the price is in it,
-     and rests grey outside it. */
-  .dm-sim-band, .dm-sim-glow { left: calc(var(--k) + var(--a) * (100% - 2 * var(--k))); right: calc(var(--k) + (1 - var(--b)) * (100% - 2 * var(--k))); bottom: var(--axis); }
-  .dm-sim-band { top: var(--top); border-radius: 10px 10px 0 0; background: linear-gradient(to bottom, transparent, var(--wash-strong)); box-shadow: inset 2px 0 0 var(--fg-faint), inset -2px 0 0 var(--fg-faint); transition: box-shadow var(--dur-step) var(--ease-std); }
-  .dm-sim-band::before { content: ''; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(to bottom, color-mix(in srgb, var(--primary-line) 4%, transparent), color-mix(in srgb, var(--primary-line) 32%, transparent)); opacity: 0; transition: opacity var(--dur-step) var(--ease-std); }
-  .dm-sim-glow { top: 0; margin-inline: -48px; background: radial-gradient(50% 90% at 50% 100%, var(--primary-glow), transparent 75%); opacity: 0; transition: opacity var(--dur-step) var(--ease-std); }
-  [data-sim-stage="inside"] .dm-sim-band { box-shadow: inset 2px 0 0 var(--primary-line), inset -2px 0 0 var(--primary-line); }
-  [data-sim-stage="inside"] .dm-sim-band::before,
-  [data-sim-stage="inside"] .dm-sim-glow { opacity: 1; }
-  /* The three zones' names along the top, over the price line; the one the price is in lights up. */
-  .dm-sim-zone { top: 8px; z-index: 1; translate: -50% 0; padding: 0 6px; border-radius: var(--radius-xs); background: var(--card); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; transition: color var(--dur-fast) var(--ease-std); }
-  .dm-sim-zone[data-here] { color: var(--fg); }
-  /* The axis: the range's two ends and the start, under the line. */
-  .dm-sim-axis { left: 0; right: 0; bottom: var(--axis); height: 1px; background: var(--border-strong); }
-  .dm-sim-tick { top: calc(100% - var(--axis) + 18px); translate: -50% 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; }
-  .dm-sim-tick[data-start]::before { content: ''; position: absolute; left: 50%; bottom: calc(100% + 12px); width: 1px; height: 6px; background: var(--fg-subtle); }
-  /* The price: a line down to the knob on the axis, and its chip above the picture. They follow at once, never eased. */
-  .dm-sim-now { top: 0; bottom: var(--axis); width: 0; }
-  .dm-sim-now::before { content: ''; position: absolute; top: 0; bottom: 0; left: -0.75px; width: 1.5px; background: color-mix(in srgb, var(--fg) 50%, transparent); }
-  .dm-sim-knob { position: absolute; left: -11px; bottom: -11px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: var(--radius-pill); background: var(--fg); color: var(--card); box-shadow: 0 0 0 4px color-mix(in srgb, var(--fg) 12%, transparent), var(--elev-button); transition: scale var(--dur-press) var(--ease-std), box-shadow var(--dur-fast) var(--ease-std); }
-  .dm-sim-knob > svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-  [data-sim-stage="inside"] .dm-sim-knob { box-shadow: 0 0 0 5px color-mix(in srgb, var(--primary-line) 26%, transparent), var(--elev-button); }
-  .dm-sim-input:hover ~ .dm-sim-art .dm-sim-knob,
-  .dm-sim-input:active ~ .dm-sim-art .dm-sim-knob { scale: 1.1; }
-  .dm-sim-input:focus-visible ~ .dm-sim-art .dm-sim-knob { outline: 2px solid var(--ring); outline-offset: 3px; }
-  /* The chip rides over the line: centred in the middle, sliding over it towards either end so it stays in the card. */
-  .dm-sim-chip { bottom: calc(100% + 12px); left: calc(var(--k) + var(--x) * (100% - 2 * var(--k))); translate: calc(var(--x) * -100%) 0; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: var(--radius-pill); background: var(--surface-3); font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg); white-space: nowrap; }
-  /* A fee rising from the price with each trade that pays it; it plays once per trade and never under stilled motion. */
-  .dm-sim-fee { position: absolute; left: -4px; bottom: 16px; width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--primary-line); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-line) 20%, transparent); opacity: 0; animation: dm-sim-fee 1.2s var(--ease-enter); }
-  @keyframes dm-sim-fee {
-    0% { opacity: 0; translate: 0 0; }
-    20% { opacity: 1; }
-    100% { opacity: 0; translate: 0 -64px; }
+  @media (min-width: 1100px) {
+    .dm-learn-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: auto auto 1fr; gap: 0 1rem; }
+    .dm-learn-step { padding: 1.25rem; }
+    .dm-learn-step:not(:last-child)::after { display: block; top: 2.375rem; left: 100%; width: 1rem; height: 0; border-left: 0; border-top: 1px dashed var(--border-strong); }
   }
-
-  /* The two answers: earning or not (with the trades that paid), and what the position holds. */
-  .dm-sim-side { display: grid; gap: 12px; min-width: 0; }
-  .dm-sim-tile { padding: 16px; }
-  .dm-sim-text { margin-top: 10px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
-  .dm-sim-paid { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-sim-coin { width: 8px; height: 8px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--fg-faint); }
-  [data-sim-earning="yes"] .dm-sim-coin { background: var(--primary-line); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-line) 20%, transparent); }
-  .dm-sim-label { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-sim-split { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
-  .dm-sim-token { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .dm-sim-pct { font-size: 22px; line-height: 28px; font-weight: 500; letter-spacing: -0.4px; color: var(--fg); }
-  .dm-sim-sym { font-size: 13px; line-height: 18px; color: var(--fg-subtle); }
-  /* The split as a bar, 2px apart; it follows the price at once, and a share of 0 folds its segment away. */
-  .dm-sim-bar { display: flex; gap: 2px; height: 8px; margin-top: 14px; }
-  .dm-sim-bar > span { flex: 0 1 0; min-width: 0; border-radius: var(--radius-pill); }
-  .dm-sim-bar > [data-empty] { display: none; }
-  .dm-sim-bar > [data-tone="eth"] { background: var(--primary-line); }
-  .dm-sim-bar > [data-tone="usdg"] { background: var(--fg-faint); }
-  .dm-sim-auto { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
-  .dm-sim-auto > b { font-weight: 500; color: var(--fg); white-space: nowrap; }
-  @media (min-width: 640px) {
-    .dm-sim-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
-  @media (min-width: 768px) {
-    .dm-sim { padding: 32px; }
-    .dm-sim-lede { font-size: 15px; line-height: 22px; }
-    .dm-sim-tile { padding: 20px; }
-    .dm-sim-stage { --h: 200px; }
-  }
-  /* Beside the picture on a laptop, the two answers stacked, level with its foot. */
-  @media (min-width: 1024px) {
-    .dm-sim-grid { grid-template-columns: minmax(0, 1fr) 340px; align-items: end; gap: 40px; }
-    .dm-sim-side { grid-template-columns: none; }
-    .dm-sim-stage { --h: 232px; }
-  }
+  .dm-learn-start { margin-top: 1.25rem; color: var(--primary-ink); }
 
   /* ---- What Domino does not do (§7.1-7): four calm tiles with icons ---------------------------------------- */
-  .dm-limits { padding: 20px 16px 16px; }
-  .dm-limits-grid { display: grid; gap: 12px; margin-top: 20px; }
-  .dm-limit { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 16px; padding: 16px; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-limit .dm-subtitle { padding-top: 6px; }
+  .dm-limits { padding: 1.25rem 1rem 1rem; }
+  .dm-limits-grid { display: grid; gap: 0.75rem; margin-top: 1.25rem; }
+  .dm-limit { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr); gap: 1rem; padding: 1rem; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-limit .dm-subtitle { padding-top: 0.375rem; }
   /* On a phone the four tiles become calm rows between hairlines inside the one card, so the words get the width. */
   @media (max-width: 767px) {
-    .dm-limits-grid { gap: 0; margin-top: 12px; }
-    .dm-limit { padding: 16px 0; border-radius: 0; background: none; box-shadow: none; border-top: 1px solid var(--border); }
+    .dm-limits-grid { gap: 0; margin-top: 0.75rem; }
+    .dm-limit { padding: 1rem 0; border-radius: 0; background: none; box-shadow: none; border-top: 1px solid var(--border); }
     .dm-limit:first-child { border-top: 0; }
-    .dm-limit:last-child { padding-bottom: 4px; }
+    .dm-limit:last-child { padding-bottom: 0.25rem; }
   }
-  .dm-limit-body { margin-top: 4px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-limit-body { margin-top: 0.25rem; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
   @media (min-width: 768px) {
-    .dm-limits { padding: 32px; }
-    .dm-limits-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
-    .dm-limit { padding: 20px; }
+    .dm-limits { padding: 2rem; }
+    .dm-limits-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+    .dm-limit { padding: 1.25rem; }
   }
 }

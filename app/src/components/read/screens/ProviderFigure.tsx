@@ -33,8 +33,8 @@ export function ProviderFigure({ label, figure, full = false, dash = false }: { 
   return (
     <div className="grid min-w-0 gap-0.5" data-provider-figure={figure.state} data-provider={figure.provider} title={provenance.long}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <span className="text-[13px] leading-[18px] text-fg-muted">{label}</span>
-        <span className={cx('tnum text-[13px] leading-[18px]', valued ? 'font-medium text-fg' : 'text-fg-subtle')}>
+        <span className="text-[0.8125rem] leading-[1.125rem] text-fg-muted">{label}</span>
+        <span className={cx('tnum text-[0.8125rem] leading-[1.125rem]', valued ? 'font-medium text-fg' : 'text-fg-subtle')}>
           {valued || !dash ? VALUE_TEXT(figure) : '—'}
         </span>
       </div>

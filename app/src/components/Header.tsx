@@ -28,9 +28,9 @@ function DisabledConnect({ title }: { title: string }) {
 }
 
 /** The mark stands upright with nothing behind it, and never moves. */
-function Wordmark() {
+function Wordmark({ home }: { home: boolean }) {
   return (
-    <a href="#/" className="dm-wordmark" aria-label="Domino, home">
+    <a href="#/" className="dm-wordmark" aria-label="Domino, home" aria-current={home ? 'page' : undefined}>
       <BrandMark width={16} height={28} />
       <span className="dm-wordmark-text">
         domino<span className="dm-wordmark-dot">.</span>
@@ -94,7 +94,7 @@ function NavPill({ page }: { page: Page }) {
   }, [lit])
 
   return (
-    <nav ref={nav} aria-label="Main" className="dm-nav">
+    <nav ref={nav} aria-label="Main" className="dm-nav" data-home={page === 'overview' ? '' : undefined}>
       <span ref={indicator} aria-hidden="true" className="dm-nav-indicator" />
       {PRIMARY_NAV.map(({ label, href, icon: Icon }, index) => (
         <a key={label} href={href} aria-current={index === lit ? 'page' : undefined} className="dm-nav-item">
@@ -111,7 +111,7 @@ export function Header({ page }: { page: Page }) {
   return (
     <header className="dm-header" data-scrolled={scrolled ? '' : undefined}>
       <div className="dm-header-row">
-        <Wordmark />
+        <Wordmark home={page === 'overview'} />
 
         <NavPill page={page} />
 

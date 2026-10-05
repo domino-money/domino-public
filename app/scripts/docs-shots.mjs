@@ -17,7 +17,7 @@
  * Re-run it after any change to a screen the docs show, and on the integrated tree before every preview, so the
  * pictures show the screens that ship. From app/:
  *
- *   rm -rf dist && npm run build && rm -rf .wallet-test-dist && npm run build:wallet-test && npm run build:unit && node scripts/docs-shots.mjs
+ *   npm run build -- --configLoader runner && npm run build:wallet-test-v2 -- --configLoader runner && npm run build:unit && node scripts/docs-shots.mjs --offline
  *
  * then `npm test` (tests/docs.test.mjs checks that every image exists, is used, has its size and its words) and commit
  * public/docs/ with src/lib/docs/shots.ts. Options: --only <id,id> shoots some scenes and keeps the others' files and
@@ -53,11 +53,13 @@ import { chromium } from 'playwright-core';
 import { zeroAddress } from 'viem';
 import { closeBrowser } from '../tests/support/close-browser.mjs';
 import { createFakeSession } from '../tests/support/fake-session.mjs';
-import { createWalletServer, WALLET_DIST } from '../tests/support/wallet-server.mjs';
+import { createWalletServer } from '../tests/support/wallet-server.mjs';
+import { WALLET_V2_DIST as WALLET_DIST } from '../tests/support/wallet-dist.mjs';
 import { ACCOUNTS, installWallets } from '../tests/support/mock-wallet.mjs';
 import { browserChain, routeChain } from '../tests/support/browser-chain.mjs';
 import { findForbidden } from './deploy-markers.mjs';
-import { DEPOSIT_USDG, MAIN_POOL, POOLS, POSITIONS, TOKENS, USDG, checkAnswers, createReadService, feeHistory, poolNamed, rawOf } from './docs-world.mjs';
+import { DEPOSIT_USDG, MAIN_POOL, POOLS, POSITIONS, TOKENS, USDG, checkAnswers, createReadService, poolNamed, rawOf } from './docs-world.mjs';
+import { ledgerWorld } from '../tests/support/fees/ledger-world.mjs';
 import * as executionRuntime from '../../api-contracts/execution-v1/runtime.mjs';
 import * as performanceRuntime from '../../api-contracts/performance-v2/runtime.mjs';
 
@@ -104,8 +106,12 @@ const INK = 3;
  * The script's own stylesheet, served only by its server and linked into every page it shoots: the test build's
  * banner is taken away, the page's background is its plain colour (its top glow would show as a band once the
  * picture is framed), and nothing is caught mid-transition or with a caret. Nothing else of a screen is restyled.
+ * Changed on purpose 2026-10-03 (the owner: the site looks too big at 100%): the site draws a tablet at 0.9 of its
+ * design (styles/tokens.css, the root's font-size); the pictures keep the design's own size, the root at 16 px, so every
+ * block is still BLOCK wide and every picture WIDTH pixels.
  */
 const SHOT_CSS = `[data-build-banner] { display: none !important; }
+html { font-size: 16px !important; }
 html, body { background: var(--bg) !important; }
 *, *::before, *::after { transition: none !important; caret-color: transparent !important; }
 html { scrollbar-width: none; }
@@ -125,35 +131,45 @@ const feesOf = ({ fees }) => fees.map((text, i) => rawOf(text, i === 0 ? 18 : TO
 /**
  * The wallet's positions (docs-world.mjs POSITIONS): an Auto-compound one in ETH/USDG 0.30% (its fees history is the
  * world's, so its page has Your APR), a plain one in ETH/USDG 0.05%, and one closed.
+ *
+ * Only a scene marked `feesHistory` builds a position ledger, with a recorded fixture mint and exact unsettled fees.
+ * The current edge handlers derive the history and APR from it. Other scenes need only pool state and positions.
  */
-function world() {
-  const history = feeHistory({ tokenId: IDS.compound, owner: OWNER });
+const NO_HISTORY_HEAD = 85_000_000;
+function world(scene) {
+  if (!scene.feesHistory) {
+    const { compound, plain } = POSITIONS;
+    return browserChain({
+      head: NO_HISTORY_HEAD,
+      timestamp: Math.floor(Date.now() / 1000),
+      positions: [
+        { tokenId: IDS.compound, holder: OWNER, key: MAIN_POOL.key, tickLower: compound.tickLower, tickUpper: compound.tickUpper, liquidity: compound.liquidity, unclaimed: feesOf(compound), subscriber: VAULT, mintBlock: NO_HISTORY_HEAD - 1_500_000 },
+        { tokenId: IDS.plain, holder: OWNER, key: LOW.key, tickLower: plain.tickLower, tickUpper: plain.tickUpper, liquidity: plain.liquidity, unclaimed: feesOf(plain), mintBlock: NO_HISTORY_HEAD - 180_000 },
+        { tokenId: IDS.closed, holder: OWNER, key: MAIN_POOL.key, tickLower: -199_800, tickUpper: -196_200, liquidity: 0n, unclaimed: [0n, 0n], mintBlock: NO_HISTORY_HEAD - 1_400_000 },
+      ],
+      pools: Object.fromEntries(POOLS.map((pool) => [pool.poolId, { sqrtPriceX96: pool.sqrtPriceX96, tick: pool.tick }])),
+      tokens: Object.fromEntries(Object.entries(TOKENS).filter(([address]) => address !== zeroAddress)),
+      vaults: { [VAULT]: { root: IDS.compound, feeBps: 200, paused: false, valid: true } },
+    });
+  }
   const { compound, plain } = POSITIONS;
-  const chain = browserChain({
-    head: history.head,
-    timestamp: history.timestamp,
-    positions: [
-      { tokenId: IDS.compound, holder: OWNER, key: MAIN_POOL.key, tickLower: compound.tickLower, tickUpper: compound.tickUpper, liquidity: compound.liquidity, unclaimed: history.unclaimed, subscriber: VAULT, mintBlock: history.mintBlock },
-      { tokenId: IDS.plain, holder: OWNER, key: LOW.key, tickLower: plain.tickLower, tickUpper: plain.tickUpper, liquidity: plain.liquidity, unclaimed: feesOf(plain), mintBlock: history.head - 180_000 },
-      { tokenId: IDS.closed, holder: OWNER, key: MAIN_POOL.key, tickLower: -199_800, tickUpper: -196_200, liquidity: 0n, unclaimed: [0n, 0n], mintBlock: history.mintBlock + 90_000 },
-    ],
-    pools: {
-      [MAIN_POOL.poolId]: { sqrtPriceX96: history.sqrtPriceX96, tick: history.tick },
-      ...Object.fromEntries(POOLS.filter((pool) => pool !== MAIN_POOL).map((pool) => [pool.poolId, { sqrtPriceX96: pool.sqrtPriceX96, tick: pool.tick }])),
-    },
+  // The current ledger reader checks this fixture's mint and unclaimed fees through the real edge handlers.
+  // No retired pool-wide replay, prewritten APR or fabricated chart is injected into the page.
+  const { chain } = ledgerWorld({
+    tokenId: BigInt(IDS.compound), holder: OWNER, vault: VAULT,
+    key: MAIN_POOL.key,
+    range: [compound.tickLower, compound.tickUpper],
+    price: { sqrtPriceX96: MAIN_POOL.sqrtPriceX96, tick: MAIN_POOL.tick },
+    head: NO_HISTORY_HEAD, now: Math.floor(Date.now() / 1000),
+    mint: { block: NO_HISTORY_HEAD - 6_048_000, liquidity: compound.liquidity },
+    steps: [], unclaimed: feesOf(compound),
     tokens: Object.fromEntries(Object.entries(TOKENS).filter(([address]) => address !== zeroAddress)),
-    vaults: { [VAULT]: { root: IDS.compound, feeBps: 200, paused: false, valid: true } },
-    history: history.logs,
+    extraPositions: [
+      { tokenId: IDS.plain, holder: OWNER, key: LOW.key, tickLower: plain.tickLower, tickUpper: plain.tickUpper, liquidity: plain.liquidity, unclaimed: feesOf(plain), mintBlock: NO_HISTORY_HEAD - 180_000 },
+      { tokenId: IDS.closed, holder: OWNER, key: MAIN_POOL.key, tickLower: -199_800, tickUpper: -196_200, liquidity: 0n, unclaimed: [0n, 0n], mintBlock: NO_HISTORY_HEAD - 1_400_000 },
+    ],
   });
-  // The chain's clock: every block has its own time (browserChain gives them all the head's), so the history has hours.
-  const fetch = chain.fetch;
-  chain.fetch = async (url, init) => {
-    const body = JSON.parse(init.body);
-    const calls = Array.isArray(body) ? body : [body];
-    if (!calls.every((call) => call.method === 'eth_getBlockByNumber')) return fetch(url, init);
-    const replies = calls.map((call) => ({ jsonrpc: '2.0', id: call.id, result: history.header(Number(call.params[0])) }));
-    return new Response(JSON.stringify(Array.isArray(body) ? replies : replies[0]), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  };
+  Object.assign(chain.pools, Object.fromEntries(POOLS.filter((pool) => pool !== MAIN_POOL).map((pool) => [pool.poolId, { sqrtPriceX96: pool.sqrtPriceX96, tick: pool.tick }])));
   return chain;
 }
 
@@ -274,8 +290,10 @@ async function openScene(browser, scene, phone) {
     refused.add(new URL(url).host);
     return route.abort('blockedbyclient');
   });
-  await routeChain(context, world());
+  await routeChain(context, world(scene));
   await installWallets(context);
+  // The same preview-only origin gate as the V2 browser suites; no live deployment or execution is enabled.
+  await context.addInitScript(() => { window.__dominoV2Test = { originOpen: true }; });
   // Round 6 (2026-09-27): Your positions measures each row's Your APR itself (components/positions/listApr.ts), which a
   // test build does only when asked before the page loads, as the site always does.
   if (scene.listApr) await context.addInitScript(() => { window.__dominoListApr = true; });
@@ -381,7 +399,8 @@ async function poolRowsRead(page, rows) {
  * moving one edge to another item's; the block must be the content column's width (BLOCK). `build` is the build it
  * is shot in: 'site' (production) or 'wallet' (the wallet-test build, for a connected wallet's screens). `run` is
  * given `phone`, true in the phone's window. `alt` is the picture's plain description; the docs pages read it from
- * shots.ts, so the words travel with the picture.
+ * shots.ts, so the words travel with the picture. `feesHistory`: the scene reads the Auto-compound position's fee
+ * history (world() above).
  */
 const SCENES = [
   {
@@ -445,20 +464,17 @@ const SCENES = [
       return journeyRegion(scene);
     },
   },
-  {
-    id: 'new-review',
-    alt: 'New position, step 4: the review lists every choice, the steps your wallet asks you to sign, and the Create position button.',
-    build: 'wallet',
-    async run(scene) {
-      await toStage(scene, 'review', this.build);
-      return journeyRegion(scene);
-    },
-  },
+  // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): no 'new-review' scene. It showed Domino V1's
+  // review (the deposit into Domino's Setup contract, then the mint), which New position no longer has once Domino's new
+  // contracts are live: Create position is then one transaction on them. That review runs only with those contracts
+  // live (a V2 build, and a fake V2 deployment such as tests/v2in-browser's), which neither build shot here carries, so
+  // it waits for a scene of its own; toStage still drives 'review' for one.
   {
     id: 'positions',
     alt: 'Positions: your positions, one row each, with its pair, whether the price is in range, its value, its fees ready to collect, its own APR and how its fees are used.',
     build: 'wallet',
     listApr: true,
+    feesHistory: true,
     async run({ page, go }) {
       await go('#/positions');
       await connect(page);
@@ -488,6 +504,7 @@ const SCENES = [
     id: 'position',
     alt: 'A position’s page: the pair and its state, its buttons, then what the position is worth, its fees ready to collect, its own APR and the price against its range.',
     build: 'wallet',
+    feesHistory: true,
     async run({ page, go }) {
       await go('#/positions');
       await connect(page);
@@ -809,7 +826,7 @@ export type ShotId = keyof typeof SHOTS
 }
 
 async function main() {
-  for (const [dist, command] of [[SITE_DIST, 'npm run build'], [WALLET_DIST, 'npm run build:wallet-test']]) {
+  for (const [dist, command] of [[SITE_DIST, 'npm run build'], [WALLET_DIST, 'npm run build:wallet-test-v2']]) {
     if (!existsSync(join(dist, 'index.html'))) throw new Error(`${dist} is missing: run \`${command}\` first.`);
   }
   // Every answer of the made-up world passes its contract, or nothing is shot.

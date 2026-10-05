@@ -75,6 +75,23 @@ export const ELYSIUM_STATUS: 'qualified' | 'unqualified' = 'unqualified'
 
 // ---------------------------------------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Domino V2's other chains (spec F7 §1.2): Base and Arbitrum One. Identity only: their full profiles are
+// api-contracts/v2/chains (src/v2/chains.ts, which a test holds equal to these), and the site reads neither chain itself
+// (no public RPC, the owner's rule): only the wallet's own provider and the V2 read API do. Not in REGISTRY_CHAIN_IDS:
+// V2 is off in every deployable build (src/v2/flag.ts), and V1 reads and keeps sessions exactly as before.
+// ---------------------------------------------------------------------------------------------------------------------
+
+export const BASE_ID = 8453
+export const BASE_NAME = 'Base'
+export const ARBITRUM_ID = 42161
+export const ARBITRUM_NAME = 'Arbitrum One'
+
+/** The chains Domino V2 serves, in the picker's order (spec §1.2; open point 23 leaves the launch order to the owner). */
+export const V2_CHAIN_IDS: readonly number[] = Object.freeze([ROBINHOOD_ID, BASE_ID, ARBITRUM_ID])
+
+// ---------------------------------------------------------------------------------------------------------------------
+
 /**
  * Every chain of the registry, by id (config/chains.ts CHAINS, the same order): the networks this app reads. The wallet
  * session keeps a signed-in account's session while its wallet moves between them (session/machine.ts, part B, audit

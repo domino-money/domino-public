@@ -203,7 +203,7 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
             </span>
           )}
         </div>
-        <p className="dm-pool-chart-date">{inspecting ? `${at(point.candle.startTimestamp)} · ${point.candle.swapCount} swaps` : `Latest · ${at(point.candle.startTimestamp)}`}</p>
+        <p className="dm-pool-chart-date">{inspecting ? `${at(point.candle.startTimestamp)} · ${point.candle.swapCount} swaps` : `${stale ? 'Saved' : 'Latest'} · ${at(point.candle.startTimestamp)}`}</p>
       </div>}
       {!point && reading && <div aria-hidden="true" className="dm-pool-skel-figure"><Skeleton className="dm-pool-skel-price" /><Skeleton className="dm-pool-skel-date" /></div>}
       <div className="dm-pool-chart-body" data-ratio-unit="quote_per_base">
@@ -219,7 +219,7 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
           !data ? <div className="dm-pool-plot dm-pool-plot-empty"><p className="text-body text-fg-muted">Price history is temporarily unavailable.</p></div> :
           !plot || !point || !last ? <div className="dm-pool-plot dm-pool-plot-empty"><p className="text-body text-fg-muted">{data.status === 'available' ? 'No swaps in this window.' : coverage || 'No prices to draw for this window.'}</p></div> : <>
             <div className="dm-pool-canvas">
-              <svg width="100%" height="240" viewBox={`0 0 ${plot.width} ${plot.height}`} preserveAspectRatio="none" role="slider"
+              <svg width="100%" height="15rem" viewBox={`0 0 ${plot.width} ${plot.height}`} preserveAspectRatio="none" role="slider"
                 aria-label="Inspect the pool’s price by hour" aria-valuemin={1} aria-valuemax={plot.points.length} aria-valuenow={index + 1}
                 aria-valuetext={ratioCandleText(point.candle)} tabIndex={0} className="dm-pool-chart-svg"
                 onPointerMove={inspectAt} onPointerDown={inspectAt} onPointerLeave={() => setInspected(null)}

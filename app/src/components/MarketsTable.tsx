@@ -3,7 +3,7 @@ import { catalogueTokenLabel, poolListings, type PoolCatalogueEntry, type PoolLi
 import { agedMarket, feeLabel, presentMetric, providerStale, retrievedAgeSeconds, retrievedText, type FallbackApr as Fallback, type Instant, type Market, type MarketProvenance, type Metric } from '../lib/markets'
 import { presentAprEstimate } from '../lib/read/aprEstimate'
 import { FEE_VENUE_PREFIX, feeWords } from '../lib/format/fee'
-import { featuredTitle, shortCount } from '../lib/read/featuredList'
+import { featuredTitle } from '../lib/read/featuredList'
 import { useFeatured } from '../lib/read/featuredSource'
 import { pricePair } from '../lib/read/orientation'
 import { READ_CURRENCIES } from '../lib/read/screens/featuredPools'
@@ -148,6 +148,7 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
       <span className="tnum font-medium text-fg">
         {price.text} <PoolTokenLabel token={price.quote} />
       </span>
+      {price.stale && <span className="dm-mkt-saved" data-saved-data="price">Saved price</span>}
     </span>
   )
 }
@@ -173,6 +174,13 @@ function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; 
   const tvlFigure = presentMetric(m.tvlUsd)
   const volumeFigure = presentMetric(m.volume24hUsd)
   const estimateFigure = presentAprEstimate(m.feeAprEstimate, now)
+  const savedFigures = [
+    tvlFigure.kind === 'value' && tvlFigure.stale ? 'TVL' : null,
+    volumeFigure.kind === 'value' && volumeFigure.stale ? '24h volume' : null,
+    qualified ? m.feeAprPercent.state === 'stale' ? 'APR' : null
+      : standIn ? standIn.basis === 'kept' || standIn.basis === 'selection' ? 'APR estimate' : null
+      : estimateFigure.text !== null && estimateFigure.state === 'stale' ? 'APR estimate' : null,
+  ].filter(Boolean)
   useLoadMilestone(['overview', 'markets'], 'tvl', tvlFigure.kind === 'value' ? tvlFigure.stale ? 'cached' : 'current' : null)
   useLoadMilestone(['overview', 'markets'], 'volume', volumeFigure.kind === 'value' ? volumeFigure.stale ? 'cached' : 'current' : null)
   useLoadMilestone(['overview', 'markets'], 'apr', qualified ? m.feeAprPercent.state === 'stale' ? 'cached' : 'current' : estimateFigure.text !== null ? estimateFigure.state === 'stale' ? 'cached' : 'estimated' : null)
@@ -205,6 +213,7 @@ function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; 
               {feeWords(feeLabel(m))}
             </Chip>
             {pinned && <PinnedChip />}
+            {savedFigures.length > 0 && <span className="dm-mkt-saved" data-saved-data="figures" title={`Saved figures: ${savedFigures.join(', ')}. Open Details for their sources and times.`}>Saved figures</span>}
             {flags.map((flag) => (
               <Chip key={flag.key} className="dm-mkt-venue dm-mkt-flag" data-pool-flag={flag.key} title={flag.title}>
                 {flag.text}
@@ -322,6 +331,7 @@ function CatalogueRow({ poolId, entry, full, loading, token, pinned, standIn }: 
   // The name's title says figures are unavailable only when none stands in (fix round 1): beside stand-in figures it
   // said the opposite of the row. Each stand-in names its source and time in its own title.
   const standing = tvl !== null || volume !== null || apr !== null
+  const saved = [tvl, volume].some((metric) => metric?.state === 'stale' && metric.value !== null) || apr?.basis === 'kept' || apr?.basis === 'selection'
   return (
     <tr className="dm-mkt-row" data-pool-catalogue={poolId} data-pool-row={full ? poolId : undefined} data-row-loading={loading ? '' : undefined} onClick={(event) => followRow(event, href)}>
       <Td>
@@ -329,6 +339,7 @@ function CatalogueRow({ poolId, entry, full, loading, token, pinned, standIn }: 
           <PoolCatalogueIdentity entry={entry} />
         </a>
         {pinned && <PinnedChip />}
+        {saved && <span className="dm-mkt-saved" data-saved-data="figures">Saved figures</span>}
       </Td>
       <Td numeric col="wide">
         {loading ? <span className="dm-mkt-bubbles">{bubble('dm-mkt-bubble--price')}{bubble('dm-mkt-bubble--unit')}</span> : <FigureDash reason="Price unavailable" />}
@@ -405,7 +416,6 @@ export function MarketsTable({
   const listings = unsettled ? [] : poolListings(markets, listed ? featured.entries : null)
   const ranked = listed && featured.source === 'server'
   const title = featuredTitle(listed ? featured.source : 'bundled')
-  const short = listed && !unsettled ? shortCount(featured) : null
   const matches = full && filter ? listings.filter((listing) => matchesFilter(listing, filter)) : listings
   // Pools still without a row once the markets read has settled (still being collected, or refused): their stand-ins.
   // Not while the first read is out (every pool is rowless then, and nothing is wrong with any of them yet), nor when
@@ -476,12 +486,8 @@ export function MarketsTable({
   const said = marketsStatus(state)
   const status = diagnostics ? <ReadStatus status={said} onRetry={retry} /> : <ReadStatus status={said} quiet />
 
-  // A short list says so (audit B1, the owner's OK): "4 of 6 today", from the list's own rules, never a number written here.
-  const count = short && (
-    <span className="tnum text-caption text-fg-subtle" data-featured-count={`${short.shown}/${short.size}`} title={`Today’s list has ${short.shown} of the ${short.size} pools its rules allow: a pool leaves the list when its figures can’t be checked.`}>
-      {short.shown} of {short.size} today
-    </span>
-  )
+  // Changed on purpose 2026-10-03 (the owner): a short list no longer says "5 of 6 today" over the table. It raised a
+  // question the screen can't answer, and a list carried over from an earlier day made its "today" untrue.
   const table = (
     <TableShell
       label={title}
@@ -497,7 +503,6 @@ export function MarketsTable({
                 {refreshing ? 'Refreshing…' : 'Refresh'}
               </Button>
             )}
-            {count}
             <LinkButton href={marketsHref()} variant="ghost" size="sm">
               Find more pools
               <IconChevronRight size={14} />
@@ -570,7 +575,7 @@ export function MarketsTable({
           <tr>
             <td colSpan={6} className="text-center text-fg-subtle">
               {state.phase === 'loading' ? (
-                <Skeleton className="mx-auto h-10 max-w-[480px]" />
+                <Skeleton className="mx-auto h-10 max-w-[30rem]" />
               ) : state.phase === 'ready' && state.problems.length === 0 ? (
                 empty ?? <span data-empty="no-pools">{state.acquiring ? 'Pool data is being collected.' : 'No pools selected yet.'}</span>
               ) : (

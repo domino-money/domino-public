@@ -4139,6 +4139,14 @@ test('no private API path, no signing or value transfer, no markup injection, no
       // 2026-10-01 (the chain2 workstream, part B): /chains/elysium/signer.ts, the second chain's closed signer, which sends
       // exactly the draft rugged97's actions service prepared, once (tests/elysium-signer.test.mjs).
       if (pattern.source.startsWith('eth_sendTransaction') && ['/finance/wallet.ts', '/finance/setup.ts', '/finance/sequence.ts', '/finance/position.ts', '/finance/batch.ts', '/wallet/walletConnectMethods.ts', '/chains/elysium/signer.ts'].some(suffix => file.replace(/\\/g, '/').endsWith(suffix))) continue;
+      // Changed on purpose (data) 2026-10-02 (Domino V2, spec F7 §1.8, D15): the closed V2 modules join, held to their own
+      // narrower lists in tests/session.source-guard.test.mjs: finance/v2/typedData.ts (the one EIP-712 signer) and the
+      // shared sender and the three clients (transact, zap, vault, autoExit). Nothing under src/v2 is exempt.
+      // Changed on purpose (data) 2026-10-02 (Domino V2 PHASE B, B5 S2): finance/v2/crosschain.ts, the closed sender of a
+      // deposit's approval and deposit on its origin chain, joins them, held to its own list in the same guard.
+      // Changed on purpose (data) 2026-10-02 (Domino V2 S1, B2.4): finance/v2/direct.ts joins, the owner's direct exit at
+      // Uniswap's own position manager (spec F7 §2.6.4), held to the same list in tests/session.source-guard.test.mjs.
+      if (pattern.source.startsWith('eth_sendTransaction') && /\/finance\/v2\/(typedData|transact|zap|vault|autoExit|crosschain|direct)\.ts$/.test(file.replace(/\\/g, '/'))) continue;
       if (pattern.test(code)) found.push(`${file.slice(SRC.length)}: ${pattern}`);
     }
   }

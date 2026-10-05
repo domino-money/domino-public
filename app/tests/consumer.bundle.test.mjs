@@ -63,6 +63,8 @@ const ONBOARDING_MARKERS = [
 // runtime is used by both consumers. Admit these in Setup and lazy onboarding closures, never the entry;
 // deposit-specific markers above still require Setup's exclusive closure.
 const SHARED_CODE_MARKERS = ['preview_expired'];
+/** 2026-10-04 (the owner: the site runs on Domino V2): V2's lazy roots in the deployed build (src/v2in), and the viem chunks only they load. */
+const V2_ROOTS = /^(NewPositionV2|PoolAdvanced|PositionV2Actions|PositionAutomation|PositionPage|ManagedVaults|OwnedRows|Receipts|SetupEntry|AutomateProtection|FundsAmounts|MandateDialog|PositionDialog|VaultDialog|actions|ccip|secp256k1)-/;
 // The labs, their synthetic catalogue and fixtures, and the lab's own wording: never in the build that deploys.
 const CONSUMER_MARKERS = [
   'position-preview.native',
@@ -164,7 +166,12 @@ function productionClosures() {
   // (tests/session.bundle.test.mjs measures it, with its own ceiling).
   // 2026-10-02 (rugged97's spec rev3 §2.13): the fees waiting in a vault (FeeReserves), a lazy root Positions and a
   // position's page open, like the position actions (tests/session.bundle.test.mjs measures it with the financial screens).
-  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits|FeeReserves|feesReplay\.worker|chainCode|Explore|PoolDetail|Positions|NewPosition|Automate|Docs|walletConnectProvider|ElysiumEntry)-/.test(file));
+  // 2026-10-03 (the owner's point 10): the price range chart (PriceVsRange), a lazy root only a position's page opens
+  // (tests/session.bundle.test.mjs measures it with its own ceiling).
+  // 2026-10-04 (the owner: the site runs on Domino V2): V2's own screens, lazy roots V1's screens open behind the bare
+  // __DOMINO_V2__ define, and the viem chunks only they load (tests/session.bundle.test.mjs measures them as one family).
+  const v2Roots = scripts.filter((file) => V2_ROOTS.test(file));
+  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits|FeeReserves|PriceVsRange|feesReplay\.worker|chainCode|Explore|PoolDetail|Positions|NewPosition|Automate|Docs|walletConnectProvider|ElysiumEntry)-/.test(file) || V2_ROOTS.test(file));
   const shared = reach([...entry, ...otherRoots]);
   const setupClosure = reach(setup);
   assert.ok(!shared.has(setup[0]), 'Setup must not be loaded statically by the entry or another screen');
@@ -189,7 +196,10 @@ function productionClosures() {
   assert.ok(openers.length > 0 && openers.every((file) => !entryClosure.has(file)), `a lazy screen opens Create position through a dynamic import: ${openers.join(', ')}`);
   const onboardingAdmitted = new Set([...setupClosure, ...amountsClosure].filter((file) => !entryClosure.has(file)));
   const setupOnly = new Set([...setupClosure].filter((file) => !shared.has(file)));
-  const sharedCodeAdmitted = new Set([...setupOnly, ...onboardingAdmitted]);
+  // 2026-10-04 (the owner: the site runs on Domino V2): V2's lazy closures say the same expiry code (a plan's or a quote's),
+  // and stay out of the entry like the deposit and onboarding closures.
+  const v2Closure = new Set([...reach(v2Roots)].filter((file) => !entryClosure.has(file)));
+  const sharedCodeAdmitted = new Set([...setupOnly, ...onboardingAdmitted, ...v2Closure]);
   return { setupOnly, setupClosure, amountsClosure, onboardingAdmitted, sharedCodeAdmitted };
 }
 

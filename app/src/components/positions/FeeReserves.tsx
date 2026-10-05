@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import type { Address, Hex } from 'viem'
 import { personRefused } from '../../finance/nonce'
 import { settleStep } from '../../finance/receiptWait'
@@ -31,12 +30,11 @@ import { formatUnits } from '../../lib/read/decimal'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import { whenVisibleAfter } from '../../lib/read/screens/quietRead'
 import { readWithin } from '../../lib/read/screens/screenRead'
-import { useDialog } from '../../lib/useDialog'
 import { useWalletIdentity, walletKey } from '../../lib/walletIdentity'
-import { IconClose } from '../icons'
 import { CopyButton } from '../read/screens/CopyButton'
-import { Button, IconButton, KeyValue, KeyValueList, Skeleton } from '../ui'
-import { QuietMarkPair } from './visual/QuietMarks'
+import { Button, Skeleton } from '../ui'
+import { ActionSheet, SheetAlert, SheetCard, SheetFact, SheetFacts, SheetNote, SheetStatus, TokenRow, TokenRows } from './ActionSheet'
+import { QuietMark, QuietMarkPair } from './visual/QuietMarks'
 import { amountText, outcomeUnknown, readAfterReplaced, RECEIPT_EVERY_MS, RECEIPT_WAIT_MS } from './walletSteps'
 
 /*
@@ -80,7 +78,7 @@ export interface FeeReservesProps {
 
 /** The owner's words (rugged97's spec rev3 §5.6, approved by the owner). */
 const RESERVES_LEDE = 'Fees the automation collected and had not reinvested yet. They’re yours: withdrawing charges no Domino fee.'
-const TITLE = 'Fees waiting in your vault'
+const TITLE = 'Fees waiting in your automation'
 const ACTION = 'Withdraw to wallet'
 const NATIVE = '0x0000000000000000000000000000000000000000'
 /** After this many reads in a row that failed, the card says so quietly when it has nothing else to show. */
@@ -117,7 +115,7 @@ const PROGRESS: Partial<Record<Stage, string>> = { wallet: 'Confirm in your wall
 const CHANGED = 'The amounts changed since you opened this. Check them, then press again.'
 /** Said in this card's own words; any other code goes through finance/words.ts. */
 const OWN: Readonly<Record<string, string>> = {
-  empty: 'Nothing is waiting in this vault now.',
+  empty: 'Nothing is waiting in this automation now.',
   fee_reserve_insufficient: CHANGED,
   invalid_fee_withdrawal: CHANGED,
   sequence_preparation_changed: CHANGED,
@@ -126,19 +124,19 @@ const OWN: Readonly<Record<string, string>> = {
   gas_budget_exceeded: 'This withdrawal needs more gas than expected. Nothing was sent. Try again in a moment.',
   wallet_identity_changed: 'Your wallet account or network changed. Nothing was sent.',
   connect_robinhood_wallet: 'Connect your wallet on Robinhood Chain first.',
-  sequence_admission_unavailable: 'Your vault can’t be checked on this page right now. Nothing was sent: your fees stay in your vault.',
-  sequence_step_reverted: 'The withdrawal reverted on chain. Your fees are still in your vault; only network gas was spent.',
+  sequence_admission_unavailable: 'Your automation can’t be checked on this page right now. Nothing was sent: your fees stay in your automation.',
+  sequence_step_reverted: 'The withdrawal reverted on chain. Your fees are still in your automation; only network gas was spent.',
   sequence_step_reorged: 'The block that held the withdrawal left the chain. Check your wallet activity before trying again.',
   sequence_receipt_waiting: 'The withdrawal is still waiting to be included. Check your wallet activity: nothing is sent twice.',
   reserve_withdrawal_replaced:
-    'Your wallet replaced the withdrawal with another transaction. Your vault shows no record of paying these fees, so the outcome is unknown. Check your wallet activity before trying again: your vault is read first, and nothing is sent twice.',
+    'Your wallet replaced the withdrawal with another transaction. Your automation shows no record of paying these fees, so the outcome is unknown. Check your wallet activity before trying again: your automation is read first, and nothing is sent twice.',
   batch_already_offered: 'A withdrawal of these fees is already waiting in your wallet. Check your wallet activity: nothing is sent twice.',
   batch_upgrade_declined: 'You declined turning on your wallet’s smart account. Nothing was sent.',
   batch_simulation_reverted: 'The withdrawal would fail on chain now. Nothing was sent. Try again in a moment.',
   batch_coordination_unavailable: 'This browser cannot keep track of a batch here. Nothing was sent.',
-  reserve_batch_dropped: 'Your wallet did not include the withdrawal. Your fees are still in your vault. Press Withdraw in wallet again.',
-  reserve_batch_reverted: 'The withdrawal reverted on chain. Your fees are still in your vault; only network gas was spent.',
-  reserve_batch_unknown: 'The withdrawal’s outcome could not be read. Check your wallet activity before trying again: your vault is read first, and nothing is sent twice.',
+  reserve_batch_dropped: 'Your wallet did not include the withdrawal. Your fees are still in your automation. Press Withdraw in wallet again.',
+  reserve_batch_reverted: 'The withdrawal reverted on chain. Your fees are still in your automation; only network gas was spent.',
+  reserve_batch_unknown: 'The withdrawal’s outcome could not be read. Check your wallet activity before trying again: your automation is read first, and nothing is sent twice.',
   reserve_batch_waiting: 'The withdrawal is still waiting to be included. Check your wallet activity: nothing is sent twice.',
   review_required: 'The review expired before it reached your wallet. Nothing was sent. Press Withdraw in wallet again.',
   wallet_review_expired: 'The review expired before it reached your wallet. Nothing was sent. Press Withdraw in wallet again.',
@@ -157,7 +155,7 @@ const BEFORE_WALLET = new Set([
 /** Once a press sent anything, no sentence may claim that nothing was sent: such a clause is left out. */
 const NOTHING = / ?(?:No (?:wallet )?transaction|Nothing) was \w+(?:[^.]*)\./g
 /** Said after any failure of a press that already put part of the fees in the wallet. */
-const PART = 'The fees withdrawn before this are in your wallet; the rest stays in your vault.'
+const PART = 'The fees withdrawn before this are in your wallet; the rest stays in your automation.'
 
 /** A failure while a step was offered to the wallet, kept apart from the reads and the preparation before it. */
 class Offered extends Error {
@@ -182,7 +180,7 @@ function noticeFor(error: unknown, sent: boolean, landed: number): Notice {
   else if (sent) text = outcomeUnknown('withdrawal')
   else if (offered && (code === null || !BEFORE_WALLET.has(code)))
     text = 'Your wallet may or may not have sent it. Check your wallet activity before trying again. This step won’t be offered twice, even after a reload.'
-  else text = financeErrorText(code, 'Your vault could not be read just now. Nothing was sent. Try again in a moment.', 'Withdraw to wallet')
+  else text = financeErrorText(code, 'Your automation could not be read just now. Nothing was sent. Try again in a moment.', 'Withdraw to wallet')
   if (landed > 0) text = `${text.replace(NOTHING, '').trim()} ${PART}`.trim()
   return { text, code: declined ? 'declined' : code }
 }
@@ -406,8 +404,23 @@ function useReserves(owner: string | null, vault: string | undefined): ReservesV
 
 /* ---- The dialog ---- */
 
+/** The amounts as token rows (ActionSheet.tsx): each token's quiet mark (from its address, no request), then its amount. */
+function AmountRows({ totals, names, size = 'lg' }: { totals: readonly ReserveTotal[]; names: ReadonlyMap<string, TokenName>; size?: 'lg' | 'sm' }) {
+  return (
+    <TokenRows size={size}>
+      {totals.map((total) => (
+        <TokenRow key={total.currency} mark={<QuietMark address={total.currency} size={size === 'lg' ? 28 : 16} />} amount={<Amount amount={total.amount} currency={total.currency} names={names} />} />
+      ))}
+    </TokenRows>
+  )
+}
+
+/**
+ * Changed on purpose 2026-10-03 (the owner, point 9: the position dialogs were "literally ugly"): the position actions'
+ * family (ActionSheet.tsx): what comes back as token rows in a card, the fees as quiet facts, the wallet's plan, the step
+ * in progress and a failure as their own lines, one button. The same figures, words and hooks as before.
+ */
 function WithdrawDialog({ run, names, onClose, onConfirm }: { run: Run; names: ReadonlyMap<string, TokenName>; onClose: () => void; onConfirm: () => void }) {
-  const dialog = useDialog(true, onClose)
   const { stage, review } = run
   const busy = stage === 'reading' || stage === 'wallet' || stage === 'chain'
   const done = stage === 'done'
@@ -418,110 +431,89 @@ function WithdrawDialog({ run, names, onClose, onConfirm }: { run: Run; names: R
   const canSend = review !== null && shown && (stage === 'ready' || stage === 'failed')
   const progress = PROGRESS[stage]
   const step = review?.plan === 'steps' && count > 1 && (stage === 'wallet' || stage === 'chain') ? ` (${run.at + 1} of ${count})` : ''
-  return createPortal(
-    <div role="presentation" className="dm-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="reserves-dialog-title" className="dm-dialog dm-flow-dialog" data-reserves-dialog={stage}>
-        <div className="dm-flow-dialog-head">
-          <h2 id="reserves-dialog-title" tabIndex={-1} className="dm-dialog-title outline-none">
-            {done ? 'Returned to your wallet' : ACTION}
-          </h2>
-          <IconButton label="Close" icon={<IconClose />} variant="ghost" size="sm" className="dm-dialog-close" onClick={onClose} />
-        </div>
-        <div className="dm-flow-dialog-body grid gap-3">
-          {done ? (
-            <>
-              <p className="dm-receipt-lede">These fees are in your wallet now. No Domino fee was taken.</p>
-              <KeyValueList className="dm-receipt" data-reserves-receipt="">
-                <KeyValue label="You received">
-                  <span className="dm-receipt-pair">
-                    {run.received.map((total) => (
-                      <Amount key={total.currency} amount={total.amount} currency={total.currency} names={names} />
-                    ))}
+  return (
+    <ActionSheet
+      id="reserves-dialog"
+      title={done ? 'Returned to your wallet' : ACTION}
+      lede={done ? 'These fees are in your wallet now. No Domino fee was taken.' : RESERVES_LEDE}
+      onClose={onClose}
+      data-reserves-dialog={stage}
+      footer={
+        done ? (
+          <Button type="button" variant="secondary" size="lg" onClick={onClose}>
+            Done
+          </Button>
+        ) : (
+          <Button type="button" variant="primary" size="lg" disabled={!canSend} aria-busy={busy || undefined} data-reserves-send={run.vault} onClick={onConfirm}>
+            Withdraw in wallet
+          </Button>
+        )
+      }
+    >
+      {done ? (
+        <div className="dm-pa-field" data-reserves-receipt="">
+          <SheetCard caption="You received">
+            <AmountRows totals={run.received} names={names} />
+          </SheetCard>
+          <SheetFacts>
+            <SheetFact label="Domino fee">None</SheetFact>
+            {run.hashes.map((hash, index) => (
+              <SheetFact key={hash} label={run.hashes.length > 1 ? `Transaction ${index + 1}` : 'Transaction'} data-reserves-transaction={hash}>
+                <span className="dm-pa-pair-name">
+                  <span className="dm-hex" title={hash} translate="no">
+                    {shortAddress(hash)}
                   </span>
-                </KeyValue>
-                <KeyValue label="Domino fee">None</KeyValue>
-                {run.hashes.map((hash, index) => (
-                  <KeyValue
-                    key={hash}
-                    label={run.hashes.length > 1 ? `Transaction ${index + 1}` : 'Transaction'}
-                    action={<CopyButton value={hash} label="Copy transaction hash" />}
-                    data-reserves-transaction={hash}
-                  >
-                    <span className="dm-hex" title={hash} translate="no">
-                      {shortAddress(hash)}
-                    </span>
-                  </KeyValue>
-                ))}
-              </KeyValueList>
-            </>
-          ) : (
-            <>
-              <p className="dm-receipt-lede">{RESERVES_LEDE}</p>
-              <KeyValueList className="dm-receipt" data-reserves-review="">
-                <KeyValue label="You receive">
-                  {review ? (
-                    <span className="dm-receipt-pair">
-                      {review.totals.map((total) => (
-                        <Amount key={total.currency} amount={total.amount} currency={total.currency} names={names} />
-                      ))}
-                    </span>
-                  ) : stage === 'failed' ? (
-                    <span title={run.notice?.text}>—</span>
-                  ) : (
-                    <Skeleton className="dm-receipt-skel" />
-                  )}
-                </KeyValue>
-                <KeyValue label="Domino fee">None</KeyValue>
-                <KeyValue label="Network fee" data-reserves-network-fee="">
-                  {fee ? (
-                    <span className="tnum" title={`${fee.exact} ETH at most${review?.plan === 'steps' && count > 1 ? ' for each transaction' : ''}`}>
-                      Up to {fee.text} ETH{review?.plan === 'steps' && count > 1 ? ' each' : ''}
-                    </span>
-                  ) : stage === 'failed' ? (
-                    <span title={run.notice?.text}>—</span>
-                  ) : (
-                    <Skeleton className="ml-auto h-4 w-20" />
-                  )}
-                </KeyValue>
-              </KeyValueList>
-              {review && review.plan === 'steps' && count > 1 && (
-                <p className="text-body text-fg-muted" data-reserves-steps={count}>
-                  Your wallet asks you to confirm {count} transactions, one after the other: the vault pays each balance on its own.
-                </p>
-              )}
-              {review?.plan === 'batch' && (
-                <p className="text-body text-fg-muted" data-reserves-batch="">
-                  One signature in your wallet: everything comes back together, or nothing does.
-                </p>
-              )}
-            </>
-          )}
-          {progress && (
-            <p role="status" className="text-body font-medium text-fg" data-reserves-progress={stage}>
-              {progress}
-              {step}
-            </p>
-          )}
-          {run.notice && (
-            <p role="alert" className="text-body text-fg-muted" data-reserves-notice={run.notice.code ?? 'said'}>
-              {run.notice.text}
-            </p>
-          )}
+                  <CopyButton value={hash} label="Copy transaction hash" />
+                </span>
+              </SheetFact>
+            ))}
+          </SheetFacts>
         </div>
-        <div className="dm-flow-dialog-foot">
-          {done ? (
-            <Button type="button" variant="outline" size="lg" className="w-full" onClick={onClose}>
-              Done
-            </Button>
-          ) : (
-            <Button type="button" variant="primary" size="lg" className="w-full" disabled={!canSend} aria-busy={busy || undefined} data-reserves-send={run.vault} onClick={onConfirm}>
-              Withdraw in wallet
-            </Button>
+      ) : (
+        <>
+          <div className="dm-pa-field" data-reserves-review="">
+            <SheetCard caption="You receive">
+              {review ? (
+                <AmountRows totals={review.totals} names={names} />
+              ) : stage === 'failed' ? (
+                <p className="dm-pa-hero" title={run.notice?.text}>
+                  —
+                </p>
+              ) : (
+                <TokenRows>
+                  <TokenRow amount={<Skeleton className="dm-receipt-skel" />} />
+                </TokenRows>
+              )}
+            </SheetCard>
+            <SheetFacts>
+              <SheetFact label="Domino fee">None</SheetFact>
+              <SheetFact label="Network fee" data-reserves-network-fee="">
+                {fee ? (
+                  <span className="tnum" title={`${fee.exact} ETH at most${review?.plan === 'steps' && count > 1 ? ' for each transaction' : ''}`}>
+                    Up to {fee.text} ETH{review?.plan === 'steps' && count > 1 ? ' each' : ''}
+                  </span>
+                ) : stage === 'failed' ? (
+                  <span title={run.notice?.text}>—</span>
+                ) : (
+                  <Skeleton className="ml-auto h-4 w-20" />
+                )}
+              </SheetFact>
+            </SheetFacts>
+          </div>
+          {review && review.plan === 'steps' && count > 1 && (
+            <SheetNote data-reserves-steps={String(count)}>Your wallet asks you to confirm {count} transactions, one after the other: your automation pays each balance on its own.</SheetNote>
           )}
-        </div>
-      </div>
-    </div>,
-    document.body,
+          {review?.plan === 'batch' && <SheetNote data-reserves-batch="">One signature in your wallet: everything comes back together, or nothing does.</SheetNote>}
+        </>
+      )}
+      {progress && (
+        <SheetStatus data-reserves-progress={stage}>
+          {progress}
+          {step}
+        </SheetStatus>
+      )}
+      {run.notice && <SheetAlert data-reserves-notice={run.notice.code ?? 'said'}>{run.notice.text}</SheetAlert>}
+    </ActionSheet>
   )
 }
 
@@ -787,7 +779,7 @@ export default function FeeReserves({ owner, placement, vault, root }: FeeReserv
           <section className="dm-card dm-acct-card dm-reserves" aria-labelledby={`reserves-title-${placement}`} data-fee-reserves-trouble={placement} data-fee-reserves-read={placement} data-fee-reserves-state={state}>
             {head}
             <p role="status" className="dm-reserves-lede">
-              Your vault couldn’t be checked for fees just now. This page asks again on its own.
+              Your automation couldn’t be checked for fees just now. This page asks again on its own.
             </p>
           </section>
         ) : (
@@ -855,12 +847,12 @@ export default function FeeReserves({ owner, placement, vault, root }: FeeReserv
         {/* Some vaults still to be looked in (findings 2, 6 and 8): one quiet line, never a button. */}
         {checking > 0 && (
           <p role="status" className="dm-reserves-more" data-reserves-checking={checking}>
-            {unread > 0 ? 'Your older vaults are still being checked…' : 'Some of your vaults couldn’t be checked just now. This page asks again on its own.'}
+            {unread > 0 ? 'Your older automations are still being checked…' : 'Some of your automations couldn’t be checked just now. This page asks again on its own.'}
           </p>
         )}
         {beyond && checking === 0 && (
           <p className="dm-reserves-more" data-reserves-beyond="">
-            Only your {RESERVE_VAULT_CAP.toLocaleString('en-US')} newest vaults are checked here.
+            Only your {RESERVE_VAULT_CAP.toLocaleString('en-US')} newest automations are checked here.
           </p>
         )}
       </section>

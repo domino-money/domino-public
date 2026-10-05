@@ -40,7 +40,7 @@ export function PoolAprEstimate({ observation, now, detailed = false, compact = 
       </span>
     )
     return (
-      <div data-apr-estimate={shown.state} data-apr-reasons={shown.reasons.join(' ') || undefined} className={cx('grid text-[13px] leading-[18px]', label ? 'gap-1.5' : 'gap-3')}>
+      <div data-apr-estimate={shown.state} data-apr-reasons={shown.reasons.join(' ') || undefined} className={cx('grid text-[0.8125rem] leading-[1.125rem]', label ? 'gap-1.5' : 'gap-3')}>
         {label ? (
           <div className="flex flex-wrap items-baseline justify-between gap-x-3">
             <span className="text-fg-muted">{label}</span>

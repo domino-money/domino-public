@@ -51,7 +51,7 @@ export function PriceSlider({
   const ring = inside || !band ? 'var(--primary-ink)' : 'var(--fg-faint)'
 
   return (
-    <div className="relative select-none pb-1 pt-[34px]">
+    <div className="relative select-none pb-1 pt-[2.125rem]">
       <div className="relative h-1 rounded-[var(--radius-pill)] bg-surface-3">
         {band && (
           <div
@@ -84,7 +84,7 @@ export function PriceSlider({
 
       {/* the value chip: the first .pointer-events-none here, placed by its inline left */}
       <div
-        className="pointer-events-none absolute top-0 flex h-[22px] -translate-x-1/2 items-center whitespace-nowrap rounded-[var(--radius-pill)] bg-surface-3 px-2 text-caption font-medium text-fg"
+        className="pointer-events-none absolute top-0 flex h-[1.375rem] -translate-x-1/2 items-center whitespace-nowrap rounded-[var(--radius-pill)] bg-surface-3 px-2 text-caption font-medium text-fg"
         style={{ left: `${pct(value)}%` }}
       >
         <span className="tnum">{format(value)}</span>
@@ -92,7 +92,7 @@ export function PriceSlider({
 
       {/* thumb: never a .pointer-events-none element (the chip stays the only one), it lets pointers through by its own class */}
       <div
-        className="dm-slider-thumb absolute top-[36px] size-5 -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-pill)] bg-card transition-[scale] duration-[var(--dur-press)] peer-hover:scale-[1.12] peer-active:scale-[1.12] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--ring)]"
+        className="dm-slider-thumb absolute top-[2.25rem] size-5 -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-pill)] bg-card transition-[scale] duration-[var(--dur-press)] peer-hover:scale-[1.12] peer-active:scale-[1.12] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--ring)]"
         style={{ left: `${pct(value)}%`, boxShadow: `inset 0 0 0 1.5px ${ring}, var(--elev-button)` }}
       />
 

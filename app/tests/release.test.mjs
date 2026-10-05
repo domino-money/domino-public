@@ -149,6 +149,25 @@ test('a dist carrying a forbidden marker is not recorded, and nothing unrecorded
   }
 });
 
+// Changed on purpose (data) 2026-10-02 (Domino V2 integration, the preview-v2 build): only the production dist is
+// releasable. A preview-v2 dist (V2 compiled in, published by hand to the preview alias) put where dist is, is never
+// recorded: its page carries the V2 build mark (vite.config.ts v2BuildMark), and its chunks V2's fixture contract sets.
+test('a preview-v2 dist put in dist is not recorded: its page\'s V2 mark and its fixture sets are refused by name', () => {
+  for (const [file, text, marker] of [
+    ['dist/index.html', '<!doctype html>\n<html data-v2-build="preview-v2" lang="en"><div id="root"></div></html>', 'V2 build'],
+    // Changed on purpose (data) 2026-10-03 (#302 merged): a fixture set is caught by its rehearsal facts, not an address.
+    ['dist/assets/gate-c3.js', 'const set={verification:{blockHash:"0xa76e0a19b5a2f32b0a030cb8b8d10ad40fbc2b0520d0982b790ebcc8e2c3eaff"}}', 'V2 fixture manifest'],
+  ]) {
+    const a = app({ ...BASE, [file]: text });
+    try {
+      assert.throws(() => record({ root: a.root, git: fakeGit(), now }), (error) => error instanceof Error && /must never ship/.test(error.message) && error.message.includes(`${file.slice('dist/'.length)}: ${marker}`), file);
+      assert.equal(existsSync(join(a.root, '.release/manifest.json')), false, 'no manifest written');
+    } finally {
+      a.done();
+    }
+  }
+});
+
 test('a checkout with uncommitted changes is not recorded, so --commit-hash always names the bytes that were built', () => {
   const a = app();
   const manifest = join(a.root, '.release/manifest.json');

@@ -1,5 +1,29 @@
 # Domino read, session, onboarding and deposit BFF candidates
 
+Domino V2 (2026-10-02, app spec F7 §2.4 and §6.2) adds two routes, both off in
+source. The read Worker (`src/worker.mjs`) serves read-v6 `1.0.0-rc.1`, one
+wallet's V2 state and receipts on three chains: `POST /api/read/v6/portfolio`
+and `/api/read/v6/activity` to the gateway's `/internal/read/v6/<route>`, and a
+local `GET /api/read/v6/capabilities`, behind `READ_V6_BRIDGE_ENABLED` and
+`ENABLED_V6_READS`, every answer held to read-v6's runtime and its
+`validateExchange`. `src/position-plan-worker.mjs` is S1's plan route,
+position-plan-v1 `1.0.0-rc.2`: `POST /api/position-plan/v1/plan` to the private
+listener's `/internal/position-plan/v1/plan` on onboarding's authenticated
+transport (session, CSRF, 8 KiB in, 384 KiB out, 20 s upstream), every plan held
+to the package's `validateResponse` (its `checkPlan` included) and to the
+request the browser sent, plus a local `GET /api/position-plan/v1/capabilities`;
+its own config is `wrangler.position-plan.toml` (`POSITION_PLAN_*`, flag
+false). `src/crosschain-worker.mjs` is S2's route (spec F7 §3.2, 2026-10-02),
+crosschain-v1 `1.0.0-rc.1`: `POST /api/crosschain/v1/origins`, `/quote` and
+`/status` to the private listener's `/internal/crosschain/v1/<route>` on the same
+authenticated transport (session, CSRF, 4 KiB in, 256 KiB out, 20 s upstream),
+every answer held to the package's runtime (the decision recomputed, the steps
+to the pinned provider contracts only, tracking that only moves forward) and to
+the request the browser sent, plus a local `GET /api/crosschain/v1/capabilities`;
+its own config is `wrangler.crosschain.toml` (`CROSSCHAIN_*`, flag false). The
+Worker never calls Relay or Across: the listener does. No frontend route is
+switched on by this source.
+
 Issue #40 adds `src/deposit-worker.mjs`, a disabled owner-signed direct-deposit
 transport with a separate `deposit-v1` contract and Access identity. It shares
 bounded authenticated transport with onboarding, preserves read/session payloads

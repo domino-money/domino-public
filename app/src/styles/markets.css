@@ -4,20 +4,19 @@
 
 @layer components {
   /* ---- Title row: the page title, and at its right the page dots and the rail's arrows (§8.1-1) ---- */
-  .dm-mkt-titlebar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 32px; }
-  .dm-mkt-lede { margin: 8px 0 0; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); }
-  .dm-mkt-nav { display: flex; align-items: center; gap: 12px; margin-left: auto; }
-  .dm-mkt-arrows { display: flex; gap: 8px; }
+  .dm-mkt-titlebar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem 2rem; }
+  .dm-mkt-nav { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; }
+  .dm-mkt-arrows { display: flex; gap: 0.5rem; }
   /* Page dots: one per view of cards; the lit one stretches into a pill (M18). Width only, so nothing else moves. */
-  .dm-mkt-dots { display: flex; align-items: center; gap: 6px; }
-  .dm-mkt-dot { width: 6px; height: 6px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--fg-faint); transition: width var(--dur-dot) var(--ease-fast); }
-  .dm-mkt-dot[data-lit] { width: 18px; background: var(--fg); }
+  .dm-mkt-dots { display: flex; align-items: center; gap: 0.375rem; }
+  .dm-mkt-dot { width: 0.375rem; height: 0.375rem; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--fg-faint); transition: width var(--dur-dot) var(--ease-fast); }
+  .dm-mkt-dot[data-lit] { width: 1.125rem; background: var(--fg); }
   /* A disabled arrow keeps its round card, quieter, so the pair reads as one control at two strengths. */
   .dm-mkt-arrows .dm-icon-btn--round:disabled { background: var(--card); box-shadow: var(--elev-card); color: var(--fg-subtle); opacity: 0.45; cursor: default; }
   .dm-mkt-dots[data-place="rail"] { display: none; }
   @media (max-width: 767px) {
     .dm-mkt-nav { display: none; }
-    .dm-mkt-dots[data-place="rail"] { display: flex; justify-content: center; margin-top: 14px; }
+    .dm-mkt-dots[data-place="rail"] { display: flex; justify-content: center; margin-top: 0.875rem; }
   }
 
   /* ---- Rail (§8.1-2): three cards a view from 1024px, two on a tablet, one and a peek on a phone, snapping per
@@ -26,14 +25,14 @@
   .dm-mkt-rail {
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: calc((100% - 32px) / 3);
-    gap: 16px;
-    margin: 18px -4px -6px;
-    padding: 6px 4px;
+    grid-auto-columns: calc((100% - 2rem) / 3);
+    gap: 1rem;
+    margin: 1.125rem -0.25rem -0.375rem;
+    padding: 0.375rem 0.25rem;
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scroll-snap-type: x mandatory;
-    scroll-padding-inline: 4px;
+    scroll-padding-inline: 0.25rem;
     scroll-behavior: smooth;
     scrollbar-width: none;
   }
@@ -41,10 +40,10 @@
   .dm-mkt-rail > * { scroll-snap-align: start; }
   html.dm-still .dm-mkt-rail { scroll-behavior: auto; }
   @media (min-width: 768px) and (max-width: 1023px) {
-    .dm-mkt-rail { grid-auto-columns: calc((100% - 16px) / 2); }
+    .dm-mkt-rail { grid-auto-columns: calc((100% - 1rem) / 2); }
   }
   @media (max-width: 767px) {
-    .dm-mkt-rail { grid-auto-columns: calc((100% - 16px) / 1.12); margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); scroll-padding-inline: var(--gutter); }
+    .dm-mkt-rail { grid-auto-columns: calc((100% - 1rem) / 1.12); margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); scroll-padding-inline: var(--gutter); }
   }
 
   /* ---- A pool card (§8.1-3): a flat card that is one link, at one fixed height whether its series is in or not, so
@@ -62,8 +61,8 @@
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
     min-width: 0;
-    height: 300px;
-    padding: 20px 20px 0;
+    height: 18.75rem;
+    padding: 1.25rem 1.25rem 0;
     border-radius: var(--radius-card);
     background-color: var(--card);
     background-image: none;
@@ -78,8 +77,8 @@
     inset: 0;
     pointer-events: none;
     background-image: radial-gradient(circle at center, var(--dot-chart) 1px, transparent 1.2px);
-    background-size: 18px 18px;
-    background-position: 9px 9px;
+    background-size: 1.125rem 1.125rem;
+    background-position: 0.5625rem 0.5625rem;
     -webkit-mask-image: linear-gradient(#000 0 22%, transparent 34%);
     mask-image: linear-gradient(#000 0 22%, transparent 34%);
   }
@@ -107,7 +106,7 @@
   @media (prefers-reduced-motion: reduce) { .dm-mkt-card.dm-plate:active { scale: 1; } }
   .dm-mkt-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
-  .dm-mkt-card-head { grid-row: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; height: 32px; }
+  .dm-mkt-card-head { grid-row: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; height: 2rem; }
   /* The chip gives way before the TVL does; inside it the fee is never cut in half (audit E2, 2026-10-01: at 768px it
      read "· Uniswap 0.3…"). The chip says "· 0.30% fee", without the exchange; a card too narrow for the pair, its fee
      and its TVL on one line (three a view at 1024px, a phone's) shows the pair whole and leaves the fee to the table
@@ -118,45 +117,45 @@
   .dm-mkt-pair > [aria-hidden="true"] { flex-shrink: 0; }
   .dm-mkt-pair-name { flex: 0 1 auto; min-width: 2.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
   .dm-mkt-pair-fee { flex: 0 0 auto; white-space: nowrap; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
-  @container (max-width: 359px) {
+  @container (max-width: 22.4375rem) {
     .dm-mkt-pair-fee { display: none; }
   }
   @media (max-width: 767px) {
     /* The phone's close is 24/28, 4px less above the plot, which keeps its 148px. */
-    .dm-mkt-card.dm-plate { height: 296px; }
-    .dm-mkt-card-head { gap: 12px; }
-    .dm-mkt-pair.dm-chip--plate { gap: 6px; padding: 6px 10px 6px 8px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; }
+    .dm-mkt-card.dm-plate { height: 18.5rem; }
+    .dm-mkt-card-head { gap: 0.75rem; }
+    .dm-mkt-pair.dm-chip--plate { gap: 0.375rem; padding: 0.375rem 0.625rem 0.375rem 0.5rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; }
   }
-  .dm-mkt-disc { display: inline-block; width: 20px; height: 20px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--surface-4); box-shadow: 0 0 0 2px var(--surface-3); }
+  .dm-mkt-disc { display: inline-block; width: 1.25rem; height: 1.25rem; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--surface-4); box-shadow: 0 0 0 2px var(--surface-3); }
   /* The TVL kicker over its figure: 14 + 18, the chip's 32px, so the head row is one height in every state. */
   .dm-mkt-card-tvl { display: grid; flex-shrink: 0; justify-items: end; text-align: right; }
-  .dm-mkt-card-figure { font-size: 16px; line-height: 18px; font-weight: 500; letter-spacing: -0.2px; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-mkt-card-figure { font-size: 1rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.2px; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
 
   /* The price row: the close (28px), its change as a pill, and the unit under both. */
-  .dm-mkt-card-price { grid-row: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 18px; }
+  .dm-mkt-card-price { grid-row: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem 0.625rem; margin-top: 1.125rem; }
   .dm-mkt-card-close { min-width: 0; white-space: nowrap; }
-  .dm-mkt-card-unit { flex-basis: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-mkt-card-unit { flex-basis: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
   /* The waiting price row has the loaded row's lines: the close (on its 32px line), the pill, the unit under both. */
-  .dm-mkt-skel-close { width: 120px; height: 28px; margin: 2px 0; border-radius: 6px; }
-  .dm-mkt-skel-delta { width: 48px; height: 22px; border-radius: var(--radius-pill); }
-  .dm-mkt-skel-unit { width: 96px; height: 12px; margin: 2px calc(100% - 96px) 2px 0; }
-  .dm-mkt-skel-tvl { width: 64px; height: 18px; }
+  .dm-mkt-skel-close { width: 7.5rem; height: 1.75rem; margin: 2px 0; border-radius: 0.375rem; }
+  .dm-mkt-skel-delta { width: 3rem; height: 1.375rem; border-radius: var(--radius-pill); }
+  .dm-mkt-skel-unit { width: 6rem; height: 0.75rem; margin: 2px calc(100% - 6rem) 2px 0; }
+  .dm-mkt-skel-tvl { width: 4rem; height: 1.125rem; }
 
   /* The caption names the plot at its foot, in the band the line keeps clear (MarketCard's LINE_PAD), and reads out
      the hour a pointer is on. */
-  .dm-mkt-card > .dm-mkt-card-caption { position: absolute; left: 20px; right: 20px; bottom: 14px; z-index: 1; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); pointer-events: none; }
+  .dm-mkt-card > .dm-mkt-card-caption { position: absolute; left: 1.25rem; right: 1.25rem; bottom: 0.875rem; z-index: 1; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); pointer-events: none; }
   /* Bars and the lone figure carry no price: the caption follows the head. */
-  .dm-mkt-card:is([data-card-series="bars"], [data-card-series="figure"]) > .dm-mkt-card-caption { position: relative; left: auto; right: auto; bottom: auto; grid-row: 2; margin-top: 16px; }
+  .dm-mkt-card:is([data-card-series="bars"], [data-card-series="figure"]) > .dm-mkt-card-caption { position: relative; left: auto; right: auto; bottom: auto; grid-row: 2; margin-top: 1rem; }
 
   /* The plot: full bleed, the rest of the card's height, its series standing on the card's bottom edge. */
-  .dm-mkt-plot { grid-row: 3; align-self: stretch; position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-height: 0; margin: 12px -20px 0; }
+  .dm-mkt-plot { grid-row: 3; align-self: stretch; position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-height: 0; margin: 0.75rem -1.25rem 0; }
   .dm-mkt-plot > * { flex-shrink: 0; }
-  .dm-mkt-card:is([data-card-series="bars"], [data-card-series="figure"]) > .dm-mkt-plot { margin-top: 8px; }
+  .dm-mkt-card:is([data-card-series="bars"], [data-card-series="figure"]) > .dm-mkt-plot { margin-top: 0.5rem; }
   /* The one area under the line rests a little below full strength and comes up with the hovered card. */
   .dm-mkt-plot .dm-spark-area { opacity: 0.85; transition: opacity var(--dur-fast) var(--ease-fast); }
   .dm-mkt-card:hover .dm-spark-area { opacity: 1; }
   /* A plot with no series holds the row's own 24h volume, large, in the middle: a figure, never a sentence. */
-  .dm-mkt-plot-figure { position: absolute; inset: 0; display: grid; place-items: center; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.6px; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-mkt-plot-figure { position: absolute; inset: 0; display: grid; place-items: center; font-size: 1.75rem; line-height: 2rem; font-weight: 500; letter-spacing: -0.6px; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
   .dm-mkt-card[data-card-series="figure"]::before { -webkit-mask-image: none; mask-image: none; }
   /* While the series is on its way: a wave under the skeleton sweep, the shape of the chart to come, where the line
      will be (the .dm-skel look, re-stated because this pinned node carries its own class only). A data-URL mask, no
@@ -164,8 +163,8 @@
   .dm-mkt-baseline {
     position: absolute;
     left: 0;
-    right: 20px;
-    top: 14px;
+    right: 1.25rem;
+    top: 0.875rem;
     bottom: 0;
     background-color: var(--skeleton);
     background-image: linear-gradient(100deg, transparent 40%, var(--skeleton-shine) 50%, transparent 60%);
@@ -188,16 +187,16 @@
 
   /* ---- Selected pools: heading, filters, table (§8.1-4) ---- */
   /* Above the blocks after it, so a list opened inside (the asset select, the token search) is never covered. */
-  .dm-mkt-pools { position: relative; z-index: 2; margin-top: 48px; }
-  .dm-mkt-pools-head { margin-bottom: 16px; }
-  .dm-mkt-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-  .dm-mkt-search { width: 320px; max-width: 100%; }
+  .dm-mkt-pools { position: relative; z-index: 2; margin-top: 3rem; }
+  .dm-mkt-pools-head { margin-bottom: 1rem; }
+  .dm-mkt-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
+  .dm-mkt-search { width: 20rem; max-width: 100%; }
   /* The search wears the select's skin beside it: the card's fill and pill ring, one control family. */
-  .dm-mkt-search .dm-search-input { border-radius: var(--radius-pill); padding-left: 38px; background: var(--card); box-shadow: var(--elev-pill); }
+  .dm-mkt-search .dm-search-input { border-radius: var(--radius-pill); padding-left: 2.375rem; background: var(--card); box-shadow: var(--elev-pill); }
   .dm-mkt-search .dm-search-input:hover { background: var(--card-hover); box-shadow: var(--elev-card-hover); }
   .dm-mkt-search .dm-search-input:focus-visible { background: var(--card); box-shadow: inset 0 0 0 1px var(--border-strong); }
-  .dm-mkt-search .dm-search-icon { left: 15px; }
-  .dm-mkt-pools-table { margin-top: 12px; }
+  .dm-mkt-search .dm-search-icon { left: 0.9375rem; }
+  .dm-mkt-pools-table { margin-top: 0.75rem; }
   @media (max-width: 767px) {
     .dm-mkt-filters { display: grid; grid-template-columns: minmax(0, 1fr); }
     .dm-mkt-asset { display: block; }
@@ -212,15 +211,16 @@
   .dm-mkt-table tbody tr { cursor: pointer; }
   /* The marks' cut-out ring follows the row's hover fill, so the overlap stays a clean cut. */
   .dm-mkt-table tbody tr:is(:hover, :focus-within) { --dm-mkt-ring: color-mix(in srgb, rgb(255 236 220) 4%, var(--bg)); }
-  .dm-mkt-pool { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .dm-mkt-pool { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
   a.dm-mkt-pool { width: fit-content; max-width: 100%; }
   .dm-mkt-marks { display: inline-flex; flex-shrink: 0; }
   .dm-mkt-ident { min-width: 0; }
-  .dm-mkt-name { border-radius: 4px; color: var(--fg); text-decoration: none; font-size: 15px; line-height: 20px; letter-spacing: -0.2px; font-weight: 500; }
+  .dm-mkt-saved { display: block; margin-top: 0.1875rem; font-size: 0.6875rem; line-height: 0.875rem; font-weight: 400; color: var(--fg-muted); }
+  .dm-mkt-name { border-radius: 0.25rem; color: var(--fg); text-decoration: none; font-size: 0.9375rem; line-height: 1.25rem; letter-spacing: -0.2px; font-weight: 500; }
   /* A row's flags (audit V2, 2026-10-01): a very high fee, or a pool Domino can't open positions in. Words, not colour alone. */
   .dm-mkt-venue.dm-mkt-flag { background: var(--money-out-bg); color: var(--fg); }
   /* The fee-tier chip under the name (§3.4), read rows and catalogue rows alike. */
-  .dm-mkt-venue, .dm-mkt-table [data-pool-catalogue] .dm-chip { display: flex; width: fit-content; min-height: 20px; margin-top: 4px; padding: 2px 6px; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-muted); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; }
+  .dm-mkt-venue, .dm-mkt-table [data-pool-catalogue] .dm-chip { display: flex; width: fit-content; min-height: 1.25rem; margin-top: 0.25rem; padding: 2px 0.375rem; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-muted); font-size: 0.75rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.12px; }
   /* Catalogue rows (F's PoolCatalogueIdentity) draw 30px marks ringed in the card colour: sized and ringed like a read row's here. */
   .dm-mkt-table [data-pool-catalogue] .dm-mkt-pool > span:first-child { zoom: 1.0667; }
   .dm-mkt-table [data-pool-catalogue] .dm-mkt-pool > span:first-child > * { border-color: var(--dm-mkt-ring) !important; }
@@ -231,10 +231,10 @@
   .dm-mkt-col-tvl { width: 13%; }
   .dm-mkt-col-volume { width: 14%; }
   .dm-mkt-col-apr { width: 13%; }
-  .dm-mkt-end { width: 72px; }
+  .dm-mkt-end { width: 4.5rem; }
   /* The end cell holds the info button and the chevron (28 + 6 + 14): an 8px lead keeps them inside its 72px, so the
      chevron sits at one x in a read row and in a catalogue row. */
-  .dm-mkt-table .dm-table :is(th, td).dm-mkt-end { padding-left: 8px; }
+  .dm-mkt-table .dm-table :is(th, td).dm-mkt-end { padding-left: 0.5rem; }
   /* A tablet keeps all six columns, narrower, so the pool's name keeps its room. The price column holds a plain price
      with its symbol on one line ("2,500.09 USDG", about 114px at 16px, inside its 16px paddings; round 6 integration,
      2026-09-28: at 140px it ran 3px past the column's right edge in an 820px window). Changed 2026-10-01 (audit E2): the
@@ -243,85 +243,85 @@
      running into the price, the table keeps Pool · Price · TVL · APR, as a phone keeps Pool · TVL · APR: the 24h
      volume is a row's figures dialog away, and on the pool's page. */
   @media (min-width: 768px) and (max-width: 1023px) {
-    .dm-mkt-col-price { width: 156px; }
-    .dm-mkt-col-tvl { width: 96px; }
-    .dm-mkt-col-volume { width: 100px; }
-    .dm-mkt-col-apr { width: 108px; }
+    .dm-mkt-col-price { width: 9.75rem; }
+    .dm-mkt-col-tvl { width: 6rem; }
+    .dm-mkt-col-volume { width: 6.25rem; }
+    .dm-mkt-col-apr { width: 6.75rem; }
   }
   @media (min-width: 768px) and (max-width: 799px) {
     .dm-mkt-table :is(.dm-mkt-col-volume, .dm-mkt-volume) { display: none; }
   }
   /* The exchange's part of a fee chip gives way before anything else does (lib/format/fee.ts). */
   .dm-fee-venue { white-space: nowrap; }
-  .dm-mkt-num { font-size: 16px; line-height: 22px; letter-spacing: -0.2px; }
+  .dm-mkt-num { font-size: 1rem; line-height: 1.375rem; letter-spacing: -0.2px; }
   .dm-mkt-price { display: inline-grid; justify-items: end; }
-  .dm-mkt-price-unit { margin-bottom: 2px; font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; }
-  .dm-mkt-end .dm-icon-btn { width: 28px; height: 28px; }
+  .dm-mkt-price-unit { margin-bottom: 2px; font-size: 0.75rem; line-height: 1rem; font-weight: 400; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; }
+  .dm-mkt-end .dm-icon-btn { width: 1.75rem; height: 1.75rem; }
   /* The first read still out: bubbles at each figure's text-line size (§3.11), right-aligned like the figures. */
-  .dm-mkt-bubbles { display: inline-grid; justify-items: end; gap: 6px; vertical-align: middle; }
-  .dm-mkt-bubble { display: inline-block; height: 14px; vertical-align: middle; }
-  .dm-mkt-bubble--price { width: 88px; }
-  .dm-mkt-bubble--unit { width: 64px; height: 10px; }
-  .dm-mkt-bubble--figure { width: 64px; }
-  .dm-mkt-bubble--apr { width: 56px; }
+  .dm-mkt-bubbles { display: inline-grid; justify-items: end; gap: 0.375rem; vertical-align: middle; }
+  .dm-mkt-bubble { display: inline-block; height: 0.875rem; vertical-align: middle; }
+  .dm-mkt-bubble--price { width: 5.5rem; }
+  .dm-mkt-bubble--unit { width: 4rem; height: 0.625rem; }
+  .dm-mkt-bubble--figure { width: 4rem; }
+  .dm-mkt-bubble--apr { width: 3.5rem; }
   /* A phone keeps Pool · TVL · APR · the info button (§8.4): fixed columns, and the marks shrink to 24 and the row
      opens the pool without a chevron. Changed 2026-10-01 (audit E2): a long pair name breaks over two lines after its
      "/" instead of being cut ("MARLIN/…" at 375px, every name at 360px), and the fee chip keeps only the fee. */
   @media (max-width: 767px) {
-    .dm-mkt-col-tvl { width: 68px; }
-    .dm-mkt-col-apr { width: 94px; }
-    .dm-mkt-end { width: 36px; }
+    .dm-mkt-col-tvl { width: 4.25rem; }
+    .dm-mkt-col-apr { width: 5.875rem; }
+    .dm-mkt-end { width: 2.25rem; }
     /* Measured at 390 with the real figures ($375.1K, 181.25% est.): the name keeps about 99px, USDG/MARLIN whole. */
-    .dm-mkt-table .dm-table :is(th, td):first-child { padding-right: 4px; }
-    .dm-mkt-table .dm-table :is(th, td).dm-mkt-end { padding-left: 4px; }
+    .dm-mkt-table .dm-table :is(th, td):first-child { padding-right: 0.25rem; }
+    .dm-mkt-table .dm-table :is(th, td).dm-mkt-end { padding-left: 0.25rem; }
     .dm-mkt-marks { zoom: 0.75; }
     .dm-mkt-table [data-pool-catalogue] .dm-mkt-pool > span:first-child { zoom: 0.8; }
-    .dm-mkt-pool { gap: 8px; }
+    .dm-mkt-pool { gap: 0.5rem; }
     a.dm-mkt-pool { width: auto; }
-    .dm-mkt-name { font-size: 14px; line-height: 18px; }
+    .dm-mkt-name { font-size: 0.875rem; line-height: 1.125rem; }
     .dm-mkt-ident > .dm-mkt-name { display: block; overflow-wrap: anywhere; }
     .dm-mkt-table [data-pool-catalogue] .dm-mkt-pool > span:nth-child(2) { min-width: 0; overflow-wrap: anywhere; }
     .dm-mkt-table .dm-fee-venue { display: none; }
-    .dm-mkt-venue, .dm-mkt-table [data-pool-catalogue] .dm-chip { font-size: 11px; line-height: 14px; }
-    .dm-mkt-num { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
+    .dm-mkt-venue, .dm-mkt-table [data-pool-catalogue] .dm-chip { font-size: 0.6875rem; line-height: 0.875rem; }
+    .dm-mkt-num { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; }
     .dm-mkt-end .i-chev-r { display: none; }
   }
   /* Home's footnote, inside the card under the rows. */
-  .dm-mkt-caption { caption-side: bottom; padding: 12px 16px 4px; text-align: left; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-mkt-footnote { max-width: 100ch; margin-top: 12px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-mkt-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 8px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-muted); }
-  .dm-mkt-empty { padding: 32px 8px; }
+  .dm-mkt-caption { caption-side: bottom; padding: 0.75rem 1rem 0.25rem; text-align: left; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-mkt-footnote { max-width: 100ch; margin-top: 0.75rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-mkt-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem 0.5rem; margin: 0 0 0.5rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-muted); }
+  .dm-mkt-empty { padding: 2rem 0.5rem; }
   /* No rows, so nothing to scroll sideways: the token search's list may open past the card instead of inside it. */
   .dm-mkt-table[data-filter-empty] > div:has(> .dm-table) { overflow: visible !important; }
-  .dm-mkt-empty-actions { display: grid; justify-items: center; gap: 12px; width: min(420px, calc(100vw - 88px)); text-align: left; }
+  .dm-mkt-empty-actions { display: grid; justify-items: center; gap: 0.75rem; width: min(26.25rem, calc(100vw - 5.5rem)); text-align: left; }
   .dm-mkt-empty-actions > [data-token-search] { width: 100%; }
 
   /* ---- The catalogue disclosure (§8.1-5): a 56px row on a card, the search glyph left, the chevron right ---- */
-  .dm-mkt-catalogue { margin-top: 32px; border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--elev-card); }
-  .dm-mkt-catalogue > summary { gap: 12px; min-height: 56px; padding: 0 20px; border-radius: var(--radius-lg); color: var(--fg); font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; }
+  .dm-mkt-catalogue { margin-top: 2rem; border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--elev-card); }
+  .dm-mkt-catalogue > summary { gap: 0.75rem; min-height: 3.5rem; padding: 0 1.25rem; border-radius: var(--radius-lg); color: var(--fg); font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; }
   .dm-mkt-catalogue > summary:hover { background: var(--card-hover); }
   .dm-mkt-catalogue > summary::before { order: 2; margin-left: auto; color: var(--fg-subtle); rotate: 45deg; translate: 0 -2px; }
   .dm-mkt-catalogue[open] > summary::before { rotate: 225deg; translate: 0 2px; }
   .dm-mkt-catalogue-icon { flex-shrink: 0; color: var(--fg-subtle); }
-  .dm-mkt-catalogue > :not(summary) { padding: 8px 20px 20px; }
-  .dm-mkt-catalogue-search { max-width: 520px; }
+  .dm-mkt-catalogue > :not(summary) { padding: 0.5rem 1.25rem 1.25rem; }
+  .dm-mkt-catalogue-search { max-width: 32.5rem; }
 
   /* ---- Token view ---- */
-  .dm-mkt-crumbs { font-size: 13px; line-height: 16px; letter-spacing: -0.16px; }
-  .dm-mkt-back { display: inline-flex; align-items: center; gap: 4px; border-radius: 4px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
+  .dm-mkt-crumbs { font-size: 0.8125rem; line-height: 1rem; letter-spacing: -0.16px; }
+  .dm-mkt-back { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 0.25rem; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
   .dm-mkt-back:hover { color: var(--fg); }
   .dm-mkt-back > svg { transition: translate var(--dur-fade) var(--ease-std); }
   .dm-mkt-back:hover > svg { translate: -2px 0; }
-  .dm-mkt-found { margin-top: 32px; }
-  .dm-mkt-lookup { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 20px; }
-  .dm-mkt-lookup-token { display: flex; flex: 1 1 320px; align-items: center; gap: 12px; min-width: 0; }
-  .dm-mkt-lookup-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-  .dm-mkt-lookup-symbol { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
-  .dm-mkt-lookup-meta { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-mkt-lookup-address { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 2px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-mkt-lookup-address .font-mono { font-size: 13px; line-height: 18px; letter-spacing: 0; color: var(--fg-muted); }
-  .dm-mkt-lookup-why { margin-top: 4px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--money-out); }
-  .dm-mkt-lookup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .dm-mkt-found { margin-top: 2rem; }
+  .dm-mkt-lookup { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.25rem; }
+  .dm-mkt-lookup-token { display: flex; flex: 1 1 20rem; align-items: center; gap: 0.75rem; min-width: 0; }
+  .dm-mkt-lookup-name { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
+  .dm-mkt-lookup-symbol { font-size: 1rem; line-height: 1.5rem; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
+  .dm-mkt-lookup-meta { font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-mkt-lookup-address { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0.375rem; margin-top: 2px; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-mkt-lookup-address .font-mono { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: 0; color: var(--fg-muted); }
+  .dm-mkt-lookup-why { margin-top: 0.25rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--money-out); }
+  .dm-mkt-lookup-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   @media (max-width: 639px) {
     .dm-mkt-lookup-actions { width: 100%; }
     .dm-mkt-lookup-actions > .dm-btn { flex: 1 1 auto; }
@@ -329,23 +329,23 @@
 
   /* ---- Pool picker rows (Markets token view, New position): a row pill that opens or chooses, its
      provider figures under it, and the pool's details folded away ---- */
-  .dm-mkt-option { display: grid; gap: 6px; padding: 4px 4px 6px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); list-style: none; transition: box-shadow var(--dur-hover) ease; }
+  .dm-mkt-option { display: grid; gap: 0.375rem; padding: 0.25rem 0.25rem 0.375rem; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); list-style: none; transition: box-shadow var(--dur-hover) ease; }
   .dm-mkt-option--checked { box-shadow: inset 0 0 0 1px var(--fg-subtle); }
-  .dm-mkt-option-head { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 0 12px; border-radius: var(--radius-sm); text-align: left; cursor: pointer; transition: background-color var(--dur-fade) var(--ease-std); }
+  .dm-mkt-option-head { display: flex; align-items: center; gap: 0.75rem; width: 100%; min-height: 3.5rem; padding: 0 0.75rem; border-radius: var(--radius-sm); text-align: left; cursor: pointer; transition: background-color var(--dur-fade) var(--ease-std); }
   .dm-mkt-option-head:hover { background: var(--wash); }
   .dm-mkt-option-head:focus-visible { outline-offset: var(--focus-offset-inset); }
   .dm-mkt-option-head > .i-chev-r { flex-shrink: 0; color: var(--fg-subtle); transition: translate var(--dur-fade) var(--ease-std), color var(--dur-fade) ease; }
   .dm-mkt-option-head:hover > .i-chev-r { color: var(--fg); translate: 2px 0; }
   /* Each figure hugs its words on a laptop (label, value and source together); a phone stacks them full width. */
-  .dm-mkt-option-figures { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 48px; padding: 0 12px; }
-  .dm-mkt-option-apr { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 12px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-mkt-option-note { padding: 0 12px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; }
-  .dm-mkt-option-details > summary { min-height: 36px; font-size: 13px; letter-spacing: -0.16px; }
+  .dm-mkt-option-figures { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.375rem 3rem; padding: 0 0.75rem; }
+  .dm-mkt-option-apr { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 0.75rem; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-mkt-option-note { padding: 0 0.75rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; }
+  .dm-mkt-option-details > summary { min-height: 2.25rem; font-size: 0.8125rem; letter-spacing: -0.16px; }
   @media (max-width: 767px) {
     .dm-mkt-option-figures { display: grid; grid-template-columns: minmax(0, 1fr); }
   }
   .dm-mkt-coverage { border-radius: var(--radius); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-mkt-coverage > summary { font-size: 13px; letter-spacing: -0.16px; }
-  .dm-mkt-catalogue-panel { display: grid; gap: 8px; padding: 12px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-mkt-candidate { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); list-style: none; }
+  .dm-mkt-coverage > summary { font-size: 0.8125rem; letter-spacing: -0.16px; }
+  .dm-mkt-catalogue-panel { display: grid; gap: 0.5rem; padding: 0.75rem; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-mkt-candidate { display: grid; gap: 0.375rem; padding: 0.625rem 0.75rem; border-radius: var(--radius-sm); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); list-style: none; }
 }

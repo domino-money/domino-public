@@ -1,0 +1,24 @@
+/* Recovery keeps exact protocol units and all wallet controls. Groups make
+   those advanced limits easier to scan without converting financial inputs. */
+@layer components {
+  .dm-setup-entry { margin-top: 1rem; line-height: 1.5; }
+  .dm-setup-entry a { color: var(--primary-line); text-underline-offset: 0.1875rem; }
+  .dm-setup .dm-acct-panel,
+  .dm-setup .dm-acct-draft { gap: 1rem; padding: 1.5rem; }
+  .dm-setup .dm-acct-disclosure { margin-inline: 0; }
+  .dm-setup .dm-setup-group { display: grid; gap: 1rem; min-width: 0; margin: 0; padding: 1.25rem; border: 0.0625rem solid var(--border); border-radius: var(--radius-lg); }
+  .dm-setup-group > legend { padding-inline: 0.5rem; color: var(--fg); font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; }
+  .dm-setup-token-details > .dm-acct-hash { padding: 0 0.75rem 0.875rem; }
+  .dm-setup-section { display: grid; gap: 0.875rem; min-width: 0; padding-block: 1.25rem; border-top: 0.0625rem solid var(--border); }
+  .dm-setup-section > h3 { margin: 0; }
+  .dm-setup .dm-acct-panel > .dm-inset { display: grid; gap: 0.875rem; padding: 1rem; border-radius: var(--radius-lg); }
+  .dm-setup-state { display: grid; gap: 0.75rem; margin: 0; padding: 1rem; background: var(--surface-1); border: 0.0625rem solid var(--border); border-radius: var(--radius-lg); }
+  .dm-setup-state > div { display: grid; gap: 0.25rem; min-width: 0; }
+  .dm-setup-state dt { font-size: 0.75rem; color: var(--fg-muted); overflow-wrap: anywhere; }
+  .dm-setup-state dd { margin: 0; font-size: 0.875rem; color: var(--fg); overflow-wrap: anywhere; }
+  @media (max-width: 39.999rem) {
+    .dm-setup .dm-acct-panel,
+    .dm-setup .dm-acct-draft { padding: 1rem; }
+    .dm-setup .dm-setup-group { padding: 1rem; }
+  }
+}

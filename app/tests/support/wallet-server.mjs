@@ -16,8 +16,11 @@ import { Readable } from 'node:stream';
 import { loadMiddleware } from '../../scripts/gated-server.mjs';
 import { DROP } from './fake-session.mjs';
 import { feesDefault } from './fees/stub.mjs';
+import { WALLET_DIST } from './wallet-dist.mjs';
 
-export const WALLET_DIST = resolve(import.meta.dirname, '../../.wallet-test-dist');
+// Changed on purpose (data) 2026-10-02 (Domino V2 integration): the build served is ./wallet-dist.mjs's, the wallet-test
+// build unless scripts/v1-on-v2.mjs runs V1's suites on the V2-compiled one.
+export { WALLET_DIST };
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',

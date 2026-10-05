@@ -18,7 +18,8 @@ export const MARKETS: DocPage = {
         // held to them (tests/docs.test.mjs).
         p('Markets lists selected Uniswap pools on Robinhood Chain. Once a day, at 12:00 UTC, Domino ranks pools by estimated 24h fee APR. A pool needs no hooks, a fixed fee, tokens that pass Domino’s checks, and enough 24h volume and TVL. The list is not a recommendation.'),
         // 2026-10-01 (audit E14, B1, B5).
-        p('A pool can leave the list during the day, for example when its figures can’t be checked, and its place stays empty until the next one: the title then says how many are left, such as 4 of 6 today. ', b('Pinned'), ' marks a pool Domino chose itself. When the list is unavailable, a fixed selection, ', b('Selected pools'), ', takes its place.'),
+        // Changed on purpose 2026-10-03 (the owner): the table no longer says how many pools are left ("4 of 6 today").
+        p('A pool can leave the list during the day, for example when its figures can’t be checked, and some days fewer than six pools pass every check, so the list can be shorter until the next one. ', b('Pinned'), ' marks a pool Domino chose itself. When the list is unavailable, a fixed selection, ', b('Selected pools'), ', takes its place.'),
         shot('markets', 'Each row is a pool. Select it to open the pool’s page.'),
         list(
           [b('Price'), ': the pool’s own price between its two tokens, not a dollar price.'],
@@ -76,7 +77,7 @@ export const POOL_PAGE: DocPage = {
       id: 'estimates',
       title: 'Estimates and activity',
       blocks: [
-        p(b('Estimate your earnings'), ' works out your share of the pool’s recent fees for an amount you type. ', b('A typical range'), ' draws the band New position starts on against the price now. ', b('Recent activity'), ' says the last day in words. A pool Domino can’t open positions in says why instead.'),
+        p(b('Estimate your earnings'), ' works out your share of the pool’s recent fees for an amount you type. ', b('Price range'), ' draws the band New position starts on against the pool’s price. Open ', b('Recent activity'), ' for the last day in words. A pool Domino can’t open positions in says why instead.'),
       ],
     },
     {
@@ -89,10 +90,16 @@ export const POOL_PAGE: DocPage = {
   ],
 }
 
+/**
+ * Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): New position as it runs on Domino's new contracts
+ * (src/v2in/journey): an amount in either token or both, or another token, swapped by Domino when needed; Review's quote
+ * from the planning service (sign-in); and Create position as one transaction after any exact approval, Domino's
+ * contract keeping nothing. Its sentences are written here: a V1 file never imports src/v2in.
+ */
 export const NEW_POSITION: DocPage = {
   slug: 'new-position',
   title: 'New position',
-  summary: 'Plan a position in four steps, then create it with your wallet.',
+  summary: 'Plan a position in four steps, then review and confirm the steps in your wallet.',
   sections: [
     {
       id: 'four-steps',
@@ -103,19 +110,31 @@ export const NEW_POSITION: DocPage = {
           items: [
             { title: CREATE.step.pool.title, body: [CREATE.step.pool.lead] },
             { title: CREATE.step.range.title, body: [CREATE.step.range.lead] },
-            { title: CREATE.step.amount.title, body: [CREATE.step.amount.lead] },
+            { title: CREATE.step.amount.title, body: ['Enter an amount in either token, or both. Domino swaps for you when needed.'] },
             { title: CREATE.step.review.title, body: [CREATE.step.review.lead] },
           ],
         },
         // 2026-09-27 (the owner's round 6, point 8): one flow, wherever it starts; the pool page's button is Create a
-        // position (r6/poolpage).
-        p('From a pool’s page, ', b('Create a position'), ' opens these same four steps, with that pool already chosen.'),
+        // position (r6/poolpage). 2026-10-04: New position has no network choice (the owner, 2026-10-02).
+        p('New position opens positions on Robinhood Chain. From a pool’s page, ', b('Create a position'), ' opens these same four steps, with that pool already chosen.'),
       ],
     },
     {
       id: 'step-pool',
       title: 'Pool',
-      blocks: [shot('new-pool', 'Step 1: choosing the pool.')],
+      blocks: [
+        shot('new-pool', 'Step 1: choosing the pool.'),
+        p('Find other pools by their tokens, Uniswap version and fee.'),
+      ],
+      subsections: [
+        {
+          id: 'new-pool',
+          title: 'Create a new pool (advanced)',
+          blocks: [
+            p('A pool with no price offers ', b('Create a new pool (advanced)'), ': your first deposit sets its price. Confirm that a price differing from the market lets arbitrageurs take the difference from your deposit. Network fees are higher.'),
+          ],
+        },
+      ],
     },
     {
       id: 'step-range',
@@ -130,8 +149,7 @@ export const NEW_POSITION: DocPage = {
       title: 'Amount',
       blocks: [
         shot('new-amount', 'Step 3: the amounts; slippage is under Advanced.'),
-        // Changed on purpose 2026-10-01 (audit E13).
-        p('Type an amount of either token; the other follows from your range. A range beside today’s price asks for its one token only: see ', doc('A range beside the price', 'ranges', 'one-sided'), '.'),
+        p('Type an amount in either token, or both, and Domino swaps between them to fit your range; or pay with ', b('Another token'), ', such as USDG, ETH or WETH. A range beside today’s price takes its one token only: see ', doc('A range beside the price', 'ranges', 'one-sided'), '. A wallet that can’t fund the position is offered to ', doc('bring funds from another network', 'bring-funds'), '.'),
         // 2026-09-27 (round 6): the tolerance moved under the amount step's Advanced, closed until opened.
         p('Under ', b('Advanced'), ', slippage tolerance is how far the price may move before a step stops. It starts at 0.5%; choose 0.1% to 5%.'),
       ],
@@ -140,20 +158,75 @@ export const NEW_POSITION: DocPage = {
       id: 'review',
       title: 'Review',
       blocks: [
-        p('Review lists every choice and the wallet steps in order. The steps are what your wallet signs when you press Create position: any approval, the deposit, then the position. Automation is set up afterwards, from Automate, on the position you opened.'),
-        shot('new-review', 'Step 4: your choices, then the steps your wallet asks you to sign.'),
-        // Changed on purpose 2026-10-01 (audit E20).
-        p('If your wallet holds only one of the two tokens, part of it is swapped for the other first, in the same pool or through Uniswap where that gets more: one more signature, and the pool’s fee and Domino’s assisted-swap fee (0.65%) on the swapped part. Review shows how much is swapped before you sign.'),
+        p('Review shows what you put in, any swap Domino makes and its fee, what goes into the position, what comes back to your wallet, and the network fee. Automation is set up afterwards, from Automate, on the position you opened.'),
+        p('Its quote needs sign-in and lasts 3 minutes. If the price moves within your slippage, the position can come out smaller and the rest returns to your wallet: Review says by how much at most.'),
       ],
     },
     {
       id: 'create',
       title: 'Create position',
       blocks: [
-        p(b('Create position'), ' is the last step. It needs your wallet on Robinhood Chain, and no sign-in.'),
-        p('Your wallet asks you to sign, in order: an approval for each token it has not yet allowed, the deposit of both tokens (or of the one your wallet holds, then the swap of part of it inside the pool), and the position itself. Some wallets sign all at once: see ', doc('Wallet requests', 'wallet-requests', 'all-at-once'), '. With one token, the pool is checked first: if it cannot swap part of your deposit, Create position says so before anything is deposited.'),
-        p('When the position exists, you choose what its fees do. If a deposit went through and the position did not, pressing Create position again finishes it from that deposit, never depositing twice; the deposit can also be refunded.'),
-        note(['A direct position carries no Domino percentage fee, except the assisted-swap fee on the part swapped when your wallet holds one token; network gas still applies.']),
+        p(b('Create position'), ' is the last step: your wallet allows each token for the exact amount, if needed, then one transaction puts your tokens in, makes any swap and sends you the position NFT, with anything the range doesn’t use. Domino’s contract keeps nothing afterwards. Some wallets confirm it all at once: see ', doc('Wallet requests', 'wallet-requests'), '.'),
+        note(['No Domino fee unless a swap is needed: then 0.65% of the amount swapped, shown on Review. Network gas still applies.']),
+      ],
+    },
+  ],
+}
+
+/**
+ * 2026-10-04 (the owner: docs revalidated for V2): a deposit from another network, inline in New position's amount step
+ * (src/v2in/funds; spec F7 §3): through Relay or Across to the person's own signed-in wallet, 0.35% charged by the
+ * bridge, no Domino contract on the way.
+ */
+export const BRING_FUNDS: DocPage = {
+  slug: 'bring-funds',
+  title: 'Bring funds from another network',
+  summary: 'Move tokens from another network to your own wallet, through a bridge, and use them in a new position.',
+  sections: [
+    {
+      id: 'where',
+      title: 'Where it appears',
+      blocks: [
+        p('When your wallet can’t fund the Amount step, even with a swap, an offer to bring funds appears automatically.'),
+        p('Domino checks the connected network for ETH, WETH and USDC. ', b('Check other networks'), ' asks your wallet to switch networks, then return. Nothing is sent.'),
+      ],
+    },
+    {
+      id: 'how',
+      title: 'How it works',
+      blocks: [
+        {
+          kind: 'steps',
+          items: [
+            { title: 'Choose', body: ['The network, the token to send and how much.'] },
+            { title: 'Get a quote', body: ['Domino’s service asks two bridges, Relay and Across, and offers the one that delivers more after every fee. The quote shows Domino’s fee, the bridge’s fee, what you receive and the least you receive, and about how long it takes.'] },
+            { title: 'Deposit', body: ['Your wallet switches to that network and sends it: a token takes two transactions, an approval of the exact amount and then the deposit; ETH takes one.'] },
+            { title: 'Use it', body: ['It arrives in your own wallet on Robinhood Chain, and the same position continues with it.'] },
+          ],
+        },
+        p('A quote lasts 2 minutes; past it, the step asks for a new one. The step follows your deposit until it arrives, even after a reload. With no ETH on Robinhood Chain for network fees, ', b('Get gas on Robinhood Chain'), ' lets Relay deliver a little ETH out of the deposit; Across can’t.'),
+      ],
+    },
+    {
+      id: 'cost',
+      title: 'What it costs',
+      blocks: [
+        p('0.35% of what you deposit, charged by the bridge as Domino’s fee: Relay takes it from what you send, Across from what arrives. Each bridge also charges its own fee, shown in the quote, and each network its gas.'),
+        p('You can also bridge with any other service and use Domino with what arrives in your wallet: then Domino charges no bridge fee.'),
+      ],
+    },
+    {
+      id: 'refunds',
+      title: 'If it doesn’t arrive',
+      blocks: [
+        p('If a bridge can’t deliver, it refunds you on the network you sent from: Across in full, usually 2.5 to 3 hours after your deposit; Relay minus the refund’s gas. The step says what is happening, and how to reclaim a deposit if an automatic refund fails.'),
+      ],
+    },
+    {
+      id: 'your-wallet',
+      title: 'Your wallet at both ends',
+      blocks: [
+        p('The deposit leaves from your signed-in wallet and arrives in the same wallet: no request can name another one, and no Domino contract holds it on the way. A quote needs sign-in.'),
       ],
     },
   ],
@@ -162,19 +235,18 @@ export const NEW_POSITION: DocPage = {
 export const POSITIONS: DocPage = {
   slug: 'positions',
   title: 'Positions',
-  summary: 'Your positions and their pages, collecting fees, closing, what automation did, and wallet balances.',
+  summary: 'Your positions on every network and their pages, what you and your automation did, and wallet balances.',
   sections: [
     {
       id: 'your-positions',
       title: 'Your positions',
       blocks: [
         shot('positions', 'Your positions and how their fees are used.'),
-        // 2026-09-28: the list shows this browser's copy of it at once while the chain is read (OwnedPositions.tsx).
-        p('Connect your wallet on Robinhood Chain and Positions lists the positions it created with Domino, read from the chain: there is no ID to type, and only this browser keeps a copy, for a day. ', b('Open'), ' positions hold liquidity; ', b('Closed'), ' ones hold none. Position NFTs made elsewhere are not listed.'),
-        // 2026-09-27 (the owner's point 6): the product's plain words, Value and Fees ready to collect, once Principal and Unclaimed fees.
-        // Changed on purpose 2026-10-01 (audit E15, item A18); RPC-SPEC §11.4.
-        p('Each row shows the pair, whether the price is in range, its value, its fees ready to collect and ', b('Your APR'), ' since it opened, or “on its page”. It updates every 30 seconds; select a row to open its page.'),
-        p('Open rows also say how their fees are used, or offer ', b('Automate'), '. Deposits that never became a position are listed too, with their refund.'),
+        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the positions read from Domino's new contracts
+        // on the three networks are listed too (src/v2in/lists), each with its network.
+        p('Connect your wallet and Positions lists the positions it created with Domino, on any of its networks, read from the chain: there is no ID to type. ', b('Open'), ' positions hold liquidity; ', b('Closed'), ' ones hold none. Position NFTs made elsewhere are not listed.'),
+        p('Each row shows the pair, its network, whether the price is in range, what it holds and its fees ready to collect, in tokens. A Domino V1 position shows dollars instead, and ', b('Your APR'), ' since it opened, or “on its page”.'),
+        p('Open rows also say how their fees are used, or offer Automate. Select a row to open its page. A Domino V1 deposit that never became a position is listed too, with its refund.'),
       ],
     },
     {
@@ -184,38 +256,35 @@ export const POSITIONS: DocPage = {
         shot('position', 'The top of a position’s page.'),
         // 2026-09-27: the page's key figures and order as the owner's round 5 made them (points 2, 4, 5 and 10).
         list(
-          ['At the top: the pair, whether it is in range, how its fees are used, and its buttons.'],
+          ['At the top: the pair, whether it is in range, how its fees are used, and the actions available for this position: see ', doc('Manage a position', 'manage-position'), '.'],
           [b('Position value'), ': what it holds, in each token and, with USDG, in dollars.'],
           [b('Fees ready to collect'), ': earned and not yet collected.'],
           [b('Your APR'), ': this position’s own fees as a yearly rate, from its history. Not the pool’s APR, and not a promise.'],
           [b('Current price'), ': the pool’s price now, on a bar between your range’s two ends.'],
-          ['Further down: its fees over time, price against its range, activity and, closed, technical details.'],
+          ['Below: price and fee charts, activity, automation, any existing exit orders, and technical details.'],
         ),
-        p('With automation, its Fees earned card says how much was added back, and the chart marks each time. No sign-in is needed.'),
         p('The page updates every minute; everything on it is public chain data.'),
       ],
     },
     {
-      id: 'collect-and-close',
-      title: 'Collect fees and close',
+      // 2026-10-04 (the owner: docs revalidated for V2): the chart as the owner's point 10 of 2026-10-03 redrew it.
+      id: 'price-range',
+      title: 'The Price range chart',
       blocks: [
-        p(b('Collect fees'), ' sends a position’s earned fees to your wallet; it stays open.'),
-        p(b('Close position'), ' sends its tokens and fees to your wallet; the empty NFT stays there.'),
-        // 2026-09-27 (review of 260a76a): only Close has a slippage tolerance and an "At least" row (PositionActions.tsx).
-        p('Each shows what you receive and the network fee before you sign; Close also shows the least you receive within your slippage tolerance. Collecting fees or closing stops that position’s Domino automation.'),
+        p('One line says first whether the position earns fees: ', b('Earning fees'), ' while the price is inside your range, ', b('Not earning'), ' outside it, with how far the price must move to come back, or ', b('Closed'), '.'),
+        p('The band marks ', b('Max'), ' and ', b('Min'), ', with the price ', b('Now'), '. History starts when this position opened, up to 7 days: green inside the range, red outside. Unread history is not filled in.'),
+        p('Fees earned offers 24H, 7D and All. A recent position’s periods start at its opening.'),
       ],
     },
     {
       id: 'managed-positions',
       title: 'What automation did',
       blocks: [
-        // 2026-09-27: the two cards as round 5 made them (short rows, See all on a page of their own). A position's own page
-        // shows what automation added back without sign-in (position-details, above). Round 6, point 1: one phrase for it
-        // everywhere, "Fees added back". Changed on purpose 2026-10-01 (audit E15, D2).
-        p(b('Managed positions'), ' and ', b('Receipts'), ' fill in once you sign in and have automation; until then, one line stands for both. Managed positions shows each automated position over the last 24 hours. Receipts lists each automation run and the fees it added back; ', b('See all'), ' opens every receipt on a page of its own.'),
+        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the cards read Domino's new contracts with
+        // no sign-in (src/v2in/automate/ManagedVaults.tsx, src/v2in/lists/Receipts.tsx); Domino V1's history still needs it.
+        p(b('Managed positions'), ' lists each automated position, on any network: its state, the fees it collected and hasn’t reinvested yet, and the one button it needs, such as ', b('Withdraw to wallet'), '. ', b('Receipts'), ' lists what you and your automation did, each action with its fees and what came back. For the full list, select ', b('Receipts'), ' beside New position or the card’s ', b('See all'), '.'),
         shot('receipts', 'Receipts: each time automation added fees back.'),
-        p('A receipt shows Done only once the chain has settled its transaction.'),
-        p(b('Managed positions'), ' also lists your wallet’s automations, each with ', b('Start tracking'), ': it records how one does from then on, and grants no permission.'),
+        p('Neither needs sign-in, except for what Domino V1’s automation did. A receipt is final only once its network settles it.'),
       ],
     },
     {
@@ -225,6 +294,74 @@ export const POSITIONS: DocPage = {
       // 2026-10-01 (audit V7). Changed on purpose 2026-10-01 (integration pass 3): "read-only" is a word the docs never use
       // (tests/docs.test.mjs, the words); what it meant, said plainly.
       blocks: [p('The Wallet card shows the tokens of the connected wallet, or any address, in dollars: the three largest first, the rest under ', b('Show all'), '. ', b('View address'), ' also lists that address’s positions, just to look at. Balances are public data.')],
+    },
+  ],
+}
+
+/**
+ * 2026-10-04 (the owner: docs revalidated for V2): what a position's page does to it (src/v2in/position, and V1's
+ * components/positions/PositionActions.tsx), in the dialogs' own words, and what each costs. Collect fees and Close
+ * position moved here from Positions, word for word.
+ */
+export const MANAGE_POSITION: DocPage = {
+  slug: 'manage-position',
+  title: 'Manage a position',
+  summary: 'Add to a position, change its range, withdraw, collect its fees or close it, from its page.',
+  sections: [
+    {
+      id: 'from-its-page',
+      title: 'From a position’s page',
+      blocks: [
+        p('The available actions are shown below the position’s title: ', b('Collect fees'), ', ', b('Add liquidity'), ', ', b('Change range'), ', ', b('Withdraw'), ' and ', doc('Stop-loss / take-profit', 'stop-loss'), '. Robinhood Chain’s Uniswap v4 positions also offer ', b('Close position'), '.'),
+        p('Each opens a dialog: your choice, then Review with what you receive, then your wallet. Each action is a single transaction, and Domino’s contract keeps nothing afterwards. No Domino fee unless it needs a swap: then 0.65% of the amount swapped. A quote needs sign-in and lasts 3 minutes.'),
+      ],
+    },
+    {
+      id: 'add-liquidity',
+      title: 'Add liquidity',
+      blocks: [
+        p(b('Add liquidity'), ' puts more into the same position and range, in one token or both, or another token: Domino swaps for you when needed. On a Uniswap v4 position, its uncollected fees also go to your wallet.'),
+      ],
+    },
+    {
+      id: 'change-range',
+      title: 'Change range',
+      blocks: [
+        p(b('Change range'), ' closes this position and opens a new one, with a new NFT, in the range you choose: ', b('Narrow ±1%'), ', ', b('Medium ±5%'), ' or ', b('Wide ±20%'), ' around today’s price, or ', b('Custom'), '. It moves all of the position, or 50% or 25%, and swaps only when the new range needs it.'),
+      ],
+    },
+    {
+      id: 'withdraw',
+      title: 'Withdraw',
+      blocks: [
+        p(b('Withdraw'), ' takes all of a position, or 50% or 25% of it, to your wallet: both tokens, with no Domino fee, or only one, which Domino swaps for you. ', b('You receive'), ' shows what comes to your wallet before you sign.'),
+        p('Receiving one token, part may come back unconverted if the price moves within your slippage; Review says how much at most.'),
+      ],
+    },
+    {
+      id: 'collect-and-close',
+      title: 'Collect fees and close',
+      blocks: [
+        p(b('Collect fees'), ' sends a position’s earned fees to your wallet; it stays open.'),
+        p(b('Close position'), ' sends its tokens and fees to your wallet; the empty NFT stays there.'),
+        // 2026-09-27 (review of 260a76a): only Close has a slippage tolerance and an "At least" row (PositionActions.tsx).
+        p('Each shows what you receive and the network fee before you sign; Close also shows the least you receive within your slippage tolerance. Neither carries a Domino fee.'),
+      ],
+    },
+    {
+      id: 'permission',
+      title: 'Domino’s permission',
+      blocks: [
+        p('To add to a Uniswap v4 position, change a range or withdraw into one token, you first let Domino manage that one position: Domino can manage this position for you when you ask. ', b('Revoke'), ', in its Details, takes that back, and giving it to another app ends Domino’s, and any automation on it.'),
+      ],
+    },
+    {
+      id: 'with-automation',
+      title: 'With automation on',
+      blocks: [
+        p('While a position is automated, ', b('Change range'), ' isn’t available, and Add liquidity, Withdraw and Collect fees first ask you to tick that this pauses it; ', b('Turn automation back on'), ' restarts it afterwards.'),
+        p('A position Domino-compound opened has no actions of its own until withdrawn from your automation. Withdrawing an automated position leaves its collected fees with your automation, and the page takes you to withdrawing them.'),
+      ],
     },
   ],
 }

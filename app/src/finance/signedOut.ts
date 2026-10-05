@@ -14,8 +14,8 @@ import type { SessionKind } from '../session/port'
  * `both` (2026-10-01, the D2 follow-up): the one line Positions shows for the two cards at once, when neither has
  * anything to show for the same reason (lib/automationCards.ts).
  */
-export function signedOutLine(kind: SessionKind, what: 'receipts' | 'managed' | 'both'): { text: string; action: 'Sign in' | 'Open wallet' | null } {
-  const things = what === 'receipts' ? 'your receipts' : what === 'managed' ? 'your automated positions' : 'your automated positions and their receipts'
+export function signedOutLine(kind: SessionKind, what: 'receipts' | 'managed' | 'both' | 'history'): { text: string; action: 'Sign in' | 'Open wallet' | null } {
+  const things = what === 'history' ? 'more automation history' : what === 'receipts' ? 'your receipts' : what === 'managed' ? 'your automated positions' : 'your automated positions and their receipts'
   switch (kind) {
     case 'no_wallet':
       return { text: `Connect your wallet to see ${things}.`, action: null }

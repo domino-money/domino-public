@@ -28,7 +28,10 @@ const APP = resolve(import.meta.dirname, '..');
 const REPO = resolve(APP, '..');
 const { sqrtPriceAtTick, presetRange, MIN_TICK, MAX_TICK } = require('../.test-build/app/src/lib/read/screens/poolRange.js');
 const { pairedAmount } = require('../.test-build/app/src/lib/create/pairAmount.js');
-const { FeeReplay, Timeline } = require('../.test-build/app/src/lib/fees/replay.js');
+// Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): lib/fees/replay.ts went with the fees replay
+// (9ce0fdad, 2026-10-02: a position's ledger in its place), so it is asked for only when a position's fee history is
+// built (feeHistory, for the wallet's position scenes), and the scenes that need none shoot without it.
+const replayLib = () => require('../.test-build/app/src/lib/fees/replay.js');
 const { principalAt } = require('../.test-build/app/src/components/positions/visual/value.js');
 const feesLib = require('../.test-build/app/src/lib/fees/constants.js');
 
@@ -590,6 +593,7 @@ export function feeHistory({ tokenId, owner, now = NOW }) {
 const histories = new Map();
 
 function makeHistory({ tokenId, owner, now }) {
+  const { FeeReplay, Timeline } = replayLib();
   const pool = MAIN_POOL;
   const head = HEAD;
   const timeOf = (block) => now - Math.round((head - block) / BLOCKS_PER_SECOND);

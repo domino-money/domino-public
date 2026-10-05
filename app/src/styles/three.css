@@ -17,51 +17,51 @@
      takes one of its own under them (2026-09-27, Domino's buttons: positions.css, the owner's actions). */
   /* A sequence's Turn on or Pause (2026-09-25) takes that place, and what its press says stands on a line of its own
      after the buttons. The line takes the row's width without widening it (inline-size containment). */
-  .dm-seq-switch-note { order: 2; flex-basis: 100%; contain: inline-size; margin: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-seq-switch-note { order: 2; flex-basis: 100%; contain: inline-size; margin: 0; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
 
   /* ---- New position: what comes next, once the position exists -------------------------------------------- */
   .dm-flow-foot[data-final] > .dm-created { grid-column: 1 / -1; }
-  .dm-created { display: grid; gap: 12px; min-width: 0; animation: dm-rise var(--dur-enter) var(--ease-enter) backwards; }
-  .dm-created-line { margin: 0; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
-  .dm-created-choices { display: grid; gap: 8px; }
-  .dm-created-choice { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: 14px; min-height: 68px; padding: 10px 16px 10px 10px; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); color: inherit; text-decoration: none; transition: background-color var(--dur-fast) var(--ease-std), box-shadow var(--dur-fast) var(--ease-std); }
+  .dm-created { display: grid; gap: 0.75rem; min-width: 0; animation: dm-rise var(--dur-enter) var(--ease-enter) backwards; }
+  .dm-created-line { margin: 0; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-created-choices { display: grid; gap: 0.5rem; }
+  .dm-created-choice { display: grid; grid-template-columns: 4rem minmax(0, 1fr) auto; align-items: center; gap: 0.875rem; min-height: 4.25rem; padding: 0.625rem 1rem 0.625rem 0.625rem; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); color: inherit; text-decoration: none; transition: background-color var(--dur-fast) var(--ease-std), box-shadow var(--dur-fast) var(--ease-std); }
   .dm-created-choice:hover { background: var(--wash); box-shadow: inset 0 0 0 1px var(--border-strong); }
-  .dm-created-art { display: grid; place-items: end center; width: 64px; height: 48px; padding-bottom: 6px; border-radius: var(--radius); background: var(--card); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-created-art { display: grid; place-items: end center; width: 4rem; height: 3rem; padding-bottom: 0.375rem; border-radius: var(--radius); background: var(--card); box-shadow: inset 0 0 0 1px var(--border); }
   .dm-created-text { display: grid; gap: 2px; min-width: 0; }
-  .dm-created-name { font-size: 15px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-created-name { font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
   .dm-created-fee { font-weight: 400; color: var(--fg-subtle); }
-  .dm-created-note { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
-  .dm-created-go { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; line-height: 16px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); white-space: nowrap; }
+  .dm-created-note { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-created-go { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.8125rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); white-space: nowrap; }
   .dm-created-go > svg { transition: translate var(--dur-fast) var(--ease-std); }
   .dm-created-choice:hover .dm-created-go { color: var(--fg); }
   .dm-created-choice:hover .dm-created-go > svg { translate: 2px 0; }
   /* The plain row is the default: it keeps the position as it is. Its way on is in the CTA's colour. */
   .dm-created-choice[data-created-next="plain"] .dm-created-go { color: var(--primary-line); }
   @media (max-width: 479px) {
-    .dm-created-choice { grid-template-columns: 52px minmax(0, 1fr) auto; gap: 12px; padding-right: 12px; }
-    .dm-created-art { width: 52px; height: 40px; }
-    .dm-created-art > svg { width: 46px; height: 26px; }
+    .dm-created-choice { grid-template-columns: 3.25rem minmax(0, 1fr) auto; gap: 0.75rem; padding-right: 0.75rem; }
+    .dm-created-art { width: 3.25rem; height: 2.5rem; }
+    .dm-created-art > svg { width: 2.875rem; height: 1.625rem; }
     /* At this width the way on is the chevron alone, so each row's words keep to two lines; screen readers still read it. */
     .dm-created-go-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   }
 
   /* ---- The automation page: a position already in a sequence says so in its option; the done card's two ways on -- */
-  .dm-seq-pick-auto { display: inline-flex; align-items: center; min-height: 20px; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--primary-wash); color: var(--primary-line); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; white-space: nowrap; }
-  .dm-seq-done-links { display: flex; flex-wrap: wrap; gap: 8px; }
+  .dm-seq-pick-auto { display: inline-flex; align-items: center; min-height: 1.25rem; padding: 2px 0.5rem; border-radius: var(--radius-pill); background: var(--primary-wash); color: var(--primary-line); font-size: 0.75rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.12px; white-space: nowrap; }
+  .dm-seq-done-links { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   @media (max-width: 767px) { .dm-seq-done-links { justify-self: stretch; } .dm-seq-done-links > .dm-btn { flex: 1 1 100%; } }
 
   /* ---- Automate: the plain position the two automations start from --------------------------------------- */
-  .dm-auto-plain { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 20px; margin-top: 32px; padding: 8px 24px 8px 8px; }
-  .dm-auto-plain-plate { display: flex; align-items: flex-end; justify-content: center; width: 120px; height: 88px; padding-bottom: 14px; border-radius: calc(var(--radius-card) - 6px); }
-  .dm-auto-plain-plate > svg { width: 84px; height: 48px; }
-  .dm-auto-plain-body { display: grid; gap: 6px; min-width: 0; }
-  .dm-auto-plain-line { margin: 0; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); }
-  .dm-auto-plain + .dm-acct-auto-grid { margin-top: 16px; }
-  @media (min-width: 900px) { .dm-auto-plain + .dm-acct-auto-grid { margin-top: 24px; } .dm-auto-plain { margin-top: 40px; } }
+  .dm-auto-plain { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1.25rem; margin-top: 2rem; padding: 0.5rem 1.5rem 0.5rem 0.5rem; }
+  .dm-auto-plain-plate { display: flex; align-items: flex-end; justify-content: center; width: 7.5rem; height: 5.5rem; padding-bottom: 0.875rem; border-radius: calc(var(--radius-card) - 0.375rem); }
+  .dm-auto-plain-plate > svg { width: 5.25rem; height: 3rem; }
+  .dm-auto-plain-body { display: grid; gap: 0.375rem; min-width: 0; }
+  .dm-auto-plain-line { margin: 0; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; color: var(--fg-muted); }
+  .dm-auto-plain + .dm-acct-auto-grid { margin-top: 1rem; }
+  @media (min-width: 900px) { .dm-auto-plain + .dm-acct-auto-grid { margin-top: 1.5rem; } .dm-auto-plain { margin-top: 2.5rem; } }
   @media (max-width: 639px) {
-    .dm-auto-plain { grid-template-columns: auto minmax(0, 1fr); padding: 8px 8px 12px; gap: 12px 16px; }
-    .dm-auto-plain-plate { width: 88px; height: 72px; padding-bottom: 10px; }
-    .dm-auto-plain-plate > svg { width: 63px; height: 36px; }
+    .dm-auto-plain { grid-template-columns: auto minmax(0, 1fr); padding: 0.5rem 0.5rem 0.75rem; gap: 0.75rem 1rem; }
+    .dm-auto-plain-plate { width: 5.5rem; height: 4.5rem; padding-bottom: 0.625rem; }
+    .dm-auto-plain-plate > svg { width: 3.9375rem; height: 2.25rem; }
     .dm-auto-plain-go { grid-column: 1 / -1; width: 100%; }
   }
 }

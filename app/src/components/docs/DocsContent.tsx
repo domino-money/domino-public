@@ -11,6 +11,7 @@ import { Display, KeyValue, KeyValueList } from '../ui'
 import { DocsDiagram } from './DocsDiagram'
 import { DocsPager } from './DocsPager'
 import { DocsToc } from './DocsToc'
+import { rem } from '../../lib/rootScale'
 
 /** The docs' phone width, where a picture's phone shot is served (docs.css draws the page for a phone below 640 px). */
 const PHONE_MEDIA = '(max-width: 639px)'
@@ -139,8 +140,9 @@ function BlockView({ block }: { block: Block }) {
       // Sized by its own pixels, so the page keeps its place while the picture loads; lazy, so a page loads only what is read.
       // Under 640 px the phone picture, shot in a phone's window, so its words keep their size (2026-09-27, review of 260a76a).
       const { width, height, phone, alt }: Shot = SHOTS[block.shot]
-      // Drawn at twice its size for sharp text, so never wider than half its pixels: a narrow card stays card-sized.
-      const widths = { '--dm-shot-w': `${width / 2}px`, '--dm-shot-phone-w': `${(phone ?? { width }).width / 2}px` } as CSSProperties
+      // Drawn at twice its size for sharp text, so never wider than half its pixels: a narrow card stays card-sized. Half
+      // its pixels in design px, written in rem so it scales with the page (changed on purpose 2026-10-03, lib/rootScale.ts).
+      const widths = { '--dm-shot-w': rem(width / 2), '--dm-shot-phone-w': rem((phone ?? { width }).width / 2) } as CSSProperties
       return (
         <figure className="dm-docs-figure" data-docs-shot={block.shot}>
           <div className="dm-docs-shot" style={widths}>

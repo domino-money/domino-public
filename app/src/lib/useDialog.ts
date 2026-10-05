@@ -67,6 +67,11 @@ export function useDialog(open: boolean, onClose: () => void) {
 
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        // 2026-10-03 (the position dialogs' token chip, components/ui.tsx Select): a select's list open inside the dialog
+        // closes first. Its trigger keeps focus while the list is open and says so (combobox, expanded), and its own
+        // Escape closes the list; the dialog closes on the next one.
+        const active = document.activeElement
+        if (active instanceof HTMLElement && node.contains(active) && active.getAttribute('role') === 'combobox' && active.getAttribute('aria-expanded') === 'true') return
         event.stopPropagation()
         close.current()
         return

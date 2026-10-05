@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode, Ref } from 'react'
 import { cx } from '../ui'
 
@@ -22,13 +22,23 @@ export interface VignetteProps {
   running?: boolean
 }
 
+const visibleDocument = () => typeof document === 'undefined' || !document.hidden
+const serverVisibility = () => true
+function subscribeVisibility(onChange: () => void) {
+  if (typeof document === 'undefined') return () => undefined
+  document.addEventListener('visibilitychange', onChange)
+  return () => document.removeEventListener('visibilitychange', onChange)
+}
+
 /**
- * Whether at least `threshold` of the element is in view, from an
- * IntersectionObserver. Nothing is observed while `enabled` is false.
+ * Whether at least `threshold` of the element is in view in a visible tab.
+ * Hidden tabs pause the existing CSS timeline; returning resumes it without
+ * resetting the drawing. Nothing is observed while `enabled` is false.
  */
 export function useInView<T extends Element>(threshold: number, enabled = true) {
   const ref = useRef<T>(null)
   const [inView, setInView] = useState(false)
+  const visible = useSyncExternalStore(subscribeVisibility, visibleDocument, serverVisibility)
   useEffect(() => {
     const node = ref.current
     if (!enabled || !node || typeof IntersectionObserver === 'undefined') return
@@ -42,7 +52,7 @@ export function useInView<T extends Element>(threshold: number, enabled = true) 
     observer.observe(node)
     return () => observer.disconnect()
   }, [threshold, enabled])
-  return [ref, inView] as const
+  return [ref, enabled && inView && visible] as const
 }
 
 const round = (value: number) => Math.round(value * 1000) / 1000

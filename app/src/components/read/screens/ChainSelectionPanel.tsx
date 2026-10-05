@@ -22,7 +22,7 @@ function TokenSummary({ label, candidate }: { label: string; candidate: TokenCan
   return (
     <div className="flex min-w-0 items-start gap-2.5" data-summary={label}>
       <TokenMark token={candidate.token} size={20} />
-      <div className="min-w-0 text-[12px]">
+      <div className="min-w-0 text-[0.75rem]">
         <p>
           <span className="text-fg-muted">{label}: </span>
           <span className="font-medium">
@@ -52,7 +52,7 @@ function RangeSummary({ pool, range }: { pool: PoolOption; range: PracticeRange 
   const shown = shownPrice(price)
   const view = shownRange(range, price.inverted)
   return (
-    <p className="text-[12px]" data-summary="Range">
+    <p className="text-[0.75rem]" data-summary="Range">
       <span className="text-fg-muted">{COPY.selection.rangeSummary}: </span>
       <span className="tnum font-mono">
         {priceOrWords(view.lower, shown)} to {priceOrWords(view.upper, shown)}
@@ -201,7 +201,7 @@ export function ChainSelectionPanel({ onChrome }: ChainSelectionSlotProps) {
   return (
     <section aria-labelledby="chain-selection-title" className="grid gap-3 rounded-[var(--radius)] border border-dashed p-3" data-chain-selection="">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 id="chain-selection-title" className="text-[13px] font-medium">
+        <h3 id="chain-selection-title" className="text-[0.8125rem] font-medium">
           {COPY.selection.heading}
         </h3>
         <Pill>{COPY.selection.pill}</Pill>
@@ -209,7 +209,7 @@ export function ChainSelectionPanel({ onChrome }: ChainSelectionSlotProps) {
       {first && <TokenSummary label="Token" candidate={first} />}
       {second && <TokenSummary label="Second asset" candidate={second} />}
       {pool && (
-        <div className="grid gap-0.5 text-[12px]" data-summary="Pool">
+        <div className="grid gap-0.5 text-[0.75rem]" data-summary="Pool">
           <p>
             <span className="text-fg-muted">Pool: </span>
             {/* Named as its price is written (audit E21). */}

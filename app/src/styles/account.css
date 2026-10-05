@@ -6,10 +6,10 @@
 
 @layer components {
   /* ---- Shared pieces --------------------------------------------------------------------- */
-  .dm-acct-mono { font-family: var(--font-mono); font-size: 13px; line-height: 18px; letter-spacing: 0; }
-  .dm-acct-quiet { padding: 32px 16px; text-align: center; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
+  .dm-acct-mono { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: 0; }
+  .dm-acct-quiet { padding: 2rem 1rem; text-align: center; font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-muted); }
   .dm-acct-slot { min-width: 0; }
   .dm-acct-status { flex-shrink: 0; white-space: nowrap; }
-  .dm-acct-slot-wait { min-height: 240px; }
+  .dm-acct-slot-wait { min-height: 15rem; }
 
 }

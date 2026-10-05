@@ -5,6 +5,8 @@ export interface Forbidden {
 }
 export declare const FORBIDDEN: ReadonlyArray<Forbidden>
 export declare const TEXT_FILE: RegExp
+/** Changed on purpose (data) 2026-10-02 (Domino V2 integration): the markers a published, never released site may not carry. */
+export declare const PREVIEW_SITE_FORBIDDEN: ReadonlySet<string>
 export interface ForbiddenHit {
   marker: string
   match: string

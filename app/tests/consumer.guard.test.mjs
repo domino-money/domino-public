@@ -98,7 +98,10 @@ test('GUARD-2: no Number, parseFloat, parseInt or toFixed on contract values; th
 });
 
 test('GUARD-3: no route to the live deposit service; storage only for the remembered id; no HTML from strings; no URL writes (the product consumers included)', () => {
-  const importers = ALL.filter(({ code }) => specifiers(code).some((spec) => /httpTransport$/.test(spec))).map(({ path }) => path);
+  // Changed on purpose (data) 2026-10-02 (Domino V2 integration, the base agent's item 5): the live DEPOSIT transport,
+  // by what it is (deposit/httpTransport), now that Domino V2's own routes have http transports of their own
+  // (src/v2/plan/httpTransport.ts, src/v2/read/v6HttpTransport.ts, wired by src/finance/v2/http.ts).
+  const importers = ALL.filter(({ path, code }) => specifiers(code).some((spec) => spec.startsWith('.') && target(path, spec) === 'deposit/httpTransport')).map(({ path }) => path);
   assert.deepEqual(importers, ['screens/Setup.tsx'], 'only the reviewed live setup screen imports the live deposit transport');
   assert.deepEqual(hits(SCANNED, /\/api\/deposit\/v1/), ['deposit/transport.ts'], 'the prefix is declared once and used only by the unimported http transport');
   // New position's carried draft lives in memory only: no storage and no URL, whatever the product consumers grow into.
@@ -145,7 +148,9 @@ test('GUARD-5: the consumer is reached only through the two flag-gated lab scree
   // Changed on purpose (2026-09-24): the automation page lost its owner controls, and with them the activation check that read the live port.
   // Changed on purpose (owner, 2026-09-25): that check is back, behind a sequence's Turn on (components/positions/SequenceSwitch.tsx).
   // The one new production consumer is the lazy finance facade for Create position's authenticated route decision.
-  assert.deepEqual(importersOf('session/livePort'), ['components/positions/SequenceSwitch.tsx', 'finance/routedQuote.ts', 'finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
+  // Changed on purpose (data) 2026-10-02 (S2 wired): the page's V2 route module (finance/v2/http.ts) reports a crosschain
+  // route's denial of the session through the live port, as the onboarding and deposit clients do; V2 builds only.
+  assert.deepEqual(importersOf('session/livePort'), ['components/positions/SequenceSwitch.tsx', 'finance/routedQuote.ts', 'finance/v2/http.ts', 'finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
   // Create position's chunk and what it is made of ask no preview and read no session: it signs through the wallet alone.
   for (const path of ['components/create/DepositAmounts.tsx', 'components/create/CreatePosition.tsx', 'components/create/StageReview.tsx', 'lib/create/depositPlan.ts', 'lib/create/createProgress.ts']) {
     const targets = specifiers(byPath(path).code).filter((spec) => spec.startsWith('.')).map((spec) => target(path, spec));
@@ -177,19 +182,29 @@ test('GUARD-6: no clock is read outside lib/clock.ts, in the consumer code or th
 });
 
 test('DF-11: prepare has exactly one call site, inside issueWalletStep; create and a wallet send have none', () => {
-  const prepares = ALL.flatMap(({ path, code }) => [...code.matchAll(/\.prepare\(/g)].map(() => path));
+  // Changed on purpose (data) 2026-10-02 (Domino V2, spec F7 §1.8): the closed V2 clients call their shared sender's
+  // own step preparation (finance/v2/transact.ts, `t.prepare(rpc, draft, gas)`), which is not the deposit service's
+  // prepare; tests/session.source-guard.test.mjs holds them to their own list. Nothing else in src may name it.
+  // Changed on purpose (data) 2026-10-02 (Domino V2 S1, B2.4): finance/v2/direct.ts, the owner's direct exit at Uniswap's
+  // own position manager, prepares through the same shared sender.
+  const V2_SENDERS = /^finance\/v2\/(zap|vault|autoExit|direct)\.ts$/;
+  const prepares = ALL.flatMap(({ path, code }) => [...code.matchAll(/\.prepare\(/g)].map(() => path)).filter((path) => !V2_SENDERS.test(path));
   assert.deepEqual(prepares, ['deposit/flow.ts']);
   const flow = byPath('deposit/flow.ts').code;
   const start = flow.indexOf('async function issueWalletStep');
   const end = flow.indexOf('async function userAction');
   const at = flow.indexOf('.prepare(');
   assert.ok(start > 0 && start < at && at < end, 'the call sits in issueWalletStep');
+  // Changed on purpose (data) 2026-10-02 (Domino V2 integration): the V2 modules (src/v2, src/finance/v2, the integrated
+  // src/v2in and the old src/v2ui) are held to their own lists (tests/session.source-guard.test.mjs, the V2 tests; the
+  // money lock in tests/v2/live-lock.test.mjs); these two lists are V1's.
+  const V1_FILES = ALL.filter(({ path }) => !/^(v2|finance\/v2|v2in|v2ui)\//.test(path));
   // 2026-09-24: the expert creation card left Sequence.tsx; SequenceCreate's one action is the only sequence creation.
-  assert.deepEqual(hits(ALL, /\.create\(/), ['screens/SequenceCreate.tsx', 'screens/Setup.tsx']);
+  assert.deepEqual(hits(V1_FILES, /\.create\(/), ['screens/SequenceCreate.tsx', 'screens/Setup.tsx']);
   // 2026-09-24: the owner's Collect fees / Close position and the refund of a held setup deposit send one reviewed step each, on purpose.
   // 2026-09-25 (owner): and a sequence's Turn on or Pause, the one owner transaction its vault takes (components/positions/SequenceSwitch.tsx).
   // 2026-10-02 (rugged97's spec rev3 §2.13): and the withdrawal of the fees waiting in a vault, one reviewed step per balance (FeeReserves.tsx).
-  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['components/create/CreatePosition.tsx', 'components/positions/FeeReserves.tsx', 'components/positions/HeldDeposits.tsx', 'components/positions/PositionActions.tsx', 'components/positions/SequenceSwitch.tsx', 'screens/AdvancedSetup.tsx', 'screens/SequenceCreate.tsx']);
+  assert.deepEqual(hits(V1_FILES, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['components/create/CreatePosition.tsx', 'components/positions/FeeReserves.tsx', 'components/positions/HeldDeposits.tsx', 'components/positions/PositionActions.tsx', 'components/positions/SequenceSwitch.tsx', 'screens/AdvancedSetup.tsx', 'screens/SequenceCreate.tsx']);
   assert.deepEqual(hits(MINE, /available:\s*true/), [], 'no handoff says it is available');
   assert.deepEqual(hits(MINE, /executionAvailable:\s*true|automationAvailable:\s*true|serverBroadcastAvailable:\s*true/), []);
 });

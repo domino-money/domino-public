@@ -34,13 +34,12 @@ export const PERIODS: Readonly<Record<TimedPeriod, PeriodRule>> = {
 }
 
 /**
- * The periods worth offering for a history `span` seconds long (DESIGN-V2 §13.2): 24H always, 7D past 36 hours, 30D past
- * 8 days, and All. `on` false (no past read can be made here): All only, and no tabs.
+ * 24H and 7D stay visible for new positions too: each starts at the mint, never before it. 30D joins after 8 days.
+ * `on` false retains the fallback for callers with no measured period starts and no past-read route.
  */
 export function periodsFor(span: number, on: boolean): FeesPeriod[] {
   if (!on) return ['all']
-  const out: FeesPeriod[] = ['24h']
-  if (span > 36 * HOUR) out.push('7d')
+  const out: FeesPeriod[] = ['24h', '7d']
   if (span > 8 * DAY) out.push('30d')
   out.push('all')
   return out

@@ -15,6 +15,7 @@ import type { WalletPosition } from '../lib/walletPositions'
 import { Button, Card, LinkButton } from '../components/ui'
 import { IconChevronRight } from '../components/icons'
 import { ModeArt } from '../components/automate/ModeArt'
+import { ModeSummary } from '../components/automate/ModeSummary'
 import { LimitControl } from '../components/automate/LimitControl'
 import { SuccessorAxis } from '../components/automate/SuccessorAxis'
 import { CompoundPreview } from '../components/automate/CompoundPreview'
@@ -111,6 +112,12 @@ const LIMIT_LABELS: Record<keyof SequenceForm, string> = {
   maxGasCostEth: 'Gas cap per run (ETH)',
   maxObservationAgeMinutes: 'Price reading may be this old (minutes)',
   forecastHorizonHours: 'Forecast horizon (hours)',
+}
+const LIMIT_HELP: Partial<Record<keyof SequenceForm, string>> = {
+  upsidePercent: 'How much higher the next range ends, compared with the top of this range.',
+  sequenceCap: 'Includes this position and any following positions.',
+  triggerPercent: 'How close the price must get to the top of this range before Domino can consider the next position.',
+  maxOverlapPercent: 'How far the next range may extend below the top of this range.',
 }
 /** What a Domino-compound owner sets at a glance; everything else keeps its default under More limits. */
 const DOMINO_FIELDS: (keyof SequenceForm)[] = ['upsidePercent', 'sequenceCap']
@@ -447,6 +454,7 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
         {LIMIT_LABELS[name]}
         <input className="dm-field" inputMode="decimal" value={form[name]} onChange={(event) => edit(name, event.target.value)} />
       </label>
+      {LIMIT_HELP[name] && <p className="dm-seq-hint">{LIMIT_HELP[name]}</p>}
     </LimitControl>
   )
   const legend = (n: number, done: boolean, text: string) => (
@@ -555,13 +563,11 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
                     data-sequence-mode={entry.key}
                   >
                     <ModeArt mode={entry.key} size="card" play={mode === entry.key ? 'once' : 'none'} />
-                    <span>
-                      {entry.title} · {entry.fee}
-                    </span>
+                    <ModeSummary mode={entry.key} title={entry.title} fee={entry.fee} />
                   </Button>
                 ))}
               </div>
-              {chosen && <p className="dm-acct-line dm-acct-wrap dm-seq-chosen">{chosen.line}</p>}
+              <p className="dm-seq-hint">The service fee applies once to earned fees used. Your original deposit is not charged.</p>
             </fieldset>
           )}
           {usable && chosen && pair && (
@@ -609,6 +615,7 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
           )}
         </div>
         <aside className="dm-seq-aside" aria-label="Wallet steps">
+          <div className="dm-auto-aside-heading"><h2>Your automation</h2></div>
           {chosen && !usable && (
             <div className="dm-plate dm-dots-plate dm-seq-stage" data-mode={chosen.key}>
               <ModeArt mode={chosen.key} size="card" play="loop" />

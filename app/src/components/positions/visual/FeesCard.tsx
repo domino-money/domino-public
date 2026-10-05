@@ -226,9 +226,10 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
   // and a card that loses its tabs once drawn would jump): a verified history's; a saved copy's, only those its kept
   // points start (it reads nothing); none with nothing earned.
   const offered = useMemo<readonly FeesPeriod[]>(() => {
-    if (!drawn || !view || view.zero) return ALL_ONLY
-    if (drawn.phase === 'cached') return periodsFor(view.span, listed !== false).filter((one) => one === 'all' || periodStart(drawn.history, one) !== null)
-    return periodsFor(view.span, listed !== false)
+    if (!drawn || !view) return ALL_ONLY
+    const candidates = periodsFor(view.span, true)
+    if (drawn.phase === 'cached' || listed === false) return candidates.filter((one) => one === 'all' || periodStart(drawn.history, one) !== null)
+    return candidates
   }, [drawn, view, listed])
   const fallback = view ? defaultPeriodFor(view.span) : 'all'
   const period: FeesPeriod = chosen && offered.includes(chosen) ? chosen : offered.includes(fallback) ? fallback : 'all'
@@ -343,6 +344,9 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
     plot = (
       <div className="dm-fees-plot">
         <FeesChart view={view} pv={pv} zero={view.zero} onInspect={setInspected} automation={impact ? { adds: impact.adds, by: AUTOMATION_NAME[impact.kind], exactFees: impact.exactFees } : undefined} />
+        <p className="dm-fees-window" data-fees-window="" title={`${shortDate(pv.start)} ${shortTime(pv.start)} — ${shortDate(pv.end)} ${shortTime(pv.end)}`}>
+          {pv.from.kind === 'opened' ? 'Since opened' : `From ${shortDate(pv.start)} ${shortTime(pv.start)}`}
+        </p>
       </div>
     )
   } else if (pv) plot = <QuietPlot note={FEW_POINTS_NOTE} why="few_points" />

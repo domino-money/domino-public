@@ -1,0 +1,67 @@
+/* A finish for the original hero: same centered composition, tile geometry and 12-second chain.
+   A pointer light sits inside the existing artwork band; the chain loops automatically. */
+@layer components {
+  .dm-home .dm-hero {
+    --dot-hero: color-mix(in srgb, var(--fg) 8%, transparent);
+    background-color: var(--card);
+    box-shadow: inset 0 0.0625rem 0 var(--card-lip), inset 0 0 0 0.0625rem var(--border-card);
+  }
+  .dm-home .dm-hero::before {
+    background:
+      radial-gradient(62% 72% at 50% 32%, transparent 0%, var(--card) 100%),
+      radial-gradient(42% 52% at 50% 0%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 76%);
+  }
+  .dm-home .dm-hero::after {
+    background: radial-gradient(52% 65% at 88% 100%, var(--primary-glow), transparent 74%);
+  }
+
+  /* Clearer tile edges and pips, without making the whole chain solid orange. */
+  .dm-home .dm-hero-art {
+    --art-loops: infinite;
+    --hero-tile: color-mix(in srgb, var(--surface-2) 55%, var(--surface-3));
+    --hero-edge: color-mix(in srgb, var(--primary-line) 74%, transparent);
+    --hero-pip: color-mix(in srgb, var(--primary-line) 94%, transparent);
+    --hero-lit: color-mix(in srgb, var(--primary) 32%, var(--hero-tile));
+  }
+  .dm-hero-art .tile-bevel {
+    fill: none;
+    stroke: var(--fg);
+    stroke-opacity: 0.16;
+    stroke-width: 1;
+    stroke-linecap: round;
+  }
+  .dm-hero-art .tile-depth {
+    fill: none;
+    stroke: var(--bg);
+    stroke-opacity: 0.5;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+  }
+  .dm-hero-art .next .tile-bevel { stroke-opacity: 0.32; }
+  .dm-hero-art .next .tile-depth { stroke-opacity: 0.2; }
+  .dm-hero-art .ground-rim {
+    fill: none;
+    stroke: var(--primary-line);
+    stroke-opacity: 0.3;
+    stroke-width: 1;
+    stroke-linejoin: round;
+  }
+
+  /* Pointer feedback is a light on the scene, never a moving tile or a new
+     animation timeline. */
+  .dm-home .dm-hero-band > .dm-hero-art { pointer-events: auto; }
+  .dm-hero-art .dm-hero-interaction-area { fill: transparent; pointer-events: all; }
+  .dm-hero-spotlight {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(ellipse 10rem 6rem at var(--hero-pointer-x, 82%) var(--hero-pointer-y, 60%), var(--primary-glow), transparent 75%);
+    transition: opacity var(--dur-hover) var(--ease-std);
+  }
+  .dm-hero-spotlight[data-active] { opacity: 0.7; }
+  html.dm-still .dm-hero-spotlight { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .dm-hero-spotlight { display: none; }
+  }
+}

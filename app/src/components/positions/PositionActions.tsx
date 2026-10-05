@@ -1,21 +1,21 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import { suggestGasBudget } from '../../finance/gas'
 import { closeMinimums, createPositionClient, positionTokenId, type PositionClient, type PositionState, type PreparedPosition } from '../../finance/position'
 import type { GasBudget } from '../../finance/setup'
 import { setupWallet } from '../../finance/wallet'
 import { errorCode, financeErrorText } from '../../finance/words'
 import { CREATE } from '../../lib/create/copy'
-import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom } from '../../lib/create/slippage'
+import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom, slippageWritten } from '../../lib/create/slippage'
 import { formatUsd, usdgValue } from '../../lib/format/usd'
 import type { TokenDisplay } from '../../lib/read/types'
-import { useDialog } from '../../lib/useDialog'
 import { useWalletIdentity, walletKey } from '../../lib/walletIdentity'
 import { SlippageChoice } from '../create/SlippageChoice'
-import { IconClose } from '../icons'
 import { TokenMark } from '../TokenIcon'
-import { Button, IconButton, KeyValue, KeyValueList, Skeleton } from '../ui'
+import { Button, Skeleton } from '../ui'
+import { IconCoins, IconClose } from '../icons'
+import { ActionSheet, SheetAlert, SheetCard, SheetFact, SheetFacts, SheetMore, SheetNote, SheetStatus, TokenRow, TokenRows } from './ActionSheet'
 import { SequenceSwitch } from './SequenceSwitch'
+import { QuietMark } from './visual/QuietMarks'
 import { amountText, currencyName, outcomeUnknown, readAfterReplaced, watchReceipt } from './walletSteps'
 // The person's own refusal, by the nonce latch's rule: 4001, WalletConnect's 5000, a hardware wallet's words (fix round 1).
 import { personRefused as isRejection } from '../../finance/nonce'
@@ -143,45 +143,34 @@ function paysLess(fresh: PreparedPosition, shown: PreparedPosition, bps: number)
   return lessIn(fresh.atLeast, [minimums[0] + fees[0], minimums[1] + fees[1]])
 }
 
-/** One amount of one token, or a dash with the reason in its title when the token's decimals are unknown. */
-function Amount({ raw, currency, token }: { raw: bigint; currency: PositionCurrency; token?: TokenDisplay }) {
-  const shown = amountText(raw, currency.decimals)
-  const name = currencyName(currency)
-  if (!shown) return <span title={`${name}’s decimals are unknown.`}>— {name}</span>
+/**
+ * The pair's amounts as token rows (ActionSheet.tsx): each token's mark (the page's own, or the quiet mark its address
+ * gives), its figure and its symbol; a dash with the reason in its title when a token's decimals are unknown, and
+ * skeletons while the position is read. `lg` for what the wallet receives, `sm` for At least.
+ */
+function Pair({ amounts, currencies, tokens, size = 'lg', unread = null }: { amounts: readonly [bigint, bigint] | null; currencies: readonly [PositionCurrency, PositionCurrency]; tokens?: readonly [TokenDisplay, TokenDisplay] | null; size?: 'lg' | 'sm'; unread?: string | null }) {
+  const markSize = size === 'lg' ? 28 : 16
   return (
-    <span className="dm-receipt-amount tnum" title={`${shown.exact} ${name}`}>
-      {token && <TokenMark token={token} size={20} />}
-      {shown.text} {name}
-    </span>
+    <TokenRows size={size}>
+      {currencies.map((currency, index) => {
+        const name = currencyName(currency)
+        const token = tokens?.[index]
+        const mark = token ? <TokenMark token={token} size={markSize} /> : <QuietMark address={currency.address} size={markSize} />
+        const raw = amounts?.[index] ?? null
+        const shown = raw === null ? null : amountText(raw, currency.decimals)
+        if (raw === null) return <TokenRow key={currency.address} mark={mark} amount={unread ? <span className="dm-pa-token-amount" title={unread}>— <bdi className="dm-pa-token-symbol">{name}</bdi></span> : <Skeleton className="dm-receipt-skel" />} />
+        if (!shown) return <TokenRow key={currency.address} mark={mark} amount={<span className="dm-pa-token-amount" title={`${name}’s decimals are unknown.`}>— <bdi className="dm-pa-token-symbol">{name}</bdi></span>} />
+        return <TokenRow key={currency.address} mark={mark} figure={shown.text} symbol={name} title={`${shown.exact} ${name}`} />
+      })}
+    </TokenRows>
   )
 }
 const Dash = ({ reason }: { reason: string }) => <span title={reason}>—</span>
-function Pair({ amounts, currencies, tokens }: { amounts: readonly [bigint, bigint] | null; currencies: readonly [PositionCurrency, PositionCurrency]; tokens?: readonly [TokenDisplay, TokenDisplay] | null }) {
-  if (!amounts) return <Skeleton className="dm-receipt-skel" />
-  return (
-    <span className="dm-receipt-pair">
-      <Amount raw={amounts[0]} currency={currencies[0]} token={tokens?.[0]} />
-      <Amount raw={amounts[1]} currency={currencies[1]} token={tokens?.[1]} />
-    </span>
-  )
-}
 
-function ActionDialog({ action, onClose, children, footer }: { action: Action; onClose: () => void; children: ReactNode; footer: ReactNode }) {
-  const dialog = useDialog(true, onClose)
-  const id = `position-${action}-title`
-  return createPortal(
-    <div role="presentation" className="dm-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby={id} className="dm-dialog dm-flow-dialog" data-position-dialog={action}>
-        <div className="dm-flow-dialog-head">
-          <h2 id={id} tabIndex={-1} className="dm-dialog-title outline-none">{TITLE[action]}</h2>
-          <IconButton label="Close" icon={<IconClose />} variant="ghost" size="sm" className="dm-dialog-close" onClick={onClose} />
-        </div>
-        <div className="dm-flow-dialog-body grid gap-3">{children}</div>
-        <div className="dm-flow-dialog-foot">{footer}</div>
-      </div>
-    </div>,
-    document.body,
-  )
+/** The dialogs' one plain line under the title. Changed on purpose 2026-10-01 (audit E5): plain words, no "liquidity" and no "NFT". */
+const LEDE: Readonly<Record<Action, string>> = {
+  collect: 'The fees this position has earned go to your wallet. The position stays open.',
+  close: 'Your tokens and fees return to your wallet. The position, now empty, stays in your wallet.',
 }
 
 export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null, automate = null, primary }: PositionActionsProps) {
@@ -328,7 +317,7 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
   return (
     <>
       <SequenceSwitch tokenId={tokenId} holder={owner} liquid={!empty} fallback={automate} />
-      <div className="flex flex-wrap items-center gap-2" data-position-actions={hooked ? 'hooks' : ''}>
+      <div className="dm-position-base-actions" data-position-actions={hooked ? 'hooks' : ''}>
         {/* One primary (2026-09-27, Domino's buttons): Collect fees for a plain position; for one of Domino's sequences,
             which collects and re-adds its fees itself, outlined, and the sequence's own Turn on is the primary. */}
         <Button
@@ -337,11 +326,14 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
           disabled={hooked || empty || noFees || (pending && run?.action !== 'collect')}
           title={collectReason}
           aria-busy={(pending && run?.action === 'collect') || undefined}
+          aria-haspopup="dialog"
+          aria-expanded={open === 'collect'}
           data-position-action="collect"
           onClick={() => void show('collect')}
         >
-          Collect fees
+          <IconCoins size={18} /><span>Collect fees</span>
         </Button>
+        <span className="dm-position-tools-slot" data-position-action-tools="" />
         {!empty && (
           <Button
             type="button"
@@ -349,83 +341,73 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
             disabled={hooked || (pending && run?.action !== 'close')}
             title={hooked ? HOOKED : undefined}
             aria-busy={(pending && run?.action === 'close') || undefined}
+            aria-haspopup="dialog"
+            aria-expanded={open === 'close'}
             data-position-action="close"
             onClick={() => void show('close')}
           >
-            Close position
+            <IconClose size={18} /><span>Close position</span>
           </Button>
         )}
+        {/* Changed on purpose 2026-10-03 (the owner, point 9: "literally ugly"): the dialog is the position actions' family
+            (ActionSheet.tsx): the plain line under the title; what the wallet receives as token rows in a card (its USD
+            value, at the pool's price, on the card's right); At least and the network fee as quiet facts under it; the
+            note, the step in progress and a failure as their own lines; the slippage tolerance under a quiet Advanced at
+            the foot of the body; one button. The same figures, words and hooks as before. */}
         {open && (
-          <ActionDialog
-            action={open}
+          <ActionSheet
+            id={`position-${open}`}
+            title={TITLE[open]}
+            lede={LEDE[open]}
             onClose={() => setOpen(null)}
+            data-position-dialog={open}
             footer={
               shown?.stage === 'done' ? (
-                <Button type="button" variant="outline" size="lg" className="w-full" onClick={() => setOpen(null)}>
+                <Button type="button" variant="secondary" size="lg" onClick={() => setOpen(null)}>
                   Back to position
                 </Button>
               ) : (
-                <Button type="button" variant="primary" size="lg" className="w-full" disabled={!canSend} aria-busy={busy || undefined} data-position-send={open} onClick={() => void confirm(open)}>
+                <Button type="button" variant="primary" size="lg" disabled={!canSend} aria-busy={busy || undefined} data-position-send={open} onClick={() => void confirm(open)}>
                   {PRIMARY[open]}
                 </Button>
               )
             }
           >
-            <p className="dm-receipt-lede">
-              {/* Changed on purpose 2026-10-01 (audit E5): plain words, no "liquidity" and no "NFT" on the dialog. */}
-              {open === 'collect'
-                ? 'The fees this position has earned go to your wallet. The position stays open.'
-                : 'Your tokens and fees return to your wallet. The position, now empty, stays in your wallet.'}
-            </p>
-            <KeyValueList className="dm-receipt" data-position-receive={open}>
-              <KeyValue label="You receive">
-                {prepared || !unread ? <Pair amounts={prepared ? prepared.receive : null} currencies={currencies} tokens={tokens} /> : <Dash reason={unread} />}
-              </KeyValue>
-              {receiveUsd && usd && (
-                <p className="dm-usd-line" title={`Pool price at block ${usd.block}`}>
-                  {receiveUsd}
-                </p>
-              )}
-              {open === 'close' && (
-                <KeyValue label="At least" data-position-at-least="">
-                  {atLeast ? <Pair amounts={atLeast} currencies={currencies} tokens={tokens} /> : prepared ? <Dash reason="Choose a slippage limit from 0.1% to 5%." /> : unread ? <Dash reason={unread} /> : <Pair amounts={null} currencies={currencies} />}
-                </KeyValue>
-              )}
-              <KeyValue label="Network fee" data-position-network-fee="">
-                {fee ? <span className="tnum" title={`${fee.exact} ETH at most`}>Up to {fee.text} ETH</span> : unread ? <Dash reason={unread} /> : <Skeleton className="ml-auto h-4 w-20" />}
-              </KeyValue>
-            </KeyValueList>
+            <div className="dm-pa-field" data-position-receive={open}>
+              <SheetCard caption="You receive" aside={receiveUsd && usd ? <span title={`Pool price at block ${usd.block}`}>{receiveUsd}</span> : undefined}>
+                <Pair amounts={prepared ? prepared.receive : null} currencies={currencies} tokens={tokens} unread={unread} />
+              </SheetCard>
+              <SheetFacts>
+                {open === 'close' && (
+                  <SheetFact label="At least" data-position-at-least="">
+                    {atLeast ? <Pair amounts={atLeast} currencies={currencies} tokens={tokens} size="sm" /> : prepared ? <Dash reason="Choose a slippage limit from 0.1% to 5%." /> : unread ? <Dash reason={unread} /> : <Pair amounts={null} currencies={currencies} tokens={tokens} size="sm" />}
+                  </SheetFact>
+                )}
+                <SheetFact label="Network fee" data-position-network-fee="">
+                  {fee ? <span className="tnum" title={`${fee.exact} ETH at most`}>Up to {fee.text} ETH</span> : unread ? <Dash reason={unread} /> : <Skeleton className="ml-auto h-4 w-20" />}
+                </SheetFact>
+              </SheetFacts>
+            </div>
+            {prepared?.state.hasSubscriber && (
+              <SheetNote tone="warn" data-position-warning="automation">
+                {AUTOMATION}
+              </SheetNote>
+            )}
+            {nothingToCollect && shown?.stage !== 'done' && <SheetNote data-position-nothing="">There are no fees to collect right now.</SheetNote>}
+            {shown && PROGRESS[shown.stage] && (
+              <SheetStatus state={shown.stage === 'done' ? 'done' : 'busy'} data-position-progress={shown.stage}>
+                {PROGRESS[shown.stage]}
+              </SheetStatus>
+            )}
+            {shown?.notice && <SheetAlert data-position-notice={shown.notice.code ?? 'said'}>{shown.notice.text}</SheetAlert>}
             {/* The slippage tolerance under a closed Advanced, as New position has it (audit E5, 2026-10-01): At least, above,
                 already says what it allows. Its choices are New position's, under the same name. */}
             {open === 'close' && (
-              <details className="dm-details dm-flow-advanced" data-close-advanced="">
-                <summary>
-                  <span>{CREATE.amount.advanced}</span>
-                </summary>
+              <SheetMore label={CREATE.amount.advanced} value={bps === null ? undefined : `${CREATE.amount.slippageLabel} ${slippageWritten(bps)}`} data-close-advanced="">
                 <SlippageChoice id="close-slippage" label={CREATE.amount.slippageLabel} bps={slippage} onChange={setSlippage} disabled={busy || shown?.stage === 'done'} />
-              </details>
+              </SheetMore>
             )}
-            {prepared?.state.hasSubscriber && (
-              <p className="text-body text-fg-muted" data-position-warning="automation">
-                {AUTOMATION}
-              </p>
-            )}
-            {nothingToCollect && shown?.stage !== 'done' && (
-              <p className="text-body text-fg-muted" data-position-nothing="">
-                There are no fees to collect right now.
-              </p>
-            )}
-            {shown && PROGRESS[shown.stage] && (
-              <p role="status" className="text-body font-medium text-fg" data-position-progress={shown.stage}>
-                {PROGRESS[shown.stage]}
-              </p>
-            )}
-            {shown?.notice && (
-              <p role="alert" className="text-body text-fg-muted" data-position-notice={shown.notice.code ?? 'said'}>
-                {shown.notice.text}
-              </p>
-            )}
-          </ActionDialog>
+          </ActionSheet>
         )}
       </div>
     </>

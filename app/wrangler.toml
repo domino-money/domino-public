@@ -114,3 +114,10 @@ service = "domino-execution-bridge"
 [[env.production.services]]
 binding = "SETUP_BRIDGE"
 service = "domino-setup-bridge"
+
+# 2026-10-04 (the owner: the site runs on Domino V2): S1's plans (position-plan-v1, spec F7 §2.4), bound to their own Worker
+# (bridge/wrangler.position-plan.toml, deployed off: POSITION_PLAN_BRIDGE_ENABLED "false" until its Access pair and
+# rugged97's listener are live). The forwarder's position-plan family (functions/_lib/bridge.ts) answers through it.
+[[env.production.services]]
+binding = "POSITION_PLAN_BRIDGE"
+service = "domino-position-plan-bridge"

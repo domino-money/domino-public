@@ -20,18 +20,25 @@ const batchPrefix = 'domino.offered-batch.v1.'
 const batchAtPrefix = 'domino.offered-batch-at.v1.'
 /** The lock a page holds while its offer may still be open in the wallet: the latch's own hash, under its own prefix. */
 const livePrefix = 'domino.offered-live.v1.'
-const keyFor = (owner: string, nonce: bigint) => {
+/**
+ * The chain a journal keeps latches for. Changed on purpose 2026-10-02 (Domino V2, spec F7 §1.3: the nonce journal's and
+ * the batch latch's keys include the action's chain): the chain is the first field of the hashed input, as it always was
+ * for Robinhood Chain, so a journal for 4663 (every V1 caller, the default) writes the very same keys as before, and the
+ * same account's nonce 7 on Base is another latch than its nonce 7 on Robinhood Chain.
+ */
+const ROBINHOOD = 4663
+const chainOf = (chainId: number) => {
+  if (!Number.isSafeInteger(chainId) || chainId <= 0) throw new Error('invalid_wallet_chain')
+  return chainId
+}
+const nonceKey = (chainId: number, owner: string, nonce: bigint) => {
   if (!/^0x[0-9a-f]{40}$/.test(owner) || nonce < 0n || nonce >= 2n ** 64n) throw new Error('invalid_wallet_nonce')
-  return prefix + keccak256(stringToHex(`4663|${owner}|${nonce}`)).slice(2)
+  return prefix + keccak256(stringToHex(`${chainOf(chainId)}|${owner}|${nonce}`)).slice(2)
 }
-const atKeyFor = (owner: string, nonce: bigint) => atPrefix + keyFor(owner, nonce).slice(prefix.length)
-const liveFor = (owner: string, nonce: bigint) => livePrefix + keyFor(owner, nonce).slice(prefix.length)
-const batchKeyFor = (owner: string, operationId: string) => {
+const batchKey = (chainId: number, owner: string, operationId: string) => {
   if (!/^0x[0-9a-f]{40}$/.test(owner) || !/^0x[0-9a-f]{64}$/.test(operationId)) throw new Error('invalid_wallet_batch')
-  return batchPrefix + keccak256(stringToHex(`4663|${owner}|${operationId}`)).slice(2)
+  return batchPrefix + keccak256(stringToHex(`${chainOf(chainId)}|${owner}|${operationId}`)).slice(2)
 }
-const batchAtKeyFor = (owner: string, operationId: string) => batchAtPrefix + batchKeyFor(owner, operationId).slice(batchPrefix.length)
-const batchLiveFor = (owner: string, operationId: string) => livePrefix + 'b' + batchKeyFor(owner, operationId).slice(batchPrefix.length)
 /**
  * The mark after a claim time that says the page which claimed the latch holds its lock while it is open (2026-10-01, fix
  * round 1). Only a claim since audit C2 holds one. A latch from the release before it (production until this package: no
@@ -102,7 +109,14 @@ export const personRefused = (error: unknown): boolean => refusedWith(error, PER
  * when the person says they rejected or closed the request in their wallet (forget). Nothing here ever sends: each
  * later offer is a new review, and each money step names what it does once on chain (an operation is opened, swapped,
  * minted and closed once), so a request still open in a wallet cannot repeat one. */
-export function createNonceJournal(storage: StoragePort, locks: LockPort, randomId: () => string) {
+export function createNonceJournal(storage: StoragePort, locks: LockPort, randomId: () => string, chainId: number = ROBINHOOD) {
+  chainOf(chainId)
+  const keyFor = (owner: string, nonce: bigint) => nonceKey(chainId, owner, nonce)
+  const atKeyFor = (owner: string, nonce: bigint) => atPrefix + keyFor(owner, nonce).slice(prefix.length)
+  const liveFor = (owner: string, nonce: bigint) => livePrefix + keyFor(owner, nonce).slice(prefix.length)
+  const batchKeyFor = (owner: string, operationId: string) => batchKey(chainId, owner, operationId)
+  const batchAtKeyFor = (owner: string, operationId: string) => batchAtPrefix + batchKeyFor(owner, operationId).slice(batchPrefix.length)
+  const batchLiveFor = (owner: string, operationId: string) => livePrefix + 'b' + batchKeyFor(owner, operationId).slice(batchPrefix.length)
   const held = () => {
     let count = 0
     for (let i = 0; i < storage.length; i++) if (storage.key(i)?.startsWith(prefix) || storage.key(i)?.startsWith(batchPrefix)) count++
@@ -267,10 +281,15 @@ function browserLocks(locks: LockManager): LockPort {
     held: (name) => locks.request(name, { ifAvailable: true }, async (lock) => lock === null) as unknown as Promise<boolean>,
   }
 }
-function browserJournal() {
+function browserJournal(chainId: number = ROBINHOOD) {
   if (typeof window === 'undefined' || !navigator.locks) throw new Error('wallet_nonce_coordination_unavailable')
-  return createNonceJournal(window.localStorage, browserLocks(navigator.locks), () => crypto.randomUUID())
+  return createNonceJournal(window.localStorage, browserLocks(navigator.locks), () => crypto.randomUUID(), chainId)
 }
+/**
+ * The page's journal for one chain (Domino V2, spec F7 §1.3): the same latches, keys and locks as V1's, keyed by that
+ * chain (finance/v2/wallet.ts). V1's functions below are this journal for Robinhood Chain.
+ */
+export const chainNonceJournal = (chainId: number) => browserJournal(chainId)
 export const ownerNonceOffered = (owner: string, nonce: bigint) => browserJournal().offered(owner, nonce)
 export const claimOwnerNonce = (owner: string, nonce: bigint) => browserJournal().claim(owner, nonce, Date.now() / 1000)
 export const releaseOwnerNonceAfterRejection = (owner: string, nonce: bigint, token: string) => browserJournal().releaseAfterRejection(owner, nonce, token)

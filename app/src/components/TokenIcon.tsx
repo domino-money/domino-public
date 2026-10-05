@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import type { TokenDisplay } from '../lib/read/types'
 import { tokenArtwork, tokenArtworkKey } from '../lib/tokenArtwork'
 import { tokenHue } from '../lib/format/tokenHue'
+import { rem } from '../lib/rootScale'
 
 /**
  * Token marks.
@@ -16,6 +17,10 @@ import { tokenHue } from '../lib/format/tokenHue'
  * vectors. Those files are their projects' own marks, saved into this
  * repository rather than hot-linked. `bg` still matters for them: it is the
  * colour behind the image while it loads and the disc colour if it is missing.
+ *
+ * Changed on purpose 2026-10-03 (the owner: the site looks too big at 100%): a mark's `size` is in design px and drawn
+ * in rem, so it keeps its size beside its text at every scale of the root (lib/rootScale.ts). The overlap ring and its
+ * outline offset are hairlines and stay px.
  */
 
 type Spec = {
@@ -70,8 +75,8 @@ export function TokenIcon({
         onError={() => setBrokenSrc(src)}
         className={className ? `dm-token-img ${className}` : 'dm-token-img'}
         style={{
-          width: size,
-          height: size,
+          width: rem(size),
+          height: rem(size),
           borderRadius: '50%',
           border,
           // The theme's hairline sits on the art's own edge, inside the overlap ring (shell.css .dm-token-img).
@@ -92,8 +97,8 @@ export function TokenIcon({
       aria-hidden="true"
       className={className}
       style={{
-        width: size,
-        height: size,
+        width: rem(size),
+        height: rem(size),
         borderRadius: '50%',
         border,
         display: 'inline-flex',
@@ -103,7 +108,7 @@ export function TokenIcon({
         color: spec.fg ?? '#fff',
         fontFamily: 'var(--font-mono)',
         fontWeight: 600,
-        fontSize: Math.max(9, size * 0.34),
+        fontSize: rem(Math.max(9, size * 0.34)),
         letterSpacing: '0.2px',
         flexShrink: 0,
         ...style,
@@ -180,7 +185,7 @@ function RemoteTokenMark({ token, size = 24, ring, style, monogram = false }: Ma
     return () => clearTimeout(timer)
   }, [src, loaded, broken, token.chainId, token.address])
   const markStyle: CSSProperties = {
-    width: size, height: size, borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined,
+    width: rem(size), height: rem(size), borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined,
     display: 'inline-block', flexShrink: 0, background: 'var(--surface-3)',
     // The plain disc's own line, inside the overlap ring: until artwork paints, and when there is none. Never letters.
     boxShadow: loaded ? undefined : DISC_LINE,
@@ -193,9 +198,9 @@ function RemoteTokenMark({ token, size = 24, ring, style, monogram = false }: Ma
   // No inline background or shadow here: inline styles would beat the disc's class.
   const letters = monogram ? monogramOf(token.symbol, token.address) : ''
   const discStyle = {
-    width: size, height: size, borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined,
+    width: rem(size), height: rem(size), borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined,
     display: letters ? 'inline-grid' : 'inline-block', flexShrink: 0, '--mark-h': tokenHue(token.address),
-    ...(letters ? { fontSize: Math.max(9, Math.round(size * (letters.length > 1 ? 0.34 : 0.42))) } : {}), ...style,
+    ...(letters ? { fontSize: rem(Math.max(9, Math.round(size * (letters.length > 1 ? 0.34 : 0.42)))) } : {}), ...style,
   } as CSSProperties
   // The letters are drawn by the class from `data-letters` (shell.css), not as text: a copied row reads "UFG", never "UF UFG".
   return (
@@ -214,7 +219,7 @@ export function TokenMarkPair({ base, quote, size = 32, ring = 'var(--card)' }: 
   return (
     <span className="inline-flex shrink-0 items-center" aria-hidden="true">
       <TokenMark token={base} size={size} ring={ring} />
-      <TokenMark token={quote} size={size} ring={ring} style={{ marginLeft: -size * 0.3 }} />
+      <TokenMark token={quote} size={size} ring={ring} style={{ marginLeft: rem(-size * 0.3) }} />
     </span>
   )
 }

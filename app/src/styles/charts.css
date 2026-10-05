@@ -47,7 +47,7 @@
   .dm-live-ring { fill: var(--primary-line); opacity: 0; animation: dm-live-ring 1.8s ease-out calc(var(--dur-wipe) + 200ms) 3; }
   .dm-live-ring + .dm-live-ring { animation-delay: calc(var(--dur-wipe) + 700ms); }
   .dm-last-line { stroke: var(--primary-line); stroke-opacity: 0.45; stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
-  .dm-last-chip { position: absolute; right: 0; display: inline-flex; align-items: center; height: 20px; padding: 0 6px; translate: 0 -50%; border-radius: 6px; background: var(--primary); color: var(--primary-fg); font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: -0.1px; font-variant-numeric: lining-nums tabular-nums; white-space: nowrap; transform-origin: right center; animation: dm-dot-pop var(--dur-dot) var(--ease-pop) var(--dur-wipe) backwards; }
+  .dm-last-chip { position: absolute; right: 0; display: inline-flex; align-items: center; height: 1.25rem; padding: 0 0.375rem; translate: 0 -50%; border-radius: 0.375rem; background: var(--primary); color: var(--primary-fg); font-size: 0.6875rem; line-height: 0.875rem; font-weight: 500; letter-spacing: -0.1px; font-variant-numeric: lining-nums tabular-nums; white-space: nowrap; transform-origin: right center; animation: dm-dot-pop var(--dur-dot) var(--ease-pop) var(--dur-wipe) backwards; }
   .dm-axis { fill: var(--fg-subtle); font-family: var(--font-sans); font-size: 12px; letter-spacing: -0.12px; font-variant-numeric: lining-nums tabular-nums; }
   .dm-band { fill: var(--band-fill); }
   .dm-band-edge { stroke: var(--primary-line); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
@@ -91,30 +91,30 @@
   .dm-spark .dm-hover-halo { fill: var(--spark-line); opacity: 0.16; }
   .dm-spark .dm-hover-dot { fill: var(--spark-line); stroke: var(--chart-ground, var(--card)); }
   /* The inspected hour: its close over its time, beside the crosshair, above the point (under it near the top). */
-  .dm-spark-tip { position: absolute; z-index: 2; display: grid; gap: 1px; padding: 6px 9px 7px; border-radius: var(--radius-sm); background: var(--tooltip-bg); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: var(--elev-tooltip); white-space: nowrap; pointer-events: none; translate: 12px calc(-100% - 12px); animation: dm-fade var(--dur-instant) linear backwards; }
-  .dm-spark-tip[data-side="left"] { translate: calc(-100% - 12px) calc(-100% - 12px); text-align: right; }
-  .dm-spark-tip[data-place="below"] { translate: 12px 12px; }
-  .dm-spark-tip[data-side="left"][data-place="below"] { translate: calc(-100% - 12px) 12px; }
-  .dm-spark-tip-price { font-size: 13px; line-height: 16px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
-  .dm-spark-tip-time { font-size: 11px; line-height: 14px; letter-spacing: -0.08px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-spark-tip { position: absolute; z-index: 2; display: grid; gap: 1px; padding: 0.375rem 0.5625rem 0.4375rem; border-radius: var(--radius-sm); background: var(--tooltip-bg); -webkit-backdrop-filter: blur(0.5rem); backdrop-filter: blur(0.5rem); box-shadow: var(--elev-tooltip); white-space: nowrap; pointer-events: none; translate: 0.75rem calc(-100% - 0.75rem); animation: dm-fade var(--dur-instant) linear backwards; }
+  .dm-spark-tip[data-side="left"] { translate: calc(-100% - 0.75rem) calc(-100% - 0.75rem); text-align: right; }
+  .dm-spark-tip[data-place="below"] { translate: 0.75rem 0.75rem; }
+  .dm-spark-tip[data-side="left"][data-place="below"] { translate: calc(-100% - 0.75rem) 0.75rem; }
+  .dm-spark-tip-price { font-size: 0.8125rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.16px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-spark-tip-time { font-size: 0.6875rem; line-height: 0.875rem; letter-spacing: -0.08px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
 
   /* ---- Tooltip (§4.4): glass, placed without measuring, fades in once ----------------------------- */
-  .dm-chart-tooltip { position: absolute; z-index: 5; display: grid; gap: 4px; min-width: 160px; max-width: 240px; padding: 10px 12px; border-radius: var(--radius); background: var(--tooltip-bg); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: var(--elev-tooltip); font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg); pointer-events: none; animation: dm-fade var(--dur-instant) linear backwards; }
-  .dm-chart-tooltip[data-side="left"] { translate: calc(-100% - 24px) 0; }
-  .dm-chart-tooltip-head { margin-bottom: 2px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-chart-tooltip-row { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; min-width: 0; }
+  .dm-chart-tooltip { position: absolute; z-index: 5; display: grid; gap: 0.25rem; min-width: 10rem; max-width: 15rem; padding: 0.625rem 0.75rem; border-radius: var(--radius); background: var(--tooltip-bg); -webkit-backdrop-filter: blur(0.5rem); backdrop-filter: blur(0.5rem); box-shadow: var(--elev-tooltip); font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg); pointer-events: none; animation: dm-fade var(--dur-instant) linear backwards; }
+  .dm-chart-tooltip[data-side="left"] { translate: calc(-100% - 1.5rem) 0; }
+  .dm-chart-tooltip-head { margin-bottom: 2px; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-chart-tooltip-row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; min-width: 0; }
   .dm-chart-tooltip-row > :first-child { color: var(--fg-muted); }
   .dm-chart-tooltip-row > :last-child { font-weight: 500; text-align: right; font-variant-numeric: lining-nums tabular-nums; }
 
   /* ---- Loading (§4.5): a wave under the shimmer, tick bubbles, header bubbles ------------------------ */
   .dm-chart-skel { position: relative; width: 100%; }
-  .dm-chart-skel-head { display: grid; gap: 8px; margin-bottom: 16px; }
+  .dm-chart-skel-head { display: grid; gap: 0.5rem; margin-bottom: 1rem; }
   .dm-chart-skel-plot { position: relative; }
   /* The wave: a skeleton box masked by a data-URL sine (no url( inside the data URL). */
-  .dm-chart-skel-wave { position: absolute; inset: 12px 56px 24px 0; border-radius: 0; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 120' preserveAspectRatio='none'%3E%3Cpath d='M0 70 C 30 40, 60 40, 90 62 S 150 96, 180 70 S 240 30, 270 48 S 330 84, 360 56' stroke='black' stroke-width='2' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 120' preserveAspectRatio='none'%3E%3Cpath d='M0 70 C 30 40, 60 40, 90 62 S 150 96, 180 70 S 240 30, 270 48 S 330 84, 360 56' stroke='black' stroke-width='2' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
-  .dm-chart-skel[data-axes="false"] .dm-chart-skel-wave { inset: 12px 0 0 0; }
-  .dm-chart-skel-y { position: absolute; top: 12px; right: 0; bottom: 24px; display: flex; flex-direction: column; justify-content: space-between; }
-  .dm-chart-skel-x { position: absolute; left: 0; right: 56px; bottom: 0; display: flex; justify-content: space-between; }
+  .dm-chart-skel-wave { position: absolute; inset: 0.75rem 3.5rem 1.5rem 0; border-radius: 0; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 120' preserveAspectRatio='none'%3E%3Cpath d='M0 70 C 30 40, 60 40, 90 62 S 150 96, 180 70 S 240 30, 270 48 S 330 84, 360 56' stroke='black' stroke-width='2' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 120' preserveAspectRatio='none'%3E%3Cpath d='M0 70 C 30 40, 60 40, 90 62 S 150 96, 180 70 S 240 30, 270 48 S 330 84, 360 56' stroke='black' stroke-width='2' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
+  .dm-chart-skel[data-axes="false"] .dm-chart-skel-wave { inset: 0.75rem 0 0 0; }
+  .dm-chart-skel-y { position: absolute; top: 0.75rem; right: 0; bottom: 1.5rem; display: flex; flex-direction: column; justify-content: space-between; }
+  .dm-chart-skel-x { position: absolute; left: 0; right: 3.5rem; bottom: 0; display: flex; justify-content: space-between; }
 
   /* ---- RangePreview (§4.7): the band, the current price, the two ends --------------------------------- */
   .dm-range-preview { position: relative; width: 100%; }
@@ -124,10 +124,10 @@
   .dm-range-preview-edge { position: absolute; left: 0; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--primary-line); transition: translate var(--dur-step) var(--ease-enter); }
   .dm-range-preview[data-in="false"] .dm-range-preview-band { background: var(--wash-strong); }
   .dm-range-preview[data-in="false"] .dm-range-preview-edge { background: var(--fg-faint); }
-  .dm-range-preview-now { position: absolute; left: 0; top: 0; height: 100%; width: 1.5px; margin-left: -0.75px; background: radial-gradient(circle, var(--fg-subtle) 0.75px, transparent 1px) center top / 1.5px 5px repeat-y; transition: translate var(--dur-step) var(--ease-enter); }
-  .dm-range-preview-dot { position: absolute; left: 0; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: var(--radius-pill); background: var(--fg); box-shadow: 0 0 0 2px var(--card); transition: translate var(--dur-step) var(--ease-enter); }
-  .dm-range-preview-label { position: absolute; left: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; transition: translate var(--dur-step) var(--ease-enter); }
-  .dm-range-preview-label[data-end="current"] { padding: 1px 6px; border-radius: var(--radius-pill); background: var(--surface-3); color: var(--fg); }
+  .dm-range-preview-now { position: absolute; left: 0; top: 0; height: 100%; width: 1.5px; margin-left: -0.75px; background: radial-gradient(circle, var(--fg-subtle) 0.75px, transparent 1px) center top / 1.5px 0.3125rem repeat-y; transition: translate var(--dur-step) var(--ease-enter); }
+  .dm-range-preview-dot { position: absolute; left: 0; width: 0.4375rem; height: 0.4375rem; margin: -0.21875rem 0 0 -0.21875rem; border-radius: var(--radius-pill); background: var(--fg); box-shadow: 0 0 0 2px var(--card); transition: translate var(--dur-step) var(--ease-enter); }
+  .dm-range-preview-label { position: absolute; left: 0; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; transition: translate var(--dur-step) var(--ease-enter); }
+  .dm-range-preview-label[data-end="current"] { padding: 1px 0.375rem; border-radius: var(--radius-pill); background: var(--surface-3); color: var(--fg); }
 }
 
 @keyframes dm-live-ring {

@@ -4,6 +4,7 @@ import { cx, Segmented } from './ui'
 import { shortAmount } from '../lib/format/amount'
 import { compareDisplayed } from '../lib/format/change'
 import { formatUsd, formatUsdFloor } from '../lib/format/usd'
+import { rem } from '../lib/rootScale'
 
 /*
  * Figure primitives (DESIGN-V2 §3.15). They present text the page already
@@ -217,7 +218,7 @@ export function StackedBar({ parts, height = 6, className }: { parts: ReadonlyAr
   const shown = parts.filter((part) => Number.isFinite(part.share) && part.share > 0)
   const total = shown.reduce((sum, part) => sum + part.share, 0)
   return (
-    <span aria-hidden="true" className={cx('dm-stack', className)} style={{ height }}>
+    <span aria-hidden="true" className={cx('dm-stack', className)} style={{ height: rem(height) }}>
       {total > 0 &&
         shown.map((part, index) => <span key={index} className="dm-stack-seg" data-tone={part.tone} style={{ flexGrow: part.share / total, flexBasis: 0 }} />)}
     </span>

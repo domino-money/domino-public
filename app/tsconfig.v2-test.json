@@ -1,0 +1,34 @@
+{
+  "//": "Domino V2 (spec F7, stage 0): the pure V2 modules (src/v2) and the closed V2 money clients (src/finance/v2), compiled for node --test into the same .test-build tree as tsconfig.test.json's modules. Globs, so a new V2 module needs no edit here. JSON (the api-contracts/v2 chain profiles and ABIs) is imported by relative path, which the CommonJS output can resolve. Changed on purpose (data) 2026-10-02 (Domino V2 PHASE B, B5 S2): the S2 screens' pure helpers (src/v2ui/s2/*.ts: the form's exact fields, the deposit flow over injected parts, the copy and constants), so tests/v2/s2-*.test.mjs can run them; the .tsx screens stay out. Changed on purpose (data) 2026-10-02 (Domino V2 PHASE B, B6/B7): the automation screens' pure .ts modules (src/v2ui/vault/*.ts, src/v2ui/autoExit/*.ts: their constants, forms and token words; never a .tsx) join, for tests/v2/auto-*.test.mjs. Changed on purpose (data) 2026-10-02 (Domino V2 integration, the base agent's item 5): src/v2in/dataSource.ts, the integrated screens' choice of read-v6 and plan transports by the gate (pure), for tests/v2/v2in-transports.test.mjs; src/v2in/transports.ts, which wires the page's routes and session, stays out. Changed on purpose (data) 2026-10-02 (Domino V2 integration, funds): the inline deposit-from-another-network offer's pure .ts modules (src/v2in/funds/*.ts: its constants, words, model, fixtures, deposit flow and services; never a .tsx), for tests/v2/funds-*.test.mjs. Changed on purpose (data) 2026-10-02 (Domino V2 integration, the base agent's item 6): the old #/v2 screens (src/v2ui) are gone, and their pure helpers' includes with them. Changed on purpose (data) 2026-10-02 (Domino V2 integration, the position agent): the position page's pure .ts modules (src/v2in/position: its constants, copy, errors, forms, model, token book, preview plan choice, marks and card; never a .tsx, never the modules that reach the wallet or the session), for tests/v2/position-*.test.mjs. Changed on purpose (data) 2026-10-02 (Domino V2 integration, the journey): New position's zap path's pure model (src/v2in/journey/model/*.ts: pools, prices, the journey machine, routing, the preview's fixture plans and their checks; never a .tsx), for tests/v2/journey-*.test.mjs. Changed on purpose (data) 2026-10-02 (Domino V2 integration, lists): the lists' two pure modules (src/v2in/lists/model.ts, read.ts; never a .tsx) join, for tests/v2/lists-*.test.mjs.",
+  "extends": "./tsconfig.test.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "files": [
+    "src/build-flags.d.ts"
+  ],
+  "include": [
+    "src/v2/**/*.ts",
+    "src/finance/v2/**/*.ts",
+    "src/v2in/automate/*.ts",
+    "src/v2in/autoexit/*.ts",
+    "src/v2in/dataSource.ts",
+    "src/v2in/funds/*.ts",
+    "src/v2in/position/constants.ts",
+    "src/v2in/position/copy.ts",
+    "src/v2in/position/errors.ts",
+    "src/v2in/position/forms.ts",
+    "src/v2in/position/model.ts",
+    "src/v2in/position/tokens.ts",
+    "src/v2in/position/marks.ts",
+    "src/v2in/position/card.ts",
+    "src/v2in/journey/model/*.ts",
+    "src/v2in/lists/model.ts",
+    "src/v2in/lists/read.ts"
+  ]
+}

@@ -136,9 +136,9 @@ function LabView({ lab }: { lab: Lab }) {
     <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
       <div className="space-y-4">
         <Card className="p-4">
-          <h2 className="text-[14px] font-medium">Simulated wallet context</h2>
-          <p className="mt-1 text-[12px] text-fg-muted">Injected into the pre-sign checks only. No wallet is connected.</p>
-          <div className="mt-3 grid gap-3 text-[13px]">
+          <h2 className="text-[0.875rem] font-medium">Simulated wallet context</h2>
+          <p className="mt-1 text-[0.75rem] text-fg-muted">Injected into the pre-sign checks only. No wallet is connected.</p>
+          <div className="mt-3 grid gap-3 text-[0.8125rem]">
             <label>
               <span className="text-fg-muted">Wallet network</span>
               <select id={`${contextId}-chain`} className="mt-1 block w-full rounded-[var(--radius)] border bg-surface-1 px-2 py-1.5" value={chainId} onChange={(event) => setChainId(event.target.value === '1' ? 1 : 4663)}>
@@ -148,7 +148,7 @@ function LabView({ lab }: { lab: Lab }) {
             </label>
             <label>
               <span className="text-fg-muted">Wallet account</span>
-              <select className="mt-1 block w-full rounded-[var(--radius)] border bg-surface-1 px-2 py-1.5 font-mono text-[12px]" value={account} onChange={(event) => setAccount(event.target.value)}>
+              <select className="mt-1 block w-full rounded-[var(--radius)] border bg-surface-1 px-2 py-1.5 font-mono text-[0.75rem]" value={account} onChange={(event) => setAccount(event.target.value)}>
                 <option value={FIXTURE_OWNER}>{FIXTURE_OWNER} (fixture owner)</option>
                 <option value={FOREIGN_ACCOUNT}>{FOREIGN_ACCOUNT} (another account)</option>
               </select>
@@ -164,9 +164,9 @@ function LabView({ lab }: { lab: Lab }) {
         </Card>
 
         <Card className="p-4">
-          <h2 className="text-[14px] font-medium">Your deposits (fixture)</h2>
-          {state.phase === 'booting' && <p className="mt-2 text-[13px] text-fg-muted">Loading…</p>}
-          {state.items.length === 0 && state.phase === 'ready' && <p className="mt-2 text-[13px] text-fg-muted">Nothing listed.</p>}
+          <h2 className="text-[0.875rem] font-medium">Your deposits (fixture)</h2>
+          {state.phase === 'booting' && <p className="mt-2 text-[0.8125rem] text-fg-muted">Loading…</p>}
+          {state.items.length === 0 && state.phase === 'ready' && <p className="mt-2 text-[0.8125rem] text-fg-muted">Nothing listed.</p>}
           <ul className="mt-2 space-y-1" aria-label="Deposits">
             {state.items.map((item) => (
               <li key={item.id}>
@@ -174,7 +174,7 @@ function LabView({ lab }: { lab: Lab }) {
                   type="button"
                   onClick={() => flow.dispatch({ t: 'user', action: 'open', id: item.id })}
                   className={cx(
-                    'w-full rounded-[var(--radius)] border px-3 py-2 text-left text-[13px] hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-[var(--ring)]',
+                    'w-full rounded-[var(--radius)] border px-3 py-2 text-left text-[0.8125rem] hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-[var(--ring)]',
                     current?.op.id === item.id && 'bg-surface-2',
                   )}
                   aria-label={`Open deposit ${item.id}: ${STATE_LABEL[item.state] ?? item.state}`}
@@ -198,9 +198,9 @@ function LabView({ lab }: { lab: Lab }) {
         </Card>
 
         <Card className="p-4">
-          <h2 className="text-[14px] font-medium">What the lab sent</h2>
-          <p className="mt-1 text-[12px] text-fg-muted">Every request, in order, to the fixture transport. Nothing else leaves this page.</p>
-          <ol className="mt-2 list-decimal pl-5 font-mono text-[12px]" data-testid="request-log">
+          <h2 className="text-[0.875rem] font-medium">What the lab sent</h2>
+          <p className="mt-1 text-[0.75rem] text-fg-muted">Every request, in order, to the fixture transport. Nothing else leaves this page.</p>
+          <ol className="mt-2 list-decimal pl-5 font-mono text-[0.75rem]" data-testid="request-log">
             {fixture.calls().map((call, index) => (
               <li key={index}>{call.route}</li>
             ))}
@@ -235,7 +235,7 @@ function LabView({ lab }: { lab: Lab }) {
             allowances={current.allowances}
           />
         ) : (
-          state.phase === 'ready' && <p className="text-[13px] text-fg-muted">No deposit is open.</p>
+          state.phase === 'ready' && <p className="text-[0.8125rem] text-fg-muted">No deposit is open.</p>
         )}
       </div>
     </div>
@@ -252,23 +252,23 @@ export default function Deposits() {
   useEffect(() => lab.flow.start(), [lab])
   return (
     <ConsumerBoundary>
-      <main className="mx-auto max-w-[1220px] px-5 pb-24 pt-8" data-fixture="deposit-v1">
+      <main className="mx-auto max-w-[76.25rem] px-5 pb-24 pt-8" data-fixture="deposit-v1">
         <Callout tone="wait" role="note" testId="fixture-banner">
           <span className="font-medium">{LAB_BANNER}</span>
         </Callout>
         <Eyebrow className="mt-6">Deposit consumer · fixture lab</Eyebrow>
-        <Display as="h1" className="mt-2 text-[40px]">
+        <Display as="h1" className="mt-2 text-[2.5rem]">
           Deposits
         </Display>
-        <p className="mt-3 max-w-[75ch] text-[14px] text-fg-muted">
+        <p className="mt-3 max-w-[75ch] text-[0.875rem] text-fg-muted">
           How the app will show direct deposits (deposit-v1 1.1.0-rc.4): recovery, nonce conflicts, exceeded limits, Nitro gas and the evidence behind
           received amounts. Wallet steps can be reviewed here but never sent: this build has no wallet handoff.
         </p>
         <div className="mt-5 flex flex-wrap items-end gap-3">
-          <label className="text-[13px]">
+          <label className="text-[0.8125rem]">
             <span className="text-fg-muted">Scenario</span>
             <select
-              className="mt-1 block min-w-[320px] rounded-[var(--radius)] border bg-surface-1 px-3 py-2 text-[13px]"
+              className="mt-1 block min-w-[20rem] rounded-[var(--radius)] border bg-surface-1 px-3 py-2 text-[0.8125rem]"
               value={scenario.id}
               onChange={(event) => setScenarioId(event.target.value)}
             >
@@ -286,7 +286,7 @@ export default function Deposits() {
             </select>
           </label>
         </div>
-        <p className="mt-2 max-w-[75ch] text-[12px] text-fg-subtle" data-testid="scenario-description">
+        <p className="mt-2 max-w-[75ch] text-[0.75rem] text-fg-subtle" data-testid="scenario-description">
           {scenario.description}
         </p>
         <LabView key={scenario.id} lab={lab} />

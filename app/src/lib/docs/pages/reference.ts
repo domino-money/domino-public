@@ -3,12 +3,16 @@ import { CREATE } from '../../create/copy'
 import { b, doc, p } from '../blocks'
 import type { DocPage } from '../types'
 
-const { feeLabels, feeValues, feeNotes } = CREATE.review
+const { feeLabels, feeValues } = CREATE.review
 
+/**
+ * Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Domino's five fees (spec F7 §1.6), each with when
+ * it applies, and when nothing is charged ("Sem tarifa Domino").
+ */
 export const FEES: DocPage = {
   slug: 'fees',
   title: 'Fees',
-  summary: 'The Domino service fee, the assisted swap fee, network gas and the pool’s trading fee.',
+  summary: 'Domino’s fees, when each applies and when nothing is charged, network gas and the pool’s trading fee.',
   sections: [
     {
       id: 'at-a-glance',
@@ -17,8 +21,10 @@ export const FEES: DocPage = {
         {
           kind: 'facts',
           rows: [
-            { label: feeLabels.service, value: feeValues.service, note: 'Once, on the earned fees Auto-compound or Domino-compound uses. Never on principal, never on a direct deposit.' },
-            { label: feeLabels.swap, value: feeValues.swap, note: feeNotes.swap },
+            { label: feeLabels.swap, value: feeValues.swap, note: 'When something you do needs a swap. Once per action.' },
+            { label: 'Deposit from another network', value: '0.35% of the amount deposited', note: 'When you bring funds from another network, charged by the bridge; none if you bridge any other way.' },
+            { label: feeLabels.service, value: feeValues.service, note: 'Once, on the earned fees automation uses. Never on principal, never on a direct deposit.' },
+            { label: 'Auto-exit fee', value: '0.2% of the position’s value at exit', note: 'When a stop-loss or take-profit order runs: the only fee, even when converting.' },
             // Changed on purpose 2026-10-01 (audit E24).
             { label: feeLabels.gas, value: 'Paid by the wallet that sends it', note: 'Your wallet pays for the steps you sign, and shows the network fee before you sign.' },
             { label: feeLabels.pool, value: 'The pool’s fee tier', note: 'Paid by swappers to the pool’s liquidity providers, on each trade. Not a charge on your deposit; a swap you make pays it.' },
@@ -27,30 +33,34 @@ export const FEES: DocPage = {
       ],
     },
     {
-      id: 'service-fee',
-      title: 'Domino service fee',
+      id: 'no-fee',
+      title: 'When nothing is charged',
       blocks: [
-        // 2026-09-27 (review of 260a76a): the example counts the fees Auto-compound uses, of which 98 go back.
-        p('Auto-compound charges 2% of the earned fees it uses. Domino-compound charges 4% for every automated step, including putting fees back into the same position. Each is taken once: of 100 USDG of fees Auto-compound uses, 2 go to the service fee and 98 back into your position.'),
-        p('It is never charged on principal, on a direct deposit or on a withdrawal. Earned fees that wait are not charged, and an automation transaction that fails charges nothing.'),
-        p('Gas for automation transactions is paid by the operator that sends them, and is included in the fee.'),
+        p('No Domino fee for finding pools, connecting your wallet, creating or adding without a swap, changing a range without a swap, withdrawing in both tokens, collecting fees, withdrawing from your automation, pausing, cancelling an order or revoking a permission.'),
       ],
     },
     {
       id: 'assisted-swap-fee',
       title: 'Assisted swap fee',
       blocks: [
-        p('0.65% of the amount swapped. It applies only when your wallet holds one of a new position’s two tokens and Create position swaps part of it for the other inside the same pool; Review shows the swap, and your wallet shows it before you sign.'),
-        // 2026-10-01 (audit E20): the swap through Uniswap (finance/routedSwap.ts).
-        p('When swapping through Uniswap gets more than the pool does, Review may show that swap instead, with the least you receive; the 0.65% is then taken from what you receive.'),
+        p('0.65% of the amount swapped, once per action: of 500 USDG swapped, 3.25 USDG. Review shows it before you sign, and the receipt the exact fee.'),
         p('It is not added on top of the service fee, and the automation’s own balancing swaps carry no swap fee.'),
+      ],
+    },
+    {
+      id: 'service-fee',
+      title: 'Domino service fee',
+      blocks: [
+        // 2026-09-27 (review of 260a76a): the example counts the fees Auto-compound uses, of which 98 go back.
+        p('Auto-compound charges 2% of the earned fees it uses. Domino-compound charges 4% for every automated step, including putting fees back into the same position. Each is taken once: of 100 USDG of fees Auto-compound uses, 2 go to the service fee and 98 back into your position.'),
+        p('It is never charged on principal, on a deposit or on a withdrawal. Earned fees that wait are not charged, a run that fails charges nothing, and Domino pays the runs’ gas.'),
       ],
     },
     {
       id: 'network-gas',
       title: 'Network gas',
-      // Changed on purpose 2026-10-01 (audit E24).
-      blocks: [p('Gas is paid in ETH by the wallet that sends the transaction. Your wallet pays for the steps you sign, and shows the network fee before you sign each one.')],
+      // Changed on purpose 2026-10-01 (audit E24). 2026-10-04 (the owner: docs revalidated for V2): on each network, and Base's L1 data fee.
+      blocks: [p('Gas is paid in ETH on the network of the transaction, by the wallet that sends it, which shows it before you sign. On Base it includes the L1 data fee, for storing the transaction on Ethereum.')],
     },
     {
       id: 'pool-trading-fee',
@@ -77,7 +87,8 @@ export const FIGURES: DocPage = {
       title: 'Read from chain',
       blocks: [
         p('Pool prices, ticks, fee tiers, protocol fees, tick spacings and hooks, position NFTs and token balances are read from Robinhood Chain. Each names the block it was read at.'),
-        p('A pool’s price is the ratio between its two tokens at that block, not a dollar price.'),
+        // 2026-10-04 (the owner: docs revalidated for V2): read-v6, the record of Domino's new contracts on the three networks.
+        p('Positions on Base and Arbitrum One, and in Uniswap v3 pools, come from Domino’s record of its contracts, read at a named block. Their amounts are in tokens, with no dollar value or APR.'),
         p('A pool’s activity and the positions in it come from indexed chain events, up to a named block; activity indexed too far behind shows dashes.'),
       ],
     },
@@ -104,8 +115,7 @@ export const FIGURES: DocPage = {
       title: 'Calculated by Domino',
       blocks: [
         // Each term is held together with no-break spaces, so on a phone the formula wraps only at a ×.
-        p('Estimated APR is calculated from the provider’s 24h volume and TVL, the pool’s fixed fee and its protocol fee: ', { mono: '24h\u00a0volume × fee\u00a0tier × (1\u00a0−\u00a0protocol\u00a0fee) × 365\u00a0÷\u00a0TVL' }, '. No estimate is given when a pool’s protocol fee differs by swap direction. It leaves out rewards, gas, service fees and price changes.'),
-        p('A pool’s 24h volume over TVL is also calculated by Domino, from two figures of the same source.'),
+        p('Estimated APR is calculated from the provider’s 24h volume and TVL, the pool’s fixed fee and its protocol fee: ', { mono: '24h volume × fee tier × (1 − protocol fee) × 365 ÷ TVL' }, '. No estimate is given when a pool’s protocol fee differs by swap direction. It leaves out rewards, gas, service fees and price changes.'),
       ],
     },
     {
@@ -127,33 +137,68 @@ export const FIGURES: DocPage = {
   ],
 }
 
+/**
+ * Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Domino's contracts, one address on the three
+ * networks (CREATE3, spec F7 §1.3, §7.2). Changed on purpose 2026-10-04 (V2 deployed, #327; the owner: the docs show the V2
+ * contracts): their 13 addresses, from the verified records the app pins (docs/deployments/v2-*-2026-10-04, src/v2/
+ * manifest.ts), each under its own contract name. Domino V1's live addresses exactly as before, and its automation ending
+ * with no migration (spec §1.1); the Uniswap contracts the positions live in, from the backend's constants (Robinhood
+ * Chain) and the chain profiles (api-contracts/v2/chains). "Vault" is said here once, as the contract's own name (the
+ * owner, 2026-10-04).
+ */
 export const CONTRACTS: DocPage = {
   slug: 'contracts',
   title: 'Contracts',
-  summary: 'Domino V1 and the Uniswap contracts it builds on, on Robinhood Chain, with their addresses.',
+  summary: 'Domino’s contracts on its three networks, Domino V1 on Robinhood Chain, and the Uniswap contracts behind every position.',
   sections: [
     {
-      // docs/deployments/v1-robinhood-mainnet-2026-09-21: the two contracts a wallet meets. The vault is a clone made per owner, so it has no address here.
+      id: 'new-contracts',
+      title: 'Domino’s contracts',
+      blocks: [
+        p('Domino’s contracts run on Robinhood Chain, Base and Arbitrum One, each at one address on every network, so check the network as well as the address.'),
+        {
+          kind: 'addresses',
+          rows: [
+            { label: 'DominoZapV4', role: 'Create, add, change range and withdraw, in Uniswap v4', address: '0x376b92929bbe778c6dd64e8d73f8688686288e8a' },
+            { label: 'DominoZapV4Steps', role: 'DominoZapV4’s helper', address: '0x355b0997d5e04392862a8e8d21d911851b2eefbe' },
+            { label: 'DominoZapV3', role: 'The same in Uniswap v3', address: '0xe30d7e07a67198c45d4c7b67d8423cbb6c7ea5a0' },
+            { label: 'DominoV2VaultFactory', role: 'Makes each automation contract (vault), Uniswap v4', address: '0xc71a561853514efc2271f1d10c13ec95834792ba' },
+            { label: 'DominoV2VaultFactory', role: 'The same, Uniswap v3', address: '0xa7dfb61a6597d09742cb7f9a8780c9c74ebc34f4' },
+            { label: 'DominoV2VaultV4', role: 'What each Uniswap v4 automation copies', address: '0xa3ff8d74e4ec4a19f35d92b7eec852ba6f7e2bbb' },
+            { label: 'DominoV2VaultV3', role: 'What each Uniswap v3 automation copies', address: '0xd55c0f5ff8ad1ded828edb36be77e0f3677ad4a4' },
+            { label: 'DominoV2VaultExecutorV4', role: 'Runs automation steps, Uniswap v4', address: '0xf3f68d8461c2071e2b8d88a60ce64f527f1d6639' },
+            { label: 'DominoV2VaultExecutorV3', role: 'The same, Uniswap v3', address: '0xd8d3bf832b234855fee2ac36ac4803aa7f9adca9' },
+            { label: 'DominoV2VaultSwapModule', role: 'Automation swaps', address: '0xbf22a36bbb419846e073cf0c6c729f669d7f348a' },
+            { label: 'DominoAutoExit', role: 'Carries out your stop-loss and take-profit orders; 0.2% when one exits', address: '0x6109fc514a88a8e85e6e5c863238ddba9a98be36' },
+            { label: 'DominoRegistry', role: 'Fee currencies, swap routes, and stopping automation for safety', address: '0x25d4f013ecff3790e384e16ca9951bba6cd715fa' },
+            { label: 'DominoPriceAnchor', role: 'The reference price automation and exit orders check', address: '0x8c1edc4280d9533f6336f760380ba329e1f81f43' },
+          ],
+        },
+        p('Each contract that charges a fee pays it to Domino’s fee recipient. A fee it cannot pay at once waits in that contract, apart from your funds, until it is paid.'),
+      ],
+    },
+    {
+      // docs/deployments/v1-robinhood-mainnet-2026-09-21: the two contracts a wallet meets. Its automation contracts are
+      // clones made per owner, so they have no address here.
       id: 'domino-contracts',
       title: 'Domino V1 on Robinhood Chain',
       blocks: [
-        // Changed on purpose 2026-10-01 (audit E17): deposits approve the Setup contract (finance/setup.ts).
-        p('Domino’s own contracts are deployed on Robinhood Chain as Domino V1. Your wallet meets two of them directly, besides your own sequence vault: the Setup contract, which holds a setup operation until you mint or refund, and the factory that creates your sequence vault. Create position’s approvals go to the Setup contract, each for the exact amount of the deposit.'),
+        p('Domino V1’s contracts stay on Robinhood Chain. Its automation ends when the new automation starts, and nothing moves from V1 to it by itself: there is no migration. Withdraw what V1 holds for you, then set up the new automation. See ', doc('Domino V1’s automation', 'your-automation', 'domino-v1'), '.'),
         {
           kind: 'addresses',
           rows: [
             { label: 'DominoSetupV1', role: 'Deposit approvals, then fund, assisted swap, mint and refund', address: '0x676f449fcfcd0f5ce4c7a1db2d98c7d6565dd37a' },
-            { label: 'DominoVaultFactoryV1', role: 'Creates your sequence vault', address: '0x16bf6eaba7b31118627b277e97249720dfe1c7ff' },
+            { label: 'DominoVaultFactoryV1', role: 'Made each Domino V1 automation', address: '0x16bf6eaba7b31118627b277e97249720dfe1c7ff' },
           ],
         },
-        p('Your sequence vault is a contract of its own, created for your wallet by the factory. Service readiness is checked for each owner and vault before activation: see ', doc('Domino-compound', 'domino-compound', 'start-and-stop'), '.'),
+        p('A deposit made with V1 that never became a position can still be refunded through Setup, from Positions.'),
       ],
     },
     {
       id: 'uniswap-contracts',
       title: 'Uniswap contracts on Robinhood Chain',
       blocks: [
-        p('Domino positions live in Uniswap’s own deployment on Robinhood Chain.'),
+        p('Domino positions live in Uniswap’s own deployments. On Robinhood Chain:'),
         {
           kind: 'addresses',
           rows: [
@@ -168,15 +213,35 @@ export const CONTRACTS: DocPage = {
       ],
     },
     {
+      // 2026-10-04 (the owner: docs revalidated for V2): api-contracts/v2/chains/*.json, which tests/docs.test.mjs holds these to.
+      id: 'position-nfts',
+      title: 'Position NFTs on each network',
+      blocks: [
+        p('The Uniswap contract each position NFT belongs to, which your wallet names when you approve one:'),
+        {
+          kind: 'addresses',
+          rows: [
+            { label: 'NonfungiblePositionManager', role: 'Robinhood Chain, Uniswap v3', address: '0x73991a25c818bf1f1128deaab1492d45638de0d3' },
+            { label: 'PositionManager', role: 'Base, Uniswap v4', address: '0x7c5f5a4bbd8fd63184577525326123b519429bdc' },
+            { label: 'NonfungiblePositionManager', role: 'Base, Uniswap v3', address: '0x03a520b32c04bf3beef7beb72e919cf822ed34f1' },
+            { label: 'PositionManager', role: 'Arbitrum One, Uniswap v4', address: '0xd88f38f930b7952f2db2432cb002e7abbf3dd869' },
+            { label: 'NonfungiblePositionManager', role: 'Arbitrum One, Uniswap v3', address: '0xc36442b4a4522e871399cd717abdd847ab11fe88' },
+          ],
+        },
+        p('Permit2 has the same address on all three networks.'),
+      ],
+    },
+    {
       id: 'network',
-      title: 'Network',
+      title: 'Networks',
       blocks: [
         {
           kind: 'facts',
           rows: [
-            { label: 'Network', value: 'Robinhood Chain' },
-            { label: 'Chain ID', value: String(CAPABILITIES.chainId) },
-            { label: 'Gas token', value: 'ETH' },
+            { label: 'Robinhood Chain', value: `Chain ID ${CAPABILITIES.chainId}` },
+            { label: 'Base', value: 'Chain ID 8453' },
+            { label: 'Arbitrum One', value: 'Chain ID 42161' },
+            { label: 'Gas token', value: 'ETH, on each' },
           ],
         },
       ],
@@ -215,16 +280,17 @@ export const GLOSSARY: DocPage = {
         {
           kind: 'terms',
           items: [
-            { id: 'pool', term: 'Pool', text: ['Where two tokens are traded for each other, on Uniswap.'] },
+            { id: 'network', term: 'Network', text: ['A blockchain Domino works on: Robinhood Chain, Base or Arbitrum One.'] },
+            { id: 'pool', term: 'Pool', text: ['Where two tokens are traded for each other.'] },
             { id: 'pool-id', term: 'Pool id', text: ['A pool’s identifier. Domino names pools by id, never by symbol.'] },
             { id: 'fee-tier', term: 'Fee tier', text: ['The share of every swap a pool charges, paid to its liquidity providers.'] },
-            { id: 'hook', term: 'Hook', text: ['A contract attached to a pool that can change its fee or add rules. Domino uses pools without one.'] },
+            { id: 'hook', term: 'Hook', text: ['A contract a Uniswap v4 pool can attach to change its fee or add rules. Domino uses pools without one.'] },
             { id: 'protocol-fee', term: 'Protocol fee', text: ['Uniswap’s fee on a pool’s swaps, taken from what a swap sells into the pool before the fee tier. It does not go to liquidity providers.'] },
             { id: 'range', term: 'Range', text: ['The lowest and highest price a position provides liquidity between.'] },
             { id: 'tick', term: 'Tick', text: ['Uniswap’s price step, 0.01%. Ranges end on multiples of a pool’s tick spacing.'] },
             { id: 'in-range', term: 'In range', text: ['The pool price is inside a position’s range. Only then does it earn fees.'] },
             { id: 'position-nft', term: 'Position NFT', text: ['The standard Uniswap token that stands for a position. Positions lists the ones your wallet created with Domino.'] },
-            { id: 'principal', term: 'Principal', text: ['What a position holds, not counting its fees: its Position value. Automation never reduces it.'] },
+            { id: 'principal', term: 'Principal', text: ['What a position holds, not counting its fees: its Position value.'] },
           ],
         },
       ],
@@ -241,7 +307,7 @@ export const GLOSSARY: DocPage = {
             { id: 'fees-ready-to-collect', term: 'Fees ready to collect', text: ['Earned fees not yet collected. Collect fees sends them to your wallet.'] },
             { id: 'your-apr', term: 'Your APR', text: ['A position’s own fees as a yearly rate. Not the pool’s APR, and not a promise.'] },
             { id: 'service-fee', term: 'Service fee', text: ['Domino’s fee on automation: Auto-compound 2%, Domino-compound 4% of the earned fees used, once.'] },
-            { id: 'assisted-swap-fee', term: 'Assisted swap fee', text: ['0.65% of the part Create position swaps when your wallet holds one of the two tokens.'] },
+            { id: 'assisted-swap-fee', term: 'Assisted swap fee', text: ['0.65% of the amount swapped, when an action needs a swap.'] },
             { id: 'domino-history', term: 'Domino history', text: ['Domino’s own record of a pool’s last 24 hours, where the deployment provides it. Figures from it are marked Domino history.'] },
             { id: 'tvl', term: 'TVL', text: ['Total value locked: what the tokens in a pool are worth, from Domino history or, where it has none, a market data provider.'] },
             { id: 'volume-24h', term: '24h volume', text: ['The value swapped through a pool over the last 24 hours, from Domino history or, where it has none, a market data provider.'] },
@@ -264,12 +330,16 @@ export const GLOSSARY: DocPage = {
             { id: 'plain-position', term: 'Plain position', text: ['No automation: earned fees wait in the position until you collect them.'] },
             { id: 'auto-compound', term: 'Auto-compound', text: ['Automation that adds a position’s earned fees back into the same position.'] },
             { id: 'domino-compound', term: 'Domino-compound', text: ['Near the top of a range, earned fees open or fund the next position one step higher.'] },
-            { id: 'sequence', term: 'Sequence', text: ['The vault contract created for your wallet that holds the positions automation opens and earned fees not yet added back. Only your wallet can withdraw from it.'] },
-            { id: 'operator', term: 'Operator', text: ['Domino’s automation service, which acts within your limits. It can pause, but cannot withdraw, change limits or resume.'] },
-            { id: 'trigger-distance', term: 'Trigger distance', text: ['How near the top of its range the price must be before a next position is considered. Up to 20%.'] },
+            { id: 'protection-only', term: 'Protection only', text: ['Automation that only watches a position’s stop-loss and take-profit.'] },
+            // 2026-10-04 (the owner: the reader meets "your automation", never the contract's name).
+            { id: 'your-automation', term: 'Your automation', text: ['The contract made for your wallet that runs one position’s automation and exit orders.'] },
+            { id: 'stop-loss', term: 'Stop-loss / take-profit', text: ['An order you sign that withdraws a position when the price reaches a level you set.'] },
+            { id: 'reference-price', term: 'Reference price', text: ['The recent price automation and exit orders check, not the last trade.'] },
+            { id: 'operator', term: 'Operator', text: ['Domino’s automation service. It acts within your limits, can pause, and pays only you.'] },
+            { id: 'trigger-distance', term: 'Trigger distance', text: ['How near its range’s top the price must be for a next position. Up to 20%.'] },
             { id: 'maximum-overlap', term: 'Maximum overlap', text: ['How far below the previous top a next position may start. Up to 20%.'] },
             // 2026-10-01 (audit E21): the setup's field name.
-            { id: 'upside', term: 'Next range higher by', text: ['How far above the previous ceiling a next position’s ceiling sits, at least. You set it; the app draws it at 50%.'] },
+            { id: 'upside', term: 'Next range higher by', text: ['How far above the previous top a next position’s top sits, at least. 50% at first.'] },
           ],
         },
       ],
@@ -283,8 +353,7 @@ export const GLOSSARY: DocPage = {
           items: [
             { id: 'sign-in', term: 'Sign-in', text: ['A signature that proves you control an address. It authorizes no transaction and no automation.'] },
             { id: 'session', term: 'Session', text: ['What signing in starts. It ends after 30 minutes idle, at its end time, or when you sign out.'] },
-            { id: 'setup', term: 'Setup', text: ['Domino V1’s setup contract: it holds a deposit until its position is created.'] },
-            { id: 'receipt', term: 'Receipt', text: ['A record of what automation did, on Positions once you sign in.'] },
+            { id: 'receipt', term: 'Receipt', text: ['A record of what you or your automation did.'] },
           ],
         },
       ],

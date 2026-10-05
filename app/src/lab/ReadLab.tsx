@@ -24,9 +24,9 @@ const ROUTES = [...new Set(FAMILY.map((c) => c.route))]
 function MarketCaseView({ scenario }: { scenario: MarketCase }) {
   const [provider] = useState(() => fixtureMarketsFor(scenario))
   return (
-    <section data-case={`market-${scenario.id}`} className="rounded-[20px] border border-dashed p-4">
+    <section data-case={`market-${scenario.id}`} className="rounded-[1.25rem] border border-dashed p-4">
       <Eyebrow>market · {scenario.id}</Eyebrow>
-      <h3 className="mb-3 mt-1 text-[15px] font-medium">{scenario.title}</h3>
+      <h3 className="mb-3 mt-1 text-[0.9375rem] font-medium">{scenario.title}</h3>
       <MarketsContext.Provider value={provider}>
         <Ticker />
         <div className="mt-4">
@@ -41,7 +41,7 @@ function FamilyCaseSection({ scenario }: { scenario: FamilyCase }) {
   const [source] = useState(() => createFixtureSource({ catalog: FIXTURE_CATALOG, validators: READ_RUNTIME, script: scenario.script }))
   return (
     <section data-case={`family-${scenario.id}`}>
-      <h4 className="mb-1.5 font-mono text-[12px] text-fg-muted">{scenario.id}</h4>
+      <h4 className="mb-1.5 font-mono text-[0.75rem] text-fg-muted">{scenario.id}</h4>
       <FamilyCaseView source={source} route={scenario.route} request={scenario.request} pager={scenario.pager} />
     </section>
   )
@@ -52,16 +52,16 @@ export function ReadLab() {
   return (
     <>
       <BuildBanner mode="fixture" />
-      <main className="mx-auto max-w-[1220px] px-5 py-10">
-        <Display as="h1" className="text-[38px]">
+      <main className="mx-auto max-w-[76.25rem] px-5 py-10">
+        <Display as="h1" className="text-[2.375rem]">
           Read lab
         </Display>
-        <p className="mt-2 max-w-[70ch] text-[14px] text-fg-muted">
+        <p className="mt-2 max-w-[70ch] text-[0.875rem] text-fg-muted">
           Every read-v1 {pin.version} fixture case, read through the real pipeline and rendered by the app’s own components. Producer {PRODUCER_PIN.producerCommit.slice(0, 7)},
           manifest {pin.manifestSha256.slice(0, 12)}.
         </p>
 
-        <Display className="mt-10 text-[28px]">Selected pools and ticker</Display>
+        <Display className="mt-10 text-[1.75rem]">Selected pools and ticker</Display>
         <div className="mt-4 grid gap-6">
           {MARKET_CASES.map((scenario) => (
             <MarketCaseView key={scenario.id} scenario={scenario} />
@@ -70,7 +70,7 @@ export function ReadLab() {
 
         {ROUTES.map((route) => (
           <section key={route} className="mt-12" aria-labelledby={`route-${route}`}>
-            <Display id={`route-${route}`} className="text-[28px]">
+            <Display id={`route-${route}`} className="text-[1.75rem]">
               {route}
             </Display>
             <div className="mt-4 grid gap-4 md:grid-cols-2">

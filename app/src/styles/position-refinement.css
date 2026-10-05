@@ -1,0 +1,67 @@
+/* One action family for position pages and dialogs. All dimensions follow the root scale. */
+@layer components {
+  .dm-pos-title { gap: 1.25rem; padding-bottom: 1.5rem; border-bottom: 0.0625rem solid var(--border); }
+  .dm-pos-actions { display: flex; flex-wrap: wrap; flex-basis: 100%; width: 100%; align-items: center; gap: 0.5rem; padding: 0; border: 0; background: transparent; }
+  .dm-position-base-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .dm-pos-actions > .dm-position-base-actions, .dm-pos-actions .dm-position-tools-slot, .dm-pos-actions .dm-position-tools, .dm-pos-actions .dm-position-tools-list { display: contents; }
+  .dm-pos-actions .dm-btn { display: inline-flex; flex-direction: row; justify-content: center; gap: 0.5rem; min-width: 0; height: auto; min-height: 2.75rem; padding: 0.75rem 1rem; border-radius: var(--radius); color: var(--fg-muted); background: var(--card); box-shadow: var(--elev-field); font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; white-space: nowrap; text-align: center; --icon-2: currentColor; }
+  .dm-pos-actions .dm-btn > svg { width: 1rem; height: 1rem; flex-shrink: 0; color: var(--fg-subtle); transition: color var(--dur-fast) var(--ease-std); }
+  .dm-pos-actions .dm-btn:is(:hover, :focus-visible, [aria-expanded="true"]):not(:disabled) { color: var(--primary-ink); background: var(--primary-wash); box-shadow: inset 0 0 0 0.0625rem color-mix(in srgb, var(--primary-line) 22%, transparent); }
+  .dm-pos-actions .dm-btn:is(:hover, :focus-visible, [aria-expanded="true"]):not(:disabled) > svg { color: currentColor; }
+  .dm-pos-actions .dm-btn:disabled { color: var(--fg-subtle); background: var(--surface-1); box-shadow: inset 0 0 0 0.0625rem var(--border); }
+  .dm-pos-actions [data-position-action="close"] { margin-left: auto; color: var(--fg-subtle); background: transparent; box-shadow: none; }
+  .dm-pos-actions [data-position-action="close"]:is(:hover, :focus-visible, [aria-expanded="true"]):not(:disabled) { color: var(--money-out); background: var(--money-out-bg); box-shadow: inset 0 0 0 0.0625rem color-mix(in srgb, var(--money-out) 20%, transparent); }
+  .dm-pos-actions > .dm-auto-go, .dm-pos-actions > [data-sequence-switch] { order: 0; grid-column: auto; }
+  .dm-position-action-note, .dm-pos-actions > .dm-seq-switch-note { order: 8; flex-basis: 100%; grid-column: 1 / -1; margin: 0; padding: 0.375rem 0; font-size: 0.8125rem; line-height: 1.25rem; color: var(--fg-subtle); }
+  .dm-pos-grid { gap: 1.25rem; }
+  .dm-pos-details-head { min-height: 3.25rem; }
+  .dm-pos-details-hint { display: none; }
+  [data-position-detail] .dm-fees-body { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
+  [data-position-detail] .dm-fees-summary { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 0.5rem 2rem; align-items: start; }
+  [data-position-detail] .dm-fees-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; margin: 0; }
+  [data-position-detail] .dm-fees-legend-row { flex-direction: column; gap: 0.375rem; padding: 0; }
+  [data-position-detail] .dm-fees-legend-row + .dm-fees-legend-row { box-shadow: none; }
+  [data-position-detail] .dm-fees-legend-value { justify-items: start; text-align: left; }
+  [data-position-detail] .dm-fees-split { grid-column: 1 / -1; order: 2; margin-top: 0.5rem; }
+  [data-position-detail] [data-fees-state="unclaimed-only"] .dm-fees-summary { grid-template-columns: minmax(0, 1fr); }
+  [data-position-detail] [data-fees-state="unclaimed-only"] .dm-fees-quiet { height: auto; min-height: 0; padding: 0; }
+  [data-position-detail] [data-fees-state="unclaimed-only"] .dm-fees-quiet-line { display: none; }
+  [data-position-detail] .dm-chart[role="slider"] { cursor: crosshair; touch-action: pan-y; }
+  [data-position-detail] .dm-chart[role="slider"]:focus-visible { outline: 0.125rem solid var(--ring); outline-offset: 0.375rem; border-radius: 0.375rem; }
+  [data-v2in-exit][hidden] { display: none; }
+
+  .dm-dialog.dm-pa { width: min(34rem, calc(100vw - 2rem)); max-height: min(54rem, calc(100dvh - 2rem)); border-radius: 1.5rem; background: var(--card); box-shadow: 0 1.5rem 5rem rgb(0 0 0 / 35%), inset 0 0 0 0.0625rem var(--border-card); }
+  .dm-flow-dialog.dm-pa > .dm-pa-head { gap: 0.5rem; padding: 1.75rem 4rem 1.25rem 1.75rem; }
+  .dm-pa-title { font-family: var(--font-display); font-size: 1.625rem; line-height: 1.875rem; font-weight: 400; letter-spacing: -0.04em; }
+  .dm-pa-lede { max-width: 45ch; margin-right: -1.5rem; color: var(--fg-subtle); line-height: 1.375rem; }
+  .dm-flow-dialog.dm-pa > .dm-pa-body { min-width: 0; overflow-x: hidden; gap: 1.25rem; padding: 0 1.75rem 1.5rem; }
+  .dm-pa-body > * { min-width: 0; max-width: 100%; }
+  .dm-flow-dialog.dm-pa > .dm-pa-foot { padding: 1.125rem 1.75rem 1.5rem; border-top: 0.0625rem solid var(--border); background: var(--card); }
+  .dm-pa-card { gap: 1rem; padding: 1.25rem; border-radius: 1.125rem; background: var(--bg); }
+  .dm-pa-card-head { flex-wrap: wrap; }
+  .dm-pa-token-amount { font-size: 1.75rem; line-height: 2.125rem; }
+  .dm-pa-token { gap: 0.875rem; }
+  .dm-pa-tokens { gap: 1rem; }
+  .dm-pa-facts > div { gap: 1rem; }
+  .dm-pa-facts dd { min-width: 0; overflow-wrap: anywhere; }
+  .dm-pa .dm-pa-mode { background: var(--bg); }
+  .dm-pa .dm-pa-mode .dm-segmented-item { min-height: 2rem; }
+  .dm-pa .dm-pa-options { gap: 0.75rem; }
+  .dm-pa .dm-pa-option { border-radius: 1rem; min-width: 0; }
+  .dm-pa .dm-flow-amount { padding: 1.125rem; border-radius: 1.125rem; }
+  .dm-pa .dm-flow-amount-row { gap: 0.75rem; }
+  .dm-pa .dm-flow-amount-input { min-width: 0; }
+  .dm-pa-more > summary { min-height: 3rem; }
+  @media (max-width: 47.9375rem) {
+    .dm-pos-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dm-pos-actions .dm-btn { justify-content: flex-start; min-height: 3.25rem; padding: 0.75rem; gap: 0.5rem; white-space: normal; text-align: left; }
+    .dm-pos-actions > .dm-auto-go { grid-column: auto; order: 0; }
+    .dm-pos-actions [data-position-action="close"] { grid-column: 1 / -1; margin-left: 0; min-height: 2.75rem; justify-content: center; }
+    [data-position-detail] .dm-fees-summary { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+    [data-position-detail] .dm-fees-legend { gap: 1rem; }
+    .dm-dialog.dm-pa { width: 100%; max-height: calc(100dvh - 1rem); border-radius: 1.5rem 1.5rem 0 0; }
+    .dm-flow-dialog.dm-pa > .dm-pa-head { padding: 1.5rem 3.5rem 1rem 1.25rem; }
+    .dm-flow-dialog.dm-pa > .dm-pa-body { padding-inline: 1.25rem; }
+    .dm-flow-dialog.dm-pa > .dm-pa-foot { padding: 1rem 1.25rem max(1.25rem, env(safe-area-inset-bottom)); }
+  }
+}

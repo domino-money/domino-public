@@ -1650,14 +1650,20 @@ test('round 6: the earnings estimate says a month, a year and a day at the pool�
   const text = (props) => renderToStaticMarkup(React.createElement(PoolEarnings, props)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
   const ready = text({ apr: 100.35, tvl: null, loading: false })
   assert.match(ready, /If you put in/)
-  assert.match(ready, /You could earn about \$83\.63 a month \$1,004 a year · \$2\.75 a day/)
-  assert.match(ready, /An estimate at the pool’s recent rate, about 100% a year\./)
-  assert.match(ready, /a position earns only while the price is inside its range/)
+  assert.match(ready, /You could earn about \$83\.63 a month/)
+  assert.match(ready, /\$1,004 a year · \$2\.75 a day/)
+  assert.match(ready, /At the pool’s recent rate, about 100% a year\./)
+  assert.match(ready, /Fees are earned only inside your range/)
+  const disclosure = renderToStaticMarkup(React.createElement(PoolEarnings, { apr: 100.35, tvl: null, loading: false }))
+  assert.match(disclosure, /<details class="dm-pool-disclosure" data-pool-earnings-basis="">/, 'secondary estimates stay in a closed disclosure')
+  assert.doesNotMatch(disclosure, /<details[^>]+open/)
   assert.match(renderToStaticMarkup(React.createElement(PoolEarnings, { apr: 100.35, tvl: null, loading: false })), /data-pool-earnings="ready"/)
   // Added 2026-09-28 (round 6 review): with the pool's TVL the amount shares its fees, and the note says with how much.
   const shared = text({ apr: 181.25, tvl: 13_400, loading: false })
-  assert.match(shared, /You could earn about \$140\.55 a month \$1,687 a year/, '$1,000 in a $13.4K pool: 1.8125 × 13,400 × 1,000 / 14,400')
-  assert.match(shared, /An estimate at the pool’s recent rate, about 181% a year, shared with the \$13\.4K already in the pool\./)
+  assert.match(shared, /You could earn about \$140\.55 a month/, '$1,000 in a $13.4K pool: 1.8125 × 13,400 × 1,000 / 14,400')
+  assert.match(shared, /\$1,687 a year/)
+  assert.match(shared, /At the pool’s recent rate, about 181% a year, shared with the \$13\.4K already in the pool\./)
+  assert.match(text({ apr: 100, tvl: null, loading: false, saved: true }), /Estimate from saved figures/)
   // Changed on purpose (2026-09-28, round 6 review): with no rate there is nothing to type, and no "yet": a rate refused
   // for a lasting reason (a protocol fee, say) never comes.
   const none = renderToStaticMarkup(React.createElement(PoolEarnings, { apr: null, tvl: 13_400, loading: false }))
@@ -1678,7 +1684,9 @@ test('round 6: a typical range draws the band, the price now and the last day, a
   const draw = (day) => renderToStaticMarkup(React.createElement(PoolRangeGuide, { guide, day, unit: 'USDG for 1 PONS' }))
   const inside = draw({ base: addr('1'), low: '0.9', high: '1.1', first: '1', last: '1.05', whole: true })
   assert.match(inside, /data-pool-range-guide="ready"/)
-  assert.match(inside.replace(/<[^>]+>/g, ''), /From 0\.697689 to 1\.50378: 30% below today’s price to 50% above it\. Over the last day the price stayed inside it\./)
+  assert.match(inside.replace(/<[^>]+>/g, ''), /This starting range is 30% below the pool price to 50% above it\./)
+  assert.match(inside, /Over the last day the price stayed inside it\./)
+  assert.match(inside, /<details class="dm-pool-disclosure" data-pool-range-basis="">/, 'range method is a closed disclosure')
   assert.match(inside, /class="dm-pool-guide-day"/)
   const outside = draw({ base: addr('1'), low: '0.5', high: '1.1', first: '1', last: '1.05', whole: true })
   assert.match(outside.replace(/<[^>]+>/g, ''), /Over the last day the price went past it at times\./)
@@ -1762,7 +1770,7 @@ test('round 6: the page opens with what the pool is and what it earns, and gives
   assert.equal(part(host, 'PoolEarnings').props.loading, true, 'resting while the figures are read')
   fixture.reads[0].resolve(ok()); await flush(); host.render()
   const intro = elements(host.tree, (node) => node.props?.['data-pool-intro'] === '')[0]
-  assert.match(renderToStaticMarkup(intro).replace(/<[^>]+>/g, ''), /^People swap {2}and {2}in this pool\. Everyone who adds money to it shares the 0\.3% fee on each swap: about 100% a year at recent activity\.$/, 'symbols are stubbed out here')
+  assert.match(renderToStaticMarkup(intro).replace(/<[^>]+>/g, ''), /^Add tokens to share the fees when people swap {2}and \.$/, 'symbols are stubbed out here; APR is not repeated in the intro')
   assert.equal(part(host, 'PoolEarnings').props.apr, 100.349999941681629604)
   assert.equal(part(host, 'PoolAutomation').props.usable, true)
   assert.equal(part(host, 'PoolHistoryChart').props.quote, 1, 'the chart opens on the page’s direction')
@@ -1801,6 +1809,28 @@ test('round 6: the page opens with what the pool is and what it earns, and gives
   usable.unmount()
 })
 
+test('saved-data labels name only retained displayed figures; missing, partial and qualified values do not become saved data', async () => {
+  for (const [state, value, expected] of [['stale', '42', true], ['stale', null, false], ['unavailable', '42', false], ['partial', '42', false], ['qualified', '0', false]]) {
+    const fixture = workspace({ dependencies: { projectMarketRow: ({ market }) => ({ ...row(market.data.poolId), tvlUsd: { ...metric, state, value }, feeAprEstimate: { data: { feeAprEstimate24hPercent: '10' }, receivedAt: 0 } }) } })
+    const host = mount(fixture.PoolWorkspace, fixture.props)
+    fixture.reads[0].resolve(ok()); await flush(); host.render()
+    const label = elements(host.tree, (node) => node.props?.['data-saved-data'] === 'figures')
+    assert.equal(label.length, expected ? 1 : 0, `${state}, ${value}`)
+    assert.equal(part(host, 'PoolEarnings').props.saved, expected, 'only a retained input actually used by the estimate is labelled saved')
+    if (expected) {
+      assert.match(renderToStaticMarkup(label[0]), /Saved figures: TVL\./)
+      assert.match(label[0].props.title, /retrieved 12 s ago/, 'the original observation time remains accessible')
+    }
+    host.unmount()
+  }
+  const stalePrice = workspace({ dependencies: { poolPrice: () => ({ state: 'usable', tick: 0, tickSpacing: 60, text: '≈1', base: token('1'), quote: token('2'), inverted: false, decimals: [18, 18], block: 700, stale: true, partial: false }) } })
+  const host = mount(stalePrice.PoolWorkspace, stalePrice.props)
+  assert.match(visibleText(host), /Saved pool price/, 'the on-chain price has its own freshness label')
+  assert.equal(part(host, 'PoolRangeGuide').props.saved, true)
+  assert.equal(elements(host.tree, (node) => node.props?.['data-saved-data'] === 'figures').length, 0, 'a saved price never labels unrelated figures as saved')
+  host.unmount()
+})
+
 test('round 6: the pool page’s button is “Create a position”, into the same New position flow with the pool chosen', async () => {
   const previous = globalThis.window
   const { PoolDetail, verifications } = poolPage(`#/pool/${id('a')}`)
@@ -1829,7 +1859,7 @@ test('round 6: the typical range is worked out on the price now, so a price that
   // And falls 40% (tick −5100), past the lower end it opened on (tick −3600).
   host.props = { ...host.props, option: { ...option('a'), tick: -5100 } }; host.render()
   assert.deepEqual(at(), ['−30%', '+50%', true], 'never "+5% below it"')
-  assert.match(renderToStaticMarkup(React.createElement(real('src/components/pool/PoolRangeGuide.tsx').PoolRangeGuide, { ...part(host, 'PoolRangeGuide').props, unit: 'USDG for 1 PONS' })).replace(/<[^>]+>/g, ''), /: 30% below today’s price to 50% above it\./)
+  assert.match(renderToStaticMarkup(React.createElement(real('src/components/pool/PoolRangeGuide.tsx').PoolRangeGuide, { ...part(host, 'PoolRangeGuide').props, unit: 'USDG for 1 PONS' })).replace(/<[^>]+>/g, ''), /30% below the pool price to 50% above it\./)
   host.unmount()
 })
 

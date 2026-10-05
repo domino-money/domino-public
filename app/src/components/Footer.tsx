@@ -13,8 +13,11 @@
  *
  * 2026-09-27 (the owner's round 6, point 6): the Settings page is gone, and its
  * link with it; Docs, under Guides, says what it said.
+ *
+ * Changed on purpose 2026-10-03 (the owner: Domino covers more than one network now, and the footer had two things
+ * too many): no Network column, no chain in the brand line, and no Pause motion row. Reduced motion (the system
+ * setting) still stills every drawing, and the ticker still stops under the pointer or focus.
  */
-import type { ReactNode } from 'react'
 import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref } from './explore/routes'
 
 /** Domino's X account, confirmed by the owner on 2026-09-26. */
@@ -23,7 +26,7 @@ export const X_PROFILE = 'https://x.com/dominomoney'
 /** The X mark (Simple Icons, CC0), drawn in the link's own colour. */
 function XMark() {
   return (
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false" className="dm-footer-social-mark">
+    <svg viewBox="0 0 24 24" width="0.875rem" height="0.875rem" aria-hidden="true" focusable="false" className="dm-footer-social-mark">
       <path fill="currentColor" d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" />
     </svg>
   )
@@ -50,13 +53,8 @@ const COLUMNS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: st
   },
 ]
 
-/**
- * The page's only `<footer>`. `motion` (Pause motion / Resume motion) comes
- * from App and sits in the last row, in the footer's own flow, where it can
- * never cover text. The site has one look, the dark one (owner, 2026-09-26:
- * dark only), so there is no control for it.
- */
-export function Footer({ motion }: { motion?: ReactNode }) {
+/** The page's only `<footer>`: the brand and two link columns, with no control in it. */
+export function Footer() {
   return (
     <footer className="dm-footer">
       <div className="dm-footer-inner">
@@ -65,12 +63,12 @@ export function Footer({ motion }: { motion?: ReactNode }) {
             {/* Not a link: only the header's wordmark points at Home. */}
             <div className="dm-footer-brand">
               <span className="inline-flex items-center gap-2 text-fg">
-                <span className="dm-display text-[26px] leading-[26px] md:text-[30px] md:leading-[30px]">
+                <span className="dm-display text-[1.625rem] leading-[1.625rem] md:text-[1.875rem] md:leading-[1.875rem]">
                   domino<span className="text-primary">.</span>
                 </span>
               </span>
               <p className="mt-4 max-w-[42ch] text-body text-fg-muted">
-                Domino opens Uniswap positions on Robinhood Chain and puts their earned fees to work, only within limits your wallet signs.
+                Domino opens Uniswap positions and puts their earned fees to work, only within limits your wallet signs.
               </p>
               <a href={X_PROFILE} target="_blank" rel="noopener noreferrer" className="dm-footer-social" aria-label="Domino on X (opens in a new tab)">
                 <XMark />
@@ -92,19 +90,6 @@ export function Footer({ motion }: { motion?: ReactNode }) {
                 </ul>
               </nav>
             ))}
-
-            <div className="dm-footer-network">
-              <h2 className="dm-footer-heading">Network</h2>
-              {/* Changed on purpose 2026-10-01 (audit E5): the chain's number is for the docs (Wallet and sign-in, Contracts). */}
-              <div className="mt-4 grid gap-3">
-                <p className="dm-footer-note">Robinhood Chain</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="dm-footer-bottom">
-            {/* The motion control: at the start of the row on a phone, like the rest of the footer, and at its end from 768px. */}
-            <div className="dm-footer-controls md:ml-auto">{motion}</div>
           </div>
         </div>
       </div>

@@ -25,8 +25,11 @@ const ROBINHOOD = 4663
 /**
  * The chains the session asks for, all optional: Robinhood Chain, and Ethereum so that a wallet that does not know
  * Robinhood Chain yet still pairs and is then asked to add it (the dialog's "Switch to Robinhood Chain").
+ * Changed on purpose 2026-10-04 (Domino V2 live on Base and Arbitrum One, #327): those two as well. A WalletConnect
+ * request names its chain, and the session must hold it, so V2's switch to Base or Arbitrum One and what follows there
+ * need them in the session.
  */
-const CHAINS = [`eip155:${ROBINHOOD}`, 'eip155:1']
+const CHAINS = [`eip155:${ROBINHOOD}`, 'eip155:1', 'eip155:8453', 'eip155:42161']
 
 export interface WalletConnectOptions {
   projectId: string

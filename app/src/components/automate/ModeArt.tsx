@@ -2,6 +2,7 @@ import { useId } from 'react'
 import type { CSSProperties } from 'react'
 import { ArtTile, useInView } from '../home/Vignettes'
 import { cx } from '../ui'
+import { rem } from '../../lib/rootScale'
 
 /*
  * The two automation modes as machines (DESIGN-V2 §14, automate.md §5.1):
@@ -280,8 +281,8 @@ export function ModeArt({ mode, size, play = 'none', className }: { mode: ModeAr
       data-mode={mode}
       data-size={size}
       data-play={still ? 'none' : play}
-      width={size === 'stage' ? undefined : box.width}
-      height={size === 'stage' ? undefined : box.height}
+      width={size === 'stage' ? undefined : rem(box.width)}
+      height={size === 'stage' ? undefined : rem(box.height)}
       viewBox={`0 0 ${box.width} ${box.height}`}
       preserveAspectRatio="xMidYMax meet"
       aria-hidden="true"
@@ -298,7 +299,7 @@ export function ModeArt({ mode, size, play = 'none', className }: { mode: ModeAr
  */
 export function PlainArt({ className }: { className?: string }) {
   return (
-    <svg className={cx('dm-art dm-mode-art', className)} data-mode="plain" data-size="thumb" width={56} height={32} viewBox="0 0 56 32" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false">
+    <svg className={cx('dm-art dm-mode-art', className)} data-mode="plain" data-size="thumb" width="3.5rem" height="2rem" viewBox="0 0 56 32" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false">
       <rect className="plain-band" x={6} y={24.5} width={44} height={7} rx={3.5} />
       <g transform="translate(21 0)">
         <g className="tile-solid">

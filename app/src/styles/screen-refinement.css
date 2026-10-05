@@ -1,0 +1,23 @@
+/* Consistent hierarchy across live-data screens; no graphic stands in for a financial value. */
+@layer components {
+  .dm-positions-page .dm-acct-title { padding-bottom: 1.75rem; border-bottom: 1px solid var(--border); }
+  .dm-acct-title-copy { min-width: 0; }
+  .dm-positions-page .dm-own-head { padding: 1rem; }
+  .dm-positions-page .dm-portfolio { padding: 1rem; margin: 0 0.5rem 0.75rem; background: var(--wash); border-radius: var(--radius); gap: 0.5rem 2.5rem; }
+  .dm-positions-page .dm-own-card { border-radius: var(--radius-hero); }
+  .dm-pos-title { padding-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
+  .dm-pos-stats.dm-stats--tiles, .dm-pool-stats.dm-stats--tiles { gap: 0.75rem; background: transparent; box-shadow: none; overflow: visible; }
+  .dm-pos-stats.dm-stats--tiles > *, .dm-pool-stats.dm-stats--tiles > * { border-radius: var(--radius-card); background: var(--card); box-shadow: var(--elev-card); }
+  .dm-pos-stats.dm-stats--tiles > [data-cell="principal"] { background: linear-gradient(135deg, var(--wash-strong), transparent 75%), var(--card); }
+  .dm-pos-stats.dm-stats--tiles > [data-cell="fees"] { background: linear-gradient(135deg, color-mix(in srgb, var(--money-in) 5%, transparent), transparent 75%), var(--card); }
+  .dm-fees, .dm-pos-card, .dm-pool-chart { border-radius: var(--radius-hero); }
+  .dm-pool-head { padding-bottom: 1.25rem; border-bottom: 1px solid var(--border); }
+  .dm-pool-intro { margin-top: 0.25rem; }
+  .dm-docs-nav-link[aria-current="page"] { background: color-mix(in srgb, var(--primary) 9%, var(--card)); color: var(--primary); box-shadow: inset 2px 0 0 var(--primary); }
+  .dm-docs-nav-label { letter-spacing: 0.04em; font-size: 0.6875rem; text-transform: uppercase; }
+  .dm-docs-article { line-height: 1.75; }
+  @media (min-width: 1024px) {
+    .dm-positions-page .dm-acct-grid { grid-template-columns: minmax(0, 1fr) 21rem; }
+    .dm-pool-layout { column-gap: 1.25rem; }
+  }
+}

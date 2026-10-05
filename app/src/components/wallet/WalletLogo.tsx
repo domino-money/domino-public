@@ -17,7 +17,7 @@ export function WalletLogo({ id }: { id: string }) {
     case 'com.trustwallet.app': return <img {...props} alt="" src="/wallets/trust.svg" />
     case 'walletConnect': return <img {...props} alt="" src="/wallets/walletconnect.svg" />
     default: return (
-      <svg width="24" height="24" viewBox="0 0 24 24" className="shrink-0 text-fg-muted" aria-hidden="true">
+      <svg width="1.5rem" height="1.5rem" viewBox="0 0 24 24" className="shrink-0 text-fg-muted" aria-hidden="true">
         <rect x="3" y="5" width="18" height="15" rx="4" fill="none" stroke="currentColor" strokeWidth="1.5" />
         <path d="M3 9h18" stroke="currentColor" strokeWidth="1.5" />
         <circle cx="17" cy="14.5" r="1.5" fill="currentColor" />

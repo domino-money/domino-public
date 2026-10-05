@@ -13,7 +13,7 @@ import type { AutoAdd } from '../../../lib/automationImpact'
 import { useMediaQuery } from '../../../lib/useMediaQuery'
 import { TokenFigure } from './FeesActivity'
 import type { FeesPeriodView, FeesView } from './model'
-import { dateTicks } from './ticks'
+import { dateTicks, spacedTimeTicks } from './ticks'
 import { positive, unitsNumber, valueFigure } from './value'
 
 /**
@@ -44,7 +44,8 @@ const CHIP_GAP = 14
 
 /** An axis figure for a round tick (niceTicks' 1/2/5 steps): `$1,500`, `$0.25`, `$0.002`; a quote amount without its symbol. */
 function axisFigure(view: FeesView, value: number): string {
-  const [whole, fraction = ''] = value.toFixed(8).split('.')
+  const precision = value > 0 && value < 1 ? Math.min(24, Math.max(8, 3 - Math.floor(Math.log10(value)))) : 8
+  const [whole, fraction = ''] = value.toFixed(precision).split('.')
   const digits = fraction.replace(/0+$/, '')
   if (view.basis.kind === 'quote') return digits ? `${group(whole)}.${digits}` : group(whole)
   return digits ? formatUsd(`${whole}.${digits}`) : `$${group(whole)}`
@@ -239,6 +240,7 @@ export function FeesChart({
       return (
         <>
           <Baseline y={plot.bottom} left={plot.left} right={plot.right} />
+          {niceTicks(baseN, topN, phone ? 2 : 3).filter((tick) => tick > baseN && tick < topN).map((tick) => <line key={tick} x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)} className="dm-position-chart-guide" />)}
           <Split earned={line} collected={collected} baseline={plot.bottom} />
           {pips}
           {marks.map((add, index) => (
@@ -248,7 +250,7 @@ export function FeesChart({
         </>
       )
     },
-    [scales, pv, zero, bottomN, marks, automatic],
+    [scales, pv, zero, bottomN, baseN, topN, phone, marks, automatic],
   )
 
   const lastText = valueFigure(view.basis, pv.last)
@@ -277,7 +279,7 @@ export function FeesChart({
       }
       const { x } = scales(plot)
       const dates = dateTicks(start, end, dateCount(plot)).map((tick) => ({ x: x(tick.t), label: tick.label }))
-      const xAxis = <XAxis ticks={dates} anchor={plot.bottom + 32} left={plot.left} right={plot.right} />
+      const xAxis = <XAxis ticks={spacedTimeTicks(dates, plot.left, plot.right)} anchor={plot.bottom + 32} left={plot.left} right={plot.right} />
       // A phone draws its y labels over the series (inspect layer); a desktop in the gutter.
       if (phone) return xAxis
       const { floor, levels } = yLabels(plot)
@@ -393,7 +395,7 @@ export function FeesChart({
   const valueText = useMemo(
     () => (index: number) => {
       const bucket = buckets[index]
-      return bucket ? `${bucketLabel(bucket.start, bucket.end)}, ${valueFigure(view.basis, bucket.earned)}` : ''
+      return bucket ? `${bucketLabel(bucket.start, bucket.end)}, ${valueFigure(view.basis, bucket.earnedIn)} earned in this interval; ${valueFigure(view.basis, bucket.earned)} earned since opened` : ''
     },
     [buckets, view.basis],
   )

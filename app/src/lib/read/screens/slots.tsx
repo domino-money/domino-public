@@ -48,7 +48,7 @@ export const PoolFiguresSlot = READ_SCREENS
 export const SlotFailed = READ_SCREENS
   ? function SlotFailed() {
       return (
-        <p role="status" className="dm-inset px-4 py-3 text-[13px] leading-[18px] text-fg-muted" data-slot-failed="">
+        <p role="status" className="dm-inset px-4 py-3 text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-slot-failed="">
           {COPY.slotFailed}
         </p>
       )

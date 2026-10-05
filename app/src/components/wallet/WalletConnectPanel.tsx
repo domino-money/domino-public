@@ -37,7 +37,7 @@ export function WalletConnectPanel({ phone }: { phone: boolean }) {
 
   if (!link) {
     return (
-      <p className="text-[13px] leading-[18px] text-fg-muted" data-walletconnect="starting">
+      <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-walletconnect="starting">
         {WALLETCONNECT.starting}
       </p>
     )
@@ -49,7 +49,7 @@ export function WalletConnectPanel({ phone }: { phone: boolean }) {
   }
   return (
     <div className="dm-walletconnect" data-walletconnect="pairing">
-      <p className="text-[13px] leading-[18px] text-fg-muted">{phone ? WALLETCONNECT.open : WALLETCONNECT.scan}</p>
+      <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted">{phone ? WALLETCONNECT.open : WALLETCONNECT.scan}</p>
       {phone && (
         <Button type="button" variant="primary" onClick={() => window.location.assign(link)} data-walletconnect-open="">
           Open wallet app

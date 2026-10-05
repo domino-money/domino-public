@@ -17,6 +17,12 @@
  * period tabs are back, each period from a measured start, read at a past block when the history has none (read-v1
  * `nft-positions` at `blockNumber`, through the site's read bridge: tests/support/read-stub.mjs over the world's
  * pastAnswer, `scenario`'s `past`).
+ *
+ * Changed on purpose 2026-10-03 (the owner's point 10: the Price range chart "doesn't work … no beginner will understand
+ * it"): its status in words ("Earning fees — the price is inside your range"), its Max and Min labelled, and the pool's
+ * price over the last 7 days from the read service's stored history (read-v3 `history`, `scenario`'s `history`); where
+ * the deployment lists none, the band and the price now alone, and one short line says so. Every case at every price:
+ * tests/price-range.browser.test.mjs.
  */
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
@@ -27,12 +33,13 @@ import { routeChain } from './support/browser-chain.mjs';
 import { closeBrowser } from './support/close-browser.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
 import { POOL_MANAGER } from './support/fees/ledger-chain.mjs';
-import { HEAD, NOW, OWNER_MINT, OWNER_STEPS, VAULT, ledgerWorld } from './support/fees/ledger-world.mjs';
+import { HEAD, NOW, OWNER_MINT, OWNER_STEPS, UFG, USDG, VAULT, ledgerWorld } from './support/fees/ledger-world.mjs';
 import { createReadStub, gatewayError } from './support/read-stub.mjs';
 import { NODE_LOG_BLOCKS, NODE_LOG_FLOOR } from './support/log-limits.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
 import { ARTWORK } from './support/new-position.mjs';
-import { createWalletServer } from './support/wallet-server.mjs';
+import { historyFor } from './support/price-range-cases.mjs';
+import { createWalletServer, WALLET_DIST } from './support/wallet-server.mjs';
 
 let browser;
 before(async () => {
@@ -46,6 +53,12 @@ after(async () => { await closeBrowser(browser); });
 const shots = () => { const dir = process.env.DOMINO_CHART_SHOTS || resolve(import.meta.dirname, '../.test-artifacts'); mkdirSync(dir, { recursive: true }); return dir; };
 const DESKTOP = { viewport: { width: 1280, height: 900 } };
 const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
+/**
+ * CSS px per design px on a page (changed on purpose 2026-10-03, the owner: the site looks too big at 100%; at 80% it
+ * looks right): the root's font-size over 16 (styles/tokens.css, src/lib/rootScale.ts), 0.8 in DESKTOP's window and 1
+ * on PHONE. A chart's paddings and offsets are design px, so a box measured in CSS px is compared at this scale.
+ */
+const rootScale = (page) => page.evaluate(() => Number.parseFloat(getComputedStyle(document.documentElement).fontSize) / 16);
 const ID = '3325113';
 const HASH = `#/positions/${ID}`;
 const EXECUTION_COMPLETED = '0xa75f5619abce0f39b6b0ace7eb96f20ba345b963b9799beed8451480a406cde0';
@@ -80,22 +93,26 @@ const readsVault = (init) => callsOf(init).some((call) => call.method === 'eth_g
  * past block from the world (`past(block)`, a JSON text, a Response or a promise of one; `true`: world.pastAnswer), every
  * question kept in `reads`; without it the bridge is not there, as before.
  */
-async function scenario(world, hash, device = DESKTOP, init = null, { past = null } = {}) {
+async function scenario(world, hash, device = DESKTOP, init = null, { past = null, history = null, dist = WALLET_DIST } = {}) {
   const fake = createFakeSession();
   const asked = [];
   const reads = [];
+  const histories = [];
   const answer = past === true ? (block) => world.pastAnswer(block) : past;
-  const read = answer
+  // 2026-10-03 (the owner's point 10): `history(body)`, the read service's stored price history of the pool (read-v3
+  // `history`, listed only with it), every question kept in `histories`.
+  const read = answer || history
     ? createReadStub({
         reads: 'nft-positions',
         answer: (route, body) => {
-          if (route !== 'nft-positions') return gatewayError('route_not_available', 404);
+          if (route !== 'nft-positions' || !answer) return gatewayError('route_not_available', 404);
           reads.push(body);
           return answer(body.blockNumber, body);
         },
+        ...(history ? { stored: (route, body) => { if (route === 'history') histories.push(body); return JSON.stringify(history(body)); } } : {}),
       })
     : null;
-  const server = createWalletServer({ fake, dist: resolve(import.meta.dirname, '../.wallet-test-dist'), routes: [async (request, url) => {
+  const server = createWalletServer({ fake, dist, routes: [async (request, url) => {
     if (read && url.pathname.startsWith('/api/read/')) return read.handle(request, url);
     if (!/^\/api\/(?:owned|fees|automation)\//.test(url.pathname)) return undefined;
     asked.push(url.pathname);
@@ -118,6 +135,7 @@ async function scenario(world, hash, device = DESKTOP, init = null, { past = nul
     page,
     asked,
     reads,
+    histories,
     async close() {
       await context.close();
       await server.closeAll();
@@ -151,6 +169,8 @@ async function headerPrice(page) {
 
 /** The Price range card around the chart. */
 const rangeCard = (page) => page.locator('section.dm-pos-card:has([data-range])');
+/** A range end's figure on the chart, as the key figures write it (2026-10-03: its word "Max" or "Min" over it). */
+const endFigure = (range, end) => range.locator(`[data-pvr-end="${end}"] .dm-pvr-label-fig`).innerText();
 
 /** The growth line's figure from the world's liquidity: the automation's re-adds against the owner's mint. */
 function growthOf(steps = OWNER_STEPS) {
@@ -201,7 +221,7 @@ test('an automated position: the card says in two lines what Auto-compound put b
     assert.equal(await card.locator('.dm-fees-waiting').count(), 1, 'the part still waiting is drawn');
     // Changed on purpose 2026-10-02, later (the owner): the period tabs are back. A day old, it offers 24H and All; its 24H
     // starts at the mint, a measured point a day old, so nothing is read for it and nothing is added beside the hero.
-    assert.deepEqual(await card.getByRole('radio').allInnerTexts(), ['24H', 'All'], 'its periods');
+    assert.deepEqual(await card.getByRole('radio').allInnerTexts(), ['24H', '7D', 'All'], 'its periods');
     assert.equal(await card.getAttribute('data-fees-period'), '24h');
     assert.equal(await card.getAttribute('data-fees-period-state'), 'drawn');
     assert.equal(await card.locator('.dm-fees-delta').count(), 0, 'a period from the mint says nothing the hero does not');
@@ -230,16 +250,19 @@ test('an automated position: the card says in two lines what Auto-compound put b
       await tip.waitFor({ state: 'detached', timeout: 5_000 });
     }
 
-    // The price range chart: in range, the band and its ends, the price now, in plain words; no line of the pool's prices.
+    // The price range chart: in range, in plain words, the band and its two ends labelled, the price now; no line where
+    // the deployment lists no stored price history of the pool (this one lists read-v1 nft-positions alone).
     const range = page.locator('[data-pvr-where]');
     await range.waitFor();
     assert.equal(await range.getAttribute('data-pvr-where'), 'inside');
-    assert.equal(await range.getAttribute('data-pvr-line'), null, 'no price line: the pool’s own history is never read');
-    assert.match(await range.locator('.dm-pvr-says').innerText(), /In range\s+The price is inside your range, so this position is earning fees\./);
+    await page.locator('[data-pvr-history="not_listed"]').waitFor({ timeout: 10_000 });
+    assert.equal(await range.getAttribute('data-pvr-line'), null, 'no line without a stored history: nothing else is read for it');
+    assert.equal((await range.locator('.dm-pvr-says').textContent()).replace(/\s+/g, ' ').trim(), 'Earning fees — the price is inside your range');
     assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(page), 'one price now on the screen');
-    const [low, high] = [await range.locator('[data-pvr-end="min"]').innerText(), await range.locator('[data-pvr-end="max"]').innerText()];
+    const [low, high] = [await endFigure(range, 'min'), await endFigure(range, 'max')];
     assert.match(await page.locator('[data-stat="range"]').innerText(), new RegExp(`^${low.replaceAll('.', '[.]')}\\s+Your range\\s+${high.replaceAll('.', '[.]')}\\s`));
-    assert.deepEqual(await range.locator('.dm-pvr-legend > *').allInnerTexts(), ['Your range', 'Prices in USDG for 1 UFG']);
+    assert.deepEqual(await range.locator('.dm-pvr-legend > *').allInnerTexts(), ['Your range', 'Price now', 'Price history isn’t available yet.']);
+    assert.equal(await range.locator('.dm-pvr-unit').innerText(), 'USDG per UFG');
     assert.match(await page.locator('[data-stat="price"]').innerText(), /1 UFG =\s+0\.00\d+\s+USDG/);
     await rangeCard(page).screenshot({ path: join(shots(), 'desktop-price-range-in.png') });
   } finally { await s.close(); }
@@ -256,6 +279,17 @@ test('an automated position on a phone: the same two lines and marks, the chart 
     assert.equal(await card.locator('.dm-fees-auto').count(), 3);
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     assert.ok(width <= 390, `no sideways scroll: ${width}px`);
+    const chart = card.locator('.dm-chart[role="slider"]').first();
+    await chart.scrollIntoViewIfNeeded();
+    const chartBox = await chart.boundingBox();
+    await chart.tap({position:{x:chartBox.width * 0.3,y:chartBox.height * 0.5}});
+    await chart.locator('.dm-chart-tooltip').waitFor();
+    assert.equal(await chart.locator('.dm-chart-tooltip').isVisible(), true, 'a tap keeps a measured point visible on touch screens');
+    await chart.press('Home');
+    assert.equal(await chart.getAttribute('aria-valuenow'), '1', 'keyboard reaches the first measured point');
+    await chart.press('End');
+    assert.equal(await chart.getAttribute('aria-valuenow'), await chart.getAttribute('aria-valuemax'), 'keyboard reaches the last measured point');
+    await chart.press('Escape');
     await page.screenshot({ path: join(shots(), 'phone-automated-all.png'), fullPage: true });
     await page.locator('[data-pvr-where]').scrollIntoViewIfNeeded();
     assert.equal(await page.locator('[data-pvr-now]').innerText(), await headerPrice(page));
@@ -315,8 +349,9 @@ test('a plain position: no automation line, no mark and no vault read; the price
     await range.waitFor();
     // UFG's price in USDG sits over this range (the pool's tick is under its lower one).
     assert.equal(await range.getAttribute('data-pvr-where'), 'over');
-    assert.match(await range.locator('.dm-pvr-says').innerText(), /Out of range\s+The price is over your range, so this position is not earning fees right now\./);
-    assert.equal(await range.locator('.dm-pvr-chip:not([data-in])').count(), 1, 'the price now in the out-of-range colour');
+    assert.equal((await range.locator('.dm-pvr-says').textContent()).replace(/\s+/g, ' ').trim(), 'Not earning — the price is above your range');
+    assert.match(await range.locator('.dm-pvr-move').innerText(), /^It must fall \d+(\.\d)?% to come back into your range\.$/);
+    assert.equal(await range.locator('.dm-pvr-chip[data-tone="out"]').count(), 1, 'the price now in the out-of-range colour');
     assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(page), 'one price now on the screen');
     // Just over the range: its ceiling's number stays readable, clear of the chip's.
     const [ceiling, chip] = await Promise.all([range.locator('[data-pvr-end="max"]').boundingBox(), range.locator('[data-pvr-now]').boundingBox()]);
@@ -332,6 +367,107 @@ test('a plain position: no automation line, no mark and no vault read; the price
     await phone.page.locator('[data-pvr-where]').scrollIntoViewIfNeeded();
     await rangeCard(phone.page).screenshot({ path: join(shots(), 'phone-price-range-out.png') });
   } finally { await phone.close(); }
+});
+
+// Added 2026-10-03 (the owner's point 10: "it doesn't show the history"): where the deployment lists the read service's
+// stored price history (read-v3 `history`), the position's own page draws the pool's last 7 days from it, in the page's
+// orientation (UFG's price in USDG), asked once with the page's own pair; nothing of it is read from the node.
+test('the position’s page draws the pool’s last 7 days from the read service’s stored history, in its own orientation, and reads nothing of it from the node', async () => {
+  for (const [device, label] of [[DESKTOP, 'desktop'], [PHONE, 'phone']]) {
+    const world = automated();
+    const pool = { id: 7, now: 0.003, quote: { address: USDG }, swing: 0.01 };
+    const s = await scenario(world, HASH, device, null, { history: (body) => historyFor(pool, body, { end: Math.floor(Date.now() / 1000) }) });
+    try {
+      const range = s.page.locator('[data-pvr-where]');
+      await s.page.locator('[data-pvr-line]').waitFor({ timeout: 30_000 });
+      assert.equal(await range.getAttribute('data-pvr-where'), 'inside');
+      assert.equal((await range.locator('.dm-pvr-says').textContent()).replace(/\s+/g, ' ').trim(), 'Earning fees — the price is inside your range');
+      assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(s.page), 'one price now on the screen');
+      assert.equal(await range.locator('.dm-pvr-note').innerText(), 'Last 7 days · Hourly prices');
+      assert.ok((await range.locator('.dm-pvr-line').count()) > 0, 'the line is drawn');
+      assert.deepEqual(s.histories, [{ poolId: world.poolId, currency: UFG, windowSeconds: 604_800, resolutionSeconds: 3_600 }], 'asked once, for UFG’s price, the 7 days hour by hour');
+      keptToTheRules(world);
+      await s.page.waitForTimeout(900);
+      await rangeCard(s.page).screenshot({ path: join(shots(), `${label}-price-range-history.png`) });
+    } finally { await s.close(); }
+  }
+});
+
+test('R5: real mint bounds price history and 7D fees at 1440, 390 and 320; the same ledger totals survive every period', { timeout: 120_000 }, async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const minted = HEAD - 216_000; // Six hours before the fake node's current block.
+  const devices = [
+    [{ viewport: { width: 1440, height: 1000 } }, 'desktop'],
+    [PHONE, 'phone'],
+    [{ ...PHONE, viewport: { width: 320, height: 760 } }, 'small'],
+  ];
+  // Optional local baseline capture uses the previous compiled artifact with exactly the same fixture.
+  const baseline = process.env.DOMINO_CHART_BASELINE_DIST;
+  for (const [device, label] of devices) {
+    const world = plain({ now, mint: { ...OWNER_MINT, block: minted }, range: [327_200, 339_200], steps: [
+      { block: HEAD - 72_000, kind: 'collect', fees: [1_000n, 1_000_000_000_000_000_000n] },
+    ], unclaimed: [500n, 2_000_000_000_000_000_000n] });
+    const pool = { id: 7, now: 0.003, quote: { address: USDG }, swing: 0.02 };
+    const s = await scenario(world, HASH, device, null, { past: true, history: (body) => historyFor(pool, body, { end: now }), ...(baseline ? { dist: resolve(baseline) } : {}) });
+    try {
+      const page = s.page;
+      const card = page.locator('[data-fees-card][data-fees-state="verified"]');
+      const range = page.locator('[data-pvr-line]');
+      await card.locator('.dm-fees-chart').waitFor({ timeout: 30_000 });
+      await range.waitFor();
+      const total = await card.locator('.dm-fees-hero').innerText();
+      const legend = await card.locator('.dm-fees-legend').innerText();
+      if (!baseline) {
+        assert.deepEqual(await card.getByRole('radio').allInnerTexts(), ['24H', '7D', 'All']);
+        const track = await card.getByRole('radiogroup').boundingBox();
+        for (const radio of await card.getByRole('radio').all()) {
+          const box = await radio.boundingBox();
+          assert.ok(box.y >= track.y && box.y + box.height <= track.y + track.height, 'the selected period fits within its track');
+        }
+        assert.equal(Number(await range.getAttribute('data-pvr-opened')), world.timeAt(minted));
+        assert.equal(Number(await range.getAttribute('data-pvr-start')), world.timeAt(minted));
+        assert.ok(Number(await range.getAttribute('data-pvr-first')) >= world.timeAt(minted));
+        assert.ok(Number(await range.locator('[role="slider"]').getAttribute('aria-valuemax')) < 10, 'only the six-hour position history is inspectable');
+        for (const period of ['24H', '7D', 'All']) {
+          await card.getByRole('radio', { name: period, exact: true }).click();
+          assert.equal(Number(await card.getAttribute('data-fees-period-from')), minted);
+          assert.equal(await card.locator('.dm-fees-hero').innerText(), total);
+          assert.equal(await card.locator('.dm-fees-legend').innerText(), legend);
+          assert.equal(await card.locator('.dm-fees-window').innerText(), 'Since opened');
+        }
+        assert.ok(s.reads.every((read) => read.blockNumber >= minted), 'period samples never read before the mint');
+        await card.getByRole('radio', { name: '7D', exact: true }).click();
+      } else {
+        assert.deepEqual(await card.getByRole('radio').allInnerTexts(), ['24H', 'All'], 'old artifact reproduces the missing 7D');
+        assert.equal(await range.locator('.dm-pvr-note').innerText(), 'Last 7 days, hour by hour.', 'old artifact reproduces the pre-mint week');
+      }
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await page.waitForTimeout(900);
+      await card.screenshot({ path: join(shots(), `fees-recent-${label}.png`) });
+      await rangeCard(page).screenshot({ path: join(shots(), `range-recent-${label}.png`) });
+      if (!baseline) {
+        for (const [chart, name] of [[card.locator('.dm-fees-chart'), 'fees'], [range.locator('.dm-pvr'), 'range']]) {
+          const axis = await chart.locator(':scope > svg:first-child text.dm-axis').evaluateAll((nodes) => nodes
+            .filter((node) => /^(Opened|\d{2}:\d{2}|\d{2}-\d{2})$/.test(node.textContent))
+            .map((node) => { const r = node.getBoundingClientRect(); return { text: node.textContent, x: r.x, right: r.right }; })
+            .sort((a, b) => a.x - b.x));
+          const scale = await rootScale(page);
+          for (let i = 1; i < axis.length; i++) assert.ok(axis[i].x - axis[i - 1].right >= 8 * scale, `${name} ${label}: time labels need space: ${JSON.stringify(axis)}`);
+          await chart.focus();
+          await page.keyboard.press('Home');
+          const tooltip = chart.locator('.dm-chart-tooltip');
+          await tooltip.waitFor();
+          await page.waitForTimeout(200);
+          const tip = await tooltip.boundingBox();
+          const box = await chart.boundingBox();
+          assert.ok(tip.x >= box.x - 1 && tip.x + tip.width <= box.x + box.width + 1, `${name} tooltip stays inside ${label}`);
+          await (name === 'fees' ? card : rangeCard(page)).screenshot({ path: join(shots(), `${name}-tooltip-${label}.png`) });
+          await page.keyboard.press('Escape');
+        }
+      }
+      keptToTheRules(world);
+    } finally { await s.close(); }
+  }
 });
 
 test('a position whose owner added liquidity by hand: Fees ready to collect stays exact, and the card says plainly that Fees earned can’t be measured', async () => {
@@ -359,7 +495,8 @@ async function priceOnBar(page) {
   const range = page.locator('[data-pvr-where]');
   await range.waitFor({ timeout: 20_000 });
   const nowText = await headerPrice(page);
-  const [min, max, now] = [Number(await range.locator('[data-pvr-end="min"]').innerText()), Number(await range.locator('[data-pvr-end="max"]').innerText()), Number(nowText)];
+  const price = (end) => range.locator(`[data-pvr-end="${end}"] [data-pvr-price]`).getAttribute('data-pvr-price').then((text) => Number(text.replace(/,/g, '')));
+  const [min, max, now] = [await price('min'), await price('max'), Number(nowText)];
   const span = Math.log(max / min);
   const share = Math.log(now / min) / span;
   const want = share < 0 ? 0.015 : share > 1 ? 0.985 : 0.05 + 0.9 * share;
@@ -399,7 +536,7 @@ test('the Current price bar puts UFG’s price where the chart does: inside its 
   }
 });
 
-test('a range that reaches the pool’s limits: the chart labels no end at 0 or ∞ (never a number in exponent form), and its band runs to the edge', async () => {
+test('a range that reaches the pool’s limits: the chart labels such an end with its limit, 0 or ∞, as the key figures do (never a number in exponent form), and its band runs to the edge', async () => {
   // The pool spaces its ticks by 400: its usable limits are -887,200 and 887,200. UFG's price in USDG, so the pool's upper
   // limit is the range's price 0, and the band runs off the plot's foot.
   for (const [ticks, label] of [[[335_200, 887_200], 'lower-limit'], [[-887_200, 887_200], 'full-range']]) {
@@ -409,20 +546,24 @@ test('a range that reaches the pool’s limits: the chart labels no end at 0 or 
       await page.locator(`[data-position-detail][data-position-id="${ID}"]`).waitFor({ timeout: 20_000 });
       const range = page.locator('[data-pvr-where]');
       await range.waitFor({ timeout: 20_000 });
-      const header = label === 'full-range' ? /^0\s+Your range\s+∞\s/ : new RegExp(`^0\\s+Your range\\s+${(await range.locator('[data-pvr-end="max"]').innerText()).replaceAll('.', '[.]')}\\s`);
+      const header = label === 'full-range' ? /^0\s+Your range\s+∞\s/ : new RegExp(`^0\\s+Your range\\s+${(await endFigure(range, 'max')).replaceAll('.', '[.]')}\\s`);
       assert.match(await page.locator('[data-stat="range"]').innerText(), header);
       const text = await rangeCard(page).innerText();
       assert.doesNotMatch(text, /\de[+-]\d/, `no exponent: ${text}`);
-      assert.equal(await range.locator('[data-pvr-end="min"]').count(), 0, 'no number at 0');
+      assert.equal(await range.locator('[data-pvr-end="min"][data-pvr-open]').count(), 1, 'the end at 0 is labelled with its limit');
+      assert.equal(await endFigure(range, 'min'), '0');
       if (label === 'full-range') {
-        assert.equal(await range.locator('[data-pvr-end]').count(), 0, 'no number at ∞ either');
+        assert.equal(await range.locator('[data-pvr-end="max"][data-pvr-open]').count(), 1, 'and the end at ∞ too');
+        assert.equal(await endFigure(range, 'max'), '∞');
         assert.equal(await range.getAttribute('data-pvr-where'), 'inside');
       }
       // The band runs off the plot where the range does, with no edge line there: its foot at 0, and its top too at ∞.
+      // The plot's room under and over the band is 30 and 12 design px (PriceVsRange's padding), at the root's scale.
       const plot = await range.locator('.dm-pvr').boundingBox();
       const band = await range.locator('.dm-pvr-band').boundingBox();
-      assert.ok(Math.abs(band.y + band.height - (plot.y + plot.height - 30)) <= 1, `the band reaches the plot's foot (${band.y + band.height} vs ${plot.y + plot.height - 30})`);
-      if (label === 'full-range') assert.ok(Math.abs(band.y - (plot.y + 12)) <= 1, `the band reaches the plot's top (${band.y} vs ${plot.y + 12})`);
+      const scale = await rootScale(page);
+      assert.ok(Math.abs(band.y + band.height - (plot.y + plot.height - 30 * scale)) <= 1, `the band reaches the plot's foot (${band.y + band.height} vs ${plot.y + plot.height - 30 * scale})`);
+      if (label === 'full-range') assert.ok(Math.abs(band.y - (plot.y + 16 * scale)) <= 1, `the band reaches the plot's top (${band.y} vs ${plot.y + 16 * scale})`);
       assert.equal(await range.locator('.dm-pvr-edge').count(), label === 'full-range' ? 0 : 1);
       assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(page));
       await page.waitForTimeout(900);
@@ -448,12 +589,12 @@ test('while the ledger is read the card shows the chain’s unclaimed figure and
       await loading.waitFor({ timeout: 20_000 });
       assert.match(await loading.innerText(), /Fees earned[\s\S]*Ready to collect[\s\S]*\$[\d,]+\.\d\d/, 'the chain’s unclaimed figure, at once, in the key figures’ words');
       const skeleton = await loading.locator('.dm-fees-chart-skel').boundingBox();
-      // The price range, from the page's own read: the pill, the sentence, the band and the price now, in the chart's
-      // final box, and no line (none is ever drawn: the pool's own history is not read).
+      // The price range, from the page's own read: the status, the band and the price now, in the chart's final box, and
+      // no line (this deployment lists no stored price history of the pool).
       const range = s.page.locator('[data-pvr-where]');
       await range.waitFor({ timeout: 10_000 });
       assert.equal(await range.getAttribute('data-pvr-line'), null);
-      assert.match(await range.locator('.dm-pvr-says').innerText(), /Out of range\s+The price is over your range/);
+      assert.equal((await range.locator('.dm-pvr-says').textContent()).replace(/\s+/g, ' ').trim(), 'Not earning — the price is above your range');
       assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(s.page));
       assert.equal(await rangeCard(s.page).locator('.dm-acct-range-bar, .dm-pos-ends, .dm-pos-preview-wrap').count(), 0);
       const early = await rangeCard(s.page).boundingBox();
@@ -481,7 +622,9 @@ test('an automated position fills in without a jump: its chart draws before attr
         const card = document.querySelector('[data-fees-card][data-fees-state="verified"]');
         if (card) {
           const top = (selector) => { const node = document.querySelector(selector); return node ? Math.round(node.getBoundingClientRect().top + scrollY) : null; };
-          window.__frames.push({ impact: !!card.querySelector('[data-automation-impact]'), chart: top('.dm-fees-chart'), activity: top('[data-position-activity]'), range: top('[data-pvr-where]'), height: Math.round(card.getBoundingClientRect().height) });
+          // 2026-10-03: the Price range card itself ([data-range]), there from the first frame; its chart is a chunk of its own
+          // that may arrive a frame later, in the box its stand-in already holds.
+          window.__frames.push({ impact: !!card.querySelector('[data-automation-impact]'), chart: top('.dm-fees-chart'), activity: top('[data-position-activity]'), range: top('[data-range]'), height: Math.round(card.getBoundingClientRect().height) });
         }
         if (!window.__stopFrames && window.__frames.length < 5000) requestAnimationFrame(tick);
       };

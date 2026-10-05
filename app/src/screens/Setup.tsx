@@ -220,11 +220,12 @@ export default function Setup() {
   const action = (id: ActionId, hash?: string) => { if (sending) return; setNotice(null); deps.flow.dispatch({ t: 'user', action: id === 'check_allowances' ? 'allowances' : id, hash }) }
   const open = (id: string) => { setNotice(null); deps.flow.dispatch({ t: 'user', action: 'open', id }) }
   const blockerButton = (id: string | null) => id && <Button className="justify-self-start" variant="outline" size="sm" disabled={state.busy !== null} onClick={() => open(id)}>Open the blocking deposit</Button>
-  return <main className="dm-page dm-page--narrow">
+  const field = (name: keyof typeof initial) => <label key={name} className="dm-label dm-acct-lf">{labels[name]}<input className="dm-field dm-acct-mono-field" value={form[name]} onChange={event => setForm(old => ({ ...old, [name]: event.target.value }))} /></label>
+  return <main className="dm-page dm-page--narrow dm-setup">
     <Display as="h1" className="dm-display-title">Deposits and recovery</Display>
-    <p className="dm-acct-lede">{pool ? 'Review the amounts and approve each step in your wallet.' : 'Choose a pool, review the amounts and approve each step in your wallet.'} Direct deposits carry no Domino percentage fee. You pay network gas; Uniswap pool fees apply only if you swap.</p>
+    <p className="dm-acct-lede">Continue a deposit or recover tokens from an unfinished operation.</p>
     {/* Positions are created from New position's Create position. This page keeps the deposit service's drafts and owner recovery. */}
-    <p className="dm-acct-block text-body text-fg-muted" data-setup-new-position="">To open a new position, use <a className="underline" href="#/new">New position</a>: its last step creates it through your wallet.</p>
+    <p className="dm-setup-entry text-body text-fg-muted" data-setup-new-position="">Opening a position? Start with <a className="underline" href="#/new">New position</a>.</p>
     {/* The pool comes from New position with the rest of the choices; the explorer is for choosing one here, or another one, and folds away once there is one. */}
     <details className="dm-details dm-acct-disclosure dm-acct-block" open={pool ? undefined : true} data-setup-explorer={pool ? 'folded' : 'open'}>
       <summary>{pool ? 'Choose another pool' : 'Choose a pool'}</summary>
@@ -235,7 +236,7 @@ export default function Setup() {
         title={quiet ? `Deposits could not be read: ${failureCode(quiet.failure).replaceAll('_', ' ')}` : undefined}>
         <h2 className="dm-acct-panel-title">Your deposits</h2>
         {rows.length ? <div className="dm-rows dm-acct-oplist" aria-label="Your deposits">{rows.map(row =>
-          <Button key={row.id} variant="ghost" className="dm-acct-oprow h-auto min-h-[44px] flex-wrap gap-x-3 gap-y-0.5 whitespace-normal py-2 text-left"
+          <Button key={row.id} variant="ghost" className="dm-acct-oprow h-auto min-h-[2.75rem] flex-wrap gap-x-3 gap-y-0.5 whitespace-normal py-2 text-left"
             aria-current={current?.op.id === row.id ? 'true' : undefined} disabled={state.busy !== null} onClick={() => open(row.id)} data-deposit-row={row.id}>
             <span className="font-medium">{row.pair}</span>
             <span className="tnum text-fg-muted" title={row.amount === null ? 'Reading token details' : undefined}>{row.amount ?? '—'}</span>
@@ -253,13 +254,24 @@ export default function Setup() {
         onAcknowledge={setAck} allowances={current.allowances} handoffAvailable />{current.walletStep && <Button className="justify-self-start" variant="accent" disabled={!check?.ok || sending || state.busy !== null} onClick={() => { void send() }}>{sending ? 'Waiting for wallet…' : 'Review and send in wallet'}</Button>}
         {notice?.place === 'step' && <p className="dm-acct-line dm-acct-wrap" role="status">{notice.text}</p>}</div>}
       {pool && <form className="dm-card dm-acct-block dm-acct-draft" data-setup-draft={carried && pool.key === carried.pool.key ? 'new-position' : 'typed'} onSubmit={event => { event.preventDefault(); void create() }}>
-        <h2 className="dm-acct-panel-title dm-acct-span">Deposit budgets · {pool.fee} pool</h2><p className="dm-acct-hash dm-acct-span">Token 0: {pool.currencies[0].address}<br />Token 1: {pool.currencies[1].address}</p>
+        <h2 className="dm-acct-panel-title dm-acct-span">Deposit budgets · {pool.fee} pool</h2>
+        <p className="dm-acct-panel-note dm-acct-span">Amounts below use the token’s smallest units. Network prices use wei. These are exact limits for an advanced deposit.</p>
+        <details className="dm-details dm-setup-token-details dm-acct-span"><summary>Token contracts</summary><p className="dm-acct-hash">Token 0: {pool.currencies[0].address}<br />Token 1: {pool.currencies[1].address}</p></details>
         {carried && pool.key === carried.pool.key && <p className="dm-hint dm-acct-span">Filled in from New position. Enter the budgets and network limits, then create the draft. Nothing is sent before that.</p>}
-        <label className="dm-label dm-acct-lf">Input amount is in<select className="dm-field dm-acct-mono-field" value={independent} onChange={event => setIndependent(event.target.value === '1' ? 1 : 0)}><option value={0}>Token 0</option><option value={1}>Token 1</option></select></label>
-        {(Object.keys(initial) as (keyof typeof initial)[]).map(name => name === 'slippageBps'
-          // The same presets and exact box as New position's amount step, over the same bound; a choice carried from there is the one shown.
-          ? <SlippageChoice key={name} id="setup-slippage" label={labels.slippageBps} bps={form.slippageBps} onChange={text => setForm(old => ({ ...old, slippageBps: text }))} />
-          : <label key={name} className="dm-label dm-acct-lf">{labels[name]}<input className="dm-field dm-acct-mono-field" value={form[name]} onChange={event => setForm(old => ({ ...old, [name]: event.target.value }))} /></label>)}
+        <fieldset className="dm-setup-group dm-acct-span"><legend>Token amounts</legend><div className="dm-acct-fields">
+          <label className="dm-label dm-acct-lf">Input amount is in<select className="dm-field dm-acct-mono-field" value={independent} onChange={event => setIndependent(event.target.value === '1' ? 1 : 0)}><option value={0}>Token 0</option><option value={1}>Token 1</option></select></label>
+          {(['amountRaw', 'budget0Raw', 'budget1Raw'] as const).map(field)}
+        </div></fieldset>
+        <fieldset className="dm-setup-group dm-acct-span"><legend>Range and slippage</legend><div className="dm-acct-fields">
+          {(['tickLower', 'tickUpper'] as const).map(field)}
+        </div>
+          {/* The same presets and exact box as New position, with its carried limit. */}
+          <SlippageChoice id="setup-slippage" label={labels.slippageBps} bps={form.slippageBps} onChange={text => setForm(old => ({ ...old, slippageBps: text }))} />
+        </fieldset>
+        <fieldset className="dm-setup-group dm-acct-span"><legend>Network limits</legend><div className="dm-acct-fields">
+          {(['nativeGasReserveRaw', 'maxGasLimitRaw', 'maxFeePerGasRaw', 'maxPriorityFeePerGasRaw'] as const).map(field)}
+        </div></fieldset>
+        <p className="dm-hint dm-acct-span">Direct deposits carry no Domino percentage fee. Network gas applies; pool fees apply only if you swap.</p>
         <Button type="submit" className="justify-self-start" disabled={creation || state.busy !== null || sending}>Create deposit draft</Button><p className="dm-hint dm-acct-span">This saves your selection. Each approval and mint is reviewed separately before your wallet opens.</p>
         {notice?.place === 'draft' && <div className="dm-acct-span dm-acct-stack">
           <p className="dm-acct-line dm-acct-wrap" role="status" data-deposit-notice={notice.code ?? undefined}>{notice.text}</p>

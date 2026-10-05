@@ -76,7 +76,7 @@ type TabId = (typeof TABS)[number]['id']
 function SessionLine() {
   const session = useSyncExternalStore(livePort.subscribe, livePort.getSnapshot)
   return (
-    <p className="mt-3 text-[13px] text-fg-muted" data-session={session.kind}>
+    <p className="mt-3 text-[0.8125rem] text-fg-muted" data-session={session.kind}>
       {session.kind === 'signed_in' ? (
         <>
           <Pill tone="in">Signed in</Pill> <span className="font-mono">{session.owner}</span>. Previews are private to this session and are cleared when it changes.
@@ -114,12 +114,12 @@ export default function LivePreview() {
 
   return (
     <ConsumerBoundary>
-      <main className="mx-auto max-w-[1220px] px-5 pb-24 pt-8">
+      <main className="mx-auto max-w-[76.25rem] px-5 pb-24 pt-8">
         <Eyebrow>Invited testers · consumer-test build</Eyebrow>
-        <Display as="h1" className="mt-2 text-[40px]">
+        <Display as="h1" className="mt-2 text-[2.5rem]">
           Live preview
         </Display>
-        <p className="mt-3 max-w-[70ch] text-[14px] text-fg-muted">
+        <p className="mt-3 max-w-[70ch] text-[0.875rem] text-fg-muted">
           Estimates from the onboarding service for your signed-in wallet. A preview is never a transaction, a quote lock or an authorization, and it
           expires 30 seconds after it was requested. Pools and tokens here are the package’s synthetic test pools.
         </p>
@@ -139,7 +139,7 @@ export default function LivePreview() {
                 onKeyDown={onKey}
                 onClick={() => setTab(entry.id)}
                 className={cx(
-                  'rounded-[var(--radius-pill)] px-4 py-1.5 text-[13px] transition focus-visible:outline-2 focus-visible:outline-[var(--ring)]',
+                  'rounded-[var(--radius-pill)] px-4 py-1.5 text-[0.8125rem] transition focus-visible:outline-2 focus-visible:outline-[var(--ring)]',
                   tab === entry.id ? 'bg-surface-3 text-fg' : 'text-fg-muted hover:text-fg',
                 )}
               >

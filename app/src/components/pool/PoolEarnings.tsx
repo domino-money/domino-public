@@ -14,7 +14,7 @@ const presetText = (value: number) => `$${numberFormat().format(value)}`
  * earnings). Clearly an estimate. `apr` null while the figure is read (`loading`) or when there is none: then one calm
  * line and no amount to type, never a box that can't answer. Shown only for a pool Domino can open positions in.
  */
-export function PoolEarnings({ apr, tvl, loading }: { apr: number | null; tvl: number | null; loading: boolean }) {
+export function PoolEarnings({ apr, tvl, loading, saved = false }: { apr: number | null; tvl: number | null; loading: boolean; saved?: boolean }) {
   const [typed, setTyped] = useState('1,000')
   const amount = parseAmount(typed)
   const shown = apr !== null && amount !== null ? earnings(amount, apr, tvl) : null
@@ -60,9 +60,6 @@ export function PoolEarnings({ apr, tvl, loading }: { apr: number | null; tvl: n
                 <p className="dm-pool-earn-month">
                   <span className="dm-fig-lg tnum">{usdText(shown.month)}</span> <span>a month</span>
                 </p>
-                <p className="dm-pool-earn-more tnum">
-                  {usdText(shown.year)} a year · {usdText(shown.day)} a day
-                </p>
               </>
             ) : state === 'loading' ? (
               <>
@@ -76,9 +73,17 @@ export function PoolEarnings({ apr, tvl, loading }: { apr: number | null; tvl: n
           </div>
         </>
       )}
-      <p id="pool-earn-note" className="dm-pool-earn-note">
-        {apr !== null && `An estimate at the pool’s recent rate, about ${aboutPercent(apr)} a year${shared ? `, shared with the ${usdShort(tvl)} already in the pool` : ''}. `}Real earnings change with trading, and a position earns only while the price is inside its range.
+      <p id="pool-earn-note" className="dm-pool-earn-note" data-saved-data={saved ? 'estimate' : undefined}>
+        {/* Changed on purpose 2026-10-04: the copy promises nothing, not even in the negative (tests/screen-words.test.mjs). */}
+        {saved ? 'Estimate from saved figures. ' : 'Estimate only. '}Actual fees can differ. Fees are earned only inside your range.
       </p>
+      {apr !== null && <details className="dm-pool-disclosure" data-pool-earnings-basis="">
+        <summary>How it’s estimated<span aria-hidden="true" className="dm-pool-details-chevron" /></summary>
+        <div className="dm-pool-disclosure-body">
+          {shown && <p className="tnum">{usdText(shown.year)} a year · {usdText(shown.day)} a day</p>}
+          <p>At the pool’s {saved ? 'saved' : 'recent'} rate, about {aboutPercent(apr)} a year{shared ? `, shared with the ${usdShort(tvl)} already in the pool` : ''}. Real earnings change with trading and your chosen range.</p>
+        </div>
+      </details>}
     </section>
   )
 }

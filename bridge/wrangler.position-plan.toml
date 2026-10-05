@@ -1,0 +1,21 @@
+# Reviewed-source candidate for position-plan-v1 (spec F7 §2.4, #308); this file does not provision a deployment.
+# Only the reviewed domino-app Pages Function may call this Worker via a binding.
+# No Internet endpoint or scheduled trigger is configured here.
+name = "domino-position-plan-bridge"
+main = "src/position-plan-worker.mjs"
+compatibility_date = "2026-10-02"
+workers_dev = false
+preview_urls = false
+routes = []
+logpush = false
+
+[observability]
+enabled = false
+
+[vars]
+POSITION_PLAN_BRIDGE_ENABLED = "false"
+APP_ORIGIN = "https://domino.money"
+POSITION_PLAN_GATEWAY_ORIGIN = "https://vm-position-plan.domino.money"
+
+# Access client IDs/secrets are provisioned separately in Cloudflare after review.
+# Do not add credentials, account overrides or environment bindings to this file.

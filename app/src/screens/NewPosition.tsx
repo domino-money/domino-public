@@ -1,6 +1,6 @@
 // The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
 import '../styles/screens.css'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { CREATE } from '../lib/create/copy'
 import { useRouteTitle } from '../lib/routeTitle'
 import { useCreated } from '../lib/create/createProgress'
@@ -9,6 +9,18 @@ import { PageHeader, PageShell } from '../components/ui'
 import { Journey } from '../components/create/Journey'
 import { parseNewHash } from '../components/explore/routes'
 import { useHash } from '../components/explore/useHash'
+import { recovering } from '../lib/staleRelease'
+
+/**
+ * Changed on purpose (data) 2026-10-02 (Domino V2 integration, the journey): in a build that carries V2 (`__DOMINO_V2__`;
+ * production and development too since 2026-10-04, the owner: the site runs on Domino V2; false only in the test builds
+ * without V2, where this folds away and New position is V1's Journey), New position is drawn by the integrated
+ * journey's wrapper (src/v2in/journey): Domino V2's journey wherever the V2 gate opens (Robinhood Chain on domino.money,
+ * src/v2in/journey/constants.ts SETUP_STAYS_WHILE_PREVIEW), today's Journey where it stays off. Opened lazily, named
+ * once; a wrapper that cannot load leaves today's Journey (lib/staleRelease.ts recovering).
+ */
+type V2JourneyProps = { flow: number; poolId: string; linkToken: string | null }
+const V2NewPosition = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/journey/NewPositionV2'), () => ({ default: ({ flow, poolId, linkToken }: V2JourneyProps) => <Journey key={flow} poolId={poolId} linkToken={linkToken} /> }))) : null
 
 /**
  * Which flow New position shows: a new one each time a link to New position is followed after a position was created
@@ -53,6 +65,13 @@ export function NewPosition({ poolId }: { poolId: string }) {
   useRouteTitle(CREATE.page.title)
   const flow = useFlowKey()
   const linkToken = parseNewHash(useHash()).token
+  if (__DOMINO_V2__ && V2NewPosition) {
+    return (
+      <Suspense fallback={<PageShell width="flow"><PageHeader size="display" title={CREATE.page.title} description={CREATE.page.description} /></PageShell>}>
+        <V2NewPosition flow={flow} poolId={poolId} linkToken={linkToken} />
+      </Suspense>
+    )
+  }
   if (!SlotBoundary || !SlotFailed) return <Journey key={flow} poolId={poolId} linkToken={linkToken} />
   return (
     <SlotBoundary

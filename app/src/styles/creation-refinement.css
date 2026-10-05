@@ -1,0 +1,29 @@
+/* One progress rail and one review. The preview draws the current choices;
+   the editable step remains the source of exact amounts and prices. */
+@layer components {
+  .dm-np .dm-flow-head > .dm-step-marker { margin-top: 1.1875rem; }
+  .dm-np .dm-flow-body { padding-block: 1.25rem 1.5rem; }
+  .dm-np .dm-flow-row { min-height: 3.5rem; }
+  .dm-np .dm-flow-preview[hidden] { display: none; }
+  .dm-np[data-create-step="review"] { grid-template-columns: minmax(0, 1fr); max-width: 58rem; }
+  .dm-np[data-create-step="review"] .dm-flow-row { display: flex; }
+  .dm-np[data-create-step="review"] .dm-flow-row-summary { display: none; }
+  .dm-np[data-create-step="review"] .dm-flow-row-title { flex: 1; }
+
+  /* The range is already priced in its fields, and the amount step already
+     shows both token amounts and their total. Keep the supporting picture. */
+  .dm-np .dm-flow-preview[data-step="range"] .dm-flow-pv-price-line,
+  .dm-np .dm-flow-preview[data-step="range"] .dm-flow-pv-bounds,
+  .dm-np .dm-flow-preview[data-step="amount"] .dm-flow-pv-deposit { display: none; }
+  .dm-np .dm-flow-preview[data-step="range"] .dm-flow-pv-live { padding-bottom: 1.25rem; }
+  .dm-np .dm-flow-preview:not([data-step="pool"]) .dm-flow-preview-head { display: none; }
+  .dm-np .dm-flow-pv-price { padding-top: 0.25rem; }
+  .dm-np .dm-flow-pv-range { height: 8.5rem; }
+  .dm-np .dm-flow-pv-bounds { padding-block: 1rem; }
+
+  @media (max-width: 47.999rem) {
+    .dm-np .dm-flow-body { padding-block: 1rem 1.25rem; }
+    .dm-np .dm-flow-row { min-height: 3.25rem; }
+    .dm-np .dm-flow-pv-range { height: 7.5rem; }
+  }
+}

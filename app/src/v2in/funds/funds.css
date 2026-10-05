@@ -1,0 +1,38 @@
+@layer components {
+  .dm-funds-offer { border: 0.0625rem solid var(--border-card); border-radius: 1rem; background: var(--card); overflow: hidden; min-width: 0; }
+  .dm-funds-heading { display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem 1rem 0.75rem; }
+  .dm-funds-icon { display: grid; place-items: center; flex-shrink: 0; width: 2rem; height: 2rem; border-radius: 0.625rem; color: var(--primary); background: var(--wash-strong); font-size: 1.125rem; }
+  .dm-funds-heading h4 { font-size: 0.875rem; font-weight: 600; line-height: 1.4; color: var(--fg); }
+  .dm-funds-heading p { margin-top: 0.25rem; font-size: 0.75rem; line-height: 1.5; color: var(--fg-subtle); }
+  .dm-funds-body { display: grid; gap: 1rem; padding: 0 1rem 1rem; min-width: 0; }
+  .dm-funds-body > div:first-child { padding-left: 2.75rem; }
+  .dm-funds-unavailable { font-size: 0.75rem; line-height: 1.5; color: var(--fg-muted); padding: 0.75rem; border-radius: 0.625rem; background: var(--surface-1); }
+  .dm-funds-route { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; border-block: 0.0625rem solid var(--border); padding: 0.875rem 0; color: var(--fg-muted); font-size: 0.6875rem; }
+  .dm-funds-route li { display: flex; gap: 0.375rem; align-items: center; }
+  .dm-funds-route li span { display: grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: var(--surface-3); color: var(--fg); font-size: 0.625rem; }
+  .dm-funds-private { display: grid; gap: 1rem; min-width: 0; }
+  .dm-funds-private[hidden] { display: none; }
+  .dm-funds-discovery > summary, .dm-funds-edit > summary { cursor: pointer; color: var(--fg-muted); font-size: 0.75rem; padding-block: 0.375rem; }
+  .dm-funds-discovery > summary[hidden], .dm-funds-edit > summary[hidden] { display: none; }
+  .dm-funds-discovery[open] > summary:not([hidden]), .dm-funds-edit[open] > summary:not([hidden]) { margin-bottom: 0.75rem; }
+  .dm-funds-form { display: grid; gap: 1rem; }
+  .dm-funds-candidate { padding: 1rem; min-width: 0; }
+  .dm-funds-quote-lines { margin-top: 0.75rem; display: grid; gap: 0.75rem; font-weight: 400; }
+  .dm-funds-delivery { color: var(--fg); font-size: 0.9375rem; line-height: 1.6; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .dm-funds-quote-lines ul { display: grid; gap: 0.5rem; color: var(--fg-muted); font-size: 0.75rem; line-height: 1.6; }
+  .dm-funds-alternatives > div { padding-top: 0.75rem; }
+  .dm-funds-holdings, .dm-funds-found { display: grid; gap: 0.75rem; min-width: 0; }
+  .dm-funds-holdings:empty { display: none; }
+  .dm-funds-source { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.875rem; border: 0.0625rem solid var(--border); border-radius: 0.75rem; background: var(--surface-1); }
+  .dm-funds-source > div { display: grid; gap: 0.25rem; min-width: 0; }
+  .dm-funds-source strong { font-size: 0.875rem; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .dm-funds-source span { font-size: 0.6875rem; color: var(--fg-subtle); }
+  .dm-funds-source > button { flex-shrink: 0; }
+  .dm-funds-check { display: grid; gap: 0.5rem; justify-items: start; }
+  .dm-funds-check > span { max-width: 32rem; }
+  .dm-funds-status { font-size: 0.75rem; color: var(--fg-muted); display: flex; align-items: center; gap: 0.5rem; }
+  .dm-funds-status::before { content: ''; width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--primary); animation: dm-funds-breathe 1.8s ease-in-out infinite; }
+  @keyframes dm-funds-breathe { 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) { .dm-funds-status::before { animation: none; } }
+  @media (max-width: 25rem) { .dm-funds-heading { padding: 0.875rem 0.875rem 0.625rem; } .dm-funds-body { padding: 0 0.875rem 0.875rem; } .dm-funds-body > div:first-child { padding-left: 0; } .dm-funds-route { gap: 0.75rem; } }
+}

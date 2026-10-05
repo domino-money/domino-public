@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import { TokenIcon } from '../TokenIcon'
 import { unreadToken } from '../../lib/read/project'
 import { tokenHue } from '../../lib/format/tokenHue'
+import { rem } from '../../lib/rootScale'
 
 /**
  * A currency's mark from its address alone: the bundled artwork of a
@@ -11,5 +12,5 @@ import { tokenHue } from '../../lib/format/tokenHue'
 export function AddressMark({ address, size = 24 }: { address: string; size?: number }) {
   const artwork = unreadToken(address).artwork
   if (artwork) return <TokenIcon symbol={artwork} size={size} />
-  return <span className="dm-token-disc" style={{ width: size, height: size, borderRadius: '50%', display: 'inline-block', flexShrink: 0, '--mark-h': tokenHue(address) } as CSSProperties} />
+  return <span className="dm-token-disc" style={{ width: rem(size), height: rem(size), borderRadius: '50%', display: 'inline-block', flexShrink: 0, '--mark-h': tokenHue(address) } as CSSProperties} />
 }

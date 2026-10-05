@@ -5,6 +5,7 @@ import { aprDigits } from '../../lib/format/apr'
 import type { JourneyState } from '../../lib/create/journey'
 import { awayShort, plainFigure } from '../../lib/create/plain'
 import { formatUsd } from '../../lib/format/usd'
+import { rem } from '../../lib/rootScale'
 import type { PoolPrice } from '../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import { rowApr } from '../../lib/read/screens/rowApr'
@@ -56,7 +57,7 @@ function RangeStage({ view, poolTick, lowerTick, upperTick, priceText }: { view:
   return (
     <div className="dm-flow-pv-range" data-in={view.inRange ? 'true' : 'false'}>
       <span className="dm-flow-pv-range-glow" style={at(middle - 50)} />
-      <span className="dm-flow-pv-range-band" style={{ clipPath: `inset(0 ${100 - geo.upper}% 0 ${geo.lower}% round 10px 10px 0 0)` }} />
+      <span className="dm-flow-pv-range-band" style={{ clipPath: `inset(0 ${100 - geo.upper}% 0 ${geo.lower}% round ${rem(10)} ${rem(10)} 0 0)` }} />
       <span className="dm-flow-pv-range-edge" data-end="lower" data-at={lowerAt === null ? 'edge' : undefined} style={at(geo.lower)}>
         <span className="dm-flow-pv-range-grip" />
       </span>
@@ -163,7 +164,10 @@ export function PositionPreview({
   const phase = chosen ? 'chosen' : pool ? 'pointed' : 'empty'
 
   return (
-    <aside aria-hidden="true" className={className} style={style} data-preview={phase} data-step={step}>
+    <aside aria-hidden="true" hidden={step === 'review'} className={className} style={style} data-preview={phase} data-step={step}>
+      <div className="dm-flow-preview-head">
+        <span className="dm-flow-preview-kicker">{CREATE.page.preview}</span>
+      </div>
       {/* The pool: pair, fee, and its TVL and APR, for a chosen pool or a row pointed at. It opens and folds (M13). */}
       <div
         className="dm-flow-pv-fold"
@@ -180,11 +184,11 @@ export function PositionPreview({
                 <p className="dm-flow-pv-pair">
                   <SymbolText token={head.currencies[0]} /> / <SymbolText token={head.currencies[1]} />
                 </p>
-                {figures && (figures.tvl || figures.apr) && (
+                {step === 'pool' && figures && (figures.tvl || figures.apr) && (
                   <dl className="dm-flow-pv-stats">
                     {figures.tvl && (
                       <div>
-                        <dt>TVL</dt>
+                        <dt>In this pool</dt>
                         <dd>
                           <LiveFigure value={figures.tvl} direction="none" />
                         </dd>
@@ -192,7 +196,7 @@ export function PositionPreview({
                     )}
                     {figures.apr && (
                       <div>
-                        <dt>APR</dt>
+                        <dt>Yearly fee estimate</dt>
                         <dd className="dm-flow-pv-apr">
                           <LiveFigure value={figures.apr} direction="none" />
                         </dd>
@@ -211,7 +215,7 @@ export function PositionPreview({
         <div key="range" className="dm-flow-pv-live dm-arrive" data-part="range">
           <div className="dm-flow-pv-price">
             <div className="dm-flow-pv-price-head">
-              <span className="dm-flow-pv-label">{CREATE.amount.now}</span>
+              <span className="dm-flow-pv-label">{step === 'range' ? CREATE.amount.rangeHeading : CREATE.amount.now}</span>
               {/* Changed on purpose 2026-09-28 (one-sided): a range beside today's price is a choice, not an alarm, so it is
                   said calmly (no red "Out of range"): the position earns once the price enters it. */}
               {view.inRange ? (
@@ -257,6 +261,7 @@ export function PositionPreview({
           <div className="dm-flow-pv-stage">
             <PreviewArt />
           </div>
+          <p className="dm-flow-preview-example">{CREATE.page.previewExample}</p>
           <ArtLegend />
         </div>
       )}
@@ -302,7 +307,7 @@ export function PositionPreview({
           {valued && (
             // The receipt's figure: it ticks, and a change tints it up or down for a moment (M7).
             <div className="dm-flow-pv-total">
-              <TokenMarkPair base={chosen.currencies[0]} quote={chosen.currencies[1]} size={24} />
+              <span className="dm-flow-pv-label">{CREATE.page.previewTotal}</span>
               <span className="dm-fig-lg dm-arrive">
                 {held.estimate && <span className="dm-flow-pv-about">{CREATE.review.about} </span>}
                 <LiveFigure value={formatUsd(valued)} direction="auto">

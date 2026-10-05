@@ -443,8 +443,8 @@ const WALLET_READ = new Set(['wallet_action_busy', 'wallet_action_expired', 'wal
 
 /** What Start tracking says when it could not start or was refused, in words; the code stays in the title and data attributes. */
 export function enrollmentFailureText(code: string): string {
-  if (code === 'performance_subject_not_admitted') return 'This vault can’t be tracked.'
-  if (code === 'performance_enrollment_limit') return 'This wallet already tracks the most vaults it can.'
+  if (code === 'performance_subject_not_admitted') return 'This automation can’t be tracked.'
+  if (code === 'performance_enrollment_limit') return 'This wallet already tracks the most automations it can.'
   if (code === 'invalid_request') return 'This sequence is already tracked with other positions. Nothing changed.'
   if (code === 'session_required' || code === 'csrf_invalid' || code === 'account_unsupported') return 'Your sign-in is being checked. Nothing changed.'
   if (code === 'unqualified_sequence' || code === 'deployment_identity_changed' || code === 'invalid_address') return 'That address isn’t a sequence this wallet owns. Nothing was sent.'

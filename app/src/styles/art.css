@@ -3,9 +3,8 @@
    composition: the static CSS, the 0% keyframe and
    the 100% keyframe of every loop are the same complete picture, so a paused loop, a loop still inside its delay
    and `animation: none` (reduced motion, html.dm-still: tokens.css) all show it. Loops play only while the art
-   root carries .is-running, which an IntersectionObserver sets while the art is in view, and each plays --art-loops
-   times (tokens.css), then rests on that complete picture (2026-10-01, F6: an endless loop kept the processor busy for as
-   long as Home was open, about 3.7 ms a frame on a slow phone). */
+   root carries .is-running, which the shared visibility hook sets while the art is in view in a visible tab.
+   Each repeats --art-loops times (tokens.css); offscreen and hidden-tab loops pause without losing their place. */
 
 @layer components {
   /* ---- Shared art rules (F) ---------------------------------------------------------------- */

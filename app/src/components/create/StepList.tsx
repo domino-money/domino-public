@@ -11,6 +11,7 @@ import { StepMarker } from '../ui'
 import type { Held } from './valuation'
 // Whether motion is stilled (reduced motion, or the footer's Pause motion): moved to lib/motion in V2 (DESIGN-V2 §5.4).
 import { stilled } from '../../lib/motion/stilled'
+import { rootScale } from '../../lib/rootScale'
 
 /** The four steps a person sees, over the state machine's five stages. */
 export type VisualStep = 'pool' | 'range' | 'amount' | 'review'
@@ -142,8 +143,9 @@ export function StepList({ steps, onOpen, locked = false }: { steps: readonly St
         if (document.activeElement !== heading) return
         const top = heading.getBoundingClientRect().top
         const header = document.querySelector('header')?.getBoundingClientRect().height ?? 0
-        if (top < header + 8 || top > window.innerHeight * 0.6) {
-          window.scrollTo({ top: Math.max(0, window.scrollY + top - header - 24), behavior: still ? 'auto' : 'smooth' })
+        const air = rootScale()
+        if (top < header + 8 * air || top > window.innerHeight * 0.6) {
+          window.scrollTo({ top: Math.max(0, window.scrollY + top - header - 24 * air), behavior: still ? 'auto' : 'smooth' })
         }
       },
       still ? 0 : 260,
@@ -184,6 +186,7 @@ export function StepList({ steps, onOpen, locked = false }: { steps: readonly St
                     <div className="dm-flow-head">
                       <StepMarker index={number} state={open ? 'current' : step.state} label={label} />
                       <div className="min-w-0">
+                        <p className="dm-flow-eyebrow" aria-hidden="true">{CREATE.page.stepOf(number, steps.length)}</p>
                         <h2 ref={open ? title : undefined} tabIndex={-1} className="dm-flow-title">
                           {words.title}
                         </h2>

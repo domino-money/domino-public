@@ -1,11 +1,19 @@
 # Dependencies and build output
 node_modules/
 dist/
-# Fixture, bridge-test, wallet-test and consumer-test builds: never deployed, never in dist
+# Fixture, bridge-test, wallet-test, consumer-test and v2-test builds: never deployed, never in dist
 .fixture-dist/
 .bridge-dist/
 .wallet-test-dist/
 .consumer-test-dist/
+.v2-test-dist/
+# Changed on purpose (data) 2026-10-02 (Domino V2 integration): the old v2-preview build's directory (the mode is gone), kept
+# ignored so a stale copy on a disk never joins Tailwind's scan of the app
+.v2-preview-dist/
+# Changed on purpose (data) 2026-10-02 (Domino V2 integration): the preview-v2 build, published by hand to the preview alias, never released
+.preview-v2-dist/
+# Changed on purpose (data) 2026-10-02 (Domino V2 integration): wallet-test with V2 compiled in, for the browser suites only
+.wallet-test-v2-dist/
 # Links and config copies tests/build-guard.test.mjs makes; removed after each test
 .guard-link-*
 .guard-config-*

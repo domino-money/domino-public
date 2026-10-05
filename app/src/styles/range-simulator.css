@@ -1,0 +1,86 @@
+/* One compact, automatic illustration. It shares the product's own compound drawings. */
+@layer components {
+  .dm-sim { --art-loops: 1; --sim-eth: var(--primary-line); --sim-usdg: var(--fg-muted); min-width: 0; overflow: hidden; padding: 1.5rem 1.75rem; }
+  .dm-sim-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1.5rem; }
+  .dm-sim-title { margin: 0; text-wrap: balance; }
+  .dm-sim-heading > p { margin: 0; color: var(--fg-subtle); font-size: 0.8125rem; line-height: 1.25rem; }
+  .dm-sim-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: center; gap: 2.5rem; margin-top: 1.5rem; }
+  .dm-sim-explore { min-width: 0; }
+  .dm-sim-readout { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: 1.75rem; }
+  .dm-sim-chip { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--fg); font-size: 0.8125rem; line-height: 1.125rem; white-space: nowrap; }
+  .dm-sim-readout > .dm-pill { font-size: 0.6875rem; white-space: nowrap; }
+  /* The native thumb owns the whole price column. Its geometry matches the visible dot exactly. */
+  .dm-sim-stage { --k: 1.375rem; --h: 7.5rem; --axis: 2.25rem; position: relative; height: var(--h); margin-top: 1.125rem; }
+  .dm-sim-input { position: absolute; inset: 0; z-index: 2; width: 100%; height: var(--h); margin: 0; padding: 0; opacity: 0; cursor: ew-resize; touch-action: pan-y; -webkit-appearance: none; appearance: none; background: none; }
+  .dm-sim-input::-webkit-slider-thumb { width: calc(2 * var(--k)); height: var(--h); -webkit-appearance: none; appearance: none; }
+  .dm-sim-input::-moz-range-thumb { width: calc(2 * var(--k)); height: var(--h); border: 0; }
+  .dm-sim-art { position: absolute; inset: 0; pointer-events: none; }
+  .dm-sim-art > span { position: absolute; }
+  .dm-sim-dots { inset: 0 0 var(--axis); background-image: radial-gradient(circle, var(--dot-chart) 0.0625rem, transparent 0.075rem); background-size: 0.875rem 0.875rem; mask-image: linear-gradient(transparent, #000); }
+  .dm-sim-band { top: 1.5rem; bottom: var(--axis); left: calc(var(--k) + var(--a) * (100% - 2 * var(--k))); right: calc(var(--k) + (1 - var(--b)) * (100% - 2 * var(--k))); border-inline: 0.0625rem solid var(--primary-line); border-radius: 0.5rem 0.5rem 0 0; background: linear-gradient(180deg, var(--primary-wash), color-mix(in srgb, var(--primary-line) 20%, transparent)); }
+  .dm-sim-band-label { position: absolute; top: -0.375rem; left: 50%; translate: -50% -100%; color: var(--primary-ink); font-size: 0.6875rem; line-height: 1rem; white-space: nowrap; }
+  .dm-sim-axis { left: var(--k); right: var(--k); bottom: var(--axis); height: 0.0625rem; background: var(--fg-faint); }
+  .dm-sim-now, .dm-sim-tick { left: calc(var(--k) + var(--x) * (100% - 2 * var(--k))); }
+  .dm-sim-tick { top: calc(100% - var(--axis) + 0.875rem); translate: -50% 0; color: var(--fg-subtle); font-size: 0.6875rem; line-height: 1rem; white-space: nowrap; }
+  .dm-sim-now { top: 1.5rem; bottom: var(--axis); width: 0; }
+  .dm-sim-now::before { content: ''; position: absolute; inset: 0 auto 0 -0.03125rem; width: 0.0625rem; background: linear-gradient(var(--fg-muted) 50%, transparent 50%) 0 0 / 0.0625rem 0.3125rem; }
+  .dm-sim-knob { position: absolute; bottom: -0.625rem; left: -0.625rem; display: grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: var(--radius-pill); color: var(--card); background: var(--fg-muted); box-shadow: 0 0 0 0.1875rem var(--card), 0 0 0 0.25rem var(--border-card-hover); }
+  .dm-sim-knob > svg { width: 0.9375rem; height: 0.9375rem; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  [data-sim-stage="inside"] .dm-sim-knob { color: var(--primary-fg); background: var(--primary-line); }
+  .dm-sim-input:focus-visible ~ .dm-sim-art .dm-sim-knob { outline: 0.125rem solid var(--ring); outline-offset: 0.375rem; }
+  .dm-sim-result { padding-top: 0.5rem; }
+  .dm-sim-mix-track { height: 0.1875rem; overflow: hidden; border-radius: var(--radius-pill); background: var(--sim-usdg); }
+  .dm-sim-mix-track > span { display: block; height: 100%; background: var(--sim-eth); }
+  .dm-sim-split { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.75rem; }
+  .dm-sim-token { display: inline-flex; align-items: center; gap: 0.3125rem; min-width: 0; color: var(--fg-muted); font-size: 0.6875rem; line-height: 1rem; }
+  .dm-sim-pct { min-width: 2.25rem; color: var(--fg); font-size: 0.8125rem; font-weight: 500; }
+  .dm-sim-token[data-end] .dm-sim-pct { text-align: right; }
+  .dm-sim-mix-label { color: var(--fg-subtle); font-size: 0.625rem; line-height: 1rem; white-space: nowrap; }
+  .dm-sim-fees { display: grid; gap: 0.25rem; min-width: 0; border-left: 0.0625rem solid var(--border); padding-left: 1.75rem; }
+  .dm-sim-fee-option { display: grid; grid-template-columns: 8.75rem minmax(0, 1fr); align-items: center; gap: 0.625rem; min-width: 0; }
+  .dm-sim-fee-option .dm-sim-fee-art { opacity: 0.65; transition: opacity 400ms ease; }
+  .dm-sim-fee-option[data-active] .dm-sim-fee-art { opacity: 1; }
+  .dm-sim-fee-option[data-active] h3 { color: var(--primary-ink); }
+  .dm-sim-fee-option:not([data-active]) .dm-art * { animation: none !important; }
+  .dm-sim-fee-option[data-active] .dm-art * { animation-fill-mode: both; }
+  .dm-sim-fee-art { min-width: 0; }
+  .dm-sim-fee-art > svg { display: block; width: 100%; height: auto; }
+  .dm-sim-fee-copy { min-width: 0; }
+  .dm-sim-fee-copy h3 { margin: 0; color: var(--fg); font-size: 0.8125rem; line-height: 1.25rem; font-weight: 500; }
+  .dm-sim-fee-copy p { margin: 0.25rem 0 0; color: var(--fg-muted); font-size: 0.75rem; line-height: 1.125rem; text-wrap: pretty; }
+  .dm-sim-details { margin-top: 1.25rem; border-top: 0.0625rem solid var(--border); }
+  .dm-sim-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 2.25rem; padding-top: 0.75rem; color: var(--fg-muted); font-size: 0.75rem; line-height: 1.125rem; cursor: pointer; list-style: none; }
+  .dm-sim-details > summary::-webkit-details-marker { display: none; }
+  .dm-sim-details > summary > span { display: grid; place-items: center; flex-shrink: 0; width: 1.25rem; height: 1.25rem; border: 0.0625rem solid var(--border-card); border-radius: var(--radius-pill); font-size: 0.9375rem; transition: rotate var(--dur-hover) ease; }
+  .dm-sim-details[open] > summary > span { rotate: 45deg; }
+  .dm-sim-details > p { max-width: 84ch; margin: 0.75rem 0 0; color: var(--fg-subtle); font-size: 0.8125rem; line-height: 1.375rem; text-wrap: pretty; }
+  @media (max-width: 63.9375rem) {
+    .dm-sim-grid { gap: 1.5rem; }
+    .dm-sim-fees { padding-left: 1rem; }
+    .dm-sim-fee-option { grid-template-columns: 6.75rem minmax(0, 1fr); gap: 0.375rem; }
+    .dm-sim-mix-label { display: none; }
+  }
+  @media (max-width: 47.9375rem) {
+    .dm-sim { padding: 1.125rem; }
+    .dm-sim-heading { gap: 0.375rem; }
+    .dm-sim-heading > p { font-size: 0.75rem; }
+    .dm-sim-grid { grid-template-columns: minmax(0, 1fr); gap: 1rem; margin-top: 1.125rem; }
+    .dm-sim-stage { --h: 7rem; margin-top: 0.75rem; }
+    .dm-sim-fees { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; border-left: 0; border-top: 0.0625rem solid var(--border); padding: 0.75rem 0 0; }
+    .dm-sim-fee-option { display: flex; flex-direction: column; gap: 0; align-items: stretch; }
+    .dm-sim-fee-art { max-width: 10rem; width: 100%; align-self: center; }
+    .dm-sim-fee-copy { text-align: center; }
+    .dm-sim-fee-copy h3 { font-size: 0.6875rem; white-space: nowrap; }
+    .dm-sim-fee-copy p { font-size: 0.6875rem; line-height: 1rem; }
+    .dm-sim-details { margin-top: 1rem; }
+  }
+  @media (max-width: 22.4375rem) {
+    .dm-sim { padding: 1rem; }
+    .dm-sim-chip { font-size: 0.6875rem; }
+    .dm-sim-readout { gap: 0.375rem; }
+    .dm-sim-readout > .dm-pill { font-size: 0.625rem; padding-inline: 0.5rem; }
+    .dm-sim-fees { gap: 0.5rem; }
+  }
+  @media (prefers-reduced-motion: reduce) { .dm-sim *, .dm-sim *::before, .dm-sim *::after { transition: none; animation: none !important; } }
+  html.dm-still .dm-sim *, html.dm-still .dm-sim *::before, html.dm-still .dm-sim *::after { transition: none; animation: none !important; }
+}

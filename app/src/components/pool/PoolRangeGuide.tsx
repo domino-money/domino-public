@@ -11,12 +11,12 @@ const stretch = (from: number, to: number): CSSProperties => ({ left: `${from * 
  * sent: the person picks a range of their own in New position. `unit` is how the prices are written ("USDG for 1
  * PONS"); `day` is the chart's last day in the same direction, or null.
  */
-export function PoolRangeGuide({ guide, day, unit }: { guide: RangeGuide | null; day: DaySpan | null; unit: ReactNode }) {
+export function PoolRangeGuide({ guide, day, unit, saved = false }: { guide: RangeGuide | null; day: DaySpan | null; unit: ReactNode; saved?: boolean }) {
   if (!guide) {
     return (
       <section className="dm-card dm-pool-card dm-pool-guide" aria-labelledby="pool-range-title" data-pool-range-guide="none">
         <h2 id="pool-range-title" className="dm-title">
-          A typical range
+          Price range
         </h2>
         <p className="dm-pool-lead">A position earns fees only while the price stays inside the range you choose.</p>
         <p className="dm-pool-quiet-line">This pool’s price can’t be drawn as a range here.</p>
@@ -36,11 +36,11 @@ export function PoolRangeGuide({ guide, day, unit }: { guide: RangeGuide | null;
   return (
     <section className="dm-card dm-pool-card dm-pool-guide" aria-labelledby="pool-range-title" data-pool-range-guide="ready">
       <h2 id="pool-range-title" className="dm-title">
-        A typical range
+        Price range
       </h2>
-      <p className="dm-pool-lead">A position earns fees only while the price stays inside the range you choose.</p>
+      <p className="dm-pool-lead">Earn fees while the price stays between these limits.</p>
       <div className="dm-pool-guide-plot">
-        <div className="dm-pool-guide-bar" role="img" aria-label={`A typical range from ${guide.low} to ${guide.high}, with the price now at ${values.now}.`}>
+        <div className="dm-pool-guide-bar" role="img" aria-label={`Starting range from ${guide.low} to ${guide.high}, with the ${saved ? 'saved' : 'pool'} price at ${values.now}.`}>
           <span className="dm-pool-guide-band" style={stretch(at(values.low), at(values.high))} />
           {moved && <span className="dm-pool-guide-day" style={stretch(at(moved.low), at(moved.high))} title={`Last day: ${day?.low} to ${day?.high}`} />}
           <span className="dm-pool-guide-now" style={{ left: `${at(values.now) * 100}%` }} />
@@ -56,15 +56,18 @@ export function PoolRangeGuide({ guide, day, unit }: { guide: RangeGuide | null;
         </div>
       </div>
       <ul className="dm-pool-guide-key" aria-hidden="true">
-        <li data-key="band">Typical range</li>
-        <li data-key="now">Price now</li>
+        <li data-key="band">Starting range</li>
+        <li data-key="now">{saved ? 'Saved price' : 'Pool price'}</li>
         {moved && <li data-key="day">Last day</li>}
       </ul>
-      <p className="dm-pool-guide-text">
-        From <b className="tnum">{guide.low}</b> to <b className="tnum">{guide.high}</b>: {guide.below.replace('−', '')} below today’s price to {guide.above.replace('+', '')} above it.
-        {moved && inside !== null && (inside ? ' Over the last day the price stayed inside it.' : ' Over the last day the price went past it at times.')}
-      </p>
-      <p className="dm-pool-guide-note">A narrower range earns more while the price is inside it, but leaves it sooner. You choose your own range when you create a position.</p>
+      <details className="dm-pool-disclosure" data-pool-range-basis="">
+        <summary>About this range<span aria-hidden="true" className="dm-pool-details-chevron" /></summary>
+        <div className="dm-pool-disclosure-body">
+          <p>You choose your own limits when you create a position. This starting range is {guide.below.replace('−', '')} below the {saved ? 'saved' : 'pool'} price to {guide.above.replace('+', '')} above it.</p>
+          {moved && inside !== null && <p>{inside ? 'Over the last day the price stayed inside it.' : 'Over the last day the price went past it at times.'}</p>}
+          <p>A tighter range concentrates your tokens but can stop earning sooner.</p>
+        </div>
+      </details>
     </section>
   )
 }

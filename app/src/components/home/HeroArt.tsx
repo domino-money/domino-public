@@ -1,7 +1,9 @@
-import type { CSSProperties } from 'react'
+import { useRef, type CSSProperties, type PointerEvent } from 'react'
+import '../../styles/hero-refinement.css'
 import { useSvgId } from '../charts/series'
 import { cx } from '../ui'
 import { ArtTile, useInView } from './Vignettes'
+import { stilled, useStilled } from '../../lib/motion/stilled'
 
 /*
  * The hero's horizon (DESIGN-V2 §7.1-2a): a run of domino tiles across the
@@ -11,8 +13,7 @@ import { ArtTile, useInView } from './Vignettes'
  * first step, the tile on that step tips toward the second, and a new tile
  * rises one step higher: the fees of one position opening the next one up.
  *
- * Only shapes: no text, no digits, no title, no image, no colour literal (every
- * colour is a token in art.css). The static frame (and the stilled one) is the
+ * The drawing uses only shapes and loops by itself while visible. The static frame (and the stilled one) is the
  * whole composition: every tile standing, the new tile on the top step.
  *
  * The loop is 12 s on one shared timeline: every moving part runs its own
@@ -55,6 +56,9 @@ function ChainTile({ index, x, y }: { index: number; x: number; y: number }) {
       <ellipse className="shadow" cx={W / 2} cy={H} rx={14} ry={2} />
       <g className="tip" style={{ animationName: `dm-hero-tip-${index}` }}>
         <ArtTile w={W} layout={CHAIN[index]} parts="outline" />
+        {/* Inset edges stay inside the original tile bounds, preserving its falling pivot and contact points. */}
+        <path className="tile-bevel" d="M30.5 1.5 H5.5 A4 4 0 0 0 1.5 5.5 V56.5" />
+        <path className="tile-depth" d="M34.5 6.5 V57.5 A4 4 0 0 1 30.5 61.5 H5.5" />
       </g>
     </g>
   )
@@ -67,46 +71,77 @@ function ChainTile({ index, x, y }: { index: number; x: number; y: number }) {
  */
 export function HeroArt({ className, running }: { className?: string; running?: boolean }) {
   const [ref, seen] = useInView<SVGSVGElement>(0.3, running === undefined)
+  const spotlight = useRef<HTMLSpanElement>(null)
+  const still = useStilled()
+  const active = running ?? seen
   const glow = useSvgId('dm-hero-glow')
   const rise = useSvgId('dm-hero-steps')
+  const clearSpotlight = () => {
+    const light = spotlight.current
+    if (!light) return
+    delete light.dataset.active
+    light.style.removeProperty('--hero-pointer-x')
+    light.style.removeProperty('--hero-pointer-y')
+  }
+  const illuminate = (event: PointerEvent<SVGSVGElement>) => {
+    const light = spotlight.current
+    if (!light || event.pointerType === 'touch' || stilled()) return
+    const bounds = event.currentTarget.getBoundingClientRect()
+    if (!bounds.width || !bounds.height) return
+    const percent = (position: number, start: number, length: number) => `${Math.min(100, Math.max(0, (position - start) / length * 100))}%`
+    light.style.setProperty('--hero-pointer-x', percent(event.clientX, bounds.left, bounds.width))
+    light.style.setProperty('--hero-pointer-y', percent(event.clientY, bounds.top, bounds.height))
+    light.dataset.active = ''
+  }
   return (
-    <svg
-      ref={ref}
-      className={cx('dm-art dm-hero-art', (running ?? seen) && 'is-running', className)}
-      viewBox="0 0 1200 192"
-      preserveAspectRatio="xMaxYMax slice"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <defs>
-        <radialGradient id={glow} cx="50%" cy="50%" r="50%">
-          <stop offset="0%" className="glow-0" />
-          <stop offset="100%" className="glow-1" />
-        </radialGradient>
-        <linearGradient id={rise} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" className="steps-0" />
-          <stop offset="100%" className="steps-1" />
-        </linearGradient>
-      </defs>
-      {/* The warmth under the staircase: it glows brighter as the new tile arrives. */}
-      <ellipse className="warm" cx={1110} cy={150} rx={230} ry={76} fill={`url(#${glow})`} />
-      <path className="steps" d={`M900 192 V${STEP_1} H1040 V${STEP_2} H1200 V192 Z`} fill={`url(#${rise})`} />
-      <path className="ground" d={`M0 ${GROUND} H900 V${STEP_1} H1040 V${STEP_2} H1200`} />
-      <g className="chain">
-        {Array.from({ length: RUN - 1 }, (_, index) => (
-          <ChainTile key={index} index={index} x={24 + 46 * index} y={GROUND - H} />
-        ))}
-        {/* The tile on the first step tips until it leans on the second step's corner. */}
-        <ChainTile index={RUN - 1} x={952} y={STEP_1 - H} />
-      </g>
-      {/* Where the new tile will stand, while it is away. */}
-      <rect className="ghost" x={1102} y={STEP_2 - H} width={W} height={H} rx={W * 0.14} />
-      <g className="stand dm-art-enter" transform={`translate(1102 ${STEP_2 - H})`} style={vars({ '--i': RUN })}>
-        <g className="next tile-solid">
-          <ellipse className="shadow" cx={W / 2} cy={H} rx={14} ry={2} />
-          <ArtTile w={W} layout={CHAIN[CHAIN.length - 1]} />
+    <>
+      <svg
+        ref={ref}
+        className={cx('dm-art dm-hero-art', active && 'is-running', className)}
+        viewBox="0 0 1200 192"
+        preserveAspectRatio="xMaxYMax slice"
+        aria-hidden="true"
+        focusable="false"
+        onPointerMove={illuminate}
+        onPointerLeave={clearSpotlight}
+      >
+        <defs>
+          <radialGradient id={glow} cx="50%" cy="50%" r="50%">
+            <stop offset="0%" className="glow-0" />
+            <stop offset="100%" className="glow-1" />
+          </radialGradient>
+          <linearGradient id={rise} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" className="steps-0" />
+            <stop offset="100%" className="steps-1" />
+          </linearGradient>
+        </defs>
+        <rect className="dm-hero-interaction-area" width={1200} height={192} />
+        <g data-hero-play="automatic">
+          {/* The warmth under the staircase: it glows brighter as the new tile arrives. */}
+          <ellipse className="warm" cx={1110} cy={150} rx={230} ry={76} fill={`url(#${glow})`} />
+          <path className="steps" d={`M900 192 V${STEP_1} H1040 V${STEP_2} H1200 V192 Z`} fill={`url(#${rise})`} />
+          <path className="ground" d={`M0 ${GROUND} H900 V${STEP_1} H1040 V${STEP_2} H1200`} />
+          <path className="ground-rim" d={`M900 ${STEP_1} H1040 V${STEP_2} H1200`} />
+          <g className="chain">
+            {Array.from({ length: RUN - 1 }, (_, index) => (
+              <ChainTile key={index} index={index} x={24 + 46 * index} y={GROUND - H} />
+            ))}
+            {/* The tile on the first step tips until it leans on the second step's corner. */}
+            <ChainTile index={RUN - 1} x={952} y={STEP_1 - H} />
+          </g>
+          {/* Where the new tile will stand, while it is away. */}
+          <rect className="ghost" x={1102} y={STEP_2 - H} width={W} height={H} rx={W * 0.14} />
+          <g className="stand dm-art-enter" transform={`translate(1102 ${STEP_2 - H})`} style={vars({ '--i': RUN })}>
+            <g className="next tile-solid">
+              <ellipse className="shadow" cx={W / 2} cy={H} rx={14} ry={2} />
+              <ArtTile w={W} layout={CHAIN[CHAIN.length - 1]} />
+              <path className="tile-bevel" d="M30.5 1.5 H5.5 A4 4 0 0 0 1.5 5.5 V56.5" />
+              <path className="tile-depth" d="M34.5 6.5 V57.5 A4 4 0 0 1 30.5 61.5 H5.5" />
+            </g>
+          </g>
         </g>
-      </g>
-    </svg>
+      </svg>
+      {!still && <span ref={spotlight} className="dm-hero-spotlight" aria-hidden="true" />}
+    </>
   )
 }

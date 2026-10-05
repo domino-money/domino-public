@@ -6,6 +6,7 @@ import { nearestIndex } from '../../lib/chart/inspect'
 import { sparkGeometry, type SparkRun } from '../../lib/chart/spark'
 import { shortTime } from '../../lib/format/time'
 import { cx } from '../ui'
+import { rem, useRootScale } from '../../lib/rootScale'
 import { EndDot, HoverDot, useSvgId } from './series'
 
 /** The points of an `M x y L x y …` path. */
@@ -52,6 +53,9 @@ function fadeOf(run: SparkRun, width: number): 'start' | 'end' | 'both' | undefi
  * colours, Tangerine when the card shows no change. Pointing (or a held
  * touch) draws a crosshair and a small tooltip with the hour's close and
  * time; the line past the pointer steps back.
+ *
+ * Changed on purpose 2026-10-03 (the owner: the site looks too big at 100%): `height`, `pad` and every offset are
+ * design px; the plot is drawn through a viewBox in design px and the tooltip placed in rem (lib/rootScale.ts).
  */
 export function PriceLineSvg({
   history,
@@ -88,9 +92,12 @@ export function PriceLineSvg({
   reveal?: boolean
 }) {
   const box = useRef<HTMLDivElement>(null)
+  // The box's width in CSS px; `wide` is the same in design px, which the plot is drawn in.
   const [width, setWidth] = useState(0)
   const [inspected, setInspected] = useState<number | null>(null)
   const id = useSvgId('dm-price-')
+  const scale = useRootScale()
+  const wide = width / scale
 
   useLayoutEffect(() => {
     const node = box.current
@@ -129,11 +136,11 @@ export function PriceLineSvg({
   }
 
   if (variant === 'area') {
-    const spark = width > 0 ? sparkGeometry(history, width, height, pad) : null
+    const spark = width > 0 ? sparkGeometry(history, wide, height, pad) : null
     const marked = spark && inspected !== null ? (spark.points.find((point) => point.candle.startTimestamp === inspected) ?? null) : null
     const inspect = (event: ReactPointerEvent<SVGSVGElement>) => {
       if (!spark) return
-      const x = event.clientX - event.currentTarget.getBoundingClientRect().left
+      const x = (event.clientX - event.currentTarget.getBoundingClientRect().left) / scale
       const index = nearestIndex(
         spark.points.map((point) => point.x),
         x,
@@ -145,20 +152,20 @@ export function PriceLineSvg({
     const series = spark && (
       <>
         {spark.runs.map((run, index) =>
-          run.area ? <path key={index} d={run.area} fill={`url(#${id})`} className="dm-spark-area" data-fade={fadeOf(run, width)} /> : null,
+          run.area ? <path key={index} d={run.area} fill={`url(#${id})`} className="dm-spark-area" data-fade={fadeOf(run, wide)} /> : null,
         )}
         <path d={spark.line} className="dm-spark-line" />
         {spark.runs.map((run, index) => (run.area ? null : <circle key={index} cx={run.start.x} cy={run.start.y} r={2.5} className="dm-spark-lone" />))}
       </>
     )
-    const tipSide = marked && marked.x + TIP_WIDTH > width ? 'left' : 'right'
+    const tipSide = marked && marked.x + TIP_WIDTH > wide ? 'left' : 'right'
     return (
-      <div ref={box} className={cx('dm-price-wrap dm-spark-wrap w-full', className)} style={{ height }} title={title} data-reveal={reveal && spark ? '' : undefined}>
+      <div ref={box} className={cx('dm-price-wrap dm-spark-wrap w-full', className)} style={{ height: rem(height) }} title={title} data-reveal={reveal && spark ? '' : undefined}>
         {spark && (
           <svg
             width={width}
-            height={height}
-            viewBox={`0 0 ${width} ${height}`}
+            height={height * scale}
+            viewBox={`0 0 ${wide} ${height}`}
             role="img"
             aria-label={label}
             data-price-line=""
@@ -183,7 +190,7 @@ export function PriceLineSvg({
                     <rect x={-8} y={-8} width={marked.x + 8} height={height + 16} />
                   </clipPath>
                   <clipPath id={`${id}-past`}>
-                    <rect x={marked.x} y={-8} width={Math.max(0, width - marked.x + 8)} height={height + 16} />
+                    <rect x={marked.x} y={-8} width={Math.max(0, wide - marked.x + 8)} height={height + 16} />
                   </clipPath>
                 </>
               )}
@@ -214,7 +221,7 @@ export function PriceLineSvg({
             className="dm-spark-tip"
             data-side={tipSide}
             data-place={marked.y - spark.top < TIP_ROOM ? 'below' : 'above'}
-            style={{ left: marked.x, top: marked.y }}
+            style={{ left: rem(marked.x), top: rem(marked.y) }}
           >
             <span className="dm-spark-tip-price">{groupedRatioText(marked.candle.close)}</span>
             <span className="dm-spark-tip-time">{shortTime(marked.candle.startTimestamp)}</span>
@@ -224,22 +231,22 @@ export function PriceLineSvg({
     )
   }
 
-  const plot = width > 0 ? ratioGeometry(history, width, height, pad) : null
+  const plot = width > 0 ? ratioGeometry(history, wide, height, pad) : null
   const marked = plot ? (plot.points.find((point) => point.candle.startTimestamp === inspected) ?? plot.points[plot.points.length - 1]) : null
   // A path of one point draws nothing: that hour gets a dot instead.
   const lone = new Set(plot ? plot.paths.filter((path) => !path.includes(' L')) : [])
   const inspect = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!plot || plot.points.length === 0) return
-    const x = event.clientX - event.currentTarget.getBoundingClientRect().left
+    const x = (event.clientX - event.currentTarget.getBoundingClientRect().left) / scale
     let nearest = plot.points[0]
     for (const point of plot.points) if (Math.abs(point.x - x) < Math.abs(nearest.x - x)) nearest = point
     choose(nearest.candle)
   }
 
   return (
-    <div ref={box} className={cx('w-full', className)} style={{ height }} title={title}>
+    <div ref={box} className={cx('w-full', className)} style={{ height: rem(height) }} title={title}>
       {plot && marked && (
-        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label} data-price-line="" className="block overflow-visible" onPointerMove={inspect} onPointerLeave={leave}>
+        <svg width={width} height={height * scale} viewBox={`0 0 ${wide} ${height}`} role="img" aria-label={label} data-price-line="" className="block overflow-visible" onPointerMove={inspect} onPointerLeave={leave}>
           {plot.paths.map((path, index) => (lone.has(path) ? null : <path key={index} d={curve === 'monotone' ? linePath(pointsOf(path), curveFor(pointsOf(path).length, curve)) : path} className="dm-spark-line" />))}
           {plot.points.map((point) => (lone.has(`M${point.x.toFixed(2)} ${point.y.toFixed(2)}`) ? <circle key={point.candle.startTimestamp} cx={point.x} cy={point.y} r={1.5} className="dm-spark-dot" /> : null))}
           {inspected !== null && <line x1={marked.x} x2={marked.x} y1={0} y2={height} className="dm-spark-cross" />}

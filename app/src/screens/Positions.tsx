@@ -19,7 +19,6 @@ import { warmState } from '../lib/fees/client'
 import { parseAddressInput, shortAddress } from '../lib/read/screens/identity'
 import { portfolioRoute, positionDetailId } from '../lib/read/screens/positions'
 import { useWalletIdentity, walletKey, type WalletIdentityView } from '../lib/walletIdentity'
-import { RoadmapPill } from '../components/automate/RoadmapPill'
 import { FEATURES } from '../lib/automate/features'
 import { useRouteTitle } from '../lib/routeTitle'
 
@@ -36,6 +35,11 @@ const couldNotLoad = () => ({ default: CouldNotLoad })
 type TellShows = (shows: CardShows | null) => void
 const Performance = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ onShows?: TellShows }>>(recovering(() => import('./Performance'), couldNotLoad)) : null
 const Execution = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ limit?: number; onShows?: TellShows }>>(recovering(() => import('./Execution'), couldNotLoad)) : null
+// Changed on purpose 2026-10-02 (Domino V2 integration, lists): in a build that carries V2 only, Receipts draws V1's own
+// receipts and then read-v6's (src/v2in/lists/Receipts.tsx, which renders Execution itself), lazily and behind the bare
+// define; every deployable build, where `__DOMINO_V2__` is false, folds it away and opens Execution as before.
+// A chunk that cannot load leaves Execution itself (2026-10-03, review #7): V1's receipts, never a "couldn't load" line.
+const V2Receipts = __DOMINO_WALLET_SESSION__ && __DOMINO_V2__ ? lazy<ComponentType<{ limit?: number; onShows?: TellShows }>>(recovering(() => import('../v2in/lists/Receipts'), () => ({ default: ({ limit, onShows }: { limit?: number; onShows?: TellShows }) => (Execution ? <Execution limit={limit} onShows={onShows} /> : null) }))) : null
 // The deposits the wallet has not turned into a position, each with its refund: its own chunk, in wallet builds only.
 // Typed from the slot's own props, so this screen names nothing of that chunk but its lazy import.
 const HeldDeposits = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<Parameters<DepositsSlot>[0]>>(recovering(() => import('../components/positions/HeldDeposits'), couldNotLoad)) : null
@@ -43,13 +47,24 @@ const HeldDeposits = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<Parameters<D
 // Withdraw to wallet, whatever became of the vault's root position. Its own chunk, in wallet builds only; it shows nothing
 // while there is nothing to withdraw, and nothing in place of a chunk that cannot load.
 const FeeReserves = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ owner: string; placement: 'positions' | 'position' }>>(recovering(() => import('../components/positions/FeeReserves'), () => ({ default: () => null }))) : null
+// Domino V2 (integration, 2026-10-02): Managed positions with Domino's vaults (each vault's state, the fees waiting in it,
+// Withdraw to wallet, Leave automation), drawn around Performance itself, only in a build that carries V2 (the define is
+// false in both deployable builds, so this is null there and nothing of it is bundled).
+// A chunk that cannot load leaves V1's Performance itself (2026-10-03, review #7).
+type ManagedProps = { performance: ComponentType<{ onShows?: TellShows }>; onShows?: TellShows }
+const V2Managed = __DOMINO_V2__ ? lazy<ComponentType<ManagedProps>>(recovering(() => import('../v2in/automate/ManagedVaults'), () => ({ default: ({ performance: Performance, onShows }: ManagedProps) => <Performance onShows={onShows} /> }))) : null
 
 // Your positions and a position's own page: chunks of their own, loaded only on Positions, so no other page pays for
 // them. The list exists only where a wallet can connect; the page is public chain data and opens in every build.
 // 2026-09-28 (speed wave B, item 24): drawn as soon as their chunk is in (components/Deferred.tsx), not 300 ms after
 // their fallback as a Suspense boundary reveals them.
 const OwnedPositions = __DOMINO_WALLET_SESSION__ ? deferred<OwnedPositionsProps>(recovering(() => import('../components/positions/OwnedPositions'), couldNotLoad)) : null
-const PositionDetail = deferred<{ tokenId: string; kit?: unknown }>(recovering(() => import('./PositionDetail'), couldNotLoad))
+// Its default only (2026-10-03): the module also carries the test builds' Price range lab (PositionDetail.tsx RangeLab).
+const PositionDetail = deferred<{ tokenId: string; kit?: unknown }>(recovering(() => import('./PositionDetail').then((module) => ({ default: module.default })), couldNotLoad))
+// Changed on purpose (data) 2026-10-02 (Domino V2 integration): a position V1's reads do not cover (`#/positions/<chain>-
+// v<dex>-<id>`, src/v2in/route.ts: v3, Base, Arbitrum One) opens the same page from its own chunk, in a build with V2
+// only; where V2 is off there it draws this list, as any other segment does.
+const V2Position = __DOMINO_V2__ ? deferred<{ param: string; list: ReactNode }>(recovering(() => import('../v2in/position/PositionPage'), couldNotLoad)) : null
 
 /**
  * 2026-09-28 (speed wave B, item 24): what Positions reads, asked as soon as the route is known, outside the chunk that
@@ -93,7 +108,7 @@ const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSPropertie
  */
 function ConnectedChip({ identity }: { identity: Connected }) {
   return (
-    <Chip variant="plate" className="dm-acct-wallet-chip" title="Connected, not signed in." data-connected-wallet="">
+    <Chip variant="plate" className="dm-acct-wallet-chip" title="Connected wallet" data-connected-wallet="">
       <span className="sr-only">Connected wallet </span>
       <span className="dm-acct-mono" title={identity.address} translate="no">
         {shortAddress(identity.address)}
@@ -146,7 +161,7 @@ function ManagedCard({ hidden, onShows }: { hidden?: boolean; onShows?: TellShow
     >
       {Performance ? (
         <Suspense fallback={<Quiet line="How your automated positions did in the last 24 hours." />}>
-          <Performance onShows={onShows} />
+          {V2Managed ? <V2Managed performance={Performance} onShows={onShows} /> : <Performance onShows={onShows} />}
         </Suspense>
       ) : (
         <Plot>Managed history needs wallet sign-in, which isn’t available here.</Plot>
@@ -186,7 +201,7 @@ function ReceiptsCard({ limit, title = 'Receipts', hidden, onShows }: { limit?: 
     >
       {Execution ? (
         <Suspense fallback={<Quiet line="What automation did for your positions." />}>
-          <Execution limit={limit} onShows={onShows} />
+          {__DOMINO_V2__ && V2Receipts ? <V2Receipts limit={limit} onShows={onShows} /> : <Execution limit={limit} onShows={onShows} />}
         </Suspense>
       ) : (
         <p className="dm-acct-quiet">Wallet sign-in isn’t available here, so automation receipts can’t be read.</p>
@@ -262,7 +277,7 @@ function ReceiptsPage() {
   )
 }
 
-/** What automation is, where it stands, and the way to Automate. Static: the status comes from ROADMAP. */
+/** A short introduction to both modes. Actual automation status belongs to each position. */
 function AutomationCard() {
   return (
     <section className="dm-card dm-acct-rail dm-acct-auto dm-acct-o6" aria-labelledby="automation-title">
@@ -275,7 +290,6 @@ function AutomationCard() {
           <div className="min-w-0">
             <p className="dm-acct-auto-name">
               <span>Auto-compound</span>
-              <RoadmapPill name="Compound" />
             </p>
             <p className="dm-acct-auto-text">{FEATURES.compound.line}</p>
           </div>
@@ -285,7 +299,6 @@ function AutomationCard() {
           <div className="min-w-0">
             <p className="dm-acct-auto-name">
               <span>Domino-compound</span>
-              <RoadmapPill name="Domino" />
             </p>
             <p className="dm-acct-auto-text">{FEATURES.domino.line}</p>
           </div>
@@ -344,18 +357,26 @@ function PositionsList() {
   const [listEmpty, setListEmpty] = useState(false)
   const quietNew = OwnedPositions !== null && !viewing && (identity.kind === 'disconnected' || (identity.kind === 'connected' && listEmpty))
   return (
-    <PageShell>
+    <PageShell className="dm-positions-page">
       <div className="dm-acct-title animate-rise" style={rise(0)}>
+        <div className="dm-acct-title-copy">
         <div className="dm-acct-title-main">
           <Display as="h1" className="dm-display-h1">
             Positions
           </Display>
           {identity.kind === 'connected' && <ConnectedChip identity={identity} />}
         </div>
+        </div>
         <div className="dm-acct-title-actions">
-          <LinkButton href={marketsHref()} variant="ghost">
-            Markets
-          </LinkButton>
+          {identity.kind === 'connected' && !viewing ? (
+            <LinkButton href={receiptsHref} variant="outline" data-positions-receipts="">
+              Receipts
+            </LinkButton>
+          ) : (
+            <LinkButton href={marketsHref()} variant="ghost">
+              Markets
+            </LinkButton>
+          )}
           <LinkButton href={newPositionHref()} variant={quietNew ? 'secondary' : 'primary'}>
             New position
           </LinkButton>
@@ -411,6 +432,7 @@ export function Positions({ param = '' }: { param?: string }) {
   // The tab's name (lib/routeTitle.ts, audit E11): the list, its receipts, or one position by its number.
   useRouteTitle(param === 'receipts' ? 'Receipts' : detail ? `Position #${detail}` : 'Positions')
   if (param === 'receipts') return <ReceiptsPage />
+  if (__DOMINO_V2__ && V2Position && /^(robinhood|base|arbitrum)-v[34]-[1-9][0-9]{0,77}$/.test(param)) return <V2Position param={param} list={<PositionsList />} fallback={<DetailWaiting />} />
   if (!detail) return <PositionsList />
   return (
     <Suspense fallback={<DetailWaiting />}>

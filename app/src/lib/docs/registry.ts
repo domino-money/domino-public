@@ -4,19 +4,21 @@
  * "On this page" all read from here, so a page added to a group appears in
  * each of them at once.
  */
-import { AUTO_COMPOUND, DOMINO_COMPOUNDER } from './pages/automation'
+import { AUTO_COMPOUND, DOMINO_COMPOUNDER, STOP_LOSS, YOUR_AUTOMATION } from './pages/automation'
 import { EARNED_FEES, POOLS, RANGES } from './pages/basics'
 import { NON_CUSTODIAL, PRIVACY, RISKS } from './pages/custody'
 import { WALLET, WALLET_REQUESTS, WHAT_IS_DOMINO } from './pages/introduction'
 import { CONTRACTS, FEES, FIGURES, GLOSSARY } from './pages/reference'
-import { MARKETS, NEW_POSITION, POOL_PAGE, POSITIONS } from './pages/using'
+import { BRING_FUNDS, MANAGE_POSITION, MARKETS, NEW_POSITION, POOL_PAGE, POSITIONS } from './pages/using'
 import type { DocGroup, DocPage, TocEntry } from './types'
 
 export const DOC_GROUPS: readonly DocGroup[] = [
   { key: 'introduction', title: 'Introduction', pages: [WHAT_IS_DOMINO, WALLET, WALLET_REQUESTS] },
   { key: 'basics', title: 'Liquidity basics', pages: [POOLS, RANGES, EARNED_FEES] },
-  { key: 'using', title: 'Using Domino', pages: [MARKETS, POOL_PAGE, NEW_POSITION, POSITIONS] },
-  { key: 'automation', title: 'Automation', pages: [AUTO_COMPOUND, DOMINO_COMPOUNDER] },
+  // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): bringing funds from another network, managing a
+  // position from its page, stop-loss and take-profit, and the automation behind them, each a page of its own.
+  { key: 'using', title: 'Using Domino', pages: [MARKETS, POOL_PAGE, NEW_POSITION, BRING_FUNDS, POSITIONS, MANAGE_POSITION] },
+  { key: 'automation', title: 'Automation', pages: [AUTO_COMPOUND, DOMINO_COMPOUNDER, STOP_LOSS, YOUR_AUTOMATION] },
   { key: 'custody', title: 'Custody and risk', pages: [NON_CUSTODIAL, RISKS, PRIVACY] },
   { key: 'reference', title: 'Reference', pages: [FEES, FIGURES, CONTRACTS, GLOSSARY] },
 ]

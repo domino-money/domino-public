@@ -14,18 +14,23 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, readdirSync, readFileSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
 import { TEXT_FILE, findForbidden } from '../scripts/deploy-markers.mjs';
-import { apiOf, close, dexOf, go, leaving, open as openPage, problemsOf, reload, shown } from './page-watch.mjs';
-import { CONTROL_VIEWPORTS, MOTION_CONTROL, textUnderMotionControl } from './motion-overlap.mjs';
+import { apiOf, close, dexOf, go, leaving, open as openPage, problemsOf, reload, shown, watch } from './page-watch.mjs';
 import { feesAnswer } from './support/fees/stub.mjs';
 
 const DIST = resolve(import.meta.dirname, '../dist');
+async function captureUI(page, name, selector) {
+  if (!process.env.DOMINO_UI_CAPTURE_DIR) return;
+  await mkdir(process.env.DOMINO_UI_CAPTURE_DIR, { recursive: true });
+  const target = selector ? page.locator(selector) : page;
+  await target.screenshot({ path: join(process.env.DOMINO_UI_CAPTURE_DIR, `${name}.png`), animations: 'disabled' });
+}
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -144,7 +149,8 @@ test('the built landing page renders its content without a single browser error'
   const body = await page.locator('#root').innerText();
   assert.ok(body.length > 500, `the page rendered only ${body.length} characters of text`);
   assert.match(body, /Domino/);
-  assert.match(body, /Robinhood Chain/);
+  // Changed on purpose 2026-10-03 (the owner: Domino covers more than one network): Home names no chain; its headline proves it rendered.
+  assert.match(body, /Earn fees on your tokens, on your own terms\./);
 
   // The blank-page failure left an empty root behind while the HTML shell and
   // the script both loaded fine, so the text assertion above is the real gate.
@@ -180,9 +186,13 @@ test('exactly one React instance rendered the page', async () => {
  */
 const ROUTES = ['/', '/markets', '/explore', '/pools', '/positions', '/app', '/portfolio', '/new', '/automate', '/settings', '/docs', '/docs/non-custodial', '/setup', '/sequence'];
 
-test('every route in the header renders', async () => {
+test('every route in the header renders', async (t) => {
+  const context = await browser.newContext();
+  t.after(() => context.close());
+  // This route-render check has no data service. Its optional market fallback must be deterministic offline too.
+  await context.route('https://api.dexscreener.com/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   for (const [route, expected, settled] of [
-    ['/', /Robinhood Chain/],
+    ['/', /Earn fees on your tokens/],
     ['/markets', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
     [`/markets/0x${'1'.repeat(40)}`, /Markets[\s\S]*Search the pool catalogue/],
     // Changed on purpose 2026-10-01 (audit B8): a pool page with no token, for a pool outside the list, says in plain words
@@ -205,11 +215,11 @@ test('every route in the header renders', async () => {
     // saved profile, neither offers an owner card with no way into it (changed on purpose, qa:visual dead ends), and Sequence says in one plain line
     // that there is nothing to manage. Each is read once its release has answered. Changed on purpose (Create position): a position is opened from
     // New position's last step, so Setup no longer asks for a wallet to deposit; one line points there instead.
-    ['/setup', /Deposits and recovery[\s\S]*To open a new position, use New position: its last step creates it through your wallet\./, '[data-setup-release="unavailable"]'],
+    ['/setup', /Deposits and recovery[\s\S]*Opening a position\? Start with New position\./, '[data-setup-release="unavailable"]'],
     // Changed on purpose (2026-09-24, the owner's simpler automation page): its title is its one action, and without a release it says so.
     ['/sequence', /Set up automation[\s\S]*Automation can’t be set up here\./, '[data-sequence-release="unavailable"]'],
   ]) {
-    const page = await open(route);
+    const page = await openPage(context, { origin, route });
     if (settled) await page.locator(settled).waitFor({ state: 'attached' });
     const body = await page.locator('#root').innerText();
     assert.match(body, expected, `route ${route}`);
@@ -236,9 +246,43 @@ test('the header names the three places, each at its route, and marks the one th
       ['Positions', '#/positions', current('Positions')],
       ['Automate', '#/automate', current('Automate')],
     ], `header on ${route}`);
+    assert.equal(await page.locator('header .dm-wordmark').getAttribute('aria-current'), route === '/' ? 'page' : null);
+    assert.equal(await nav.getAttribute('data-home'), route === '/' ? '' : null);
     clean(page, `header on ${route}`);
     await close(page);
   }
+});
+
+test('Home navigation is neutral until hovered or focused, and only the current page stays orange', async () => {
+  const page = await openSimulator();
+  const nav = page.locator('header nav[aria-label="Main"]');
+  const markets = nav.getByRole('link', {name:'Markets',exact:true});
+  const positions = nav.getByRole('link', {name:'Positions',exact:true});
+  const color = locator => locator.evaluate(el=>getComputedStyle(el).color);
+  const neutral = await color(markets);
+  assert.equal(await color(positions),neutral);
+  assert.equal(await nav.locator('[aria-current="page"]').count(),0);
+  await captureUI(page,'navigation-home-neutral','header');
+  await markets.hover();
+  await page.waitForTimeout(220);
+  assert.notEqual(await color(markets),neutral);
+  assert.equal(await color(positions),neutral,'hovering one link does not light its neighbors');
+  await captureUI(page,'navigation-home-hover','header');
+  await page.mouse.move(0,0);
+  await positions.focus();
+  await page.waitForTimeout(220);
+  assert.notEqual(await color(positions),neutral,'keyboard focus has the same emphasis');
+  await positions.click();
+  await shown(page,'/positions');
+  assert.equal(await positions.getAttribute('aria-current'),'page');
+  await page.mouse.move(0,0);
+  await page.locator('header .dm-wordmark').focus();
+  await page.waitForTimeout(220);
+  assert.notEqual(await color(positions),neutral,'selection remains lit away from the pointer');
+  assert.equal(await color(markets),neutral);
+  await captureUI(page,'navigation-position-selected','header');
+  clean(page,'navigation interaction');
+  await close(page);
 });
 
 test('the mobile Positions screen leads to Markets: reachable, bounded to the viewport, and idle until a read is requested', async () => {
@@ -360,24 +404,19 @@ test('the page survives a narrow viewport without spilling sideways', async () =
   await close(page);
 });
 
-// Changed on purpose (owner, 2026-09-26: dark only): this was the appearance toggle's check, and the toggle is gone with
-// the light theme. The footer's motion control, which sat beside it, keeps the same protection, and nothing else is there.
-for (const [width, height] of CONTROL_VIEWPORTS) {
-  test(`at ${width}x${height} the footer's motion control is its only control and never covers text on the landing page, its pools table or the footer, wherever the page is scrolled`, async () => {
+// Changed on purpose 2026-10-03 (the owner: Domino covers more than one network now, and the footer had two things too
+// many): the footer holds no control at all (Pause motion is gone; reduced motion still stills the page), no Network
+// column, and names no chain. It was the motion control's overlap check (and before that the appearance toggle's).
+for (const [width, height] of [[390, 844], [768, 1024], [1280, 800]]) {
+  test(`at ${width}x${height} the footer holds the brand and its two link columns, no control and no network`, async () => {
     const page = await open('/');
     await page.setViewportSize({ width, height });
     await page.waitForTimeout(100);
-    const { hits, seen } = await textUnderMotionControl(page, ['#pools', 'footer']);
-    assert.deepEqual(seen, ['#pools', 'footer'], 'the pools table and the footer are on the landing page');
-    assert.deepEqual(hits, [], `the motion control covers text at ${width}x${height}:\n${hits.join('\n')}`);
-    assert.deepEqual(await page.locator('footer button').allInnerTexts(), ['Pause motion'], 'the footer holds one control, and no appearance toggle');
-    // Still reachable and working at this width.
-    const control = page.locator('footer').getByRole('button', { name: MOTION_CONTROL });
-    await control.scrollIntoViewIfNeeded();
-    await control.click();
-    assert.equal(await page.evaluate(() => document.documentElement.classList.contains('dm-still')), true, 'Pause motion stills the page');
-    assert.equal(await control.innerText(), 'Resume motion');
-    clean(page, `motion control at ${width}px`);
+    assert.equal(await page.locator('footer button').count(), 0, 'no control in the footer');
+    assert.deepEqual(await page.locator('footer nav').evaluateAll((navs) => navs.map((nav) => nav.getAttribute('aria-label'))), ['Product', 'Guides']);
+    assert.doesNotMatch(await page.locator('footer').innerText(), /Network|Robinhood|Pause motion/);
+    assert.equal(await page.evaluate(() => document.documentElement.classList.contains('dm-still')), false, 'nothing stills the page by itself');
+    clean(page, `footer at ${width}px`);
     await close(page);
   });
 }
@@ -470,6 +509,12 @@ test('the fonts are the site’s own files under /assets/, and Home loads them f
 /** Reads a numeric input's value as a number. */
 const num = (page, sel) => page.locator(sel).inputValue().then(Number);
 
+/**
+ * CSS px per design px on this page (changed on purpose 2026-10-03, the owner: the site looks too big at 100%): the
+ * root's font-size over 16 (styles/tokens.css, src/lib/rootScale.ts), 0.8 from 1024px wide and 1 on a phone.
+ */
+const rootScale = (page) => page.evaluate(() => Number.parseFloat(getComputedStyle(document.documentElement).fontSize) / 16);
+
 /** Sets a native range input the way a user would, so React sees the change. */
 async function setRange(page, selector, value) {
   await page.locator(selector).evaluate((el, v) => {
@@ -484,7 +529,7 @@ async function setRange(page, selector, value) {
 // one picture, with no chart and no second slider. Pressing anywhere on the picture and dragging moves the price; the
 // knob sits under the pointer, a still pointer holds the price still, and the range never moves.
 test('dragging the price through the DOM holds a still pointer to a still price, and never moves the range', async () => {
-  const page = await open('/');
+  const page = await openSimulator();
   const stage = page.locator('[data-sim-stage]');
   await stage.scrollIntoViewIfNeeded();
   const box = await stage.boundingBox();
@@ -631,26 +676,40 @@ test('every footer and navigation link goes somewhere this app has: no "#/" plac
 // Changed on purpose (review, 2026-09-28): at the start the chip says "ETH at start price" ("ETH price 0%" can read as
 // a price of zero), and the slider's invisible thumb is 44px wide, so its centre, the knob's, runs from 22px in from
 // each end.
+// Changed on purpose 2026-10-03 (the owner: the site looks too big at 100%; at 80% it looks right): those are 44 and 22
+// design px, drawn at the root's scale (styles/tokens.css: 0.8 in this 1280px window), as every length on the page is.
+async function openSimulator() {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  watch(page);
+  // These local UI checks exercise no catalogue figures. Keep unrelated live DEX reads off the network.
+  await page.route('https://api.dexscreener.com/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.goto(`${origin}/#/`, { waitUntil: 'networkidle' });
+  await shown(page, '/');
+  return page;
+}
+
 test('the price control maps its value to the knob, its chip, earning or not, and what the position holds', async () => {
-  const page = await open('/');
+  const page = await openSimulator();
   const slider = page.locator('#sim-price');
   await slider.scrollIntoViewIfNeeded();
+  await slider.focus();
   assert.deepEqual([await slider.getAttribute('min'), await slider.getAttribute('max'), await slider.getAttribute('step')], ['-1.1', '1.1', '0.01']);
   assert.equal(await page.locator('label[for="sim-price"]').innerText(), 'ETH price, against the start');
   const stage = await page.locator('[data-sim-stage]').boundingBox();
+  const scale = await rootScale(page);
 
   for (const [v, chip, earning, hold, spoken] of [
-    [0, 'ETH at start price', 'Earning fees', ['53%', '47%'], 'ETH at its start price. Earning fees. You hold 53% ETH and 47% USDG.'],
-    [0.3, 'ETH price +23%', 'Earning fees', ['28%', '72%'], 'ETH up 23%. Earning fees. You hold 28% ETH and 72% USDG.'],
-    [0.85, 'ETH price +80%', 'Not earning', ['0%', '100%'], 'ETH up 80%. Not earning. You hold 0% ETH and 100% USDG.'],
-    [-0.8, 'ETH price −43%', 'Not earning', ['100%', '0%'], 'ETH down 43%. Not earning. You hold 100% ETH and 0% USDG.'],
-    [-1.1, 'ETH price −53%', 'Not earning', ['100%', '0%'], null],
-    [1.1, 'ETH price +114%', 'Not earning', ['0%', '100%'], null],
+    [0, 'ETH at start price', 'Inside range', ['53%', '47%'], 'ETH at its start price. Inside range. Trades can earn fees. Example mix by value: 53% ETH and 47% USDG.'],
+    [0.3, 'ETH price +23%', 'Inside range', ['28%', '72%'], 'ETH up 23%. Inside range. Trades can earn fees. Example mix by value: 28% ETH and 72% USDG.'],
+    [0.85, 'ETH price +80%', 'Above range', ['0%', '100%'], 'ETH up 80%. Above range. No trading fees here. Example mix by value: 0% ETH and 100% USDG.'],
+    [-0.8, 'ETH price −43%', 'Below range', ['100%', '0%'], 'ETH down 43%. Below range. No trading fees here. Example mix by value: 100% ETH and 0% USDG.'],
+    [-1.1, 'ETH price −53%', 'Below range', ['100%', '0%'], null],
+    [1.1, 'ETH price +114%', 'Above range', ['0%', '100%'], null],
   ]) {
     await setRange(page, '#sim-price', v);
     assert.equal(await num(page, '#sim-price'), v, 'the input did not take the value');
     const knob = await page.locator('#ranges .dm-sim-knob').boundingBox();
-    const expected = stage.x + 22 + ((v + 1.1) / 2.2) * (stage.width - 44);
+    const expected = stage.x + 22 * scale + ((v + 1.1) / 2.2) * (stage.width - 44 * scale);
     assert.ok(Math.abs(knob.x + knob.width / 2 - expected) < 1, `knob at ${knob.x + knob.width / 2} for ${v}, expected ${expected}`);
     assert.equal(await page.locator('#ranges .dm-sim-chip').innerText(), chip);
     assert.equal(await page.locator('#ranges .dm-pill').innerText(), earning);
@@ -671,9 +730,11 @@ test('the price control maps its value to the knob, its chip, earning or not, an
 // the knob's whole column and a finger wide. iOS drags a range input only from a touch that starts inside its thumb,
 // and a tap on its track does nothing there, so a thumb that sat anywhere else left the knob dead on an iPhone.
 // Chromium shows it this way: a press on the thumb grabs it and leaves the value alone, a press on the track jumps it.
+// Changed on purpose 2026-10-03 (the owner: the site looks too big at 100%): the thumb is 44 design px at the root's scale,
+// a finger wide on a phone (scale 1) and 35px in a 1280px window (0.8), so the presses beside the knob are at that scale.
 test('the simulator’s knob is the slider’s own thumb, top to bottom and a finger wide', async () => {
   for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
-    const page = await open('/');
+    const page = await openSimulator();
     await page.setViewportSize(viewport);
     await page.evaluate(() => document.getElementById('ranges').scrollIntoView({ block: 'center' }));
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -682,6 +743,7 @@ test('the simulator’s knob is the slider’s own thumb, top to bottom and a fi
     const input = await page.locator('#sim-price').boundingBox();
     const knob = await page.locator('#ranges .dm-sim-knob').boundingBox();
     const cx = knob.x + knob.width / 2;
+    const scale = await rootScale(page);
     const press = async (x, y) => {
       await setRange(page, '#sim-price', 0);
       await page.mouse.move(x, y);
@@ -694,39 +756,165 @@ test('the simulator’s knob is the slider’s own thumb, top to bottom and a fi
     const bottom = input.y + input.height - 2;
     const middle = knob.y + knob.height / 2;
     for (const y of [top, input.y + input.height / 2, middle, bottom]) {
-      for (const dx of [-18, 7, 18]) {
+      for (const dx of [-18, 7, 18].map((design) => design * scale)) {
         assert.equal(await press(cx + dx, y), 0, `${viewport.width}px: a press at ${dx}px from the knob, y ${y}, missed the thumb`);
       }
     }
     assert.ok(knob.y >= top && knob.y + knob.height <= bottom, `${viewport.width}px: the knob (y ${knob.y}) is outside the slider`);
-    assert.notEqual(await press(cx + 60, middle), 0, `${viewport.width}px: a press well off the knob did not move the price`);
+    assert.notEqual(await press(cx + 60 * scale, middle), 0, `${viewport.width}px: a press well off the knob did not move the price`);
     clean(page, `simulator thumb at ${viewport.width}px`);
     await close(page);
   }
 });
 
-// Added 2026-09-27 (owner, round 6): the illustration's trades pay the position only while the price is in its range,
-// and stop the moment it leaves; stilled motion leaves the count out altogether.
-test('trades pay the simulated position only while the price is in its range, and stilled motion leaves the count out', async () => {
-  const page = await open('/');
-  const slider = page.locator('#sim-price');
-  await page.evaluate(() => document.getElementById('ranges').scrollIntoView({ block: 'center' }));
-  const paid = () => page.locator('#ranges [data-sim-paid]').getAttribute('data-sim-paid').then(Number);
-  await page.waitForFunction(() => Number(document.querySelector('#ranges [data-sim-paid]')?.getAttribute('data-sim-paid')) >= 1, null, { timeout: 5000 });
-  assert.match(await page.locator('#ranges .dm-sim-paid').innerText(), /^\d+ trades? (has|have) paid you a fee$/);
-  await setRange(page, '#sim-price', 0.85);
-  const stopped = await paid();
-  await page.waitForTimeout(1800);
-  assert.equal(await paid(), stopped, 'no trade pays a position whose price is above its range');
-  assert.equal(await page.locator('#ranges .dm-sim-fee').count(), 0, 'no fee rises while it is out of range');
-  // Out of range the count never reads as earning under "Not earning": it says the trades paid before the price left.
-  assert.match(await page.locator('#ranges .dm-sim-paid').innerText(), /^\d+ trades? paid you a fee before the price left$/);
-  await setRange(page, '#sim-price', 0.1);
-  await page.waitForFunction((from) => Number(document.querySelector('#ranges [data-sim-paid]')?.getAttribute('data-sim-paid')) > from, stopped, { timeout: 5000 });
+// The picture starts automatically; the native scrubber still owns exact prices on request.
+test('the compact range scene keeps the correct token mix and fixed range without projected earnings', async () => {
+  const page = await openSimulator();
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.locator('#ranges .dm-sim-paid').waitFor({ state: 'detached' });
-  assert.equal(await slider.count(), 1, 'the control stays');
-  clean(page, 'simulated trades');
+  const demo = page.locator('[data-sim-example]');
+  await demo.scrollIntoViewIfNeeded();
+  const band = await demo.locator('.dm-sim-band').boundingBox();
+  for (const [state, value, mix] of [
+    ['below', -0.8, ['100%', '0%']], ['inside', 0, ['53%', '47%']], ['above', 0.85, ['0%', '100%']],
+  ]) {
+    await setRange(page, '#sim-price', value);
+    assert.equal(await demo.getAttribute('data-sim-state'), state);
+    assert.deepEqual(await demo.locator('.dm-sim-pct').allInnerTexts(), mix);
+    assert.deepEqual(await demo.locator('.dm-sim-band').boundingBox(), band);
+    assert.equal(await demo.getAttribute('data-sim-paid'), '0');
+  }
+  assert.equal(await demo.locator('details[open]').count(), 0);
+  await demo.locator('summary').click();
+  assert.match(await demo.locator('details[open]').innerText(), /near the top.*when your settings allow/i);
+  assert.match(await demo.locator('details[open]').innerText(), /can lose value even when it earns fees/);
+  await demo.locator('summary').click();
+  assert.equal(await demo.locator('button').count(), 0, 'no replay, play, pause, preset or mode buttons');
+  assert.deepEqual(await page.evaluate(() => Object.keys(localStorage)), []);
+  for (const width of [320, 390, 960, 1440]) {
+    await page.setViewportSize({ width, height: 960 });
+    await setRange(page, '#sim-price', 0);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no overflow at ' + width);
+    const box = await demo.boundingBox();
+    assert.ok(box.height < (width >= 960 ? 370 : 600), 'the scene stays compact at ' + width + ': ' + box.height);
+    await captureUI(page, 'simulator-r3-' + width, '[data-sim-example]');
+    if (width === 390 || width === 1440) {
+      await captureUI(page, 'hero-r3-' + width, '.dm-hero');
+      await captureUI(page, 'home-r3-' + width);
+    }
+  }
+  clean(page, 'compact range scene');
+  await close(page);
+});
+
+test('shared decorative motion repeats, rests outside the viewport or hidden tab, and honors reduced motion', async () => {
+  const page = await openSimulator();
+  const features = page.locator('.dm-features');
+  await features.scrollIntoViewIfNeeded();
+  const art = features.locator('.dm-vig-compound');
+  await page.waitForFunction(() => document.querySelector('.dm-features .dm-vig-compound')?.classList.contains('is-running'));
+  const drop = art.locator('.drop-1');
+  assert.equal(await drop.evaluate(el => getComputedStyle(el).animationIterationCount), 'infinite');
+  await drop.evaluate(el => { el.getAnimations()[0].currentTime = 20_000; });
+  assert.equal(await drop.evaluate(el => el.getAnimations()[0].playState), 'running', 'continues beyond the old three-cycle stop');
+  const reads = structuredClone(apiOf(page));
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForFunction(() => !document.querySelector('.dm-features .dm-vig-compound')?.classList.contains('is-running'));
+  assert.equal(await drop.evaluate(el => getComputedStyle(el).animationPlayState), 'paused');
+  // The pause settles on the next frame (2026-10-04, PR #335's CI: sampled while still pending, the time moved by 2 µs).
+  await page.waitForFunction(() => {
+    const animation = document.querySelector('.dm-features .dm-vig-compound .drop-1')?.getAnimations()[0];
+    return animation?.playState === 'paused' && !animation.pending;
+  });
+  const paused = await drop.evaluate(el => el.getAnimations()[0].currentTime);
+  await page.waitForTimeout(100);
+  assert.equal(await drop.evaluate(el => el.getAnimations()[0].currentTime), paused, 'hidden-tab drawing spends no animation time');
+  await page.evaluate(() => {
+    delete document.hidden;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForFunction(() => document.querySelector('.dm-features .dm-vig-compound')?.classList.contains('is-running'));
+  assert.ok(await drop.evaluate(el => el.getAnimations()[0].currentTime) >= paused, 'resumes the same timeline instead of restarting it');
+  await page.locator('footer').scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => !document.querySelector('.dm-features .dm-vig-compound')?.classList.contains('is-running'));
+  assert.equal(await drop.evaluate(el => getComputedStyle(el).animationPlayState), 'paused');
+  await features.scrollIntoViewIfNeeded();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  assert.equal(await drop.evaluate(el => getComputedStyle(el).animationName), 'none');
+  assert.equal(await features.locator('.dm-art').evaluateAll(nodes => nodes.every(el => el.getAnimations({ subtree: true }).length === 0)), true);
+  assert.deepEqual(apiOf(page), reads, 'decorative loops do not poll for new data');
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 960 });
+    await captureUI(page, 'feature-motion-r4-' + width, '.dm-features');
+  }
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await go(page, '/automate');
+  for (const mode of ['compound', 'domino']) {
+    const drawing = page.locator(`[data-automation-card="${mode}"] .dm-mode-art`);
+    await drawing.scrollIntoViewIfNeeded();
+    await page.waitForFunction(selector => document.querySelector(selector)?.classList.contains('is-running'), `[data-automation-card="${mode}"] .dm-mode-art`);
+    assert.equal(await drawing.locator('.drop-1').evaluate(el => getComputedStyle(el).animationIterationCount), 'infinite');
+  }
+  await captureUI(page, 'automate-motion-r4-1440', 'main');
+  await go(page, '/new');
+  const preview = page.locator('.dm-flow-pv-art');
+  await preview.scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => document.querySelector('.dm-flow-pv-art')?.classList.contains('is-running'));
+  assert.equal(await preview.locator('.line').first().evaluate(el => getComputedStyle(el).animationIterationCount), 'infinite');
+  assert.equal(await page.getByRole('button', { name: /Replay|Watch fees move|Pause motion/ }).count(), 0);
+  clean(page, 'shared decorative motion');
+  await close(page);
+});
+
+test('the home scene plays automatically with the shared compound drawings, and stops offscreen or with reduced motion', async () => {
+  const page = await openSimulator();
+  const demo = page.locator('[data-sim-example]');
+  const hero = page.locator('.dm-hero-art');
+  assert.equal(await page.getByRole('button', { name: /Replay|Watch fees move|Pause/ }).count(), 0);
+  assert.equal(await hero.locator('.chain .tip').count(), 19);
+  assert.equal(await hero.locator('.chain .tip').first().evaluate(el => getComputedStyle(el).animationIterationCount), 'infinite');
+  const reads = structuredClone(apiOf(page));
+  await demo.scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => document.querySelector('[data-sim-example]').dataset.simRunning === 'yes');
+  assert.equal(await demo.locator('.dm-vig-compound, .dm-vig-seq').count(), 2, 'same SVG components as the actual feature drawings');
+  assert.equal(await demo.locator('[aria-live]').count(), 0, 'automatic motion never repeatedly announces changes');
+  assert.doesNotMatch(await demo.innerText(), /Interactive example|Example data|Watch fees move/);
+  assert.equal(await demo.locator('.dm-vig-compound .drop-1').evaluate(el => getComputedStyle(el).animationIterationCount), '1', 'one complete fee cycle per eligible phase');
+  assert.equal(await demo.locator('.dm-vig-seq .drop-1').evaluate(el => getComputedStyle(el).animationName), 'none', 'the next range waits until price is near the upper edge');
+  await page.waitForFunction(() => Number(document.getElementById('sim-price').value) > 0.1);
+  await page.locator('#sim-price').focus();
+  const controlled = await num(page, '#sim-price');
+  await page.waitForTimeout(160);
+  assert.equal(await num(page, '#sim-price'), controlled, 'focus gives control to the visitor');
+  await setRange(page, '#sim-price', 0.5);
+  assert.equal(await demo.locator('[data-sim-fee-mode="domino"]').getAttribute('data-active'), '');
+  assert.equal(await demo.locator('.dm-vig-seq .drop-1').evaluate(el => getComputedStyle(el).animationPlayState), 'running');
+  assert.equal(await demo.locator('.dm-vig-compound .drop-1').evaluate(el => getComputedStyle(el).animationName), 'none');
+  await setRange(page, '#sim-price', 0.85);
+  assert.equal(await demo.locator('.dm-sim-fee-option[data-active]').count(), 0, 'outside the range neither drawing depicts new earned fees');
+  for (const selector of ['.dm-vig-compound .drop-1', '.dm-vig-seq .drop-1']) {
+    assert.equal(await demo.locator(selector).evaluate(el => getComputedStyle(el).animationName), 'none');
+  }
+  await setRange(page, '#sim-price', 0);
+  await page.locator('#sim-price').blur();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.waitForFunction(() => document.querySelector('[data-sim-example]').dataset.simRunning === 'no');
+  const reduced = await num(page, '#sim-price');
+  await page.waitForTimeout(160);
+  assert.equal(await num(page, '#sim-price'), reduced);
+  assert.equal(await demo.locator('.dm-vig-compound .drop-1').evaluate(el => getComputedStyle(el).animationName), 'none');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await hero.scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => document.querySelector('[data-sim-example]').dataset.simRunning === 'no');
+  const outside = await num(page, '#sim-price');
+  await page.waitForTimeout(160);
+  assert.equal(await num(page, '#sim-price'), outside, 'offscreen work stops');
+  assert.equal(await demo.locator('.dm-art').evaluateAll(nodes => nodes.every(el => el.getAnimations({ subtree: true }).every(animation => animation.playState !== 'running'))), true, 'no artwork keeps running outside the viewport');
+  assert.deepEqual(apiOf(page), reads, 'all price and compound motion is local');
+  clean(page, 'automatic home scene');
   await close(page);
 });
 
@@ -958,14 +1146,14 @@ test('Automate shows the plain position, then its two cards and nothing under th
   const page = await open('/automate');
   const ways = await Promise.all(['Set up Auto-compound', 'Set up Domino-compound'].map((name) =>
     page.getByRole('link', { name, exact: true }).evaluate((link) => ({ height: link.getBoundingClientRect().height, outline: link.classList.contains('dm-btn--outline'), sm: link.classList.contains('dm-btn--sm') }))));
-  assert.deepEqual(ways.map(({ outline, sm }) => [outline, sm]), [[true, false], [false, false]], 'outline beside filled, neither small');
+  assert.deepEqual(ways.map(({ outline, sm }) => [outline, sm]), [[true, false], [true, false]], 'both choices have equal emphasis, neither small');
   assert.equal(ways[0].height, ways[1].height, `the two ways in: ${ways.map(({ height }) => height).join(' vs ')} px`);
   assert.equal(await page.locator('main .dm-inset, main .dm-acct-auto-note').count(), 0, 'no panel under the cards');
   assert.doesNotMatch(await page.locator('main').innerText(), /Setup checks the deployment/, 'no note under the cards');
   // Changed on purpose 2026-10-01 (audit E4, live note L12): plain words, no "consumed", and no promise about the APR.
   assert.equal(await page.locator('[data-automation-card="compound"] .dm-acct-auto-fee dd').innerText(), '2% of the fees it uses, once');
   assert.equal(await page.locator('[data-automation-card="domino"] .dm-acct-auto-fee dd').innerText(), '4% of the fees it uses, once');
-  assert.deepEqual(await page.locator('[data-automation-card="compound"] .dm-acct-auto-points li').allInnerTexts(), ['Adds the fees your position has earned back into the same position, so it grows.', 'Uses earned fees only.']);
+  assert.deepEqual(await page.locator('[data-automation-card="compound"] .dm-acct-auto-points li').allInnerTexts(), ['Adds earned fees back into the same position.', 'Keeps the same price range. Uses earned fees only.']);
   assert.doesNotMatch(await page.locator('main').innerText(), /improving|consumed|hold’s/, 'no broken possessive, no "consumed", no promise');
   // 2026-09-24 (the three features): the plain position leads the page, one line and one way in, New position, before the
   // two automations that start from it.
@@ -996,9 +1184,8 @@ test('the wallet control is on every route and ready, no route mentions practice
     for (const button of buttons) assert.equal(await button.isDisabled(), false, `Connect wallet is disabled on ${route}`);
     assert.equal(await page.locator('header').getByRole('button', { name: 'Connect wallet' }).count(), 1, `the control is not in the header on ${route}`);
     assert.doesNotMatch(await page.locator('#root').innerText(), /practice/i, `practice on ${route}`);
-    // Changed on purpose (owner, 2026-09-26: dark only): the appearance, the one thing kept here, is gone with the light
-    // theme. The footer's remaining control, Pause motion, is used instead, and it is kept in memory only.
-    await page.locator('footer').getByRole('button', { name: 'Pause motion', exact: true }).click();
+    // Changed on purpose 2026-10-03 (the owner): the footer's Pause motion, the last control clicked here, is gone; the
+    // page still stores nothing.
     assert.deepEqual(await page.evaluate(() => Object.keys(localStorage)), [], `${route} stored something`);
     clean(page, `wallet on ${route}`);
     await close(page);
@@ -1113,25 +1300,19 @@ test('the receipts page keeps Positions lit, and with no wallet asks for one and
 });
 
 test('the explanatory sections stay, in relative terms, and say plainly what is not enabled', async () => {
-  const page = await open('/');
+  const page = await openSimulator();
   const text = await page.locator('#root').innerText();
   // Home: the hero, the feature cards and the pools; below them how it works, the range simulator, what Domino does not do.
-  for (const heading of [/Earn fees on your tokens, on your own terms\./, /Pick a pool\. Set a range\. Decide what happens to the fees\./, /Move the price\. Watch what you own\./, /What Domino does not do\./]) {
+  for (const heading of [/Earn fees on your tokens, on your own terms\./, /Your first position, in four steps\./, /Price moves\. Your position adapts\./, /What Domino does not do\./]) {
     assert.match(text, heading);
   }
   // The Uniswap strip, the old headlines and the simulator's explanation are gone (owner, 2026-09-14).
   assert.doesNotMatch(text, /Built on Uniswap|Put fees to work|one tile at a time|Choose what fees do|A position opened at the start price/);
-  // The landing page describes owner-scoped availability without claiming the service is on or off for everyone.
-  // Changed on purpose (owner, round 6, 2026-09-27): the simulator names the automation in one plain line and wears no
-  // pill, so the two automation feature cards say it (the How it works step is counted below).
-  // Changed on purpose 2026-10-01 (audit E3): "Per sequence" named an internal scope; the pill says "Starts paused", and its
-  // title what that means.
-  assert.ok((text.match(/Starts paused/g) ?? []).length >= 2, 'the feature cards say so');
-  assert.equal(await page.locator('.dm-features .dm-pill', { hasText: 'Starts paused' }).count(), 2, 'Auto-compound and Domino-compound wear ROADMAP’s pill');
-  assert.equal(await page.locator('#learn .dm-pill', { hasText: 'Starts paused' }).count(), 1, 'the Automation step of How it works wears ROADMAP’s pill');
-  for (const title of await page.locator('.dm-features .dm-pill, #learn .dm-pill').evaluateAll((pills) => pills.map((pill) => pill.getAttribute('title')))) {
-    assert.equal(title, 'Each automation starts paused. Once Domino’s automation service is ready for it, its position’s page offers Turn on.');
-  }
+  // Changed on purpose 2026-10-03 (the owner: "Starts paused" is not needed on Home): neither the two automation feature
+  // cards nor How it works wear ROADMAP's pill; the docs pages still say where each automation stands. Nor does the hero
+  // name a network any more (Domino covers more than one).
+  assert.doesNotMatch(text, /Starts paused|On Robinhood Chain/);
+  assert.equal(await page.locator('.dm-features .dm-pill, #learn .dm-pill').count(), 0, 'no pill on the feature cards or the steps');
   assert.doesNotMatch(text, /Per sequence|never principal|the sequence stops at a cap/, 'plain words on Home');
   assert.doesNotMatch(text, /Not running|automation is running/i);
   // The pools card has no caption any more (the owner's decision on the redesign): each figure names its source and age in its own title.
@@ -1139,16 +1320,16 @@ test('the explanatory sections stay, in relative terms, and say plainly what is 
   // The product describes itself as the product, never as an unfinished one.
   assert.doesNotMatch(text, /\balpha\b|\bv4\b|not enabled yet|read-only/i, 'no self-description as an alpha, a version or a read-only build');
   assert.doesNotMatch(text, /Made for every way to hold liquidity|One position sets up the next/, 'no product cards, no Domino sequence');
-  // Changed on purpose (owner, round 6, 2026-09-27: "remove the jargon"): the simulator's range reads as a move from the
-  // start, −30% to +50%, with the three zones named in plain words; no multiple, no range switch, no figure list, no
-  // pill, and the automation in one line.
+  // The owner's compact scene keeps the fixed range, automatically shows both fee destinations and folds away explanation.
   const sim = await page.locator('#ranges').innerText();
-  for (const words of [/Only ETH/, /Your range/, /Only USDG/, /−30%/, /\+50%/, /Start/, /What you hold/, /Auto-compound adds them back into your position/, /Domino-compound uses them to open your next range a step higher/]) {
+  for (const words of [/Only ETH/, /Your range/, /Only USDG/, /−30%/, /\+50%/, /Start/, /Token mix/, /Inside range/, /Auto-compound/]) {
     assert.match(sim, words);
   }
-  assert.doesNotMatch(sim, /×|Closer|Wider|Per sequence|Starts paused|Figures, and the other range|Domino steps in|Stablecoin|Token share/, 'no multiple, range switch, figure list, pill or old wording');
+  assert.doesNotMatch(sim, /×|Closer|Wider|Per sequence|Starts paused|Figures, and the other range|Domino steps in|Stablecoin|Token share|trades have paid/, 'no range switch, jargon or invented trade count');
   assert.equal(await page.locator('#ranges input').count(), 1, 'one control: the price');
-  assert.equal(await page.locator('#ranges details, #ranges button, #ranges [role="radiogroup"]').count(), 0, 'nothing folded away and no second control');
+  assert.equal(await page.locator('#ranges [data-sim-preset]').count(), 3, 'three price reference markers');
+  assert.equal(await page.locator('#ranges details:not([open])').count(), 1, 'extra explanation starts folded away');
+  assert.doesNotMatch(sim, /Interactive example|Example data/, 'no persistent example badge');
   assert.doesNotMatch(text, /MEME|Example token/, 'no example token');
   assert.equal(await page.locator('#hero-amount, #amount').count(), 0, 'no amount to type in');
   // The hero's two ways in.
@@ -1210,7 +1391,9 @@ test('the docs: every page opens from the sidebar with its title and its link ma
   assert.equal(await page.locator('nav[aria-label="On this page"]').count(), 0, 'the index lists pages, not sections');
   const pages = links.slice(1);
   // Changed on purpose 2026-10-01 (the copy workstream): Wallet requests, A pool’s page and Privacy joined the docs.
-  assert.equal(pages.length, 19, `the sidebar lists ${pages.length} pages`);
+  // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Bring funds from another network, Manage a
+  // position, Stop-loss / take-profit and Your automation joined them.
+  assert.equal(pages.length, 23, `the sidebar lists ${pages.length} pages`);
   const listed = await page.locator('main a[href^="#/docs/"]').evaluateAll((anchors) => [...new Set(anchors.filter((a) => !a.closest('nav[aria-label="Docs"]')).map((a) => a.getAttribute('href')))].sort());
   assert.deepEqual(listed, pages.map(([, href]) => href).sort(), 'the index itself links every page');
 
@@ -1329,7 +1512,8 @@ test('a docs section lands just under the header: opened directly, from On this 
   assert.ok(await page.evaluate(() => window.scrollY) > 0, 'the page moved to the section');
 
   const toc = page.locator('nav[aria-label="On this page"]');
-  const operator = toc.getByRole('link', { name: 'What the operator can and cannot do', exact: true });
+  // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the section says Domino's automation; its id stays.
+  const operator = toc.getByRole('link', { name: 'What Domino’s automation can and cannot do', exact: true });
   await operator.click();
   await page.waitForFunction(() => location.hash === '#/docs/non-custodial#operator');
   await lands('operator', 'from On this page');
@@ -1356,8 +1540,14 @@ test('a docs section lands just under the header: opened directly, from On this 
   await close(page);
 });
 
-test('the Non-custodial card on Home opens the custody page of the docs', async () => {
-  const page = await open('/');
+test('the Non-custodial card on Home opens the custody page of the docs', async (t) => {
+  const context = await browser.newContext();
+  t.after(() => context.close());
+  await context.route('https://api.dexscreener.com/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  const page = await context.newPage();
+  watch(page);
+  await page.goto(`${origin}/#/`);
+  await shown(page, '/');
   // Scoped to the card: the footer also has a "How it works" link, to the landing section.
   const link = page.locator('main article', { hasText: 'Non-custodial' }).getByRole('link', { name: 'How it works', exact: true });
   assert.equal(await link.getAttribute('href'), '#/docs/non-custodial');

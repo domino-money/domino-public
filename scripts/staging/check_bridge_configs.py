@@ -13,6 +13,14 @@ Added 2026-10-02 (review of rugged97's RPC rules, finding 2): the site-wide
 gate of wide log scans (wrangler.wide-gate.toml), a Durable Object the Pages
 Functions reach through their binding. It has no variables and no ingress,
 and exactly one Durable Object class and its one migration.
+
+Added 2026-10-02 (Domino V2, spec F7 §2.4 and §6.2): the position-plan Worker
+(wrangler.position-plan.toml, POSITION_PLAN_* variables, its own
+vm-position-plan gateway) and the read Worker's read-v6 pair, both off.
+
+Added 2026-10-02 (Domino V2, spec F7 §3.2, S2): the crosschain Worker
+(wrangler.crosschain.toml, CROSSCHAIN_* variables, its own vm-crosschain
+gateway), off.
 """
 from pathlib import Path
 import sys
@@ -27,6 +35,8 @@ SERVICES = {
     "performance": ("performance-worker", "PERFORMANCE_GATEWAY_ORIGIN", "2026-09-10"),
     "execution": ("execution-worker", "EXECUTION_GATEWAY_ORIGIN", "2026-09-10"),
     "setup": ("setup-release", None, "2026-09-10"),
+    "position-plan": ("position-plan-worker", "POSITION_PLAN_GATEWAY_ORIGIN", "2026-10-02"),
+    "crosschain": ("crosschain-worker", "CROSSCHAIN_GATEWAY_ORIGIN", "2026-10-02"),
 }
 # The one retained record per request, and nothing else: no invocation log.
 RECORD_ONLY = {"enabled": True, "head_sampling_rate": 1, "logs": {"invocation_logs": False}}
@@ -62,6 +72,11 @@ def same_value(actual, expected):
     return actual == expected
 
 
+def flag_prefix(service):
+    """A service's variable prefix: its name in upper case, a hyphen as an underscore (position-plan: POSITION_PLAN)."""
+    return service.upper().replace("-", "_")
+
+
 def validate(service, config):
     """Return policy errors; extra fields cannot silently add a second ingress."""
     entry, origin_key, compatibility_date = SERVICES[service]
@@ -75,14 +90,15 @@ def validate(service, config):
         "logpush": False,
         "observability": OBSERVABILITY.get(service, {"enabled": False}),
         "vars": {
-            f"{service.upper()}_BRIDGE_ENABLED": "false",
+            f"{flag_prefix(service)}_BRIDGE_ENABLED": "false",
             "APP_ORIGIN": "https://domino.money",
             origin_key: f"https://vm-{service}.domino.money",
             **({"ENABLED_READS": "", "READ_V2_BRIDGE_ENABLED": "false",
                 "ENABLED_V2_READS": "", "READ_V3_BRIDGE_ENABLED": "false",
                 "ENABLED_V3_READS": "", "READ_V4_BRIDGE_ENABLED": "false",
                 "ENABLED_V4_READS": "", "READ_V5_BRIDGE_ENABLED": "false",
-                "ENABLED_V5_READS": ""} if service == "read" else {}),
+                "ENABLED_V5_READS": "", "READ_V6_BRIDGE_ENABLED": "false",
+                "ENABLED_V6_READS": ""} if service == "read" else {}),
         },
     }
     if service == "setup":

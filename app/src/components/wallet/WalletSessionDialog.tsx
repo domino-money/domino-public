@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { useConnectors, type Connector } from 'wagmi'
 import { privateScope, type Snapshot } from '../../session/controller'
@@ -8,10 +8,12 @@ import { sessionController } from '../../wallet/session'
 import { walletConnectOffered } from '../../wallet/walletConnect'
 import { PREVIEW_ALIAS } from '../../chains/elysium/mode'
 import { useDialog } from '../../lib/useDialog'
-import { Button, Card, Pill } from '../ui'
+import { Button, Card } from '../ui'
 import { IconChevronRight, IconClose } from '../icons'
 import { knownDelegateAt } from '../../finance/delegates'
-import { approveIn, connectNotice, describe, NO_BROWSER_WALLET, OPEN_IN_WALLET_APP, OPEN_IN_WALLET_APP_NOTE, REFRESH_UNAVAILABLE, SWITCH_NOTICE, WALLETCONNECT } from './copy'
+import { approveIn, connectNotice, describe, NO_BROWSER_WALLET, OPEN_IN_WALLET_APP, OPEN_IN_WALLET_APP_NOTE, REFRESH_UNAVAILABLE, shortAddress, SWITCH_NOTICE, WALLETCONNECT } from './copy'
+import { CopyButton } from '../read/screens/CopyButton'
+import { tokenHue } from '../../lib/format/tokenHue'
 import { WalletConnectPanel } from './WalletConnectPanel'
 import { WalletLogo } from './WalletLogo'
 
@@ -86,7 +88,7 @@ function WalletApps() {
   )
   return (
     <>
-      <p className="text-[13px] leading-[18px] text-fg-muted">{OPEN_IN_WALLET_APP}</p>
+      <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted">{OPEN_IN_WALLET_APP}</p>
       <ul className="dm-wallet-list" aria-label="Wallet apps" data-wallet-apps={onPreview ? 'preview' : 'site'}>
         <li>
           {onPreview ? (
@@ -119,7 +121,7 @@ function WalletApps() {
 function GetAWallet() {
   return (
     <>
-      <p className="text-[13px] leading-[18px] text-fg-muted">{NO_BROWSER_WALLET}</p>
+      <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted">{NO_BROWSER_WALLET}</p>
       <p className="dm-wallet-get text-caption text-fg-subtle">
         {'Get one: '}
         <a href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer">MetaMask</a>
@@ -203,7 +205,10 @@ export function WalletSessionDialog({
   const browserWallets = connectors.filter((connector) => connector.type !== 'walletConnect')
   const walletConnect = walletConnectOffered() ? connectors.find((connector) => connector.type === 'walletConnect') : undefined
   const pairing = waiting !== null && waiting.uid === walletConnect?.uid
-  const status = waiting !== null ? (pairing ? null : approveIn(walletName(waiting.name))) : view.status === 'no_wallet' ? null : describe(view)
+  // A connected wallet with an unavailable sign-in must say why no Sign in action is offered.
+  // Otherwise receipts look like a missing feature even though the session service is the missing part.
+  const quiet = view.status === 'no_wallet'
+  const status = waiting !== null ? (pairing ? null : approveIn(walletName(waiting.name))) : quiet ? null : describe(view)
 
   let actions: React.ReactNode = null
   if (waiting !== null) {
@@ -297,22 +302,25 @@ export function WalletSessionDialog({
           <button type="button" onClick={onClose} aria-label="Close" className="dm-icon-btn dm-icon-btn--ghost dm-icon-btn--sm dm-press-icon absolute -top-1.5 -right-1.5">
             <IconClose />
           </button>
-          {status && <p id="wallet-dialog-status" className="text-[13px] leading-[18px] text-fg-muted" data-status={waiting ? 'connecting' : view.status}>
+          {status && <p id="wallet-dialog-status" className="text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-status={waiting ? 'connecting' : view.status}>
             {status}
           </p>}
         </div>
 
         <div className="grid gap-3" aria-busy={busy || pending || waiting !== null || undefined}>
           {identity.kind === 'connected' && !choosing && (
-            <div className="dm-inset grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-3 py-2.5">
-              {/* The name and the pill share the first row; the whole address takes the second, checksum tail included. */}
-              <div className="contents">
-                <p className="col-start-1 row-start-1 min-w-0 text-caption text-fg-subtle">{walletName(identity.connectorName)}</p>
-                <p className="tnum col-span-2 row-start-2 min-w-0 break-all font-mono text-[12px] leading-[16px] tracking-normal" data-testid="wallet-address">
-                  {identity.address}
-                </p>
-              </div>
-              {view.status === 'signed_in' ? <Pill tone="in" className="col-start-2 row-start-1 justify-self-end whitespace-nowrap">Signed in</Pill> : <Pill tone="neutral" className="col-start-2 row-start-1 justify-self-end whitespace-nowrap">Not signed in</Pill>}
+            // Changed on purpose 2026-10-03 (the owner: "no need to say which wallet app it is", and the pill above with the
+            // address below looked broken): one calm row, the address's disc, the short address and its state under it,
+            // and Copy for the whole address (also its title). The wallet app's name is no longer shown.
+            <div className="dm-wallet-id" data-wallet-state={view.status === 'signed_in' ? 'signed-in' : view.status === 'wrong_network' ? 'other-network' : 'connected'}>
+              <span aria-hidden="true" className="dm-wallet-disc dm-wallet-id-disc" style={{ '--mark-h': 200 + (tokenHue(identity.address) % 120) } as CSSProperties} />
+              <span className="dm-wallet-id-text">
+                <span className="dm-wallet-id-address tnum" title={identity.address} data-testid="wallet-address" data-address={identity.address}>
+                  {shortAddress(identity.address)}
+                </span>
+                <span className="dm-wallet-id-state">{view.status === 'signed_in' ? 'Signed in' : view.status === 'wrong_network' ? 'Connected, on another network' : 'Connected'}</span>
+              </span>
+              <CopyButton value={identity.address} label="Copy address" className="dm-wallet-id-copy" />
             </div>
           )}
 
@@ -339,12 +347,12 @@ export function WalletSessionDialog({
           {view.status === 'signed_in' && details && (
             <dl className="dm-inset dm-kv" data-testid="session-details">
               <div>
-                <dt className="text-[13px]">Ends no later than</dt>
-                <dd className="tnum font-mono text-[13px] tracking-normal">{details.expiresAt.slice(0, 16).replace('T', ' ')} UTC</dd>
+                <dt className="text-[0.8125rem]">Ends no later than</dt>
+                <dd className="tnum font-mono text-[0.8125rem] tracking-normal">{details.expiresAt.slice(0, 16).replace('T', ' ')} UTC</dd>
               </div>
               <div>
-                <dt className="text-[13px]">Account</dt>
-                <dd className="text-[13px]" title={accountCheck(details.validation).title} data-account-check={details.validation.method}>
+                <dt className="text-[0.8125rem]">Account</dt>
+                <dd className="text-[0.8125rem]" title={accountCheck(details.validation).title} data-account-check={details.validation.method}>
                   {accountCheck(details.validation).text}
                 </dd>
               </div>
@@ -357,13 +365,13 @@ export function WalletSessionDialog({
           )}
 
           {view.status === 'signed_in' && view.notice === 'refresh_unavailable' && (
-            <p className="text-[13px] leading-[18px] text-fg-muted" data-testid="refresh-notice">
+            <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-testid="refresh-notice">
               {REFRESH_UNAVAILABLE}
             </p>
           )}
 
           {shown && (
-            <p role="alert" className="text-[13px] leading-[18px]" style={{ color: 'var(--money-out)' }}>
+            <p role="alert" className="text-[0.8125rem] leading-[1.125rem]" style={{ color: 'var(--money-out)' }}>
               {shown}
             </p>
           )}

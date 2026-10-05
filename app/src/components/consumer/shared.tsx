@@ -42,7 +42,7 @@ export function ShownValue({ value }: { value: Shown }) {
   return (
     <>
       <span className="tnum dm-acct-wrap font-mono">{value.text}</span>
-      {value.note && <span className="block text-[12px] text-fg-subtle">{value.note}</span>}
+      {value.note && <span className="block text-[0.75rem] text-fg-subtle">{value.note}</span>}
     </>
   )
 }
@@ -70,7 +70,7 @@ export function FactList({ facts, label }: { facts: readonly Fact[]; label?: str
           <dt>{fact.label}</dt>
           <dd className="min-w-0">
             {fact.unknown ? <Unknown reason={fact.value} /> : <span className="tnum dm-acct-wrap font-mono">{fact.value}</span>}
-            {fact.note && <span className="block text-[12px] text-fg-subtle">{fact.note}</span>}
+            {fact.note && <span className="block text-[0.75rem] text-fg-subtle">{fact.note}</span>}
           </dd>
         </div>
       ))}

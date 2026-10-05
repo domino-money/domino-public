@@ -498,14 +498,14 @@ export function PoolPicker({
                   </div>
                   {create ? (
                     <div className="dm-mkt-option-figures dm-flow-pool-figures">
-                      {[0, 1, 2].map((cell) => <Skeleton key={cell} className="h-[18px] w-full" />)}
+                      {[0, 1, 2].map((cell) => <Skeleton key={cell} className="h-[1.125rem] w-full" />)}
                     </div>
                   ) : (
                     <>
                       <div className="dm-mkt-option-figures">
-                        <Skeleton className="h-[18px] w-full" />
+                        <Skeleton className="h-[1.125rem] w-full" />
                       </div>
-                      <Skeleton className="mx-3 h-9 w-56 max-w-[calc(100%-24px)]" />
+                      <Skeleton className="mx-3 h-9 w-56 max-w-[calc(100%-1.5rem)]" />
                     </>
                   )}
                 </li>

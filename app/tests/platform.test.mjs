@@ -407,7 +407,10 @@ test('the docs say what this browser keeps, for how long, and how it goes; nothi
   for (const row of ["{ label: 'Your positions', value: 'A day' }", "{ label: 'Token balances', value: 'A day', note: 'Of your wallet and of an address you view.' }", "{ label: 'Managed positions', value: '6 hours'", "{ label: 'Receipts', value: '30 days'", "{ label: 'Token names', value: '30 days'"]) assert.ok(docs.includes(row), row);
   assert.doesNotMatch(docs, /servers keep nothing about your wallet/, 'the sign-in service knows a signed-in address, for its session');
   assert.doesNotMatch(source('lib/docs/pages/introduction.ts'), /stores nothing about it|keep nothing about it/);
-  assert.match(source('lib/docs/pages/using.ts'), /only this browser keeps a copy, for a day\./);
+  // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Positions also lists the rows read from Domino's
+  // new contracts, which this browser does not keep, so the copy's age is said once, on Privacy (the row above), and
+  // Positions no longer says it of the whole list.
+  assert.doesNotMatch(source('lib/docs/pages/using.ts'), /only this browser keeps a copy/);
 });
 
 // ---------------------------------------------------------------------------

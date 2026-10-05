@@ -2,7 +2,7 @@ import type { AccountValidation, SessionRequests, SessionResponses } from 'api-c
 import type { ApiOutcome, RouteOutcome, TransportFailure } from './api'
 import { classify } from './errors'
 import { checkChallengeMessage } from './siwe'
-import { ELYSIUM_ID, ELYSIUM_STATUS, REGISTRY_CHAIN_IDS, ROBINHOOD_ID } from '../config/chainIdentity'
+import { ELYSIUM_ID, ELYSIUM_STATUS, REGISTRY_CHAIN_IDS, ROBINHOOD_ID, V2_CHAIN_IDS } from '../config/chainIdentity'
 import { sectionLinked } from '../chains/elysium/mode'
 
 /**
@@ -39,6 +39,10 @@ import { sectionLinked } from '../chains/elysium/mode'
 
 /** Robinhood Chain's id. Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G3): the registry's. */
 export const ROBINHOOD_CHAIN_ID = ROBINHOOD_ID
+
+// Domino V2 (src/v2/flag.ts): read here with the define itself, so a build without V2 folds every V2 branch below away.
+declare const __DOMINO_V2__: boolean | undefined
+const V2_ON: boolean = typeof __DOMINO_V2__ === 'boolean' && __DOMINO_V2__
 
 export type WalletIdentity =
   /** The wallet is still reconnecting; nothing is known yet. */
@@ -229,8 +233,16 @@ export interface Env {
  * like any other chain outside the site, exactly as before the section existed.
  */
 export function sessionChains(origin: string): readonly number[] {
-  return REGISTRY_CHAIN_IDS.filter((id) => id !== ELYSIUM_ID || sectionLinked(origin, ELYSIUM_STATUS))
+  const registry = REGISTRY_CHAIN_IDS.filter((id) => id !== ELYSIUM_ID || sectionLinked(origin, ELYSIUM_STATUS))
+  return V2_ON ? [...registry, ...V2_CHAIN_IDS.filter((id) => !registry.includes(id))] : registry
 }
+
+/**
+ * The chains a session may be kept across at all (Changed on purpose 2026-10-02, Domino V2 spec F7 §1.3 and §3: the wallet
+ * goes to another chain for a V2 action or a deposit and comes back): the registry's, and Domino V2's only in a build that
+ * carries V2 (src/v2/flag.ts): production and development too since 2026-10-04 (the owner: the site runs on Domino V2).
+ */
+export const keptChains = (): readonly number[] => (V2_ON ? [...REGISTRY_CHAIN_IDS, ...V2_CHAIN_IDS.filter((id) => !REGISTRY_CHAIN_IDS.includes(id))] : REGISTRY_CHAIN_IDS)
 
 export interface Step {
   machine: Machine
@@ -1020,7 +1032,7 @@ function runPendingRecheck(s: Step): Step {
 function step(m: Machine, e: Event, env: Env): Step {
   switch (e.type) {
     case 'identity':
-      return onIdentity(m, e.identity, (env.chains ?? [ROBINHOOD_ID]).filter((id) => REGISTRY_CHAIN_IDS.includes(id)))
+      return onIdentity(m, e.identity, (env.chains ?? [ROBINHOOD_ID]).filter((id) => keptChains().includes(id)))
     case 'sign_in':
       return startSignIn(m)
     case 'cancel':

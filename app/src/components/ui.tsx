@@ -10,6 +10,7 @@ import type {
   Ref,
 } from 'react'
 import { IconCheck, IconChevronDown, IconClose, IconInfo, IconMenu, IconSearch } from './icons'
+import { rem } from '../lib/rootScale'
 
 /*
  * Domino's primitives (DESIGN-V2 §3). Looks come from the component classes
@@ -704,7 +705,7 @@ export function TableShell({
   data?: Record<string, string>
 } & Omit<HTMLAttributes<HTMLDivElement>, 'title' | 'children' | 'className'>) {
   const attributes = data ? Object.fromEntries(Object.entries(data).map(([key, value]) => [`data-${key}`, value])) : undefined
-  const rows = rowHeight ? vars({ '--row-h': `${rowHeight}px` }) : undefined
+  const rows = rowHeight ? vars({ '--row-h': rem(rowHeight) }) : undefined
   return (
     <div className={cx('dm-card dm-table-card', surface === 'flat' && 'dm-card--flush', className)} style={rows || style ? { ...rows, ...style } : undefined} {...attributes} {...rest}>
       {(title || action) && (

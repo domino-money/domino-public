@@ -20,6 +20,10 @@ import {
   ERROR_STATUS_BY_CODE as V5_ERROR_STATUS_BY_CODE, ROUTES as V5_ROUTES, validateRequest as validateV5Request,
   validateResponse as validateV5Response, matchesRequest as matchesV5Request,
 } from '../../api-contracts/read-v5/runtime.mjs';
+import {
+  CONTRACT_VERSION as V6_CONTRACT_VERSION, ERROR_STATUS_BY_CODE as V6_ERROR_STATUS_BY_CODE, ROUTES as V6_ROUTES,
+  validateRequest as validateV6Request, validateResponse as validateV6Response, validateExchange as validateV6Exchange,
+} from '../../api-contracts/read-v6/runtime.mjs';
 
 const CONTRACT_HEADER = 'X-Domino-Read-Contract';
 // Only the exact public path chooses a protocol. Neither deployment variables
@@ -60,6 +64,22 @@ const V5_PROTOCOL = Object.freeze({
   enabledFlag: 'READ_V5_BRIDGE_ENABLED', readsFlag: 'ENABLED_V5_READS', routes: V5_ROUTES,
   validateRequest: validateV5Request, validateResponse: validateV5Response,
   errors: V5_ERROR_STATUS_BY_CODE, matchesRequest: matchesV5Request,
+});
+// Domino V2's wallet reads (read-v6 1.0.0-rc.1, spec F7 §6.2; added 2026-10-02, the bridge side of #305): portfolio
+// ({wallet}) and activity ({wallet, limit?, cursor?}), one wallet's V2 state and receipts on Robinhood Chain, Base and
+// Arbitrum One. Off until READ_V6_BRIDGE_ENABLED is exactly "true" and ENABLED_V6_READS names its routes; the gateway
+// serves them only with --enable-v6 and DOMINO_BRIDGE_V6_READS. Unlike read-v1 to read-v5 an answer covers three
+// chains, so it carries `chains` (the runtime checks all three, in order) and no top-level chainId: `chainIds` marks
+// that. Its request has integers (activity's `limit`), read from their exact lexemes as read-v3's are. The exchange
+// check is the package's own validateExchange: the answer is about the wallet asked for, and a page is no longer than
+// asked.
+const V6_PROTOCOL = Object.freeze({
+  prefix: '/api/read/v6/', upstreamPrefix: '/internal/read/v6/', version: V6_CONTRACT_VERSION,
+  enabledFlag: 'READ_V6_BRIDGE_ENABLED', readsFlag: 'ENABLED_V6_READS',
+  routes: Object.freeze(Object.fromEntries(V6_ROUTES.map((route) => [route, Object.freeze({ schemaVersion: 1 })]))),
+  validateRequest: validateV6Request, validateResponse: validateV6Response, errors: V6_ERROR_STATUS_BY_CODE,
+  matchesRequest: (request, response, route) => validateV6Exchange(route, request, response),
+  chainIds: Object.freeze([4663, 8453, 42161]),
 });
 export const LIMITS = Object.freeze({ requestBytes: 8192, responseBytes: 1024 * 1024, bodyMs: 5000, totalMs: 20000, upstreamMs: 15000 });
 
@@ -300,7 +320,8 @@ async function upstreamRead(request, body, payload, route, settings, fetchImpl, 
     }
     if (response.status === 200) {
       if (!isObject(result) || Object.hasOwn(result, 'error')) fail('upstream_invalid_response');
-      if (result.schemaVersion !== protocol.routes[route].schemaVersion || result.chainId !== CHAIN_ID) fail('upstream_contract_mismatch');
+      // A multi-chain protocol (read-v6) names no single chain: its runtime checks every chain the answer carries.
+      if (result.schemaVersion !== protocol.routes[route].schemaVersion || (!protocol.chainIds && result.chainId !== CHAIN_ID)) fail('upstream_contract_mismatch');
       // Where two versions pass, the answer names the one its header does.
       if (protocol.versions && result.contractVersion !== answered) fail('upstream_contract_mismatch');
       const valid = protocol.validateResponse(route, result) && protocol.matchesRequest(payload, result, route);
@@ -357,7 +378,8 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
       };
       try {
         const url = new URL(request.url);
-        if (url.pathname.startsWith(V5_PROTOCOL.prefix)) protocol = V5_PROTOCOL;
+        if (url.pathname.startsWith(V6_PROTOCOL.prefix)) protocol = V6_PROTOCOL;
+        else if (url.pathname.startsWith(V5_PROTOCOL.prefix)) protocol = V5_PROTOCOL;
         else if (url.pathname.startsWith(V4_PROTOCOL.prefix)) protocol = V4_PROTOCOL;
         else if (url.pathname.startsWith(V3_PROTOCOL.prefix)) protocol = V3_PROTOCOL;
         else if (url.pathname.startsWith(V2_PROTOCOL.prefix)) protocol = V2_PROTOCOL;
@@ -375,7 +397,8 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
           const output = new Response(JSON.stringify({
             contractVersion: version,
             dataMode: settings.enabledReads.length ? 'live_read_only' : 'disabled',
-            chainId: CHAIN_ID,
+            // read-v6 reads three chains, so it says which; read-v1 to read-v5 say their one chain, as before.
+            ...(protocol.chainIds ? { chainIds: protocol.chainIds } : { chainId: CHAIN_ID }),
             enabledReads: settings.enabledReads,
             walletAuthentication: false,
             privateAccounts: false,
@@ -397,7 +420,7 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
           text = await readText(request.body, LIMITS.requestBytes, scope, 'request_too_large');
           scope.check();
           body = parseStrictJson(text, { numberLexemes: true });
-          if (protocol === V3_PROTOCOL) body = safeRequestIntegers(body);
+          if (protocol === V3_PROTOCOL || protocol === V6_PROTOCOL) body = safeRequestIntegers(body);
           scope.check();
           const valid = protocol.validateRequest(route, body);
           scope.check();

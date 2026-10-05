@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { rem } from '../lib/rootScale'
 
 /**
  * Domino's inline icon set (DESIGN.md C.19). Every icon is a 16-unit SVG drawn
@@ -10,6 +11,9 @@ import type { ReactNode } from 'react'
  * Class hooks for motion (the gestures themselves live in art.css):
  * IconMarkets squares `i-t1`..`i-t4` in reading order, IconPositions group
  * `i-tile`, IconAutomate group `i-turn`, IconChevronRight root `i-chev-r`.
+ *
+ * Changed on purpose 2026-10-03 (the owner: the site looks too big at 100%): `size` is in design px and drawn in rem,
+ * so an icon keeps its size beside its text at every scale of the root (lib/rootScale.ts).
  */
 export type IconProps = { size?: number; className?: string }
 
@@ -18,8 +22,8 @@ const TWO = 'var(--icon-2, currentColor)'
 function Svg({ size = 16, className, children }: IconProps & { children: ReactNode }) {
   return (
     <svg
-      width={size}
-      height={size}
+      width={rem(size)}
+      height={rem(size)}
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"

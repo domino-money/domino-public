@@ -1,0 +1,109 @@
+import { Fragment, useState } from 'react'
+import { AmountField } from '../../components/create/fields'
+import { IconPlus } from '../../components/icons'
+import { Segmented } from '../../components/ui'
+import { CREATE } from '../../lib/create/copy'
+import { slippageValue, slippageWritten } from '../../lib/create/slippage'
+import { ZERO_ADDRESS, type Address } from '../../v2/types'
+import { JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS } from './constants'
+import { JOURNEY } from './copy'
+import { amountProblem, otherTokens, type Amounts, type JourneyState } from './model/state'
+import { TokenDisc, TokenName } from './parts'
+import { SlippageControl } from './SlippageControl'
+import { decimalsOf, labelOf, tokenBook } from './tokens'
+import { ZapFunds } from '../funds/ZapFunds'
+
+/**
+ * Step 3, Amount, on Domino's new contracts (spec F7 rev2 §2.6.1 "o que depositar": one or both of the pool's tokens, or
+ * another token), in today's look (components/create/PairedAmounts.tsx's panels, the token pill beside each figure):
+ *   - "This pool's tokens": one panel per token, an amount in either or both; an empty panel is none of it. Domino's
+ *     swap balances what goes in (the plan says how much it swaps, and its fee, on the review);
+ *   - "Another token": one panel, exactly one token outside the pool (the chain's stable, WETH or ETH), swapped in.
+ * The slippage under Advanced, closed unless it is already above 2% (decision #2). A token whose decimals were never read
+ * takes raw units only (never guessed). Paying with ETH says it needs a direct transaction (§2.7).
+ */
+export function AmountStage({ state, onAmounts, onSlippage }: { state: JourneyState; onAmounts: (amounts: Amounts) => void; onSlippage: (text: string) => void }) {
+  const value = slippageValue(state.slippage)
+  const [opened] = useState(() => value > JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS)
+  const pool = state.pool
+  if (!pool) return null
+  const others = otherTokens(state.chainId, pool.pool)
+  const book = tokenBook(state.chainId, [...pool.tokens])
+  const amounts = state.amounts
+  const tokens: Address[] = amounts.mode === 'other' ? (amounts.other ? [amounts.other] : []) : [pool.pool.currency0, pool.pool.currency1]
+  const set = (token: Address, text: string) => onAmounts({ ...amounts, text: { ...amounts.text, [token]: text } })
+  const paysEth = tokens.some((token) => token === ZERO_ADDRESS && (amounts.text[token] ?? '').trim() !== '')
+  return (
+    <div className="dm-flow-stack" data-stage="amount" data-zap-amounts={amounts.mode}>
+      {others.length > 0 && (
+        <Segmented
+          label={JOURNEY.amount.payWith}
+          items={[{ key: 'pool', label: JOURNEY.amount.poolTokens }, { key: 'other', label: JOURNEY.amount.otherToken }]}
+          value={amounts.mode}
+          onChange={(mode) => onAmounts({ mode, other: mode === 'other' ? (amounts.other ?? others[0]) : amounts.other, text: amounts.text })}
+        />
+      )}
+      {amounts.mode === 'other' && others.length > 1 && (
+        <Segmented
+          label={JOURNEY.amount.otherChoice}
+          items={others.map((token) => ({ key: token as string, label: labelOf(book, token) }))}
+          value={(amounts.other ?? others[0]) as string}
+          onChange={(token) => onAmounts({ ...amounts, other: token as Address })}
+        />
+      )}
+      <div className="dm-flow-pair" data-paired-amounts={amounts.mode}>
+        {tokens.map((token, index) => {
+          const decimals = decimalsOf(book, token)
+          const text = amounts.text[token] ?? ''
+          const problem = amountProblem(state, token, text)
+          const meta = { address: token, symbol: labelOf(book, token) }
+          return (
+            <Fragment key={token}>
+              {index === 1 && (
+                <span aria-hidden="true" className="dm-flow-link">
+                  <IconPlus size={16} />
+                </span>
+              )}
+              <div className="dm-flow-pair-row" data-zap-amount={token}>
+                <AmountField
+                  id={`zap-amount-${token}`}
+                  label={<TokenName token={meta} />}
+                  labelHidden
+                  unit={
+                    <>
+                      <TokenDisc chainId={state.chainId} token={meta} size={20} />
+                      <TokenName token={meta} />
+                    </>
+                  }
+                  inputMode="decimal"
+                  placeholder="0"
+                  value={text}
+                  onChange={(event) => set(token, event.target.value)}
+                  error={problem}
+                  below={decimals === null ? <p className="dm-hint">{`${JOURNEY.amount.rawUnits} of ${labelOf(book, token)}`}</p> : null}
+                />
+              </div>
+            </Fragment>
+          )
+        })}
+      </div>
+      {paysEth && (
+        <p className="dm-flow-position" data-tone="neutral" data-zap-eth-direct="">
+          <span>{JOURNEY.amount.ethDirect}</span>
+        </p>
+      )}
+      <ZapFunds state={state} onAmounts={onAmounts} />
+      <details className="dm-details dm-flow-advanced" data-flow-advanced="" open={opened || undefined}>
+        <summary>
+          <span>{CREATE.amount.advanced}</span>
+          <span className="dm-flow-advanced-value">
+            {CREATE.amount.slippageLabel} {slippageWritten(value)}
+          </span>
+        </summary>
+        <div>
+          <SlippageControl bps={state.slippage} onSlippage={onSlippage} />
+        </div>
+      </details>
+    </div>
+  )
+}

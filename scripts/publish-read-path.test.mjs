@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { featuredPoolsRelease, inspection, publicDataRelease, releaseOptions, sequenceSnapshotRelease, releaseVars } from './publish-read-path.mjs'
+import { featuredPoolsRelease, inspection, publicDataRelease, releaseOptions, sequenceSnapshotRelease, releaseVars, walletReadsRelease } from './publish-read-path.mjs'
 import { READ_TUNNEL_IDS } from './read-tunnel-config.mjs'
 
 const settings = () => ({ bindings: [
@@ -72,16 +72,17 @@ test('only worker-v5 and tunnels-v5 open the featured pools list; no release inp
   }
   const every = { DOMINO_RELEASE_PUBLIC_DATA: 'true', DOMINO_RELEASE_SEQUENCE_SNAPSHOT: 'true' }
   for (const operation of ['worker', 'tunnels', 'worker-v4', 'inspect']) assert.equal(releaseOptions(operation, every).enableV5, false, operation)
+  // Changed on purpose 2026-10-02 (read-v6): every operation now also says whether it opens or closes read-v6.
   assert.deepEqual(releaseOptions('worker-v5', {}),
-    { enableV3: false, enableV4: false, disableV4: false, enableV5: true, disableV5: false })
+    { enableV3: false, enableV4: false, disableV4: false, enableV5: true, disableV5: false, enableV6: false, disableV6: false })
   // A rollback opens nothing, whatever the inputs say.
   for (const operation of ['worker-disable-v5', 'tunnels-disable-v5']) {
     assert.deepEqual(releaseOptions(operation, every),
-      { enableV3: false, enableV4: false, disableV4: false, enableV5: false, disableV5: true }, operation)
+      { enableV3: false, enableV4: false, disableV4: false, enableV5: false, disableV5: true, enableV6: false, disableV6: false }, operation)
   }
   assert.deepEqual(releaseOptions('worker-disable-v4', every),
-    { enableV3: false, enableV4: false, disableV4: true, enableV5: false, disableV5: false })
-  assert.throws(() => releaseOptions('worker-v6', {}), /Unknown/)
+    { enableV3: false, enableV4: false, disableV4: true, enableV5: false, disableV5: false, enableV6: false, disableV6: false })
+  assert.throws(() => releaseOptions('worker-v7', {}), /Unknown/)
   for (const operation of ['worker-v5', 'tunnels-v5', 'worker-disable-v5']) assert.doesNotThrow(() => releaseVars(settings(), releaseOptions(operation, {})))
 })
 
@@ -140,6 +141,92 @@ test('inspection reports the read-v5 flags, and the reviewed Worker config keeps
   const toml = readFileSync(new URL('../bridge/wrangler.read.toml', import.meta.url), 'utf8')
   assert.match(toml, /^READ_V5_BRIDGE_ENABLED = "false"$/m)
   assert.match(toml, /^ENABLED_V5_READS = ""$/m)
+})
+
+// 2026-10-02, spec F7 §6.2: read-v6 (Domino V2's wallet reads) the same way: opened by its own operations only,
+// locked to its two routes, kept by every other release, and its rollback moves nothing but its flag.
+const withV6 = (enabled, reads = 'portfolio,activity') => {
+  const current = settings()
+  current.bindings.push({ type: 'plain_text', name: 'READ_V6_BRIDGE_ENABLED', text: enabled },
+    { type: 'plain_text', name: 'ENABLED_V6_READS', text: reads })
+  return current
+}
+
+test('only worker-v6 and tunnels-v6 open the wallet reads; no release input can', () => {
+  for (const operation of ['worker-v6', 'tunnels-v6']) assert.equal(walletReadsRelease(operation), true, operation)
+  for (const operation of ['inspect', 'worker', 'tunnels', 'worker-v3', 'tunnels-v3', 'worker-v4', 'tunnels-v4', 'worker-v5', 'tunnels-v5',
+    'worker-disable-v4', 'tunnels-disable-v4', 'worker-disable-v5', 'tunnels-disable-v5', 'worker-disable-v6', 'tunnels-disable-v6',
+    'Worker-v6', 'worker-v6 ']) {
+    assert.equal(walletReadsRelease(operation), false, operation)
+  }
+  const every = { DOMINO_RELEASE_PUBLIC_DATA: 'true', DOMINO_RELEASE_SEQUENCE_SNAPSHOT: 'true' }
+  for (const operation of ['worker', 'tunnels', 'worker-v4', 'worker-v5', 'inspect']) assert.equal(releaseOptions(operation, every).enableV6, false, operation)
+  assert.deepEqual(releaseOptions('worker-v6', {}),
+    { enableV3: false, enableV4: false, disableV4: false, enableV5: false, disableV5: false, enableV6: true, disableV6: false })
+  for (const operation of ['worker-disable-v6', 'tunnels-disable-v6']) {
+    assert.deepEqual(releaseOptions(operation, every),
+      { enableV3: false, enableV4: false, disableV4: false, enableV5: false, disableV5: false, enableV6: false, disableV6: true }, operation)
+  }
+  for (const operation of ['worker-v6', 'tunnels-v6', 'worker-disable-v6']) assert.doesNotThrow(() => releaseVars(settings(), releaseOptions(operation, {})))
+})
+
+test('worker-v6 sets exactly READ_V6_BRIDGE_ENABLED=true and ENABLED_V6_READS=portfolio,activity', () => {
+  const current = settings()
+  const ordinary = releaseVars(current)
+  assert.equal(ordinary.READ_V6_BRIDGE_ENABLED, undefined, 'an ordinary release does not switch read-v6 on')
+  assert.equal(ordinary.ENABLED_V6_READS, undefined)
+  const enabled = releaseVars(current, { enableV6: true })
+  assert.equal(enabled.READ_V6_BRIDGE_ENABLED, 'true')
+  assert.equal(enabled.ENABLED_V6_READS, 'portfolio,activity')
+  assert.deepEqual({ ...enabled, READ_V6_BRIDGE_ENABLED: undefined, ENABLED_V6_READS: undefined },
+    { ...ordinary, READ_V6_BRIDGE_ENABLED: undefined, ENABLED_V6_READS: undefined }, 'nothing else moves')
+  assert.equal(releaseVars(withV6('false', ''), { enableV6: true }).ENABLED_V6_READS, 'portfolio,activity')
+})
+
+test('every other release keeps an enabled read-v6, and its rollback moves nothing but its flag', () => {
+  const current = withV6('true')
+  for (const options of [{}, { enableV3: true }, { enableV4: true }, { disableV4: true }, { enableV5: true }, { disableV5: true }, { enableV6: true }]) {
+    const next = releaseVars(current, options)
+    assert.equal(next.READ_V6_BRIDGE_ENABLED, 'true', JSON.stringify(options))
+    assert.equal(next.ENABLED_V6_READS, 'portfolio,activity', JSON.stringify(options))
+  }
+  current.bindings.push({ type: 'plain_text', name: 'READ_V2_BRIDGE_ENABLED', text: 'true' },
+    { type: 'plain_text', name: 'ENABLED_V2_READS', text: 'pool-market' },
+    { type: 'plain_text', name: 'READ_V5_BRIDGE_ENABLED', text: 'true' },
+    { type: 'plain_text', name: 'ENABLED_V5_READS', text: 'featured-pools' })
+  const live = Object.fromEntries(current.bindings.filter(binding => binding.type === 'plain_text' && binding.name !== 'UNRELATED')
+    .map(binding => [binding.name, binding.text]))
+  assert.deepEqual(releaseVars(current, { disableV6: true }), { ...live, READ_V6_BRIDGE_ENABLED: 'false' })
+  // read-v5's rollback keeps read-v6, and read-v6's keeps read-v5.
+  assert.equal(releaseVars(current, { disableV5: true }).READ_V6_BRIDGE_ENABLED, 'true')
+  assert.equal(releaseVars(current, { disableV6: true }).READ_V5_BRIDGE_ENABLED, 'true')
+  const off = withV6('false')
+  assert.equal(releaseVars(off).READ_V6_BRIDGE_ENABLED, 'false')
+  assert.equal(releaseVars(off).ENABLED_V6_READS, 'portfolio,activity')
+})
+
+test('the V6 lock refuses any other route list, live or stored, and any mixed rollback', () => {
+  for (const [enabled, reads] of [['true', ''], ['true', 'portfolio'], ['true', 'activity,portfolio'], ['true', 'portfolio,activity,portfolio'],
+    ['true', 'portfolio, activity'], ['true', 'featured-pools'], ['false', 'portfolio'], ['false', 'portfolio,capabilities'], ['false', '__proto__']]) {
+    assert.throws(() => releaseVars(withV6(enabled, reads)), /Unexpected existing V6/, `${enabled} ${reads}`)
+    assert.throws(() => releaseVars(withV6(enabled, reads), { enableV6: true }), /Unexpected existing V6/, `${enabled} ${reads}`)
+    assert.throws(() => releaseVars(withV6(enabled, reads), { disableV6: true }), /Unexpected existing V6/, `${enabled} ${reads}`)
+  }
+  const current = withV6('true')
+  for (const options of [{ enableV6: true, disableV6: true }, { enableV3: true, disableV6: true }, { enableV4: true, disableV6: true },
+    { enableV5: true, disableV6: true }, { disableV4: true, disableV6: true }, { disableV5: true, disableV6: true },
+    { enableV6: true, disableV4: true }, { enableV6: true, disableV5: true }, { enableV6: 'true' }, { disableV6: 1 }]) {
+    assert.throws(() => releaseVars(current, options), /Invalid V[456]/, JSON.stringify(options))
+  }
+})
+
+test('inspection reports the read-v6 flags, and the reviewed Worker config keeps them off', () => {
+  const { summary } = inspection(['worker'], [{ status: 'fulfilled', value: withV6('false', '') }])
+  assert.equal(summary.worker.vars.READ_V6_BRIDGE_ENABLED, 'false')
+  assert.equal(summary.worker.vars.ENABLED_V6_READS, '')
+  const toml = readFileSync(new URL('../bridge/wrangler.read.toml', import.meta.url), 'utf8')
+  assert.match(toml, /^READ_V6_BRIDGE_ENABLED = "false"$/m)
+  assert.match(toml, /^ENABLED_V6_READS = ""$/m)
 })
 
 test('enables only v2 pool-market and retains the exact existing v1 read list', () => {

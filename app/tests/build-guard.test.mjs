@@ -47,7 +47,8 @@ const MODES = (() => {
     .split('\n')
     .filter((line) => line.trim() !== '')
     .map((line) => {
-      const row = line.match(/^\s+'?([a-z][a-z-]*)'?: \{.*\boutDir: '([^']+)'/);
+      // Changed on purpose 2026-10-02 (Domino V2, spec F7): a mode's name may hold a digit (v2-test).
+      const row = line.match(/^\s+'?([a-z][a-z0-9-]*)'?: \{.*\boutDir: '([^']+)'/);
       assert.ok(row, `a MODES row this test cannot read: ${line.trim()}`);
       return { mode: row[1], outDir: row[2] };
     });
@@ -391,17 +392,24 @@ test('src carries no compiled JavaScript beside its TypeScript', () => {
 // mode writes the define, so a dist always carries a literal and never falls
 // through to "absent". Four harnesses compile those SDKs outside Vite and
 // would otherwise be refused a contract they deployed themselves.
+// Changed on purpose (data) 2026-10-02 (Domino V2 integration, the preview-v2 build): the define is true where the page
+// is the real site for V1, the deployable rows and a row that says `site: true` (preview-v2, never deployable), and is
+// still written from the row for every mode. tests/v2/preview-v2-build.test.mjs resolves it for each mode.
 test('every build writes the deployable define, so no dist can be missing it', () => {
   const config = readFileSync(resolve(here, 'vite.config.ts'), 'utf8');
-  assert.match(config, /__DOMINO_DEPLOYABLE__:\s*JSON\.stringify\(settings\.deployable\)/,
+  assert.match(config, /__DOMINO_DEPLOYABLE__:\s*JSON\.stringify\(settings\.deployable \|\| settings\.site\)/,
     'the define must be written from the mode row, unconditionally');
   const defines = [...config.matchAll(/__DOMINO_DEPLOYABLE__:/g)];
   assert.equal(defines.length, 1, 'one define, so no mode can take a different path to it');
   const modes = config.slice(config.indexOf('const MODES'), config.indexOf('} as const'));
-  const rows = [...modes.matchAll(/^\s+'?([a-z-]+)'?:\s*\{(.+)$/gm)];
+  const rows = [...modes.matchAll(/^\s+'?([a-z][a-z0-9-]*)'?:\s*\{(.+)$/gm)];
   assert.ok(rows.length >= 6, `expected the MODES rows to still be one per line: found ${rows.length}`);
   for (const [, name, row] of rows) assert.match(row, /deployable: (true|false)/, `${name} says nothing about being deployable`);
+  for (const [, name, row] of rows) assert.match(row, /site: (true|false)/, `${name} says nothing about being the site`);
   assert.deepEqual(rows.filter(([, , row]) => /deployable: true/.test(row)).map(([, name]) => name), ['production', 'development']);
+  // The site and not deployable: only preview-v2, which carries V2 and so can never be written to dist or released.
+  assert.deepEqual(rows.filter(([, , row]) => /deployable: false/.test(row) && /site: true/.test(row)).map(([, name]) => name), ['preview-v2']);
+  assert.match(rows.find(([, name]) => name === 'preview-v2')[2], /\bv2: true\b/);
 });
 
 test('the wallet SDKs compile alone, and the emitted modules load, the way the backend suite does it', async () => {

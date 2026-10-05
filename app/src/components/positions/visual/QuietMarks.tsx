@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import { TokenIcon } from '../../TokenIcon'
 import { tokenHue } from '../../../lib/format/tokenHue'
 import { unreadToken } from '../../../lib/read/project'
+import { rem } from '../../../lib/rootScale'
 
 /**
  * A token's mark from its address alone, with no request: the bundled
@@ -12,7 +13,7 @@ import { unreadToken } from '../../../lib/read/project'
 export function QuietMark({ address, size = 24, ring, style }: { address: string; size?: number; ring?: string; style?: CSSProperties }) {
   const token = unreadToken(address)
   if (token.artwork) return <TokenIcon symbol={token.artwork} size={size} ring={ring} style={style} />
-  const disc = { width: size, height: size, borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined, display: 'inline-block', flexShrink: 0, '--mark-h': tokenHue(address), ...style } as CSSProperties
+  const disc = { width: rem(size), height: rem(size), borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined, display: 'inline-block', flexShrink: 0, '--mark-h': tokenHue(address), ...style } as CSSProperties
   return <span aria-hidden="true" data-token-mark="unknown" className="dm-token-disc" style={disc} />
 }
 
@@ -21,7 +22,7 @@ export function QuietMarkPair({ addresses, size = 28, ring = 'var(--card)' }: { 
   return (
     <span className="inline-flex shrink-0 items-center" aria-hidden="true">
       <QuietMark address={addresses[0]} size={size} ring={ring} />
-      <QuietMark address={addresses[1]} size={size} ring={ring} style={{ marginLeft: -size * 0.3 }} />
+      <QuietMark address={addresses[1]} size={size} ring={ring} style={{ marginLeft: rem(-size * 0.3) }} />
     </span>
   )
 }

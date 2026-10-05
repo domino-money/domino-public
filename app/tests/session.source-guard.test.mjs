@@ -29,6 +29,10 @@ function sources(dir = SRC) {
   return files;
 }
 const ALL = sources();
+// Changed on purpose (data) 2026-10-02 (Domino V2, spec F7 §1.8 and D15): the V2 modules (src/v2, src/finance/v2) are
+// held to their own, narrower lists in the V2 test at the end of this file; the V1 lists below are about V1's files.
+const V2_PATH = /^(v2|finance\/v2)\//;
+const V1 = ALL.filter(({ path }) => !V2_PATH.test(path));
 const inside = (...dirs) => ALL.filter(({ path }) => dirs.some((dir) => path.startsWith(dir)));
 const hits = (files, pattern) => files.flatMap(({ path, code }) => (pattern.test(code) ? [path] : []));
 const specifiers = (code) => [...code.matchAll(/(?:from|import)\s*\(?\s*'([^']+)'/g)].map((match) => match[1]);
@@ -55,7 +59,7 @@ test('only closed financial adapters offer wallet transactions; login cannot spe
   // Changed on purpose (2026-10-01, fix round 3): finance/routedReplacement.ts reads Permit2's allowance for a replaced
   // routed swap's input (eth_call through the wallet's own provider, never the site's): a read, and the only one of these
   // methods it names. Merged 2026-10-02 with the RPC switch, which took lib/chain/browser.ts out of this list.
-  assert.deepEqual(hits(ALL, methods), ['chains/elysium/signer.ts', 'finance/batch.ts', 'finance/position.ts', 'finance/routedReplacement.ts', 'finance/sequence.ts', 'finance/setup.ts', 'finance/wallet.ts', 'wallet/port.ts', 'wallet/walletConnectMethods.ts']);
+  assert.deepEqual(hits(V1, methods), ['chains/elysium/signer.ts', 'finance/batch.ts', 'finance/position.ts', 'finance/routedReplacement.ts', 'finance/sequence.ts', 'finance/setup.ts', 'finance/wallet.ts', 'wallet/port.ts', 'wallet/walletConnectMethods.ts']);
   const named = (path) => [...new Set([...ALL.find((f) => f.path === path).code.matchAll(new RegExp(methods.source, 'g'))].map((m) => m[1]))].sort();
   assert.deepEqual(named('chains/elysium/signer.ts'), ['eth_sendTransaction', 'wallet_addEthereumChain'], 'the draft\'s one transaction, and the chain\'s details');
   const signer = ALL.find((f) => f.path === 'chains/elysium/signer.ts').code;
@@ -66,7 +70,8 @@ test('only closed financial adapters offer wallet transactions; login cannot spe
   assert.deepEqual(named('wallet/port.ts'), ['wallet_addEthereumChain'], 'the switch adds the network, and nothing else');
   assert.deepEqual(hits(inside('lib/'), methods), [], 'the page’s own modules name none: the site serves the wallet no read (RPC-SPEC D6)');
   assert.deepEqual(named('finance/routedReplacement.ts'), ['eth_call'], 'a read only: the allowance a replaced swap would spend');
-  assert.deepEqual(named('wallet/walletConnectMethods.ts'), ['eth_sendTransaction', 'wallet_addEthereumChain', 'wallet_sendCalls']);
+  // Changed on purpose 2026-10-04 (rugged97's delta of 4 Oct §5, D15): the list forwards V2's EIP-712 signature too.
+  assert.deepEqual(named('wallet/walletConnectMethods.ts'), ['eth_sendTransaction', 'eth_signTypedData_v4', 'wallet_addEthereumChain', 'wallet_sendCalls']);
   assert.deepEqual(hits(inside('session/', 'components/wallet/'), methods), [], 'login still cannot spend');
   assert.deepEqual(hits(inside('wallet/'), methods), ['wallet/port.ts', 'wallet/walletConnectMethods.ts'], 'the wallet layer adds the network and forwards; it composes nothing');
   assert.match(ALL.find((f) => f.path === 'wallet/port.ts').code, /method: 'wallet_addEthereumChain', params: \[ADD_ROBINHOOD_CHAIN\]/, 'the fixed network details only');
@@ -76,8 +81,10 @@ test('only closed financial adapters offer wallet transactions; login cannot spe
 // 2026-10-01 (audit C3): what WalletConnect forwards to a phone's wallet is this list, and only its transport uses it.
 test('WalletConnect forwards exactly the wallet requests the app already makes, and reads go to the page', () => {
   const list = ALL.find((f) => f.path === 'wallet/walletConnectMethods.ts').code;
-  assert.deepEqual([...list.matchAll(/'([a-z]+_[A-Za-z]+)'/g)].map((m) => m[1]),
-    ['personal_sign', 'eth_sendTransaction', 'wallet_switchEthereumChain', 'wallet_addEthereumChain', 'wallet_getCapabilities', 'wallet_sendCalls', 'wallet_getCallsStatus']);
+  // Changed on purpose 2026-10-04 (rugged97's delta of 4 Oct §5, D15): eth_signTypedData_v4 joins, forwarded only (its
+  // one asker is finance/v2/typedData.ts, below); the pattern reads a method's digits and underscores too.
+  assert.deepEqual([...list.matchAll(/'([a-z]+_[A-Za-z0-9_]+)'/g)].map((m) => m[1]),
+    ['personal_sign', 'eth_sendTransaction', 'wallet_switchEthereumChain', 'wallet_addEthereumChain', 'wallet_getCapabilities', 'wallet_sendCalls', 'wallet_getCallsStatus', 'eth_signTypedData_v4']);
   const users = ALL.filter(({ code }) => /walletConnectMethods/.test(code)).map(({ path }) => path);
   assert.deepEqual(users, ['wallet/walletConnectFake.ts', 'wallet/walletConnectProvider.ts']);
   for (const path of users) {
@@ -105,7 +112,7 @@ test('exact approvals are confined to the closed setup, Permit2 and sequence ABI
   // The closed ABIs are JSON (so the page ships no ABI parser): an approval is declared as an item named approve.
   const apis =
     /\b(sendTransaction|writeContract|sendCalls|signTypedData|simulateContract|useSendTransaction|useWriteContract|useSignTypedData|approve\s*\()|\bname:\s*['"`]approve['"`]/;
-  assert.deepEqual(hits(ALL, apis), ['finance/routedSwap.ts', 'finance/sequence.ts', 'finance/setup.ts'], 'only the closed owner ABIs and exact-amount Permit2 adapter declare approvals');
+  assert.deepEqual(hits(V1, apis), ['finance/routedSwap.ts', 'finance/sequence.ts', 'finance/setup.ts'], 'only the closed owner ABIs and exact-amount Permit2 adapter declare approvals');
   const route = ALL.find(file => file.path === 'finance/routedSwap.ts').code;
   assert.match(route, /approval\.spender !== ROUTE_PERMIT2/);
   assert.match(route, /BigInt\(approval\.amountRaw\) !== gross/);
@@ -156,6 +163,10 @@ test('only session/contract.ts imports the session package at runtime; everythin
 });
 
 test('the wallet feature is reached only through the build flag', () => {
+  // Changed on purpose (data) 2026-10-02 (Domino V2 integration, item 6): the old #/v2 screens (v2ui, App.tsx's one
+  // importer) are gone; the integrated V2 modules are held by the V2 integration tests at the end of this file.
+  assert.equal(ALL.some(({ path }) => path.startsWith('v2ui/')), false, 'the old #/v2 screens are gone');
+  assert.equal(ALL.some(({ code }) => /['"`][./]*v2ui\//.test(code)), false, 'and nothing names them');
   const importers = ALL.filter(({ code }) => /import\(\s*'\.\/wallet\/WalletSessionIsland'\s*\)/.test(code));
   assert.deepEqual(importers.map(({ path }) => path), ['components/Header.tsx']);
   // Changed on purpose 2026-09-28 (speed wave B, item 24): opened by components/Deferred.tsx's loader, which draws it as
@@ -184,9 +195,13 @@ test('the wallet feature is reached only through the build flag', () => {
   // Changed on purpose (owner, 2026-09-25): a sequence's Turn on and Pause (components/positions/SequenceSwitch.tsx) sign
   // through the wallet and ask the automation service through the session; only the owner's actions and the automation
   // page's success, both wallet feature code already, show it.
+  // Changed on purpose (data) 2026-10-02 (Domino V2 integration): v2in/ is the integrated V2 modules, mounted in the existing
+  // screens; wallet feature code (they drive finance/v2's clients). A V1 file opens one only lazily, behind the bare
+  // __DOMINO_V2__ define, on the same line (v2InOpens, held by the V2 integration test below), so every deployable build
+  // carries none of them. (The old #/v2 screens, v2ui/, were admitted the same way until item 6 removed them.)
   // Changed on purpose (2026-10-02, rugged97's spec rev3 §2.13): the fees waiting in a vault and their withdrawal
   // (components/positions/FeeReserves.tsx) sign through the wallet too; Positions and a position's page open it lazily.
-  const feature = /^(session|wallet|finance|components\/wallet)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate|PositionLab)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$|^components\/positions\/(PositionActions|HeldDeposits|SequenceSwitch|FeeReserves)(\.tsx)?$/;
+  const feature = /^(session|wallet|finance|components\/wallet|v2in)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate|PositionLab)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$|^components\/positions\/(PositionActions|HeldDeposits|SequenceSwitch|FeeReserves)(\.tsx)?$/;
   // The onboarding previews and the deposit consumer (#38, #40/#44) read the
   // session through session/port.ts, and the preview screen also through
   // session/livePort.ts. Their lab screens live in chunks of the consumer-test
@@ -209,6 +224,7 @@ test('the wallet feature is reached only through the build flag', () => {
   // cards' keep, readKept and drop (finance/privateCards.ts), a module that names no wallet code (asserted here).
   // Changed on purpose 2026-10-01 (fees item A15): a position's page reads that same copy (readKept only) to draw its
   // header, dated and with no action, until its own chain read answers.
+  const v2InOpens = (path, target) => target.startsWith('v2in/');
   const listKeeps = (path, spec) => (path === 'components/positions/OwnedPositions.tsx' && spec === '../../finance/privateCards') || (path === 'screens/PositionDetail.tsx' && spec === '../finance/privateCards');
   const keeper = ALL.find(({ path }) => path === 'finance/privateCards.ts');
   assert.deepEqual(specifiers(keeper.code), ['react', '../lib/walletIdentity'], 'the copies’ module imports React and the wallet’s address, nothing of the wallet feature');
@@ -218,12 +234,22 @@ test('the wallet feature is reached only through the build flag', () => {
       if (/^(wagmi|viem|@tanstack\/)/.test(spec)) offenders.push(`${path}: ${spec}`);
       if (!spec.startsWith('.')) continue;
       const target = posix.normalize(posix.join(posix.dirname(path), spec));
-      if (feature.test(target) && target !== 'components/wallet/WalletBoundary' && spec !== './wallet/WalletSessionIsland' && spec !== './wallet/LocalWalletIsland' && !consumerMayUse(path, target) && !reviewOpens(path, spec) && !positionsOpens(path, spec) && !listKeeps(path, spec)) {
+      if (feature.test(target) && target !== 'components/wallet/WalletBoundary' && spec !== './wallet/WalletSessionIsland' && spec !== './wallet/LocalWalletIsland' && !consumerMayUse(path, target) && !reviewOpens(path, spec) && !positionsOpens(path, spec) && !listKeeps(path, spec) && !v2InOpens(path, target)) {
         offenders.push(`${path}: ${spec}`);
       }
     }
   }
   assert.deepEqual(offenders, []);
+  // Changed on purpose (data) 2026-10-02 (Domino V2 integration): a V1 file names a v2in module only inside
+  // `__DOMINO_V2__ ? lazy(() => import('…/v2in/…'))` (recovering() allowed), never a static import, types included.
+  // Changed on purpose (data) 2026-10-02 (the lists): `deferred(...)` (components/Deferred.tsx, the same lazy opening without a
+  // Suspense boundary) counts as lazy too; OwnedPositions.tsx and Positions.tsx open the lists' rows that way.
+  for (const { path, code } of ALL.filter(({ path }) => !feature.test(path) || /^screens\/(Sequence|SequenceCreate)\.tsx$/.test(path))) {
+    const mentions = [...code.matchAll(/['"`]((?:\.\.?\/)+v2in\/[^'"`]+)['"`]/g)].length;
+    if (mentions === 0) continue;
+    const lazy = [...code.matchAll(/__DOMINO_V2__\s*\?\s*(?:lazy|deferred)(?:<[^\n]*?>)?\((?:recovering\()?\(\)\s*=>\s*import\('(?:\.\.?\/)+v2in\/[^']+'\)/g)].length;
+    assert.equal(mentions, lazy, `${path} names src/v2in only in lazy imports behind __DOMINO_V2__`);
+  }
   assert.equal(ALL.some(({ path }) => path === 'components/create/StageBalance.tsx'), false, 'the deposit amounts section is gone');
   for (const path of ['components/create/StageReview.tsx']) {
     const { code } = ALL.find((file) => file.path === path);
@@ -288,4 +314,133 @@ test('each wallet logo is a local, inert SVG named in the provenance notes', () 
     assert.doesNotMatch(svg, /<script|\son[a-z]+=|href=|<image|<foreignObject/i, name);
     assert.ok(provenance.includes(name), `${name} has its source in PROVENANCE.md`);
   }
+});
+
+// Changed on purpose (data) 2026-10-02 (Domino V2, spec F7 §1.8, D15): V2 needs EIP-712 signatures in three places (the
+// Permit2 batch witness, RelayedPositionAction and ExitMandate). One closed module, finance/v2/typedData.ts, is the only
+// file in the app that names eth_signTypedData_v4; the V2 money clients (finance/v2/zap.ts, vault.ts, autoExit.ts) join
+// the transaction methods' list as the V1 clients did; the pure V2 modules (src/v2) name no wallet method at all. No V2
+// file offers a batch itself: batches stay finance/batch.ts's (generalized per chain in PHASE B).
+test('V2: one closed module signs typed data, the closed V2 clients alone name transaction methods, and src/v2 names none', () => {
+  const methods =
+    /['"`](eth_sendTransaction|eth_signTransaction|eth_sendRawTransaction|eth_sign|eth_signTypedData(_v\d)?|wallet_sendCalls|wallet_addEthereumChain|wallet_watchAsset|eth_call|eth_estimateGas)['"`]/;
+  // finance/v2/transact.ts is the three clients' one shared sender (simulate, estimate, the nonce, the chain read last,
+  // one eth_sendTransaction), so the discipline lives in one place; it is held to exactly the methods it names (below).
+  // Changed on purpose (data) 2026-10-02 (Domino V2 PHASE B, B5 S2, spec F7 §3.6): finance/v2/crosschain.ts, the closed
+  // sender of a deposit's two transactions on its ORIGIN chain (any EVM chain the origins listing names), joins; it is
+  // held to exactly the methods it names (below).
+  // Changed on purpose (data) 2026-10-02 (Domino V2 S1, B2.4): finance/v2/direct.ts joins, the owner's direct exit to both
+  // tokens and collect at Uniswap's own position manager (spec F7 §2.6.4), sent through the same shared sender.
+  // Changed on purpose (data) 2026-10-02 (S2 holdings): finance/v2/holdings.ts joins as a read only, like V1's
+  // finance/routedReplacement.ts: what the wallet holds on another network (ETH, WETH, USDC), read through the wallet's
+  // own provider after the wallet switched there (the owner's decision #9; the site reads no public RPC), eth_call for
+  // balanceOf the only one of these methods it names; it switches nothing (wallet/port's switch is handed in) and sends
+  // nothing (asserted below).
+  const V2_CLOSED = ['finance/v2/autoExit.ts', 'finance/v2/crosschain.ts', 'finance/v2/direct.ts', 'finance/v2/holdings.ts', 'finance/v2/transact.ts', 'finance/v2/typedData.ts', 'finance/v2/vault.ts', 'finance/v2/zap.ts'];
+  const v2 = ALL.filter(({ path }) => V2_PATH.test(path));
+  assert.ok(v2.some(({ path }) => path === 'finance/v2/typedData.ts'));
+  const offering = hits(v2, methods);
+  assert.deepEqual(offering.filter((path) => !V2_CLOSED.includes(path)), [], 'only the closed V2 clients name transaction methods');
+  // Changed on purpose 2026-10-04 (rugged97's delta of 4 Oct §5, D15): WalletConnect's list names the method to forward
+  // it to a phone's wallet; it composes and asks nothing (the WalletConnect test above). One module still signs.
+  assert.deepEqual(hits(ALL, /['"`]eth_signTypedData(_v\d)?['"`]/), ['finance/v2/typedData.ts', 'wallet/walletConnectMethods.ts'], 'one module signs typed data; WalletConnect only forwards it');
+  assert.deepEqual(hits(ALL, /request\(\s*['"`]eth_signTypedData(_v\d)?['"`]/), ['finance/v2/typedData.ts'], 'and only that module asks it');
+  assert.deepEqual(hits(ALL, /['"`]eth_sign['"`]|personal_sign['"`]/).filter((path) => V2_PATH.test(path)), [], 'V2 signs no message');
+  const typedData = ALL.find(({ path }) => path === 'finance/v2/typedData.ts').code;
+  assert.deepEqual([...typedData.matchAll(/request\('([^']+)'/g)].map((m) => m[1]), ['eth_accounts', 'eth_chainId', 'eth_signTypedData_v4'], 'the signer reads the account and the chain, then asks once');
+  const transact = ALL.find(({ path }) => path === 'finance/v2/transact.ts').code;
+  assert.deepEqual([...new Set([...transact.matchAll(new RegExp(methods.source, 'g'))].map((m) => m[1]))].sort(), ['eth_call', 'eth_estimateGas', 'eth_sendTransaction'], 'the shared sender simulates, estimates and sends, nothing else of these');
+  assert.equal([...transact.matchAll(/'eth_sendTransaction'/g)].length, 1, 'one send');
+  // Changed on purpose (data) 2026-10-02 (Domino V2 PHASE B, B5 S2): the origin sender reads (the account, the chain, the
+  // allowance, balances and decimals, the nonce, the fee, the estimate, receipts) and sends once; it adds no network.
+  const crosschain = ALL.find(({ path }) => path === 'finance/v2/crosschain.ts').code;
+  assert.deepEqual([...new Set([...crosschain.matchAll(new RegExp(methods.source, 'g'))].map((m) => m[1]))].sort(), ['eth_call', 'eth_estimateGas', 'eth_sendTransaction'], 'the origin sender reads, estimates and sends, nothing else of these');
+  assert.equal([...crosschain.matchAll(/'eth_sendTransaction'/g)].length, 1, 'one send');
+  const ORIGIN_METHODS = ['eth_accounts', 'eth_call', 'eth_chainId', 'eth_estimateGas', 'eth_gasPrice', 'eth_getBalance', 'eth_getBlockByNumber', 'eth_getTransactionByHash', 'eth_getTransactionCount', 'eth_getTransactionReceipt', 'eth_maxPriorityFeePerGas', 'eth_sendTransaction'];
+  assert.deepEqual([...new Set([...crosschain.matchAll(/rpc\('([a-zA-Z_]+)'/g)].map((m) => m[1]))].sort(), ORIGIN_METHODS, 'every wallet request the origin sender makes');
+  assert.deepEqual([...crosschain.matchAll(/['"`]((?:eth|personal|net|web3)_[A-Za-z0-9_]+|wallet_[a-z]+[A-Z][A-Za-z0-9]*)['"`]/g)].map((m) => m[1]).filter((m) => !ORIGIN_METHODS.includes(m)), [], 'and it names no other method (its own stop codes, wallet_refused and the like, are not methods)');
+  // Changed on purpose (data) 2026-10-02 (S2 holdings): the reader of other networks reads the chain, the native balance
+  // and balanceOf, nothing else, through the injected wallet handle; no switch, no send, no network added.
+  const holdings = ALL.find(({ path }) => path === 'finance/v2/holdings.ts').code;
+  assert.deepEqual([...new Set([...holdings.matchAll(new RegExp(methods.source, 'g'))].map((m) => m[1]))], ['eth_call'], 'a read only: the balances on another network');
+  assert.deepEqual([...holdings.matchAll(/request\('([a-zA-Z_]+)'/g)].map((m) => m[1]), ['eth_chainId', 'eth_getBalance', 'eth_call'], 'the chain confirmed first, then the balances');
+  assert.deepEqual([...holdings.matchAll(/['"`]((?:eth|personal|net|web3)_[A-Za-z0-9_]+|wallet_[a-z]+[A-Z][A-Za-z0-9]*)['"`]/g)].map((m) => m[1]).filter((m) => !['eth_chainId', 'eth_getBalance', 'eth_call'].includes(m)), [], 'and it names no other method');
+  assert.doesNotMatch(holdings, /\b(switchTo(Origin|Chain|Robinhood)|getProvider|wagmi|viem)\b/, 'the switch is handed in, and it reaches no provider of its own');
+  // Changed on purpose (data) 2026-10-02 (Domino V2, post-B4 review): the four clients send only through the shared
+  // sender (transact.ts) and sign only through typedData.ts: none names a send, a signature or a batch itself.
+  for (const path of ['finance/v2/autoExit.ts', 'finance/v2/direct.ts', 'finance/v2/vault.ts', 'finance/v2/zap.ts']) {
+    const code = ALL.find((file) => file.path === path).code;
+    const named = [...new Set([...code.matchAll(new RegExp(methods.source, 'g'))].map((m) => m[1]))];
+    assert.deepEqual(named.filter((m) => m !== 'eth_call' && m !== 'eth_estimateGas'), [], `${path} sends and signs only through the shared modules`);
+  }
+  // No V2 module outside the test screens imports a fixture transport (the read API's, the plan API's, S2's).
+  assert.deepEqual(hits(ALL.filter(({ path }) => V2_PATH.test(path)), /from\s+['"][^'"]*fixtureTransport['"]/), [], 'fixture transports are imported only by the v2-test screens and the tests');
+  // Changed on purpose (data) 2026-10-02 (Domino V2 integration): the integrated V2 modules (v2in/, V2 builds only) may, as
+  // the v2-test screens could: the gate's `preview` reads the package fixtures through them.
+  assert.deepEqual(hits(ALL.filter(({ path }) => !V2_PATH.test(path) && !path.startsWith('v2in/')), /from\s+['"][^'"]*v2\/[^'"]*fixtureTransport['"]/), [], 'and by no V1 module');
+  assert.deepEqual(hits(inside('v2/'), methods), [], 'the pure V2 modules name no wallet method');
+  assert.deepEqual(hits(v2, /['"`](wallet_sendCalls|wallet_getCallsStatus|wallet_getCapabilities|wallet_showCallsStatus|wallet_addEthereumChain)['"`]/), [], 'no V2 file offers a batch or adds a network');
+  assert.deepEqual(hits(inside('v2/'), /\b(localStorage|sessionStorage|indexedDB|document\.cookie)\b/), [], 'the pure V2 modules keep nothing in the browser');
+  // Every V2 approval is declared in a closed V2 client, never in a screen or a pure module.
+  const apis = /\b(sendTransaction|writeContract|sendCalls|signTypedData|simulateContract|useSendTransaction|useWriteContract|useSignTypedData|approve\s*\()|\bname:\s*['"`]approve['"`]/;
+  assert.deepEqual(hits(v2, apis).filter((path) => !V2_CLOSED.includes(path) && path !== 'finance/v2/abi.ts'), [], 'V2 approvals are declared only by the closed V2 ABIs and clients');
+});
+
+// Changed on purpose (data) 2026-10-02 (Domino V2 integration, the base agent's items 4 and 6): V2 is an integration into
+// the existing screens. The production and development builds carry none of it, byte for byte, so a V1 file (anything
+// outside src/v2, src/finance/v2 and src/v2in) never imports a V2 module statically: it opens an integrated V2 module
+// (src/v2in) only through import(), on a line that is behind the bare define:
+// `const X = __DOMINO_V2__ ? lazy(() => import('../../v2in/area/Thing')) : null`. A type-only import is erased and opens
+// nothing. The integrated modules are screens: they name no wallet method, ask no provider, and reach the wallet layer
+// only through the closed finance/v2 clients and wallet/port's chain switch. Item 6 took away the two allowances this
+// had while the old #/v2 screens (src/v2ui, App.tsx's route) and the old preview build's lock (wallet/port.ts's static
+// import of finance/v2/previewLock.ts) existed: neither does any more.
+const V2_DIRS = /^(v2|finance\/v2|v2in)\//;
+
+test('V2 integration: no V1 file imports a V2 module statically; it opens src/v2in only by import(), behind the bare __DOMINO_V2__ define', () => {
+  const statics = [];
+  const opens = [];
+  for (const { path, code } of ALL.filter(({ path }) => !V2_DIRS.test(path))) {
+    // Type-only imports are erased at compile time: they open nothing.
+    const values = code.replace(/^import\s+type\s[^;]*?from\s*'[^']+';?$/gm, '');
+    const resolveSpec = (spec) => posix.normalize(posix.join(posix.dirname(path), spec)).replace(/\.tsx?$/, '');
+    for (const match of values.matchAll(/(?:\bfrom\s*|^\s*import\s+)'([^']+)'/gm)) {
+      const spec = match[1];
+      if (!spec.startsWith('.')) continue;
+      if (V2_DIRS.test(resolveSpec(spec))) statics.push(`${path}: ${spec}`);
+    }
+    for (const line of values.split('\n')) {
+      for (const match of line.matchAll(/\bimport\(\s*'([^']+)'\s*\)/g)) {
+        const spec = match[1];
+        if (!spec.startsWith('.')) continue;
+        const target = resolveSpec(spec);
+        if (!V2_DIRS.test(target)) continue;
+        opens.push(path);
+        const before = line.slice(0, match.index);
+        assert.match(before, /__DOMINO_V2__\s*(\?|&&)/, `${path} opens ${spec} only behind the bare __DOMINO_V2__ define, on the same line`);
+        assert.ok(target.startsWith('v2in/'), `${path} opens ${spec}: a V1 file opens the integrated modules (src/v2in) only, never src/v2 or src/finance/v2 directly`);
+      }
+    }
+  }
+  assert.deepEqual(statics, [], 'no V1 file imports a V2 module statically');
+  assert.ok(opens.length >= 1, 'the guard sees the V1 files that open the integrated modules (it would be blind otherwise)');
+  assert.ok(opens.includes('components/create/StageAmount.tsx'), 'New position\'s amount step opens its inline offer lazily');
+  assert.equal(ALL.some(({ path }) => path === 'finance/v2/previewLock.ts'), false, 'the old preview build\'s lock is gone');
+  assert.doesNotMatch(ALL.find(({ path }) => path === 'wallet/port.ts').code, /from '\.\.\/(?:finance\/v2|v2|v2in)\//, 'the wallet port imports nothing of V2');
+});
+
+test('V2 integration: the integrated modules (src/v2in) name no wallet method and ask no provider; their wallet layer is wallet/port\'s chain switch', () => {
+  const v2in = inside('v2in/');
+  assert.ok(v2in.length >= 1, 'src/v2in exists');
+  const methods = /['"`](eth_sendTransaction|eth_signTransaction|eth_sendRawTransaction|eth_sign|eth_signTypedData(_v\d)?|personal_sign|wallet_sendCalls|wallet_getCallsStatus|wallet_getCapabilities|wallet_showCallsStatus|wallet_switchEthereumChain|wallet_addEthereumChain|wallet_watchAsset|eth_call|eth_estimateGas|eth_accounts|eth_requestAccounts|eth_chainId)['"`]/;
+  assert.deepEqual(hits(v2in, methods), [], 'no wallet RPC method');
+  assert.deepEqual(hits(v2in, /\.request\(|getProvider\(|from 'wagmi|from '@wagmi|from 'viem\/actions'|window\.ethereum/), [], 'no provider, no wagmi, no viem action');
+  const apis = /\b(sendTransaction|writeContract|sendCalls|signTypedData|simulateContract|useSendTransaction|useWriteContract|useSignTypedData)\b/;
+  assert.deepEqual(hits(v2in, apis), [], 'no send or signature API of their own: only the closed finance/v2 clients send and sign');
+  const fromPort = new Set();
+  for (const { path, code } of v2in) {
+    for (const [, names] of code.matchAll(/import \{([^}]+)\} from '(?:\.\.\/)+wallet\/port'/g)) for (const name of names.split(',')) fromPort.add(name.trim().replace(/^type\s+/, ''));
+    for (const [, target] of code.matchAll(/from '((?:\.\.\/)+(?:wallet|session)\/[^']+)'/g)) assert.match(target, /\/wallet\/port$/, `${path} imports ${target}: of the wallet and the session, only the port's chain switch`);
+  }
+  for (const name of fromPort) assert.ok(['ChainSwitchOutcome', 'switchToChain', 'switchToOrigin', 'v2SwitchNotice'].includes(name), `wallet/port.ts ${name}`);
 });

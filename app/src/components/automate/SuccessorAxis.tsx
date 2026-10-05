@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { ArtTile } from '../home/Vignettes'
 import { cx } from '../ui'
 import { CREATE } from '../../lib/create/copy'
+import { rem } from '../../lib/rootScale'
 import type { SequenceForm } from '../../lib/create/sequenceDefaults'
 import { signedPercent, successorPlan, type SuccessorPlan } from '../../lib/automate/successor'
 import type { AxisRoot } from './types'
@@ -23,7 +24,10 @@ import type { AxisRoot } from './types'
  * an unexplained negative percentage beside the choices.
  */
 
-/** The plot's height and its axis line; each successor stands RISE higher than the one before. */
+/**
+ * The plot's height and its axis line; each successor stands RISE higher than the one before. Design px, written in rem
+ * (changed on purpose 2026-10-03, lib/rootScale.ts); the 1px inset of a band's fill stays a hairline.
+ */
 const H = 160
 const BASE = 132
 const BAND = 28
@@ -32,7 +36,7 @@ const PAD = 5
 
 /** One band as two clipped layers (its line, then its fill inset by 1 px), so corners and hatching never stretch. */
 function Band({ kind, from, to, top, index, children }: { kind: 'root' | 'next' | 'zone'; from: number; to: number; top: number; index: number; children?: ReactNode }) {
-  const clip = (inset: number) => ({ clipPath: `inset(${top + inset}px calc(${100 - to}% + ${inset}px) ${H - top - BAND + inset}px calc(${from}% + ${inset}px) round ${6 - inset}px)` })
+  const clip = (inset: number) => ({ clipPath: `inset(calc(${rem(top)} + ${inset}px) calc(${100 - to}% + ${inset}px) calc(${rem(H - top - BAND)} + ${inset}px) calc(${from}% + ${inset}px) round calc(${rem(6)} - ${inset}px))` })
   return (
     <div className="dm-axis-band" data-kind={kind} style={{ '--i': index } as CSSProperties}>
       {kind !== 'zone' && <div className="dm-axis-line" style={clip(0)} />}
@@ -46,7 +50,7 @@ function Band({ kind, from, to, top, index, children }: { kind: 'root' | 'next' 
 /** A full-width layer moved by translate: whatever it holds stands at `at`% of the axis. */
 function At({ at, top, index, className, children }: { at: number; top: number; index: number; className?: string; children: ReactNode }) {
   return (
-    <div className={cx('dm-axis-at', className)} style={{ top, translate: `${at}% 0`, '--i': index } as CSSProperties}>
+    <div className={cx('dm-axis-at', className)} style={{ top: rem(top), translate: `${at}% 0`, '--i': index } as CSSProperties}>
       {children}
     </div>
   )
@@ -54,7 +58,7 @@ function At({ at, top, index, className, children }: { at: number; top: number; 
 
 function Tile({ solid, layout }: { solid: boolean; layout: readonly [number, number] }) {
   return (
-    <svg className={cx('dm-axis-tile', solid && 'tile-solid')} width={14} height={24.5} viewBox="0 0 14 24.5" focusable="false">
+    <svg className={cx('dm-axis-tile', solid && 'tile-solid')} width="0.875rem" height="1.53125rem" viewBox="0 0 14 24.5" focusable="false">
       <ArtTile w={14} layout={layout} parts={solid ? 'solid' : 'outline'} />
     </svg>
   )
@@ -93,10 +97,11 @@ export function SuccessorAxis({ root, inverse, form }: { root: AxisRoot; inverse
   }
   return (
     <div className="dm-seq-axis">
+      <div className="dm-auto-chart-heading"><h3>How the next ranges line up</h3><span>Illustration of your settings</span></div>
       <div className="dm-axis-plot" aria-hidden="true">
-        <div className="dm-axis-base" style={{ top: BASE }} />
+        <div className="dm-axis-base" style={{ top: rem(BASE) }} />
         <Band kind="root" from={x(Math.max(plan.floor, lo))} to={x(0)} top={BASE - BAND} index={0}>
-          <span className={cx('dm-axis-nft', cut && 'is-cut')} style={{ left: `calc(${x(Math.max(plan.floor, lo))}% + 10px)`, top: BASE - BAND + 7 }}>
+          <span className={cx('dm-axis-nft', cut && 'is-cut')} style={{ left: `calc(${x(Math.max(plan.floor, lo))}% + ${rem(10)})`, top: rem(BASE - BAND + 7) }}>
             #{root.tokenId}
           </span>
         </Band>
@@ -124,7 +129,11 @@ export function SuccessorAxis({ root, inverse, form }: { root: AxisRoot; inverse
         ))}
         {live && plan.more > 0 && <span className="dm-axis-more">+{plan.more}</span>}
       </div>
-      {/* The picture carries the numbers on its axis; words about how successors are placed are on the docs page (2026-09-24). */}
+      <div className="dm-auto-chart-legend">
+        <span><i data-kind="root" aria-hidden="true" />Your position</span>
+        <span><i data-kind="next" aria-hidden="true" />Possible next ranges</span>
+      </div>
+      <p className="dm-auto-preview-note">Percentages are measured from the top of your current range. Earned fees can fund the next range when your limits allow.</p>
       {!live && plan.steps.some((step) => !step.feasible) && <p className="dm-axis-note">{CREATE.automation.infeasible}</p>}
     </div>
   )

@@ -1,3 +1,5 @@
+import { rootScale } from './rootScale'
+
 /**
  * Puts the requested section under the header, or returns to the top when the
  * hash carries none.
@@ -13,5 +15,6 @@ export function scrollToSection(section: string) {
     return
   }
   const header = document.querySelector('header')?.getBoundingClientRect().height ?? 0
-  window.scrollTo(0, Math.max(0, target.getBoundingClientRect().top + window.scrollY - header - 16))
+  // 16 design px of air under the header, as a section's scroll margin keeps (tokens.css), at the root's scale.
+  window.scrollTo(0, Math.max(0, target.getBoundingClientRect().top + window.scrollY - header - 16 * rootScale()))
 }

@@ -11,6 +11,7 @@ import type { ChainConfig } from '../../../config/chainKit'
 import { explorerAddress, explorerTx } from '../../../config/chainKit'
 import { FigureDash, cx } from '../../../components/ui'
 import { tokenHue } from '../../../lib/format/tokenHue'
+import { rem } from '../../../lib/rootScale'
 import type { Provenance, TokenInfo } from '../../types'
 import { amountText, provenanceText, shortAddress, tokenLabel } from '../present'
 
@@ -23,9 +24,9 @@ export function TokenDot({ token, size = 28, ring }: { token: TokenInfo; size?: 
       title={label}
       className="inline-flex shrink-0 items-center justify-center rounded-full font-medium text-fg"
       style={{
-        width: size,
-        height: size,
-        fontSize: Math.max(9, Math.round(size * 0.36)),
+        width: rem(size),
+        height: rem(size),
+        fontSize: rem(Math.max(9, Math.round(size * 0.36))),
         background: `hsl(${tokenHue(token.address)} 38% 30%)`,
         border: ring ? `2px solid ${ring}` : undefined,
       }}
@@ -39,7 +40,7 @@ export function PairMarks({ token0, token1, size = 28 }: { token0: TokenInfo; to
   return (
     <span className="inline-flex shrink-0 items-center" aria-hidden="true">
       <TokenDot token={token0} size={size} ring="var(--card)" />
-      <span style={{ marginLeft: -size * 0.3 }}>
+      <span style={{ marginLeft: rem(-size * 0.3) }}>
         <TokenDot token={token1} size={size} ring="var(--card)" />
       </span>
     </span>

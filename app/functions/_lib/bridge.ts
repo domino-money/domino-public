@@ -55,6 +55,29 @@
  * crosses. See docs/PREVIEW_PUBLIC_READS.md.
  * tests/forwarder.test.mjs checks that the names looked up here are the names
  * wrangler.toml binds.
+ *
+ * 2026-10-02 (Domino V2, spec F7 §2.4 and §6.2): two families for the V2 APIs,
+ * both off until their Workers' own flags are switched on. Domino V2's wallet
+ * reads (/api/read/v6/, read-v6) are a public read like v1 to v5, served by the
+ * same read Worker (bridge/src/worker.mjs). S1's plans (/api/position-plan/v1/,
+ * position-plan-v1) are a private family like onboarding: the session cookie
+ * and CSRF, to the binding POSITION_PLAN_BRIDGE, which wrangler.toml declares
+ * only once its Worker (bridge/src/position-plan-worker.mjs, deployed as
+ * domino-position-plan-bridge) exists. Until then it is declared ahead of its
+ * Worker: with no binding at all under its name it answers exactly what a path
+ * no family owns answers, 404 not_found (what this path answered before the
+ * family existed), never 503; the app reads a 404 as "off". Bound to its
+ * Worker, a disabled route is the Worker's own 404 route_not_available.
+ *
+ * 2026-10-02 (Domino V2, spec F7 §3.2, S2: deposits from another network): a
+ * third V2 family, crosschain-v1 (/api/crosschain/v1/: origins, quote and
+ * status), private like onboarding and position-plan (the session cookie and
+ * CSRF), to the binding CROSSCHAIN_BRIDGE, declared ahead of its Worker
+ * (bridge/src/crosschain-worker.mjs, deployed as domino-crosschain-bridge)
+ * exactly as position-plan was: nothing bound under its name is this
+ * forwarder's own 404 not_found, which the app reads as "off" (the S2 gate,
+ * src/v2/gate.ts, stays `preview`); wrangler.toml declares the binding only
+ * once the Worker exists.
  */
 
 /** What a service binding offers its caller. */
@@ -71,7 +94,8 @@ export interface BridgeEnv {
   PREVIEW_PUBLIC_READS?: string
   /**
    * The families other than the public reads the exact preview alias may use, by name, comma-separated: setup,
-   * session, onboarding, deposit, performance, execution (2026-10-01, H7). Unset or empty: none, as before.
+   * session, onboarding, deposit, performance, execution (2026-10-01, H7), position-plan and crosschain (2026-10-02).
+   * Unset or empty: none, as before.
    */
   PREVIEW_FAMILIES?: string
   READ_BRIDGE?: unknown
@@ -81,6 +105,10 @@ export interface BridgeEnv {
   PERFORMANCE_BRIDGE?: unknown
   SETUP_BRIDGE?: unknown
   EXECUTION_BRIDGE?: unknown
+  /** 2026-10-02 (Domino V2, spec F7 §2.4): S1's plan Worker, domino-position-plan-bridge. Not bound until it is deployed. */
+  POSITION_PLAN_BRIDGE?: unknown
+  /** 2026-10-02 (Domino V2, spec F7 §3.2): S2's crosschain Worker, domino-crosschain-bridge. Not bound until it is deployed. */
+  CROSSCHAIN_BRIDGE?: unknown
 }
 
 /** The Workers' APP_ORIGIN, exactly: the only origin whose API calls are forwarded. */
@@ -102,6 +130,12 @@ interface Family {
    * data, a Worker that answers only https://domino.money); `private` goes on as sent, to a preview Worker of its own.
    */
   preview: 'public' | 'private'
+  /**
+   * Declared before its Worker is deployed (2026-10-02, position-plan and crosschain): while nothing at all is bound
+   * under its binding's name, the family is refused as a path no family owns (404 not_found, before any other check),
+   * exactly as before it was declared. Anything else under that name that is not a service binding is still 503.
+   */
+  ahead?: true
 }
 
 const FAMILIES: readonly Family[] = [
@@ -116,6 +150,9 @@ const FAMILIES: readonly Family[] = [
   // The featured pools list. Its one route, featured-pools, is answered by
   // functions/api/read/v5/featured-pools.ts, which calls forward() itself.
   { name: 'read', prefix: '/api/read/v5/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [], preview: 'public' },
+  // 2026-10-02: Domino V2's wallet reads (read-v6, spec F7 §6.2): portfolio and activity, public chain data about the
+  // wallet a request names, with no session, through the same read Worker.
+  { name: 'read', prefix: '/api/read/v6/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [], preview: 'public' },
   {
     name: 'session',
     prefix: '/api/session/v1/',
@@ -142,6 +179,30 @@ const FAMILIES: readonly Family[] = [
     csrf: true,
     cookies: ['__Host-domino-session'],
     preview: 'private',
+  },
+  // 2026-10-02: S1's plans (position-plan-v1, spec F7 §2.4), onboarding's boundary: the session cookie and CSRF.
+  {
+    name: 'position-plan',
+    prefix: '/api/position-plan/v1/',
+    binding: 'POSITION_PLAN_BRIDGE',
+    contract: 'x-domino-position-plan-contract',
+    csrf: true,
+    cookies: ['__Host-domino-session'],
+    preview: 'private',
+    ahead: true,
+  },
+  // 2026-10-02: S2's deposits from another network (crosschain-v1, spec F7 §3.2), onboarding's boundary: the session
+  // cookie and CSRF. Declared ahead of its Worker, as position-plan was: nothing bound under CROSSCHAIN_BRIDGE is the
+  // 404 not_found this path answered before the family existed, and nothing in wrangler.toml until the Worker is deployed.
+  {
+    name: 'crosschain',
+    prefix: '/api/crosschain/v1/',
+    binding: 'CROSSCHAIN_BRIDGE',
+    contract: 'x-domino-crosschain-contract',
+    csrf: true,
+    cookies: ['__Host-domino-session'],
+    preview: 'private',
+    ahead: true,
   },
 ]
 
@@ -246,7 +307,7 @@ function familyOf(pathname: string): Family | undefined {
 function isPreviewBrowserRead(request: Request, url: URL, family: Family): boolean {
   const host = request.headers.get('host')
   if (host !== null && host !== url.host) return false
-  const capability = request.method === 'GET' && (/^\/api\/read\/v[1-5]\/capabilities$/.test(url.pathname) || family.binding === 'SETUP_BRIDGE')
+  const capability = request.method === 'GET' && (/^\/api\/read\/v[1-6]\/capabilities$/.test(url.pathname) || family.binding === 'SETUP_BRIDGE')
   const origin = request.headers.get('origin')
   if ((!capability || origin !== null) && origin !== PREVIEW_ORIGIN) return false
   for (const [name, accepted] of [
@@ -266,6 +327,8 @@ export async function forward(request: Request, env: BridgeEnv): Promise<Respons
   if (url.origin !== APP_ORIGIN && !preview) return refuse('not_found', 404)
   const family = familyOf(url.pathname)
   if (!family) return refuse('not_found', 404)
+  // A family declared ahead of its Worker, with nothing bound yet, is still a path no family owns.
+  if (family.ahead && env[family.binding] === undefined) return refuse('not_found', 404)
   if (preview && !previewAllows(env, family)) return refuse('not_found', 404)
   // A public family is translated below, so its browser is checked first; a private one keeps its own origin, which
   // its preview Worker checks itself, as production's do.

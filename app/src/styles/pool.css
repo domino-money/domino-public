@@ -7,13 +7,13 @@
 @layer components {
   /* ---- What the page must say first (audit I1, B2, 2026-10-01): a token that passes for a main token, a pool off the
      list. The warning in the money-out wash, as the automation page's notices; the off-list line in quiet text. ---- */
-  .dm-pool-warning { margin: 0; max-width: 72ch; padding: 10px 14px; border-radius: var(--radius); background: var(--money-out-bg); box-shadow: inset 2px 0 0 var(--money-out); color: var(--fg); font-size: 14px; line-height: 20px; letter-spacing: -0.16px; }
-  .dm-pool-offlist { margin: 0; max-width: 72ch; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-pool-warning { margin: 0; max-width: 72ch; padding: 0.625rem 0.875rem; border-radius: var(--radius); background: var(--money-out-bg); box-shadow: inset 2px 0 0 var(--money-out); color: var(--fg); font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.16px; }
+  .dm-pool-offlist { margin: 0; max-width: 72ch; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
 
   /* ---- Page frame: breadcrumb and the one grid (§9.1) ------------------------------------------------------- */
-  .dm-pool-breadcrumb { display: flex; align-items: center; min-height: 20px; }
+  .dm-pool-breadcrumb { display: flex; align-items: center; min-height: 1.25rem; }
   /* The same back link as every other screen: one chevron icon, 4px gap, no bolder weight. */
-  .dm-pool-back { display: inline-flex; align-items: center; gap: 4px; border-radius: 4px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
+  .dm-pool-back { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 0.25rem; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
   .dm-pool-back:hover { color: var(--fg); }
   .dm-pool-back > svg { transition: translate var(--dur-fade) var(--ease-std); }
   .dm-pool-back:hover > svg { translate: -2px 0; }
@@ -21,18 +21,18 @@
   /* One column below 1024px, in the DOM's order (what matters first). From 1024px: the name, its sentence and the key
      figures across; the chart beside the 360px earnings estimate with the recent activity under it; the typical range
      beside what Domino can do here; then Details, across. */
-  .dm-pool-layout { display: flex; flex-direction: column; gap: 16px; }
+  .dm-pool-layout { display: flex; flex-direction: column; gap: 1rem; }
   /* Bubbles are opaque on the page's cards, so a dot grid never speckles them. */
   .dm-pool-layout { --skeleton: color-mix(in srgb, var(--fg) 8%, var(--card)); --skeleton-shine: rgb(255 236 220 / 0.07); }
   .dm-pool-layout > * { min-width: 0; }
-  .dm-pool-layout > .dm-pool-a-head { margin-bottom: -4px; }
+  .dm-pool-layout > .dm-pool-a-head { margin-bottom: -0.25rem; }
   @media (min-width: 768px) {
-    .dm-pool-layout { gap: 24px; }
+    .dm-pool-layout { gap: 1.5rem; }
   }
   @media (min-width: 1024px) {
     .dm-pool-layout {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 360px;
+      grid-template-columns: minmax(0, 1fr) 22.5rem;
       grid-template-areas: "head head" "lead lead" "figs figs" "chart earn" "chart recent" "range auto" "details details";
       grid-template-rows: auto auto auto auto 1fr auto auto;
       align-items: start;
@@ -58,37 +58,47 @@
     .dm-pool-a-chart, .dm-pool-a-chart > [data-history-mode="chain"] { display: flex; flex-direction: column; }
     .dm-pool-a-chart > [data-history-mode="chain"], .dm-pool-a-chart [data-pool-ratio-chart], .dm-pool-a-chart.dm-pool-chart { flex: 1 1 auto; }
     .dm-pool-a-chart [data-pool-ratio-chart], .dm-pool-a-chart.dm-pool-chart { display: flex; flex-direction: column; }
-    .dm-pool-a-chart .dm-pool-chart-foot, .dm-pool-a-chart.dm-pool-chart > .dm-pool-skel-quiet { margin-top: auto; padding-top: 16px; }
+    .dm-pool-a-chart .dm-pool-chart-foot, .dm-pool-a-chart.dm-pool-chart > .dm-pool-skel-quiet { margin-top: auto; padding-top: 1rem; }
     /* Any height the column beside it adds goes to the plot, never to empty card. */
     .dm-pool-a-chart .dm-pool-chart-body { flex: 1 1 auto; display: flex; flex-direction: column; }
-    .dm-pool-a-chart .dm-pool-chart-body > .dm-pool-canvas, .dm-pool-a-chart .dm-pool-chart-body > .dm-pool-plot-empty { flex: 1 1 auto; height: auto; min-height: 320px; }
+    .dm-pool-a-chart .dm-pool-chart-body > .dm-pool-canvas, .dm-pool-a-chart .dm-pool-chart-body > .dm-pool-plot-empty { flex: 1 1 auto; height: auto; min-height: 20rem; }
   }
 
   /* ---- The title row: marks, the pair (the page h1), chips; New position at its right ------------------------- */
-  .dm-pool-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px 32px; }
-  .dm-pool-title { display: flex; min-width: 0; align-items: center; gap: 16px; }
+  .dm-pool-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1.25rem 2rem; }
+  .dm-pool-title { display: flex; min-width: 0; align-items: center; gap: 1rem; }
   .dm-pool-marks { display: inline-flex; flex-shrink: 0; }
-  .dm-pool-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 10px; }
+  .dm-pool-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem 0.5rem; margin-top: 0.625rem; }
   /* Each chip line keeps the id's copy-button height (24px), with or without the button, so the title row is one
      height while the pool is verified and after. */
-  .dm-pool-id { display: inline-flex; align-items: center; gap: 2px; min-height: 24px; font-family: var(--font-mono); font-size: 13px; line-height: 18px; letter-spacing: 0; color: var(--fg-subtle); }
-  .dm-pool-verifying { display: inline-flex; align-items: center; min-height: 24px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-pool-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .dm-pool-id { display: inline-flex; align-items: center; gap: 2px; min-height: 1.5rem; font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: 0; color: var(--fg-subtle); }
+  .dm-pool-verifying { display: inline-flex; align-items: center; min-height: 1.5rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 
   /* ---- Cards ------------------------------------------------------------------------------------------------- */
-  .dm-pool-card, .dm-pool-chart { padding: 24px; }
-  .dm-pool-lead { max-width: 60ch; margin-top: 4px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); }
+  .dm-pool-card, .dm-pool-chart { padding: 1.5rem; }
+  .dm-pool-lead { max-width: 60ch; margin-top: 0.25rem; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; color: var(--fg-muted); }
   /* A disclosure inside a card is a quiet row whose chevron lines up with the card's text. */
-  .dm-pool-quiet { margin: 12px -12px 0; }
+  .dm-pool-quiet { margin: 0.75rem -0.75rem 0; }
+  .dm-pool-disclosure { margin-top: 1rem; padding-top: 0.875rem; border-top: 0.0625rem solid var(--border); font-size: 0.75rem; line-height: 1.125rem; color: var(--fg-muted); }
+  .dm-pool-disclosure > summary, .dm-pool-recent-disclosure > summary { display: flex; align-items: center; gap: 0.75rem; cursor: pointer; list-style: none; border-radius: var(--radius-sm); }
+  .dm-pool-disclosure > summary::-webkit-details-marker, .dm-pool-recent-disclosure > summary::-webkit-details-marker { display: none; }
+  .dm-pool-disclosure > summary:hover, .dm-pool-recent-disclosure > summary:hover { color: var(--fg); }
+  .dm-pool-disclosure > summary:focus-visible, .dm-pool-recent-disclosure > summary:focus-visible { outline: 0.125rem solid var(--ring); outline-offset: var(--focus-offset); }
+  .dm-pool-disclosure[open] > summary .dm-pool-details-chevron, .dm-pool-recent-disclosure[open] > summary .dm-pool-details-chevron { rotate: 225deg; translate: 0 0.125rem; }
+  .dm-pool-disclosure-body { display: grid; gap: 0.625rem; margin-top: 0.875rem; color: var(--fg-muted); }
+  .dm-pool-disclosure-body > p { margin: 0; }
+  .dm-pool-saved { margin: 0.625rem 0 0; color: var(--fg-muted); font-size: 0.75rem; line-height: 1.125rem; }
+  .dm-pool-recent.dm-pool-card { padding-block: 1.125rem; }
 
   /* ---- The sentence under the name, and the key figures (round 6) --------------------------------------------- */
   /* One plain sentence: what the pool is and what it earns. */
-  .dm-pool-intro { max-width: 72ch; margin: 0; font-size: 15px; line-height: 22px; letter-spacing: -0.2px; color: var(--fg-muted); }
+  .dm-pool-intro { max-width: 72ch; margin: 0; font-size: 0.9375rem; line-height: 1.375rem; letter-spacing: -0.2px; color: var(--fg-muted); }
   .dm-pool-intro b { font-weight: 500; color: var(--fg); }
   .dm-pool-intro .dm-pool-intro-apr { color: var(--money-in); }
-  .dm-pool-skel-intro { display: block; width: min(720px, 100%); height: 14px; margin: 5px 0; }
-  .dm-pool-skel-intro--short { width: min(320px, 60%); }
-  @media (min-width: 768px) { .dm-pool-intro { font-size: 16px; line-height: 24px; } }
+  .dm-pool-skel-intro { display: block; width: min(45rem, 100%); height: 0.875rem; margin: 0.3125rem 0; }
+  .dm-pool-skel-intro--short { width: min(20rem, 60%); }
+  @media (min-width: 768px) { .dm-pool-intro { font-size: 1rem; line-height: 1.5rem; } }
 
   /* The key figures as the position page's tiles: a label with its info mark, one figure, a line under it. */
   .dm-pool-stats.dm-stats--tiles { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -99,61 +109,61 @@
   .dm-pool-stat { display: grid; align-content: start; row-gap: 0; }
   .dm-pool-stat > dt > [role="img"] { cursor: help; }
   @media (max-width: 767px) { .dm-pool-stat > dt > [role="img"] { display: none !important; } }
-  .dm-pool-stat > .dm-stat-value { margin-top: 12px; font-size: 22px; line-height: 28px; letter-spacing: -0.4px; overflow: visible; white-space: normal; overflow-wrap: anywhere; }
-  .dm-pool-stat > .dm-stat-sub { margin-top: 4px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  @media (min-width: 768px) { .dm-pool-stat > .dm-stat-value { font-size: 24px; } }
-  .dm-pool-price-side { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg-muted); }
-  .dm-pool-fig-skel { display: block; width: 104px; height: 22px; margin: 3px 0; border-radius: 6px; }
-  .dm-pool-fig-sub-skel { display: block; width: 96px; height: 12px; margin: 2px 0; }
+  .dm-pool-stat > .dm-stat-value { margin-top: 0.75rem; font-size: 1.375rem; line-height: 1.75rem; letter-spacing: -0.4px; overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+  .dm-pool-stat > .dm-stat-sub { margin-top: 0.25rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  @media (min-width: 768px) { .dm-pool-stat > .dm-stat-value { font-size: 1.5rem; } }
+  .dm-pool-price-side { font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg-muted); }
+  .dm-pool-fig-skel { display: block; width: 6.5rem; height: 1.375rem; margin: 0.1875rem 0; border-radius: 0.375rem; }
+  .dm-pool-fig-sub-skel { display: block; width: 6rem; height: 0.75rem; margin: 2px 0; }
 
   /* ---- The chart card (§9.1) --------------------------------------------------------------------------------- */
-  .dm-pool-chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; }
-  .dm-pool-chart-sub { margin-top: 4px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-pool-chart-figure { margin-top: 20px; min-width: 0; }
-  .dm-pool-chart-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
+  .dm-pool-chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem 1rem; }
+  .dm-pool-chart-sub { margin-top: 0.25rem; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-pool-chart-figure { margin-top: 1.25rem; min-width: 0; }
+  .dm-pool-chart-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; min-width: 0; }
   .dm-pool-chart-close { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-  .dm-pool-chart-date { margin-top: 4px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-pool-chart-date { margin-top: 0.25rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
   /* The provider's USD chart (PoolPriceChart, where the history route is not listed): its currency and read controls. */
-  .dm-pool-chart-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 20px; }
-  .dm-pool-chart-unit { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-pool-chart-body { --axis-w: 84px; margin-top: 16px; }
+  .dm-pool-chart-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 0.75rem; margin-top: 1.25rem; }
+  .dm-pool-chart-unit { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-pool-chart-body { --axis-w: 5.25rem; margin-top: 1rem; }
   /* Under the plot: which token is priced, and a coverage line only when something is missing. */
-  .dm-pool-chart-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-top: 16px; }
+  .dm-pool-chart-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; margin-top: 1rem; }
   .dm-pool-chart-foot > .dm-pool-coverage { margin: 0; }
 
   /* The plot: a stretched SVG (areas, lines, crosshair) left of an HTML price column (labels and the last-value chip);
      dots, the end dot and the hover dot are HTML over the SVG, placed in percent of the plot box, so nothing stretches. */
-  .dm-pool-canvas { position: relative; height: 320px; }
+  .dm-pool-canvas { position: relative; height: 20rem; }
   .dm-pool-canvas > .dm-pool-chart-svg { position: absolute; top: 0; left: 0; width: calc(100% - var(--axis-w)); height: 100%; max-width: none; overflow: visible; border-radius: 0; animation: dm-reveal var(--dur-wipe) var(--ease-enter) backwards; }
-  .dm-pool-canvas > .dm-pool-chart-svg:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; border-radius: 4px; }
+  .dm-pool-canvas > .dm-pool-chart-svg:focus-visible { outline: 2px solid var(--ring); outline-offset: 0.25rem; border-radius: 0.25rem; }
   .dm-pool-gap { fill: var(--fg-subtle); opacity: 0.08; }
   /* Dots and labels paint over the lines (the SVG sits at z-index 1). */
   .dm-pool-overlay { position: absolute; z-index: 2; top: 0; bottom: 0; left: 0; right: var(--axis-w); pointer-events: none; }
   .dm-pool-overlay > span { position: absolute; border-radius: var(--radius-pill); translate: -50% -50%; }
-  .dm-pool-lone { width: 6px; height: 6px; background: var(--primary-line); }
-  .dm-pool-end { width: 8px; height: 8px; background: var(--primary-line); box-shadow: 0 0 0 2px var(--card); animation: dm-dot-pop var(--dur-dot) var(--ease-pop) var(--dur-wipe) backwards; }
-  .dm-pool-hover { width: 10px; height: 10px; background: var(--primary-line); box-shadow: 0 0 0 2px var(--card), 0 0 0 7px color-mix(in srgb, var(--primary-line) 22%, transparent); }
+  .dm-pool-lone { width: 0.375rem; height: 0.375rem; background: var(--primary-line); }
+  .dm-pool-end { width: 0.5rem; height: 0.5rem; background: var(--primary-line); box-shadow: 0 0 0 2px var(--card); animation: dm-dot-pop var(--dur-dot) var(--ease-pop) var(--dur-wipe) backwards; }
+  .dm-pool-hover { width: 0.625rem; height: 0.625rem; background: var(--primary-line); box-shadow: 0 0 0 2px var(--card), 0 0 0 0.4375rem color-mix(in srgb, var(--primary-line) 22%, transparent); }
   .dm-pool-yaxis { position: absolute; z-index: 2; top: 0; bottom: 0; right: 0; width: var(--axis-w); pointer-events: none; }
-  .dm-pool-ylabel { position: absolute; left: 12px; translate: 0 -50%; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-pool-ylabel { position: absolute; left: 0.75rem; translate: 0 -50%; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
   /* A label within about 15px of the last-value chip gives way to it. */
   .dm-pool-ylabel[data-by-chip] { visibility: hidden; }
   /* The last value's chip starts where the dashed line leaves the plot. */
-  .dm-last-chip.dm-pool-chip { left: 6px; right: auto; max-width: calc(var(--axis-w) - 6px); overflow: hidden; text-overflow: ellipsis; transform-origin: left center; }
-  .dm-pool-xaxis { position: relative; display: flex; justify-content: space-between; gap: 12px; margin: 8px var(--axis-w) 0 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; container-type: inline-size; }
+  .dm-last-chip.dm-pool-chip { left: 0.375rem; right: auto; max-width: calc(var(--axis-w) - 0.375rem); overflow: hidden; text-overflow: ellipsis; transform-origin: left center; }
+  .dm-pool-xaxis { position: relative; display: flex; justify-content: space-between; gap: 0.75rem; margin: 0.5rem var(--axis-w) 0 0; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; container-type: inline-size; }
   /* Interior ticks sit on their time, centred; one whose distance to the nearer edge (data-room, in ‰ of the plot)
      would leave less than about 24px between it and an edge label (about 93px wide) gives way on this plot's width. */
   .dm-pool-xtick { position: absolute; top: 0; translate: -50% 0; white-space: nowrap; }
-  @container (width < 536px) { .dm-pool-xtick[data-room="250"] { visibility: hidden; } }
-  @container (width < 487px) { .dm-pool-xtick[data-room="275"] { visibility: hidden; } }
-  @container (width < 447px) { .dm-pool-xtick[data-room="300"] { visibility: hidden; } }
-  @container (width < 412px) { .dm-pool-xtick[data-room="325"] { visibility: hidden; } }
-  @container (width < 383px) { .dm-pool-xtick[data-room="350"] { visibility: hidden; } }
-  @container (width < 357px) { .dm-pool-xtick[data-room="375"] { visibility: hidden; } }
-  @container (width < 335px) { .dm-pool-xtick[data-room="400"] { visibility: hidden; } }
-  @container (width < 315px) { .dm-pool-xtick[data-room="425"] { visibility: hidden; } }
-  @container (width < 298px) { .dm-pool-xtick[data-room="450"] { visibility: hidden; } }
-  @container (width < 282px) { .dm-pool-xtick[data-room="475"] { visibility: hidden; } }
-  .dm-pool-coverage { margin-top: 12px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  @container (width < 33.5rem) { .dm-pool-xtick[data-room="250"] { visibility: hidden; } }
+  @container (width < 30.4375rem) { .dm-pool-xtick[data-room="275"] { visibility: hidden; } }
+  @container (width < 27.9375rem) { .dm-pool-xtick[data-room="300"] { visibility: hidden; } }
+  @container (width < 25.75rem) { .dm-pool-xtick[data-room="325"] { visibility: hidden; } }
+  @container (width < 23.9375rem) { .dm-pool-xtick[data-room="350"] { visibility: hidden; } }
+  @container (width < 22.3125rem) { .dm-pool-xtick[data-room="375"] { visibility: hidden; } }
+  @container (width < 20.9375rem) { .dm-pool-xtick[data-room="400"] { visibility: hidden; } }
+  @container (width < 19.6875rem) { .dm-pool-xtick[data-room="425"] { visibility: hidden; } }
+  @container (width < 18.625rem) { .dm-pool-xtick[data-room="450"] { visibility: hidden; } }
+  @container (width < 17.625rem) { .dm-pool-xtick[data-room="475"] { visibility: hidden; } }
+  .dm-pool-coverage { margin-top: 0.75rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
 
   /* The resting and unavailable plots: the plot's own height, so nothing jumps when the line lands. */
   .dm-pool-plot { position: relative; --chart-ground: var(--card); }
@@ -161,37 +171,37 @@
      wave, nothing that disappears when the line lands. */
   .dm-pool-plot.dm-dots-chart { background-image: none; }
   .dm-pool-plot.dm-dots-chart::after { display: none; }
-  .dm-pool-plot-empty { position: relative; z-index: 1; display: grid; place-content: center; justify-items: center; gap: 12px; min-height: 320px; padding: 20px; text-align: center; }
+  .dm-pool-plot-empty { position: relative; z-index: 1; display: grid; place-content: center; justify-items: center; gap: 0.75rem; min-height: 20rem; padding: 1.25rem; text-align: center; }
   /* While a history is read: the chart's wave under the skeleton sweep (a data-URL mask, no url( inside it). It ends
      level and dissolves over its last 32px, a calm placeholder rather than a line cut off at the card's edge. */
   .dm-pool-plot-empty > .dm-pool-plot-baseline {
     position: absolute;
-    inset: 24px 0 0;
+    inset: 1.5rem 0 0;
     border-radius: 0;
-    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 240' preserveAspectRatio='none'%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116 L 720 240 L 0 240 Z' fill='black' fill-opacity='0.3'/%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116' stroke='black' stroke-width='2.5' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat, linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 240' preserveAspectRatio='none'%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116 L 720 240 L 0 240 Z' fill='black' fill-opacity='0.3'/%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116' stroke='black' stroke-width='2.5' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat, linear-gradient(90deg, #000 calc(100% - 2rem), transparent);
     -webkit-mask-composite: source-in;
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 240' preserveAspectRatio='none'%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116 L 720 240 L 0 240 Z' fill='black' fill-opacity='0.3'/%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116' stroke='black' stroke-width='2.5' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat, linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 240' preserveAspectRatio='none'%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116 L 720 240 L 0 240 Z' fill='black' fill-opacity='0.3'/%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116' stroke='black' stroke-width='2.5' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat, linear-gradient(90deg, #000 calc(100% - 2rem), transparent);
     mask-composite: intersect;
   }
   /* The chart card while it waits: every loaded row as a bubble on that row's own box (measured on the loaded card:
      642px at 1440, 555px at 390), so the card keeps its height when the history lands. Each bubble is a block with
      its own margins, so an empty one (verification without an answer) still holds its row. */
-  .dm-pool-chart-head { min-height: 30px; }
-  .dm-pool-skel-switch { display: block; width: 172px; height: 30px; border-radius: var(--radius-pill); }
+  .dm-pool-chart-head { min-height: 1.875rem; }
+  .dm-pool-skel-switch { display: block; width: 10.75rem; height: 1.875rem; border-radius: var(--radius-pill); }
   .dm-pool-skel-head, .dm-pool-skel-figure { display: grid; justify-items: start; }
-  .dm-pool-skel-price { display: block; width: 180px; height: 32px; margin: 24px 0 4px; border-radius: 6px; }
-  .dm-pool-skel-date { display: block; width: 240px; max-width: 100%; height: 12px; margin: 6px 0 2px; }
-  .dm-pool-skel-seg { display: block; width: 124px; height: 30px; border-radius: var(--radius-pill); }
-  .dm-pool-skel-axis { display: flex; justify-content: space-between; margin: 8px var(--axis-w, 84px) 0 0; }
-  .dm-pool-skel-tick { display: block; width: 96px; height: 12px; margin: 2px 0; }
-  .dm-pool-skel-quiet { display: flex; align-items: center; height: 30px; margin-top: 16px; }
-  .dm-pool-skel-summary { display: block; width: 200px; height: 12px; }
-  .dm-pool-skel-card { display: grid; align-content: start; gap: 16px; }
-  .dm-pool-skel-field { display: block; width: 100%; height: 52px; margin-top: 26px; border-radius: var(--radius); }
-  .dm-pool-skel-result { display: block; width: 100%; height: 96px; border-radius: var(--radius-lg); }
-  .dm-pool-skel-marks { width: 44px; height: 44px; border-radius: var(--radius-pill); }
+  .dm-pool-skel-price { display: block; width: 11.25rem; height: 2rem; margin: 1.5rem 0 0.25rem; border-radius: 0.375rem; }
+  .dm-pool-skel-date { display: block; width: 15rem; max-width: 100%; height: 0.75rem; margin: 0.375rem 0 2px; }
+  .dm-pool-skel-seg { display: block; width: 7.75rem; height: 1.875rem; border-radius: var(--radius-pill); }
+  .dm-pool-skel-axis { display: flex; justify-content: space-between; margin: 0.5rem var(--axis-w, 5.25rem) 0 0; }
+  .dm-pool-skel-tick { display: block; width: 6rem; height: 0.75rem; margin: 2px 0; }
+  .dm-pool-skel-quiet { display: flex; align-items: center; height: 1.875rem; margin-top: 1rem; }
+  .dm-pool-skel-summary { display: block; width: 12.5rem; height: 0.75rem; }
+  .dm-pool-skel-card { display: grid; align-content: start; gap: 1rem; }
+  .dm-pool-skel-field { display: block; width: 100%; height: 3.25rem; margin-top: 1.625rem; border-radius: var(--radius); }
+  .dm-pool-skel-result { display: block; width: 100%; height: 6rem; border-radius: var(--radius-lg); }
+  .dm-pool-skel-marks { width: 2.75rem; height: 2.75rem; border-radius: var(--radius-pill); }
   /* The New position button's place in the title row, held unseen until the verified page brings the button. */
-  .dm-pool-skel-action { display: block; width: 168px; height: 48px; visibility: hidden; }
+  .dm-pool-skel-action { display: block; width: 10.5rem; height: 3rem; visibility: hidden; }
 
   /* The USD · provider chart (PoolPriceChart): a measured SVG with its bars and labels; the kit's line, area and crosshair. */
   .dm-pool-chart-svg { position: relative; z-index: 1; display: block; max-width: 100%; border-radius: inherit; touch-action: pan-y; cursor: crosshair; }
@@ -205,191 +215,191 @@
 
   /* ---- Details (round 6): everything technical, one card, closed until asked for, as on a position's page -------- */
   .dm-pool-details { padding: 0; }
-  .dm-pool-details-head { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 0 16px; border-radius: var(--radius-card); cursor: pointer; list-style: none; transition: background-color var(--dur-hover) ease; }
+  .dm-pool-details-head { display: flex; align-items: center; gap: 0.75rem; min-height: 4rem; padding: 0 1rem; border-radius: var(--radius-card); cursor: pointer; list-style: none; transition: background-color var(--dur-hover) ease; }
   .dm-pool-details-head::-webkit-details-marker { display: none; }
   .dm-pool-details-head:hover { background: var(--wash); }
   .dm-pool-details-head:focus-visible { outline: 2px solid var(--ring); outline-offset: var(--focus-offset-inset); }
-  .dm-pool-details-hint { flex: 1; min-width: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-pool-details-hint { flex: 1; min-width: 0; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-subtle); }
   /* The chevron, drawn: a 7px corner turned down, up once open. */
-  .dm-pool-details-chevron { flex-shrink: 0; width: 7px; height: 7px; margin: 0 4px 0 auto; border-right: 1.5px solid var(--fg-subtle); border-bottom: 1.5px solid var(--fg-subtle); rotate: 45deg; translate: 0 -2px; transition: rotate var(--dur-fast) var(--ease-std), translate var(--dur-fast) var(--ease-std); }
+  .dm-pool-details-chevron { flex-shrink: 0; width: 0.4375rem; height: 0.4375rem; margin: 0 0.25rem 0 auto; border-right: 1.5px solid var(--fg-subtle); border-bottom: 1.5px solid var(--fg-subtle); rotate: 45deg; translate: 0 -2px; transition: rotate var(--dur-fast) var(--ease-std), translate var(--dur-fast) var(--ease-std); }
   .dm-pool-details[open] .dm-pool-details-chevron { rotate: 225deg; translate: 0 2px; }
-  .dm-pool-details > :not(summary) { margin: 0 16px; }
+  .dm-pool-details > :not(summary) { margin: 0 1rem; }
   .dm-pool-details > .dm-kv { padding: 0; }
   @media (min-width: 768px) {
-    .dm-pool-details-head { min-height: 72px; padding: 0 24px; }
-    .dm-pool-details > :not(summary) { margin-inline: 24px; }
+    .dm-pool-details-head { min-height: 4.5rem; padding: 0 1.5rem; }
+    .dm-pool-details > :not(summary) { margin-inline: 1.5rem; }
   }
   @media (max-width: 479px) { .dm-pool-details-hint { display: none; } }
-  .dm-pool-kv dt { flex-shrink: 0; white-space: nowrap; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
-  .dm-pool-kv-id { display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--fg-muted); }
+  .dm-pool-kv dt { flex-shrink: 0; white-space: nowrap; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; }
+  .dm-pool-kv-id { display: flex; align-items: center; gap: 0.25rem; min-width: 0; color: var(--fg-muted); }
   .dm-pool-kv-id > .dm-hex { min-width: 0; }
   /* The technical parts under the rows: the APR's method, the provider's figures, the activity and positions tables. */
-  .dm-pool-details > .dm-pool-details-parts { display: grid; gap: 24px; margin-top: 8px; padding: 20px 0 24px; border-top: 1px solid var(--border); }
+  .dm-pool-details > .dm-pool-details-parts { display: grid; gap: 1.5rem; margin-top: 0.5rem; padding: 1.25rem 0 1.5rem; border-top: 1px solid var(--border); }
   .dm-pool-embedded { min-width: 0; }
-  .dm-pool-embedded-title { margin: 0 0 12px; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-pool-embedded-title { margin: 0 0 0.75rem; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
   .dm-pool-embedded > .dm-pool-facts { margin-top: 0; }
 
   /* ---- On-chain activity and positions (§9.1): the facts as tiles, the amounts as a hairline table ------------ */
-  .dm-pool-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 16px 0 0; }
-  .dm-pool-facts > div { display: grid; align-content: start; gap: 4px; min-width: 0; padding: 12px 16px; border-radius: var(--radius); background: var(--surface-1); }
-  .dm-pool-facts dt { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-pool-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
-  .dm-pool-fact-skel { width: 64px; height: 14px; margin: 3px 0; }
+  .dm-pool-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr)); gap: 0.5rem; margin: 1rem 0 0; }
+  .dm-pool-facts > div { display: grid; align-content: start; gap: 0.25rem; min-width: 0; padding: 0.75rem 1rem; border-radius: var(--radius); background: var(--surface-1); }
+  .dm-pool-facts dt { font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-pool-fact-skel { width: 4rem; height: 0.875rem; margin: 0.1875rem 0; }
 
   /* Token amounts in the pool's currency order: a label column, then one column per token, figures right-aligned. */
-  .dm-pool-table-wrap { min-width: 0; margin-top: 16px; overflow-x: auto; }
-  .dm-pool-table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; font-variant-numeric: lining-nums tabular-nums; }
-  .dm-pool-table :is(th, td) { height: 48px; padding: 0 4px; text-align: right; white-space: nowrap; }
+  .dm-pool-table-wrap { min-width: 0; margin-top: 1rem; overflow-x: auto; }
+  .dm-pool-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-pool-table :is(th, td) { height: 3rem; padding: 0 0.25rem; text-align: right; white-space: nowrap; }
   .dm-pool-table :is(th, td):first-child { text-align: left; }
-  .dm-pool-table :is(th, td) + :is(th, td) { padding-left: 16px; }
-  .dm-pool-table thead th { height: 32px; color: var(--fg-subtle); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; }
+  .dm-pool-table :is(th, td) + :is(th, td) { padding-left: 1rem; }
+  .dm-pool-table thead th { height: 2rem; color: var(--fg-subtle); font-size: 0.75rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.12px; }
   .dm-pool-table tbody tr { border-top: 1px solid var(--border); }
   .dm-pool-table tbody th { color: var(--fg-muted); font-weight: 400; }
   .dm-pool-table tbody td { color: var(--fg); }
   .dm-pool-table--positions tbody td:first-child { color: var(--fg-muted); }
-  .dm-pool-table--positions td:nth-child(2) [translate] { font-family: var(--font-mono); font-size: 13px; letter-spacing: 0; }
-  .dm-pool-positions-list { margin-top: 16px; }
+  .dm-pool-table--positions td:nth-child(2) [translate] { font-family: var(--font-mono); font-size: 0.8125rem; letter-spacing: 0; }
+  .dm-pool-positions-list { margin-top: 1rem; }
 
   /* ---- Estimate your earnings (round 6) ------------------------------------------------------------------------ */
   .dm-pool-earn { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; }
-  .dm-pool-earn-ask { margin-top: 16px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-  .dm-pool-earn-field { display: flex; align-items: center; gap: 4px; height: 52px; margin-top: 8px; padding: 0 14px; border-radius: var(--radius); background: var(--surface-1); box-shadow: var(--elev-field); font-size: 24px; line-height: 28px; font-weight: 500; letter-spacing: -0.4px; color: var(--fg-muted); transition: box-shadow var(--dur-hover) ease; }
+  .dm-pool-earn-ask { margin-top: 1rem; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-pool-earn-field { display: flex; align-items: center; gap: 0.25rem; height: 3.25rem; margin-top: 0.5rem; padding: 0 0.875rem; border-radius: var(--radius); background: var(--surface-1); box-shadow: var(--elev-field); font-size: 1.5rem; line-height: 1.75rem; font-weight: 500; letter-spacing: -0.4px; color: var(--fg-muted); transition: box-shadow var(--dur-hover) ease; }
   .dm-pool-earn-field:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
   .dm-pool-earn-field:focus-within { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
   .dm-pool-earn-input { flex: 1 1 auto; width: 100%; min-width: 0; height: 100%; padding: 0; border: 0; background: transparent; color: var(--fg); font: inherit; letter-spacing: inherit; outline: none; }
-  .dm-pool-earn-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-  .dm-pool-earn-preset { min-height: 30px; padding: 0 12px; border-radius: var(--radius-pill); background: var(--wash); color: var(--fg-muted); font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; font-variant-numeric: lining-nums tabular-nums; transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
+  .dm-pool-earn-presets { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-top: 0.625rem; }
+  .dm-pool-earn-preset { min-height: 1.875rem; padding: 0 0.75rem; border-radius: var(--radius-pill); background: var(--wash); color: var(--fg-muted); font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.16px; font-variant-numeric: lining-nums tabular-nums; transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
   .dm-pool-earn-preset:hover { background: var(--wash-strong); color: var(--fg); }
   .dm-pool-earn-preset[aria-pressed="true"] { background: var(--surface-4); color: var(--fg); box-shadow: inset 0 0 0 1px var(--border-strong); }
   .dm-pool-earn-preset:focus-visible { outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
-  .dm-pool-earn-result { display: grid; align-content: start; gap: 2px; min-height: 96px; margin-top: 20px; padding: 16px; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-pool-earn-lead { margin: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-  .dm-pool-earn-month { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
+  .dm-pool-earn-result { display: grid; align-content: center; gap: 0.125rem; min-height: 5rem; margin-top: 1rem; padding: 1rem; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 0.0625rem var(--border); }
+  .dm-pool-earn-lead { margin: 0; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-pool-earn-month { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; margin: 2px 0 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-muted); }
   .dm-pool-earn-month > .dm-fig-lg { color: var(--money-in); }
-  .dm-pool-earn-more { margin: 2px 0 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-  .dm-pool-earn-quiet { margin: auto 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-  .dm-pool-earn-note { margin-top: 12px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-pool-earn-skel-lead { display: block; width: 132px; height: 12px; margin: 3px 0; }
-  .dm-pool-earn-skel-fig { display: block; width: 120px; height: 24px; margin: 4px 0; border-radius: 6px; }
-  .dm-pool-earn-skel-more { display: block; width: 180px; height: 12px; margin: 3px 0; }
+  .dm-pool-earn-more { margin: 2px 0 0; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-pool-earn-quiet { margin: auto 0; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-pool-earn-note { margin-top: 0.75rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-earn-skel-lead { display: block; width: 8.25rem; height: 0.75rem; margin: 0.1875rem 0; }
+  .dm-pool-earn-skel-fig { display: block; width: 7.5rem; height: 1.5rem; margin: 0.25rem 0; border-radius: 0.375rem; }
+  .dm-pool-earn-skel-more { display: block; width: 11.25rem; height: 0.75rem; margin: 0.1875rem 0; }
 
   /* ---- A typical range (round 6): the band, the price now and the last day on one bar ------------------------- */
-  .dm-pool-guide-plot { margin-top: 20px; }
-  .dm-pool-guide-bar { position: relative; height: 40px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-pool-guide-plot { margin-top: 1.25rem; }
+  .dm-pool-guide-bar { position: relative; height: 2.5rem; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
   .dm-pool-guide-bar > span { position: absolute; }
-  .dm-pool-guide-band { top: 8px; bottom: 8px; border-radius: 6px; background: var(--band-fill); box-shadow: inset 2px 0 0 var(--primary-line), inset -2px 0 0 var(--primary-line); }
+  .dm-pool-guide-band { top: 0.5rem; bottom: 0.5rem; border-radius: 0.375rem; background: var(--band-fill); box-shadow: inset 2px 0 0 var(--primary-line), inset -2px 0 0 var(--primary-line); }
   /* Where the price went over the last day: a quiet line under the band. */
-  .dm-pool-guide-day { bottom: 3px; height: 3px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--fg) 45%, transparent); }
-  .dm-pool-guide-now { top: 4px; bottom: 4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--fg); box-shadow: 0 0 0 2px var(--surface-1); }
-  .dm-pool-guide-ends { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 12px; margin-top: 8px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-pool-guide-ends b { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-pool-guide-day { bottom: 0.1875rem; height: 0.1875rem; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--fg) 45%, transparent); }
+  .dm-pool-guide-now { top: 0.25rem; bottom: 0.25rem; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--fg); box-shadow: 0 0 0 2px var(--surface-1); }
+  .dm-pool-guide-ends { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 0.75rem; margin-top: 0.5rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-guide-ends b { font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
   .dm-pool-guide-ends > :last-child { text-align: right; }
   .dm-pool-guide-unit { text-align: center; }
-  .dm-pool-guide-key { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 14px 0 0; padding: 0; list-style: none; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-pool-guide-key > li { display: inline-flex; align-items: center; gap: 6px; }
+  .dm-pool-guide-key { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0.875rem 0 0; padding: 0; list-style: none; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-guide-key > li { display: inline-flex; align-items: center; gap: 0.375rem; }
   .dm-pool-guide-key > li::before { content: ''; flex-shrink: 0; }
-  .dm-pool-guide-key > [data-key="band"]::before { width: 12px; height: 8px; border-radius: 2px; background: var(--band-fill); box-shadow: inset 2px 0 0 var(--primary-line), inset -2px 0 0 var(--primary-line); }
-  .dm-pool-guide-key > [data-key="now"]::before { width: 2px; height: 12px; border-radius: 1px; background: var(--fg); }
-  .dm-pool-guide-key > [data-key="day"]::before { width: 12px; height: 3px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--fg) 45%, transparent); }
-  .dm-pool-guide-text { margin-top: 16px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); }
+  .dm-pool-guide-key > [data-key="band"]::before { width: 0.75rem; height: 0.5rem; border-radius: 2px; background: var(--band-fill); box-shadow: inset 2px 0 0 var(--primary-line), inset -2px 0 0 var(--primary-line); }
+  .dm-pool-guide-key > [data-key="now"]::before { width: 2px; height: 0.75rem; border-radius: 1px; background: var(--fg); }
+  .dm-pool-guide-key > [data-key="day"]::before { width: 0.75rem; height: 0.1875rem; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--fg) 45%, transparent); }
+  .dm-pool-guide-text { margin-top: 1rem; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; color: var(--fg-muted); }
   .dm-pool-guide-text b { font-weight: 500; color: var(--fg); }
-  .dm-pool-guide-note { margin-top: 8px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-pool-quiet-line { margin-top: 16px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); }
+  .dm-pool-guide-note { margin-top: 0.5rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-quiet-line { margin-top: 1rem; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; color: var(--fg-muted); }
 
   /* ---- What you can do here (round 6): the three features, one row each -------------------------------------- */
-  .dm-pool-auto-list { display: grid; margin: 12px 0 0; padding: 0; list-style: none; }
-  .dm-pool-auto-list > li { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; }
+  .dm-pool-auto-list { display: grid; margin: 0.75rem 0 0; padding: 0; list-style: none; }
+  .dm-pool-auto-list > li { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem 0; }
   .dm-pool-auto-list > li + li { border-top: 1px solid var(--border); }
-  .dm-pool-auto-mark { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; width: 22px; height: 22px; margin-top: 1px; border-radius: var(--radius-pill); background: var(--money-in-bg); color: var(--money-in); }
+  .dm-pool-auto-mark { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; width: 1.375rem; height: 1.375rem; margin-top: 1px; border-radius: var(--radius-pill); background: var(--money-in-bg); color: var(--money-in); }
   .dm-pool-auto-body { display: grid; gap: 2px; min-width: 0; }
-  .dm-pool-auto-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
-  .dm-pool-auto-name > a { color: inherit; text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; transition: text-decoration-color var(--dur-hover) ease; }
+  .dm-pool-auto-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 0.5rem; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-pool-auto-name > a { color: inherit; text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 0.1875rem; transition: text-decoration-color var(--dur-hover) ease; }
   .dm-pool-auto-name > a:hover { text-decoration-color: currentColor; }
-  .dm-pool-auto-fee { font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-pool-auto-line { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-pool-auto-fee { font-size: 0.75rem; line-height: 1rem; font-weight: 400; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-auto-line { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
 
   /* ---- Recent activity (round 6): the last day in a few sentences --------------------------------------------- */
-  .dm-pool-recent-list { display: grid; gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
-  .dm-pool-recent-list > li { position: relative; padding-left: 16px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); }
-  .dm-pool-recent-list > li::before { content: ''; position: absolute; left: 2px; top: 8px; width: 5px; height: 5px; border-radius: var(--radius-pill); background: var(--fg-faint); }
+  .dm-pool-recent-list { display: grid; gap: 0.625rem; margin: 0.875rem 0 0; padding: 0; list-style: none; }
+  .dm-pool-recent-list > li { position: relative; padding-left: 1rem; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; color: var(--fg-muted); }
+  .dm-pool-recent-list > li::before { content: ''; position: absolute; left: 2px; top: 0.5rem; width: 0.3125rem; height: 0.3125rem; border-radius: var(--radius-pill); background: var(--fg-faint); }
   .dm-pool-recent-list b { font-weight: 500; color: var(--fg); }
-  .dm-pool-recent-skel { display: block; width: 90%; height: 14px; margin: 3px 0; }
+  .dm-pool-recent-skel { display: block; width: 90%; height: 0.875rem; margin: 0.1875rem 0; }
   .dm-pool-recent-skel + .dm-pool-recent-skel { width: 70%; }
 
   /* ---- Plan a range: PoolRangeControls, in every context (§9.1) ------------------------------------------------ */
-  .dm-pool-range-body { margin-top: 20px; }
-  .dm-pool-price { display: grid; gap: 4px; }
-  .dm-pool-price-label { margin: 0; font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-pool-price-row { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+  .dm-pool-range-body { margin-top: 1.25rem; }
+  .dm-pool-price { display: grid; gap: 0.25rem; }
+  .dm-pool-price-label { margin: 0; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 400; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-pool-price-row { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 2px 0.625rem; }
   .dm-pool-price-figure { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-  .dm-pool-price-unit { margin: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-price-unit { margin: 0; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
 
   .dm-pool-widths { display: flex; width: 100%; }
-  @media (min-width: 640px) { .dm-pool-widths { max-width: 360px; } }
+  @media (min-width: 640px) { .dm-pool-widths { max-width: 22.5rem; } }
   .dm-pool-widths > .dm-seg-item { flex: 1 1 0; min-width: 0; }
 
   /* The interval: a dotted field, the band with its two Tangerine edges, a handle at each end, the pool price as a
      dotted line under its chip, and how far each end of the field sits from the pool price. Moves ease (M14). */
-  .dm-pool-interval-caption { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-pool-interval { position: relative; height: 140px; overflow: hidden; border-radius: var(--radius-lg); background-color: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); --chart-ground: var(--surface-1); }
+  .dm-pool-interval-caption { font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-interval { position: relative; height: 8.75rem; overflow: hidden; border-radius: var(--radius-lg); background-color: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); --chart-ground: var(--surface-1); }
   .dm-pool-interval > * { position: absolute; z-index: 1; }
-  .dm-pool-interval-band { top: 36px; bottom: 36px; border-radius: 6px; background: var(--band-fill); box-shadow: inset 2px 0 0 var(--primary-line), inset -2px 0 0 var(--primary-line); transition: left var(--dur-step) var(--ease-enter), width var(--dur-step) var(--ease-enter); }
+  .dm-pool-interval-band { top: 2.25rem; bottom: 2.25rem; border-radius: 0.375rem; background: var(--band-fill); box-shadow: inset 2px 0 0 var(--primary-line), inset -2px 0 0 var(--primary-line); transition: left var(--dur-step) var(--ease-enter), width var(--dur-step) var(--ease-enter); }
   .dm-pool-interval-handle {
     top: 50%;
-    width: 16px;
-    height: 40px;
-    margin: -20px 0 0 -8px;
+    width: 1rem;
+    height: 2.5rem;
+    margin: -1.25rem 0 0 -0.5rem;
     border-radius: var(--radius-pill);
     /* Tangerine, like the band's edges they move (a range visual, exempt from the Tangerine count): the drag targets
        are the control's most visible part, ringed in the field's ground. */
-    background: linear-gradient(var(--primary-fg), var(--primary-fg)) 5px 50% / 1px 14px no-repeat, linear-gradient(var(--primary-fg), var(--primary-fg)) 10px 50% / 1px 14px no-repeat, var(--primary-line);
+    background: linear-gradient(var(--primary-fg), var(--primary-fg)) 0.3125rem 50% / 1px 0.875rem no-repeat, linear-gradient(var(--primary-fg), var(--primary-fg)) 0.625rem 50% / 1px 0.875rem no-repeat, var(--primary-line);
     box-shadow: 0 0 0 2px var(--surface-1), var(--elev-button);
     transition: left var(--dur-step) var(--ease-enter);
   }
-  .dm-pool-interval-price { top: 30px; bottom: 12px; width: 1.5px; margin-left: -0.75px; background: radial-gradient(circle, var(--fg) 0.75px, transparent 1px) center top / 1.5px 5px repeat-y; transition: left var(--dur-step) var(--ease-enter); }
-  .dm-pool-interval-label { top: 8px; translate: -50% 0; padding: 1px 8px; border-radius: var(--radius-pill); background: var(--surface-3); color: var(--fg); font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: -0.1px; white-space: nowrap; transition: left var(--dur-step) var(--ease-enter); }
-  .dm-pool-interval-end { bottom: 8px; font-size: 11px; line-height: 14px; letter-spacing: -0.1px; color: var(--fg-subtle); white-space: nowrap; }
-  .dm-pool-interval-end--min { left: 10px; }
-  .dm-pool-interval-end--max { right: 10px; }
+  .dm-pool-interval-price { top: 1.875rem; bottom: 0.75rem; width: 1.5px; margin-left: -0.75px; background: radial-gradient(circle, var(--fg) 0.75px, transparent 1px) center top / 1.5px 0.3125rem repeat-y; transition: left var(--dur-step) var(--ease-enter); }
+  .dm-pool-interval-label { top: 0.5rem; translate: -50% 0; padding: 1px 0.5rem; border-radius: var(--radius-pill); background: var(--surface-3); color: var(--fg); font-size: 0.6875rem; line-height: 0.875rem; font-weight: 500; letter-spacing: -0.1px; white-space: nowrap; transition: left var(--dur-step) var(--ease-enter); }
+  .dm-pool-interval-end { bottom: 0.5rem; font-size: 0.6875rem; line-height: 0.875rem; letter-spacing: -0.1px; color: var(--fg-subtle); white-space: nowrap; }
+  .dm-pool-interval-end--min { left: 0.625rem; }
+  .dm-pool-interval-end--max { right: 0.625rem; }
 
   /* Min and max: two quiet panels, the price large, − and + as round buttons, the slider under them. */
-  .dm-pool-bounds { display: grid; gap: 12px; }
+  .dm-pool-bounds { display: grid; gap: 0.75rem; }
   @media (min-width: 640px) { .dm-pool-bounds { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
-  .dm-pool-bound { min-width: 0; padding: 16px 16px 6px; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-pool-bound-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .dm-pool-bound-label { font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); }
-  .dm-pool-bound-pct { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-pool-bound-row { display: flex; min-width: 0; align-items: center; gap: 6px; margin-top: 6px; }
-  .dm-pool-bound-unit { margin-top: 2px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-bound { min-width: 0; padding: 1rem 1rem 0.375rem; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-pool-bound-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+  .dm-pool-bound-label { font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-pool-bound-pct { font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-bound-row { display: flex; min-width: 0; align-items: center; gap: 0.375rem; margin-top: 0.375rem; }
+  .dm-pool-bound-unit { margin-top: 2px; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
   /* The bound's price: a borderless field that shows its ring only on focus. */
-  .dm-pool-bound-input { flex: 1 1 auto; min-width: 0; height: 40px; margin-left: -8px; padding: 0 8px; border-radius: var(--radius); background: transparent; color: var(--fg); font: inherit; font-size: 20px; line-height: 28px; font-weight: 500; letter-spacing: -0.3px; text-align: left; font-variant-numeric: lining-nums tabular-nums; transition: background-color var(--dur-hover) ease; }
+  .dm-pool-bound-input { flex: 1 1 auto; min-width: 0; height: 2.5rem; margin-left: -0.5rem; padding: 0 0.5rem; border-radius: var(--radius); background: transparent; color: var(--fg); font: inherit; font-size: 1.25rem; line-height: 1.75rem; font-weight: 500; letter-spacing: -0.3px; text-align: left; font-variant-numeric: lining-nums tabular-nums; transition: background-color var(--dur-hover) ease; }
   .dm-pool-bound-input:hover { background: var(--wash); }
   .dm-pool-bound-input:focus-visible { background: var(--card); box-shadow: inset 0 0 0 1px var(--border-card-hover); outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
   .dm-pool-bound-input[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--money-out); }
-  .dm-pool-help { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-help { font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
 
-  .dm-pool-position { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-pool-position { display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
   /* The line appears only out of range, so its dot is always the neutral one, as .dm-flow-position is (flow.css:164). */
-  .dm-pool-dot { width: 6px; height: 6px; flex-shrink: 0; margin-top: 6px; border-radius: var(--radius-pill); background: var(--fg-faint); }
+  .dm-pool-dot { width: 0.375rem; height: 0.375rem; flex-shrink: 0; margin-top: 0.375rem; border-radius: var(--radius-pill); background: var(--fg-faint); }
 
   /* ---- Phone (§9.2) ------------------------------------------------------------------------------------------ */
   @media (max-width: 767px) {
     .dm-pool-marks { zoom: 0.8182; }
-    .dm-pool-title { gap: 12px; }
+    .dm-pool-title { gap: 0.75rem; }
     .dm-pool-actions { width: 100%; }
     .dm-pool-new { width: 100%; }
-    .dm-pool-card, .dm-pool-chart { padding: 16px; }
+    .dm-pool-card, .dm-pool-chart { padding: 1rem; }
     /* The plot takes the card's whole width: the high and the low sit inside it at the right, on the card's ground,
        and the last value is the header's close right above (no gutter, no chip). */
     .dm-pool-chart-body { --axis-w: 0px; }
-    .dm-pool-canvas { height: 220px; }
-    .dm-pool-plot-empty { min-height: 220px; }
-    .dm-pool-skel-price { height: 28px; margin: 22px 0 2px; }
+    .dm-pool-canvas { height: 13.75rem; }
+    .dm-pool-plot-empty { min-height: 13.75rem; }
+    .dm-pool-skel-price { height: 1.75rem; margin: 1.375rem 0 2px; }
     .dm-pool-skel-axis { margin-right: 0; }
     .dm-pool-skel-action { width: 100%; }
     /* The high sits just over the line's top and the low just under its bottom, in the plot's own padding, so no
        label ever covers the line; with no chip on a phone, neither gives way. */
-    .dm-pool-ylabel { left: auto; right: 0; font-size: 11px; line-height: 14px; letter-spacing: -0.1px; }
+    .dm-pool-ylabel { left: auto; right: 0; font-size: 0.6875rem; line-height: 0.875rem; letter-spacing: -0.1px; }
     .dm-pool-ylabel[data-edge="high"] { translate: 0 calc(-100% - 2px); }
     .dm-pool-ylabel[data-edge="low"] { translate: 0 2px; }
     .dm-pool-ylabel[data-by-chip] { visibility: visible; }
@@ -407,9 +417,9 @@
     .dm-pool-guide-unit { grid-area: unit; }
   }
   @media (max-width: 639px) {
-    .dm-pool-table { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
-    .dm-pool-table tbody th { white-space: normal; min-width: 64px; }
-    .dm-pool-table :is(th, td) + :is(th, td) { padding-left: 10px; }
+    .dm-pool-table { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; }
+    .dm-pool-table tbody th { white-space: normal; min-width: 4rem; }
+    .dm-pool-table :is(th, td) + :is(th, td) { padding-left: 0.625rem; }
   }
 }
 

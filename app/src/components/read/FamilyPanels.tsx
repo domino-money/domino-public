@@ -21,7 +21,7 @@ const TONE: Record<Fact['state'], string> = {
 
 function FactValue({ fact }: { fact: Fact }) {
   return (
-    <dd className={cx('flex min-w-0 items-center justify-end gap-2 text-right font-mono text-[12px]', TONE[fact.state])} data-fact-state={fact.state}>
+    <dd className={cx('flex min-w-0 items-center justify-end gap-2 text-right font-mono text-[0.75rem]', TONE[fact.state])} data-fact-state={fact.state}>
       {fact.tokens?.map((token, i) => (
         <span key={`${token.address ?? token.symbol}-${i}`} className="inline-flex min-w-0 items-center gap-1.5">
           <TokenMark token={token} size={16} />
@@ -38,7 +38,7 @@ export function Facts({ facts }: { facts: Fact[] }) {
     <dl className="grid gap-0">
       {facts.map((fact) => (
         <div key={fact.label} className="flex items-baseline justify-between gap-4 border-b border-dashed py-1.5 last:border-b-0">
-          <dt className="shrink-0 text-[12px] text-fg-muted">{fact.label}</dt>
+          <dt className="shrink-0 text-[0.75rem] text-fg-muted">{fact.label}</dt>
           <FactValue fact={fact} />
         </div>
       ))}
@@ -51,8 +51,8 @@ function Items({ items }: { items: ItemView[] }) {
   return (
     <ul className="mt-3 grid gap-2">
       {items.map((item) => (
-        <li key={item.key} className="rounded-[12px] border bg-surface-2 px-3 py-2" data-item-key={item.key} {...(item.old ? { 'data-old': '' } : {})}>
-          <div className="flex items-center justify-between gap-3 text-[12px]">
+        <li key={item.key} className="rounded-[0.75rem] border bg-surface-2 px-3 py-2" data-item-key={item.key} {...(item.old ? { 'data-old': '' } : {})}>
+          <div className="flex items-center justify-between gap-3 text-[0.75rem]">
             <span className="text-fg-muted">
               {item.title.label}
               {item.old && ' · from before the list restarted'}
@@ -70,11 +70,11 @@ function Footnotes({ notes, freshness }: { notes: string[]; freshness: string[] 
   return (
     <>
       {notes.map((note) => (
-        <p key={note} className="mt-2 text-[12px] text-fg-muted">
+        <p key={note} className="mt-2 text-[0.75rem] text-fg-muted">
           {note}
         </p>
       ))}
-      {freshness.length > 0 && <p className="mt-2 font-mono text-[11px] text-fg-subtle">{freshness.join(' · ')}</p>}
+      {freshness.length > 0 && <p className="mt-2 font-mono text-[0.6875rem] text-fg-subtle">{freshness.join(' · ')}</p>}
     </>
   )
 }
@@ -82,7 +82,7 @@ function Footnotes({ notes, freshness }: { notes: string[]; freshness: string[] 
 export function FamilyPanel({ view, restarted }: { view: FamilyView; restarted?: boolean }) {
   return (
     <div data-read-state="ok">
-      {restarted && <p className="mb-2 text-[12px] text-money-wait">The catalogue changed during the read, so it was asked again once.</p>}
+      {restarted && <p className="mb-2 text-[0.75rem] text-money-wait">The catalogue changed during the read, so it was asked again once.</p>}
       <Facts facts={view.facts} />
       <Items items={view.items} />
       <Footnotes notes={view.notes} freshness={view.freshness} />
@@ -95,15 +95,15 @@ export function FailureNote({ outcome }: { outcome: FailedOutcome }) {
   const reason = 'reason' in outcome ? outcome.reason : 'code' in outcome ? outcome.code : outcome.state === 'unavailable' ? outcome.cause.kind : ''
   return (
     <div data-read-state={outcome.state} data-read-reason={reason}>
-      <p className="text-[13px] font-medium">{text.title}</p>
-      <p className="text-[12px] text-fg-muted">{text.detail}</p>
+      <p className="text-[0.8125rem] font-medium">{text.title}</p>
+      <p className="text-[0.75rem] text-fg-muted">{text.detail}</p>
     </div>
   )
 }
 
 function Loading() {
   return (
-    <p className="text-[12px] text-fg-subtle" data-loading="">
+    <p className="text-[0.75rem] text-fg-subtle" data-loading="">
       Reading…
     </p>
   )
@@ -159,14 +159,14 @@ function PagedList<V extends { hasMore: boolean; restarted: boolean; pages: numb
   }
   return (
     <div data-read-state="ok" data-pages={step.view.pages}>
-      {step.view.restarted && <p className="mb-2 text-[12px] text-money-wait">The page handle expired or the list changed, so it restarted from the first page.</p>}
+      {step.view.restarted && <p className="mb-2 text-[0.75rem] text-money-wait">The page handle expired or the list changed, so it restarted from the first page.</p>}
       {render(step.view)}
       {step.failure && <FailureNote outcome={step.failure} />}
       <div className="mt-3 flex items-center gap-3">
         <Button variant="outline" aria-disabled={busy || !step.view.hasMore ? true : undefined} onClick={() => void more()}>
           {busy ? 'Loading…' : step.view.hasMore ? 'Load more' : 'All pages loaded'}
         </Button>
-        <p role="status" aria-live="polite" className="text-[12px] text-fg-muted">
+        <p role="status" aria-live="polite" className="text-[0.75rem] text-fg-muted">
           {said}
         </p>
       </div>
@@ -183,7 +183,7 @@ function WalletList({ source, request }: { source: ReadSource; request: ReadRequ
         <>
           <ul className="grid gap-1">
             {view.rows.map((row) => (
-              <li key={row.key} className="flex items-center justify-between gap-3 text-[12px]" data-item-key={row.key} {...(row.old ? { 'data-old': '' } : {})}>
+              <li key={row.key} className="flex items-center justify-between gap-3 text-[0.75rem]" data-item-key={row.key} {...(row.old ? { 'data-old': '' } : {})}>
                 <span className="inline-flex min-w-0 items-center gap-1.5">
                   <TokenMark token={row.token} size={16} />
                   <TokenLabel token={row.token} />

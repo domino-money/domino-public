@@ -1,8 +1,9 @@
 // The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
 import '../styles/screens.css'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState, type ComponentType, type ReactElement } from 'react'
 import { setupWallet } from '../finance/wallet'
 import { useRouteTitle } from '../lib/routeTitle'
+import { recovering } from '../lib/staleRelease'
 import { atomicStatus } from '../finance/batch'
 import type { ReleaseRead } from '../finance/release'
 import type { SequenceDeployment } from '../finance/sequence'
@@ -21,6 +22,13 @@ type Release = { kind: 'loading' } | ReleaseRead<SequenceDeployment>
 
 /** What the connected wallet can do with a batch (EIP-5792): read once by the creation screen, which offers one signature for it. */
 const capabilities = () => setupWallet().then((wallet) => atomicStatus(wallet))
+
+// Domino V2 (integration, 2026-10-02): the vault's choices in this same flow, only in a build that carries V2 (the define
+// is false in both deployable builds, so this is null there and nothing of it is bundled); src/v2in/automate/SetupEntry.tsx
+// shows V1's own screen below wherever the vault's gate is off.
+// A chunk that cannot load leaves V1's own screen, handed in as `v1` (2026-10-03, review #7).
+type SetupEntryProps = { positions: readonly WalletPosition[]; intent: SequenceIntent; v1: ReactElement<{ intent: SequenceIntent }> }
+const V2Setup = __DOMINO_V2__ ? lazy<ComponentType<SetupEntryProps>>(recovering(() => import('../v2in/automate/SetupEntry'), () => ({ default: ({ v1 }: SetupEntryProps) => v1 }))) : null
 
 /** Test builds only (App.tsx routes `#/sequence-lab/<spec>` behind __DOMINO_TEST_HOOKS__): the wallet's positions injected, as useWalletPositions would answer them. */
 interface Lab {
@@ -125,7 +133,7 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
               {elsewhere ? (switching ? 'Switching…' : 'Switch network') : 'Connect wallet'}
             </Button>
             {elsewhere && switchNotice && (
-              <p role="alert" className="mt-3 text-[13px] leading-[18px] text-fg-muted" data-sequence-switch-notice="">
+              <p role="alert" className="mt-3 text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-sequence-switch-notice="">
                 {switchNotice}
               </p>
             )}
@@ -165,7 +173,14 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
         }
       />
     )
-  else body = <SequenceCreate key={owner} positions={list.positions} intent={intent} connect={connectSequence} capabilities={capabilities} />
+  else
+    body = V2Setup ? (
+      <Suspense fallback={<div className="dm-card dm-acct-block dm-seq-loading" aria-busy="true" />}>
+        <V2Setup positions={list.positions} intent={intent} v1={<SequenceCreate key={owner} positions={list.positions} intent={intent} connect={connectSequence} capabilities={capabilities} />} />
+      </Suspense>
+    ) : (
+      <SequenceCreate key={owner} positions={list.positions} intent={intent} connect={connectSequence} capabilities={capabilities} />
+    )
 
   return (
     <main className="dm-page dm-page--narrow dm-seq">

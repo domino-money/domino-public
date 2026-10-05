@@ -3,6 +3,7 @@ import { catalogueTokens } from '../../config/selectedPoolCatalogue'
 import { CREATE } from '../../lib/create/copy'
 import { dropCreatePools, startCreatePools, warmPoolHints } from '../../lib/create/poolsAhead'
 import { stilled } from '../../lib/motion/stilled'
+import { rootScale } from '../../lib/rootScale'
 import type { JourneyState } from '../../lib/create/journey'
 import { shortAddress, type AddressKey } from '../../lib/read/screens/identity'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
@@ -133,7 +134,8 @@ export function StageToken({
       if (!panel) return
       const header = document.querySelector('header')?.getBoundingClientRect().height ?? 0
       const top = panel.getBoundingClientRect().top
-      if (top < header + 8) window.scrollTo({ top: Math.max(0, window.scrollY + top - header - 24), behavior: stilled() ? 'auto' : 'smooth' })
+      const air = rootScale()
+      if (top < header + 8 * air) window.scrollTo({ top: Math.max(0, window.scrollY + top - header - 24 * air), behavior: stilled() ? 'auto' : 'smooth' })
     })
   }
 

@@ -12,7 +12,7 @@
  */
 import { jump } from './support/clock.mjs';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
@@ -69,6 +69,15 @@ after(async () => {
 });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function captureReceiptEntry(page, name, target) {
+  if (!process.env.DOMINO_RECEIPT_SHOTS) return;
+  mkdirSync(process.env.DOMINO_RECEIPT_SHOTS, { recursive: true });
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 760 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${name}: fits ${width}`);
+    await target.screenshot({ path: join(process.env.DOMINO_RECEIPT_SHOTS, `${name}-${width}.png`), animations: 'disabled' });
+  }
+}
 
 /**
  * One isolated world: a fake service, a server, a browser context with two
@@ -604,9 +613,11 @@ test('a declined connection, and one already waiting in the wallet, are said in 
 });
 
 test('a connection prompt that never answers keeps the list, says which wallet to open, and Cancel lets go of it', async () => {
+  // Changed on purpose 2026-10-03: B holds its own account, so the dialog (which no longer names the wallet app, the
+  // owner's call) shows which wallet connected by its address.
   const s = await scenario({ wallets: [
     { id: 'a', name: 'Test Wallet A', rdns: 'test.wallet.a', uuid: '8f2a7d1c-0000-4000-8000-00000000000a', connect: 'hang' },
-    { id: 'b', name: 'Test Wallet B', rdns: 'test.wallet.b', uuid: '8f2a7d1c-0000-4000-8000-00000000000b' },
+    { id: 'b', name: 'Test Wallet B', rdns: 'test.wallet.b', uuid: '8f2a7d1c-0000-4000-8000-00000000000b', account: 1 },
   ] });
   const page = await s.open();
   await viewIs(page, 'no_wallet');
@@ -624,7 +635,8 @@ test('a connection prompt that never answers keeps the list, says which wallet t
   // Another wallet connects at once.
   await dialog(page).getByRole('button', { name: 'Connect Test Wallet B' }).click();
   await viewIs(page, 'signed_out');
-  assert.match(await dialog(page).innerText(), /Test Wallet B/);
+  assert.equal((await dialog(page).getByTestId('wallet-address').getAttribute('data-address')).toLowerCase(), s.wallet.address(1).toLowerCase());
+  assert.doesNotMatch(await dialog(page).innerText(), /Test Wallet/, 'the connected wallet is shown by its address, not its app’s name');
   await s.close();
 });
 
@@ -645,7 +657,7 @@ test('a wallet approved late, after another wallet connected, is let go: the pag
     if (cancelFirst) await dialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
     await dialog(page).getByRole('button', { name: 'Connect Test Wallet B' }).click();
     await viewIs(page, 'signed_out');
-    assert.match(await dialog(page).innerText(), /Test Wallet B/);
+    assert.equal((await dialog(page).getByTestId('wallet-address').getAttribute('data-address')).toLowerCase(), s.wallet.address(1).toLowerCase());
     const signedB = await signIn(s, page);
     assert.equal(signedB.owner, s.wallet.address(1).toLowerCase(), 'signed in as B');
     // Much later, the person finds Wallet A's prompt and approves it.
@@ -655,7 +667,7 @@ test('a wallet approved late, after another wallet connected, is let go: the pag
     assert.equal(after.status, 'signed_in', `cancel first: ${cancelFirst}: still signed in`);
     assert.equal(after.owner, s.wallet.address(1).toLowerCase(), `cancel first: ${cancelFirst}: still B's account`);
     assert.equal(s.fake.count('logout'), 0, 'B’s session was not signed out');
-    assert.match(await dialog(page).innerText(), /Test Wallet B/, 'the dialog still names B');
+    assert.equal((await dialog(page).getByTestId('wallet-address').getAttribute('data-address')).toLowerCase(), s.wallet.address(1).toLowerCase(), 'the dialog still shows B');
     await s.close();
   }
 });
@@ -814,7 +826,8 @@ test('WalletConnect pairs through a code the page draws, connects the phone’s 
   await page.evaluate((address) => window.__dominoWalletConnect.accept(address, 4663), phone.address);
   await viewIs(page, 'signed_out');
   assert.equal(await trigger(page).getAttribute('title'), phone.address);
-  assert.match(await dialog(page).innerText(), /WalletConnect/);
+  // Changed on purpose 2026-10-03 (the owner): the dialog shows the connected account, not the wallet app's name.
+  assert.equal((await dialog(page).getByTestId('wallet-address').getAttribute('data-address')).toLowerCase(), phone.address.toLowerCase());
   await signIn(s, page);
   assert.deepEqual(forwarded, ['personal_sign'], 'the sign-in message, and nothing else, went to the phone');
   await dialog(page).getByRole('button', { name: 'Sign out', exact: true }).click();
@@ -869,7 +882,9 @@ test('two wallets announcing the same rdns: each button connects its own provide
 
   await connect(page, 'Test Wallet B');
   assert.deepEqual(accessRequests(s), ['b'], 'the B button asked B, and only B, for access');
-  assert.match(await dialog(page).innerText(), /Test Wallet B/);
+  // Changed on purpose 2026-10-03 (the owner): the dialog no longer names the wallet app; which provider was asked and
+  // which one signs say which wallet is connected.
+  assert.doesNotMatch(await dialog(page).innerText(), /Test Wallet/);
   await signIn(s, page);
   assert.deepEqual(s.wallet.state.signed.map((entry) => entry.id), ['b'], 'B signed the sign-in message');
 
@@ -878,7 +893,7 @@ test('two wallets announcing the same rdns: each button connects its own provide
   await dialog(page).getByRole('button', { name: 'Disconnect wallet' }).click();
   await connect(page, 'Test Wallet A');
   assert.deepEqual(accessRequests(s), ['b', 'a'], 'the A button asked A');
-  assert.match(await dialog(page).innerText(), /Test Wallet A/);
+  assert.doesNotMatch(await dialog(page).innerText(), /Test Wallet/);
   await s.close();
 });
 
@@ -901,7 +916,8 @@ test('a second wallet with the same rdns taking over the connection ends the fir
   assert.equal(logout.csrf, session.csrf, "A's session is the one signed out");
   assert.equal(logout.status, 200);
   assert.deepEqual(activeSessions(s, ADDR_A), []);
-  assert.match(await dialog(page).innerText(), /Test Wallet B/);
+  // Changed on purpose 2026-10-03 (the owner): no wallet app's name in the dialog; B's own sign-in below shows B took over.
+  assert.doesNotMatch(await dialog(page).innerText(), /Test Wallet/);
   assert.equal(s.wallet.state.signed.length, 1, 'nothing was signed for B on its own');
 
   // B needs a sign-in of its own, and signs it itself.
@@ -1279,7 +1295,7 @@ test('session_exists is adopted through me, with no second signature', async () 
 
 // ---- misconfiguration and untrusted input -----------------------------------
 
-test('a switched-off or unrouted session service says sign-in is unavailable, in words that do not describe the deployment', async () => {
+test('a switched-off or unrouted session service explains the missing sign-in and never asks for a signature', async () => {
   for (const setup of [(fake) => (fake.controls.disabled = true), (fake) => (fake.controls.notRouted = true)]) {
     const s = await scenario();
     setup(s.fake);
@@ -1289,7 +1305,8 @@ test('a switched-off or unrouted session service says sign-in is unavailable, in
     await dialog(page).getByRole('button', { name: 'Connect Test Wallet A' }).click();
     const out = await viewIs(page, 'blocked');
     assert.equal(out.failure, 'service_disabled');
-    assert.match(await dialog(page).innerText(), /Sign-in is unavailable right now\. Public pages keep working\./);
+    assert.equal(await dialog(page).locator('#wallet-dialog-status').innerText(), 'Sign-in is unavailable right now. Public pages keep working.');
+    assert.equal(await dialog(page).getByRole('button', { name: 'Sign in', exact: true }).count(), 0);
     assert.doesNotMatch(await dialog(page).innerText(), /enabled|deployment/i);
     // 2026-10-01 (audit D2): Positions' two cards say the same in their own words, with nothing to press; they used to
     // tell every visitor "Sign in with your wallet…" while the dialog said sign-in was unavailable.
@@ -1300,8 +1317,38 @@ test('a switched-off or unrouted session service says sign-in is unavailable, in
     assert.equal((await merged.locator('.dm-acct-merged-line').innerText()).trim(), 'Your automated positions and their receipts will show here once wallet sign-in is available.');
     assert.equal(await merged.locator('button').count(), 0);
     assert.doesNotMatch(await page.locator('main').innerText(), /Sign in with your wallet/);
+    await page.locator('[data-positions-receipts]').click();
+    await page.locator('[data-execution="signed_out"] [data-signed-out="session_disabled"]').waitFor();
+    assert.match(await page.locator('main').innerText(), /Your receipts will show here once wallet sign-in is available/);
+    await captureReceiptEntry(page, 'receipts-signin-unavailable', page.locator('main'));
+    assert.equal(s.wallet.state.signed.length, 0);
     await s.close();
   }
+});
+
+test('Positions gives a connected wallet a visible receipts entry and signs in only after explicit wallet confirmation', async () => {
+  const s = await scenario({ contextOptions: { viewport: { width: 320, height: 760 } } });
+  const page = await s.open('/positions');
+  await connect(page);
+  assert.match(await dialog(page).innerText(), /Sign a message to view your receipts\. This sends no transaction\./);
+  await page.keyboard.press('Escape');
+  const entrance = page.locator('[data-positions-receipts]');
+  await entrance.waitFor();
+  assert.equal(await entrance.getAttribute('href'), '#/positions/receipts');
+  const box = await entrance.boundingBox();
+  assert.ok(box && box.x >= 0 && box.x + box.width <= 320, 'the entry fits a narrow phone');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no horizontal overflow');
+  await entrance.click();
+  await page.getByRole('heading', { name: 'Receipts', exact: true }).waitFor();
+  await page.locator('[data-execution="signed_out"]').getByRole('button', { name: 'Sign in', exact: true }).click();
+  await dialog(page).waitFor();
+  assert.equal(s.wallet.state.signed.length, 0, 'opening receipts and its wallet dialog does not ask for a signature');
+  await captureReceiptEntry(page, 'receipts-signin', dialog(page));
+  await signIn(s, page);
+  assert.equal(s.wallet.state.signed.length, 1);
+  await page.keyboard.press('Escape');
+  await until(page, () => document.querySelector('[data-execution]')?.getAttribute('data-execution') !== 'signed_out', null, 'receipts observe the real signed-in session');
+  await s.close();
 });
 
 test('a contract mismatch stops without a retry loop, and a mismatched verify is never adopted', async () => {

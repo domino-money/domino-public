@@ -335,3 +335,20 @@ test('I3: a batch is asked one token at a time, each token’s most liquid pairs
   const expired = await answerDex(getAsk(`token-pairs/${TOKEN}`), { cache, now: time.now, fetch: down.fetch, inflight: new Map(), refreshing: new Map() });
   assert.equal(expired.status, 502);
 });
+
+test('I3 (2026-10-03): an ask answers before the page gives up on it: a token not read in time is a 502 at once, and its read goes on behind, kept for the next ask', async () => {
+  let release = () => {};
+  const slow = upstream(() => new Promise((resolve) => { release = () => resolve(json([pair(`0x${'41'.repeat(32)}`, TOKEN, OTHER, 900)])); }));
+  const cache = memoryCache(), time = clock(), later = [];
+  const runtime = { cache, now: time.now, fetch: slow.fetch, inflight: new Map(), refreshing: new Map(), waitUntil: (work) => later.push(work), answerMs: 30 };
+  const started = Date.now();
+  const late = await answerDex(getAsk(`token-pairs/${TOKEN}`), runtime);
+  assert.equal(late.status, 502, 'the page hears at once and asks the provider itself');
+  assert.ok(Date.now() - started < 1000, 'well before the page would give up');
+  assert.equal(later.length, 1, 'the read goes on behind');
+  release();
+  await Promise.all(later);
+  const hit = await answerDex(getAsk(`token-pairs/${TOKEN}`), { ...runtime, waitUntil: undefined });
+  assert.equal(hit.status, 200, 'what the read brought back is kept');
+  assert.equal(slow.calls.length, 1, 'and nothing more is asked upstream');
+});

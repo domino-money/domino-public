@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import {
   back,
@@ -41,6 +41,7 @@ import { usePairBalances } from './usePairBalances'
 import { useCreated } from '../../lib/create/createProgress'
 import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
 import { useNow } from '../../lib/read/useNow'
+import { recovering } from '../../lib/staleRelease'
 import { Button, PageHeader, PageShell } from '../ui'
 import { StageAmount, StageRange } from './StageAmount'
 import { FinalControl, StageReview, preloadCreateControl } from './StageReview'
@@ -51,6 +52,16 @@ import { heldAmounts } from './valuation'
 
 /** The outcomes only the verification read, or the featured list before it, can produce. */
 type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'unsupported' | 'failed' | 'withdrawn' }>
+
+/**
+ * Changed on purpose (data) 2026-10-02 (Domino V2 integration, the journey; the owner, night: no network choice, the pool
+ * step stays exactly today's): in a build that carries V2 (`__DOMINO_V2__`; production and development too since
+ * 2026-10-04, the owner: the site runs on Domino V2; false only in the test builds without V2, where this folds away),
+ * "Create a new pool (advanced)" at the foot of the pool step (src/v2in/journey/PoolAdvanced.tsx),
+ * drawn only inside the integrated journey's wrapper. Opened lazily, named once; one that cannot load draws nothing
+ * (lib/staleRelease.ts recovering).
+ */
+const V2PoolAdvanced = __DOMINO_V2__ ? lazy(recovering(() => import('../../v2in/journey/PoolAdvanced'), () => ({ default: () => null }))) : null
 
 /** How many times a failed verification of the linked pool is asked again on its own, and the first wait. */
 const VERIFY_ATTEMPTS = 3
@@ -404,6 +415,18 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   const bodyOf = (step: VisualStep): ReactNode => {
     switch (step) {
       case 'pool':
+        if (__DOMINO_V2__ && V2PoolAdvanced) {
+          return (
+            <div className="dm-flow-stack" data-pool-stage="">
+              <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} onPreview={setPreview} />
+              {!state.pool && (
+                <Suspense fallback={null}>
+                  <V2PoolAdvanced />
+                </Suspense>
+              )}
+            </div>
+          )
+        }
         return <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} onPreview={setPreview} />
       case 'range':
         return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} />
@@ -457,7 +480,7 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
 
   // The page is the steps and, on a wide screen, the position they make, drawn beside them as it takes shape.
   return (
-    <PageShell width="flow" className="dm-np" data-create-journey="">
+    <PageShell width="flow" className="dm-np" data-create-journey="" data-create-step={current}>
       <PageHeader size="display" title={CREATE.page.title} description={CREATE.page.description} className="dm-np-head dm-flow-rise" />
       <div className="dm-card dm-flow-card dm-flow-rise" style={{ '--delay': '40ms' } as CSSProperties}>
         <StepList steps={steps} onOpen={reopen} locked={creating} />

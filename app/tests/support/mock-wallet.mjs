@@ -12,6 +12,7 @@
  */
 import { hexToString } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { V2_METHODS, answerV2 } from './mock-wallet-v2.mjs';
 
 const KEYS = [
   '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
@@ -35,6 +36,8 @@ const ALLOWED = new Set([
   'wallet_addEthereumChain',
   'wallet_requestPermissions',
   'wallet_revokePermissions',
+  // Changed on purpose (2026-10-02, Domino V2 spec F7 §1.8): V2 signs EIP-712 typed data (src/finance/v2/typedData.ts), answered by mock-wallet-v2.mjs.
+  'eth_signTypedData_v4',
 ]);
 
 const DEFAULT_WALLETS = [
@@ -107,6 +110,7 @@ export async function installWallets(context, wallets = DEFAULT_WALLETS) {
     log: [],
     refused: [],
     signed: [],
+    signedTyped: [],
     csp: [],
     beforeSign: null,
   };
@@ -126,6 +130,7 @@ export async function installWallets(context, wallets = DEFAULT_WALLETS) {
       return fail(4200, `${method} is not supported`);
     }
     if (wallet.reject.delete(method)) return fail(4001, 'User rejected the request.');
+    if (V2_METHODS.has(method)) return answerV2(wallet, ACCOUNTS[wallet.account], method, params, state);
     const account = ACCOUNTS[wallet.account];
     // A connection prompt the person never answers (hidden behind another window), or one already open (-32002).
     const asking = method === 'eth_requestAccounts' || method === 'wallet_requestPermissions';

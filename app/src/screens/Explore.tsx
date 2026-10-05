@@ -31,14 +31,12 @@ const NONE: ReadonlySet<string> = new Set()
 /** The first four blocks of a page rise in, 40ms apart (first load only: navigation cross-fades). */
 const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSProperties
 
+/** Changed on purpose 2026-10-04 (the owner: Domino covers more than one network): the title alone, no "Uniswap pools on Robinhood Chain." under it. */
 function Title() {
   return (
-    <>
-      <Display as="h1" className="dm-display-h1">
-        Markets
-      </Display>
-      <p className="dm-mkt-lede">Uniswap pools on Robinhood Chain.</p>
-    </>
+    <Display as="h1" className="dm-display-h1">
+      Markets
+    </Display>
   )
 }
 
@@ -59,7 +57,8 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
   const [count, setCount] = useState<{ shown: number; total: number } | null>(null)
   // The list on screen (lib/read/featuredSource.ts) names the section and the tokens the search knows by name.
   const featured = useFeatured()
-  // A short list (fewer pools than its rules ask for) says so, and opens the way to every other pool (audit B1, B5).
+  // A short list (fewer pools than its rules ask for) opens the way to every other pool (audit B1, B5). Changed on purpose
+  // 2026-10-03 (the owner): it no longer says "5 of 6 today" beside the title.
   const short = featured.settled ? shortCount(featured) : null
   const [catalogueChoice, setCatalogueOpen] = useState<boolean | null>(null)
   const catalogueOpen = catalogueChoice ?? short !== null
@@ -95,6 +94,14 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
   return (
     <>
       <MarketCarousel heading={<Title />} />
+      <details className="dm-details dm-mkt-guide">
+        <summary>New to pools? Start here</summary>
+        <div className="dm-mkt-guide-grid">
+          <div><span className="dm-guide-number" aria-hidden="true">01</span><h2>Choose a token pair</h2><p>A pool holds two tokens. People pay a fee to trade between them.</p></div>
+          <div><span className="dm-guide-number" aria-hidden="true">02</span><h2>Compare the activity</h2><p>TVL is the money in the pool. Volume is how much people traded. APR is an estimate, not a promise.</p></div>
+          <div><span className="dm-guide-number" aria-hidden="true">03</span><h2>Make it your position</h2><p>Open a pool to explore it, choose a price range and review your amount before connecting your wallet.</p></div>
+        </div>
+      </details>
       <section className="dm-mkt-pools animate-rise" style={rise(2)} aria-labelledby="markets-pools-title">
         <SectionHead
           id="markets-pools-title"
@@ -104,10 +111,6 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
             filtered && count && count.shown > 0 ? (
               <span className="tnum" role="status">
                 {count.shown} of {count.total}
-              </span>
-            ) : short ? (
-              <span className="tnum text-fg-subtle" data-featured-count={`${short.shown}/${short.size}`} title={`Today’s list has ${short.shown} of the ${short.size} pools its rules allow: a pool leaves the list when its figures can’t be checked.`}>
-                {short.shown} of {short.size} today
               </span>
             ) : undefined
           }
@@ -123,7 +126,6 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
           Search the pool catalogue
         </summary>
         <div className="grid gap-4">
-          <p className="max-w-[64ch] text-body text-fg-muted">For pools beyond the selected ones, choose a token by name or paste its address.</p>
           {catalogueOpen && source && (
             <div className="dm-mkt-catalogue-search">
               <TokenSearch source={source} known={known} onFound={onToken} id="markets-catalogue-token" label="Find a token by name or address" />

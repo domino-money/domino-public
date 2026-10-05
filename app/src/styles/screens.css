@@ -17,3 +17,17 @@
 @import './account-screens.css';  /* foundation: rugged97's screens */
 @import './docs.css';     /* docs: #/docs layout, sidebar, prose, on-this-page */
 @import './three.css';    /* the three features joined up: rows, a position's page, New position's success, Automate */
+@import './dialogs.css';  /* a position's action dialogs, one family (2026-10-03): last, over flow.css's and positions.css's dialog rules */
+@import './screen-refinement.css'; /* common hierarchy over each screen's layout */
+@import './position-refinement.css';
+/* Changed on purpose 2026-10-04 (the owner's ChatGPT round 4): New position's and Setup's refinements join this one
+   stylesheet instead of each screen's own chunk, so the deployed build keeps its two stylesheets (session.bundle). */
+@import './creation-refinement.css';
+@import './setup-refinement.css';
+/* Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2): V2's own screen styles (src/v2in) join this one
+   stylesheet instead of their chunks' own, so the deployed build, which carries V2 now, keeps its two stylesheets
+   (session.bundle). Last, where their chunks put them; every rule is scoped to V2's own containers and classes. */
+@import '../v2in/autoexit/mandate.css';
+@import '../v2in/automate/automate.css';
+@import '../v2in/funds/funds.css';
+@import '../v2in/position/range-dialog.css';

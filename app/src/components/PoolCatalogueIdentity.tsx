@@ -4,6 +4,7 @@ import type { TokenDisplay } from '../lib/read/types'
 import { TokenLabel } from './read/TokenLabel'
 import { TokenIcon, TokenMark } from './TokenIcon'
 import { unreadToken } from '../lib/read/project'
+import { rem } from '../lib/rootScale'
 
 export function PoolTokenLabel({ token }: { token: TokenDisplay }) {
   const label = catalogueTokenLabel(token)
@@ -31,11 +32,11 @@ export function PoolCatalogueIdentity({ entry, compact = false }: { entry: PoolC
   return <>
     <span className="inline-flex shrink-0 items-center" aria-hidden="true">
       {entry.artwork.map((artwork, index) => {
-        const style = { marginLeft: index ? -size * 0.3 : 0 }
+        const style = { marginLeft: index ? rem(-size * 0.3) : 0 }
         return artwork
           ? <TokenIcon key={index} symbol={artwork} size={size} ring={ring} style={style} />
           : entry.addresses ? <TokenMark key={index} token={unreadToken(entry.addresses[index])} size={size} ring={ring} style={style} />
-            : <span key={index} className="inline-block rounded-full bg-surface-3" style={{ width: size, height: size, boxShadow: `0 0 0 2px ${ring}`, ...style }} />
+            : <span key={index} className="inline-block rounded-full bg-surface-3" style={{ width: rem(size), height: rem(size), boxShadow: `0 0 0 2px ${ring}`, ...style }} />
       })}
     </span>
     <span className={compact ? 'font-medium text-fg' : 'min-w-0 font-medium'}><CatalogueLabel text={entry.labels[0]} />/<CatalogueLabel text={entry.labels[1]} />

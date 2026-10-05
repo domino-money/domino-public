@@ -11,7 +11,7 @@ import { axisLabel } from '../../../lib/format/time'
 
 const HOUR = 3_600
 const DAY = 86_400
-const STEPS = [HOUR, 2 * HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 3 * DAY, 7 * DAY, 14 * DAY, 30 * DAY]
+const STEPS = [60, 5 * 60, 15 * 60, 30 * 60, HOUR, 2 * HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 3 * DAY, 7 * DAY, 14 * DAY, 30 * DAY]
 /** Fewer ticks than this read as a lone label; a finer step is taken while it keeps within one of `max`. */
 const FEWEST = 3
 
@@ -37,4 +37,31 @@ export function dateTicks(start: number, end: number, max: number): { t: number;
     ticks = finer
   }
   return ticks.map((t) => ({ t, label: axisLabel(t, step >= DAY || t % DAY === 0 ? 3 * DAY : 0) }))
+}
+
+/**
+ * XAxis aligns labels near an edge instead of centring them. Keep actual label boxes apart after that alignment,
+ * prioritising the first ("Opened", when present) and last labels. SVG design units scale with the chart's rem root.
+ * The conservative width includes room for the 12-unit tabular face, without a measuring/re-rendering loop.
+ */
+export function spacedTimeTicks<T extends { x: number; label: string }>(ticks: readonly T[], left: number, right: number): T[] {
+  if (ticks.length < 2) return [...ticks]
+  const boxes = ticks.map((tick) => {
+    const width = tick.label.length * 7.5 + 4
+    const start = tick.x - left < 32 ? tick.x : right - tick.x < 32 ? tick.x - width : tick.x - width / 2
+    return { tick, start, end: start + width }
+  })
+  const gap = 12
+  const first = boxes[0]
+  const last = boxes[boxes.length - 1]
+  if (last.start - first.end < gap) return [first.tick]
+  const kept = [first.tick]
+  let edge = first.end
+  for (const box of boxes.slice(1, -1)) {
+    if (box.start - edge >= gap && last.start - box.end >= gap) {
+      kept.push(box.tick)
+      edge = box.end
+    }
+  }
+  return [...kept, last.tick]
 }

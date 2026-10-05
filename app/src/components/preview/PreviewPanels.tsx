@@ -29,13 +29,13 @@ function ChecksList({ checks }: { checks: ChecksView }) {
     <div data-checks={checks.status}>
       <Pill tone={checks.tone}>{checks.label}</Pill>
       {checks.reasons.length > 0 && (
-        <ul className="mt-2 list-disc pl-5 text-[13px]">
+        <ul className="mt-2 list-disc pl-5 text-[0.8125rem]">
           {checks.reasons.map((reason) => (
             <li key={reason}>{reason}</li>
           ))}
         </ul>
       )}
-      {checks.note && <p className="mt-2 text-[12px] text-fg-subtle">{checks.note}</p>}
+      {checks.note && <p className="mt-2 text-[0.75rem] text-fg-subtle">{checks.note}</p>}
     </div>
   )
 }
@@ -50,10 +50,10 @@ function SwapPreviewPanel({ view }: { view: SwapView }) {
       <Section title="Provider output fee">
         <RowList rows={view.fee} label="Provider output fee" />
         {view.feeOutputs === null ? (
-          <p className="mt-2 text-[12px] text-fg-subtle">Itemised outputs not reported.</p>
+          <p className="mt-2 text-[0.75rem] text-fg-subtle">Itemised outputs not reported.</p>
         ) : (
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[560px] text-left text-[12px]">
+            <table className="w-full min-w-[35rem] text-left text-[0.75rem]">
               <caption className="sr-only">Provider fee outputs</caption>
               <thead className="text-fg-subtle">
                 <tr>
@@ -83,11 +83,11 @@ function SwapPreviewPanel({ view }: { view: SwapView }) {
       </Section>
       <Section title="Route">
         {view.paths.map((path) => (
-          <div key={path.label} className="mb-2 text-[13px]">
+          <div key={path.label} className="mb-2 text-[0.8125rem]">
             <p className="font-medium">
               {path.label}: <span className="font-mono">{path.share}</span>
             </p>
-            <ol className="mt-1 list-decimal pl-5 font-mono text-[12px] text-fg-muted">
+            <ol className="mt-1 list-decimal pl-5 font-mono text-[0.75rem] text-fg-muted">
               {path.hops.map((hop) => (
                 <li key={hop} className="break-all">
                   {hop}
@@ -99,7 +99,7 @@ function SwapPreviewPanel({ view }: { view: SwapView }) {
       </Section>
       <Section title="Network gas">
         <RowList rows={view.gas} label="Network gas" />
-        <p className="mt-2 text-[12px] text-fg-subtle">Provider estimate. Excludes approvals. Not verified.</p>
+        <p className="mt-2 text-[0.75rem] text-fg-subtle">Provider estimate. Excludes approvals. Not verified.</p>
       </Section>
       <Section title="Other">
         <RowList rows={view.other} label="Simulation, approval and fees" />
@@ -117,7 +117,7 @@ function PositionPreviewPanel({ view }: { view: PositionView }) {
       <ChecksList checks={view.checks} />
       <Section title="Tokens">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-[12px]">
+          <table className="w-full min-w-[45rem] text-left text-[0.75rem]">
             <caption className="sr-only">Expected deposits, maximum debits and budgets per token</caption>
             <thead className="text-fg-subtle">
               <tr>
@@ -165,13 +165,13 @@ function PositionPreviewPanel({ view }: { view: PositionView }) {
       <Section title="Other">
         <RowList rows={view.other} label="Gas, fees and simulation" />
       </Section>
-      <details className="mt-5 border-t pt-4 text-[13px]">
+      <details className="mt-5 border-t pt-4 text-[0.8125rem]">
         <summary className="cursor-pointer text-fg-muted">Provider details</summary>
         <div className="mt-3">
           <RowList rows={view.provider} label="Provider details" />
         </div>
       </details>
-      <p className="mt-4 text-[12px] text-fg-subtle">{view.statement}</p>
+      <p className="mt-4 text-[0.75rem] text-fg-subtle">{view.statement}</p>
     </>
   )
 }
@@ -262,7 +262,7 @@ export function PreviewResult<R extends OnboardingRoute>({
           {refresh ? 'Refresh preview' : 'Get preview'}
         </Button>
         {reason && (
-          <p id={reasonId} className="text-[12px] text-fg-muted">
+          <p id={reasonId} className="text-[0.75rem] text-fg-muted">
             {reason}
           </p>
         )}
@@ -275,7 +275,7 @@ export function PreviewResult<R extends OnboardingRoute>({
           </Callout>
         )}
         {state.status === 'editing' && (
-          <div role="alert" className="text-[13px] text-money-out">
+          <div role="alert" className="text-[0.8125rem] text-money-out">
             <p className="font-medium">Some inputs need fixing:</p>
             <ul className="mt-1 list-disc pl-5">
               {state.issues.map((issue) => (
@@ -284,8 +284,8 @@ export function PreviewResult<R extends OnboardingRoute>({
             </ul>
           </div>
         )}
-        {state.status === 'ready' && <p className="text-[13px] text-fg-muted">{READY_COPY}</p>}
-        {state.status === 'loading' && <p className="text-[13px] text-fg-muted">{LOADING_COPY}</p>}
+        {state.status === 'ready' && <p className="text-[0.8125rem] text-fg-muted">{READY_COPY}</p>}
+        {state.status === 'loading' && <p className="text-[0.8125rem] text-fg-muted">{LOADING_COPY}</p>}
         {state.status === 'current' && (
           <div
             ref={figures}
@@ -297,11 +297,11 @@ export function PreviewResult<R extends OnboardingRoute>({
           >
             <div className="flex flex-wrap items-center gap-3">
               <Pill tone="accent">Preview only</Pill>
-              <span aria-live="off" className="tnum font-mono text-[12px] text-fg-muted" data-testid="preview-expiry">
+              <span aria-live="off" className="tnum font-mono text-[0.75rem] text-fg-muted" data-testid="preview-expiry">
                 Expires in {state.secondsLeft} s
               </span>
             </div>
-            <p className="mt-2 text-[13px] text-fg-muted">{PREVIEW_ONLY}</p>
+            <p className="mt-2 text-[0.8125rem] text-fg-muted">{PREVIEW_ONLY}</p>
             <div className="mt-4">
               {route === 'swap-preview' ? (
                 <SwapPreviewPanel view={projectSwap(state.preview as SwapPreview, catalog, state.owner)} />
@@ -322,7 +322,7 @@ export function PreviewResult<R extends OnboardingRoute>({
         {state.status === 'failed' && (
           <Callout tone="out" testId="preview-failure">
             <p>{failureText(state)}</p>
-            {state.requestId && <p className="mt-1 font-mono text-[12px] text-fg-subtle">Support reference: {state.requestId}</p>}
+            {state.requestId && <p className="mt-1 font-mono text-[0.75rem] text-fg-subtle">Support reference: {state.requestId}</p>}
           </Callout>
         )}
       </div>

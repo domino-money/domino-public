@@ -89,22 +89,90 @@ test('the unavailable page offers no form to submit', async () => {
   assert.match(text, /Access is paused/);
 });
 
-test('the access page calls nothing a beta and asks no one to come back later, in any state', async () => {
-  const pages = {
+/** The access page in each of its four states, as the gate answers them. */
+async function accessPages() {
+  const address = { 'CF-Connecting-IP': '198.51.100.250' };
+  for (let i = 0; i < gate.LOGIN_LIMIT.failures; i++) await run(loginPost('wrong', address));
+  const wait = await run(loginPost('wrong', address));
+  assert.equal(wait.status, 429);
+  return {
     ask: await (await run(navigate('/'))).text(),
     wrong: await (await run(loginPost('wrong'))).text(),
+    wait: await wait.text(),
     unavailable: await (await run(navigate('/'), {})).text(),
   };
+}
+
+/** What a visitor reads: the markup and styles removed, so the login path's name does not count. */
+const wordsOf = (html) => html.replace(/<style>[\s\S]*<\/style>/, ' ').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+
+test('the access page calls nothing a beta and asks no one to come back later, in any state', async () => {
+  const pages = await accessPages();
   for (const [state, html] of Object.entries(pages)) {
     // The app recognises this page by its exact title (GATE_PAGE_MARKER in src/lib/read/interpret.ts).
     assert.match(html, /<title>Domino · Access<\/title>/, state);
-    // What a visitor reads: the markup and styles removed, so the login path's name does not count.
-    const words = html.replace(/<style>[\s\S]*<\/style>/, ' ').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    const words = wordsOf(html);
     assert.doesNotMatch(words, /\bbeta\b|\blater\b|temporarily/i, state);
     assert.match(words, /Invitation only/, state);
   }
-  assert.match(pages.ask, /Enter the access password from your invitation to continue\./);
-  assert.match(pages.unavailable, /<h1>Access is paused\.<\/h1>\s*<p class="lede">Nothing is wrong on your side\.<\/p>/);
+  // Changed on purpose 2026-10-03 (the owner's review of the access page: fewer words): one short line, and the
+  // headline's full stop in Tangerine, as the wordmark's.
+  assert.match(pages.ask, /<h1>You’re early<span class="dot">\.<\/span><\/h1>\s*<p class="lede">Enter the password from your invitation\.<\/p>/);
+  assert.match(pages.unavailable, /<h1>Access is paused<span class="dot">\.<\/span><\/h1>\s*<p class="lede">Nothing is wrong on your side\.<\/p>/);
+});
+
+// 2026-10-03 (the owner: "It also says 'Robinhood Chain': that isn't needed, Domino is becoming multi-chain."): no state
+// of the access page names a chain, and the redesigned page (a drawing, its motion, icons) is still all inline: nothing
+// is asked of another host, no style sits in an attribute, and the only scheme in it is the SVG namespace inside the
+// favicon's data: URL.
+test('the access page names no chain and asks nothing of another host, in any state', async () => {
+  const pages = await accessPages();
+  for (const [state, html] of Object.entries(pages)) {
+    assert.doesNotMatch(wordsOf(html), /robinhood|\bchains?\b/i, state);
+    assert.doesNotMatch(html, /robinhood/i, state);
+    const references = [...html.matchAll(/\b(?:src|href|action)="([^"]*)"|url\(([^)]*)\)/g)].map((match) => match[1] ?? match[2]);
+    assert.ok(references.length > 0, state);
+    for (const reference of references) assert.match(reference, /^'?(?:\/(?!\/)|#|data:)/, `${state}: ${reference}`);
+    assert.deepEqual([...new Set(html.match(/https?:\/\/[^\s'"]+/g))], ['http://www.w3.org/2000/svg'], state);
+    assert.doesNotMatch(html, /\sstyle="/, `${state}: a style attribute`);
+    assert.equal((html.match(/<script\b/g) ?? []).length, 1, `${state}: its one script`);
+  }
+  // The two fonts where the gate serves them; while access is paused it refuses them too (rule 1), so that page names
+  // none, and asks for nothing at all but itself.
+  for (const state of ['ask', 'wrong', 'wait']) for (const font of gate.GATE_FONTS) assert.ok(pages[state].includes(font), `${state}: ${font}`);
+  for (const font of gate.GATE_FONTS) assert.ok(!pages.unavailable.includes(font), `unavailable: ${font}`);
+});
+
+// 2026-10-03: the app reads at most MAX_PAGE_BYTES of an HTML 503 to find the gate's title in it (src/lib/read/interpret.ts,
+// src/lib/http/rawReply.ts); a longer body is refused whole as too large, and "Access is paused" would become a generic
+// failure. The redesigned page carries only what its state uses, so the paused one stays well inside that.
+test('the paused page fits inside what the app reads of a 503 to recognise the gate', async () => {
+  const { MAX_PAGE_BYTES, GATE_PAGE_MARKER } = require('../.test-build/app/src/lib/read/interpret.js');
+  const { MAX_PAGE_BYTES: RAW_MAX_PAGE_BYTES } = require('../.test-build/app/src/lib/http/rawReply.js');
+  const response = await run(fetchLike('/api/read/v1/capabilities'), {});
+  assert.equal(response.status, 503);
+  assert.match(response.headers.get('Content-Type'), /^text\/html/);
+  const bytes = Buffer.byteLength(await response.text(), 'utf8');
+  for (const limit of [MAX_PAGE_BYTES, RAW_MAX_PAGE_BYTES]) assert.ok(bytes <= limit - 2048, `${bytes} bytes, against ${limit} (2 KiB kept spare)`);
+  assert.ok((await (await run(navigate('/'), {})).text()).includes(GATE_PAGE_MARKER));
+});
+
+// 2026-10-03: the access page's drawing moves on a first visit only, a few loops, then rests on its complete picture;
+// nothing moves at all where the system asks for reduced motion.
+test('the access page’s motion plays a few times on a first visit, never forever, and stops under reduced motion', async () => {
+  const pages = await accessPages();
+  for (const [state, html] of Object.entries(pages)) {
+    const style = /<style>([\s\S]*)<\/style>/.exec(html)[1];
+    assert.doesNotMatch(style, /infinite/, `${state}: a loop without end`);
+    assert.match(style, /@media \(prefers-reduced-motion: reduce\) \{ \*, \*::before, \*::after \{ animation: none !important; transition: none !important; \} \}\s*$/, `${state}: reduced motion stills everything, last`);
+    for (const [, count] of style.matchAll(/animation: g-[a-z0-9-]+ [\d.]+s linear [\d.]+s (\S+);/g)) assert.ok(Number(count) <= 3, `${state}: ${count} loops`);
+    // The loop belongs to the first visit: sent with that page alone, every selector that starts it naming data-state="ask"
+    // (the run, its six tiles, the lit tile, its face and its glow).
+    const loops = [...style.matchAll(/[^;{}]*\{ animation: g-(?:run|tip-\d|lit|lit-body|warm) [^}]*\}/g)].map((match) => match[0]);
+    assert.equal(loops.length, state === 'ask' ? 10 : 0, `${state}: ${loops.length} looping parts`);
+    for (const rule of loops) assert.match(rule, /body\[data-state="ask"\]/, rule);
+    assert.match(html, new RegExp(`<body data-state="${state}">`), state);
+  }
 });
 
 // ---------------------------------------------------------------------------

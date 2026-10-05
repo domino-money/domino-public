@@ -2,37 +2,42 @@ import { COPY } from '../../read/screens/copy'
 import { doc, p } from '../blocks'
 import type { DocPage } from '../types'
 
+/**
+ * Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): custody as Domino's new contracts keep it (spec F7
+ * §1.5, in its suggested words): the position stays in the wallet, an action keeps nothing afterwards, and the contract
+ * behind Auto-compound, Domino-compound and Protection only is "your automation" (the owner, 2026-10-04). Domino V1's
+ * setup operation and sequence controls left with V1's automation, which ends when the new one starts.
+ */
 export const NON_CUSTODIAL: DocPage = {
   slug: 'non-custodial',
   title: 'Non-custodial',
-  summary: 'Who holds your positions and fees, what the operator may do, and how you pause, revoke and withdraw.',
+  summary: 'Who holds your positions and fees, what Domino’s automation may and may not do, and the controls only you have.',
   lead: 'When you create an automation using Domino, you are the sole owner and only you can control it. Every step is fully automated by a contract whose controller is your signed wallet.',
   sections: [
     {
       id: 'your-wallet',
       title: 'The position you open stays in your wallet',
       blocks: [
-        p('A position you create is a standard Uniswap position NFT in the wallet that signs.'),
-        p('When you start Auto-compound or Domino-compound from it, that NFT stays in your wallet. You approve that one NFT to your sequence vault, never all of your NFTs.'),
-        // 2026-09-27: Create position deposits through Domino's Setup contract itself (since 2026-09-23), and Setup's own
-        // screen is linked from nowhere, so the sentence says where a reader meets a setup operation.
-        p('Create position first deposits your tokens in Domino’s Setup contract, then turns them into your position. Until then the tokens you fund wait in a setup operation until you mint or refund. Only your wallet can do either, and a refund carries no Domino fee.'),
+        p('A position you create is a standard Uniswap position NFT in the wallet that signs. Each action on it is a single transaction, and Domino’s contract keeps nothing afterwards.'),
+        p('Some actions first let Domino manage that one position, until you revoke it: see ', doc('Domino’s permission', 'manage-position', 'permission'), '.'),
+        p('When you start Auto-compound or Domino-compound from it, that NFT stays in your wallet. You approve that one NFT to your automation, never all of your NFTs.'),
       ],
     },
     {
+      // The id stays, so links to it still land.
       id: 'sequence-vault',
-      title: 'What your sequence vault holds',
+      title: 'What your automation holds',
       blocks: [
-        p('Positions the automation opens, and earned fees not yet added back, are held by your own sequence vault until you withdraw them. Positions it opens are standard Uniswap position NFTs too.'),
-        p('Your permission covers earned fees only, including fees still uncollected on your starting position when you create the sequence. Principal is never used.'),
-        p('The vault is created for your wallet alone, and no function can change its owner. Only your wallet controls the vault: its withdrawals, limits and operator. Every withdrawal goes to your wallet.'),
+        p('Positions Domino-compound opens, and earned fees not yet added back, are held by your automation until you withdraw them. Positions it opens are standard Uniswap position NFTs too.'),
+        p('Your permission covers earned fees only, including fees your position had not collected when you set it up. Principal is never used, except by a stop-loss or take-profit order you signed.'),
+        p('Your automation is made for your wallet alone, and no function can change its owner. Only your wallet controls its withdrawals, limits and pause, and every withdrawal goes to your wallet.'),
       ],
     },
     {
       id: 'operator',
-      title: 'What the operator can and cannot do',
+      title: 'What Domino’s automation can and cannot do',
       blocks: [
-        p('Your wallet stays the vault’s only owner. The operator named in your review can only run fee-only steps within your limits, and pause.'),
+        p('Your wallet stays the only owner. Domino’s automation service, the operator, can only run fee-only steps within your limits, pause, and carry out an order you signed.'),
         {
           kind: 'split',
           columns: [
@@ -41,17 +46,19 @@ export const NON_CUSTODIAL: DocPage = {
               items: [
                 ['Add a position’s earned fees back into it.'],
                 ['Open or fund the next position from earned fees, within your limits.'],
-                ['Swap earned fees in the same pool, within your slippage and price-impact limits.'],
+                ['Swap earned fees within your slippage and price-gap limits.'],
                 ['Pause automation.'],
+                ['Carry out a stop-loss or take-profit order you signed, exactly as signed.'],
+                ['Return the fees it holds to your wallet once your position is closed.'],
               ],
             },
             {
               title: 'The operator cannot',
               items: [
-                ['Withdraw positions or fees.'],
+                ['Withdraw positions or fees, except as an order you signed says.'],
                 ['Change your limits, or resume automation after a pause.'],
-                ['Reduce a position’s liquidity, or pull tokens from your wallet.'],
-                ['Send anything to an address of its choosing.'],
+                ['Pull tokens from your wallet.'],
+                ['Send anything to anyone but you.'],
               ],
             },
           ],
@@ -59,23 +66,22 @@ export const NON_CUSTODIAL: DocPage = {
       ],
     },
     {
+      // The id stays: a receipt's How to pause lands here.
       id: 'pause-revoke-withdraw',
-      title: 'Pause, revoke and withdraw',
+      title: 'Your controls',
       blocks: [
         {
           kind: 'facts',
           rows: [
-            // 2026-10-01 (audit E18): where Pause is (a receipt's How to pause lands here).
-            { label: 'Pause', value: 'You or the operator', note: 'Stops automation. Only you can resume it. Your position’s page has the button, no sign-in needed.' },
-            { label: 'Change your limits', value: 'You', note: 'The automation rules, and the limits every run is bound by. The paused state is unchanged.' },
-            // 2026-10-01 (audit E21): the app's spelling.
-            { label: 'Revoke the operator', value: 'You', note: 'Ends its authority over your vault. Once revoked, you can authorize the same operator again.' },
-            { label: 'Revoke the NFT approval', value: 'You', note: 'Takes back the vault’s approval of your starting position, stopping automation.' },
-            { label: 'Withdraw', value: 'You', note: 'Returns a position or earned fees the vault holds to your wallet.' },
+            { label: 'Pause', value: 'You, or Domino', note: 'Stops automated runs; your stop-loss orders stay active. Only you can resume.' },
+            { label: 'Turn back on', value: 'You', note: 'Restarts automation after a change outside Domino stopped it.' },
+            { label: 'Withdraw to wallet', value: 'You', note: 'Sends the fees your automation holds to your wallet, in any state.' },
+            { label: 'Withdraw a next position', value: 'You', note: 'Sends a position Domino-compound opened to your wallet, as a plain position.' },
+            { label: 'Leave automation', value: 'You', note: 'Everything your automation holds to your wallet, and automation ends; stop-loss orders pause.' },
+            { label: 'Cancel order', value: 'You', note: 'Stops a stop-loss or take-profit order for good.' },
           ],
         },
-        // 2026-10-01 (audit E18): which has a screen. What signing in grants is on Wallet and sign-in.
-        p('Each is a transaction your wallet signs on your sequence vault, even while paused or without the operator. Pause and fee withdrawals have buttons here; your wallet makes the rest on the block explorer. None carries a service fee.'),
+        p('Each is a transaction your wallet signs, with no Domino fee, and none waits on Domino’s service. They are on the position’s page, and in Managed positions on Positions.'),
         p(doc('Signing in', 'wallet', 'sign-in'), ' grants none of them.'),
       ],
     },
@@ -85,7 +91,7 @@ export const NON_CUSTODIAL: DocPage = {
 export const RISKS: DocPage = {
   slug: 'risks',
   title: 'Risks',
-  summary: 'What Domino does not remove: moving prices, idle ranges, fees that fall short, automation that stops, and token and contract risk.',
+  summary: 'What Domino does not remove: moving prices, idle ranges, fees that fall short, automation that stops, and token, bridge and contract risk.',
   sections: [
     {
       id: 'market-risk',
@@ -106,19 +112,18 @@ export const RISKS: DocPage = {
       title: 'No promised return',
       blocks: [
         p('Fees are not profit. A position can collect fees for weeks and still be worth less than holding the assets.'),
-        p('Automation adds earned fees to positions. It does not stop a token falling.'),
+        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): an exit order is a limit, not a promise.
+        p('Automation adds earned fees to positions. It does not stop a token falling, and a stop-loss limits a fall only when its exit runs: see ', doc('Stop-loss / take-profit', 'stop-loss', 'warnings'), '.'),
       ],
     },
     {
       id: 'automation-stops',
       title: 'Automation can stop',
       blocks: [
-        // 2026-09-27: a position's page collects fees and closes (components/positions/PositionActions.tsx, since 2026-09-24),
-        // and either stops automation on it, as its dialog says; the sentence names them.
-        p('Automation stops if the position you started from has its fees collected or its liquidity changed outside Domino, or leaves your wallet. Collect fees and Close position on its page stop it too, and so does revoking the operator or the NFT approval.'),
-        p('Restoring the vault’s permission over that position, while the position is still yours and still approved to the vault, or naming the operator again while it is revoked, is a transaction your wallet signs on your sequence vault. Activation stays a separate step you sign.'),
-        p('Restoring that permission consents again to the fees the position has not collected, exactly as creating the vault did.'),
-        p('After you revoke the NFT approval, or the position leaves your wallet, restarting takes a contract call that no Domino screen makes.'),
+        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): spec F7 §1.5, §2.13, §5.3, §5.4.
+        p('Automation stops for a position if you change it, move it or approve another app on it. Collect fees, Close position, Add liquidity and Withdraw count as changes too.'),
+        p('It stays stopped until you turn it back on: Turn back on, on the position’s page, consents again to the fees the position has not collected, exactly as setting it up did.'),
+        p('Automation can also wait without stopping, for example until fees cover the network cost; its card says why. Domino can stop automation on a network for safety, and your controls keep working.'),
       ],
     },
     {
@@ -127,6 +132,14 @@ export const RISKS: DocPage = {
       blocks: [
         p(COPY.figures.caveat),
         p('TVL and 24h volume come from Domino history where the deployment provides it, and otherwise from a market data provider that Domino does not reconcile. See ', doc('Figures and sources', 'figures'), '.'),
+      ],
+    },
+    {
+      // 2026-10-04 (the owner: docs revalidated for V2): spec F7 §3, F5.
+      id: 'bridges',
+      title: 'Bridges',
+      blocks: [
+        p('A deposit from another network travels through Relay or Across, which Domino does not run. If one can’t deliver, it refunds the deposit on the network it left from.'),
       ],
     },
     {
@@ -161,6 +174,8 @@ export const PRIVACY: DocPage = {
             { label: 'Receipts', value: '30 days', note: 'While you are signed in.' },
             { label: 'A position’s fee history', value: '7 days', note: 'Public chain data, no wallet in it.' },
             { label: 'Token names', value: '30 days', note: 'Public chain data.' },
+            // 2026-10-04 (the owner: docs revalidated for V2): finance/v2/crosschain.ts's deposit journal.
+            { label: 'Deposits from another network', value: 'Until you remove one', note: 'The networks, the bridge and the transaction, so a deposit is followed after a reload.' },
           ],
         },
         p('An older copy is never shown, and is deleted the next time the site opens. Disconnecting your wallet here deletes its copies, and signing out deletes the signed-in ones. Clearing this site’s data deletes them all.'),
@@ -175,6 +190,8 @@ export const PRIVACY: DocPage = {
         // RPC-SPEC §7.6 (2026-10-01): no public node is asked.
         p('Your positions, their fees and their history, as the chain has them now, are read by Domino’s own servers, from Domino’s own Robinhood Chain node. Your browser asks only Domino, so no other node sees your address. Your wallet signs and sends through its own connection to the chain.'),
         p('A position’s fees at a past moment, for its chart, are read by Domino’s read service through an archive provider outside Domino. It is given only the position’s number and the block, never your address.'),
+        // 2026-10-04 (the owner: docs revalidated for V2): read-v6, position-plan-v1, crosschain-v1 and the wallet's own reads.
+        p('Your positions on Base and Arbitrum One, your automation and your orders come from Domino’s read service, which keeps its own record of Domino’s contracts. A quote, for a position or a deposit, is asked of Domino with your signed-in address; a deposit’s bridge, Relay or Across, is given your address, which sends and receives it. Before you sign, and for Look in my wallet, your wallet reads the network through its own connection.'),
         p('Token pictures and prices come from a public market data provider. Like any site it sees your internet address, never your wallet’s.'),
         p('The Wallet card asks Domino’s read service for a wallet’s tokens by its address. ', doc('Signing in', 'wallet', 'sign-in'), ' tells Domino’s sign-in service your address, for the session.'),
       ],

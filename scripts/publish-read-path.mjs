@@ -6,22 +6,30 @@
  * alone switches READ_V5_BRIDGE_ENABLED on, with ENABLED_V5_READS exactly
  * `featured-pools`. Rollback is `worker-disable-v5`, then `tunnels-disable-v5`.
  * Every other operation keeps the v5 state it finds.
+ * Domino V2's wallet reads (read-v6, spec F7 §6.2, 2026-10-02) follow the same
+ * rule: `tunnels-v6` opens their production tunnel path and `worker-v6` alone
+ * switches READ_V6_BRIDGE_ENABLED on, with ENABLED_V6_READS exactly
+ * `portfolio,activity`. Rollback is `worker-disable-v6`, then
+ * `tunnels-disable-v6`. Every other operation keeps the v6 state it finds.
  * The app uses its existing build-once, preview-then-production release helper.
  */
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
-import { READ_TUNNEL_IDS, V3_READ_TUNNEL_IDS, V4_READ_TUNNEL_IDS, V5_READ_TUNNEL_IDS, extendReadTunnelConfig } from './read-tunnel-config.mjs'
+import { READ_TUNNEL_IDS, V3_READ_TUNNEL_IDS, V4_READ_TUNNEL_IDS, V5_READ_TUNNEL_IDS, V6_READ_TUNNEL_IDS, extendReadTunnelConfig } from './read-tunnel-config.mjs'
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url))
 // read-v1's ten POST routes: an existing Worker variable may name any of them and is retained as it is.
 const KNOWN_READS = new Set(['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics', 'markets-snapshot'])
 // Every flag a release passes back: one left out here would be reset to wrangler.read.toml's "false" by the next deploy.
 const VISIBLE_VARS = ['READ_BRIDGE_ENABLED', 'READ_V2_BRIDGE_ENABLED', 'READ_V3_BRIDGE_ENABLED', 'READ_V4_BRIDGE_ENABLED', 'READ_V5_BRIDGE_ENABLED',
-  'ENABLED_READS', 'ENABLED_V2_READS', 'ENABLED_V3_READS', 'ENABLED_V4_READS', 'ENABLED_V5_READS', 'APP_ORIGIN', 'GATEWAY_ORIGIN']
+  'READ_V6_BRIDGE_ENABLED', 'ENABLED_READS', 'ENABLED_V2_READS', 'ENABLED_V3_READS', 'ENABLED_V4_READS', 'ENABLED_V5_READS', 'ENABLED_V6_READS',
+  'APP_ORIGIN', 'GATEWAY_ORIGIN']
 /** read-v5's one route: the only value ENABLED_V5_READS may hold. */
 const V5_READS = 'featured-pools'
+/** read-v6's two routes, as this release writes them: the only value ENABLED_V6_READS may hold. */
+const V6_READS = 'portfolio,activity'
 
 export function publicDataRelease(operation, selected = 'false') {
   if (!['false', 'true'].includes(selected)) throw new Error('DOMINO_RELEASE_PUBLIC_DATA must be true or false.')
@@ -39,7 +47,13 @@ export function featuredPoolsRelease(operation) {
   return operation === 'worker-v5' || operation === 'tunnels-v5'
 }
 
-export function releaseVars(settings, { enableV3 = false, enableV4 = false, disableV4 = false, enableV5 = false, disableV5 = false } = {}) {
+/** Only the operations named for Domino V2's wallet reads (read-v6) open them; no workflow input or variable can. */
+export function walletReadsRelease(operation) {
+  return operation === 'worker-v6' || operation === 'tunnels-v6'
+}
+
+export function releaseVars(settings, { enableV3 = false, enableV4 = false, disableV4 = false, enableV5 = false, disableV5 = false,
+  enableV6 = false, disableV6 = false } = {}) {
   if (typeof enableV3 !== 'boolean') throw new Error('Invalid V3 release option.')
   if (typeof enableV4 !== 'boolean' || typeof disableV4 !== 'boolean' || (enableV4 || enableV3) && disableV4)
     throw new Error('Invalid V4 release option.')
@@ -47,6 +61,10 @@ export function releaseVars(settings, { enableV3 = false, enableV4 = false, disa
   if (typeof enableV5 !== 'boolean' || typeof disableV5 !== 'boolean' || enableV5 && disableV4
       || disableV5 && (enableV3 || enableV4 || enableV5 || disableV4))
     throw new Error('Invalid V5 release option.')
+  // Likewise a V6 rollback changes nothing but READ_V6_BRIDGE_ENABLED, and opening V6 travels with no other rollback.
+  if (typeof enableV6 !== 'boolean' || typeof disableV6 !== 'boolean' || enableV6 && (disableV4 || disableV5)
+      || disableV6 && (enableV3 || enableV4 || enableV5 || enableV6 || disableV4 || disableV5))
+    throw new Error('Invalid V6 release option.')
   const vars = Object.fromEntries((settings.bindings ?? [])
     .filter(binding => binding.type === 'plain_text' && VISIBLE_VARS.includes(binding.name))
     .map(binding => [binding.name, binding.text]))
@@ -64,13 +82,19 @@ export function releaseVars(settings, { enableV3 = false, enableV4 = false, disa
   if (![undefined, '', V5_READS].includes(vars.ENABLED_V5_READS)
       || vars.READ_V5_BRIDGE_ENABLED === 'true' && vars.ENABLED_V5_READS !== V5_READS)
     throw new Error('Unexpected existing V5 featured pools routes; refusing to replace them.')
-  const rollback = disableV4 || disableV5
+  // The same lock for read-v6: nothing, or exactly its two routes as worker-v6 writes them.
+  if (![undefined, '', V6_READS].includes(vars.ENABLED_V6_READS)
+      || vars.READ_V6_BRIDGE_ENABLED === 'true' && vars.ENABLED_V6_READS !== V6_READS)
+    throw new Error('Unexpected existing V6 wallet read routes; refusing to replace them.')
+  const rollback = disableV4 || disableV5 || disableV6
   return { ...vars, ...(rollback ? {} : { READ_V2_BRIDGE_ENABLED: 'true', ENABLED_V2_READS: 'pool-market' }),
     ...(enableV3 ? { READ_V3_BRIDGE_ENABLED: 'true', ENABLED_V3_READS: 'overview,history,search' } : {}),
     ...(enableV4 ? { READ_V4_BRIDGE_ENABLED: 'true', ENABLED_V4_READS: 'sequence-snapshot' } : {}),
     ...(enableV5 ? { READ_V5_BRIDGE_ENABLED: 'true', ENABLED_V5_READS: V5_READS } : {}),
+    ...(enableV6 ? { READ_V6_BRIDGE_ENABLED: 'true', ENABLED_V6_READS: V6_READS } : {}),
     ...(disableV4 ? { READ_V4_BRIDGE_ENABLED: 'false' } : {}),
-    ...(disableV5 ? { READ_V5_BRIDGE_ENABLED: 'false' } : {}) }
+    ...(disableV5 ? { READ_V5_BRIDGE_ENABLED: 'false' } : {}),
+    ...(disableV6 ? { READ_V6_BRIDGE_ENABLED: 'false' } : {}) }
 }
 
 /** Summarise one settled result per key, and name every resource refused. */
@@ -113,31 +137,35 @@ async function cloudflare(path, payload) {
 }
 
 const OPERATIONS = ['inspect', 'tunnels', 'worker', 'tunnels-v3', 'worker-v3', 'tunnels-v4', 'worker-v4', 'tunnels-v5', 'worker-v5',
-  'worker-disable-v4', 'tunnels-disable-v4', 'worker-disable-v5', 'tunnels-disable-v5']
+  'tunnels-v6', 'worker-v6', 'worker-disable-v4', 'tunnels-disable-v4', 'worker-disable-v5', 'tunnels-disable-v5',
+  'worker-disable-v6', 'tunnels-disable-v6']
 
 /** What one operation opens and closes, from its name and the two release inputs. A rollback opens nothing, whatever the inputs say. */
 export function releaseOptions(operation, env = {}) {
   if (!OPERATIONS.includes(operation)) throw new Error('Unknown read-path operation.')
   const disableV4 = operation === 'worker-disable-v4' || operation === 'tunnels-disable-v4'
   const disableV5 = operation === 'worker-disable-v5' || operation === 'tunnels-disable-v5'
-  const rollback = disableV4 || disableV5
+  const disableV6 = operation === 'worker-disable-v6' || operation === 'tunnels-disable-v6'
+  const rollback = disableV4 || disableV5 || disableV6
   return {
     enableV3: !rollback && publicDataRelease(operation, env.DOMINO_RELEASE_PUBLIC_DATA),
     enableV4: !rollback && sequenceSnapshotRelease(operation, env.DOMINO_RELEASE_SEQUENCE_SNAPSHOT),
     disableV4,
     enableV5: featuredPoolsRelease(operation),
     disableV5,
+    enableV6: walletReadsRelease(operation),
+    disableV6,
   }
 }
 
 async function run(operation) {
   if (!OPERATIONS.includes(operation)) {
-    throw new Error('Use inspect, tunnels, worker, tunnels-v3 or worker-v3/v4/v5; reviewed rollback uses worker-disable-v4 then tunnels-disable-v4, or worker-disable-v5 then tunnels-disable-v5.')
+    throw new Error('Use inspect, tunnels, worker, tunnels-v3 or worker-v3/v4/v5/v6; reviewed rollback uses worker-disable-v4 then tunnels-disable-v4, worker-disable-v5 then tunnels-disable-v5, or worker-disable-v6 then tunnels-disable-v6.')
   }
   const options = releaseOptions(operation, process.env)
-  const { enableV3, enableV4, disableV4, enableV5, disableV5 } = options
+  const { enableV3, enableV4, disableV4, enableV5, disableV5, enableV6, disableV6 } = options
   if (operation.startsWith('tunnels')) {
-    for (const id of enableV5 || disableV5 ? V5_READ_TUNNEL_IDS : enableV4 || disableV4 ? V4_READ_TUNNEL_IDS : enableV3 ? V3_READ_TUNNEL_IDS : READ_TUNNEL_IDS) {
+    for (const id of enableV6 || disableV6 ? V6_READ_TUNNEL_IDS : enableV5 || disableV5 ? V5_READ_TUNNEL_IDS : enableV4 || disableV4 ? V4_READ_TUNNEL_IDS : enableV3 ? V3_READ_TUNNEL_IDS : READ_TUNNEL_IDS) {
       const path = `cfd_tunnel/${id}/configurations`
       const before = await cloudflare(path)
       const config = extendReadTunnelConfig(id, before.config, options)
@@ -153,7 +181,9 @@ async function run(operation) {
         ...(enableV4 ? { v4SequenceSnapshotEnabled: true } : {}),
         ...(disableV4 ? { v4SequenceSnapshotEnabled: false } : {}),
         ...(enableV5 ? { v5FeaturedPoolsEnabled: true } : {}),
-        ...(disableV5 ? { v5FeaturedPoolsEnabled: false } : {}), otherSettingsPreserved: true }))
+        ...(disableV5 ? { v5FeaturedPoolsEnabled: false } : {}),
+        ...(enableV6 ? { v6WalletReadsEnabled: true } : {}),
+        ...(disableV6 ? { v6WalletReadsEnabled: false } : {}), otherSettingsPreserved: true }))
     }
     return
   }
@@ -189,6 +219,9 @@ async function run(operation) {
   if ((enableV5 || disableV5) && !readFileSync(new URL('../bridge/wrangler.read.toml', import.meta.url), 'utf8').includes('READ_V5_BRIDGE_ENABLED')) {
     throw new Error('This source does not yet contain the v5 read Worker.')
   }
+  if ((enableV6 || disableV6) && !readFileSync(new URL('../bridge/wrangler.read.toml', import.meta.url), 'utf8').includes('READ_V6_BRIDGE_ENABLED')) {
+    throw new Error('This source does not yet contain the v6 read Worker.')
+  }
   const args = ['--yes', 'wrangler@4.130.0', 'deploy', '-c', 'bridge/wrangler.read.toml', '--keep-vars']
   for (const [name, value] of Object.entries(vars)) args.push('--var', `${name}:${value}`)
   const result = spawnSync('npx', args, { cwd: ROOT, stdio: 'inherit', shell: false })
@@ -198,10 +231,12 @@ async function run(operation) {
   if (Object.entries(vars).some(([name, value]) => current[name] !== value)) throw new Error('Deployed read Worker flags differ from the requested release.')
   releaseVars(deployed, options)
   console.log(disableV4
-    ? 'Read Worker deployed: read-v4 sequence snapshot disabled; existing v1-v3 and v5 flags and Access credentials retained.'
+    ? 'Read Worker deployed: read-v4 sequence snapshot disabled; existing v1-v3, v5 and v6 flags and Access credentials retained.'
     : disableV5
-      ? 'Read Worker deployed: read-v5 featured pools disabled; existing v1-v4 flags and Access credentials retained.'
-      : `Read Worker deployed: existing v1 reads retained; read-v2 pool-market enabled; ${enableV3 ? 'read-v3 stored reads enabled; ' : ''}${enableV4 ? 'read-v4 sequence snapshot enabled; ' : ''}${enableV5 ? 'read-v5 featured pools enabled; ' : ''}Access credentials retained.`)
+      ? 'Read Worker deployed: read-v5 featured pools disabled; existing v1-v4 and v6 flags and Access credentials retained.'
+      : disableV6
+        ? 'Read Worker deployed: read-v6 wallet reads disabled; existing v1-v5 flags and Access credentials retained.'
+        : `Read Worker deployed: existing v1 reads retained; read-v2 pool-market enabled; ${enableV3 ? 'read-v3 stored reads enabled; ' : ''}${enableV4 ? 'read-v4 sequence snapshot enabled; ' : ''}${enableV5 ? 'read-v5 featured pools enabled; ' : ''}${enableV6 ? 'read-v6 wallet reads enabled; ' : ''}Access credentials retained.`)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

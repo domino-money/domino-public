@@ -1,0 +1,222 @@
+/* The position action dialogs, one family (Changed on purpose 2026-10-03, the owner's point 9: "the UIs you built for them
+   are literally ugly"): V1's Collect fees and Close position, the fees waiting in a vault and Domino V2's Add liquidity,
+   Change range, Withdraw and Collect fees, drawn by components/positions/ActionSheet.tsx in New position's visual
+   language (flow.css: the amount panels, the joined panels' medallion, the wallet steps' timeline). The frame and the
+   sheet on a phone stay .dm-dialog / .dm-flow-dialog's (shell.css, flow.css); these rules come after positions.css in
+   screens.css and win over its older dialog rules at the same specificity. Every class is dm-pa- (position action). */
+
+@layer components {
+  /* ---- The frame ---------------------------------------------------------------------------------------------- */
+  /* The wells inside sit a step darker than the dialog (surface-2), ringed by a hairline, as New position's panels sit
+     on its card. */
+  .dm-pa { --pa-well: var(--surface-1); --pa-ring: var(--border-lip); --flow-well: var(--surface-1); --flow-well-ring: var(--border-lip); }
+  @media (min-width: 640px) {
+    .dm-dialog.dm-pa { width: min(28.75rem, 100vw - 2rem); }
+  }
+  .dm-flow-dialog.dm-pa > .dm-pa-head { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 0.375rem 0.375rem; padding: 1.375rem 3.75rem 1rem 1.5rem; }
+  .dm-flow-dialog.dm-pa > .dm-pa-head--back { grid-template-columns: auto minmax(0, 1fr); }
+  .dm-pa-back { margin: -0.25rem 0 -0.25rem -0.5rem; }
+  .dm-pa-title { min-width: 0; font-size: 1.125rem; line-height: 1.625rem; letter-spacing: -0.3px; }
+  /* The line runs on under the Close button: only the title shares its row. */
+  .dm-pa-lede { grid-column: 1 / -1; margin: 0 -2.25rem 0 0; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-flow-dialog.dm-pa .dm-dialog-close { top: 1.1875rem; right: 1rem; }
+  .dm-flow-dialog.dm-pa > .dm-pa-body { display: grid; align-content: start; gap: 1rem; padding: 0.375rem 1.5rem 1.5rem; }
+  .dm-flow-dialog.dm-pa > .dm-pa-foot { display: grid; justify-content: normal; align-items: stretch; gap: 0.625rem; padding: 1rem 1.5rem 1.5rem; }
+  .dm-flow-dialog.dm-pa > .dm-pa-foot:empty { display: none; }
+  .dm-pa-foot > .dm-btn { width: 100%; }
+  .dm-pa-foot > .dm-btn--lg { height: 3.25rem; border-radius: 1rem; font-size: 1rem; line-height: 1.375rem; letter-spacing: -0.24px; }
+  /* A button waiting for something says what (its words are the caller's): a neutral slot, never a dead grey bar. */
+  .dm-pa-foot > .dm-btn--primary:disabled { background: var(--surface-3); color: var(--fg-muted); box-shadow: none; }
+  /* A button whose step is under way keeps its colour and turns an arc beside its words. */
+  .dm-pa-foot > .dm-btn--primary[aria-busy="true"]:disabled { background: var(--primary); color: var(--primary-fg); opacity: 0.85; cursor: progress; }
+  .dm-pa-foot > .dm-btn[aria-busy="true"]::before { content: ''; flex-shrink: 0; width: 1rem; height: 1rem; border-radius: var(--radius-pill); background: conic-gradient(from var(--dm-spin), currentColor 0 25%, color-mix(in srgb, currentColor 22%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); animation: dm-spin 1s linear infinite; }
+
+  /* ---- Cards, token rows, facts -------------------------------------------------------------------------------- */
+  .dm-pa-card { display: grid; gap: 0.875rem; min-width: 0; padding: 1rem; border-radius: var(--radius-lg); background: var(--pa-well); box-shadow: inset 0 0 0 1px var(--pa-ring); }
+  .dm-pa-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; min-width: 0; }
+  .dm-pa-caption { min-width: 0; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-pa-card-aside { flex-shrink: 0; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
+  /* The card's one big value when it is not a token (a share, a range, a pair). */
+  .dm-pa-hero { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.625rem; min-width: 0; margin: -0.25rem 0 0; font-size: 1.375rem; line-height: 1.875rem; font-weight: 500; letter-spacing: -0.5px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; overflow-wrap: anywhere; }
+  .dm-pa-hero--md { font-size: 1.0625rem; line-height: 1.5rem; letter-spacing: -0.3px; }
+
+  .dm-pa-tokens { display: grid; gap: 0.75rem; min-width: 0; margin: 0; padding: 0; list-style: none; }
+  .dm-pa-token { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+  .dm-pa-token > :first-child { flex-shrink: 0; }
+  .dm-pa-token-amount { min-width: 0; font-size: 1.5rem; line-height: 1.875rem; font-weight: 500; letter-spacing: -0.6px; color: var(--fg); overflow-wrap: anywhere; }
+  .dm-pa-token-symbol { font-size: 1rem; font-weight: 400; letter-spacing: -0.2px; color: var(--fg-muted); }
+  .dm-pa-token-blank { display: inline-block; width: 1.75rem; height: 1.75rem; border-radius: var(--radius-pill); background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  /* A figure on its way: a bubble the figure's height, beside its token's mark. */
+  .dm-pa-token > .dm-skel { width: 8.25rem; height: 1.375rem; margin: 0; border-radius: 0.375rem; }
+  .dm-pa-tokens--sm .dm-pa-token > .dm-skel { width: 6rem; height: 0.875rem; border-radius: var(--radius-xs); }
+  .dm-pa-tokens--sm { gap: 0.375rem; justify-items: end; }
+  .dm-pa-tokens--sm .dm-pa-token { gap: 0.5rem; }
+  .dm-pa-tokens--sm .dm-pa-token-amount { font-size: 0.8125rem; line-height: 1.25rem; letter-spacing: -0.16px; }
+  .dm-pa-tokens--sm .dm-pa-token-symbol { font-size: 0.8125rem; letter-spacing: -0.16px; }
+  .dm-pa-tokens--sm .dm-pa-token-blank { width: 1rem; height: 1rem; }
+  .dm-pa-card .dm-reserves-amount { min-width: 0; font-size: 1.5rem; line-height: 1.875rem; font-weight: 500; letter-spacing: -0.6px; color: var(--fg); text-align: left; }
+  .dm-pa-card .dm-reserves-amount > bdi { font-size: 1rem; font-weight: 400; letter-spacing: -0.2px; color: var(--fg-muted); }
+
+  .dm-pa-facts { display: grid; min-width: 0; margin: 0; padding: 0 2px; }
+  .dm-pa-facts > div { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; min-width: 0; padding: 0.5625rem 0; }
+  .dm-pa-facts > div + div { box-shadow: inset 0 1px 0 var(--border); }
+  .dm-pa-facts dt { flex-shrink: 0; max-width: 48%; font-size: 0.8125rem; line-height: 1.25rem; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-pa-facts dd { display: grid; justify-items: end; gap: 2px; margin: 0; min-width: 0; font-size: 0.8125rem; line-height: 1.25rem; letter-spacing: -0.16px; color: var(--fg); text-align: right; font-variant-numeric: lining-nums tabular-nums; overflow-wrap: anywhere; }
+  .dm-pa-facts dd > .dm-pa-tokens--sm { align-self: start; }
+  /* The quiet lines under a value: the fee's base, the slippage's effect, the quote's ceilings. */
+  .dm-pa-sub { font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); text-wrap: pretty; }
+  .dm-pa-card > .dm-pa-facts { padding: 2px 0 0; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-pa-card > .dm-pa-facts > div:first-child { padding-top: 0.6875rem; }
+  .dm-pa-card > .dm-pa-facts > div:last-child { padding-bottom: 0; }
+  /* A pair named in a value: its two marks, then the words; one amount inline (a leg, a swap), its mark beside it. */
+  .dm-pa-pair-name { display: inline-flex; align-items: center; gap: 0.5rem; min-width: 0; }
+  .dm-pa-inline { display: inline-flex; align-items: center; gap: 0.375rem; vertical-align: middle; }
+
+  /* Two cards joined (what you put in, then what it becomes), the medallion between them cut out of both, as New
+     position's two amount panels are joined. */
+  .dm-pa-pair { display: grid; gap: 0; min-width: 0; }
+  .dm-pa-pair > .dm-pa-card:first-child:not(:only-child) { padding-bottom: 1.375rem; }
+  .dm-pa-pair > .dm-pa-card + .dm-pa-link + .dm-pa-card, .dm-pa-pair > .dm-pa-link + .dm-pa-card { padding-top: 1.375rem; }
+  .dm-pa-link { position: relative; z-index: 1; display: grid; place-items: center; width: 2rem; height: 2rem; margin: -0.875rem auto; border-radius: var(--radius-pill); background: var(--surface-2); box-shadow: 0 0 0 0.25rem var(--surface-2), inset 0 0 0 1px var(--border-card); color: var(--fg-subtle); }
+
+  /* ---- Notes, the step in progress, failures, the gate's locked slot --------------------------------------------- */
+  .dm-pa-note { display: flex; align-items: flex-start; gap: 0.625rem; margin: 0; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-pa-note::before { content: ''; flex-shrink: 0; width: 0.375rem; height: 0.375rem; margin-top: 0.375rem; border-radius: var(--radius-pill); background: var(--fg-faint); }
+  /* A warning, as New position says one: the words in full ink, the dot in the money-out colour, never colour alone. */
+  .dm-pa-note[data-tone="warn"] { color: var(--fg); }
+  .dm-pa-note[data-tone="warn"]::before { background: var(--money-out); }
+  .dm-pa-notes { display: grid; gap: 0.5rem; min-width: 0; }
+
+  .dm-pa-status { display: flex; align-items: center; gap: 0.625rem; min-height: 2.75rem; margin: 0; padding: 0.625rem 0.875rem; border-radius: var(--radius); background: var(--wash); font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-pa-status::before { content: ''; flex-shrink: 0; width: 1rem; height: 1rem; border-radius: var(--radius-pill); background: conic-gradient(from var(--dm-spin), var(--primary-line) 0 25%, color-mix(in srgb, var(--fg) 14%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); animation: dm-spin 1s linear infinite; }
+  .dm-pa-status[data-state="done"] { background: var(--money-in-bg); color: var(--money-in); }
+  .dm-pa-status[data-state="done"]::before { border-radius: 0; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8.5 3 3 6-7' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 1rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8.5 3 3 6-7' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 1rem no-repeat; animation: dm-flow-stamp 240ms var(--ease-pop) backwards; }
+
+  .dm-pa-alert { display: flex; align-items: flex-start; gap: 0.625rem; margin: 0; padding: 0.75rem 0.875rem; border-radius: var(--radius); background: color-mix(in srgb, var(--money-out) 7%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--money-out) 22%, transparent); font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg); text-wrap: pretty; }
+  .dm-pa-alert::before { content: ''; flex-shrink: 0; width: 1rem; height: 1rem; margin-top: 1px; background: var(--money-out); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6.25'/%3E%3Cpath d='M8 4.75v3.75'/%3E%3Ccircle cx='8' cy='11' r='.6' fill='%23000'/%3E%3C/svg%3E") center / 1rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6.25'/%3E%3Cpath d='M8 4.75v3.75'/%3E%3Ccircle cx='8' cy='11' r='.6' fill='%23000'/%3E%3C/svg%3E") center / 1rem no-repeat; }
+  .dm-pa-alert + .dm-btn { justify-self: start; }
+
+  /* Before the deploy the action's place holds the gate's sentence: a closed slot with a lock, the button's own size. */
+  .dm-pa-locked { display: flex; align-items: center; gap: 0.75rem; min-height: 3.25rem; margin: 0; padding: 0.75rem 1rem; border-radius: 1rem; background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border-lip); font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-pa-locked > svg { flex-shrink: 0; color: var(--fg-subtle); }
+
+  /* The box the person ticks before the wallet may be asked (an armed root's pause warning). */
+  .dm-pa-tick { display: flex; align-items: flex-start; gap: 0.75rem; min-width: 0; padding: 0.75rem 0.875rem; border-radius: var(--radius); background: var(--pa-well); box-shadow: inset 0 0 0 1px var(--pa-ring); font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg); cursor: pointer; }
+  .dm-pa-tick > input { flex-shrink: 0; width: 1rem; height: 1rem; margin: 1px 0 0; accent-color: var(--primary); cursor: pointer; }
+  .dm-pa-tick:has(> input:checked) { box-shadow: inset 0 0 0 1px var(--primary-line); }
+
+  /* ---- The settings: a quiet line of text, closed until asked for (never a field) ------------------------------- */
+  .dm-pa-more { min-width: 0; padding-top: 2px; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-pa-more > summary { display: flex; align-items: center; gap: 0.5rem; min-height: 2.5rem; margin-bottom: -0.5rem; padding: 0 2px; border-radius: var(--radius-sm); cursor: pointer; list-style: none; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-subtle); transition: color var(--dur-hover) ease; }
+  .dm-pa-more > summary::-webkit-details-marker { display: none; }
+  .dm-pa-more > summary:hover { color: var(--fg); }
+  .dm-pa-more-value { margin-left: auto; font-weight: 400; }
+  .dm-pa-more-chevron { flex-shrink: 0; transition: rotate var(--dur-fast) var(--ease-std); }
+  .dm-pa-more[open] > summary { margin-bottom: 0; }
+  .dm-pa-more[open] .dm-pa-more-chevron { rotate: 180deg; }
+  .dm-pa-more-body { display: grid; gap: 0.75rem; min-width: 0; padding: 0.25rem 2px 2px; }
+  /* The slippage limit inside: the presets and the exact figure on one line, the label above them. */
+  .dm-pa .dm-slip-choice { grid-template-columns: minmax(0, 1fr) 6.5rem; align-items: end; gap: 0.5rem 0.625rem; }
+  .dm-pa .dm-slip-choice > .dm-label:first-child { grid-column: 1 / -1; margin: 0; color: var(--fg-muted); }
+  .dm-pa .dm-slip-choice > .dm-seg { display: flex; width: 100%; height: 2.5rem; }
+  .dm-pa .dm-slip-choice > .dm-seg > .dm-seg-item { flex: 1 1 0; min-width: 0; height: 2rem; }
+  .dm-pa .dm-slip-choice > .dm-seg > .dm-seg-item[aria-pressed="true"] { background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-pa .dm-slip-choice > label { position: relative; gap: 0.25rem; margin: 0; font-size: 0.6875rem; line-height: 0.875rem; font-weight: 500; letter-spacing: -0.1px; color: var(--fg-subtle); }
+  .dm-pa .dm-slip-choice > label > .dm-field { height: 2.5rem; padding-right: 1.625rem; font-family: var(--font-sans); font-size: 0.875rem; letter-spacing: -0.2px; font-variant-numeric: lining-nums tabular-nums; text-align: right; }
+  .dm-pa .dm-slip-choice > label::after { content: '%'; position: absolute; right: 0.75rem; bottom: 0.625rem; font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-subtle); pointer-events: none; }
+  .dm-pa .dm-slip-choice > :is(.dm-error, .dm-hint) { grid-column: 1 / -1; margin: 0; }
+
+  /* ---- Choices as cards (Withdraw's "You receive", Change range's widths) --------------------------------------- */
+  .dm-pa-field { display: grid; gap: 0.5rem; min-width: 0; }
+  .dm-pa-field-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-width: 0; min-height: 1.5rem; }
+  .dm-pa-label { font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-pa-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; min-width: 0; }
+  .dm-pa-choices[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dm-pa-choices[data-count="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .dm-pa-choice { display: grid; justify-items: center; align-content: center; gap: 0.375rem; min-width: 0; min-height: 4.75rem; padding: 0.75rem 0.375rem; border-radius: 0.875rem; background: var(--pa-well); box-shadow: inset 0 0 0 1px var(--pa-ring); color: var(--fg-muted); text-align: center; cursor: pointer; transition: background-color var(--dur-hover) ease, box-shadow var(--dur-hover) ease, color var(--dur-hover) ease, scale var(--dur-press) var(--ease-std); }
+  .dm-pa-choice:hover:not(:disabled) { color: var(--fg); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-pa-choice[aria-checked="true"] { background: var(--primary-wash); box-shadow: inset 0 0 0 1.5px var(--primary-line); color: var(--fg); }
+  .dm-pa-choice:disabled { opacity: 0.5; cursor: not-allowed; }
+  .dm-pa-choice-icon { display: inline-flex; align-items: center; justify-content: center; min-height: 1.5rem; }
+  .dm-pa-choice-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; }
+  .dm-pa-choice-sub { font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-pa-choice[aria-checked="true"] .dm-pa-choice-sub { color: var(--fg-muted); }
+  /* Short choices with no picture (the widths): lower cards. */
+  .dm-pa-choices--compact > .dm-pa-choice { min-height: 3.5rem; gap: 2px; padding: 0.5rem 0.25rem; }
+  /* A share (All, 50%, 25%): the site's segmented track across the dialog. */
+  .dm-pa .dm-pa-share { display: flex; width: 100%; height: 2.5rem; }
+  .dm-pa .dm-pa-share > .dm-seg-item { flex: 1 1 0; min-width: 0; height: 2rem; font-size: 0.875rem; line-height: 1.25rem; }
+
+  /* ---- Add liquidity: the amount panels of New position, with the token to pay with as a chip ------------------- */
+  .dm-pa .dm-flow-link { background: var(--surface-2); box-shadow: 0 0 0 0.25rem var(--surface-2), inset 0 0 0 1px var(--border-card); }
+  .dm-pa .dm-flow-amount { padding: 0.875rem 0.875rem 0.875rem 1.125rem; }
+  .dm-pa .dm-flow-amount-unit { height: 2.25rem; padding: 0 0.75rem 0 0.375rem; }
+  .dm-pa-amount-raw { grid-area: usd; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pa-chip-box { display: contents; }
+  .dm-pa-chip { flex-shrink: 0; max-width: 55%; }
+  .dm-pa-chip > .dm-select-trigger { height: 2.25rem; gap: 0.375rem; padding: 0 0.5rem 0 0.375rem; border-radius: var(--radius-pill); background: var(--surface-3); box-shadow: none; font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; }
+  .dm-pa-chip > .dm-select-trigger:hover { background: var(--surface-4); box-shadow: none; }
+  .dm-pa-chip > .dm-listbox { left: auto; right: 0; min-width: 12.5rem; transform-origin: top right; }
+  .dm-pa-chip .dm-option { height: 2.5rem; gap: 0.625rem; font-weight: 500; }
+  .dm-pa .dm-pa-mode { flex-shrink: 0; }
+
+  /* ---- Change range: the new range on the pool's price, beside the one the position has now --------------------- */
+  .dm-pa-range { position: relative; height: 6.5rem; min-width: 0; margin: -2px 2px 0; }
+  .dm-pa-range::before { content: ''; position: absolute; inset: 0 0 1.375rem; background-image: radial-gradient(circle at center, var(--dot-chart) 1px, transparent 1.2px); background-size: 0.875rem 0.875rem; background-position: 0.4375rem 0.1875rem; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 55%); mask-image: linear-gradient(to bottom, transparent, #000 55%); pointer-events: none; }
+  .dm-pa-range > span { position: absolute; pointer-events: none; }
+  .dm-pa-range-was { top: 1.875rem; bottom: 1.375rem; border-radius: 0.375rem 0.375rem 0 0; background: repeating-linear-gradient(135deg, var(--wash-strong) 0 2px, transparent 2px 0.4375rem); box-shadow: inset 1px 0 0 var(--fg-faint), inset -1px 0 0 var(--fg-faint), inset 0 1px 0 var(--fg-faint); }
+  .dm-pa-range-band { top: 0.75rem; bottom: 1.375rem; border-radius: 0.5rem 0.5rem 0 0; background: linear-gradient(to bottom, color-mix(in srgb, var(--primary-line) 5%, transparent), color-mix(in srgb, var(--primary-line) 32%, transparent)); box-shadow: inset 2px 0 0 var(--primary-line), inset -2px 0 0 var(--primary-line), inset 0 -2px 0 color-mix(in srgb, var(--primary-line) 55%, transparent); transition: left var(--dur-step) var(--ease-enter), width var(--dur-step) var(--ease-enter); }
+  .dm-pa-range-axis { left: 0; right: 0; bottom: 1.375rem; height: 1px; background: var(--border-strong); }
+  .dm-pa-range-now { top: 0.25rem; bottom: 1.375rem; width: 0; transition: left var(--dur-step) var(--ease-enter); }
+  .dm-pa-range-now::before { content: ''; position: absolute; top: 0; bottom: 0; left: -0.75px; width: 1.5px; background: radial-gradient(circle, var(--fg-muted) 0.75px, transparent 1px) center top / 1.5px 0.3125rem repeat-y; }
+  .dm-pa-range-now::after { content: ''; position: absolute; bottom: -0.28125rem; left: -0.28125rem; width: 0.5625rem; height: 0.5625rem; border-radius: var(--radius-pill); background: var(--fg); box-shadow: 0 0 0 0.15625rem var(--pa-well); }
+  .dm-pa-range-mark { bottom: 2px; translate: -50% 0; font-size: 0.6875rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.1px; color: var(--fg-muted); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; transition: left var(--dur-step) var(--ease-enter); }
+  .dm-pa-range-mark[data-side="start"] { translate: calc(-100% - 2px) 0; }
+  .dm-pa-range-mark[data-side="end"] { translate: 2px 0; }
+  .dm-pa-range[data-in="false"] .dm-pa-range-band { background: linear-gradient(to bottom, transparent, var(--wash-strong)); box-shadow: inset 2px 0 0 var(--fg-subtle), inset -2px 0 0 var(--fg-subtle), inset 0 -2px 0 var(--border-strong); }
+  .dm-pa-range-key { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem 1rem; margin: 0; padding: 0; list-style: none; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-muted); }
+  .dm-pa-range-key > li { display: inline-flex; align-items: center; gap: 0.375rem; }
+  .dm-pa-range-key > li::before { content: ''; flex-shrink: 0; width: 0.875rem; height: 0.625rem; border-radius: 0.1875rem; }
+  .dm-pa-range-key > [data-key="new"]::before { background: color-mix(in srgb, var(--primary-line) 26%, transparent); box-shadow: inset 1.5px 0 0 var(--primary-line), inset -1.5px 0 0 var(--primary-line); }
+  .dm-pa-range-key > [data-key="was"]::before { background: repeating-linear-gradient(135deg, var(--wash-strong) 0 2px, transparent 2px 0.3125rem); box-shadow: inset 0 0 0 1px var(--fg-faint); }
+  .dm-pa-range-key > [data-key="now"]::before { width: 0.5625rem; height: 0.5625rem; border-radius: var(--radius-pill); background: var(--fg); }
+  /* The ends of the new range: two panels, each its price large and how far it sits from today's. */
+  .dm-pa-bounds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; min-width: 0; }
+  .dm-pa-bound { display: grid; align-content: start; gap: 0.25rem; min-width: 0; padding: 0.75rem 0.875rem; border-radius: 0.875rem; background: var(--pa-well); box-shadow: inset 0 0 0 1px var(--pa-ring); }
+  /* Custom: the two ends are fields, lifted to the card's ink with a stronger ring, the figure typed on a rule. */
+  .dm-pa-bound[data-editing] { background: var(--card); box-shadow: inset 0 0 0 1px var(--border-strong); cursor: text; }
+  .dm-pa-bound:focus-within { box-shadow: inset 0 0 0 1px var(--primary-line), 0 0 0 0.1875rem var(--primary-wash); }
+  .dm-pa-bound-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; min-width: 0; }
+  .dm-pa-bound-away { font-size: 0.75rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-muted); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-pa-bound-price { margin: 0; min-width: 0; font-size: 1.125rem; line-height: 1.5rem; font-weight: 500; letter-spacing: -0.3px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; overflow-wrap: anywhere; }
+  .dm-pa-bound-input { width: 100%; min-width: 0; height: 1.75rem; padding: 0; border-radius: 0; background: transparent; box-shadow: inset 0 -1px 0 var(--border-strong); color: var(--fg); font-family: var(--font-sans); font-size: 1.125rem; line-height: 1.5rem; font-weight: 500; letter-spacing: -0.3px; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-pa-bound-input::placeholder { color: var(--fg-faint); }
+  .dm-pa-bound-input:focus-visible { outline: none; }
+  .dm-pa-bound-unit { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pa-inverse { margin: -0.375rem 2px 0; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; overflow-wrap: anywhere; }
+  .dm-pa .dm-error { margin: 0; }
+
+  /* ---- The wallet's steps (Domino V2): New position's timeline; the arc turns only while a step is under way ----- */
+  .dm-pa .dm-flow-wsteps { margin: 0; }
+  .dm-pa .dm-flow-wsteps > li { padding: 0.625rem 0.75rem; }
+  .dm-pa .dm-flow-wsteps > li:not(:last-child)::before { top: 2.75rem; left: 1.5625rem; }
+  .dm-pa .dm-flow-wsteps > li:not(:is([data-step-state="wallet"], [data-step-state="chain"], [data-step-state="reading"])) .dm-step-marker[data-state="current"]::after { content: none; }
+
+  /* ---- Phone: the sheet's own clearances ------------------------------------------------------------------------ */
+  @media (max-width: 639px) {
+    .dm-flow-dialog.dm-pa > .dm-pa-head { padding: 1.625rem 3.25rem 0.75rem 1rem; }
+    .dm-flow-dialog.dm-pa .dm-dialog-close { top: 1.3125rem; right: 0.625rem; }
+    .dm-pa-title { font-size: 1.0625rem; line-height: 1.5rem; letter-spacing: -0.24px; }
+    .dm-pa-lede { margin-right: -1.875rem; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; }
+    .dm-flow-dialog.dm-pa > .dm-pa-body { gap: 0.875rem; padding: 0.25rem 1rem 1.25rem; }
+    .dm-flow-dialog.dm-pa > .dm-pa-foot { padding: 0.75rem 1rem calc(0.875rem + env(safe-area-inset-bottom)); }
+    .dm-pa-card { padding: 0.875rem; }
+    .dm-pa-token-amount { font-size: 1.375rem; line-height: 1.75rem; letter-spacing: -0.5px; }
+    .dm-pa-hero { font-size: 1.25rem; line-height: 1.75rem; }
+    .dm-pa-choice { min-height: 4.25rem; padding: 0.625rem 0.25rem; }
+    .dm-pa-choice-title { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; }
+    .dm-pa .dm-flow-amount { padding: 0.75rem 0.75rem 0.75rem 0.875rem; }
+    .dm-pa-bound { padding: 0.625rem 0.75rem; }
+    .dm-pa-bound-price, .dm-pa-bound-input { font-size: 1rem; line-height: 1.375rem; }
+  }
+}

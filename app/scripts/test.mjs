@@ -12,6 +12,8 @@ execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconf
 // The onboarding previews (#38) and the deposit consumer (#40/#44): their own
 // file list, into the same .test-build tree.
 execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.consumer-test.json'], { stdio: 'inherit' });
+// 2026-10-02 (Domino V2, spec F7 stage 0): the V2 modules (src/v2, src/finance/v2), by glob, into the same tree.
+execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.v2-test.json'], { stdio: 'inherit' });
 
 mkdirSync('.test-build', { recursive: true });
 writeFileSync('.test-build/package.json', JSON.stringify({ type: 'commonjs' }));
@@ -83,6 +85,9 @@ execFileSync(
     'tests/token-artwork.test.mjs',
     // 2026-09-28 (speed wave, item 35): the site's fonts are its own files, and they are the ones Google Fonts served.
     'tests/fonts.test.mjs',
+    // 2026-10-03 (the owner: the site looks too big at 100%; at 80% it looks right): the site's lengths are rem, so the
+    // root's font-size scales the page (scripts/rem-codemod.mjs), and nothing under src is left in px for it to convert.
+    'tests/rem-codemod.test.mjs',
     // 2026-09-24: New position's pool step (usable pools, TVL order, pool-id hints).
     'tests/pool-hints.test.mjs',
     'tests/pool-workspace.test.mjs',
@@ -145,6 +150,8 @@ execFileSync(
     // 2026-09-24: V2 foundation, the pure number, USD, time and chart geometry helpers (lib/format, lib/chart).
     'tests/format.test.mjs',
     'tests/chart-geometry.test.mjs',
+    // 2026-10-03 (the owner's point 10): the Price range chart's axis, labels, figures and line (lib/chart/priceRange.ts).
+    'tests/price-range-chart.test.mjs',
     // 2026-09-24 (P6): a position's fees, its state route, its pins and its store (DESIGN-V2 §15.7, R-11).
     'tests/fees-relay.test.mjs',
     'tests/fees-topics.test.mjs',
@@ -201,3 +208,8 @@ execFileSync(
   ],
   { stdio: 'inherit' },
 );
+
+// 2026-10-02 (Domino V2, spec F7 stage 0, §7.5): the V2 tests that need no deployment (typed data goldens, the fee rule,
+// trigger translation, the error and event decoders, the plan checks and clients against a fake V2 chain, the manifest
+// pin, and the crosschain-v1 fixtures). Every file under tests/v2, by glob, so a new one needs no edit here.
+execFileSync(process.execPath, ['--test', 'tests/v2/*.test.mjs'], { stdio: 'inherit' });

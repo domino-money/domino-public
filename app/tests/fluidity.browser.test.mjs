@@ -76,7 +76,7 @@ test('a verified public chart survives reload as a labelled snapshot before the 
     await cached.waitFor({ timeout: 10_000 });
     copyShown = true;
     // Its periods from the points it kept (24H starts at the mint, a measured point a day old), with nothing read for them.
-    assert.deepEqual(await cached.getByRole('radio').allInnerTexts(), ['24H', 'All']);
+    assert.deepEqual(await cached.getByRole('radio').allInnerTexts(), ['24H', '7D', 'All']);
     assert.equal(await cached.getAttribute('data-fees-period-state'), 'drawn');
     await page.waitForFunction(() => performance.getEntriesByType('measure').some((e) => e.name.startsWith('domino:load:') && e.name.endsWith(':chart:cached')), null, { timeout: 10_000 });
     assert.match(await cached.innerText(), /saved|snapshot/i);
@@ -96,7 +96,7 @@ test('a verified public chart survives reload as a labelled snapshot before the 
     await page.locator('[data-fees-state="verified"]').waitFor({ timeout: 60_000 });
     copyShown = false;
     assert.equal(await page.locator('[data-fees-state="cached"]').count(), 0);
-    assert.deepEqual(await page.locator('[data-fees-state="verified"]').getByRole('radio').allInnerTexts(), ['24H', 'All'], 'the same periods, current');
+    assert.deepEqual(await page.locator('[data-fees-state="verified"]').getByRole('radio').allInnerTexts(), ['24H', '7D', 'All'], 'the same periods, current');
     assert.deepEqual(errors, []);
     assert.deepEqual(chain.refused, []);
   } finally {

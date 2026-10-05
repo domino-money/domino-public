@@ -1,12 +1,10 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
 import { Ticker } from './components/Ticker'
 import { deferred } from './components/Deferred'
 import { Landing } from './screens/Landing'
 import { NotFound } from './screens/NotFound'
-import { Button } from './components/ui'
-import { IconPause, IconPlay } from './components/icons'
 import { BuildBanner } from './components/read/BuildBanner'
 import { scrollToSection } from './lib/sectionScroll'
 import { appMarketsProvider } from './lib/read/buildMode'
@@ -125,12 +123,20 @@ export function parseHash(hash: string): HashLocation {
   return { page: page === 'markets' && second !== '' && !MARKETS_TOKEN.test(second) ? 'not-found' : page, param: second, section }
 }
 
+const subscribeHash = (onChange: () => void) => {
+  window.addEventListener('hashchange', onChange)
+  return () => window.removeEventListener('hashchange', onChange)
+}
+
 function useHashLocation() {
-  const [location, setLocation] = useState(() => parseHash(window.location.hash))
+  // Changed on purpose 2026-10-04 (PR #335's CI, finance-create): read through useSyncExternalStore, which reads the hash
+  // again once it listens. As state set from a listener added after the first render, a hash that changed in between (a
+  // link followed while the page was still starting) was missed, and the old screen stayed.
+  const hash = useSyncExternalStore(subscribeHash, () => window.location.hash, () => '')
+  const location = useMemo(() => parseHash(hash), [hash])
   useEffect(() => {
     const onChange = () => {
       const next = parseHash(window.location.hash)
-      setLocation(next)
       // Scrolled from the listener rather than from an effect: the new screen
       // has to be committed first, and an effect keyed on the route would be
       // torn down by the re-render that commits it. A timeout rather than a
@@ -198,14 +204,8 @@ const FLAGGED: Partial<Record<Page, unknown>> = {
 export default function App() {
   const { page: route, param } = useHashLocation()
   const page: Page = Object.hasOwn(FLAGGED, route) && !FLAGGED[route] ? 'not-found' : route
-  // Pause motion: kept in memory for this visit only, never stored.
-  const [still, setStill] = useState(false)
   // One provider for the whole app, so the ticker and the table share one load.
   const [markets] = useState(appMarketsProvider)
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dm-still', still)
-  }, [still])
 
   // First load rises, navigation crossfades (DESIGN-V2 §5.5): at the first route change <html> gets dm-booted, which
   // switches the page blocks' rise off (tokens.css); from then on only the 180ms page fade marks a navigation.
@@ -233,15 +233,8 @@ export default function App() {
       {page === 'overview' && <Ticker />}
       <Header page={page} />
       <Screen page={page} param={param} />
-      {/* The footer's motion control sits in its own flow at every width, never floating over the page, so it can never cover text. */}
-      <Footer
-        motion={
-          <Button variant="outline" size="sm" onClick={() => setStill(!still)}>
-            {still ? <IconPlay /> : <IconPause />}
-            {still ? 'Resume motion' : 'Pause motion'}
-          </Button>
-        }
-      />
+      {/* Changed on purpose 2026-10-03 (the owner): the footer's Pause motion control is gone; reduced motion still stills the page. */}
+      <Footer />
     </div>
     </MarketsContext.Provider>
   )

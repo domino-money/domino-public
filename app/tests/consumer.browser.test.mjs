@@ -482,7 +482,9 @@ test('two wallets announcing the same rdns: previews go out under the session of
 
   // A needs a sign-in of its own and signs it itself; its preview carries its own session's CSRF.
   await openDialog(page);
-  assert.match(await dialog(page).innerText(), /Test Wallet A/);
+  // Changed on purpose 2026-10-03 (the owner): the dialog no longer names the wallet app; A's own signature below says
+  // which wallet signs.
+  assert.doesNotMatch(await dialog(page).innerText(), /Test Wallet/);
   s.signClicks += 1;
   await dialog(page).getByRole('button', { name: 'Sign in', exact: true }).click();
   await viewIs(page, 'signed_in');

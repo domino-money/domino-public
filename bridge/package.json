@@ -8,6 +8,6 @@
   },
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/worker.mjs && node --check src/wide-gate-worker.mjs && node --check src/session-worker.mjs && node --check src/onboarding-worker.mjs && node --check src/strict-json.mjs && node --check src/request-contract.mjs && node --check src/authenticated-worker.mjs && node --check src/deposit-worker.mjs && node --test && node --test ../api-contracts/read-v1/consumer.test.mjs ../api-contracts/read-v1/progressive.test.mjs ../api-contracts/read-v2/consumer.test.mjs ../api-contracts/read-v5/runtime.test.mjs"
+    "check": "node --check src/worker.mjs && node --check src/wide-gate-worker.mjs && node --check src/session-worker.mjs && node --check src/onboarding-worker.mjs && node --check src/strict-json.mjs && node --check src/request-contract.mjs && node --check src/authenticated-worker.mjs && node --check src/deposit-worker.mjs && node --check src/position-plan-worker.mjs && node --check src/crosschain-worker.mjs && node --test && node --test ../api-contracts/read-v1/consumer.test.mjs ../api-contracts/read-v1/progressive.test.mjs ../api-contracts/read-v2/consumer.test.mjs ../api-contracts/read-v5/runtime.test.mjs ../api-contracts/read-v6/consumer.test.mjs ../api-contracts/position-plan-v1/consumer.test.mjs ../api-contracts/crosschain-v1/consumer.test.mjs"
   }
 }

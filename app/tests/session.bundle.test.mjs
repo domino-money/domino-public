@@ -242,6 +242,16 @@ test('no connector SDK or relay, and no public RPC endpoint reached; the chain\u
   // page's location with to know whether it is open (src/chains/elysium/mode.ts: the site, the preview alias, the local
   // development server); never fetched, and no CSP directive names them.
   for (const host of ['domino.money', 'preview.domino-app-e65.pages.dev', 'localhost']) allowedHosts.add(host);
+  // Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2, so the deployed build carries it): the V2
+  // explorers' links (src/v2/explorers.ts), navigation targets in a new tab; the citations of the V2 chain profiles
+  // (api-contracts/v2/chains/*.json `sources`: where each address was checked), data never rendered as a link; ox's
+  // documentation origin in its errors' messages (as viem.sh above); and viem's ENS avatar gateways, defaults inside its
+  // actions (the app resolves no ENS name). None is ever fetched: no CSP directive names any of them (checked below).
+  for (const host of [
+    'basescan.org', 'arbiscan.io', 'robin.etherscan.io',
+    'developers.uniswap.org', 'github.com', 'docs.chain.link', 'docs.robinhood.com', 'reference-data-directory.vercel.app', 'developers.circle.com', 'docs.base.org', 'docs.arbitrum.io',
+    'oxlib.sh', 'ipfs.io', 'arweave.net',
+  ]) allowedHosts.add(host);
   // And the second chain's public RPC and explorer, in the section's own files only (the 'elysium section' family): the
   // RPC is named in the preview's page CSP alone (functions/_middleware.ts APP_CSP_CHAIN2), never in production's, so
   // production's page cannot reach it; the explorer is a link, never fetched. Reads only, through the section's one
@@ -299,6 +309,10 @@ test('no connector SDK or relay, and no public RPC endpoint reached; the chain\u
           const link = message.callee.object.elements.find((part) => part?.type === 'TemplateLiteral' && part.quasis.length === 2 && part.expressions.length === 1 && part.expressions[0].type === 'Identifier' && part.quasis[0].value.cooked === 'You can look up the signature here: https://4byte.sourcify.dev/?q=' && part.quasis[1].value.cooked === '.');
           if (link) endpointText = endpointText.replace(text.slice(link.start, link.end), 'ABI signature lookup documentation');
         }
+        // Changed on purpose 2026-10-04 (V2 in the deployed build): viem's other ABI errors (an event's or an error's signature
+        // not found, ContractFunctionRevertedError) give the same lookup link in their own messages; those exact templates
+        // are admitted too, and any other use of the host still fails.
+        endpointText = endpointText.replace(/`You can look up the (?:decoded )?signature here: https:\/\/4byte\.sourcify\.dev\/\?q=\$\{[A-Za-z_$][\w$]*\}\.`/g, 'signature lookup documentation');
       }
       const hosts = new Set([...endpointText.matchAll(/https?:\/\/([a-z0-9.-]+)/gi)].map((match) => match[1].toLowerCase()));
       for (const host of hosts) assert.ok(allowedHosts.has(host) || (ELYSIUM_HOSTS.includes(host) && elysiumFiles.has(name)) || file.endsWith('.css'), `${label}/${file} names ${host}`);
@@ -1054,7 +1068,26 @@ test('what every visitor downloads first, the route screens, the session/read cl
     assert.equal(elysiumRoots.length, 1, `one section chunk: ${elysiumRoots.join(', ')}`);
     const elysium = new Set([...staticClosure(dir, elysiumRoots)].filter((file) => !initial.has(file)));
     for (const file of elysiumRoots) assert.ok(!initial.has(file) && !allLazy.has(file) && !chain.has(file) && !routes.has(file) && !walletConnect.has(file), 'loaded only when its route opens');
-    assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain, ...routes, ...walletConnect, ...elysium])].sort(), js, 'every generated script belongs to a measured closure');
+    // 2026-10-03 (the owner's point 10): the Price range chart (components/positions/visual/PriceVsRange.tsx: its axis, its
+    // labels, its line and the pool's stored price history), a chunk of its own that only a position's page opens
+    // (components/positions/PositionRange.tsx), measured as its own family, as WalletConnect's is: its chunk and what it
+    // loads that neither the entry nor the lazy families carry. Moved out of the Positions chunk it was part of, so the list
+    // and the screens around it no longer download it.
+    const priceChartRoots = js.filter((file) => /^PriceVsRange-/.test(file));
+    assert.equal(priceChartRoots.length, 1, `one Price range chart chunk: ${priceChartRoots.join(', ')}`);
+    const priceChart = new Set([...staticClosure(dir, priceChartRoots)].filter((file) => !initial.has(file) && !allLazy.has(file)));
+    for (const file of priceChartRoots) assert.ok(!initial.has(file) && !allLazy.has(file) && !routes.has(file), 'loaded only on a position’s page');
+    // 2026-10-04 (the owner: the site runs on Domino V2, deployed and pinned on every chain): V2's own screens, the lazy roots
+    // V1's screens open behind the bare __DOMINO_V2__ define (src/v2in: New position's zap journey and its advanced pool
+    // finder, a position's V2 actions, page, dialogs and automation, the lists' rows and receipts, the automation setup, the
+    // protection card, the inline funds offer), and the viem chunks only they load (actions, ccip, secp256k1): one family of
+    // their own, measured in the deployed build that carries them. The V1 wallet-test build carries none.
+    const v2Roots = js.filter((file) => /^(NewPositionV2|PoolAdvanced|PositionV2Actions|PositionAutomation|PositionPage|ManagedVaults|OwnedRows|Receipts|SetupEntry|AutomateProtection|FundsAmounts|MandateDialog|PositionDialog|VaultDialog|actions|ccip|secp256k1)-/.test(file));
+    if (dir === WALLET) assert.deepEqual(v2Roots, [], 'the V1 wallet-test build carries no V2');
+    else assert.ok(v2Roots.length >= 14, `the deployed build carries V2's screens: ${v2Roots.join(', ')}`);
+    const v2 = new Set([...staticClosure(dir, v2Roots)].filter((file) => !initial.has(file)));
+    for (const file of v2Roots) assert.ok(!initial.has(file) && !routes.has(file), `${file} is loaded only when a V1 screen opens V2`);
+    assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain, ...routes, ...walletConnect, ...elysium, ...priceChart, ...v2])].sort(), js, 'every generated script belongs to a measured closure');
     // H4 (2026-10-01): what every visitor downloads before anything shows, the entry with the chunks it imports and the
     // stylesheet the page links, has a budget of its own. Until then only lazily loaded families had one, and the entry
     // grew 33% in a week with no test failing.
@@ -1081,7 +1114,41 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // SEQUENCE_RECOVERY_RECORD, about 0.7 kB of it). Clean Windows build, gzip level 9, dist / .wallet-test-dist: financial
     // 325,333 -> 328,545 / 329,147 B, all lazy 359,261 -> 362,466 / 363,253 B; every other family unchanged. Raised
     // minimally, to the next kB above the deployable build: financial 326,000 -> 329,000, all lazy 360,000 -> 363,000.
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 177_000], ['session/public reads', base, 161_000], ['financial', financial, 329_000], ['all lazy', allLazy, 363_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000]]) {
+    // 2026-10-03 (the owner's UI round: the wallet dialog shows the account's disc, its short address and Copy instead of the
+    // wallet app's name; components/read/screens/CopyButton.tsx and lib/format/tokenHue.ts join the dialog's chunk). Clean
+    // Windows build, gzip level 9, dist: financial 329,434 B, all lazy 363,444 B. Raised minimally, to the next kB:
+    // financial 329,000 -> 330,000, all lazy 363,000 -> 364,000.
+    // 2026-10-03 (the owner's point 9, the position action dialogs redrawn as one family): Collect fees, Close position and
+    // the fees waiting in a vault share components/positions/ActionSheet.tsx (the frame, the token rows, the facts). Clean
+    // Windows build, gzip level 9, dist, v2/f7 (7c6e4822, the note above) then with the change: financial 329,434 ->
+    // 330,611 B, all lazy 363,444 -> 364,666 B; the initial entry +6 B, every other family unchanged within a few dozen
+    // bytes. Raised minimally, to the next kB above the deployable build: financial 330,000 -> 331,000, all lazy 364,000 ->
+    // 365,000; the 3 kB wallet-test allowance stays.
+    // 2026-10-03 (the owner's point 10): the Price range chart redrawn (its status in words, its whole band with Max and Min,
+    // the pool's last 7 days from read-v3 `history`, readable prices) and moved to a chunk of its own that only a position's
+    // page opens (components/positions/PositionRange.tsx). Clean Windows build, gzip level 9, dist, against v2/f7 at
+    // 52f09f41: initial entry 205,685 -> 204,729 B, route screens 173,668 -> 173,723 B, session/public reads 156,880 ->
+    // 156,999 B, financial 330,566 -> 330,656 B, all lazy 364,601 -> 364,755 B; the chart's own family 5,368 B, its budget
+    // the next kB above it, 6,000 B. No other budget moves.
+    // 2026-10-03 (the density change merged with the chart: lib/rootScale.ts and its rem() join the chart and the frames).
+    // Clean Windows build, gzip level 9, dist: financial 330,839 B, all lazy 365,004 B (4 B over). Raised minimally, to the
+    // next kB: all lazy 365,000 -> 366,000; financial stays at 331,000.
+    // 2026-10-04 (the docs revalidated for V2, four new pages in the Docs route; the owner's ChatGPT UI round: the range
+    // simulator redesigned, Automate's mode summary). Clean Windows build, gzip level 9, dist: route screens 179,731 B.
+    // Raised minimally, to the next kB: route screens 177,000 -> 182,000 (the wallet-test build's 181,455 B; route screens
+    // has no test-only allowance); financial 331,822 B: 331,000 -> 332,000; all lazy 366,041 B: 366,000 -> 367,000.
+    // 2026-10-04 (the ChatGPT UI round 4: New position's single progress, Setup's grouped fields, Receipts' states):
+    // financial 332,289 B: 332,000 -> 333,000; all lazy (366,531 B) stays at 367,000.
+    // 2026-10-04 (the ChatGPT UI round 5: the inline funds offer, Change range and the charts): the wallet-test build's route
+    // screens 182,155 B: 182,000 -> 183,000; dist's financial 332,563 B and all lazy 366,886 B stay under theirs.
+    // 2026-10-04 (the owner: the site runs on Domino V2; the deployed build carries V2's screens and its pinned manifests):
+    // V2 shares the wallet, session and chain code with V1, so the chunks the existing families load moved. Clean Windows
+    // build, gzip level 9, dist / .wallet-test-dist: route screens 183,151 / 182,603 B, session/public reads 161,496 /
+    // 158,959 B, financial 339,801 / 335,016 B, all lazy 376,287 / 369,661 B; Domino V2's own family 599,749 B (dist only).
+    // Raised to the next kB above the deployable build, with one more kB for financial and all lazy (Linux builds measure a
+    // few hundred bytes apart): route screens 183,000 -> 184,000, session/public reads 161,000 -> 162,000, financial
+    // 333,000 -> 341,000, all lazy 367,000 -> 378,000; Domino V2 601,000 (new). The 3 kB wallet-test allowance stays.
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 184_000], ['session/public reads', base, 162_000], ['financial', financial, 341_000], ['all lazy', allLazy, 378_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 6_000], ['domino v2', v2, 601_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir === WALLET && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

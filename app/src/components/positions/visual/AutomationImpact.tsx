@@ -13,7 +13,7 @@ const growthText = (share: number) => (share >= 0.0001 ? `${(share * 100).toFixe
 /** The chart's mark for a re-add, small, beside the words that name it (decoration: the words say it all). */
 export function AutoGlyph() {
   return (
-    <svg className="dm-fees-auto-glyph" width="16" height="16" viewBox="-8 -8 16 16" aria-hidden="true" focusable="false">
+    <svg className="dm-fees-auto-glyph" width="1rem" height="1rem" viewBox="-8 -8 16 16" aria-hidden="true" focusable="false">
       <circle r={6.5} className="dm-fees-auto-dot" />
       <path d="M-2.75 0H2.75M0 -2.75V2.75" className="dm-fees-auto-plus" />
     </svg>

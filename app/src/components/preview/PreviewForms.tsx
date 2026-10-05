@@ -10,7 +10,7 @@ import type { InputIssue, PositionForm, SwapForm } from '../../onboarding/inputs
 import { formatTokenAmount, isRaw } from '../../lib/raw'
 
 const INPUT =
-  'mt-1 w-full rounded-[var(--radius)] border border-line-strong bg-surface-1 px-3 py-2 font-mono text-[13px] text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] aria-[invalid=true]:border-[var(--money-out)]'
+  'mt-1 w-full rounded-[var(--radius)] border border-line-strong bg-surface-1 px-3 py-2 font-mono text-[0.8125rem] text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] aria-[invalid=true]:border-[var(--money-out)]'
 
 function Field({
   label,
@@ -27,17 +27,17 @@ function Field({
   const described = [issue ? `${id}-issue` : null, hint ? `${id}-hint` : null].filter(Boolean).join(' ') || undefined
   return (
     <div>
-      <label htmlFor={id} className="text-[12px] font-medium text-fg-muted">
+      <label htmlFor={id} className="text-[0.75rem] font-medium text-fg-muted">
         {label}
       </label>
       {children({ id, 'aria-invalid': Boolean(issue), 'aria-describedby': described })}
       {hint && (
-        <p id={`${id}-hint`} className="mt-1 text-[12px] text-fg-subtle">
+        <p id={`${id}-hint`} className="mt-1 text-[0.75rem] text-fg-subtle">
           {hint}
         </p>
       )}
       {issue && (
-        <p id={`${id}-issue`} className="mt-1 text-[12px] text-money-out">
+        <p id={`${id}-issue`} className="mt-1 text-[0.75rem] text-money-out">
           {issue.message}
         </p>
       )}

@@ -4,7 +4,7 @@ import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, type Plugin, type Rollup } from 'vite'
-import { TEXT_FILE, assertDeployable, findForbidden } from './scripts/deploy-markers.mjs'
+import { PREVIEW_SITE_FORBIDDEN, TEXT_FILE, assertDeployable, findForbidden } from './scripts/deploy-markers.mjs'
 import { ROUTES } from './src/routeTable'
 import { bootTags, type BootData } from './functions/_lib/boot'
 
@@ -42,24 +42,50 @@ const reactDomRoot = here('./node_modules/react-dom')
  *                             a local stub serves
  *   wallet-test               the same, plus the wallet session's test probes,
  *                             for the browser tests' fake session service
+ *   preview-v2                the site exactly as production builds it, with
+ *                             Domino V2 compiled in: published by hand to the
+ *                             preview alias only, never written to dist and
+ *                             refused by every release (its page is marked)
+ *   wallet-test-v2            wallet-test with Domino V2 compiled in: V1's
+ *                             browser suites run on it with V2's gate open on
+ *                             the test server's origin, as on the preview
+ *                             alias (scripts/v1-on-v2.mjs), and V2's own browser
+ *                             suites open its gate through window.__dominoV2Test
  *
  * Wallet sign-in itself is not a mode: the deployable modes carry it, because
  * it is part of what the site does. Only its probes are a mode of their own.
  *
  * Only a deployable mode may write to dist, which is what Pages deploys; the
  * guard below refuses any other there. No mode has sample data: there is none.
+ *
+ * Changed on purpose (data) 2026-10-02 (Domino V2 integration, the preview-v2 build): a key every row states, `site`:
+ * the page is the real site for V1 (real wallets, the reviewed pools, live reads), so `__DOMINO_DEPLOYABLE__` is true
+ * there: V1's deployment pin is insisted on (finance/pin.ts), no build banner is drawn, the chain is read
+ * (lib/automationState.ts, automationImpact.ts, fees/answers.ts) and the boot script sends the list's first reads. The
+ * two deployable modes are the site; so is preview-v2, which is never deployable (it carries V2) and is the site the
+ * owner tests V1 on, so V1 there behaves exactly as on domino.money. Domino V2's FIXTURE contract sets are taken by the
+ * builds that carry V2 and are not deployable (`__DOMINO_V2_FIXTURE_SETS__`, src/v2/flag.ts), preview-v2 included, up to
+ * a review: every send and signature with one is refused outside the test builds (src/finance/v2/liveLock.ts).
  */
 // wallet-test plus the onboarding previews (#38) at #/live-preview and the
 // deposit consumer's fixture lab (#40/#44) at #/deposits, for the browser
 // tests' fake services only. No build sends a deposit anywhere, and none
 // can: there is no live deposit transport and no wallet send.
+// Changed on purpose (data) 2026-10-02 (Domino V2 integration, the base agent's item 6): the old fixture-only `v2-preview`
+// mode and its separate #/v2 screens (src/v2ui) are gone: Domino V2 is integrated into the existing screens
+// (src/v2in), built for the preview alias by preview-v2 and for the browser suites by wallet-test-v2 and v2-test.
+// Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2, deployed and pinned on every chain): production
+// and development carry V2 (`v2: true`) with its pinned production manifests only, never its fixture sets.
 const MODES = {
-  production: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false, wallet: true, testHooks: false, preview: false, depositLab: false },
-  development: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false, wallet: true, testHooks: false, preview: false, depositLab: false },
-  fixtures: { read: 'fixture', pools: 'fixture', deployable: false, outDir: '.fixture-dist', lab: true, wallet: false, testHooks: false, preview: false, depositLab: false },
-  'bridge-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.bridge-dist', lab: false, wallet: false, testHooks: false, preview: false, depositLab: false },
-  'wallet-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.wallet-test-dist', lab: false, wallet: true, testHooks: true, preview: false, depositLab: false },
-  'consumer-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.consumer-test-dist', lab: false, wallet: true, testHooks: true, preview: true, depositLab: true },
+  production: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false, wallet: true, testHooks: false, preview: false, depositLab: false, v2: true, site: true },
+  development: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false, wallet: true, testHooks: false, preview: false, depositLab: false, v2: true, site: true },
+  fixtures: { read: 'fixture', pools: 'fixture', deployable: false, outDir: '.fixture-dist', lab: true, wallet: false, testHooks: false, preview: false, depositLab: false, v2: false, site: false },
+  'bridge-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.bridge-dist', lab: false, wallet: false, testHooks: false, preview: false, depositLab: false, v2: false, site: false },
+  'wallet-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.wallet-test-dist', lab: false, wallet: true, testHooks: true, preview: false, depositLab: false, v2: false, site: false },
+  'consumer-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.consumer-test-dist', lab: false, wallet: true, testHooks: true, preview: true, depositLab: true, v2: false, site: false },
+  'v2-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.v2-test-dist', lab: false, wallet: true, testHooks: true, preview: false, depositLab: false, v2: true, site: false },
+  'preview-v2': { read: 'bridge', pools: 'selected', deployable: false, outDir: '.preview-v2-dist', lab: false, wallet: true, testHooks: false, preview: false, depositLab: false, v2: true, site: true },
+  'wallet-test-v2': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.wallet-test-v2-dist', lab: false, wallet: true, testHooks: true, preview: false, depositLab: false, v2: true, site: false },
 } as const
 
 // Every deployable row is checked whichever mode is built, so a production row
@@ -171,6 +197,49 @@ function deployableBundleCheck(mode: string, deployable: boolean): Plugin {
 }
 
 /**
+ * Changed on purpose (data) 2026-10-02 (Domino V2 integration, the preview-v2 build): the site a build that is not
+ * deployable still publishes (`site`, preview-v2: the preview alias, real wallets) carries none of what a real site must
+ * never carry, whatever else it holds: no local-development boundary, no test hooks, no lab, no node secret, no public
+ * RPC (scripts/deploy-markers.mjs PREVIEW_SITE_FORBIDDEN). V2 itself (its screens behind the bare `__DOMINO_V2__` define
+ * and the page's V2 mark; no test data: real data only, the owner, 2026-10-02) is what it may carry; it is refused by
+ * every release for it. Checked over what Rollup emits and over the whole output directory, as the deployable check is.
+ */
+function previewSiteBundleCheck(mode: string, active: boolean): Plugin {
+  const scan = (text: string) => findForbidden(text).filter((hit) => PREVIEW_SITE_FORBIDDEN.has(hit.marker))
+  const refuse = (hits: string[]) => {
+    throw new Error(`The ${mode} build is published as the site and carries what a site must never carry:\n${hits.join('\n')}`)
+  }
+  let outDir = ''
+  return {
+    name: 'domino:preview-site-bundle-check',
+    apply: 'build',
+    enforce: 'post',
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir)
+    },
+    generateBundle(_options, bundle) {
+      if (!active) return
+      const hits: string[] = []
+      for (const [file, output] of Object.entries(bundle)) {
+        if (!TEXT_FILE.test(file)) continue
+        const text = output.type === 'chunk' ? output.code : typeof output.source === 'string' ? output.source : new TextDecoder().decode(output.source)
+        for (const hit of scan(text)) hits.push(`${file}: ${hit.marker} in "${hit.context}"`)
+      }
+      if (hits.length > 0) refuse(hits)
+    },
+    closeBundle() {
+      if (!active) return
+      const hits: string[] = []
+      for (const file of filesUnder(outDir)) {
+        if (!TEXT_FILE.test(file)) continue
+        for (const hit of scan(readFileSync(file, 'utf8'))) hits.push(`${relative(outDir, file)}: ${hit.marker} in "${hit.context}"`)
+      }
+      if (hits.length > 0) refuse(hits)
+    },
+  }
+}
+
+/**
  * The modules each route's screen is drawn by, beyond the entry (2026-10-01, platform workstream, F1/F2): the screens
  * are chunks of their own (src/App.tsx). `position` is a position's own page, #/positions/<id>. A module a build does not
  * carry (the wallet's list and the money screens, in a build without the wallet) is passed over. Changed on purpose
@@ -253,6 +322,47 @@ function boot(early: boolean): Plugin {
 }
 
 /**
+ * A build with V2 on scans the integrated V2 modules for its CSS (Domino V2, 2026-10-02). styles/tokens.css keeps
+ * `src/v2in` out of Tailwind's scan, so every other build's CSS is byte for byte what it was before V2; only in a build
+ * with `__DOMINO_V2__` on is that one line taken out before Tailwind reads the file. A tokens.css without the line fails
+ * the build rather than drawing the screens unstyled. Changed on purpose (data) 2026-10-02 (Domino V2 integration, item
+ * 6): the old #/v2 screens (src/v2ui) and their line are gone.
+ */
+const V2IN_SOURCE_EXCLUSION = /^@source not '\.\.\/v2in';\r?$/m
+function v2ScreensCss(): Plugin {
+  return {
+    name: 'domino:v2-screens-css',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!/[\\/]styles[\\/]tokens\.css$/.test(id.split('?')[0])) return null
+      if (!V2IN_SOURCE_EXCLUSION.test(code)) throw new Error('styles/tokens.css no longer keeps src/v2in out of the scan.')
+      return { code: code.replace(V2IN_SOURCE_EXCLUSION, ''), map: null }
+    },
+  }
+}
+
+/**
+ * Changed on purpose (data) 2026-10-02 (Domino V2 integration, the preview-v2 build): the page of every build that
+ * compiles V2 in says so on its root element, `<html data-v2-build="<mode>">`, a marker scripts/deploy-markers.mjs refuses
+ * in any release (`V2 build`): a preview-v2 dist copied into dist is never recorded or deployed by scripts/release.mjs,
+ * and a deployable build that ever compiled V2 in fails its own bundle check. A page without its root element fails the
+ * build rather than going unmarked.
+ */
+export const V2_BUILD_MARK = 'data-v2-build'
+function v2BuildMark(mode: string): Plugin {
+  return {
+    name: 'domino:v2-build-mark',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html) {
+        if (!/<html\b/.test(html)) throw new Error(`The ${mode} page has no <html> element to mark as a V2 build.`)
+        return html.replace(/<html\b/, `<html ${V2_BUILD_MARK}="${mode}"`)
+      },
+    },
+  }
+}
+
+/**
  * Two chunks that change far less often than the app (2026-10-01, platform workstream, F4), so a returning visitor keeps
  * them across releases instead of downloading them again inside the entry, whose name changes with every app change:
  * React, React DOM and their scheduler (they change only with the lockfile), and the read contracts' runtimes the entry
@@ -271,17 +381,26 @@ export default defineConfig(({ mode, command }) => {
   const localLive = mode === 'local-live'
   if (localLive && command === 'build') throw new Error('local-live is serve-only and cannot be built or released.')
   if (!localLive && !Object.hasOwn(MODES, mode)) {
-    throw new Error(`Unknown mode "${mode}". Use production, development, fixtures, bridge-test, wallet-test or consumer-test.`)
+    throw new Error(`Unknown mode "${mode}". Use production, development, fixtures, bridge-test, wallet-test, consumer-test, v2-test, preview-v2 or wallet-test-v2.`)
   }
+  // Changed on purpose (data) 2026-10-02 (Domino V2 integration): local-live is development's row served locally, and
+  // not the site (`site: false`): its V1 stays what it was.
   const settings = localLive
-    ? { ...MODES.development, deployable: false, wallet: false }
+    ? { ...MODES.development, deployable: false, wallet: false, site: false }
     : MODES[mode as keyof typeof MODES]
+  // The page is the real site for V1 (the MODES note): the deployable builds, and preview-v2.
+  const site = settings.deployable || settings.site
   return {
-    plugins: [react(), tailwindcss(), boot(!localLive && settings.deployable && settings.pools === 'selected'), ...(localLive ? [{ name: 'domino:local-live-launcher-only', configResolved(config: { server: { middlewareMode: unknown } }) { if (!config.server.middlewareMode) throw new Error('Use npm run dev:live; local-live requires the guarded launcher.') } }] : [deployableOnlyInDist(mode, settings.deployable)]), deployableBundleCheck(mode, settings.deployable)],
+    // Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2): a deployable build carries V2's screens but
+    // never the V2 build mark, which marks the builds that take V2's test data (preview-v2, the test builds) and which
+    // every release refuses.
+    plugins: [react(), ...(settings.v2 ? [v2ScreensCss(), ...(settings.deployable ? [] : [v2BuildMark(mode)])] : []), tailwindcss(), boot(!localLive && site && settings.pools === 'selected'), ...(localLive ? [{ name: 'domino:local-live-launcher-only', configResolved(config: { server: { middlewareMode: unknown } }) { if (!config.server.middlewareMode) throw new Error('Use npm run dev:live; local-live requires the guarded launcher.') } }] : [deployableOnlyInDist(mode, settings.deployable)]), deployableBundleCheck(mode, settings.deployable), previewSiteBundleCheck(mode, !localLive && !settings.deployable && settings.site)],
     define: {
       __DOMINO_READ_MODE__: JSON.stringify(settings.read),
       __DOMINO_POOL_SET__: JSON.stringify(settings.pools),
-      __DOMINO_DEPLOYABLE__: JSON.stringify(settings.deployable),
+      // Changed on purpose (data) 2026-10-02 (Domino V2 integration): true where the page is the real site for V1, the
+      // deployable builds and preview-v2 (`site`); written for every mode, so no dist can be missing it.
+      __DOMINO_DEPLOYABLE__: JSON.stringify(settings.deployable || settings.site),
       // Wallet sign-in ships; its probes do not. Both are literals, so the
       // chunk behind the first is emitted only where it is true, and the code
       // behind the second disappears from every build but wallet-test.
@@ -294,6 +413,12 @@ export default defineConfig(({ mode, command }) => {
       // including the one that deploys.
       __DOMINO_ONBOARDING_PREVIEW__: JSON.stringify(settings.preview),
       __DOMINO_DEPOSIT_LAB__: JSON.stringify(settings.depositLab),
+      // Domino V2 (spec F7): true in the builds that carry it. Changed on purpose 2026-10-04 (the owner: the site runs on
+      // V2): the deployable builds too. A literal, so V2's screens and clients leave every build without it.
+      __DOMINO_V2__: JSON.stringify(settings.v2),
+      // Changed on purpose (data) 2026-10-02 (Domino V2 integration): whether the build takes V2's FIXTURE contract sets
+      // (src/v2/flag.ts): the builds that carry V2 and are not deployable. Written for every mode.
+      __DOMINO_V2_FIXTURE_SETS__: JSON.stringify(settings.v2 && !settings.deployable),
     },
     resolve: {
       dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],

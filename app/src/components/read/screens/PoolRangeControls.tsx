@@ -26,6 +26,7 @@ import { editablePrice, priceInputToTick } from '../../../lib/read/screens/Range
 import type { ReadSource } from '../../../lib/read/types'
 import { IconMinus, IconPlus } from '../../icons'
 import { PriceSlider } from '../../PriceSlider'
+import { rem } from '../../../lib/rootScale'
 import { Button, IconButton, cx } from '../../ui'
 import { Address } from './Address'
 import { SymbolText } from './SymbolText'
@@ -216,7 +217,7 @@ function RangeInterval({ range, price, bounds }: { range: PlannedRange; price: U
         <span className="dm-pool-interval-handle" style={{ left: `${lower}%` }} />
         <span className="dm-pool-interval-handle" style={{ left: `${upper}%` }} />
         <span className="dm-pool-interval-price" style={{ left: `${pool}%` }} />
-        <span className="dm-pool-interval-label" style={{ left: `clamp(34px, ${pool}%, calc(100% - 34px))` }}>Pool price</span>
+        <span className="dm-pool-interval-label" style={{ left: `clamp(${rem(34)}, ${pool}%, calc(100% - ${rem(34)}))` }}>Pool price</span>
         <span className="dm-pool-interval-end dm-pool-interval-end--min tnum">{fromPoolPrice(bounds.min, price.tick)}</span>
         <span className="dm-pool-interval-end dm-pool-interval-end--max tnum">{fromPoolPrice(bounds.max, price.tick)}</span>
       </div>

@@ -26,9 +26,9 @@ function history(minted, ages, kind = 'reading') {
   return { mintedAt: { block: 1, timestamp: T0 }, points, events: [], earned: [100n, 0n] };
 }
 
-test('the periods offered, as before they were removed: 24H always, 7D past 36 hours, 30D past 8 days, and All; All alone where no past read can be made', () => {
-  assert.deepEqual(periodsFor(10 * HOUR, true), ['24h', 'all']);
-  assert.deepEqual(periodsFor(36 * HOUR, true), ['24h', 'all']);
+test('24H and 7D are offered even for a young position; its measured mint caps every period', () => {
+  assert.deepEqual(periodsFor(10 * HOUR, true), ['24h', '7d', 'all']);
+  assert.deepEqual(periodsFor(36 * HOUR, true), ['24h', '7d', 'all']);
   assert.deepEqual(periodsFor(36 * HOUR + 1, true), ['24h', '7d', 'all']);
   assert.deepEqual(periodsFor(8 * DAY + 1, true), ['24h', '7d', '30d', 'all']);
   assert.deepEqual(periodsFor(90 * DAY, false), ['all'], 'the route not listed: only All, no tabs');

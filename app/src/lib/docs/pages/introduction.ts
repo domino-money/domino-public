@@ -6,11 +6,16 @@ import type { Block, DocPage } from '../types'
 /**
  * Written for someone who has never provided liquidity (the owner, 2026-09-27: Domino is built for people who know
  * little or nothing about liquidity pools): short sentences, and each new word explained where it first appears.
+ *
+ * Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Domino's new contracts run on three networks, a
+ * position's page manages it, a stop-loss or take-profit can protect it, and automation is set up on the position and
+ * starts at once. The machinery behind Auto-compound, Domino-compound and Protection only is "your automation" (the
+ * owner, 2026-10-04): the reader meets those names, never the contract's.
  */
 export const WHAT_IS_DOMINO: DocPage = {
   slug: 'what-is-domino',
   title: 'What Domino is',
-  summary: 'Domino helps you earn trading fees with a Uniswap position on Robinhood Chain, and can put those fees back to work.',
+  summary: 'Domino helps you earn trading fees with Uniswap positions on Robinhood Chain, Base and Arbitrum One, and can put those fees to work.',
   sections: [
     {
       id: 'what-it-does',
@@ -31,7 +36,8 @@ export const WHAT_IS_DOMINO: DocPage = {
           [doc('Auto-compound', 'auto-compound'), ': its fees go back into the same position, so it grows.'],
           [doc('Domino-compound', 'domino-compound'), ': near the top of its range, its fees open the next position one step higher.'],
         ),
-        p('Every position starts plain. You choose what its fees do when Create position finishes, or later with ', b('Automate'), ' on the position in Positions.'),
+        p('Every position starts plain; you choose what its fees do later, with ', b('Automate'), '.'),
+        p('A ', doc('stop-loss or take-profit', 'stop-loss'), ' can also withdraw a position by itself at a price you set.'),
       ],
     },
     {
@@ -39,10 +45,10 @@ export const WHAT_IS_DOMINO: DocPage = {
       title: 'Where things are',
       blocks: [
         list(
-          [doc('Markets', 'markets'), ': the pools you can use, with a page for each.'],
-          [doc('New position', 'new-position'), ': four steps, then your wallet creates the position.'],
-          [doc('Positions', 'positions'), ': your positions, each with its own page, where you collect its fees or close it.'],
-          [b('Automate'), ': the three ways side by side, and where ', doc('Auto-compound', 'auto-compound'), ' and ', doc('Domino-compound', 'domino-compound'), ' are set up.'],
+          [doc('Markets', 'markets'), ': the pools you can use on Robinhood Chain, with a page for each.'],
+          [doc('New position', 'new-position'), ': four steps on Robinhood Chain, then your wallet creates the position. Tokens on another network can be ', doc('brought over first', 'bring-funds'), '.'],
+          [doc('Positions', 'positions'), ': your positions on Robinhood Chain, Base and Arbitrum One, each with a page where you ', doc('manage it', 'manage-position'), '.'],
+          [b('Automate'), ': the three ways and a stop-loss side by side, and where ', doc('Auto-compound', 'auto-compound'), ' and ', doc('Domino-compound', 'domino-compound'), ' are set up.'],
         ),
       ],
     },
@@ -50,26 +56,19 @@ export const WHAT_IS_DOMINO: DocPage = {
       id: 'your-wallet-signs',
       title: 'Your wallet signs every step you take',
       blocks: [
-        // 2026-09-27 (review of 260a76a): Create position deposits in Domino's Setup contract before the mint (custody.ts), so
-        // the page no longer says Domino never holds your tokens; it says what is true, that only your wallet takes them out.
+        // 2026-09-27 (review of 260a76a): only your wallet takes your tokens out; Non-custodial says who holds what.
         p('Nothing moves until your wallet signs. Your wallet shows each transaction before you sign it. Domino never holds your keys, and only your wallet can take your tokens out.'),
         p('Signing in is different: it only proves the address is yours, and allows nothing. See ', doc('what signing in proves', 'wallet', 'sign-in'), '.'),
-        // 2026-09-27 (review of 260a76a, the owner's point 6): sequence vault and operator explained where a beginner first
-        // meets them; activation, revocation and withdrawal are left to Non-custodial, which explains each.
-        p('Automation works through a sequence vault: a contract made for your wallet alone, which only your wallet controls. Domino’s automation service, the operator, sends its transactions within the limits you signed. See ', doc('what the operator can do', 'non-custodial', 'operator'), '.'),
-        // Changed on purpose (2026-09-25, audit of 754014c): no screen of this site offers activation any more.
-        // Changed on purpose again (owner, 2026-09-25): a position's page offers Turn on once the service is ready, and Pause.
-        // Turn on and Pause have no review wall (the owner's rule), so they go straight to the wallet (review of 2026-09-25).
-        p('Automation starts paused. Once the service is ready for it, your position’s page offers Turn on, and Pause while it runs. Turn on and Pause go straight to your wallet, which shows the transaction.'),
+        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): what runs automation, in the owner's words.
+        p('Automation works through a contract made for your wallet alone, which only your wallet controls, and Domino’s automation service acts only within the limits you signed. It starts once your wallet sets it up. See ', doc('Your automation', 'your-automation'), '.'),
       ],
     },
     {
       id: 'built-on-uniswap',
       title: 'Built on Uniswap',
       blocks: [
-        p('Uniswap is an exchange made of smart contracts: programs on the chain that anyone can read. Every Domino position is a standard Uniswap position NFT on Robinhood Chain, a token in your wallet that stands for your position.'),
-        // 2026-09-27 (review of 260a76a): no contract names a beginner has not met; Contracts names them.
-        p('Domino’s own contracts, Domino V1, run there too: one opens your positions, and another makes your sequence vault. They are listed under ', doc('Contracts', 'contracts'), ', with the Uniswap contracts behind every position.'),
+        p('Uniswap is an exchange made of smart contracts: programs on the chain that anyone can read. Every Domino position is a standard Uniswap position NFT, a token in your wallet that stands for your position. Domino works with Uniswap v3 and v4 pools.'),
+        p('Domino’s own contracts run beside them on each of its three networks: one acts on your positions, one runs your automation, one carries out stop-loss and take-profit orders. See ', doc('Contracts', 'contracts'), '.'),
       ],
     },
   ],
@@ -89,7 +88,7 @@ const PHONE: Block = p(
 export const WALLET: DocPage = {
   slug: 'wallet',
   title: 'Wallet and sign-in',
-  summary: 'Connect a wallet on Robinhood Chain, from a computer or a phone, and sign in to see what automation did.',
+  summary: 'Connect a wallet from a computer or a phone, use Domino’s three networks, and sign in for quotes.',
   sections: [
     {
       id: 'connect',
@@ -98,17 +97,21 @@ export const WALLET: DocPage = {
         p('A wallet holds your tokens and signs for you: an extension in a computer’s browser, or an app on a phone.'),
         p(b('Connect wallet'), ', in the header, lists the wallets in this browser. Choose one to connect it. With none, it offers MetaMask and Rabby to install.'),
         PHONE,
-        p('Connecting only shows your address to the page. It moves nothing and proves nothing. What this browser keeps, and who sees your address, is under ', doc('Privacy', 'privacy'), '.'),
+        // Changed on purpose 2026-10-04 (the owner's UI round of 2026-10-03): the wallet dialog shows the address, not the app's name.
+        p('Once connected, its dialog shows your address, with ', b('Copy'), ', and whether you are signed in. Connecting moves nothing and proves nothing. What this browser keeps, and who sees your address, is under ', doc('Privacy', 'privacy'), '.'),
       ],
     },
     {
+      // The id stays, so links to it still land.
       id: 'robinhood-chain',
-      title: 'Robinhood Chain in your wallet',
+      title: 'Networks in your wallet',
       blocks: [
-        // Changed on purpose 2026-10-01 (audit C1, the owner's OK): Switch to Robinhood Chain now asks a wallet that lacks
-        // the network to add it, with the details below (src/wallet/chain.ts ADD_ROBINHOOD_CHAIN, which
+        // Changed on purpose 2026-10-01 (audit C1, the owner's OK): Switch to Robinhood Chain asks a wallet that lacks the
+        // network to add it, with the details below (src/wallet/chain.ts ADD_ROBINHOOD_CHAIN, which
         // tests/wallet-compat.test.mjs holds these rows to); they are here too for a wallet that must be told by hand.
-        p(`Domino works on Robinhood Chain only, chain ID ${CAPABILITIES.chainId}. When your wallet is on another network, `, b('Switch to Robinhood Chain'), ' asks it to change, and to add the network first if it lacks it. To add it by hand, use these details:'),
+        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Base and Arbitrum One too, which Domino asks
+        // the wallet to switch to and never adds itself ("Add {chain} to your wallet, then try again.").
+        p(`Domino works on Robinhood Chain, chain ID ${CAPABILITIES.chainId}, Base, 8453, and Arbitrum One, 42161, and asks your wallet to switch networks when a step needs it. `, b('Switch to Robinhood Chain'), ' also asks it to add that network if it lacks it; to add it by hand:'),
         {
           kind: 'facts',
           rows: [
@@ -119,7 +122,7 @@ export const WALLET: DocPage = {
             { label: 'Block explorer', value: 'https://robinhoodchain.blockscout.com' },
           ],
         },
-        p('Every transaction pays a small network fee, called gas, in ETH. Keep a little ETH in your wallet for it.'),
+        p('If your wallet lacks Base or Arbitrum One, Domino says so: add it there, then try again. Each transaction pays a small network fee, called gas, in ETH: keep a little on each network you use.'),
       ],
     },
     {
@@ -137,17 +140,22 @@ export const WALLET: DocPage = {
       title: 'Sessions and signing out',
       blocks: [
         p('Signing in starts a session. The wallet control shows when it ends at the latest, and it ends sooner after 30 minutes idle. ', b('Sign out'), ' ends it.'),
-        p('If your wallet changes account or network, the session is signed out.'),
+        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the session is kept across the three networks (session/machine.ts keptChains).
+        p('Moving between Domino’s three networks keeps the session; changing account, or moving elsewhere, signs it out.'),
       ],
     },
     {
       id: 'what-needs-sign-in',
       title: 'What needs sign-in',
       blocks: [
-        // 2026-09-27: a position's page shows what Auto-compound added back with no sign-in (lib/automationImpact.ts reads it
-        // from the chain), so the list names only the two cards that need a session.
-        list(['Managed positions and Receipts, on ', doc('Positions', 'positions', 'managed-positions'), ': what automation did across your positions.'], ['Checking whether the automation service is ready for your sequence before activation.']),
-        p('Public pages need no sign-in, a position’s page included, with what automation added back to it. Neither does anything your wallet does: creating a position, collecting its fees, closing it, setting up automation, pausing, revoking or withdrawing. Activation is the one step that also requires a live service check bound to your signed-in address and your sequence vault.'),
+        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): a quote (position-plan-v1) and a deposit from
+        // another network (crosschain-v1) are asked for the signed-in wallet; Domino V1's automation cards still need it.
+        list(
+          ['A quote: for ', doc('New position', 'new-position'), ', and for Add liquidity, Change range or a withdrawal in one token on a position’s page.'],
+          [doc('Bringing funds from another network', 'bring-funds'), '.'],
+          ['What Domino V1’s automation did, in Managed positions and Receipts on ', doc('Positions', 'positions', 'managed-positions'), '.'],
+        ),
+        p('Public pages need no sign-in, and neither does a step without a quote, such as collecting fees, closing a position, or setting up automation or a stop-loss.'),
       ],
     },
   ],
@@ -157,31 +165,39 @@ export const WALLET: DocPage = {
 export const WALLET_REQUESTS: DocPage = {
   slug: 'wallet-requests',
   title: 'Wallet requests',
-  summary: 'What your wallet shows before you sign, signing every step at once, and what to do with a request still open.',
+  summary: 'What your wallet shows before you sign, signatures that carry a plan, steps signed at once, and requests left open.',
   sections: [
     {
       id: 'before-you-sign',
       title: 'Before you sign',
       blocks: [
         p('Each step Domino asks for opens in your wallet, which shows what the transaction does and its network fee, paid in ETH. Nothing is sent until you confirm it there, and a step you reject sends nothing.'),
-        // 2026-10-01 (audit C14).
-        p('A step is never sent twice. If you press ', b('Speed up'), ' or ', b('Cancel'), ' in your wallet while Domino waits for a step, Domino notices within seconds, reads the chain again and tells you whether the step happened: a sped-up step did, a cancelled one did not. Nothing is sent again on its own; press the button again to try once more.'),
+        // 2026-10-01 (audit C14). Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the new contracts'
+        // steps say the same in their own words ("Nothing more will be sent from here: check your wallet’s activity").
+        p('A step is never sent twice. If you press ', b('Speed up'), ' or ', b('Cancel'), ' in your wallet while Domino waits for a step, or its answer goes missing, Domino reads the network again and sends nothing more on its own: it tells you what happened, or asks you to check your wallet’s activity.'),
+      ],
+    },
+    {
+      id: 'signatures',
+      title: 'Signatures',
+      blocks: [
+        p('Some steps are a signature instead of a transaction. ', b('Sign the deposit'), ' signs one message that carries the whole plan, valid for 5 minutes; the transaction after it uses it. An exit order is a signature too: see ', doc('Stop-loss / take-profit', 'stop-loss'), '.'),
+        p('A signature does only what it says, and only until it expires. If the transaction that used one fails, Domino offers ', b('Cancel the signature'), ' before a new quote.'),
       ],
     },
     {
       id: 'all-at-once',
       title: 'Sign all steps at once',
       blocks: [
-        p('Some wallets sign every step of Create position at once: all of them go through together, or none do. A wallet that can do so only as a smart account gets ', b('Sign all steps at once'), ' on Review: it first asks you to turn its smart account on. Your address stays the same, your key stays in control, and the smart account stays on until you turn it off in your wallet.'),
+        p('Some wallets confirm every step at once: they all go through together, or none do. Review says so when yours can. A wallet may first ask you to turn on its smart account: your address stays the same, your key stays in control, and the smart account stays on until you turn it off in your wallet.'),
         p('Wallets that cannot, such as Rabby, keep the steps separate, and Review lists each one.'),
-        p('If your account already runs a smart-account contract Domino does not recognize, Create position stops before asking for anything. If you set it up yourself, press ', b('I set up this smart account: continue'), '. If not, connect another account.'),
       ],
     },
     {
       id: 'request-open',
       title: 'A request still open',
       blocks: [
-        p('Create position may say your wallet could still be showing an earlier request from this site. Approve or reject it in your wallet. If you already rejected or closed it, press ', b('I rejected it in my wallet'), ': nothing is sent, and your next press checks everything again.'),
+        p('A step may say an earlier request from this site is still open in your wallet, or not settled on the network yet. Approve or reject it in your wallet. If you already rejected or closed it, press ', b('I rejected it in my wallet'), ': nothing is sent, and your next press checks everything again.'),
       ],
     },
   ],

@@ -40,8 +40,15 @@ export const DEX_STALE_SECONDS = 300
 export const MAX_TOKENS = 10
 /** The most bytes one upstream body may have. */
 const MAX_BODY = 262144
-/** An upstream read gives up after this. */
+/** An upstream read gives up after this (it may go on behind an ask that already answered: DEX_ANSWER_MS). */
 const UPSTREAM_MS = 6_000
+/**
+ * How long an ask waits for its tokens before it answers (Changed on purpose 2026-10-03): under the page's own 3 s for
+ * this route (lib/tokenArtwork.ts EDGE_TIMEOUT), so the page always hears from the edge instead of giving up on it and
+ * leaving a request behind. A token not read by then makes the ask a 502, as a gap does (the page then asks the
+ * provider itself, as before), and its read goes on behind and is kept, so the next ask for it is a hit.
+ */
+export const DEX_ANSWER_MS = 2_500
 /** Upstream reads one ask runs side by side. */
 const WIDTH = 6
 /** Pairs a `tokens` answer keeps per token, besides its most liquid pair as a base. */
@@ -58,6 +65,8 @@ export interface DexRuntime {
   fetch?: (input: string, init: RequestInit) => Promise<Response>
   /** Keys refreshed behind lately: this isolate's own unless a test gives one. */
   refreshing?: Map<string, number>
+  /** How long an ask waits before answering: DEX_ANSWER_MS unless a test gives another. */
+  answerMs?: number
   /** Upstream reads on their way, by key: this isolate's own unless a test gives one. */
   inflight?: Map<string, Promise<string | null>>
 }
@@ -248,7 +257,18 @@ export async function answerDex(request: Request, rt: DexRuntime): Promise<Respo
       parts[at] = await part(rt, asked.origin, asked.kind, asked.tokens[at])
     }
   }
-  await Promise.all(Array.from({ length: Math.min(WIDTH, asked.tokens.length) }, lane))
+  const lanes = Promise.all(Array.from({ length: Math.min(WIDTH, asked.tokens.length) }, lane))
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<'late'>((resolve) => {
+    timer = setTimeout(() => resolve('late'), rt.answerMs ?? DEX_ANSWER_MS)
+  })
+  const settled = await Promise.race([lanes.then(() => 'done' as const), late])
+  clearTimeout(timer)
+  if (settled === 'late') {
+    // Answered before the page gives up; the reads go on behind and keep what they get, for the next ask.
+    if (rt.waitUntil) rt.waitUntil(lanes.catch(() => undefined))
+    return refuse('upstream_unavailable', 502)
+  }
   // Every token answered, or none of it is: the page asks the provider itself for a batch with a gap (tokenArtwork.ts).
   if (parts.some((p) => p === null)) return refuse('upstream_unavailable', 502)
   const answered = parts as Exclude<Part, null>[]

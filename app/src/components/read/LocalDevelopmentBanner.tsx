@@ -21,7 +21,7 @@ export function LocalDevelopmentBanner() {
     finally { clearTimeout(timer); if (pending.current === controller) { pending.current = null; setBusy(false) } }
   }
   return (
-    <aside aria-label="Development environment" className="border-b bg-money-wait-bg px-5 py-2 text-center text-[12px] text-money-wait">
+    <aside aria-label="Development environment" className="border-b bg-money-wait-bg px-5 py-2 text-center text-[0.75rem] text-money-wait">
       <strong>Local real-data development</strong> · Read-only · Wallet sign-in and transactions disabled.
       {' '}<button type="button" className="underline" disabled={busy} onClick={() => void check()}>{busy ? 'Checking…' : 'Check connection'}</button>
       {data && <div role="status" className="mt-1">

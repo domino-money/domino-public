@@ -10,6 +10,7 @@ import { visibleAmountQuality } from './valueReadiness'
 import type { PositionState } from '../../lib/fees/types'
 import { formatUsdFloor } from '../../lib/format/usd'
 import { shortDate, shortTime } from '../../lib/format/time'
+import { readablePrice } from '../../lib/chart/priceFacts'
 import { APR_MISSING, aprText, positionApr, spanText } from '../../lib/positionApr'
 import { shownCardRange, shownCardTick, type RangeEnd } from '../../lib/read/screens/positions'
 import type { LiveCard } from '../../lib/walletCards'
@@ -26,8 +27,12 @@ import { basisOf, positive, rawPair, unitsText, usdgSide, valueShares } from './
  * one chain read, at its block (the strip's title); Your APR is from the fees history the Fees earned card draws.
  */
 
-/** A price or range end without its "≈": the page writes plain figures (six significant digits, every one in a title). */
-const plain = (text: string) => (text.startsWith('≈') ? text.slice(1) : text)
+/**
+ * A price or range end without its "≈": the page writes plain figures (six significant digits, every one in a title).
+ * Changed on purpose 2026-10-03 (the owner's point 10: tokens from $0.001 to $1,000,000): a tiny or huge one as DEX
+ * screens write it ("0.0₆7101", "2.5B"), the same way the Price range chart writes it (lib/chart/priceRange.ts).
+ */
+const plain = (text: string) => readablePrice(text.startsWith('≈') ? text.slice(1) : text)
 const endText = (end: RangeEnd, tick: number) => (end.kind === 'tick' ? `Tick ${tick}` : plain(end.text))
 
 /** Both amounts of the principal or the fees, one line each. */
@@ -154,7 +159,7 @@ function RangeLine({ price, card }: { price: CardPrice; card: LiveCard }) {
         <span>{endText(high.end, high.tick)}</span>
       </span>
       {live !== null && (
-        <span className="dm-pos-span-state" data-in={String(live)}>
+        <span className="sr-only" data-in={String(live)}>
           {live ? 'In range: earning fees' : 'Out of range: not earning fees'}
         </span>
       )}

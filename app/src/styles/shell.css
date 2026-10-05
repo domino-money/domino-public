@@ -4,7 +4,7 @@
 
 @layer components {
   /* ---- Page frame (§2.7): one 1200px container; the width aliases stay in the DOM ------------------ */
-  .dm-page { width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); margin-inline: auto; padding: 24px var(--gutter) 0; animation: dm-page-in var(--dur-page) var(--ease-std) backwards; }
+  .dm-page { width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); margin-inline: auto; padding: 1.5rem var(--gutter) 0; animation: dm-page-in var(--dur-page) var(--ease-std) backwards; }
   /* The page is at least the screen under the header (2026-10-01, platform workstream, E1): while a screen's code or
      first figures load, the footer stays below the fold instead of showing mid-screen and then jumping down, which
      measured up to 0.67 of layout shift on tablets and desktops. */
@@ -12,7 +12,7 @@
   .dm-page--pool { max-width: calc(var(--content-pool) + 2 * var(--gutter)); }
   .dm-page--flow { max-width: calc(var(--content-flow) + 2 * var(--gutter)); }
   .dm-page--narrow { max-width: calc(var(--content-narrow) + 2 * var(--gutter)); }
-  @media (min-width: 768px) { .dm-page { padding-top: 40px; } }
+  @media (min-width: 768px) { .dm-page { padding-top: 2.5rem; } }
 
   /* ---- Surfaces (§3.1): flat cards (a fill, an inner ring, a lit lip); plates sit lower ------- */
   .dm-card { min-width: 0; background: var(--card); border-radius: var(--radius-card); box-shadow: var(--elev-card); }
@@ -20,8 +20,8 @@
   .dm-card[data-interactive]:hover, a.dm-card:hover { background: var(--card-hover); box-shadow: var(--elev-card-hover); }
   .dm-card[data-interactive]:active, a.dm-card:active { scale: var(--press-scale-card); }
   .dm-card--flush { background: transparent; box-shadow: none; border-radius: 0; }
-  .dm-card-pad { padding: 16px; }
-  @media (min-width: 768px) { .dm-card-pad { padding: 24px; } }
+  .dm-card-pad { padding: 1rem; }
+  @media (min-width: 768px) { .dm-card-pad { padding: 1.5rem; } }
   .dm-plate { min-width: 0; background: var(--surface-1); border-radius: var(--radius-lg); box-shadow: inset 0 0 0 1px var(--border); position: relative; overflow: hidden; }
   .dm-inset { min-width: 0; background: var(--surface-1); border-radius: var(--radius-lg); box-shadow: inset 0 0 0 1px var(--border); }
 
@@ -34,49 +34,49 @@
   /* ---- Type scale (§2.8). Serif: the Home hero, page h1s, Home section heads, card-sized display titles.
      Geist: every other title and every figure. Weight never above 500 outside the wordmark. ---------- */
   .dm-display { font-family: var(--font-display); font-weight: 400; line-height: 1.1; letter-spacing: 0; }
-  .dm-display-hero { font-family: var(--font-display); font-weight: 400; font-size: clamp(44px, calc(4.6vw + 12px), 76px); line-height: 1; letter-spacing: -0.02em; }
-  .dm-display-h1, .dm-display-title { font-family: var(--font-display); font-weight: 400; font-size: 32px; line-height: 36px; letter-spacing: -0.4px; }
-  .dm-display-section { font-family: var(--font-display); font-weight: 400; font-size: 28px; line-height: 32px; letter-spacing: -0.3px; }
-  .dm-display-card { font-family: var(--font-display); font-weight: 400; font-size: 24px; line-height: 28px; letter-spacing: 0; }
-  .dm-display-rail { font-family: var(--font-display); font-weight: 400; font-size: 22px; line-height: 26px; letter-spacing: 0; }
-  .dm-lede-hero { font-size: 16px; line-height: 24px; letter-spacing: -0.2px; color: var(--fg-muted); }
-  .dm-title { font-family: var(--font-sans); font-size: 18px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
-  .dm-subtitle { font-family: var(--font-sans); font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
-  .dm-small { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
-  .dm-caption { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; }
-  .dm-mono { font-family: var(--font-mono); font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: 0; color: var(--fg-subtle); }
+  .dm-display-hero { font-family: var(--font-display); font-weight: 400; font-size: clamp(2.75rem, calc(4.6vw + 0.75rem), 4.75rem); line-height: 1; letter-spacing: -0.02em; }
+  .dm-display-h1, .dm-display-title { font-family: var(--font-display); font-weight: 400; font-size: 2rem; line-height: 2.25rem; letter-spacing: -0.4px; }
+  .dm-display-section { font-family: var(--font-display); font-weight: 400; font-size: 1.75rem; line-height: 2rem; letter-spacing: -0.3px; }
+  .dm-display-card { font-family: var(--font-display); font-weight: 400; font-size: 1.5rem; line-height: 1.75rem; letter-spacing: 0; }
+  .dm-display-rail { font-family: var(--font-display); font-weight: 400; font-size: 1.375rem; line-height: 1.625rem; letter-spacing: 0; }
+  .dm-lede-hero { font-size: 1rem; line-height: 1.5rem; letter-spacing: -0.2px; color: var(--fg-muted); }
+  .dm-title { font-family: var(--font-sans); font-size: 1.125rem; line-height: 1.5rem; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
+  .dm-subtitle { font-family: var(--font-sans); font-size: 1rem; line-height: 1.5rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-small { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; }
+  .dm-caption { font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; }
+  .dm-mono { font-family: var(--font-mono); font-size: 0.75rem; line-height: 1rem; font-weight: 400; letter-spacing: 0; color: var(--fg-subtle); }
   .dm-fig-hero, .dm-fig-xl, .dm-fig-lg, .dm-fig-md, .dm-fig-sm, .dm-fig-xs { font-family: var(--font-sans); font-weight: 500; font-variant-numeric: lining-nums tabular-nums; }
-  .dm-fig-hero { font-size: 32px; line-height: 36px; letter-spacing: -0.8px; }
-  .dm-fig-xl { font-size: 28px; line-height: 32px; letter-spacing: -0.6px; }
-  .dm-fig-lg { font-size: 24px; line-height: 28px; letter-spacing: -0.4px; }
-  .dm-fig-md { font-size: 18px; line-height: 24px; letter-spacing: -0.3px; }
-  .dm-fig-sm { font-size: 15px; line-height: 20px; letter-spacing: -0.2px; }
-  .dm-fig-xs { font-size: 14px; line-height: 20px; letter-spacing: -0.2px; }
+  .dm-fig-hero { font-size: 2rem; line-height: 2.25rem; letter-spacing: -0.8px; }
+  .dm-fig-xl { font-size: 1.75rem; line-height: 2rem; letter-spacing: -0.6px; }
+  .dm-fig-lg { font-size: 1.5rem; line-height: 1.75rem; letter-spacing: -0.4px; }
+  .dm-fig-md { font-size: 1.125rem; line-height: 1.5rem; letter-spacing: -0.3px; }
+  .dm-fig-sm { font-size: 0.9375rem; line-height: 1.25rem; letter-spacing: -0.2px; }
+  .dm-fig-xs { font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; }
   @media (min-width: 768px) {
-    .dm-display-h1, .dm-display-title { font-size: 40px; line-height: 44px; letter-spacing: -0.6px; }
-    .dm-display-section { font-size: 36px; line-height: 40px; letter-spacing: -0.4px; }
-    .dm-display-card { font-size: 28px; line-height: 32px; }
-    .dm-display-rail { font-size: 24px; line-height: 28px; }
-    .dm-lede-hero { font-size: 18px; line-height: 28px; }
-    .dm-title { font-size: 20px; line-height: 28px; letter-spacing: -0.3px; }
-    .dm-fig-hero { font-size: 40px; line-height: 44px; letter-spacing: -1.2px; }
-    .dm-fig-xl { font-size: 36px; line-height: 40px; letter-spacing: -1px; }
-    .dm-fig-lg { font-size: 28px; line-height: 32px; letter-spacing: -0.6px; }
-    .dm-fig-md { font-size: 20px; line-height: 26px; letter-spacing: -0.3px; }
-    .dm-fig-sm { font-size: 16px; line-height: 22px; letter-spacing: -0.2px; }
+    .dm-display-h1, .dm-display-title { font-size: 2.5rem; line-height: 2.75rem; letter-spacing: -0.6px; }
+    .dm-display-section { font-size: 2.25rem; line-height: 2.5rem; letter-spacing: -0.4px; }
+    .dm-display-card { font-size: 1.75rem; line-height: 2rem; }
+    .dm-display-rail { font-size: 1.5rem; line-height: 1.75rem; }
+    .dm-lede-hero { font-size: 1.125rem; line-height: 1.75rem; }
+    .dm-title { font-size: 1.25rem; line-height: 1.75rem; letter-spacing: -0.3px; }
+    .dm-fig-hero { font-size: 2.5rem; line-height: 2.75rem; letter-spacing: -1.2px; }
+    .dm-fig-xl { font-size: 2.25rem; line-height: 2.5rem; letter-spacing: -1px; }
+    .dm-fig-lg { font-size: 1.75rem; line-height: 2rem; letter-spacing: -0.6px; }
+    .dm-fig-md { font-size: 1.25rem; line-height: 1.625rem; letter-spacing: -0.3px; }
+    .dm-fig-sm { font-size: 1rem; line-height: 1.375rem; letter-spacing: -0.2px; }
   }
 
   /* ---- Buttons (§3.2): Tangerine is the main action; disabled never reads as secondary ------------ */
-  .dm-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; border-radius: var(--radius); font-weight: 500; letter-spacing: -0.2px; text-decoration: none; cursor: pointer; user-select: none; transition: background-color var(--dur-fast) var(--ease-std), box-shadow var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std), scale var(--dur-press) var(--ease-std); }
-  .dm-btn--sm { height: 32px; padding: 0 12px; border-radius: 10px; font-size: 13px; line-height: 16px; letter-spacing: -0.16px; }
-  .dm-btn--md { height: 40px; padding: 0 16px; border-radius: 12px; font-size: 14px; line-height: 20px; }
-  .dm-btn--lg { height: 48px; padding: 0 20px; border-radius: 14px; font-size: 15px; line-height: 20px; }
-  .dm-btn--xl { height: 52px; padding: 0 24px; border-radius: 16px; font-size: 16px; line-height: 22px; letter-spacing: -0.24px; }
-  @media (min-width: 768px) { .dm-btn--xl { height: 56px; } }
-  .dm-btn--sm > svg { width: 14px; height: 14px; }
-  .dm-btn--md > svg { width: 16px; height: 16px; }
-  .dm-btn--lg > svg { width: 18px; height: 18px; }
-  .dm-btn--xl > svg { width: 20px; height: 20px; }
+  .dm-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; white-space: nowrap; border-radius: var(--radius); font-weight: 500; letter-spacing: -0.2px; text-decoration: none; cursor: pointer; user-select: none; transition: background-color var(--dur-fast) var(--ease-std), box-shadow var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std), scale var(--dur-press) var(--ease-std); }
+  .dm-btn--sm { height: 2rem; padding: 0 0.75rem; border-radius: 0.625rem; font-size: 0.8125rem; line-height: 1rem; letter-spacing: -0.16px; }
+  .dm-btn--md { height: 2.5rem; padding: 0 1rem; border-radius: 0.75rem; font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-btn--lg { height: 3rem; padding: 0 1.25rem; border-radius: 0.875rem; font-size: 0.9375rem; line-height: 1.25rem; }
+  .dm-btn--xl { height: 3.25rem; padding: 0 1.5rem; border-radius: 1rem; font-size: 1rem; line-height: 1.375rem; letter-spacing: -0.24px; }
+  @media (min-width: 768px) { .dm-btn--xl { height: 3.5rem; } }
+  .dm-btn--sm > svg { width: 0.875rem; height: 0.875rem; }
+  .dm-btn--md > svg { width: 1rem; height: 1rem; }
+  .dm-btn--lg > svg { width: 1.125rem; height: 1.125rem; }
+  .dm-btn--xl > svg { width: 1.25rem; height: 1.25rem; }
   .dm-btn > svg { flex-shrink: 0; }
   .dm-btn--primary, .dm-btn--accent { background: var(--primary); color: var(--primary-fg); box-shadow: var(--elev-button); }
   .dm-btn--primary:hover:not(:disabled):not([aria-disabled="true"]), .dm-btn--accent:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--primary-hover); box-shadow: var(--elev-button), var(--elev-primary-hover); }
@@ -102,8 +102,8 @@
 
   /* ---- Icon buttons (§3.3) ----------------------------------------------------------------------- */
   .dm-icon-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: var(--radius); color: var(--fg-muted); cursor: pointer; }
-  .dm-icon-btn--md { width: 40px; height: 40px; }
-  .dm-icon-btn--sm { width: 32px; height: 32px; }
+  .dm-icon-btn--md { width: 2.5rem; height: 2.5rem; }
+  .dm-icon-btn--sm { width: 2rem; height: 2rem; }
   .dm-icon-btn--surface, .dm-icon-btn--round { background: var(--card); box-shadow: var(--elev-card); color: var(--fg); }
   .dm-icon-btn--surface:hover:not(:disabled), .dm-icon-btn--round:hover:not(:disabled) { background: var(--card-hover); box-shadow: var(--elev-card-hover); }
   .dm-icon-btn--round { border-radius: var(--radius-pill); }
@@ -112,7 +112,7 @@
   .dm-icon-btn:disabled { background: transparent; color: var(--fg-faint); box-shadow: none; cursor: not-allowed; }
 
   /* ---- Pills, then chips (§3.4). Chips come later so `className="dm-chip"` on a Pill wins. -------- */
-  .dm-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 4px 10px; border-radius: var(--radius-pill); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; }
+  .dm-pill { display: inline-flex; align-items: center; gap: 0.375rem; min-height: 1.5rem; padding: 0.25rem 0.625rem; border-radius: var(--radius-pill); font-size: 0.75rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.12px; }
   .dm-pill--neutral { background: var(--wash-strong); color: var(--fg-muted); }
   .dm-pill--accent { background: var(--accent); color: var(--accent-fg); }
   .dm-pill--in { background: var(--money-in-bg); color: var(--money-in); }
@@ -126,23 +126,23 @@
   .dm-pool-dot,
   .dm-acct-presign > li::before,
   .dm-flow-position::before,
-  .dm-flow-short::before { display: inline-block; width: 6px; height: 6px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--dot-fill, var(--fg-faint)); }
+  .dm-flow-short::before { display: inline-block; width: 0.375rem; height: 0.375rem; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--dot-fill, var(--fg-faint)); }
   /* The status pip: an 8px disc in a soft ring of its own colour (concentric, like the tile's pip). It never pulses. */
-  .dm-pill-dot { --dot-fill: currentColor; width: 8px; height: 8px; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 28%, transparent); }
+  .dm-pill-dot { --dot-fill: currentColor; width: 0.5rem; height: 0.5rem; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 28%, transparent); }
 
-  .dm-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 22px; padding: 3px 8px; border-radius: var(--radius-pill); background: var(--wash-strong); color: var(--fg-muted); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-chip { display: inline-flex; align-items: center; gap: 0.25rem; min-height: 1.375rem; padding: 0.1875rem 0.5rem; border-radius: var(--radius-pill); background: var(--wash-strong); color: var(--fg-muted); font-size: 0.75rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.12px; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
   /* A plate chip keeps surface-3 on hover (never surface-4, which would break fg-subtle text inside it). */
-  .dm-chip--plate { min-height: 32px; padding: 6px 12px; gap: 8px; border-radius: var(--radius-pill); background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg); font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
+  .dm-chip--plate { min-height: 2rem; padding: 0.375rem 0.75rem; gap: 0.5rem; border-radius: var(--radius-pill); background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg); font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; }
 
   /* ---- Deltas (§3.4, §3.15): an 8px triangle and the text, coloured by sign; the sign itself is sr-only text */
-  .dm-delta { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; color: var(--fg-subtle); }
-  .dm-delta--md { font-size: 14px; line-height: 20px; letter-spacing: -0.2px; }
+  .dm-delta { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.16px; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; color: var(--fg-subtle); }
+  .dm-delta--md { font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; }
   .dm-delta[data-sign="1"] { color: var(--money-in); }
   .dm-delta[data-sign="-1"] { color: var(--money-out); }
-  .dm-delta-arrow { display: inline-block; width: 8px; height: 7px; flex-shrink: 0; background: currentColor; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+  .dm-delta-arrow { display: inline-block; width: 0.5rem; height: 0.4375rem; flex-shrink: 0; background: currentColor; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
   .dm-delta[data-sign="-1"] .dm-delta-arrow { clip-path: polygon(0 0, 100% 0, 50% 100%); }
   .dm-delta[data-sign="0"] .dm-delta-arrow { display: none; }
-  .dm-delta[data-variant="pill"] { min-height: 22px; padding: 0 8px; border-radius: var(--radius-pill); background: var(--wash-strong); font-size: 12px; line-height: 16px; letter-spacing: -0.12px; }
+  .dm-delta[data-variant="pill"] { min-height: 1.375rem; padding: 0 0.5rem; border-radius: var(--radius-pill); background: var(--wash-strong); font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; }
   .dm-delta[data-variant="pill"][data-sign="1"] { background: var(--money-in-bg); }
   .dm-delta[data-variant="pill"][data-sign="-1"] { background: var(--money-out-bg); }
 
@@ -152,73 +152,73 @@
   .dm-live-dot[data-lit]::before { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--money-in); opacity: 0; animation: dm-live 1.8s ease-out 3; }
 
   /* ---- Key/value rows (C.12): 48px rows, the rule drawn inset 4px from each row end -------- */
-  .dm-kv { display: grid; padding: 0 16px; margin: 0; }
-  .dm-kv > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; padding: 0 4px; background: linear-gradient(var(--border-lip), var(--border-lip)) bottom center / calc(100% - 8px) 1px no-repeat; }
+  .dm-kv { display: grid; padding: 0 1rem; margin: 0; }
+  .dm-kv > div { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 3rem; padding: 0 0.25rem; background: linear-gradient(var(--border-lip), var(--border-lip)) bottom center / calc(100% - 0.5rem) 1px no-repeat; }
   .dm-kv > div:last-child { background: none; }
   /* The label keeps its line (up to about half the row); the value, a one-line hex included, takes the rest. */
-  .dm-kv dt { flex-shrink: 0; max-width: 55%; color: var(--fg-subtle); font-size: 14px; line-height: 20px; }
-  .dm-kv dd { margin: 0; color: var(--fg); font-size: 14px; line-height: 20px; text-align: right; font-variant-numeric: lining-nums tabular-nums; min-width: 0; overflow-wrap: anywhere; }
-  .dm-kv .dm-kv-mono { font-family: var(--font-mono); font-size: 13px; line-height: 18px; letter-spacing: 0; color: var(--fg-muted); }
-  .dm-kv-action { display: inline-flex; margin-left: 6px; vertical-align: middle; }
+  .dm-kv dt { flex-shrink: 0; max-width: 55%; color: var(--fg-subtle); font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-kv dd { margin: 0; color: var(--fg); font-size: 0.875rem; line-height: 1.25rem; text-align: right; font-variant-numeric: lining-nums tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+  .dm-kv .dm-kv-mono { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: 0; color: var(--fg-muted); }
+  .dm-kv-action { display: inline-flex; margin-left: 0.375rem; vertical-align: middle; }
   @media (min-width: 768px) {
-    .dm-kv--two { grid-template-columns: 1fr 1fr; column-gap: 32px; }
+    .dm-kv--two { grid-template-columns: 1fr 1fr; column-gap: 2rem; }
     .dm-kv--two > div:nth-last-child(2):nth-child(odd) { background: none; }
   }
 
   /* ---- Fields (§3.6) ------------------------------------------------------------------------------ */
-  .dm-field { width: 100%; height: 40px; padding: 0 12px; border-radius: var(--radius); background: var(--surface-1); color: var(--fg); box-shadow: var(--elev-field); font: inherit; transition: box-shadow var(--dur-hover) ease; }
+  .dm-field { width: 100%; height: 2.5rem; padding: 0 0.75rem; border-radius: var(--radius); background: var(--surface-1); color: var(--fg); box-shadow: var(--elev-field); font: inherit; transition: box-shadow var(--dur-hover) ease; }
   .dm-field::placeholder { color: var(--fg-subtle); }
   .dm-field:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
   .dm-field:focus-visible { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
   .dm-field[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--money-out); }
   .dm-field:disabled { color: var(--fg-subtle); cursor: not-allowed; }
-  textarea.dm-field { height: auto; min-height: 88px; padding: 10px 12px; line-height: 20px; }
-  .dm-label { display: block; margin-bottom: 8px; font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); }
-  .dm-hint { margin-top: 6px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-error { margin-top: 6px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--money-out); }
+  textarea.dm-field { height: auto; min-height: 5.5rem; padding: 0.625rem 0.75rem; line-height: 1.25rem; }
+  .dm-label { display: block; margin-bottom: 0.5rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-hint { margin-top: 0.375rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-error { margin-top: 0.375rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--money-out); }
 
   /* A quiet disclosure row: the chevron turns 90° when open. */
-  .dm-details > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border-radius: var(--radius); cursor: pointer; list-style: none; color: var(--fg-muted); font-size: 14px; font-weight: 500; transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
+  .dm-details > summary { display: flex; align-items: center; gap: 0.5rem; min-height: 2.5rem; padding: 0 0.75rem; border-radius: var(--radius); cursor: pointer; list-style: none; color: var(--fg-muted); font-size: 0.875rem; font-weight: 500; transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
   .dm-details > summary::-webkit-details-marker { display: none; }
-  .dm-details > summary::before { content: ''; width: 6px; height: 6px; flex-shrink: 0; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; rotate: -45deg; transition: rotate var(--dur-fast) var(--ease-std); }
+  .dm-details > summary::before { content: ''; width: 0.375rem; height: 0.375rem; flex-shrink: 0; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; rotate: -45deg; transition: rotate var(--dur-fast) var(--ease-std); }
   .dm-details[open] > summary::before { rotate: 45deg; }
   .dm-details > summary:hover { background: var(--wash); color: var(--fg); }
   .dm-details > summary:focus-visible { outline-offset: var(--focus-offset-inset); }
-  .dm-details > :not(summary) { padding: 8px 12px 12px; }
+  .dm-details > :not(summary) { padding: 0.5rem 0.75rem 0.75rem; }
 
-  .dm-pre { background: var(--bg); border-radius: var(--radius-sm); padding: 12px; font-family: var(--font-mono); font-size: 12px; line-height: 18px; letter-spacing: 0; color: var(--fg-muted); max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .dm-pre { background: var(--bg); border-radius: var(--radius-sm); padding: 0.75rem; font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.125rem; letter-spacing: 0; color: var(--fg-muted); max-height: 17.5rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 
   /* Checkboxes and radios stay native and hit-testable, drawn by CSS. The check is a data URL with a literal
      colour (a data URL cannot read a variable); the radio's dot is a thick inner ring. */
-  input[type="checkbox"], input[type="radio"] { appearance: none; -webkit-appearance: none; display: inline-grid; place-content: center; width: 18px; height: 18px; margin: 0; flex-shrink: 0; vertical-align: middle; background: var(--card) center / 12px no-repeat; box-shadow: inset 0 0 0 1.5px var(--border-strong); cursor: pointer; transition: box-shadow var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std); }
-  input[type="checkbox"] { border-radius: 5px; }
+  input[type="checkbox"], input[type="radio"] { appearance: none; -webkit-appearance: none; display: inline-grid; place-content: center; width: 1.125rem; height: 1.125rem; margin: 0; flex-shrink: 0; vertical-align: middle; background: var(--card) center / 0.75rem no-repeat; box-shadow: inset 0 0 0 1.5px var(--border-strong); cursor: pointer; transition: box-shadow var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std); }
+  input[type="checkbox"] { border-radius: 0.3125rem; }
   input[type="radio"] { border-radius: var(--radius-pill); }
   input[type="checkbox"]:checked { background-color: var(--primary-line); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' fill='none' stroke='%2324201c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); box-shadow: none; }
-  input[type="radio"]:checked { box-shadow: inset 0 0 0 5px var(--primary-line); }
+  input[type="radio"]:checked { box-shadow: inset 0 0 0 0.3125rem var(--primary-line); }
   :is(input[type="checkbox"], input[type="radio"]):hover:not(:disabled):not(:checked) { box-shadow: inset 0 0 0 1.5px var(--fg-subtle); }
   :is(input[type="checkbox"], input[type="radio"]):disabled { opacity: 0.5; cursor: not-allowed; }
   input[type="range"] { accent-color: var(--primary-ink); }
 
   /* ---- Search field (§3.6) ------------------------------------------------------------------------ */
   .dm-search { position: relative; display: block; }
-  .dm-search-icon { position: absolute; left: 12px; top: 50%; translate: 0 -50%; color: var(--fg-subtle); pointer-events: none; }
-  .dm-search-input { width: 100%; height: 40px; padding: 0 12px 0 34px; border-radius: var(--radius); background: var(--surface-1); color: var(--fg); box-shadow: var(--elev-field); font-family: var(--font-sans); font-size: 14px; line-height: 20px; letter-spacing: -0.2px; transition: box-shadow var(--dur-hover) ease; }
+  .dm-search-icon { position: absolute; left: 0.75rem; top: 50%; translate: 0 -50%; color: var(--fg-subtle); pointer-events: none; }
+  .dm-search-input { width: 100%; height: 2.5rem; padding: 0 0.75rem 0 2.125rem; border-radius: var(--radius); background: var(--surface-1); color: var(--fg); box-shadow: var(--elev-field); font-family: var(--font-sans); font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; transition: box-shadow var(--dur-hover) ease; }
   .dm-search-input::placeholder { color: var(--fg-subtle); }
   .dm-search-input:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
   .dm-search-input:focus-visible { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
   .dm-search-input[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--money-out); }
 
   /* ---- Tabs, Segmented, PeriodTabs (§3.5): a pill track, a sliding pill thumb; colour never transitions */
-  .dm-seg { position: relative; display: inline-flex; align-items: center; gap: 0; height: 36px; max-width: 100%; padding: 3px; border-radius: var(--radius-pill); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); vertical-align: middle; }
-  .dm-seg-thumb { position: absolute; top: 3px; bottom: 3px; left: 0; width: 0; border-radius: var(--radius-pill); background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border-strong); opacity: 0; pointer-events: none; }
+  .dm-seg { position: relative; display: inline-flex; align-items: center; gap: 0; height: 2.25rem; max-width: 100%; padding: 0.1875rem; border-radius: var(--radius-pill); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); vertical-align: middle; }
+  .dm-seg-thumb { position: absolute; top: 0.1875rem; bottom: 0.1875rem; left: 0; width: 0; border-radius: var(--radius-pill); background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border-strong); opacity: 0; pointer-events: none; }
   .dm-seg[data-thumb] > .dm-seg-thumb { transition: translate var(--dur-fast) var(--ease-fast), width var(--dur-fast) var(--ease-fast), opacity var(--dur-fade) ease; }
-  .dm-seg-item { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--radius-pill); font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-subtle); white-space: nowrap; cursor: pointer; }
+  .dm-seg-item { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 0.375rem; height: 1.875rem; padding: 0 0.75rem; border-radius: var(--radius-pill); font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-subtle); white-space: nowrap; cursor: pointer; }
   .dm-seg-item:hover:not(:disabled), .dm-seg-item[aria-selected="true"], .dm-seg-item[aria-checked="true"], .dm-seg-item[aria-pressed="true"] { color: var(--fg); }
   /* Colour only: a fill here would impersonate the selected thumb below. */
   .dm-seg-item:disabled { color: var(--fg-subtle); cursor: not-allowed; opacity: 0.6; }
   .dm-seg-item:focus-visible { outline-offset: var(--focus-offset-inset); }
-  .dm-seg--sm { height: 30px; }
-  .dm-seg--sm > .dm-seg-item { height: 24px; padding: 0 10px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; }
+  .dm-seg--sm { height: 1.875rem; }
+  .dm-seg--sm > .dm-seg-item { height: 1.5rem; padding: 0 0.625rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; }
   .dm-seg--stretch { display: flex; width: 100%; }
   .dm-seg--stretch > .dm-seg-item { flex: 1 1 0; min-width: 0; }
   /* Until the first measurement the selected item carries the thumb's fill and ring itself. */
@@ -229,30 +229,30 @@
 
   /* ---- Select (C.9): a combobox button that keeps focus, and a listbox of option buttons ---- */
   .dm-select { position: relative; display: inline-block; max-width: 100%; }
-  .dm-select-trigger { display: inline-flex; align-items: center; gap: 8px; height: 40px; max-width: 100%; padding: 0 10px 0 14px; border-radius: var(--radius-pill); background: var(--card); box-shadow: var(--elev-pill); font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); white-space: nowrap; cursor: pointer; }
+  .dm-select-trigger { display: inline-flex; align-items: center; gap: 0.5rem; height: 2.5rem; max-width: 100%; padding: 0 0.625rem 0 0.875rem; border-radius: var(--radius-pill); background: var(--card); box-shadow: var(--elev-pill); font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); white-space: nowrap; cursor: pointer; }
   .dm-select-trigger:hover { background: var(--card-hover); box-shadow: var(--elev-card-hover); }
   .dm-select-chevron { flex-shrink: 0; color: var(--fg-subtle); transition: rotate var(--dur-hover) var(--ease-std); }
   .dm-select-trigger[aria-expanded="true"] .dm-select-chevron { rotate: 180deg; }
-  .dm-listbox { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; display: grid; gap: 2px; min-width: 240px; max-width: calc(100vw - 32px); max-height: 320px; overflow-y: auto; margin: 0; padding: 4px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-menu); transform-origin: top left; animation: dm-pop var(--dur-menu) var(--ease-enter) backwards; }
-  .dm-option { display: flex; align-items: center; gap: 10px; width: 100%; height: 36px; padding: 0 10px; border-radius: var(--radius-sm); font-size: 14px; line-height: 20px; text-align: left; color: var(--fg); white-space: nowrap; cursor: pointer; }
+  .dm-listbox { position: absolute; top: calc(100% + 0.375rem); left: 0; z-index: 40; display: grid; gap: 2px; min-width: 15rem; max-width: calc(100vw - 2rem); max-height: 20rem; overflow-y: auto; margin: 0; padding: 0.25rem; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-menu); transform-origin: top left; animation: dm-pop var(--dur-menu) var(--ease-enter) backwards; }
+  .dm-option { display: flex; align-items: center; gap: 0.625rem; width: 100%; height: 2.25rem; padding: 0 0.625rem; border-radius: var(--radius-sm); font-size: 0.875rem; line-height: 1.25rem; text-align: left; color: var(--fg); white-space: nowrap; cursor: pointer; }
   .dm-option:hover, .dm-option[data-active] { background: var(--wash); }
   .dm-option:focus-visible { outline-offset: var(--focus-offset-inset); }
   .dm-option-check { flex-shrink: 0; margin-left: auto; color: var(--fg); }
-  .dm-listbox-sep { height: 1px; margin: 4px 6px; border: 0; background: var(--border); }
+  .dm-listbox-sep { height: 1px; margin: 0.25rem 0.375rem; border: 0; background: var(--border); }
 
   /* ---- Menu (C.9, D.3) ------------------------------------------------------------------- */
   .dm-menu-anchor { position: relative; }
-  .dm-menu { position: absolute; top: calc(100% + 12px); z-index: 50; display: grid; gap: 2px; width: 248px; padding: 4px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-menu); outline: none; animation: dm-pop var(--dur-menu) var(--ease-enter) backwards; }
+  .dm-menu { position: absolute; top: calc(100% + 0.75rem); z-index: 50; display: grid; gap: 2px; width: 15.5rem; padding: 0.25rem; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-menu); outline: none; animation: dm-pop var(--dur-menu) var(--ease-enter) backwards; }
   .dm-menu--end { right: 0; transform-origin: top right; }
   .dm-menu--start { left: 0; transform-origin: top left; }
-  .dm-menu-item { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: var(--radius-sm); font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg-muted); text-decoration: none; transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; --icon-2: var(--fg-subtle); }
+  .dm-menu-item { display: flex; align-items: center; gap: 0.625rem; height: 2.25rem; padding: 0 0.625rem; border-radius: var(--radius-sm); font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg-muted); text-decoration: none; transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; --icon-2: var(--fg-subtle); }
   .dm-menu-item > svg { flex-shrink: 0; }
   .dm-menu-item:hover, .dm-menu-item:focus-visible { background: var(--wash); color: var(--fg); }
   .dm-menu-item:focus-visible { outline-offset: var(--focus-offset-inset); }
   .dm-menu-item[aria-current="page"] { color: var(--fg); --icon-2: var(--fg-muted); }
-  .dm-menu-heading { padding: 8px 10px 4px; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-menu-sep { height: 1px; margin: 4px 6px; border: 0; background: var(--border); }
-  .dm-menu-glyph { position: relative; display: inline-block; width: 16px; height: 16px; }
+  .dm-menu-heading { padding: 0.5rem 0.625rem 0.25rem; font-size: 0.75rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-menu-sep { height: 1px; margin: 0.25rem 0.375rem; border: 0; background: var(--border); }
+  .dm-menu-glyph { position: relative; display: inline-block; width: 1rem; height: 1rem; }
   .dm-menu-glyph > svg { position: absolute; inset: 0; transition: opacity var(--dur-hover) ease; }
   .dm-menu-glyph-close { opacity: 0; }
   /* The trigger's two resting glyphs: three dots from 768px, the hamburger below. Both are rendered. */
@@ -265,117 +265,117 @@
     .dm-menu-glyph > .dm-menu-glyph-open { display: none; }
   }
   @media (max-width: 767px) {
-    .dm-menu { position: fixed; left: 16px; right: 16px; top: calc(var(--header-h) + 8px); width: auto; }
+    .dm-menu { position: fixed; left: 1rem; right: 1rem; top: calc(var(--header-h) + 0.5rem); width: auto; }
     /* In the header the panel hangs from the header row, so it follows the header when the home ticker sits above it. */
     .dm-header .dm-menu-anchor { position: static; }
-    .dm-header .dm-menu { position: absolute; left: var(--gutter); right: var(--gutter); top: calc(100% + 8px); }
+    .dm-header .dm-menu { position: absolute; left: var(--gutter); right: var(--gutter); top: calc(100% + 0.5rem); }
   }
 
   /* ---- Empty state with ripple rings (§3.10). The icon in the tile is never a domino. -------------- */
-  .dm-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px 16px 36px; }
-  .dm-empty--plate { border-radius: var(--radius-lg); min-height: 200px; }
-  .dm-empty--plate[data-plate-height="120"] { min-height: 120px; padding-top: 16px; padding-bottom: 16px; }
-  .dm-empty-art { display: grid; place-items: center; width: 104px; height: 104px; margin-bottom: 20px; }
+  .dm-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem 1rem 2.25rem; }
+  .dm-empty--plate { border-radius: var(--radius-lg); min-height: 12.5rem; }
+  .dm-empty--plate[data-plate-height="120"] { min-height: 7.5rem; padding-top: 1rem; padding-bottom: 1rem; }
+  .dm-empty-art { display: grid; place-items: center; width: 6.5rem; height: 6.5rem; margin-bottom: 1.25rem; }
   .dm-empty-art > * { grid-area: 1 / 1; }
   .dm-empty-ring { border: 1px solid var(--border); animation: dm-ring-in 0.6s var(--ease-enter) backwards; }
-  .dm-empty-ring--1 { width: 62px; height: 62px; border-radius: 18px; opacity: 0.7; }
-  .dm-empty-ring--2 { width: 83px; height: 83px; border-radius: 24px; opacity: 0.4; animation-delay: 80ms; }
-  .dm-empty-ring--3 { width: 104px; height: 104px; border-radius: 30px; opacity: 0.18; animation-delay: 160ms; }
-  .dm-empty-tile { display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-subtle); }
-  .dm-empty-tile > svg { width: 20px; height: 20px; }
+  .dm-empty-ring--1 { width: 3.875rem; height: 3.875rem; border-radius: 1.125rem; opacity: 0.7; }
+  .dm-empty-ring--2 { width: 5.1875rem; height: 5.1875rem; border-radius: 1.5rem; opacity: 0.4; animation-delay: 80ms; }
+  .dm-empty-ring--3 { width: 6.5rem; height: 6.5rem; border-radius: 1.875rem; opacity: 0.18; animation-delay: 160ms; }
+  .dm-empty-tile { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-subtle); }
+  .dm-empty-tile > svg { width: 1.25rem; height: 1.25rem; }
   .dm-empty-title { margin: 0; }
-  .dm-empty-body { max-width: 40ch; margin: 4px 0 0; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
-  .dm-empty-action { margin-top: 16px; }
+  .dm-empty-body { max-width: 40ch; margin: 0.25rem 0 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-muted); }
+  .dm-empty-action { margin-top: 1rem; }
 
   /* ---- PriceSlider's thumb (§4.8): drawn over the native range input, it lets every pointer through to it. ---- */
   .dm-slider-thumb { pointer-events: none; }
 
   /* ---- Step marker (C.16): no ring on the current step (a Tangerine ring would read as focus) ---- */
-  .dm-step-marker { position: relative; display: inline-grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-subtle); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; font-variant-numeric: lining-nums tabular-nums; transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease; }
+  .dm-step-marker { position: relative; display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; flex-shrink: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-subtle); font-size: 0.75rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.12px; font-variant-numeric: lining-nums tabular-nums; transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease; }
   .dm-step-marker[data-state="current"] { background: var(--primary); color: var(--primary-fg); }
   .dm-step-marker[data-state="done"] { color: var(--money-in); }
   :is(a, button, summary):hover .dm-step-marker[data-state="done"] { background: var(--surface-4); }
 
   /* ---- Range bar (§11.1): a mini range. In range the band is Tangerine (a range visual); out of range
      it is faint; unknown or no liquidity draws no band, only a hatched outline. ---------------------- */
-  .dm-range-bar { position: relative; width: 100%; height: 8px; border-radius: var(--radius-pill); background: var(--surface-3); }
+  .dm-range-bar { position: relative; width: 100%; height: 0.5rem; border-radius: var(--radius-pill); background: var(--surface-3); }
   .dm-range-band { position: absolute; top: 0; bottom: 0; border-radius: var(--radius-pill); transition: left var(--dur-step) var(--ease-enter), width var(--dur-step) var(--ease-enter); }
   .dm-range-band[data-in="true"] { background: var(--primary-line); }
   .dm-range-band[data-in="false"] { background: var(--fg-faint); }
-  .dm-range-now { position: absolute; top: 50%; width: 8px; height: 8px; translate: -50% -50%; border-radius: var(--radius-pill); background: var(--fg); box-shadow: 0 0 0 2px var(--card); }
-  .dm-range-unknown { box-shadow: inset 0 0 0 1px var(--fg-subtle); background: repeating-linear-gradient(135deg, transparent 0 3px, var(--wash-strong) 3px 6px); }
+  .dm-range-now { position: absolute; top: 50%; width: 0.5rem; height: 0.5rem; translate: -50% -50%; border-radius: var(--radius-pill); background: var(--fg); box-shadow: 0 0 0 2px var(--card); }
+  .dm-range-unknown { box-shadow: inset 0 0 0 1px var(--fg-subtle); background: repeating-linear-gradient(135deg, transparent 0 0.1875rem, var(--wash-strong) 0.1875rem 0.375rem); }
 
   /* ---- Stat and StatStrip (§3.7). The layout is CSS only: the dl > div order and the dt texts never change */
-  .dm-stat-value { margin-top: 6px; color: var(--fg); }
-  .dm-stat-sub { margin-top: 4px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-stat-value { margin-top: 0.375rem; color: var(--fg); }
+  .dm-stat-sub { margin-top: 0.25rem; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-subtle); }
   .dm-stat-sub:has(> .dm-provenance:only-child) { margin-top: 0; }
-  .dm-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 16px; margin: 0; }
+  .dm-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem 1rem; margin: 0; }
   @media (min-width: 640px) {
     .dm-stats { column-gap: 0; }
-    .dm-stats > * { padding-right: 24px; }
+    .dm-stats > * { padding-right: 1.5rem; }
     .dm-stats--5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .dm-stats--4 > :nth-child(2n) { border-left: 1px solid var(--border); padding-left: 24px; }
-    .dm-stats--5 > :not(:nth-child(3n + 1)) { border-left: 1px solid var(--border); padding-left: 24px; }
+    .dm-stats--4 > :nth-child(2n) { border-left: 1px solid var(--border); padding-left: 1.5rem; }
+    .dm-stats--5 > :not(:nth-child(3n + 1)) { border-left: 1px solid var(--border); padding-left: 1.5rem; }
   }
   @media (min-width: 1024px) {
     .dm-stats--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .dm-stats--5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-    .dm-stats > :not(:first-child) { border-left: 1px solid var(--border); padding-left: 24px; }
+    .dm-stats > :not(:first-child) { border-left: 1px solid var(--border); padding-left: 1.5rem; }
   }
   /* tiles: one card, every Stat a cell. Each cell draws its hairlines to the left and above as outer
      shadows; the card clips the first column's and first row's, so any column count divides cleanly. */
   .dm-stats.dm-stats--tiles { gap: 0; overflow: hidden; background: var(--card); border-radius: var(--radius-card); box-shadow: var(--elev-card); }
-  .dm-stats.dm-stats--tiles > * { padding: 16px; border-left: 0; box-shadow: -1px 0 0 0 var(--border), 0 -1px 0 0 var(--border); }
-  @media (min-width: 768px) { .dm-stats.dm-stats--tiles > * { padding: 20px 24px; } }
+  .dm-stats.dm-stats--tiles > * { padding: 1rem; border-left: 0; box-shadow: -1px 0 0 0 var(--border), 0 -1px 0 0 var(--border); }
+  @media (min-width: 768px) { .dm-stats.dm-stats--tiles > * { padding: 1.25rem 1.5rem; } }
   /* list: every Stat a row, the label left, the figure right. */
   .dm-stats.dm-stats--list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
-  .dm-stats.dm-stats--list > * { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; align-content: center; column-gap: 16px; min-height: 52px; padding: 8px 0; border-left: 0; background: linear-gradient(var(--border), var(--border)) top / 100% 1px no-repeat; }
+  .dm-stats.dm-stats--list > * { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; align-content: center; column-gap: 1rem; min-height: 3.25rem; padding: 0.5rem 0; border-left: 0; background: linear-gradient(var(--border), var(--border)) top / 100% 1px no-repeat; }
   .dm-stats.dm-stats--list > :first-child { background: none; }
   .dm-stats.dm-stats--list > * > dt { grid-row: 1 / span 2; }
   .dm-stats.dm-stats--list > * > dd { grid-column: 2; justify-self: end; margin-top: 0; text-align: right; }
-  .dm-stats.dm-stats--list .dm-stat-value { font-size: 15px; line-height: 20px; letter-spacing: -0.2px; }
-  .dm-stats.dm-stats--list .dm-stat-sub { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; }
-  @media (min-width: 768px) { .dm-stats.dm-stats--list .dm-stat-value { font-size: 16px; line-height: 22px; } }
+  .dm-stats.dm-stats--list .dm-stat-value { font-size: 0.9375rem; line-height: 1.25rem; letter-spacing: -0.2px; }
+  .dm-stats.dm-stats--list .dm-stat-sub { font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; }
+  @media (min-width: 768px) { .dm-stats.dm-stats--list .dm-stat-value { font-size: 1rem; line-height: 1.375rem; } }
 
   /* ---- Tables (§3.9): a header band, borderless rows that fill on hover ------------------------------- */
-  .dm-table-card { min-width: 0; padding: 8px; }
+  .dm-table-card { min-width: 0; padding: 0.5rem; }
   .dm-table-card.dm-card--flush { padding: 0; }
-  .dm-table-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 12px 16px 12px 16px; }
-  .dm-card--flush > .dm-table-head { padding: 0 0 16px; }
-  .dm-table-status { padding: 0 16px 8px; }
-  .dm-card--flush > .dm-table-status { padding: 0 0 8px; }
+  .dm-table-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; padding: 0.75rem 1rem 0.75rem 1rem; }
+  .dm-card--flush > .dm-table-head { padding: 0 0 1rem; }
+  .dm-table-status { padding: 0 1rem 0.5rem; }
+  .dm-card--flush > .dm-table-status { padding: 0 0 0.5rem; }
   .dm-table { width: 100%; border-collapse: separate; border-spacing: 0 2px; margin-top: -2px; }
-  .dm-table thead th { height: 44px; padding: 0 16px; background: var(--band); color: var(--fg-subtle); font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; white-space: nowrap; text-align: right; vertical-align: middle; }
-  .dm-table thead th:first-child { border-radius: 12px 0 0 12px; text-align: left; }
-  .dm-table thead th:last-child { border-radius: 0 12px 12px 0; }
-  .dm-table tbody td { height: var(--row-h, 64px); padding: 0 16px; background: transparent; text-align: right; vertical-align: middle; transition: background-color 100ms ease-in-out; }
-  .dm-table tbody td:first-child { border-radius: 12px 0 0 12px; text-align: left; }
-  .dm-table tbody td:last-child { border-radius: 0 12px 12px 0; }
+  .dm-table thead th { height: 2.75rem; padding: 0 1rem; background: var(--band); color: var(--fg-subtle); font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.16px; white-space: nowrap; text-align: right; vertical-align: middle; }
+  .dm-table thead th:first-child { border-radius: 0.75rem 0 0 0.75rem; text-align: left; }
+  .dm-table thead th:last-child { border-radius: 0 0.75rem 0.75rem 0; }
+  .dm-table tbody td { height: var(--row-h, 4rem); padding: 0 1rem; background: transparent; text-align: right; vertical-align: middle; transition: background-color 100ms ease-in-out; }
+  .dm-table tbody td:first-child { border-radius: 0.75rem 0 0 0.75rem; text-align: left; }
+  .dm-table tbody td:last-child { border-radius: 0 0.75rem 0.75rem 0; }
   .dm-table tbody tr:hover td, .dm-table tbody tr:focus-within td { background: var(--row-hover); }
-  .dm-table tfoot td { padding: 16px; }
-  .dm-row-end { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; vertical-align: middle; }
-  .dm-table .dm-row-actions { display: inline-flex; align-items: center; gap: 6px; opacity: 0; transition: opacity var(--dur-fade) ease; }
+  .dm-table tfoot td { padding: 1rem; }
+  .dm-row-end { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.375rem; vertical-align: middle; }
+  .dm-table .dm-row-actions { display: inline-flex; align-items: center; gap: 0.375rem; opacity: 0; transition: opacity var(--dur-fade) ease; }
   .dm-table tbody tr:hover .dm-row-actions, .dm-table tbody tr:focus-within .dm-row-actions { opacity: 1; }
   .dm-table .i-chev-r { color: var(--fg-subtle); transition: translate var(--dur-fade) var(--ease-std), color var(--dur-fade) ease; }
   .dm-table tbody tr:hover .i-chev-r { color: var(--fg); translate: 2px 0; }
   @media (hover: none) { .dm-table .dm-row-actions { opacity: 1; } }
   @media (max-width: 767px) {
-    .dm-table { --row-h: 60px; }
+    .dm-table { --row-h: 3.75rem; }
     .dm-table [data-col="wide"] { display: none; }
-    .dm-table thead th, .dm-table tbody td { padding: 0 8px; }
-    .dm-table thead th:last-child, .dm-table tbody td:last-child { padding-right: 4px; }
+    .dm-table thead th, .dm-table tbody td { padding: 0 0.5rem; }
+    .dm-table thead th:last-child, .dm-table tbody td:last-child { padding-right: 0.25rem; }
   }
 
   /* Div lists drawn like a table: grid rows with the same band and hover. The list sets --cols.
      Rows carry no click handler; an expanding row is itself the summary of a details. */
   .dm-rows { display: grid; gap: 2px; }
-  .dm-rows > [role="row"], .dm-rows > article > details > summary, .dm-rows > .dm-rows-item { display: grid; grid-template-columns: var(--cols, 1fr); align-items: center; column-gap: 16px; min-height: var(--row-h, 72px); padding: 0 16px; border-radius: var(--radius); list-style: none; transition: background-color 100ms ease-in-out; }
+  .dm-rows > [role="row"], .dm-rows > article > details > summary, .dm-rows > .dm-rows-item { display: grid; grid-template-columns: var(--cols, 1fr); align-items: center; column-gap: 1rem; min-height: var(--row-h, 4.5rem); padding: 0 1rem; border-radius: var(--radius); list-style: none; transition: background-color 100ms ease-in-out; }
   .dm-rows > article > details > summary { cursor: pointer; }
   .dm-rows > article > details > summary::-webkit-details-marker { display: none; }
   .dm-rows > article > details > summary:focus-visible { outline-offset: var(--focus-offset-inset); }
   .dm-rows > [role="row"]:hover, .dm-rows > article > details > summary:hover, .dm-rows > article > details[open] > summary, .dm-rows > .dm-rows-item:hover { background: var(--row-hover); }
-  .dm-rows > article > details > .dm-inset { margin: 0 8px 8px; }
-  .dm-rows > .dm-rows-head, .dm-rows-head { display: grid; grid-template-columns: var(--cols, 1fr); align-items: center; column-gap: 16px; min-height: 40px; height: 40px; padding: 0 16px; border-radius: var(--radius); background: var(--band); color: var(--fg-subtle); font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; }
+  .dm-rows > article > details > .dm-inset { margin: 0 0.5rem 0.5rem; }
+  .dm-rows > .dm-rows-head, .dm-rows-head { display: grid; grid-template-columns: var(--cols, 1fr); align-items: center; column-gap: 1rem; min-height: 2.5rem; height: 2.5rem; padding: 0 1rem; border-radius: var(--radius); background: var(--band); color: var(--fg-subtle); font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.16px; }
 
   /* ---- Skeletons (§3.11): one sweep instead of a pulse. aria-hidden, never digits. At rest the highlight
      sits outside the box, so a stilled bubble is flat. ---------------------------------------------- */
@@ -388,7 +388,7 @@
   /* ---- Hex, ids and addresses (§3.14): one line, ellipsised, the full value in the DOM and in title.
      A one-line clamp rather than white-space: nowrap: the value may break anywhere, so it never widens a grid track
      or a flex row past its container (its min-content is one character), and only its first line shows. ---- */
-  .dm-hex { display: -webkit-inline-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; line-clamp: 1; vertical-align: bottom; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; word-break: break-all; font: 400 12px/16px var(--font-mono); letter-spacing: 0; color: var(--fg-subtle); }
+  .dm-hex { display: -webkit-inline-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; line-clamp: 1; vertical-align: bottom; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; word-break: break-all; font: 400 0.75rem/1rem var(--font-mono); letter-spacing: 0; color: var(--fg-subtle); }
 
   /* ---- Utility classes (§3.18) -------------------------------------------------------------------- */
   /* Provenance leaves the layout but not the DOM: the sr-only technique keeps it in innerText. */
@@ -397,10 +397,10 @@
   .dm-arrive { animation: dm-fade var(--dur-arrive) var(--ease-std) backwards; }
   .dm-approx { color: var(--fg-subtle); margin-right: 1px; }
   .dm-amount-tail { color: var(--fg-subtle); }
-  .dm-usd-line { margin-top: 2px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-usd-line { margin-top: 2px; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
   /* A working indicator that is not a transform: a registered angle turns a conic quarter arc. The host
      needs position: relative. Stilled, it rests as a static quarter arc. */
-  .dm-spin-ring::after { content: ''; position: absolute; inset: -3px; border-radius: inherit; padding: 2px; background: conic-gradient(from var(--dm-spin), var(--spin-color, var(--primary-line)) 0 25%, transparent 0); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: dm-spin 1s linear infinite; pointer-events: none; }
+  .dm-spin-ring::after { content: ''; position: absolute; inset: -0.1875rem; border-radius: inherit; padding: 2px; background: conic-gradient(from var(--dm-spin), var(--spin-color, var(--primary-line)) 0 25%, transparent 0); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: dm-spin 1s linear infinite; pointer-events: none; }
   .dm-check-draw path { stroke-dasharray: 1; animation: dm-check 300ms var(--ease-enter) backwards; }
 
   /* ---- Figures (§3.15) ---------------------------------------------------------------------------- */
@@ -415,7 +415,7 @@
   .dm-tick-fig[data-dir="down"] { animation: dm-flash-down var(--dur-flash) var(--ease-std) backwards; }
 
   /* StackedBar: shares of one whole on a pill track, 2px apart. aria-hidden; its legend carries the words. */
-  .dm-stack { display: flex; gap: 2px; width: 100%; height: 6px; overflow: hidden; border-radius: var(--radius-pill); background: var(--surface-3); }
+  .dm-stack { display: flex; gap: 2px; width: 100%; height: 0.375rem; overflow: hidden; border-radius: var(--radius-pill); background: var(--surface-3); }
   .dm-stack-seg { flex: 0 0 auto; min-width: 2px; height: 100%; border-radius: var(--radius-pill); }
   .dm-stack-seg[data-tone="primary"] { background: var(--primary-line); }
   .dm-stack-seg[data-tone="primary-soft"] { background: color-mix(in srgb, var(--primary-line) 35%, var(--surface-3)); }
@@ -424,27 +424,27 @@
   .dm-stack-seg[data-tone="muted"] { background: var(--surface-4); }
 
   /* IconTile: an icon on a small tile. */
-  .dm-icon-tile { display: inline-grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: var(--radius); background: var(--surface-3); color: var(--fg-muted); }
-  .dm-icon-tile[data-size="20"] { width: 20px; height: 20px; border-radius: 6px; }
-  .dm-icon-tile[data-size="20"] > svg { width: 12px; height: 12px; }
-  .dm-icon-tile[data-size="44"] { width: 44px; height: 44px; }
-  .dm-icon-tile[data-size="44"] > svg { width: 20px; height: 20px; }
+  .dm-icon-tile { display: inline-grid; place-items: center; flex-shrink: 0; width: 2.25rem; height: 2.25rem; border-radius: var(--radius); background: var(--surface-3); color: var(--fg-muted); }
+  .dm-icon-tile[data-size="20"] { width: 1.25rem; height: 1.25rem; border-radius: 0.375rem; }
+  .dm-icon-tile[data-size="20"] > svg { width: 0.75rem; height: 0.75rem; }
+  .dm-icon-tile[data-size="44"] { width: 2.75rem; height: 2.75rem; }
+  .dm-icon-tile[data-size="44"] > svg { width: 1.25rem; height: 1.25rem; }
   .dm-icon-tile[data-tone="primary"] { background: var(--primary-wash); color: var(--primary-ink); }
 
   /* SectionHead: a module title with an aside (a count, a caption) and an action on the right. */
-  .dm-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; min-width: 0; }
-  .dm-section-head-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
-  .dm-section-head-aside { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-section-head-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .dm-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; min-width: 0; }
+  .dm-section-head-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; min-width: 0; }
+  .dm-section-head-aside { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-section-head-action { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 
   /* ---- Dotted grids ------------------------------------------------------------------------------- */
   /* Hero and plates: dots on a tile-shaped lattice (14 x 24.5, Domino's 1:1.75). The hero adds a vignette
      and a faint Tangerine glow from the top edge; its overlay stays 1px inside the ring. */
-  .dm-dots-hero { background-color: var(--surface-1); background-image: radial-gradient(circle at center, var(--dot-hero) 0.9px, transparent 1.4px); background-size: 14px 24.5px; background-position: 7px 12.25px; }
+  .dm-dots-hero { background-color: var(--surface-1); background-image: radial-gradient(circle at center, var(--dot-hero) 0.9px, transparent 1.4px); background-size: 0.875rem 1.53125rem; background-position: 0.4375rem 0.765625rem; }
   .dm-dots-hero::before { content: ''; position: absolute; inset: 1px; border-radius: inherit; pointer-events: none; background: radial-gradient(60% 72% at 50% 36%, transparent 0%, var(--surface-1) 100%), radial-gradient(38% 46% at 50% 0%, color-mix(in srgb, var(--primary) 9%, transparent) 0%, transparent 72%); }
-  .dm-dots-plate { background-color: var(--surface-1); background-image: radial-gradient(circle at center, var(--dot-plate) 0.9px, transparent 1.4px); background-size: 14px 24.5px; background-position: 7px 12.25px; }
+  .dm-dots-plate { background-color: var(--surface-1); background-image: radial-gradient(circle at center, var(--dot-plate) 0.9px, transparent 1.4px); background-size: 0.875rem 1.53125rem; background-position: 0.4375rem 0.765625rem; }
   /* Chart plots: a square 18px grid; dots dissolve at the top and bottom over --chart-ground. */
-  .dm-dots-chart { position: relative; background-image: radial-gradient(circle at center, var(--dot-chart) 1px, transparent 1.2px); background-size: 18px 18px; background-position: 9px 9px; }
+  .dm-dots-chart { position: relative; background-image: radial-gradient(circle at center, var(--dot-chart) 1px, transparent 1.2px); background-size: 1.125rem 1.125rem; background-position: 0.5625rem 0.5625rem; }
   .dm-plate.dm-dots-chart { background-color: var(--chart-ground, var(--surface-1)); } /* a DottedSurface plate paints its ground; a raw plot inside a card stays transparent */
   .dm-dots-chart::after { content: ''; position: absolute; inset: 1px; border-radius: inherit; pointer-events: none; background: linear-gradient(to bottom, var(--chart-ground, var(--surface-1)) 0%, transparent 14%, transparent 86%, var(--chart-ground, var(--surface-1)) 100%); }
   /* Inside a card a raw plot's fades meet the card's own fill. */
@@ -461,14 +461,14 @@
   .dm-header { position: sticky; top: 0; z-index: 30; height: var(--header-h); transition: box-shadow var(--dur-fade) var(--ease-std); }
   .dm-header::before { content: ''; position: absolute; inset: 0; z-index: -1; background: transparent; pointer-events: none; transition: background-color var(--dur-fade) var(--ease-std); }
   .dm-header[data-scrolled] { box-shadow: var(--elev-header); }
-  .dm-header[data-scrolled]::before { background: color-mix(in srgb, var(--bg) 84%, transparent); -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2); }
-  .dm-header-row { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); height: 100%; margin-inline: auto; padding-inline: var(--gutter); }
-  .dm-wordmark { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; border-radius: var(--radius-sm); color: var(--fg); text-decoration: none; }
-  .dm-wordmark-text { font-family: var(--font-display); font-weight: 400; font-size: 24px; line-height: 24px; letter-spacing: 0; }
+  .dm-header[data-scrolled]::before { background: color-mix(in srgb, var(--bg) 84%, transparent); -webkit-backdrop-filter: blur(0.75rem) saturate(1.2); backdrop-filter: blur(0.75rem) saturate(1.2); }
+  .dm-header-row { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); height: 100%; margin-inline: auto; padding-inline: var(--gutter); }
+  .dm-wordmark { display: inline-flex; align-items: center; gap: 0.5rem; flex-shrink: 0; border-radius: var(--radius-sm); color: var(--fg); text-decoration: none; }
+  .dm-wordmark-text { font-family: var(--font-display); font-weight: 400; font-size: 1.5rem; line-height: 1.5rem; letter-spacing: 0; }
   .dm-wordmark-dot { color: var(--primary); }
-  .dm-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+  .dm-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; min-width: 0; }
   .dm-nav { display: none; }
-  .dm-nav-item { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: var(--radius-pill); font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg-muted); text-decoration: none; white-space: nowrap; transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; --icon-2: var(--fg-subtle); }
+  .dm-nav-item { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 0.5rem; height: 2.25rem; padding: 0 0.875rem; border-radius: var(--radius-pill); font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg-muted); text-decoration: none; white-space: nowrap; transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; --icon-2: var(--fg-subtle); }
   .dm-nav-item > svg { flex-shrink: 0; }
   /* No fill on hover: --surface-3 is the indicator's own pill, so a filled hover reads as a second
      current item. The cue is the same one the segmented control uses — the text and icon lifting. */
@@ -477,14 +477,14 @@
   .dm-nav[data-ready] > .dm-nav-item[aria-current="page"] { background: transparent; }
   .dm-nav:not([data-ready]) > .dm-nav-item[aria-current="page"] { background: var(--surface-3); }
   .dm-nav-item:focus-visible { outline-offset: var(--focus-offset-inset); }
-  .dm-nav-indicator { position: absolute; top: 4px; bottom: 4px; left: 0; width: 0; border-radius: var(--radius-pill); background: var(--surface-3); opacity: 0; pointer-events: none; }
+  .dm-nav-indicator { position: absolute; top: 0.25rem; bottom: 0.25rem; left: 0; width: 0; border-radius: var(--radius-pill); background: var(--surface-3); opacity: 0; pointer-events: none; }
   .dm-nav[data-ready] > .dm-nav-indicator { transition: translate var(--dur-step) var(--ease-enter), width var(--dur-step) var(--ease-enter), opacity var(--dur-fade) ease; }
   /* The connected wallet: a neutral pill with the address's own disc and the short address. */
-  .dm-btn.dm-wallet-pill { gap: 8px; padding-left: 8px; border-radius: var(--radius-pill); background: var(--card); box-shadow: var(--elev-pill); color: var(--fg); }
+  .dm-btn.dm-wallet-pill { gap: 0.5rem; padding-left: 0.5rem; border-radius: var(--radius-pill); background: var(--card); box-shadow: var(--elev-pill); color: var(--fg); }
   .dm-btn.dm-wallet-pill:hover:not(:disabled) { background: var(--card-hover); box-shadow: var(--elev-card-hover); }
-  .dm-wallet-disc { width: 16px; height: 16px; flex-shrink: 0; border-radius: var(--radius-pill); background: radial-gradient(120% 120% at 30% 25%, hsl(var(--mark-h, 0) var(--disc-s) calc(var(--disc-l) + 6%)), hsl(var(--mark-h, 0) var(--disc-s) var(--disc-l))); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-wallet-disc { width: 1rem; height: 1rem; flex-shrink: 0; border-radius: var(--radius-pill); background: radial-gradient(120% 120% at 30% 25%, hsl(var(--mark-h, 0) var(--disc-s) calc(var(--disc-l) + 6%)), hsl(var(--mark-h, 0) var(--disc-s) var(--disc-l))); box-shadow: inset 0 0 0 1px var(--border-strong); }
   @media (min-width: 768px) {
-    .dm-wordmark-text { font-size: 26px; line-height: 26px; }
+    .dm-wordmark-text { font-size: 1.625rem; line-height: 1.625rem; }
     /* Three columns, the nav pill in the middle (2026-10-01, D6): the side columns share what is left equally, so the pill
        sits in the centre as before, but neither is ever narrower than its own content. Between 768 and about 800 px,
        with a wallet connected, the pill, placed absolutely at the centre, covered the wallet control's left edge (a
@@ -492,65 +492,61 @@
     .dm-header-row { display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); }
     .dm-wordmark { justify-self: start; }
     .dm-header-actions { justify-self: end; }
-    .dm-nav { position: relative; justify-self: center; display: flex; align-items: center; gap: 0; height: 44px; padding: 4px; border-radius: var(--radius-pill); background: var(--card); box-shadow: var(--elev-pill); }
+    .dm-nav { position: relative; justify-self: center; display: flex; align-items: center; gap: 0; height: 2.75rem; padding: 0.25rem; border-radius: var(--radius-pill); background: var(--card); box-shadow: var(--elev-pill); }
   }
   @media (max-width: 767px) {
     /* The two header controls stay matched, and stay a touch target: 44px inside the 56px phone bar (audit E23,
        2026-10-01: 40px was under the 44px a thumb is given on phones). */
-    .dm-header-actions .dm-btn { height: 44px; padding: 0 12px; font-size: 13px; line-height: 16px; letter-spacing: -0.16px; }
-    .dm-header-actions .dm-btn.dm-wallet-pill { padding-left: 8px; }
-    .dm-header-actions .dm-icon-btn--md { width: 44px; height: 44px; }
+    .dm-header-actions .dm-btn { height: 2.75rem; padding: 0 0.75rem; font-size: 0.8125rem; line-height: 1rem; letter-spacing: -0.16px; }
+    .dm-header-actions .dm-btn.dm-wallet-pill { padding-left: 0.5rem; }
+    .dm-header-actions .dm-icon-btn--md { width: 2.75rem; height: 2.75rem; }
     /* A small segmented control's items (the period tabs, 24px) answer a touch over 36px: the pill is drawn as before,
        the area that takes the press reaches 6px above and below it (audit E23). */
-    .dm-seg--sm > .dm-seg-item::after { content: ''; position: absolute; inset: -6px 0; }
+    .dm-seg--sm > .dm-seg-item::after { content: ''; position: absolute; inset: -0.375rem 0; }
   }
 
   /* ---- Footer (§3.13) ------------------------------------------------------------------------------ */
-  .dm-footer { margin-top: 56px; }
-  .dm-footer-inner { width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); margin-inline: auto; padding: 0 var(--gutter) 40px; }
-  .dm-footer-body { padding-top: 40px; border-top: 1px solid var(--border); }
-  .dm-footer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 24px; }
-  .dm-footer-brand, .dm-footer-network { grid-column: 1 / -1; }
-  .dm-footer-heading { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
-  .dm-footer-links { display: grid; justify-items: start; gap: 12px; margin: 16px 0 0; padding: 0; list-style: none; }
-  .dm-footer-link { border-radius: 4px; font-size: 14px; line-height: 20px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
+  .dm-footer { margin-top: 3.5rem; }
+  .dm-footer-inner { width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); margin-inline: auto; padding: 0 var(--gutter) 2.5rem; }
+  .dm-footer-body { padding-top: 2.5rem; border-top: 1px solid var(--border); }
+  .dm-footer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem 1.5rem; }
+  .dm-footer-brand { grid-column: 1 / -1; }
+  .dm-footer-heading { font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-footer-links { display: grid; justify-items: start; gap: 0.75rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+  .dm-footer-link { border-radius: 0.25rem; font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
   .dm-footer-link:hover { color: var(--fg); }
   /* Domino's X account (2026-09-26): a quiet pill under the brand line, the footer's muted ink until hovered. */
-  .dm-footer-social { display: inline-flex; align-items: center; gap: 8px; height: 32px; margin-top: 20px; padding: 0 12px 0 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; line-height: 20px; letter-spacing: -0.1px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease, border-color var(--dur-hover) ease; }
+  .dm-footer-social { display: inline-flex; align-items: center; gap: 0.5rem; height: 2rem; margin-top: 1.25rem; padding: 0 0.75rem 0 0.625rem; border: 1px solid var(--border); border-radius: 999px; font-size: 0.8125rem; line-height: 1.25rem; letter-spacing: -0.1px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease, border-color var(--dur-hover) ease; }
   .dm-footer-social:hover { color: var(--fg); border-color: var(--border-strong); }
   .dm-footer-social:focus-visible { outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
   .dm-footer-social-mark { flex: none; }
-  /* The network facts keep the link columns' 14/20 on their 32px rhythm, so every column shares its baselines. */
-  .dm-footer-note { font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-subtle); }
-  .dm-footer-bottom { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-top: 48px; }
-  .dm-footer-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   @media (min-width: 768px) {
-    .dm-footer { margin-top: 80px; }
-    .dm-footer-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px 48px; }
-    .dm-footer-network { grid-column: auto; }
+    .dm-footer { margin-top: 5rem; }
+    .dm-footer-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2.5rem 3rem; }
   }
-  /* The three columns on an even grid that ends on the content's right edge; the brand takes the rest. */
+  /* The link columns on an even grid that ends on the content's right edge; the brand takes the rest. Changed on purpose
+     2026-10-03 (the owner): the Network column and the Pause motion row are gone, so two columns. */
   @media (min-width: 1024px) {
-    .dm-footer-grid { grid-template-columns: minmax(0, 1fr) repeat(3, 184px); column-gap: 24px; }
+    .dm-footer-grid { grid-template-columns: minmax(0, 1fr) repeat(2, 11.5rem); column-gap: 1.5rem; }
     .dm-footer-brand { grid-column: auto; }
   }
 
   /* ---- Ticker (§3.13): 40px, the pair in full ink, dots between items; provenance leaves the strip ----- */
   .dm-ticker { position: relative; display: flex; align-items: center; height: var(--ticker-h); overflow: hidden; border-bottom: 1px solid var(--border); }
-  .dm-ticker-scroller { flex: 1; min-width: 0; height: 100%; overflow: hidden; -webkit-mask-image: linear-gradient(to right, transparent, #000 64px, #000 calc(100% - 64px), transparent); mask-image: linear-gradient(to right, transparent, #000 64px, #000 calc(100% - 64px), transparent); }
+  .dm-ticker-scroller { flex: 1; min-width: 0; height: 100%; overflow: hidden; -webkit-mask-image: linear-gradient(to right, transparent, #000 4rem, #000 calc(100% - 4rem), transparent); mask-image: linear-gradient(to right, transparent, #000 4rem, #000 calc(100% - 4rem), transparent); }
   .dm-ticker .dm-marquee { display: flex; align-items: center; width: max-content; height: 100%; }
   .dm-ticker-scroller:hover .dm-marquee, .dm-ticker-scroller:focus-within .dm-marquee { animation-play-state: paused; }
-  .dm-ticker-item { position: relative; display: inline-flex; align-items: center; gap: 8px; height: var(--ticker-h); padding: 0 20px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; white-space: nowrap; color: var(--fg-subtle); text-decoration: none; transition: color var(--dur-hover) ease; }
-  .dm-ticker-item::before { content: ''; position: absolute; left: -1.5px; top: calc(50% - 1.5px); width: 3px; height: 3px; border-radius: var(--radius-pill); background: var(--fg-faint); }
+  .dm-ticker-item { position: relative; display: inline-flex; align-items: center; gap: 0.5rem; height: var(--ticker-h); padding: 0 1.25rem; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; white-space: nowrap; color: var(--fg-subtle); text-decoration: none; transition: color var(--dur-hover) ease; }
+  .dm-ticker-item::before { content: ''; position: absolute; left: -1.5px; top: calc(50% - 1.5px); width: 0.1875rem; height: 0.1875rem; border-radius: var(--radius-pill); background: var(--fg-faint); }
   .dm-ticker-item:focus-visible { outline-offset: var(--focus-offset-inset); }
   .dm-ticker-pair { font-weight: 500; color: var(--fg); }
   .dm-ticker-item:hover { color: var(--fg-muted); }
   /* The APR's "from provider-reported inputs" tail: PoolAprEstimate's second span, sr-only here (markup untouched). */
   .dm-ticker [data-apr-estimate] > span + span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
-  .dm-ticker-status { display: block; padding: 0 24px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); white-space: nowrap; }
+  .dm-ticker-status { display: block; padding: 0 1.5rem; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-subtle); white-space: nowrap; }
   /* One caps kicker, four names: the 11px uppercase label over a figure, a section and the ticker tag. */
-  .dm-kicker, .dm-acct-caps-label, .dm-mkt-card-label, .dm-ticker-tag { font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: 0.6px; text-transform: uppercase; color: var(--fg-subtle); }
-  .dm-ticker-tag { flex-shrink: 0; padding: 0 12px; border-right: 1px solid var(--border); }
+  .dm-kicker, .dm-acct-caps-label, .dm-mkt-card-label, .dm-ticker-tag { font-size: 0.6875rem; line-height: 0.875rem; font-weight: 500; letter-spacing: 0.6px; text-transform: uppercase; color: var(--fg-subtle); }
+  .dm-ticker-tag { flex-shrink: 0; padding: 0 0.75rem; border-right: 1px solid var(--border); }
   /* Stilled: no animation, the duplicate hidden (tokens.css), the strip scrolls by hand. */
   html.dm-still .dm-ticker-scroller { overflow-x: auto; scrollbar-width: none; }
   @media (prefers-reduced-motion: reduce) {
@@ -561,40 +557,51 @@
      pseudo-element, because a filter on the dialog's own parent would contain its fixed descendants. ---- */
   .dm-dialog-backdrop { position: fixed; inset: 0; z-index: 50; isolation: isolate; display: flex; align-items: flex-end; justify-content: center; padding: 0; background: transparent; }
   .dm-dialog-backdrop::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--backdrop); animation: dm-fade var(--dur-fade) var(--ease-std) backwards; }
-  .dm-dialog { position: relative; display: grid; align-content: start; gap: 12px; width: 100%; max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain; padding: 20px 16px calc(16px + env(safe-area-inset-bottom)); border-radius: var(--radius-card) var(--radius-card) 0 0; background: var(--surface-2); color: var(--fg); box-shadow: var(--elev-menu); animation: dm-sheet-up var(--dur-sheet) var(--ease-sheet) backwards; }
+  .dm-dialog { position: relative; display: grid; align-content: start; gap: 0.75rem; width: 100%; max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain; padding: 1.25rem 1rem calc(1rem + env(safe-area-inset-bottom)); border-radius: var(--radius-card) var(--radius-card) 0 0; background: var(--surface-2); color: var(--fg); box-shadow: var(--elev-menu); animation: dm-sheet-up var(--dur-sheet) var(--ease-sheet) backwards; }
   /* The sheet's grab handle: absolute, so it is never a grid item. */
-  .dm-dialog::before { content: ''; position: absolute; top: 8px; left: 50%; translate: -50% 0; width: 36px; height: 4px; border-radius: var(--radius-pill); background: var(--border-strong); }
-  .dm-dialog-title { font-family: var(--font-sans); font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
-  .dm-dialog-close { position: absolute; top: 12px; right: 12px; }
+  .dm-dialog::before { content: ''; position: absolute; top: 0.5rem; left: 50%; translate: -50% 0; width: 2.25rem; height: 0.25rem; border-radius: var(--radius-pill); background: var(--border-strong); }
+  .dm-dialog-title { font-family: var(--font-sans); font-size: 1rem; line-height: 1.5rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-dialog-close { position: absolute; top: 0.75rem; right: 0.75rem; }
   /* The slippage presets hug their three choices wherever SlippageChoice renders (the Close dialog, Setup), as New
      position's do (flow.css): no half-empty track across the dialog. */
   .dm-slip-choice > .dm-slip-presets { justify-self: start; width: fit-content; }
   @media (min-width: 640px) {
-    .dm-dialog-backdrop { align-items: center; padding: 16px; }
-    .dm-dialog-backdrop::before { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
-    .dm-dialog { width: min(440px, 100vw - 32px); max-height: min(86vh, 760px); padding: 24px; border-radius: var(--radius-card); animation: dm-dialog-in 180ms var(--ease-fast) backwards; }
+    .dm-dialog-backdrop { align-items: center; padding: 1rem; }
+    .dm-dialog-backdrop::before { -webkit-backdrop-filter: blur(0.375rem); backdrop-filter: blur(0.375rem); }
+    .dm-dialog { width: min(27.5rem, 100vw - 2rem); max-height: min(86vh, 47.5rem); padding: 1.5rem; border-radius: var(--radius-card); animation: dm-dialog-in 180ms var(--ease-fast) backwards; }
     .dm-dialog::before { display: none; }
-    .dm-dialog--wide { width: min(640px, 100vw - 32px); }
+    .dm-dialog--wide { width: min(40rem, 100vw - 2rem); }
   }
 
   /* Wallet choices inside the wallet dialogs: wallet logos (never the Domino mark) sit in a tile. */
   .dm-wallet-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; border-radius: var(--radius); overflow: hidden; }
-  .dm-wallet-row { display: flex; align-items: center; gap: 12px; width: 100%; height: 52px; padding: 0 12px; border-radius: 4px; background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); text-align: left; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg); cursor: pointer; transition: background-color var(--dur-hover) ease; }
+  .dm-wallet-row { display: flex; align-items: center; gap: 0.75rem; width: 100%; height: 3.25rem; padding: 0 0.75rem; border-radius: 0.25rem; background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); text-align: left; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; color: var(--fg); cursor: pointer; transition: background-color var(--dur-hover) ease; }
   .dm-wallet-row:hover:not(:disabled) { background: var(--surface-3); }
   .dm-wallet-row:disabled { opacity: 0.5; cursor: wait; }
   .dm-wallet-row:focus-visible { outline-offset: var(--focus-offset-inset); }
-  .dm-wallet-logo { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--radius-sm); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-wallet-logo > img, .dm-wallet-logo > svg { width: 20px; height: 20px; }
+  .dm-wallet-logo { display: grid; place-items: center; width: 2rem; height: 2rem; flex-shrink: 0; border-radius: var(--radius-sm); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-wallet-logo > img, .dm-wallet-logo > svg { width: 1.25rem; height: 1.25rem; }
   .dm-wallet-row .i-chev-r { margin-left: auto; color: var(--fg-subtle); opacity: 0; transition: opacity var(--dur-hover) ease, translate var(--dur-fade) var(--ease-std); }
   .dm-wallet-row:hover .i-chev-r, .dm-wallet-row:focus-visible .i-chev-r { opacity: 1; translate: 2px 0; }
   /* 2026-10-01 (audit C3, C4, C7): a row's second line (WalletConnect's hint, the wallet still to approve), the wallet
      apps a phone opens the site in, and WalletConnect's pairing code, dark on white as a phone's camera reads it. */
   .dm-wallet-row-text { display: grid; min-width: 0; }
-  .dm-wallet-row-hint { font-size: 12px; line-height: 16px; font-weight: 400; color: var(--fg-subtle); }
+  .dm-wallet-row-hint { font-size: 0.75rem; line-height: 1rem; font-weight: 400; color: var(--fg-subtle); }
   a.dm-wallet-row { text-decoration: none; }
-  .dm-wallet-get a { color: var(--fg); text-decoration-line: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
-  .dm-walletconnect { display: grid; justify-items: center; gap: 12px; text-align: center; }
-  .dm-walletconnect-qr { width: min(232px, 100%); height: auto; }
+  .dm-wallet-get a { color: var(--fg); text-decoration-line: underline; text-decoration-color: var(--border-strong); text-underline-offset: 0.1875rem; }
+  /* The connected wallet (2026-10-03, the owner: no wallet app's name; the address and its state together on one calm row):
+     the address's disc, larger than the header's, the short address over its state (a green dot while connected, Tangerine
+     on another network), Copy at the end. */
+  .dm-wallet-id { display: flex; align-items: center; gap: 0.75rem; min-width: 0; padding: 0.75rem 0.625rem 0.75rem 0.75rem; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border), inset 0 1px 0 0 var(--card-lip); }
+  .dm-wallet-disc.dm-wallet-id-disc { width: 2.25rem; height: 2.25rem; box-shadow: inset 0 0 0 1px var(--border-strong), 0 0 0 0.25rem var(--wash); }
+  .dm-wallet-id-text { display: grid; flex: 1; gap: 2px; min-width: 0; }
+  .dm-wallet-id-address { overflow: hidden; font-family: var(--font-mono); font-size: 0.9375rem; line-height: 1.25rem; letter-spacing: 0; color: var(--fg); text-overflow: ellipsis; white-space: nowrap; }
+  .dm-wallet-id-state { display: inline-flex; align-items: center; gap: 0.375rem; font-size: 0.75rem; line-height: 1rem; color: var(--fg-subtle); }
+  .dm-wallet-id-state::before { content: ''; flex: none; width: 0.375rem; height: 0.375rem; border-radius: var(--radius-pill); background: var(--money-in); box-shadow: 0 0 0 0.1875rem var(--money-in-bg); }
+  .dm-wallet-id[data-wallet-state='other-network'] .dm-wallet-id-state::before { background: var(--primary); box-shadow: 0 0 0 0.1875rem var(--primary-wash); }
+  .dm-wallet-id-copy { flex: none; }
+  .dm-walletconnect { display: grid; justify-items: center; gap: 0.75rem; text-align: center; }
+  .dm-walletconnect-qr { width: min(14.5rem, 100%); height: auto; }
 
   /* ---- Token marks (§3.8): missing artwork is a calm disc from the address, never letters ---------- */
   .dm-token-disc { background: radial-gradient(120% 120% at 30% 25%, hsl(var(--mark-h, 0) var(--disc-s) calc(var(--disc-l) + 6%)), hsl(var(--mark-h, 0) var(--disc-s) var(--disc-l))); box-shadow: inset 0 0 0 1px var(--border-strong); }

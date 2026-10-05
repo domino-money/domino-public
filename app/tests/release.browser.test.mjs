@@ -51,7 +51,6 @@ import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
 import { closeContext, leaving, watch } from './page-watch.mjs';
 import { DIST, createGatedServer } from '../scripts/gated-server.mjs';
-import { CONTROL_VIEWPORTS, textUnderMotionControl } from './motion-overlap.mjs';
 
 const PASSWORD = 'release-test-beta-password';
 const GATE = { BETA_PASSWORD: PASSWORD, BETA_COOKIE_KEY: 'Rk2mP9vQx4Lr7TbW1cNy6ZsJ3dGa8FeU5oViRtYqWeC' };
@@ -742,25 +741,8 @@ test('(k) #93 per row: a 504 on one pool drops only that pool, whose own row say
   }
 });
 
-// Changed on purpose (owner, 2026-09-26: dark only): the appearance toggle is gone with the light theme. The footer's motion
-// control, which sat beside it, keeps the same check.
-test('(m) with all six pools on screen, the footer’s motion control covers no figure, heading or footer text at 390, 768 or 1280 wide', async () => {
-  const { context, page, errors } = await visit(bridgeStub());
-  try {
-    assert.equal(await settled(page), 'none');
-    assert.equal(await liveRows(page).count(), 6);
-    for (const [width, height] of CONTROL_VIEWPORTS) {
-      await page.setViewportSize({ width, height });
-      await page.waitForTimeout(100);
-      const { hits, seen } = await textUnderMotionControl(page, ['#pools table', 'footer']);
-      assert.deepEqual(seen, ['#pools table', 'footer'], `${width}px`);
-      assert.deepEqual(hits, [], `the motion control covers text at ${width}x${height}:\n${hits.join('\n')}`);
-    }
-    assert.deepEqual(errors, []);
-  } finally {
-    await closeContext(context);
-  }
-});
+// Changed on purpose 2026-10-03 (the owner): the footer's Pause motion control is gone, so check (m), that it covered no
+// figure or text with all six pools on screen, has nothing left to check.
 
 test('(l) #93 per row: a 429 that outlasts R-1 on one pool leaves the other pools’ rows, and Home asks that pool again on its own, alone, once the wait has passed', async () => {
   let busy = true;
@@ -1123,7 +1105,8 @@ test('(v) Markets with a short list: today’s table alone, with its count and t
     assert.equal(await page.locator('#markets-pools-title').innerText(), 'Top pools · last 24h', 'today’s title');
     assert.doesNotMatch(await page.locator('main').innerText(), /Selected pools/, 'no "Selected pools" heading anywhere on Markets');
     assert.deepEqual(await page.locator('main [data-selected-pools] tbody tr').evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SERVED_LINKS, 'today’s pools, in its order, and nothing else');
-    assert.equal(await page.locator('main [data-featured-count]').innerText(), '2 of 6 today', 'the short list says so');
+    // Changed on purpose 2026-10-03 (the owner): a short list no longer says "2 of 6 today"; it still opens the catalogue search.
+    assert.equal(await page.locator('main [data-featured-count]').count(), 0, 'no count beside the title');
     assert.equal(await page.locator('[data-catalogue-search]').evaluate((details) => details.open), true, 'the catalogue search is open on a short list');
     const others = SELECTED.filter((poolId) => !SERVED.includes(poolId));
     assert.deepEqual(reads.slice(from).filter((r) => r.path.endsWith('/pool-market') && others.includes(r.body.poolId)).map((r) => r.body.poolId), [], 'the pools the list does not name are never read');

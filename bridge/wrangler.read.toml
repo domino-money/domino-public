@@ -26,6 +26,7 @@ READ_V2_BRIDGE_ENABLED = "false"
 READ_V3_BRIDGE_ENABLED = "false"
 READ_V4_BRIDGE_ENABLED = "false"
 READ_V5_BRIDGE_ENABLED = "false"
+READ_V6_BRIDGE_ENABLED = "false"
 APP_ORIGIN = "https://domino.money"
 GATEWAY_ORIGIN = "https://vm-read.domino.money"
 ENABLED_READS = ""
@@ -33,6 +34,7 @@ ENABLED_V2_READS = ""
 ENABLED_V3_READS = ""
 ENABLED_V4_READS = ""
 ENABLED_V5_READS = ""
+ENABLED_V6_READS = ""
 
 # Access client IDs/secrets are provisioned separately in Cloudflare after review.
 # Do not add credentials, account overrides or environment bindings to this file.

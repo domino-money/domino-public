@@ -8,6 +8,7 @@ import { areaGeometry, changeOverWindow, midpoint, volumeGeometry, windowCandles
 import { unreadToken } from '../../../lib/read/project'
 import { useNow } from '../../../lib/read/useNow'
 import { useLoadMilestone } from '../../../lib/useLoadMilestone'
+import { useRootScale } from '../../../lib/rootScale'
 import { failureText } from '../../../lib/read/screens/copy'
 import { utcTime } from '../../../lib/read/screens/figures'
 import { useReadSource } from '../../../lib/read/screens/readContext'
@@ -166,7 +167,10 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
   const [attempt, setAttempt] = useState(0)
   const [read, setRead] = useState<{ key: string; outcome: ScreenOutcome<'pool-market'> } | null>(null)
   const [inspected, setInspected] = useState<number | null>(null)
+  // The box's width in CSS px. The plot is drawn in design px (the width over the root's scale) through its viewBox
+  // (changed on purpose 2026-10-03, lib/rootScale.ts), so its gutter, label offsets and axis text scale with the page.
   const [width, setWidth] = useState(0)
+  const scale = useRootScale()
   const box = useRef<HTMLDivElement>(null)
   const fillId = `pool-chart-fill-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const chartTokens = market.chartTokens
@@ -235,7 +239,7 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
   const tokenFor = (address: string) => [market.tokens.base, market.tokens.quote].find((token) => token.origin === 'read' && token.address.toLowerCase() === address.toLowerCase()) ?? unreadToken(address)
 
   const candles = data ? windowCandles(data, null) : []
-  const plot = data ? plotFor(candles, data.intervalSeconds, width) : null
+  const plot = data ? plotFor(candles, data.intervalSeconds, width / scale) : null
   const points = plot?.line.points ?? []
   const change = candles.length ? changeOverWindow(candles) : null
   const inspecting = inspected !== null && points.some((point) => point.candle.startTimestamp === inspected)
@@ -250,7 +254,7 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
   }
   const inspectAt = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (points.length === 0) return
-    const x = event.clientX - event.currentTarget.getBoundingClientRect().left
+    const x = (event.clientX - event.currentTarget.getBoundingClientRect().left) / scale
     const nearest = points.reduce((best, point) => (Math.abs(point.x - x) < Math.abs(best.x - x) ? point : best))
     if (nearest.candle.startTimestamp !== inspected) setInspected(nearest.candle.startTimestamp)
   }
@@ -289,7 +293,7 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
             )}
           </div>
           <p className="dm-pool-chart-date">
-            {hourText(current.candle.startTimestamp)} · {inspecting ? 'close' : 'latest close'}
+            {hourText(current.candle.startTimestamp)} · {inspecting ? 'close' : stale ? 'saved close' : 'latest close'}
             {current.candle.closed ? '' : ' · open hour'}
           </p>
         </div>
@@ -344,19 +348,19 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
               <p role="status" className="sr-only">
                 {reason}
               </p>
-              <span className="text-[13px] leading-[18px] text-fg-subtle" title={reason}>
+              <span className="text-[0.8125rem] leading-[1.125rem] text-fg-subtle" title={reason}>
                 —
               </span>
             </div>
           ) : candles.length === 0 ? (
             <div className="dm-pool-plot-empty">
-              <p className="text-[13px] leading-[18px] text-fg-muted">No candles reported.</p>
+              <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted">No candles reported.</p>
             </div>
           ) : plot && current && last ? (
             <svg
               key={shownKey}
-              width={plot.width}
-              height={plot.height}
+              width={plot.width * scale}
+              height={plot.height * scale}
               viewBox={`0 0 ${plot.width} ${plot.height}`}
               role="slider"
               aria-label={`Inspect reported hourly USD candles${stale ? ', stale retrieval' : ''}`}
@@ -418,7 +422,7 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
               </text>
             </svg>
           ) : (
-            <div className="dm-pool-plot-empty">{width > 0 && <p className="text-[13px] leading-[18px] text-fg-muted">These hourly prices couldn’t be drawn.</p>}</div>
+            <div className="dm-pool-plot-empty">{width > 0 && <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted">These hourly prices couldn’t be drawn.</p>}</div>
           )}
         </div>
       )}
@@ -431,7 +435,7 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
               <p className="text-caption text-fg-muted" data-chart-currency="">
                 Token <Address value={currency ?? ''} />
               </p>
-              <ul className="tnum mt-2 grid max-h-[240px] gap-1.5 overflow-y-auto text-caption break-words text-fg-muted">
+              <ul className="tnum mt-2 grid max-h-[15rem] gap-1.5 overflow-y-auto text-caption break-words text-fg-muted">
                 {data.candles.map((candle) => (
                   <li key={candle.startTimestamp}>{candleDescription(candle)}</li>
                 ))}

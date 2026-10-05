@@ -558,7 +558,10 @@ test('Review ends on Create position, made in place: no hand-off to Setup, and t
   // Create position is asking the wallet.
   const newPosition = readFileSync(new URL('../src/screens/NewPosition.tsx', import.meta.url), 'utf8');
   // Changed on purpose (round 6, 2026-09-27): the journey also takes the token a pool page's link names (#/new/<id>/<token>).
-  assert.equal([...newPosition.matchAll(/<Journey key=\{flow\} poolId=\{poolId\} linkToken=\{linkToken\} \/>/g)].length, 2, 'both ways the page draws the journey are keyed');
+  // Changed on purpose (data) 2026-10-02 (Domino V2 integration, the journey): a third way, keyed the same: the stand-in the
+  // V2 mount falls back to when its chunk cannot load (lib/staleRelease.ts recovering), behind the bare __DOMINO_V2__
+  // define, which folds it away in production and development.
+  assert.equal([...newPosition.matchAll(/<Journey key=\{flow\} poolId=\{poolId\} linkToken=\{linkToken\} \/>/g)].length, 3, 'every way the page draws the journey is keyed');
   const journeyCode = readFileSync(new URL('../src/components/create/Journey.tsx', import.meta.url), 'utf8');
   assert.match(journeyCode, /<StepList steps=\{steps\} onOpen=\{reopen\} locked=\{creating\} \/>/);
   assert.match(journeyCode, /if \(creating \|\| !canOpen\(target, state, now\)\) return/);
@@ -597,7 +600,7 @@ test('the Review says the fee once, and keeps only Your choices and Wallet steps
 });
 
 test('Review’s wallet steps are the live ones once Create position runs: each marked by its key and state, and a done step is drawn green with a check', () => {
-  const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
+  const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   const css = readFileSync(new URL('../src/styles/flow.css', import.meta.url), 'utf8');
   const control = readFileSync(new URL('../src/components/create/CreatePosition.tsx', import.meta.url), 'utf8');
   assert.match(review, /const progress = useCreateProgress\(\)\n\s*const live = progress && progress\.length > 0 \? progress : null/, 'Review reads the steps Create position publishes, and keeps its own plan until there are some');
@@ -898,7 +901,7 @@ test('a pool from a link starts from the token it was verified against, else the
   assert.deepEqual(journey.canContinue('pool', linked, NOW), { ok: true });
   const stage = readFileSync(new URL('../src/components/create/StageToken.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(stage, /data-deposit-choice|depositWhich|create-deposit-token/, 'no deposit-token question on step 1');
-  const flow = readFileSync(new URL('../src/components/create/Journey.tsx', import.meta.url), 'utf8');
+  const flow = readFileSync(new URL('../src/components/create/Journey.tsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   // Changed on purpose 2026-09-28 (speed wave, study item 31): the rule is one function, asked once before the featured
   // list's first answer (the verification then starts at once) and once after it, which decides.
   assert.match(flow, /const tokenFor = \(linked: Extract<Preselect, \{ ok: true \}>\): AddressKey =>\n\s+!linked\.catalogue && linkToken \? addressKey\(linkToken\) : verificationToken\(linked\)/, 'a pool of neither list is verified with the token its link names');

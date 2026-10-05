@@ -10,9 +10,9 @@ public reads, family by family, each by an explicit opt-in:
 
 | Family | How the preview reaches it | Enabled in `app/wrangler.toml` |
 |---|---|---|
-| Public reads (`/api/read/v1/` to `/api/read/v5/`) | translated to `https://domino.money`, production's read Worker | yes (`PREVIEW_PUBLIC_READS = "true"`) |
+| Public reads (`/api/read/v1/` to `/api/read/v6/`; read-v6, Domino V2's wallet reads, since 2026-10-02) | translated to `https://domino.money`, production's read Worker | yes (`PREVIEW_PUBLIC_READS = "true"`) |
 | Setup release (`/api/setup/v1/`: the setup and sequence releases, public contract identities, GET only) | translated to `https://domino.money`, production's setup Worker | yes (`PREVIEW_FAMILIES = "setup"`) |
-| Session, onboarding, deposit, performance, execution | as the browser sent them, its own cookies only, to a Worker deployed **for the preview alias** | no: see "Wallet sign-in and the private families" below |
+| Session, onboarding, deposit, performance, execution, position-plan (Domino V2's S1 plans, since 2026-10-02), crosschain (S2's deposits from another network, since 2026-10-02) | as the browser sent them, its own cookies only, to a Worker deployed **for the preview alias** | no: see "Wallet sign-in and the private families" below |
 
 ## Boundary
 
@@ -20,8 +20,8 @@ public reads, family by family, each by an explicit opt-in:
   every other origin stay denied, whatever the variables say.
 - The reads are opted in by `PREVIEW_PUBLIC_READS=true`; every other family by
   its exact name in `PREVIEW_FAMILIES` (comma-separated: `setup`, `session`,
-  `onboarding`, `deposit`, `performance`, `execution`). Anything else in the
-  list names nothing. Unset or empty: none.
+  `onboarding`, `deposit`, `performance`, `execution`, `position-plan`,
+  `crosschain`). Anything else in the list names nothing. Unset or empty: none.
 - A public family (the reads, the setup release) is translated to the Worker's
   canonical app origin after Pages has validated the original browser Host,
   Origin and Fetch Metadata. POST requires the preview Origin; a GET of the read
@@ -76,7 +76,7 @@ therefore needs, besides this repository's code (ready):
 3. In `app/wrangler.toml` under `[env.preview]`: one `[[env.preview.services]]`
    table per family, binding its production binding name (`SESSION_BRIDGE`,
    `ONBOARDING_BRIDGE`, `DEPOSIT_BRIDGE`, `PERFORMANCE_BRIDGE`,
-   `EXECUTION_BRIDGE`) to its preview Worker of step 2, and the family's name
+   `EXECUTION_BRIDGE`, `POSITION_PLAN_BRIDGE`) to its preview Worker of step 2, and the family's name
    added to `PREVIEW_FAMILIES` (for example `"setup,session,performance,execution"`).
    `tests/forwarder.test.mjs` pins this file, so the change is reviewed with it.
 

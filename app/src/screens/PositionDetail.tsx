@@ -5,7 +5,7 @@ import { PairName, PositionStatus } from '../components/positions/PositionFigure
 import { AutomateEntry, AutomationChip, useListedPosition } from '../components/positions/AutomateEntry'
 import { KeyFigures } from '../components/positions/KeyFigures'
 import { PositionActivity, useAutomaticAdds } from '../components/positions/PositionActivity'
-import { PositionRange, chainCardPrice } from '../components/positions/PositionRange'
+import { PositionRange, chainCardPrice, preloadPriceChart } from '../components/positions/PositionRange'
 import { FeesCard } from '../components/positions/visual/FeesCard'
 import { PositionSkeleton } from '../components/positions/visual/PositionSkeleton'
 import { usdgSide } from '../components/positions/visual/value'
@@ -15,6 +15,7 @@ import { Button, Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, 
 import { chainState, freshState, takeWarmState } from '../lib/fees/client'
 import { feesStore } from '../lib/fees/spawn'
 import { refreshFeeStates, useFeeHistory, useLedgerTraces } from '../lib/fees/useFeeHistory'
+import { ledgerOpenedAt } from '../lib/chart/positionOpened'
 import { readKept } from '../finance/privateCards'
 import { KEPT_MAX_AGE_MS } from '../lib/browserCopies'
 import { createdHere } from '../lib/create/createProgress'
@@ -70,7 +71,18 @@ const couldNotLoad = () => ({
 })
 const PositionActions = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<ActionsProps>>(recovering(() => import('../components/positions/PositionActions'), couldNotLoad)) : null
 /**
- * 2026-10-02 (the V1 incident of rugged97's spec rev3 §2.13): the fees waiting in this position's vault, with Withdraw to
+ * Changed on purpose (data) 2026-10-02 (Domino V2 integration): Add liquidity, Change range and Withdraw beside Collect
+ * fees and Close position, and Domino's approval in Details, from their own chunk (src/v2in/position) in a build with V2
+ * only; the chunk asks the gate itself and draws nothing where V2 is off. Its props, written here as ActionsProps is.
+ */
+interface V2ActionsProps {
+  position: WalletPosition
+  owner: string
+  onChanged: (block?: bigint) => void
+}
+const V2Actions = __DOMINO_V2__ ? lazy<ComponentType<V2ActionsProps>>(recovering(() => import('../v2in/position/PositionV2Actions'), couldNotLoad)) : null
+/**
+* 2026-10-02 (the V1 incident of rugged97's spec rev3 §2.13): the fees waiting in this position's vault, with Withdraw to
  * wallet, for the vault's owner: on the page of a position its read names a vault for (on, paused, stopped or closed), and
  * on the page of an NFT that no longer exists, the vault whose root it was. Its own chunk, in wallet builds only; nothing
  * while there is nothing to withdraw, and nothing in place of a chunk that cannot load.
@@ -82,6 +94,11 @@ interface ReservesProps {
   root?: string
 }
 const FeeReserves = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<ReservesProps>>(recovering(() => import('../components/positions/FeeReserves'), () => ({ default: () => null }))) : null
+
+// Domino V2 (integration, 2026-10-02): the position's automation (its vault's reserves, Leave automation, the rearm) and
+// its Stop-loss / take-profit, under the page's cards in every phase, only in a build that carries V2 (the define is false
+// in both deployable builds, so this is null there and nothing of it is bundled).
+const V2Position = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/automate/PositionAutomation'), () => ({ default: () => null }))) : null
 
 /**
  * The page's own chain read: the fees relay's /state read of this NFT, from the chain, at one block. 2026-09-28 (speed
@@ -139,6 +156,43 @@ const AFTER_ACTION_MS = 11_000
  * reads as before.
  */
 const REFRESH = !__DOMINO_TEST_HOOKS__ || !!(window as { __dominoRefresh?: boolean }).__dominoRefresh
+
+// 2026-10-03 (the owner's point 10): the Price range chart is a chunk of its own (PositionRange.tsx); asked for as this
+// page's code arrives, so it is there before the page's own read and draws at once in its card.
+preloadPriceChart()
+
+/** What screens/PositionLab.tsx's `range` spec carries: a position as this page reads one, and whether its pool's history is asked. */
+export interface RangeLabSpec {
+  position: WalletPosition
+  owner: string
+  block: number
+  /** As this page always does; false: as V2's page for a pool the read service keeps no history for. */
+  history?: boolean
+  openedAt?: number | null
+}
+
+/**
+ * Test builds only (__DOMINO_TEST_HOOKS__; null in every deployable build, so none carries it): this page's Price range
+ * card alone, from a position as the page reads one, for screens/PositionLab.tsx's `range` spec and
+ * tests/price-range.browser.test.mjs (2026-10-03, the owner's point 10). It lives in this screen's chunk, which holds
+ * every module it draws, so the lab adds nothing else to the bundles (tests/session.bundle.test.mjs).
+ */
+export const RangeLab = __DOMINO_TEST_HOOKS__
+  ? function RangeLab({ spec }: { spec: RangeLabSpec }) {
+      const card = useMemo(() => walletCard(spec.position, spec.owner), [spec])
+      const price = chainCardPrice(card, { sqrtPriceX96: spec.position.sqrtPriceX96, tick: spec.position.tick, block: spec.block })
+      return (
+        <div className="dm-pos-grid" data-range-lab="">
+          <section className="dm-card dm-pos-card" aria-labelledby="position-range-title">
+            <h2 id="position-range-title" className="dm-title">
+              Price range
+            </h2>
+            <PositionRange card={card} price={price} variant="page" history={spec.history !== false} openedAt={spec.openedAt ?? null} />
+          </section>
+        </div>
+      )
+    }
+  : null
 
 type Ready = Extract<Detail, { phase: 'ready' }>
 /** A read position as the page shows it. */
@@ -256,11 +310,12 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
   const automation = useAutomation(card.tokenId)
   // What the automation put back, from its vault's own record: the only rows of Activity that name it (2026-09-27).
   const automatic = useAutomaticAdds(card.tokenId, automation)
+  const openedAt = ledgerOpenedAt(useFeeHistory(card.tokenId))
   // The way on: Automate, or the docs on switching a sequence on. The owner's actions show it first, unless a
   // sequence's Turn on or Pause takes its place (2026-09-25), and it stands alone while their chunk loads.
   const entry = <AutomateEntry tokenId={card.tokenId} open={automatable} variant="action" />
   return (
-    <div data-position-detail="" data-position-id={card.tokenId} data-snapshot={block}>
+    <div data-position-detail="" data-position-id={card.tokenId} data-snapshot={block} data-position-read={copy !== undefined ? 'saved' : gateway ? 'gateway' : 'chain'}>
       <div className="dm-pos-title">
         <div className="dm-pos-name">
           <TokenMarkPair base={base} quote={quote} size={phone ? 36 : 44} ring="var(--bg)" />
@@ -291,6 +346,11 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
             </div>
           </div>
         </div>
+        {mine && (copy !== undefined || gateway) && (
+          <p className="max-w-md text-body text-fg-muted" role="status" data-position-actions-waiting="">
+            Actions are temporarily unavailable while we refresh this position’s data. We’ll keep trying automatically.
+          </p>
+        )}
         {/* No action on a row from the read gateway (RPC-SPEC P2): the page's own read offers them once it answers. */}
         {PositionActions && mine && copy === undefined && !gateway && (
           <div className="dm-pos-actions" data-position-actions="">
@@ -330,6 +390,12 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
             </Suspense>
           </div>
         )}
+        {/* V2 actions join the same visible action bar while retaining their own gates and lazy loading. */}
+        {__DOMINO_V2__ && V2Actions && PositionActions && mine && copy === undefined && !gateway && (
+          <Suspense fallback={null}>
+            <V2Actions position={wallet} owner={card.owner.address} onChanged={onChanged} />
+          </Suspense>
+        )}
       </div>
 
       <KeyFigures card={card} state={state && usdgIndex !== null ? state : null} price={price} block={block} cached={cached} />
@@ -352,8 +418,10 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
             Price range
           </h2>
           {/* The range, its ends and the price now (the page's own read). Changed on purpose 2026-10-02 (RPC-SPEC §11.4):
-              no line of the pool's past prices, which came from the fees replay's reads of the pool's history. */}
-          <PositionRange card={card} price={price} variant="page" />
+              no line of the pool's past prices, which came from the fees replay's reads of the pool's history. Changed on
+              purpose 2026-10-03 (the owner's point 10: "it doesn't show the history"): the line is back, from the read
+              service's stored price history of the pool (read-v3 `history`, the last 7 days), never from a node. */}
+          <PositionRange card={card} price={price} variant="page" history openedAt={openedAt} />
         </section>
 
         <PositionActivity tokenId={card.tokenId} automatic={automatic} />
@@ -640,7 +708,16 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
   return (
     <PageShell>
       <Back />
-      {body}
+      {V2Position ? (
+        <>
+          {body}
+          <Suspense fallback={null}>
+            <V2Position tokenId={tokenId} position={current.phase === 'ready' ? current.position : null} holder={current.phase === 'ready' ? current.owner : null} priceContext={current.phase === 'ready' ? { block: current.block, saved: current.row === true || current.copy !== undefined || current.gateway === true } : null} />
+          </Suspense>
+        </>
+      ) : (
+        body
+      )}
     </PageShell>
   )
 }

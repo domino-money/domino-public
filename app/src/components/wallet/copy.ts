@@ -5,7 +5,7 @@ import { networkName } from '../../lib/networkName'
 /** English copy for every session state. Plain strings, rendered as text only. */
 
 export const SIGNED_OUT: Record<SignedOutReason, string> = {
-  none: 'Sign in to prove you control this address.',
+  none: 'Sign a message to view your receipts. This sends no transaction.',
   logged_out: 'You signed out.',
   session_ended: 'Your session ended: it expired or was revoked. Sign in again to continue.',
   identity_changed:

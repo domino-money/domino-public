@@ -11,13 +11,13 @@ import { PositionRange } from '../PositionRange'
 import { AutomationFrame } from './AutomationFrame'
 import { FeesCard } from './FeesCard'
 import { PortfolioSummary } from './PortfolioSummary'
-import { PriceVsRange } from './PriceVsRange'
 import { QuietMarkPair } from './QuietMarks'
 
 export const POSITION_KIT = {
   FeesCard,
   PortfolioSummary,
-  PriceVsRange,
+  // Changed on purpose 2026-10-03 (the owner's point 10): no PriceVsRange here; the Price range chart is a chunk of its own,
+  // loaded by a position's page only (PositionRange.tsx), so the list never carries it.
   AutomationFrame,
   PositionRange,
   PositionFigures: { Amount, PairName, PositionStatus },

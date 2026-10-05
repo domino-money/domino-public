@@ -4,6 +4,7 @@ import { ArtTile, useInView } from '../home/Vignettes'
 import { cx } from '../ui'
 import { Ground } from './ModeArt'
 import { FeeMeter } from './ServiceFee'
+import { FeeJourney } from './ModeSummary'
 
 /*
  * Auto-compound's picture once its position is read (DESIGN-V2 §14.2, automate.md §5.5.5): what Domino's successor axis is
@@ -80,6 +81,7 @@ export function CompoundPreview() {
           ))}
         </svg>
       </div>
+      <FeeJourney mode="compound" />
       <FeeMeter mode="compound" />
     </div>
   )

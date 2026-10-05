@@ -132,9 +132,11 @@ export const PRODUCER_PIN = {
 } as const
 
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
+// Changed on purpose (data) 2026-10-02 (Domino V2 integration, bridge): read-v2's manifest hashes the read Worker, its
+// config and the forwarder, which gained read-v6 and the position-plan family; no read-v2 route, schema or version moved.
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: 'b8ec88b697185d6b95f264564e1491a6c5ed0d1f1bbb921d070c5e8bcfb9d7ac',
+  manifestSha256: '9f8934ed616602c2d424e4ed9f79aa1dc636b4887865ecd1eee4ee377922232b',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

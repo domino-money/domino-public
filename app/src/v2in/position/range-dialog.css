@@ -1,0 +1,41 @@
+/* Position actions share one sheet. The range editor compares two aligned rails,
+   so a narrower choice remains legible beside a wide existing position. */
+@layer components {
+  .dm-range-edit { gap: 1rem; }
+  .dm-range-reference { padding-block: 0.25rem 1rem; border-bottom: 0.0625rem solid var(--border); }
+  .dm-range-reference p { margin: 0.375rem 0 0; font-size: 0.875rem; line-height: 1.5; color: var(--fg-muted); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .dm-range-reference strong { font-size: 1.5rem; line-height: 1.25; color: var(--fg); font-weight: 500; }
+  .dm-range-width { display: grid; gap: 0.625rem; }
+  .dm-range-edit .dm-pa-choice { min-height: 3.25rem; border-radius: 0.75rem; }
+  .dm-range-edit .dm-pa-bound { padding: 1rem; border-radius: 0.875rem; }
+  .dm-range-edit .dm-pa-bound-head { flex-wrap: wrap; gap: 0.125rem 0.5rem; }
+  .dm-range-edit .dm-pa-bound-price,.dm-range-edit .dm-pa-bound-input { font-size: 1.375rem; line-height: 1.75rem; }
+  .dm-range-edit .dm-pa-bound-away { color: var(--primary-line); }
+  .dm-range-comparison { padding: 1rem; border: 0.0625rem solid var(--border); border-radius: 0.875rem; background: var(--pa-well); }
+  .dm-range-tracks { height: auto; display: grid; gap: 0.5rem; margin: 0; }
+  .dm-range-tracks::before { content: none; }
+  .dm-range-track-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.25rem 0.5rem; font-size: 0.6875rem; line-height: 1rem; color: var(--fg-muted); }
+  .dm-range-track-head [data-key="new"] { color: var(--primary-line); }
+  .dm-range-track { height: 1.25rem; position: relative; margin-bottom: 0.25rem; background: var(--wash); border-radius: 0.375rem; }
+  .dm-range-track > span { position: absolute; }
+  .dm-range-track .dm-pa-range-was,.dm-range-track .dm-pa-range-band { top: 0; bottom: 0; border-radius: 0.375rem; min-width: 0.25rem; }
+  .dm-range-track .dm-pa-range-was { background: var(--wash-strong); box-shadow: inset 0 0 0 0.0625rem var(--fg-faint); }
+  .dm-range-track .dm-pa-range-band { background: var(--primary-wash); box-shadow: inset 0 0 0 0.0625rem var(--primary-line); }
+  .dm-range-track .dm-pa-range-axis { top: 50%; bottom: auto; height: 0.0625rem; opacity: 0.2; }
+  .dm-range-track .dm-pa-range-now { top: -0.125rem; bottom: -0.125rem; }
+  .dm-range-track .dm-pa-range-now::before { background: var(--fg); width: 0.125rem; left: -0.0625rem; border-radius: 0.125rem; }
+  .dm-range-track .dm-pa-range-now::after { width: 0.375rem; height: 0.375rem; top: 50%; bottom: auto; left: -0.1875rem; translate: 0 -50%; box-shadow: 0 0 0 0.125rem var(--pa-well); }
+  .dm-range-result { margin: 0.75rem 0 0; font-size: 0.75rem; line-height: 1.4; color: var(--fg-muted); }
+  .dm-range-result[data-position-range-result="outside"] { color: var(--primary-line); }
+  .dm-range-detail { font-size: 0.75rem; line-height: 1.4; color: var(--fg-muted); }
+  .dm-range-detail summary { cursor: pointer; width: fit-content; padding-block: 0.25rem; }
+  .dm-range-detail summary:focus-visible { outline: 0.125rem solid var(--primary-line); outline-offset: 0.25rem; }
+  .dm-range-detail dl { display: grid; gap: 0.625rem; margin: 0.625rem 0 0; }
+  .dm-range-detail dt { color: var(--fg-subtle); }
+  .dm-range-detail dd { margin: 0.125rem 0 0; color: var(--fg); overflow-wrap: anywhere; }
+  @media (max-width: 24rem) {
+    .dm-range-edit .dm-pa-bound { padding: 0.75rem; }
+    .dm-range-edit .dm-pa-bound-price,.dm-range-edit .dm-pa-bound-input { font-size: 1.125rem; }
+    .dm-range-edit .dm-pa-choice { padding-inline: 0.25rem; }
+  }
+}

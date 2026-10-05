@@ -1,0 +1,41 @@
+/*
+ * Domino V2 integration (2026-10-02): the few rules the integrated automation screens add on top of the app's own
+ * classes (styles/flow.css's action dialogs, automate.css's Set up automation steps, positions.css's cards). Imported
+ * only by the V2 chunks (src/v2in), so a build without Domino V2 carries none of it.
+ */
+
+/* A dialog's footer holds its button and, under the gate's preview, the locked sentence under it. */
+.dm-flow-dialog-foot.dm-v2in-foot { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+.dm-v2in-foot .dm-flow-reason { margin: 0; }
+
+/* Exact values in Details wrap anywhere: an address or a 160-bit integer never pushes the dialog wider. */
+.dm-v2in-facts { display: grid; gap: 0.25rem; overflow-wrap: anywhere; }
+.dm-v2in-facts .dm-acct-note { margin: 0; }
+
+/* The mandatory warnings of an exit order, as a plain list. */
+.dm-v2in-warnings { display: grid; gap: 0.375rem; margin: 0; padding-left: 1.25rem; list-style: disc; color: var(--fg); font-size: 0.875rem; line-height: 1.25rem; }
+
+/* "Your wallet will show this as …" under a trigger price. */
+[data-wallet-shows] { display: block; margin-top: 2px; overflow-wrap: anywhere; }
+
+/* Set up automation's three ways for a protection-only position: the cards wrap to a second row on narrow screens. */
+@media (min-width: 720px) {
+  .dm-acct-choices.dm-seq-modes.dm-v2in-modes3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* The vault's sequence (§5.5): root, then successors, each a small block: id, state, range, lots, its own offer. */
+.dm-v2in-sequence { display: grid; gap: 0.625rem; margin: 0; padding: 0; list-style: none; }
+.dm-v2in-sequence > li { display: grid; gap: 2px; min-width: 0; }
+.dm-v2in-member-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.625rem; min-width: 0; }
+.dm-v2in-member-head .dm-acct-status { margin-left: 0; }
+.dm-v2in-sequence .dm-acct-note { margin: 0; overflow-wrap: anywhere; }
+.dm-v2in-sequence [data-vault-child] { margin-top: 0.25rem; justify-self: start; }
+
+/* The page card's Advanced: the owner's two recoveries, closed until opened, and the typed fields of their dialogs. */
+.dm-v2in-advanced { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.dm-v2in-field { display: grid; gap: 0.25rem; }
+.dm-v2in-field .dm-hint { margin: 0; }
+
+/* Managed positions' vaults: a block of its own under V1's Performance in the card's body (never in its desc/plate areas). */
+.dm-v2in-vaults { display: grid; gap: 0.75rem; min-width: 0; }
+.dm-v2in-vaults > .dm-acct-note { margin: 0; }

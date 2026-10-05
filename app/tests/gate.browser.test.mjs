@@ -110,7 +110,48 @@ test('a visitor without the password sees only the access page', async () => {
   // login, admitted by the page's CSP by its hash; nothing else.
   assert.deepEqual([...raw.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((match) => match[1]), [GATE_SCRIPT], 'the access page ships its one script and no other');
   assert.doesNotMatch(raw, /fonts\.googleapis|fonts\.gstatic/, 'and loads nothing from Google (I5)');
+  // 2026-10-03 (the owner: Domino is becoming multi-chain): the page names no chain.
+  assert.doesNotMatch(await page.locator('body').innerText(), /robinhood|\bchains?\b/i);
   await closeContext(context);
+});
+
+// 2026-10-03 (the owner: the access page "lacks life"): its drawing plays on a first visit, a few loops on one timeline,
+// then rests; a wrong password brings back a still drawing and one shake of the field; under reduced motion nothing
+// moves at all. Nothing it does reaches another host, and the CSP refuses nothing of it.
+test('the access page moves a few times on a first visit, then rests, and never where reduced motion is asked', async () => {
+  const motion = async (page) =>
+    page.evaluate(() =>
+      document.getAnimations().map((animation) => {
+        const timing = animation.effect.getComputedTiming();
+        return { name: animation.animationName, iterations: timing.iterations, end: timing.endTime };
+      }),
+    );
+  const { context, page, log } = await visitor();
+  const requested = [];
+  page.on('request', (request) => { if (/^https?:/.test(request.url())) requested.push(new URL(request.url()).origin); });
+  await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
+  const first = await motion(page);
+  assert.ok(first.some((a) => a.name === 'g-run') && first.some((a) => a.name === 'g-tip-0') && first.some((a) => a.name === 'g-lit'), JSON.stringify(first));
+  for (const a of first) {
+    assert.ok(Number.isFinite(a.end) && a.iterations <= 3, `${a.name} runs ${a.iterations} times, ending at ${a.end} ms`);
+  }
+  const loops = first.filter((a) => /^g-(?:run|tip-\d|lit|lit-body|warm)$/.test(a.name));
+  assert.equal(new Set(loops.map((a) => a.end)).size, 1, 'every part of the loop ends together, on one timeline');
+  assert.deepEqual([...new Set(requested)], [origin], 'nothing from another host');
+  assert.deepEqual(log.errors.filter((e) => !/status of 401/.test(e)), [], 'no CSP refusal, no error');
+  // A wrong password: the drawing stands still; only the field's one shake plays.
+  await page.fill('#password', 'not-the-password');
+  leaving(page);
+  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.click('button[type="submit"]')]);
+  const wrong = await motion(page);
+  assert.ok(wrong.every((a) => a.name === 'g-shake'), JSON.stringify(wrong));
+  await closeContext(context);
+
+  const still = await browser.newContext({ viewport: { width: 1280, height: 860 }, reducedMotion: 'reduce' });
+  const quiet = await still.newPage();
+  await quiet.goto(`${origin}/`, { waitUntil: 'networkidle' });
+  assert.deepEqual(await motion(quiet), [], 'reduced motion: nothing moves');
+  await closeContext(still);
 });
 
 // 2026-10-01 (platform workstream, D3): the link a visitor opened is where the password takes them, not Home.
@@ -207,7 +248,8 @@ test('the right password opens the full app, which runs under the CSP without a 
 
   const text = await page.locator('#root').innerText();
   assert.ok(text.length > 500, `the app rendered only ${text.length} characters`);
-  assert.match(text, /Robinhood Chain/);
+  // Changed on purpose 2026-10-03 (the owner: Domino covers more than one network): Home's headline, not a chain's name.
+  assert.match(text, /Earn fees on your tokens/);
 
   const [cookie] = await context.cookies();
   assert.equal(cookie.name, '__Host-domino-beta');

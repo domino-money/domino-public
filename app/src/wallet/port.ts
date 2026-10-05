@@ -2,6 +2,7 @@ import { getAddress, numberToHex, type Address } from 'viem'
 import { injected, type Connector } from 'wagmi'
 import { connect, disconnect, getConnection, reconnect, signMessage, watchConnection } from 'wagmi/actions'
 import type { SignOutcome } from '../session/controller'
+import { V2_CHAIN_IDS } from '../config/chainIdentity'
 import { ROBINHOOD_CHAIN_ID, type WalletIdentity } from '../session/machine'
 import { ADD_ROBINHOOD_CHAIN } from './chain'
 import { walletConfig } from './config'
@@ -358,5 +359,75 @@ export async function switchToRobinhood(): Promise<SwitchOutcome> {
   if ((await chainNow(provider)) !== ROBINHOOD_CHAIN_ID) return 'error'
   // The wallet is on Robinhood Chain; the page may not have heard it say so.
   if (getConnection(walletConfig).chainId !== ROBINHOOD_CHAIN_ID) connector.onChainChanged(target)
+  return 'switched'
+}
+
+/**
+ * How a switch to one of Domino V2's chains ended (spec F7 §1.3): SwitchOutcome's words, and `unknown_chain` for a wallet
+ * that does not know Base or Arbitrum One. Said as "Add {chain} to your wallet, then try again." (v2SwitchNotice).
+ */
+export type ChainSwitchOutcome = SwitchOutcome | 'unknown_chain'
+
+/**
+ * "Add {chain} to your wallet, then try again." (spec §1.3, §2.12 wallet 4902) for Base and Arbitrum One; every other
+ * outcome in V1's own words (SWITCH_NOTICE), Robinhood Chain's add-network outcomes included.
+ */
+export const v2SwitchNotice = (outcome: Exclude<ChainSwitchOutcome, 'switched'>, chainName: string): string =>
+  outcome === 'unknown_chain' ? `Add ${chainName} to your wallet, then try again.` : SWITCH_NOTICE[outcome as Exclude<SwitchOutcome, 'switched'>]
+
+/**
+ * Asks the wallet to switch to one of Domino V2's chains (Changed on purpose 2026-10-02, Domino V2 spec F7 §1.3). Robinhood
+ * Chain is switchToRobinhood itself, unchanged, its add-network included. Base and Arbitrum One are only switched to,
+ * never added: a wallet that does not know them (4902, wrapped or not) is `unknown_chain`, and the person adds the network
+ * in the wallet (the spec's rule; this app hands a wallet no network details for them and reads neither chain itself).
+ * As for Robinhood, the chain is read again once after the wallet says it switched.
+ */
+export async function switchToChain(chainId: number): Promise<ChainSwitchOutcome> {
+  if (chainId === ROBINHOOD_CHAIN_ID) return switchToRobinhood()
+  if (!V2_CHAIN_IDS.includes(chainId)) return 'error'
+  const { connector } = getConnection(walletConfig)
+  const provider = (await connector?.getProvider().catch(() => undefined)) as Provider | undefined
+  if (!connector || !provider) return 'error'
+  const target = numberToHex(chainId)
+  try {
+    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: target }] })
+  } catch (error) {
+    const codes = codesOf(error)
+    if (codes.includes(UNRECOGNIZED_CHAIN)) return 'unknown_chain'
+    if (rejected(codes)) return 'user_rejected'
+    if (codes.includes(ALREADY_PENDING)) return 'pending'
+    return 'error'
+  }
+  if ((await chainNow(provider)) !== chainId) return 'error'
+  if (getConnection(walletConfig).chainId !== chainId) connector.onChainChanged(target)
+  return 'switched'
+}
+
+/**
+ * Asks the wallet to switch to a deposit's ORIGIN chain (Changed on purpose (data) 2026-10-02, Domino V2 spec F7 §1.3,
+ * §3.6 step 1): any EVM chain the crosschain-v1 origins listing names, not only V2's. A switch and nothing else: a network
+ * is never added here, not even Robinhood Chain (the guard forbids it, and this app holds no network details for an
+ * arbitrary chain). A wallet that does not know the chain (4902, wrapped or not) is `unknown_chain`, said as "Add {origin}
+ * to your wallet, then try again." (src/v2/crosschain/copy.ts ADD_ORIGIN). As switchToChain does, the chain is read again
+ * once after the wallet says it switched, and a wallet that did not switch is `error`. Additive: no other function here
+ * changed.
+ */
+export async function switchToOrigin(chainId: number): Promise<ChainSwitchOutcome> {
+  if (!Number.isSafeInteger(chainId) || chainId < 1) return 'error'
+  const { connector } = getConnection(walletConfig)
+  const provider = (await connector?.getProvider().catch(() => undefined)) as Provider | undefined
+  if (!connector || !provider) return 'error'
+  const target = numberToHex(chainId)
+  try {
+    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: target }] })
+  } catch (error) {
+    const codes = codesOf(error)
+    if (codes.includes(UNRECOGNIZED_CHAIN)) return 'unknown_chain'
+    if (rejected(codes)) return 'user_rejected'
+    if (codes.includes(ALREADY_PENDING)) return 'pending'
+    return 'error'
+  }
+  if ((await chainNow(provider)) !== chainId) return 'error'
+  if (getConnection(walletConfig).chainId !== chainId) connector.onChainChanged(target)
   return 'switched'
 }

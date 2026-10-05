@@ -21,21 +21,27 @@ export const CREATE = {
     edit: 'Edit',
     notChosen: '—',
     sourceLoading: 'Loading…',
+    progress: 'Build your position',
+    preview: 'Your position',
+    previewNote: 'Your choices appear here as you go.',
+    previewExample: 'Illustration of how a price range works',
+    previewTotal: 'Estimated total',
     stepState: { done: 'done', current: 'current', upcoming: 'not started' },
   },
   /** The four visual steps of the flow, over the five stages of the state machine. */
   step: {
     // Changed on purpose 2026-10-01 (audit E25): the step asks for a token, then one of its pools, not two tokens.
-    pool: { title: 'Pool', lead: 'Search a token, then pick one of its pools.' },
-    range: { title: 'Range', lead: 'You earn fees only while the price stays in this range.' },
+    pool: { title: 'Pool', lead: 'Search a token, then pick one of its pools.', caption: 'Choose your tokens' },
+    range: { title: 'Range', lead: 'You earn fees only while the price stays in this range.', caption: 'Set your price window' },
     // Changed on purpose 2026-10-01 (audit E13, live note L11): a range above or below today's price takes one token
     // alone, so "either token" is said only of a range around the price, and the one-token range has its own lead.
     amount: {
       title: 'Amount',
       lead: 'Enter an amount in either token; the other fills in.',
+      caption: 'Choose how much',
       leadOne: (symbol: string) => `This range takes only ${symbol}. Enter how much ${symbol} to put in.`,
     },
-    review: { title: 'Review', lead: 'Check your position, then confirm in your wallet.' },
+    review: { title: 'Review', lead: 'Check your position, then confirm in your wallet.', caption: 'Check and confirm' },
   },
   /** The state machine's stages: `short` labels the plain-text summary lines. */
   stage: {
@@ -74,6 +80,14 @@ export const CREATE = {
     keep: 'Keep this pool',
   },
   amount: {
+    entered: 'You enter',
+    paired: 'Paired automatically',
+    pairGuide: 'These two amounts make up your position. Change either one and the other follows your range.',
+    total: 'Estimated total in this position',
+    totalNote: 'Network fees are separate.',
+    totalOneNote: 'Network fees are separate.',
+    totalSwapNote: 'After the estimated swap. Network fees are separate.',
+    totalUnavailable: 'USD estimate unavailable',
     budgetHint: (decimals: number | null) => (decimals === null ? 'Decimals for this token could not be read.' : `Up to ${decimals} decimal places.`),
     empty: 'Enter an amount to continue.',
     format: 'Enter a number, like 100 or 0.5.',
@@ -91,8 +105,8 @@ export const CREATE = {
     now: 'Today’s price',
     widths: 'Range width',
     widthLines: {
-      standard: 'Earns more while the price stays near today’s.',
-      wide: 'Earns less, but keeps earning through bigger moves.',
+      standard: 'A smaller price window. The price can leave it sooner, so check it more often.',
+      wide: 'A larger price window gives the price more room to move. Fees are spread over a wider range.',
       custom: 'Set your own lowest and highest price.',
     },
     lowest: 'Lowest price',
@@ -231,6 +245,7 @@ export const CREATE = {
   },
   review: {
     choices: 'Your position',
+    total: 'Estimated position value',
     steps: 'In your wallet',
     stepsNote: 'Your wallet will ask you to confirm these, in order.',
     /**

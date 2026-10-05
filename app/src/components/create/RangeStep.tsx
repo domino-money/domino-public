@@ -268,7 +268,8 @@ export function RangeStep({
                 data-width={key}
                 onClick={() => pick(key)}
               >
-                {widthName(key)}
+                <span className="dm-flow-width-art" data-width-art={key} aria-hidden="true"><span /></span>
+                <span>{widthName(key)}</span>
               </button>
             ))}
           </div>

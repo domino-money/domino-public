@@ -7,9 +7,13 @@
 @import './home.css';     /* home: Home-only overrides */
 @import './markets.css';  /* markets: carousel, filter bar */
 @import './account.css';  /* foundation: pieces shared by the account screens (Home's feature pills use .dm-acct-status) */
+@import './refinement.css'; /* shared UI refresh, including the market comparison surface */
 /* The screens' own partials (pool, flow, positions, automate, account-screens, docs, three) follow these in
    screens.css, which each screen imports itself (2026-10-01, platform workstream, F8): Home's first paint waits for
    none of them. */
+/* Changed on purpose 2026-10-02 (Domino V2): the integrated V2 modules' class names are not scanned, so every deployable
+   build's CSS is byte for byte what it was; only a build with V2 on takes this line out (vite.config.ts v2ScreensCss). */
+@source not '../v2in';
 
 /* Domino design tokens, V2 (DESIGN-V2 §2). One palette, the dark one (owner, 2026-09-26: dark only): `:root`
    holds every colour, with nothing to switch between and no OS setting consulted. Tangerine (--primary,
@@ -21,10 +25,10 @@
 :root {
   color-scheme: dark;
 
-  /* How many times a decorative drawing's loop plays before it rests on its complete picture (2026-10-01, F6): the
-     hero, Home's three feature drawings, Automate's mode drawings and New position's preview. Spinners and busy bars
-     are not decoration: they keep moving while work goes on. Reduced motion and Pause motion still stop them all. */
-  --art-loops: 3;
+  /* Decorative drawings repeat while visible, with breathing room inside each timeline. Their shared observer
+     pauses offscreen and hidden-tab work; reduced motion keeps a complete still composition. The price demo
+     overrides this to one cycle per eligible phase, so a compound never runs independently of its price. */
+  --art-loops: infinite;
 
   /* Surfaces: page, plate, (control), control, control hover. Hue 22 to 30 degrees, visibly warm; lightness
      4 / 8 / 11 / 16 / 21 % */
@@ -116,21 +120,21 @@
   --elev-card-hover: inset 0 1px 0 0 var(--card-lip), inset 0 0 0 1px var(--border-card-hover);
   --elev-pill: inset 0 0 0 1px var(--border-card);
   --elev-field: inset 0 0 0 1px var(--border-lip);
-  --elev-primary-hover: 0 6px 20px -8px var(--primary-glow);
+  --elev-primary-hover: 0 0.375rem 1.25rem -0.5rem var(--primary-glow);
   --elev-button: 0 1px 2px rgb(0 0 0 / 0.35);
-  --elev-tooltip: 0 12px 28px -10px rgb(0 0 0 / 0.6), inset 0 0 0 1px var(--tooltip-border);
-  --elev-menu: inset 0 0 0 1px rgb(255 236 220 / 0.10), 0 16px 40px -10px rgb(0 0 0 / 0.65);
+  --elev-tooltip: 0 0.75rem 1.75rem -0.625rem rgb(0 0 0 / 0.6), inset 0 0 0 1px var(--tooltip-border);
+  --elev-menu: inset 0 0 0 1px rgb(255 236 220 / 0.10), 0 1rem 2.5rem -0.625rem rgb(0 0 0 / 0.65);
   /* The header's soft fall once something scrolls under it */
-  --elev-header: 0 8px 16px -12px rgb(0 0 0 / 0.6);
+  --elev-header: 0 0.5rem 1rem -0.75rem rgb(0 0 0 / 0.6);
 
   /* Shape: nested radii */
-  --radius-xs: 4px;      /* ticks, tiny bars */
-  --radius-sm: 8px;      /* nav items, menu items, step markers, fee-tier chips in tables and lists */
-  --radius-inner: 9px;
-  --radius: 12px;        /* md controls, fields, table band ends, rows, dropdowns, tooltips */
-  --radius-lg: 16px;     /* plates and panels inside cards, amount panels, xl buttons */
-  --radius-card: 20px;   /* cards, dialogs, market cards, feature cards, sheets (top corners) */
-  --radius-hero: 24px;   /* the Home hero plate only */
+  --radius-xs: 0.25rem;      /* ticks, tiny bars */
+  --radius-sm: 0.5rem;      /* nav items, menu items, step markers, fee-tier chips in tables and lists */
+  --radius-inner: 0.5625rem;
+  --radius: 0.75rem;        /* md controls, fields, table band ends, rows, dropdowns, tooltips */
+  --radius-lg: 1rem;     /* plates and panels inside cards, amount panels, xl buttons */
+  --radius-card: 1.25rem;   /* cards, dialogs, market cards, feature cards, sheets (top corners) */
+  --radius-hero: 1.5rem;   /* the Home hero plate only */
   --radius-pill: 9999px; /* pills, chips, segmented tracks and thumbs, delta pills, page dots */
 
   /* Focus ring geometry: outward on anything with clearance, inset on rows,
@@ -141,13 +145,13 @@
   /* Spacing: 4px base with half steps. Use Tailwind's own scale (p-1.5 = 6px, gap-6 = 24px) — it already matches, so there is no --space-* token to reach for. */
 
   /* Layout: one container. The page-width aliases stay for their callers and all resolve to 1200. */
-  --header-h: 72px;     /* 56px below 768px */
-  --ticker-h: 40px;
-  --gutter: 16px;       /* 24px from 768px, 40px from 1024px */
-  --content: 1200px;
-  --content-pool: 1200px;
-  --content-flow: 1200px;
-  --content-narrow: 1200px;
+  --header-h: 4.5rem;     /* 56px below 768px */
+  --ticker-h: 2.5rem;
+  --gutter: 1rem;       /* 24px from 768px, 40px from 1024px */
+  --content: 75rem;
+  --content-pool: 75rem;
+  --content-flow: 75rem;
+  --content-narrow: 75rem;
 
   /* Type families: unchanged */
   --font-display: 'Instrument Serif', 'Instrument Serif Fallback', ui-serif, Georgia, 'Times New Roman', serif;
@@ -191,9 +195,9 @@
   --backdrop: rgb(0 0 0 / 0.6);
 }
 
-@media (min-width: 768px) { :root { --gutter: 24px; } }
-@media (min-width: 1024px) { :root { --gutter: 40px; } }
-@media (max-width: 767px) { :root { --header-h: 56px; } }
+@media (min-width: 768px) { :root { --gutter: 1.5rem; } }
+@media (min-width: 1024px) { :root { --gutter: 2.5rem; } }
+@media (max-width: 767px) { :root { --header-h: 3.5rem; } }
 
 /* The spinner's angle, registered so it animates as a number rather than a transform (DESIGN-V2 §3.18). */
 @property --dm-spin {
@@ -274,23 +278,23 @@
   /* Type scale: text-chip, text-caption, text-meta, text-body, text-lead, text-section, text-stat,
      text-amount (Geist) and text-hero, text-h1, text-title, text-card, text-rail (Instrument Serif sizes).
      Kept for old callers; V2 uses the .dm-display-*, .dm-title, .dm-fig-* classes (shell.css). */
-  --text-chip: 11px;     --text-chip--line-height: 14px;    --text-chip--letter-spacing: -0.1px;
-  --text-caption: 12px;  --text-caption--line-height: 16px; --text-caption--letter-spacing: -0.12px;
-  --text-meta: 13px;     --text-meta--line-height: 18px;    --text-meta--letter-spacing: -0.16px;
-  --text-body: 14px;     --text-body--line-height: 20px;    --text-body--letter-spacing: -0.2px;
-  --text-lead: 16px;     --text-lead--line-height: 24px;    --text-lead--letter-spacing: -0.24px;
-  --text-section: 20px;  --text-section--line-height: 26px; --text-section--letter-spacing: -0.3px;
-  --text-stat: 24px;     --text-stat--line-height: 28px;    --text-stat--letter-spacing: -0.4px;
+  --text-chip: 0.6875rem;     --text-chip--line-height: 0.875rem;    --text-chip--letter-spacing: -0.1px;
+  --text-caption: 0.75rem;  --text-caption--line-height: 1rem; --text-caption--letter-spacing: -0.12px;
+  --text-meta: 0.8125rem;     --text-meta--line-height: 1.125rem;    --text-meta--letter-spacing: -0.16px;
+  --text-body: 0.875rem;     --text-body--line-height: 1.25rem;    --text-body--letter-spacing: -0.2px;
+  --text-lead: 1rem;     --text-lead--line-height: 1.5rem;    --text-lead--letter-spacing: -0.24px;
+  --text-section: 1.25rem;  --text-section--line-height: 1.625rem; --text-section--letter-spacing: -0.3px;
+  --text-stat: 1.5rem;     --text-stat--line-height: 1.75rem;    --text-stat--letter-spacing: -0.4px;
   /* The figure sizes the Stat primitive steps between on a phone and a laptop; both keep the
      -0.4px the 24px step carries, so the three sizes read as one figure at three widths. */
-  --text-stat-sm: 20px;  --text-stat-sm--line-height: 24px; --text-stat-sm--letter-spacing: -0.4px;
-  --text-stat-lg: 30px;  --text-stat-lg--line-height: 34px; --text-stat-lg--letter-spacing: -0.4px;
-  --text-amount: 36px;   --text-amount--line-height: 40px;  --text-amount--letter-spacing: -0.6px;
-  --text-hero: 56px;     --text-hero--line-height: 60px;    --text-hero--letter-spacing: -0.6px;
-  --text-h1: 44px;       --text-h1--line-height: 48px;      --text-h1--letter-spacing: -0.4px;
-  --text-title: 34px;    --text-title--line-height: 38px;   --text-title--letter-spacing: -0.2px;
-  --text-card: 28px;     --text-card--line-height: 32px;    --text-card--letter-spacing: 0px;
-  --text-rail: 24px;     --text-rail--line-height: 28px;    --text-rail--letter-spacing: 0px;
+  --text-stat-sm: 1.25rem;  --text-stat-sm--line-height: 1.5rem; --text-stat-sm--letter-spacing: -0.4px;
+  --text-stat-lg: 1.875rem;  --text-stat-lg--line-height: 2.125rem; --text-stat-lg--letter-spacing: -0.4px;
+  --text-amount: 2.25rem;   --text-amount--line-height: 2.5rem;  --text-amount--letter-spacing: -0.6px;
+  --text-hero: 3.5rem;     --text-hero--line-height: 3.75rem;    --text-hero--letter-spacing: -0.6px;
+  --text-h1: 2.75rem;       --text-h1--line-height: 3rem;      --text-h1--letter-spacing: -0.4px;
+  --text-title: 2.125rem;    --text-title--line-height: 2.375rem;   --text-title--letter-spacing: -0.2px;
+  --text-card: 1.75rem;     --text-card--line-height: 2rem;    --text-card--letter-spacing: 0px;
+  --text-rail: 1.5rem;     --text-rail--line-height: 1.75rem;    --text-rail--letter-spacing: 0px;
 
   /* animate-rise staggers through --delay set on the element (multiples of --stagger). Entrances fill
      backwards only: once they end nothing keeps a transform (it would become the containing block of
@@ -313,16 +317,30 @@
     /* A control the keyboard moves to is scrolled into view below the sticky header, never under it (audit E12,
        2026-10-01: a pool page's Estimate your earnings field hid there). Section links scroll by script
        (lib/sectionScroll.ts), which this does not move. */
-    scroll-padding-top: calc(var(--header-h) + 12px);
+    scroll-padding-top: calc(var(--header-h) + 0.75rem);
+  }
+
+  /* Changed on purpose 2026-10-03 (the owner: the site looks too big at 100%; at 80% it looks right): every length is
+     written in rem, 16 design px to the rem (scripts/rem-codemod.mjs), so the root's font-size is the whole page's
+     scale. A laptop or a desktop draws the design at 0.8 (12.8 px to the rem: at 100 % zoom it looks as it did at 80 %),
+     a tablet at 0.9 (14.4 px); a phone keeps the browser's own size, 16 px, so it looks as it did. Media queries still
+     measure CSS pixels, so every breakpoint is where it was. Sizes written in script follow the same steps through
+     lib/rootScale.ts (ROOT_SCALE_QUERIES). The 0.8 step asks for a fine pointer (a mouse or a trackpad): a touch tablet
+     held wide, an iPad in landscape, keeps 0.9, so its targets stay large enough for a finger. */
+  @media (min-width: 768px) {
+    html { font-size: 14.4px; }
+  }
+  @media (min-width: 1024px) and (pointer: fine) {
+    html { font-size: 12.8px; }
   }
 
   /* The page ground: the warm light over the header is part of the body's own background, so nothing overflows. */
   body {
-    background: radial-gradient(1100px 520px at 50% -160px, var(--page-glow), transparent 70%) no-repeat, var(--bg);
+    background: radial-gradient(68.75rem 32.5rem at 50% -10rem, var(--page-glow), transparent 70%) no-repeat, var(--bg);
     color: var(--fg);
     font-family: var(--font-sans);
-    font-size: 14px;
-    line-height: 20px;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
     letter-spacing: -0.2px;
     margin: 0;
     -webkit-font-smoothing: antialiased;
@@ -344,7 +362,7 @@
   }
 
   section[id] {
-    scroll-margin-top: calc(var(--header-h) + 16px);
+    scroll-margin-top: calc(var(--header-h) + 1rem);
   }
 
   /* Seamless marquee: the track holds two copies of the same list. */
@@ -382,8 +400,8 @@
     border-width: 0;
   }
 
-  /* Stilled motion: under prefers-reduced-motion, and while the footer's "Pause motion" control puts
-     dm-still on <html>. Important declarations in this layer outrank every later layer. Resting states are
+  /* Stilled motion: under prefers-reduced-motion, or when dm-still is applied to <html>.
+     Important declarations in this layer outrank every later layer. Resting states are
      the real states: skeletons flat, spinners a static arc, art complete. */
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -452,7 +470,7 @@
    paint at opacity 0 as contentful, so with 0 it dated the page's largest paint (LCP) at the end of the fade, about
    300 ms after the heading was drawn. */
 @keyframes dm-rise {
-  from { opacity: 0.01; translate: 0 8px; }
+  from { opacity: 0.01; translate: 0 0.5rem; }
   to { opacity: 1; translate: 0 0; }
 }
 
@@ -466,15 +484,15 @@
 }
 
 @keyframes dm-pop {
-  from { opacity: 0; scale: 0.97; translate: 0 -4px; }
+  from { opacity: 0; scale: 0.97; translate: 0 -0.25rem; }
 }
 
 @keyframes dm-sheet {
-  from { opacity: 0; translate: 0 12px; }
+  from { opacity: 0; translate: 0 0.75rem; }
 }
 
 @keyframes dm-dialog-in {
-  from { opacity: 0; translate: 0 8px; scale: 0.98; }
+  from { opacity: 0; translate: 0 0.5rem; scale: 0.98; }
 }
 
 @keyframes dm-sheet-up {
@@ -482,7 +500,7 @@
 }
 
 @keyframes dm-step-in {
-  from { opacity: 0; translate: 0 6px; }
+  from { opacity: 0; translate: 0 0.375rem; }
 }
 
 @keyframes dm-tick {

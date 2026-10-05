@@ -69,6 +69,8 @@ const DISABLED = {
     READ_V3_BRIDGE_ENABLED: 'false',
     READ_V4_BRIDGE_ENABLED: 'false',
     READ_V5_BRIDGE_ENABLED: 'false',
+    // 2026-10-02 (Domino V2, read-v6): bridge/wrangler.read.toml's pair, off.
+    READ_V6_BRIDGE_ENABLED: 'false',
     APP_ORIGIN: 'https://domino.money',
     GATEWAY_ORIGIN: 'https://vm-read.domino.money',
     ENABLED_READS: '',
@@ -76,6 +78,7 @@ const DISABLED = {
     ENABLED_V3_READS: '',
     ENABLED_V4_READS: '',
     ENABLED_V5_READS: '',
+    ENABLED_V6_READS: '',
   },
   session: {
     SESSION_BRIDGE_ENABLED: 'false',
@@ -127,6 +130,8 @@ const FAMILY = {
   },
 };
 const FAMILIES = ['read', 'session', 'onboarding', 'deposit', 'performance', 'execution', 'setup'];
+/** 2026-10-04 (the owner: the site runs on Domino V2): S1's plan Worker, bound in production beside the seven, deployed off. */
+const PLAN_SERVICE = { binding: 'POSITION_PLAN_BRIDGE', service: 'domino-position-plan-bridge' };
 
 /** A well-formed browser call per family, on a route each Worker really has. */
 const ROUTE = {
@@ -382,19 +387,21 @@ test('the preview alias is one exact HTTPS origin and an exact opt-in', async ()
 test('preview capabilities in every public read version reach the real Worker without a fabricated Origin', async () => {
   const { env, calls } = workers();
   env.PREVIEW_PUBLIC_READS = 'true';
-  for (const version of [1, 2, 3, 4, 5]) {
+  // Changed on purpose 2026-10-02 (Domino V2): and read-v6, which names its three chains instead of one.
+  for (const version of [1, 2, 3, 4, 5, 6]) {
     const path = `/api/read/v${version}/capabilities`;
     const response = await pages(call(path, { origin: PREVIEW }), env);
     assert.equal(response.status, 200, path);
     assert.ok(response.headers.get('x-domino-read-contract'), path);
     const body = await response.json();
     assert.equal(body.dataMode, 'disabled');
-    assert.equal(body.chainId, 4663);
+    if (version === 6) assert.deepEqual(body.chainIds, [4663, 8453, 42161]);
+    else assert.equal(body.chainId, 4663);
     assert.deepEqual(body.enabledReads, []);
     assert.equal(body.walletAuthentication, false);
     assert.equal(body.ownerTransactions, false);
   }
-  assert.deepEqual(calls, [1, 2, 3, 4, 5].map(version => `read GET ${ORIGIN}/api/read/v${version}/capabilities`));
+  assert.deepEqual(calls, [1, 2, 3, 4, 5, 6].map(version => `read GET ${ORIGIN}/api/read/v${version}/capabilities`));
   assert.deepEqual(upstream, []);
 });
 
@@ -402,6 +409,8 @@ test('preview public POSTs preserve method, bytes, query and contract while tran
   const paths = [
     '/api/read/v1/pools', '/api/read/v2/pool-market', '/api/read/v3/overview',
     '/api/read/v4/sequence-snapshot', '/api/read/v5/featured-pools',
+    // 2026-10-02 (Domino V2): read-v6's two routes, public reads like the others.
+    '/api/read/v6/portfolio', '/api/read/v6/activity',
   ];
   for (const path of paths) {
     const { binding, calls } = recorder();
@@ -445,10 +454,15 @@ test('enabled preview keeps every private family shut even if every binding is a
     const { path, body } = ROUTE[family];
     await refused(await pages(call(path, { method: 'POST', body, origin: PREVIEW }), env), 404, 'not_found');
   }
-  for (const path of ['/api/session/v1/me', '/api/other/v1/x', '/api/read/v6/capabilities', '/api/read/v1//capabilities']) {
-    await refused(await pages(call(path, { origin: PREVIEW }), env), 404, 'not_found');
+  // Changed on purpose 2026-10-02 (Domino V2): read-v6 is a public read now, so a version no family owns is read-v7;
+  // and S1's plans, a private family, stay shut too. Changed on purpose 2026-10-02 (S2 wired): and S2's deposits.
+  const plan = recorder();
+  for (const path of ['/api/session/v1/me', '/api/other/v1/x', '/api/read/v7/capabilities', '/api/read/v1//capabilities',
+    '/api/position-plan/v1/plan', '/api/position-plan/v1/capabilities', '/api/crosschain/v1/quote', '/api/crosschain/v1/capabilities']) {
+    await refused(await pages(call(path, { origin: PREVIEW }), { ...env, POSITION_PLAN_BRIDGE: plan.binding, CROSSCHAIN_BRIDGE: plan.binding }), 404, 'not_found');
   }
   assert.equal(calls(), 0);
+  assert.equal(plan.calls.length, 0);
 });
 
 test('preview opt-in never admits other pages.dev, hash, lookalike, insecure or port-bearing origins', async () => {
@@ -594,6 +608,11 @@ test('each family goes to its own binding and to no other', async () => {
   await pages(call('/api/read/v5/featured-pools', { method: 'POST', body: '{}' }), env);
   await pages(call('/api/read/v5/capabilities'), env);
   assert.equal(bound.read.calls.length, 6, 'V5 goes to the same read binding');
+  // 2026-10-02 (Domino V2): read-v6, Domino V2's wallet reads, too.
+  await pages(call('/api/read/v6/portfolio', { method: 'POST', body: '{}' }), env);
+  await pages(call('/api/read/v6/activity', { method: 'POST', body: '{}' }), env);
+  await pages(call('/api/read/v6/capabilities'), env);
+  assert.equal(bound.read.calls.length, 9, 'V6 goes to the same read binding');
   for (const other of FAMILIES.filter((family) => family !== 'read')) assert.equal(bound[other].calls.length, 0, other);
 });
 
@@ -622,7 +641,9 @@ test('an /api path no family owns gets a JSON 404 from the forwarder, never inde
     '/api/x',
     '/api/read',
     '/api/read/v1',
-    '/api/read/v6/capabilities',
+    // Changed on purpose 2026-10-02 (Domino V2): read-v6 has a family now; read-v7 has none.
+    '/api/read/v7/capabilities',
+    '/api/read/v6',
     '/api/read/v5',
     '/api/read//v5/featured-pools',
     '/api/read/v5//featured-pools',
@@ -649,6 +670,12 @@ test('an /api path no family owns gets a JSON 404 from the forwarder, never inde
     '/api/onboarding/v1//position-preview',
     '/api/deposit//v1/create',
     '/api/deposit/v1//create',
+    // 2026-10-02 (Domino V2): the V2 families' prefixes, cut short or with an empty segment.
+    '/api/position-plan/v1',
+    '/api/position-plan/v1//plan',
+    '/api/read/v6//portfolio',
+    '/api/crosschain/v1',
+    '/api/crosschain/v1//quote',
   ];
   for (const path of paths) {
     await refused(await pages(call(path), env), 404, 'not_found');
@@ -1191,8 +1218,10 @@ test('wrangler.toml: preview gets its public-read opt-in, its setup release and 
   // Service bindings: one table per family, each naming a binding and a
   // Worker and nothing else (no entrypoint, no environment).
   const services = tables.filter(({ header }) => header === '[[env.production.services]]');
-  assert.equal(services.length, FAMILIES.length);
+  // Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2): and S1's plan Worker (PLAN_SERVICE), deployed off.
+  assert.equal(services.length, FAMILIES.length + 1);
   for (const { keys } of services) assert.deepEqual(Object.keys(keys).sort(), ['binding', 'service']);
+  assert.deepEqual(services.at(-1).keys, { binding: `"${PLAN_SERVICE.binding}"`, service: `"${PLAN_SERVICE.service}"` });
   // Changed on purpose 2026-10-01 (platform workstream, H7): and the setup release, public deployment identities, named
   // in PREVIEW_FAMILIES and bound to production's own setup Worker (reached like the reads, translated).
   // Changed on purpose 2026-10-01 (the chain2 workstream, part B): and CHAIN2_PREVIEW, the middleware's own setting that
@@ -1282,9 +1311,10 @@ test('wrangler 4.130.0 reads seven production Workers, and for preview only the 
   assert.equal(read.production.targetEnvironment, 'production');
   // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): and the simulate route's switch, in both environments.
   assert.deepEqual(read.production.vars, { CANONICAL_HOSTS_ONLY: 'true', LOCAL_RPC_SIMULATE: 'true' });
+  // Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2): and S1's plan Worker, last.
   assert.deepEqual(
     read.production.services,
-    FAMILIES.map((family) => ({ binding: FAMILY[family].binding, service: FAMILY[family].service })),
+    [...FAMILIES.map((family) => ({ binding: FAMILY[family].binding, service: FAMILY[family].service })), PLAN_SERVICE],
   );
   assert.equal(read.preview.targetEnvironment, 'preview');
   // Changed on purpose 2026-10-01 (the chain2 workstream, part B): and CHAIN2_PREVIEW, for the preview alone.
@@ -1304,7 +1334,10 @@ test("the binding names forward() looks up are exactly the names wrangler.toml b
     assert.equal(bound[names[0]], FAMILY[family].service, `${family} → ${String(names[0])} → a Worker`);
     looked.push(names[0]);
   }
-  assert.deepEqual(looked.sort(), Object.keys(bound).sort());
+  // Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2): S1's plans look their own binding up too (their
+  // tests below), bound to the plan Worker.
+  assert.equal(bound[PLAN_SERVICE.binding], PLAN_SERVICE.service);
+  assert.deepEqual(looked.sort(), Object.keys(bound).filter((name) => name !== PLAN_SERVICE.binding).sort());
 });
 
 test('both deploys target the Pages project wrangler.toml names, domino-app, and no doc calls domino-app-e65 anything but its pages.dev hostname', async () => {
@@ -1356,6 +1389,16 @@ function deployed(environment) {
   const calls = [];
   const env = { ...GATE, ...vars };
   for (const { binding, service } of services) {
+    // 2026-10-04 (the owner: the site runs on Domino V2): S1's plan Worker, under its reviewed disabled config.
+    if (service === PLAN_SERVICE.service) {
+      env[binding] = {
+        fetch(request) {
+          calls.push(`${service} ${request.method} ${request.url}`);
+          return PLAN_WORKER.fetch(request, PLAN_DISABLED);
+        },
+      };
+      continue;
+    }
     const family = FAMILIES.find((name) => FAMILY[name].service === service);
     assert.ok(family, `${binding} names ${service}, which is no bridge Worker`);
     env[binding] = {
@@ -1834,4 +1877,356 @@ test('preview private families go on exactly as the browser sent them, with thei
   const refusedByWorker = await pages(call(ROUTE.session.path, { method: 'POST', body: '{}', origin: PREVIEW, cookie: JAR, headers: { 'X-Domino-CSRF': CSRF } }), env);
   assert.ok([403, 404].includes(refusedByWorker.status), String(refusedByWorker.status));
   assert.equal(refusedByWorker.headers.get(FAMILY.session.contract), RUNTIME.session.CONTRACT_VERSION, 'the Worker’s own refusal');
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-02 (Domino V2, spec F7 §2.4 and §6.2): the two V2 families. read-v6 is a public read through the read
+// Worker; S1's plans are a private family declared ahead of their Worker (domino-position-plan-bridge), which
+// wrangler.toml does not bind yet: until it does, their paths answer exactly as before (404 not_found), and the app
+// reads a 404 as "off". Both Workers are the real ones from bridge/src, under their reviewed disabled configs, with the
+// tripwire as their upstream transport; the enabled ones exist only here, in memory, with placeholder credentials, and
+// each is refused before any upstream call.
+// ---------------------------------------------------------------------------
+
+const PLAN_WORKER = (await import('../../bridge/src/position-plan-worker.mjs')).default;
+const PLAN_RUNTIME = await import('../../api-contracts/position-plan-v1/runtime.mjs');
+const V6_RUNTIME = await import('../../api-contracts/read-v6/runtime.mjs');
+const { PREVIEW_FAMILY_NAMES } = require('../.test-build/app/functions/_lib/bridge.js');
+/** bridge/wrangler.position-plan.toml's [vars], as committed. */
+const PLAN_DISABLED = { POSITION_PLAN_BRIDGE_ENABLED: 'false', APP_ORIGIN: ORIGIN, POSITION_PLAN_GATEWAY_ORIGIN: 'https://vm-position-plan.domino.money' };
+const PLAN_ENABLED = { ...PLAN_DISABLED, POSITION_PLAN_BRIDGE_ENABLED: 'true',
+  POSITION_PLAN_ACCESS_CLIENT_ID: 'placeholder-plan-id', POSITION_PLAN_ACCESS_CLIENT_SECRET: 'placeholder-plan-secret' };
+const PLAN_PATH = '/api/position-plan/v1/plan';
+const PLAN_CAPABILITIES = '/api/position-plan/v1/capabilities';
+const PLAN_HEADER = 'x-domino-position-plan-contract';
+const V6_WALLET = `0x${'b1'.repeat(20)}`;
+const planBinding = (settings) => ({ fetch: (request) => PLAN_WORKER.fetch(request, settings) });
+
+test('read-v6 through the whole chain: the real read Worker, disabled, says so on both routes and calls nothing upstream', async () => {
+  const { env, calls } = workers();
+  const capability = await pages(call('/api/read/v6/capabilities'), env);
+  assert.equal(capability.status, 200);
+  assert.equal(capability.headers.get('x-domino-read-contract'), V6_RUNTIME.CONTRACT_VERSION);
+  assert.equal(capability.headers.get('cache-control'), 'no-store', 'a public read');
+  assert.deepEqual(await capability.json(), {
+    contractVersion: V6_RUNTIME.CONTRACT_VERSION, dataMode: 'disabled', chainIds: [4663, 8453, 42161], enabledReads: [],
+    walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false,
+  });
+  for (const route of ['portfolio', 'activity']) {
+    const response = await pages(call(`/api/read/v6/${route}`, { method: 'POST', body: JSON.stringify({ wallet: V6_WALLET }) }), env);
+    assert.equal(response.status, 404, route);
+    assert.equal(response.headers.get('x-domino-read-contract'), V6_RUNTIME.CONTRACT_VERSION, route);
+    assert.deepEqual(await response.json(), { error: 'route_not_available' }, route);
+  }
+  assert.deepEqual(calls, [
+    `read GET ${ORIGIN}/api/read/v6/capabilities`,
+    `read POST ${ORIGIN}/api/read/v6/portfolio`,
+    `read POST ${ORIGIN}/api/read/v6/activity`,
+  ]);
+  assert.equal(served, 0);
+  assert.deepEqual(upstream, []);
+});
+
+test('read-v6 is a public read: no cookie and no CSRF of any kind reach the read Worker', async () => {
+  const { binding, calls } = recorder();
+  const env = { ...GATE, READ_BRIDGE: binding };
+  const response = await pages(call('/api/read/v6/portfolio', { method: 'POST', body: JSON.stringify({ wallet: V6_WALLET }),
+    cookie: JAR, headers: { 'X-Domino-CSRF': CSRF, 'X-Domino-Read-Contract': V6_RUNTIME.CONTRACT_VERSION } }), env);
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].headers.cookie, undefined);
+  assert.equal(calls[0].headers['x-domino-csrf'], undefined);
+  assert.equal(calls[0].headers['x-domino-read-contract'], V6_RUNTIME.CONTRACT_VERSION);
+  assert.equal(new TextDecoder().decode(calls[0].body), JSON.stringify({ wallet: V6_WALLET }));
+});
+
+test('read-v6 switched on, in memory: the capabilities say live, and a request the package refuses never goes upstream', async () => {
+  const enabled = { ...DISABLED.read, READ_V6_BRIDGE_ENABLED: 'true', ENABLED_V6_READS: 'portfolio,activity',
+    ACCESS_CLIENT_ID: 'placeholder-id', ACCESS_CLIENT_SECRET: 'placeholder-secret' };
+  const env = { ...GATE, READ_BRIDGE: { fetch: (request) => WORKERS.read.fetch(request, enabled) } };
+  const capability = await pages(call('/api/read/v6/capabilities'), env);
+  const body = await capability.json();
+  assert.equal(body.dataMode, 'live_read_only');
+  assert.deepEqual(body.enabledReads, ['portfolio', 'activity']);
+  for (const sent of [{ wallet: V6_WALLET.toUpperCase().replace('0X', '0x') }, { wallet: V6_WALLET, chainId: 4663 }]) {
+    const response = await pages(call('/api/read/v6/portfolio', { method: 'POST', body: JSON.stringify(sent) }), env);
+    assert.equal(response.status, 422);
+    assert.deepEqual(await response.json(), { error: 'invalid_request' });
+  }
+  // read-v1 to read-v5 are untouched by it: still off.
+  assert.equal((await (await pages(call('/api/read/v5/capabilities'), env)).json()).dataMode, 'disabled');
+  assert.deepEqual(upstream, []);
+});
+
+// Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2): production binds S1's plan Worker, deployed off;
+// it answered 404 not_found while no Worker was bound.
+test('S1 plans: production as wrangler.toml binds it reaches the plan Worker, off: route_not_available and capabilities "disabled", nothing upstream', async () => {
+  const { env, calls } = deployed('production');
+  assert.equal(typeof env.POSITION_PLAN_BRIDGE?.fetch, 'function', 'wrangler.toml binds the plan Worker');
+  const plan = await pages(call(PLAN_PATH, { method: 'POST', body: '{}', cookie: `${BETA}; ${SESSION}`, headers: { 'X-Domino-CSRF': CSRF } }), env);
+  assert.equal(plan.status, 404);
+  assert.equal(plan.headers.get(PLAN_HEADER), PLAN_RUNTIME.CONTRACT_VERSION, 'the Worker\'s own answer');
+  assert.deepEqual(await plan.json(), { error: 'route_not_available' });
+  const capability = await pages(call(PLAN_CAPABILITIES), env);
+  assert.equal(capability.status, 200);
+  assert.deepEqual(await capability.json(), { contractVersion: PLAN_RUNTIME.CONTRACT_VERSION, dataMode: 'disabled', enabledRoutes: [] });
+  // A Worker's own request never reaches it: the forwarder refuses it first.
+  await refused(await pages(call(PLAN_PATH, { method: 'POST', body: '{}', headers: { 'CF-Worker': 'x.example' } }), env), 403, 'worker_subrequest_refused');
+  assert.deepEqual(calls, [
+    `${PLAN_SERVICE.service} POST https://domino.money${PLAN_PATH}`,
+    `${PLAN_SERVICE.service} GET https://domino.money${PLAN_CAPABILITIES}`,
+  ]);
+  assert.equal(served, 0);
+  assert.deepEqual(upstream, []);
+});
+
+test('S1 plans: anything under their binding\'s name that is not a service binding is 503 bridge_unavailable', async () => {
+  for (const value of ['domino-position-plan-bridge', {}, null, 0, { fetch: 'no' }]) {
+    await refused(await pages(call(PLAN_PATH, { method: 'POST', body: '{}', headers: { 'X-Domino-CSRF': CSRF } }), { ...GATE, POSITION_PLAN_BRIDGE: value }), 503, 'bridge_unavailable');
+  }
+});
+
+test('S1 plans, bound: to their own binding alone, with their contract, the CSRF header and the session cookie only', async () => {
+  const others = recorders();
+  const { binding, calls } = recorder();
+  const env = { ...others.env, POSITION_PLAN_BRIDGE: binding };
+  const body = '{ "chainId": 8453 }\n';
+  const response = await pages(call(PLAN_PATH, { method: 'POST', body, cookie: JAR, headers: {
+    'X-Domino-CSRF': CSRF, 'X-Domino-Position-Plan-Contract': PLAN_RUNTIME.CONTRACT_VERSION,
+    'X-Domino-Read-Contract': 'read-version', 'X-Domino-Onboarding-Contract': 'onboarding-version', Authorization: 'Bearer secret',
+    'X-Domino-Session': 'forged', 'X-Forwarded-For': '192.0.2.1',
+  } }), env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store, no-transform', 'a private family\'s answer');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, 'POST');
+  assert.equal(calls[0].url, `${ORIGIN}${PLAN_PATH}`);
+  assert.equal(new TextDecoder().decode(calls[0].body), body);
+  assert.equal(calls[0].headers.cookie, SESSION, 'the session cookie only: never the beta, preauth or any other cookie');
+  assert.equal(calls[0].headers['x-domino-csrf'], CSRF);
+  assert.equal(calls[0].headers[PLAN_HEADER], PLAN_RUNTIME.CONTRACT_VERSION);
+  assert.equal(calls[0].headers.origin, ORIGIN);
+  assert.equal(calls[0].headers['cf-connecting-ip'], '203.0.113.9');
+  for (const name of ['x-domino-read-contract', 'x-domino-onboarding-contract', 'authorization', 'x-domino-session', 'x-forwarded-for']) {
+    assert.equal(calls[0].headers[name], undefined, name);
+  }
+  assert.equal((await pages(call(PLAN_CAPABILITIES), env)).status, 200);
+  assert.equal(calls.length, 2, 'the capabilities GET goes to the same Worker');
+  assert.equal(others.calls(), 0, 'no other family\'s binding is asked');
+});
+
+test('S1 plans through the real Worker, disabled: route_not_available and capabilities "disabled", nothing upstream', async () => {
+  const env = { ...GATE, POSITION_PLAN_BRIDGE: planBinding(PLAN_DISABLED) };
+  const plan = await pages(call(PLAN_PATH, { method: 'POST', body: '{}', cookie: `${BETA}; ${SESSION}`, headers: { 'X-Domino-CSRF': CSRF } }), env);
+  assert.equal(plan.status, 404);
+  assert.equal(plan.headers.get(PLAN_HEADER), PLAN_RUNTIME.CONTRACT_VERSION, 'the Worker\'s own answer');
+  assert.deepEqual(await plan.json(), { error: 'route_not_available' });
+  const capability = await pages(call(PLAN_CAPABILITIES), env);
+  assert.equal(capability.status, 200);
+  assert.equal(capability.headers.get(PLAN_HEADER), PLAN_RUNTIME.CONTRACT_VERSION);
+  assert.deepEqual(await capability.json(), { contractVersion: PLAN_RUNTIME.CONTRACT_VERSION, dataMode: 'disabled', enabledRoutes: [] });
+  // Its own browser checks run on what the forwarder forwarded.
+  const cross = await pages(call(PLAN_PATH, { method: 'POST', body: '{}', headers: { 'Sec-Fetch-Site': 'cross-site', 'X-Domino-CSRF': CSRF } }), env);
+  assert.equal(cross.status, 403);
+  assert.deepEqual(await cross.json(), { error: 'origin_not_allowed' });
+  assert.deepEqual(upstream, []);
+});
+
+test('S1 plans through the real Worker switched on, in memory: live, and no session, CSRF or valid request goes upstream', async () => {
+  const env = { ...GATE, POSITION_PLAN_BRIDGE: planBinding(PLAN_ENABLED) };
+  const capability = await pages(call(PLAN_CAPABILITIES), env);
+  assert.deepEqual(await capability.json(), { contractVersion: PLAN_RUNTIME.CONTRACT_VERSION, dataMode: 'live', enabledRoutes: ['plan'] });
+  for (const [options, status, error] of [
+    [{ cookie: BETA, headers: { 'X-Domino-CSRF': CSRF } }, 401, 'session_required'],
+    [{ cookie: `${BETA}; ${PREAUTH}`, headers: { 'X-Domino-CSRF': CSRF } }, 401, 'session_required'],
+    [{ cookie: `${BETA}; ${SESSION}` }, 403, 'csrf_invalid'],
+    [{ cookie: `${BETA}; ${SESSION}`, headers: { 'X-Domino-CSRF': CSRF } }, 400, 'invalid_request'],
+  ]) {
+    const response = await pages(call(PLAN_PATH, { method: 'POST', body: '{}', ...options }), env);
+    assert.equal(response.status, status, error);
+    assert.equal(response.headers.get(PLAN_HEADER), PLAN_RUNTIME.CONTRACT_VERSION, error);
+    assert.deepEqual(await response.json(), { error }, error);
+  }
+  assert.deepEqual(upstream, []);
+});
+
+test('S1 plans on the preview alias: shut unless PREVIEW_FAMILIES names position-plan and a binding exists; never translated', async () => {
+  assert.ok(PREVIEW_FAMILY_NAMES.includes('position-plan'));
+  assert.ok(!PREVIEW_FAMILY_NAMES.includes('read'));
+  const { binding, calls } = recorder();
+  for (const families of [undefined, '', 'session', 'position_plan', 'Position-plan', 'plan', 'onboarding']) {
+    await refused(await pages(call(PLAN_PATH, { method: 'POST', body: '{}', origin: PREVIEW, cookie: JAR }), {
+      ...GATE, PREVIEW_PUBLIC_READS: 'true', PREVIEW_FAMILIES: families, POSITION_PLAN_BRIDGE: binding,
+    }), 404, 'not_found');
+  }
+  // Named, with nothing bound: still exactly as before.
+  await refused(await pages(call(PLAN_PATH, { method: 'POST', body: '{}', origin: PREVIEW, cookie: JAR }), {
+    ...GATE, PREVIEW_FAMILIES: 'position-plan',
+  }), 404, 'not_found');
+  assert.equal(calls.length, 0);
+  // Named and bound to a Worker deployed for the preview: as the browser sent it, its own cookie only.
+  const response = await pages(call(PLAN_PATH, { method: 'POST', body: '{}', origin: PREVIEW, cookie: JAR, headers: { 'X-Domino-CSRF': CSRF } }), {
+    ...GATE, PREVIEW_FAMILIES: 'setup, position-plan', POSITION_PLAN_BRIDGE: binding,
+  });
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `${PREVIEW}${PLAN_PATH}`, 'the preview\'s own origin, not translated');
+  assert.equal(calls[0].headers.origin, PREVIEW);
+  assert.equal(calls[0].headers.host, new URL(PREVIEW).host);
+  assert.equal(calls[0].headers.cookie, SESSION);
+  assert.equal(calls[0].headers['x-domino-csrf'], CSRF);
+  // Production's own Worker answers https://domino.money only: bound on the preview by mistake, it refuses the call.
+  const wrong = await pages(call(PLAN_PATH, { method: 'POST', body: '{}', origin: PREVIEW, cookie: JAR, headers: { 'X-Domino-CSRF': CSRF } }), {
+    ...GATE, PREVIEW_FAMILIES: 'position-plan', POSITION_PLAN_BRIDGE: planBinding(PLAN_ENABLED),
+  });
+  assert.equal(wrong.status, 403);
+  assert.deepEqual(await wrong.json(), { error: 'origin_not_allowed' });
+  assert.deepEqual(upstream, []);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-02 (Domino V2, spec F7 §3.2, S2 wired): the third V2 family, S2's deposits from another network (crosschain-v1:
+// origins, quote and status), a private family declared ahead of its Worker (domino-crosschain-bridge) exactly as S1's
+// plans were: until wrangler.toml binds it, its paths answer as before (404 not_found, read by the app as "off"). The
+// Worker is the real one from bridge/src under its reviewed disabled config, with the tripwire as its upstream; the
+// enabled one exists only here, in memory, with placeholder credentials, and is refused before any upstream call.
+// ---------------------------------------------------------------------------
+
+const XC_WORKER = (await import('../../bridge/src/crosschain-worker.mjs')).default;
+const XC_RUNTIME = await import('../../api-contracts/crosschain-v1/runtime.mjs');
+/** bridge/wrangler.crosschain.toml's [vars], as committed. */
+const XC_DISABLED = { CROSSCHAIN_BRIDGE_ENABLED: 'false', APP_ORIGIN: ORIGIN, CROSSCHAIN_GATEWAY_ORIGIN: 'https://vm-crosschain.domino.money' };
+const XC_ENABLED = { ...XC_DISABLED, CROSSCHAIN_BRIDGE_ENABLED: 'true',
+  CROSSCHAIN_ACCESS_CLIENT_ID: 'placeholder-crosschain-id', CROSSCHAIN_ACCESS_CLIENT_SECRET: 'placeholder-crosschain-secret' };
+const XC_ROUTES = ['origins', 'quote', 'status'];
+const XC_PATH = '/api/crosschain/v1/quote';
+const XC_CAPABILITIES = '/api/crosschain/v1/capabilities';
+const XC_HEADER = 'x-domino-crosschain-contract';
+const xcBinding = (settings) => ({ fetch: (request) => XC_WORKER.fetch(request, settings) });
+
+test('S2 deposits, declared ahead of their Worker: production as wrangler.toml binds it answers exactly as before, 404 not_found', async () => {
+  const { env, calls } = deployed('production');
+  assert.equal(env.CROSSCHAIN_BRIDGE, undefined, 'wrangler.toml binds no crosschain Worker yet');
+  for (const [path, options] of [
+    ...XC_ROUTES.map((route) => [`/api/crosschain/v1/${route}`, { method: 'POST', body: '{}', cookie: `${BETA}; ${SESSION}`, headers: { 'X-Domino-CSRF': CSRF } }]),
+    [XC_CAPABILITIES, {}],
+    [XC_PATH, { method: 'POST', body: '{}', headers: { 'CF-Worker': 'x.example' } }],
+  ]) {
+    await refused(await pages(call(path, options), env), 404, 'not_found');
+  }
+  assert.deepEqual(calls, []);
+  assert.equal(served, 0);
+  assert.deepEqual(upstream, []);
+});
+
+test('S2 deposits: anything under their binding\'s name that is not a service binding is 503 bridge_unavailable', async () => {
+  for (const value of ['domino-crosschain-bridge', {}, null, 0, { fetch: 'no' }]) {
+    await refused(await pages(call(XC_PATH, { method: 'POST', body: '{}', headers: { 'X-Domino-CSRF': CSRF } }), { ...GATE, CROSSCHAIN_BRIDGE: value }), 503, 'bridge_unavailable');
+  }
+});
+
+test('S2 deposits, bound: to their own binding alone, with their contract, the CSRF header and the session cookie only', async () => {
+  const others = recorders();
+  const { binding, calls } = recorder();
+  const env = { ...others.env, CROSSCHAIN_BRIDGE: binding };
+  const body = '{ "destinationChainId": 4663 }\n';
+  for (const route of XC_ROUTES) {
+    const response = await pages(call(`/api/crosschain/v1/${route}`, { method: 'POST', body, cookie: JAR, headers: {
+      'X-Domino-CSRF': CSRF, 'X-Domino-Crosschain-Contract': XC_RUNTIME.CONTRACT_VERSION,
+      'X-Domino-Read-Contract': 'read-version', 'X-Domino-Position-Plan-Contract': 'plan-version', Authorization: 'Bearer secret',
+      'X-Domino-Session': 'forged', 'X-Forwarded-For': '192.0.2.1',
+    } }), env);
+    assert.equal(response.status, 200, route);
+    assert.equal(response.headers.get('cache-control'), 'no-store, no-transform', 'a private family\'s answer');
+  }
+  assert.equal(calls.length, XC_ROUTES.length);
+  for (const [index, route] of XC_ROUTES.entries()) {
+    assert.equal(calls[index].method, 'POST');
+    assert.equal(calls[index].url, `${ORIGIN}/api/crosschain/v1/${route}`);
+    assert.equal(new TextDecoder().decode(calls[index].body), body);
+    assert.equal(calls[index].headers.cookie, SESSION, 'the session cookie only: never the beta, preauth or any other cookie');
+    assert.equal(calls[index].headers['x-domino-csrf'], CSRF);
+    assert.equal(calls[index].headers[XC_HEADER], XC_RUNTIME.CONTRACT_VERSION);
+    assert.equal(calls[index].headers.origin, ORIGIN);
+    assert.equal(calls[index].headers['cf-connecting-ip'], '203.0.113.9');
+    for (const name of ['x-domino-read-contract', 'x-domino-position-plan-contract', 'authorization', 'x-domino-session', 'x-forwarded-for']) {
+      assert.equal(calls[index].headers[name], undefined, name);
+    }
+  }
+  assert.equal((await pages(call(XC_CAPABILITIES), env)).status, 200);
+  assert.equal(calls.length, XC_ROUTES.length + 1, 'the capabilities GET goes to the same Worker');
+  assert.equal(others.calls(), 0, 'no other family\'s binding is asked');
+});
+
+test('S2 deposits through the real Worker, disabled: route_not_available on the three routes and capabilities "disabled", nothing upstream', async () => {
+  const env = { ...GATE, CROSSCHAIN_BRIDGE: xcBinding(XC_DISABLED) };
+  for (const route of XC_ROUTES) {
+    const response = await pages(call(`/api/crosschain/v1/${route}`, { method: 'POST', body: '{}', cookie: `${BETA}; ${SESSION}`, headers: { 'X-Domino-CSRF': CSRF } }), env);
+    assert.equal(response.status, 404, route);
+    assert.equal(response.headers.get(XC_HEADER), XC_RUNTIME.CONTRACT_VERSION, 'the Worker\'s own answer');
+    assert.deepEqual(await response.json(), { error: 'route_not_available' });
+  }
+  const capability = await pages(call(XC_CAPABILITIES), env);
+  assert.equal(capability.status, 200);
+  assert.equal(capability.headers.get(XC_HEADER), XC_RUNTIME.CONTRACT_VERSION);
+  assert.deepEqual(await capability.json(), { contractVersion: XC_RUNTIME.CONTRACT_VERSION, dataMode: 'disabled', enabledRoutes: [] });
+  // Its own browser checks run on what the forwarder forwarded.
+  const cross = await pages(call(XC_PATH, { method: 'POST', body: '{}', headers: { 'Sec-Fetch-Site': 'cross-site', 'X-Domino-CSRF': CSRF } }), env);
+  assert.equal(cross.status, 403);
+  assert.deepEqual(await cross.json(), { error: 'origin_not_allowed' });
+  assert.deepEqual(upstream, []);
+});
+
+test('S2 deposits through the real Worker switched on, in memory: live, and no session, CSRF, valid request or named owner goes upstream', async () => {
+  const env = { ...GATE, CROSSCHAIN_BRIDGE: xcBinding(XC_ENABLED) };
+  const capability = await pages(call(XC_CAPABILITIES), env);
+  assert.deepEqual(await capability.json(), { contractVersion: XC_RUNTIME.CONTRACT_VERSION, dataMode: 'live', enabledRoutes: XC_ROUTES });
+  const quote = { originChainId: 42161, originToken: `0x${'a'.repeat(40)}`, destinationChainId: 4663, destinationToken: '0x5fc5360d0400a0fd4f2af552add042d716f1d168', amountRaw: '100000000', slippageBps: 50, destinationGas: false };
+  for (const [options, status, error] of [
+    [{ cookie: BETA, headers: { 'X-Domino-CSRF': CSRF } }, 401, 'session_required'],
+    [{ cookie: `${BETA}; ${PREAUTH}`, headers: { 'X-Domino-CSRF': CSRF } }, 401, 'session_required'],
+    [{ cookie: `${BETA}; ${SESSION}` }, 403, 'csrf_invalid'],
+    [{ cookie: `${BETA}; ${SESSION}`, headers: { 'X-Domino-CSRF': CSRF } }, 400, 'invalid_request'],
+    [{ body: JSON.stringify({ ...quote, owner: `0x${'b'.repeat(40)}` }), cookie: `${BETA}; ${SESSION}`, headers: { 'X-Domino-CSRF': CSRF } }, 400, 'invalid_request'],
+    [{ body: JSON.stringify({ ...quote, recipient: `0x${'b'.repeat(40)}` }), cookie: `${BETA}; ${SESSION}`, headers: { 'X-Domino-CSRF': CSRF } }, 400, 'invalid_request'],
+  ]) {
+    const response = await pages(call(XC_PATH, { method: 'POST', body: '{}', ...options }), env);
+    assert.equal(response.status, status, error);
+    assert.equal(response.headers.get(XC_HEADER), XC_RUNTIME.CONTRACT_VERSION, error);
+    assert.deepEqual(await response.json(), { error }, error);
+  }
+  assert.deepEqual(upstream, []);
+});
+
+test('S2 deposits on the preview alias: shut unless PREVIEW_FAMILIES names crosschain and a binding exists; never translated', async () => {
+  assert.ok(PREVIEW_FAMILY_NAMES.includes('crosschain'));
+  const { binding, calls } = recorder();
+  for (const families of [undefined, '', 'session', 'cross-chain', 'Crosschain', 'crosschain-v1', 'position-plan']) {
+    await refused(await pages(call(XC_PATH, { method: 'POST', body: '{}', origin: PREVIEW, cookie: JAR }), {
+      ...GATE, PREVIEW_PUBLIC_READS: 'true', PREVIEW_FAMILIES: families, CROSSCHAIN_BRIDGE: binding,
+    }), 404, 'not_found');
+  }
+  // Named, with nothing bound: still exactly as before.
+  await refused(await pages(call(XC_PATH, { method: 'POST', body: '{}', origin: PREVIEW, cookie: JAR }), {
+    ...GATE, PREVIEW_FAMILIES: 'crosschain',
+  }), 404, 'not_found');
+  assert.equal(calls.length, 0);
+  // Named and bound to a Worker deployed for the preview: as the browser sent it, its own cookie only.
+  const response = await pages(call(XC_PATH, { method: 'POST', body: '{}', origin: PREVIEW, cookie: JAR, headers: { 'X-Domino-CSRF': CSRF } }), {
+    ...GATE, PREVIEW_FAMILIES: 'setup, position-plan, crosschain', CROSSCHAIN_BRIDGE: binding,
+  });
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `${PREVIEW}${XC_PATH}`, 'the preview\'s own origin, not translated');
+  assert.equal(calls[0].headers.origin, PREVIEW);
+  assert.equal(calls[0].headers.host, new URL(PREVIEW).host);
+  assert.equal(calls[0].headers.cookie, SESSION);
+  assert.equal(calls[0].headers['x-domino-csrf'], CSRF);
+  // Production's own Worker answers https://domino.money only: bound on the preview by mistake, it refuses the call.
+  const wrong = await pages(call(XC_PATH, { method: 'POST', body: '{}', origin: PREVIEW, cookie: JAR, headers: { 'X-Domino-CSRF': CSRF } }), {
+    ...GATE, PREVIEW_FAMILIES: 'crosschain', CROSSCHAIN_BRIDGE: xcBinding(XC_ENABLED),
+  });
+  assert.equal(wrong.status, 403);
+  assert.deepEqual(await wrong.json(), { error: 'origin_not_allowed' });
+  assert.deepEqual(upstream, []);
 });

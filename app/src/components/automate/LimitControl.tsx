@@ -66,7 +66,7 @@ export function CapTiles({ cap }: { cap: number }) {
   return (
     <span className="dm-seq-caps" aria-hidden="true">
       {Array.from({ length: shown }, (_, index) => (
-        <svg key={index} className={cx('dm-seq-cap', index === 0 && 'is-root')} width={14} height={24.5} viewBox="0 0 14 24.5" focusable="false">
+        <svg key={index} className={cx('dm-seq-cap', index === 0 && 'is-root')} width="0.875rem" height="1.53125rem" viewBox="0 0 14 24.5" focusable="false">
           <g className={index === 0 ? 'tile-solid' : 'tile-line'}>
             <ArtTile w={14} layout={PIPS[index % PIPS.length]} parts={index === 0 ? 'solid' : 'outline'} />
           </g>

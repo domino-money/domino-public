@@ -172,6 +172,7 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           </p>
           {!routed && total !== null && (
             <p className="dm-usd-line dm-flow-headline-usd">
+              <span>{CREATE.review.total}</span>
               <UsdText value={total} />
             </p>
           )}

@@ -48,6 +48,17 @@ const unsupportedMethod = (error: unknown) => {
  */
 const chainOfKey = (key: string): number | null =>
   /^0x[0-9a-f]{1,16}$/i.test(key) ? Number.parseInt(key.slice(2), 16) : /^[0-9]{1,16}$/.test(key) ? Number(key) : null
+/**
+ * A chain id as EIP-5792 writes it, '0x1237' for Robinhood Chain. Changed on purpose 2026-10-02 (Domino V2, spec F7 §1.3:
+ * `wallet_getCapabilities` and the batch carry the action's chain, 0x1237, 0x2105 or 0xa4b1): atomicStatus,
+ * atomicStatusOf and offerBatch take the chain, Robinhood Chain by default, so every V1 caller asks and offers exactly
+ * what it did. A V2 caller hands offerBatch a latch keyed by the same chain (finance/nonce.ts chainNonceJournal), and
+ * simulateBatch only through the wallet (its fallback is the site's Robinhood node).
+ */
+const chainHex = (chainId: number): Hex => {
+  if (!Number.isSafeInteger(chainId) || chainId <= 0) return fail('invalid_wallet_chain')
+  return `0x${chainId.toString(16)}`
+}
 /** The `atomic` status one chain's entry states, or null when it states none. */
 const statusOf = (entry: unknown): unknown => {
   const atomic = entry && typeof entry === 'object' ? (entry as Record<string, unknown>).atomic : null
@@ -61,14 +72,14 @@ const RANK: Record<AtomicStatus, number> = { unsupported: 0, ready: 1, supported
  * under chain 0, which the standard reserves for what the wallet supports on every chain, is read instead. Any other
  * shape, version 1's `atomicBatch` included, is `unsupported`: version 1 wallets do not take the version 2 batch sent.
  */
-export function atomicStatusOf(reply: unknown): AtomicStatus {
+export function atomicStatusOf(reply: unknown, chainId: number = 4663): AtomicStatus {
   if (!reply || typeof reply !== 'object' || Array.isArray(reply)) return 'unsupported'
   const found: unknown[] = [], everywhere: unknown[] = []
   for (const [key, entry] of Object.entries(reply as Record<string, unknown>)) {
     const chain = chainOfKey(key)
     const status = statusOf(entry)
     if (status === null) continue
-    if (chain === 4663) found.push(status)
+    if (chain === chainId) found.push(status)
     else if (chain === 0) everywhere.push(status)
   }
   const stated = found.length > 0 ? found : everywhere
@@ -84,11 +95,11 @@ export function atomicStatusOf(reply: unknown): AtomicStatus {
  * parameter (-32602, as drafts before version 2 took only the account) is asked once more without it. A read that
  * fails or times out is `unsupported`: no batch is offered then, and the steps go one by one. Reads only.
  */
-export async function atomicStatus(wallet: { owner: Address; request: Request }, timeoutMs = 5_000): Promise<AtomicStatus> {
+export async function atomicStatus(wallet: { owner: Address; request: Request }, timeoutMs = 5_000, chainId: number = 4663): Promise<AtomicStatus> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const ask = async () => {
     try {
-      return await wallet.request('wallet_getCapabilities', [wallet.owner, ['0x1237']])
+      return await wallet.request('wallet_getCapabilities', [wallet.owner, [chainHex(chainId)]])
     } catch (error) {
       if ((error as { code?: unknown } | null)?.code !== -32602) throw error
       return wallet.request('wallet_getCapabilities', [wallet.owner])
@@ -96,7 +107,7 @@ export async function atomicStatus(wallet: { owner: Address; request: Request },
   }
   try {
     return atomicStatusOf(await Promise.race([ask(),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), timeoutMs) })]))
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), timeoutMs) })]), chainId)
   } catch {
     return 'unsupported'
   } finally { clearTimeout(timer) }
@@ -112,8 +123,12 @@ export async function atomicStatus(wallet: { owner: Address; request: Request },
  * site's own node) is `batch_simulation_unavailable`, so the flow goes step by step, each step checked by the wallet: the
  * batch's allowances and balances were read through the wallet, whose node may be a block or two ahead of the site's,
  * so that failure may be no failure at all.
+ *
+ * Changed on purpose (data) 2026-10-02 (Domino V2 rev2 review, F4): `inspect`, when given, is handed each call's return
+ * data (in the calls' order) once every call succeeded, and refuses the batch by throwing; a reply without it for every
+ * call is `invalid_simulation_reply`. Every V1 caller passes none and sees exactly what it did.
  */
-export async function simulateBatch(request: Request, owner: Address, calls: readonly BatchCall[], fallback?: BatchSimulator): Promise<bigint> {
+export async function simulateBatch(request: Request, owner: Address, calls: readonly BatchCall[], fallback?: BatchSimulator, inspect?: (returned: readonly Hex[]) => void): Promise<bigint> {
   const params = [{ blockStateCalls: [{ calls: calls.map(call => ({ from: owner, to: call.to, data: call.data, value: call.value })) }], validation: false }, 'latest']
   let reply: unknown
   let elsewhere = false
@@ -131,6 +146,10 @@ export async function simulateBatch(request: Request, owner: Address, calls: rea
   const block = Array.isArray(reply) && reply.length === 1 ? reply[0] as { calls?: unknown } : null
   const results = block && Array.isArray(block.calls) && block.calls.length === calls.length ? block.calls as { status?: unknown; gasUsed?: unknown }[] : fail('invalid_simulation_reply')
   if (results.some(result => result?.status !== '0x1')) return fail(elsewhere ? 'batch_simulation_unavailable' : 'batch_simulation_reverted')
+  if (inspect) {
+    const returned = results.map(result => (result as { returnData?: unknown }).returnData)
+    inspect(returned.map(data => (typeof data === 'string' && /^0x(?:[0-9a-fA-F]{2})*$/.test(data) ? data as Hex : fail('invalid_simulation_reply'))))
+  }
   return results.reduce((sum, result) => sum + quantity(result.gasUsed), 0n)
 }
 
@@ -140,9 +159,10 @@ export async function simulateBatch(request: Request, owner: Address, calls: rea
  * before the wallet: false frees the claim, since nothing was asked. A refusal in the wallet, or a wallet that cannot
  * batch, frees it; an answer that never came keeps it, and the chain decides later. The wallet's id for the batch.
  */
-export async function offerBatch(request: Request, wallet: BatchWallet, key: Hex, calls: readonly BatchCall[], stillValid: () => boolean): Promise<string> {
+export async function offerBatch(request: Request, wallet: BatchWallet, key: Hex, calls: readonly BatchCall[], stillValid: () => boolean, chainId: number = 4663): Promise<string> {
   const { claimBatch, recordBatch, releaseBatch } = wallet
   if (!claimBatch || !recordBatch || !releaseBatch) return fail('batch_coordination_unavailable')
+  const chain = chainHex(chainId)
   const claim = await claimBatch(key)
   if (!stillValid()) {
     await releaseBatch(key, claim)
@@ -150,7 +170,7 @@ export async function offerBatch(request: Request, wallet: BatchWallet, key: Hex
   }
   let reply: unknown
   try {
-    reply = await request('wallet_sendCalls', [{ version: '2.0.0', chainId: '0x1237', from: wallet.owner, atomicRequired: true, calls }])
+    reply = await request('wallet_sendCalls', [{ version: '2.0.0', chainId: chain, from: wallet.owner, atomicRequired: true, calls }])
   } catch (error) {
     const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined
     // A definite refusal: nothing was sent, and nothing of it can execute (2026-10-01, audit C2: every refusal that

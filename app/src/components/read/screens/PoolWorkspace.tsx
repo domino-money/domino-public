@@ -25,7 +25,7 @@ import { PoolActivitySummary } from '../../pool/PoolActivitySummary'
 import { PoolAutomation } from '../../pool/PoolAutomation'
 import { PoolEarnings } from '../../pool/PoolEarnings'
 import { PoolRangeGuide } from '../../pool/PoolRangeGuide'
-import { aboutPercent, isUsdg, numberOf, priceAt, quoteSide, rangeGuide, type DaySpan } from '../../pool/plain'
+import { isUsdg, numberOf, priceAt, quoteSide, rangeGuide, type DaySpan } from '../../pool/plain'
 import { Address } from './Address'
 import { CopyButton } from './CopyButton'
 import { FallbackApr } from './FallbackApr'
@@ -315,11 +315,17 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
   // An estimate standing in for the read service's where its own has no figure (audit V1): the row's, or the stand-in.
   const aprStandIn = !aprFromHistory && estimate?.text == null ? (shown?.aprFallback ?? standIns?.apr ?? null) : null
   const aprNumber = aprFromHistory && apr ? numberOf(apr.value) : estimate?.text && estimate.text !== APR_SLIVER ?numberOf(shown?.feeAprEstimate?.data?.feeAprEstimate24hPercent ?? estimate.text) : aprStandIn ? numberOf(aprStandIn.percent) : null
-  const aprWords = aprNumber !== null && aprNumber > 0 ? aboutPercent(aprNumber) : null
+  const savedApr = aprFromHistory ? apr?.state === 'stale' : aprStandIn ? aprStandIn.basis === 'kept' || aprStandIn.basis === 'selection' : estimate?.state === 'stale'
   // A pool Domino can't open positions in is never estimated (hooks, a fee that changes): its dash says so in words.
   // The money in the pool, which shares its fees with an amount added (the estimate), where the TVL is a figure.
   const tvlMetric = shown?.tvlUsd ?? standIns?.tvl ?? null
   const tvl = tvlMetric && presentMetric(tvlMetric).kind === 'value' ? numberOf(tvlMetric.value) : null
+  // Name only retained figures actually displayed. A missing, partial or rejected value never becomes “saved”.
+  const savedMetrics = [
+    ...(savedApr && aprNumber !== null ? ['APR'] : []),
+    ...([['TVL', tvlMetric], ['24h volume', shown?.volume24hUsd ?? standIns?.volume], ['24h fees', metricsListed ? shown?.lpFees24hUsd : null]] as const)
+      .filter(([, metric]) => metric?.state === 'stale' && metric.value !== null).map(([label]) => label),
+  ]
   // Fees in dollars only where the pool holds USDG, at the pool's own price with 1 USDG = $1 (lib/format/usd.ts).
   const usd = isUsdg(quote.address) && priceNow !== null ? { usdgIndex: quoteIndex, price: numberOf(priceNow) ?? 0 } : null
 
@@ -367,7 +373,7 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
     <div className="dm-pool-a-lead grid gap-3">
       {notice}
       <p className="dm-pool-intro" data-pool-intro="">
-        People swap <b><SymbolText token={base} /></b> and <b><SymbolText token={quote} /></b> in this pool. Everyone who adds money to it shares {fee === 'Dynamic fee' ? 'the pool’s fee' : `the ${fee} fee`} on each swap{aprWords ? <>: about <b className="dm-pool-intro-apr">{aprWords} a year</b> at recent activity</> : null}.
+        {usable ? 'Add tokens to share the fees when people swap ' : 'People swap '}<b><SymbolText token={base} /></b> and <b><SymbolText token={quote} /></b>{usable ? '.' : ' in this pool.'}
       </p>
     </div>
 
@@ -376,20 +382,21 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
         {aprFromHistory && apr
           ? <Stat label="APR" info="What the pool’s fees come to over a year, from Domino’s own history of its last day. It describes the pool, not your position, and is not a promise." className="dm-pool-stat" sub="A year, at recent activity">{figure(<MetricCell metric={apr} percent tone="in" />)}</Stat>
           : <Stat label="APR" info="What the pool’s fees come to over a year, estimated from its last day of trading. It describes the pool, not your position, and is not a promise." className="dm-pool-stat" sub={shown || aprStandIn ? (usable || aprNumber !== null ? 'A year, at recent activity' : 'Not estimated for this pool') : loading ? <Skeleton className="dm-pool-fig-sub-skel" /> : undefined}>{figure(shown && (aprStandIn ? <FallbackApr apr={aprStandIn} compact /> : <PoolAprEstimate observation={shown.feeAprEstimate} now={now} compact />), aprStandIn && <FallbackApr apr={aprStandIn} compact />)}</Stat>}
-        <Stat label="24h volume" info="How much people swapped through the pool over the last 24 hours." className="dm-pool-stat" sub={shown && fromHistory(shown.volume24hUsd) ? 'Swapped in the last day, Domino history' : 'Swapped in the last day'}>{figure(shown && <MetricCell metric={shown.volume24hUsd} retrieved={retrieved} />, standIns?.volume && <MetricCell metric={standIns.volume} />)}</Stat>
-        <Stat label="TVL" info="Total value locked: what all the money in the pool is worth now." className="dm-pool-stat" sub={shown && fromHistory(shown.tvlUsd) ? 'In the pool now, Domino history' : 'In the pool now'}>{figure(shown && <MetricCell metric={shown.tvlUsd} retrieved={retrieved} />, standIns?.tvl && <MetricCell metric={standIns.tvl} />)}</Stat>
+        <Stat label="24h volume" info="How much people swapped through the pool over the last 24 hours." className="dm-pool-stat" sub={shown && fromHistory(shown.volume24hUsd) ? 'Trading · Domino history' : 'Trading in the pool'}>{figure(shown && <MetricCell metric={shown.volume24hUsd} retrieved={retrieved} />, standIns?.volume && <MetricCell metric={standIns.volume} />)}</Stat>
+        <Stat label="TVL" info="Total value locked: the reported value of all tokens in the pool." className="dm-pool-stat" sub={shown && fromHistory(shown.tvlUsd) ? 'In the pool · Domino history' : 'Value in the pool'}>{figure(shown && <MetricCell metric={shown.tvlUsd} retrieved={retrieved} />, standIns?.tvl && <MetricCell metric={standIns.tvl} />)}</Stat>
         {metricsListed && (
           <Stat label="24h fees" info="What the pool’s swaps paid to the people who provide its money over the last 24 hours, from Domino’s own history." className="dm-pool-stat" sub={shown ? 'Paid to the pool, Domino history' : undefined}>
             {shown && !metricsRead ? <Skeleton className="dm-pool-fig-skel" /> : shown && metricsFailed ? <FigureDash reason={metricsFailed} /> : figure(shown && shown.lpFees24hUsd && <MetricCell metric={shown.lpFees24hUsd} />)}
           </Stat>
         )}
         {/* The price as a person says it, "1 PONS = 0.6175 USDG": a ratio between the two tokens, read on chain. */}
-        <Stat label="Price" info="What one token costs in the other now. It changes with every swap." className="dm-pool-stat" sub={priceNow ? <>for 1 <SymbolText token={base} /></> : price.state === 'usable' ? undefined : COPY.range.problems[price.problem]}>
+        <Stat label={price.state === 'usable' && price.stale ? 'Saved pool price' : 'Pool price'} info="What one token costs in the other at the block read. It changes with every swap." className="dm-pool-stat" sub={priceNow ? <>for 1 <SymbolText token={base} /></> : price.state === 'usable' ? undefined : COPY.range.problems[price.problem]}>
           {priceNow
             ? <span className="dm-pool-price-now" data-pool-price-now="" title={`Pool price from on-chain state at block ${price.state === 'usable' ? price.block : ''}. A ratio between the two tokens.${price.state === 'usable' && price.stale ? ' Read more than 5 minutes ago on this page.' : ''}`}>{priceNow} <span className="dm-pool-price-side"><SymbolText token={quote} /></span></span>
             : <FigureDash reason={price.state === 'usable' ? 'The price can’t be written as a plain number.' : COPY.range.problems[price.problem]} />}
         </Stat>
       </StatStrip>
+      {savedMetrics.length > 0 && <p className="dm-pool-saved" data-saved-data="figures" title={observation}>Saved figures: {savedMetrics.join(', ')}. Sources and times in Details.</p>}
       <p role="status" aria-live="polite" className="sr-only" data-pool-status={loading ? 'loading' : failure ? failure.state : 'none'}>
         {loading ? 'Reading pool figures…' : failed && !shown ? failed : ''}
       </p>
@@ -400,7 +407,7 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
     </div>
 
     {usable && <div className="dm-pool-a-earn">
-      <PoolEarnings apr={aprNumber} tvl={tvl} loading={loading || (metricsListed && !metricsRead && !!shown)} />
+      <PoolEarnings apr={aprNumber} tvl={tvl} loading={loading || (metricsListed && !metricsRead && !!shown)} saved={aprNumber !== null && (savedApr || (tvl !== null && tvl > 0 && tvlMetric?.state === 'stale'))} />
     </div>}
 
     <div className="dm-pool-a-recent">
@@ -408,7 +415,7 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
     </div>
 
     {usable && <div className="dm-pool-a-range">
-      <PoolRangeGuide guide={guide} day={day} unit={unit} />
+      <PoolRangeGuide guide={guide} day={day} unit={unit} saved={price.state === 'usable' && price.stale} />
     </div>}
 
     <div className="dm-pool-a-auto">
@@ -469,7 +476,7 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
       <div className="dm-pool-details-parts">
         <section className="dm-pool-embedded" aria-labelledby="pool-apr-how">
           <h3 id="pool-apr-how" className="dm-pool-embedded-title">How the APR is worked out</h3>
-          <div className="grid gap-3 text-[13px] leading-[18px]">
+          <div className="grid gap-3 text-[0.8125rem] leading-[1.125rem]">
             <dl data-history-apr="">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3"><dt className="text-fg-muted">Pool APR, Domino history</dt><dd className="font-medium">{historyApr}</dd></div>
             </dl>

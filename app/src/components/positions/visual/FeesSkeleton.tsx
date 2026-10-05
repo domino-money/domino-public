@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { ChartSkeleton } from '../../charts/ChartSkeleton'
 import { useMediaQuery } from '../../../lib/useMediaQuery'
+import { rem } from '../../../lib/rootScale'
 import { CHART_BOX } from './FeesChart'
 
 /**
@@ -17,25 +18,25 @@ export function FeesSkeleton({ unclaimed }: { unclaimed?: ReactNode }) {
     <div className="dm-fees-body" aria-busy="true">
       <div className="dm-fees-summary">
         <span aria-hidden="true" className="dm-fees-skel-hero">
-          <span className="dm-skel" style={{ width: 180, height: 40 }} />
+          <span className="dm-skel" style={{ width: rem(180), height: rem(40) }} />
         </span>
         <span aria-hidden="true" className="dm-skel dm-fees-skel-bar" />
         <div className="dm-fees-legend">
           <span aria-hidden="true" className="dm-fees-skel-row">
-            <span className="dm-skel" style={{ width: 88, height: 12 }} />
-            <span className="dm-skel" style={{ width: 64, height: 12 }} />
+            <span className="dm-skel" style={{ width: rem(88), height: rem(12) }} />
+            <span className="dm-skel" style={{ width: rem(64), height: rem(12) }} />
           </span>
           {unclaimed ?? (
             <span aria-hidden="true" className="dm-fees-skel-row">
-              <span className="dm-skel" style={{ width: 80, height: 12 }} />
-              <span className="dm-skel" style={{ width: 72, height: 12 }} />
+              <span className="dm-skel" style={{ width: rem(80), height: rem(12) }} />
+              <span className="dm-skel" style={{ width: rem(72), height: rem(12) }} />
             </span>
           )}
         </div>
         <span aria-hidden="true" className="dm-fees-tir dm-fees-skel-tir">
           <span className="dm-fees-skel-row">
-            <span className="dm-skel" style={{ width: 96, height: 12 }} />
-            <span className="dm-skel" style={{ width: 56, height: 12 }} />
+            <span className="dm-skel" style={{ width: rem(96), height: rem(12) }} />
+            <span className="dm-skel" style={{ width: rem(56), height: rem(12) }} />
           </span>
           <span className="dm-skel dm-fees-skel-tirbar" />
         </span>

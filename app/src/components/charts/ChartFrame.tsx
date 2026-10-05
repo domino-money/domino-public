@@ -2,10 +2,15 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { cx } from '../ui'
 import { useMediaQuery } from '../../lib/useMediaQuery'
+import { rem, useRootScale } from '../../lib/rootScale'
 
 /**
  * The plot a chart draws into: the frame's full box (`width`, `height`) and
- * the plot area inside it (`left`..`right`, `top`..`bottom`), in px.
+ * the plot area inside it (`left`..`right`, `top`..`bottom`), in design px.
+ *
+ * Changed on purpose 2026-10-03 (the owner: the site looks too big at 100%; at 80% it looks right): design px are CSS
+ * px over the root's scale (lib/rootScale.ts). The frame's SVG layers draw them through a viewBox and its overlay places
+ * them in rem, so the paddings, label offsets and gutters a chart writes in px scale with the rest of the page.
  */
 export interface Plot {
   width: number
@@ -76,6 +81,7 @@ export function ChartFrame({
   const [inspected, setInspected] = useState<number | null>(null)
   const [mountKey] = useState(revealKey)
   const phone = useMediaQuery('(max-width: 767px)')
+  const scale = useRootScale()
   const pending = useRef<number | null>(null)
   const frame = useRef(0)
   // The inspected index as the handlers last set it, so a coalesced pointer frame compares without re-rendering.
@@ -99,9 +105,11 @@ export function ChartFrame({
   const bottom = padding?.bottom ?? base.bottom
   const left = padding?.left ?? base.left
   const total = top + height + bottom
+  // `width` is the box's measured width in CSS px; the plot is in design px.
+  const plotWidth = width / scale
   const plot = useMemo<Plot | null>(
-    () => (width > 0 ? { width, height: total, left, right: Math.max(left, width - right), top, bottom: top + height } : null),
-    [width, total, left, right, top, height],
+    () => (width > 0 ? { width: plotWidth, height: total, left, right: Math.max(left, plotWidth - right), top, bottom: top + height } : null),
+    [width, plotWidth, total, left, right, top, height],
   )
   const drawn = useMemo(() => (plot ? series(plot) : null), [plot, series])
 
@@ -115,7 +123,7 @@ export function ChartFrame({
 
   const move = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!interactive || !plot) return
-    const x = event.clientX - event.currentTarget.getBoundingClientRect().left
+    const x = (event.clientX - event.currentTarget.getBoundingClientRect().left) / scale
     pending.current = clampIndex(indexAt(x, plot))
     if (frame.current) return
     frame.current = requestAnimationFrame(() => {
@@ -146,7 +154,7 @@ export function ChartFrame({
   const now = inspected ?? points - 1
   const layer = (content: ReactNode) =>
     plot && (
-      <svg className="dm-chart-layer" width={plot.width} height={plot.height} viewBox={`0 0 ${plot.width} ${plot.height}`} aria-hidden="true" focusable="false">
+      <svg className="dm-chart-layer" width={width} height={plot.height * scale} viewBox={`0 0 ${plot.width} ${plot.height}`} aria-hidden="true" focusable="false">
         {content}
       </svg>
     )
@@ -160,15 +168,22 @@ export function ChartFrame({
         'aria-valuemax': points,
         'aria-valuenow': now + 1,
         'aria-valuetext': valueText ? valueText(now) : undefined,
+        onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+          event.currentTarget.focus({ preventScroll: true })
+          move(event)
+        },
         onPointerMove: move,
-        onPointerLeave: leave,
+        onPointerLeave: (event: ReactPointerEvent<HTMLDivElement>) => {
+          if (event.pointerType !== 'touch') leave()
+        },
+        onPointerCancel: leave,
         onKeyDown: key,
         onBlur: leave,
       }
     : { role: 'img' as const }
 
   return (
-    <div ref={box} className={cx('dm-chart', className)} style={{ height: total }} aria-label={label} {...role}>
+    <div ref={box} className={cx('dm-chart', className)} style={{ height: rem(total) }} aria-label={label} {...role}>
       {plot && (
         <>
           {axes && layer(axes(plot))}

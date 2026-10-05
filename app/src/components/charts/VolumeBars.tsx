@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEve
 import type { Candle } from 'api-contracts/read-v1/types'
 import { volumeGeometry, type BarGeometry } from '../../lib/read/priceSeries'
 import { cx } from '../ui'
+import { rem, useRootScale } from '../../lib/rootScale'
 
 /**
  * Hourly volume bars, shared by the Markets cards and the pool chart
@@ -104,8 +105,11 @@ export function VolumeBarsSvg({
   className?: string
 }) {
   const box = useRef<HTMLDivElement>(null)
+  // The box's width in CSS px; the bars are drawn in design px (`wide`) through a viewBox (lib/rootScale.ts).
   const [width, setWidth] = useState(0)
   const [inspected, setInspected] = useState<number | null>(null)
+  const scale = useRootScale()
+  const wide = width / scale
 
   useLayoutEffect(() => {
     const node = box.current
@@ -122,13 +126,13 @@ export function VolumeBarsSvg({
   const first = starts.length > 0 ? Math.min(...starts) : 0
   const last = starts.length > 0 ? Math.max(...starts) : 0
   const steps = intervalSeconds > 0 && last > first ? (last - first) / intervalSeconds : 23
-  const side = width > 0 ? width / (2 * (steps + 1)) : 0
-  const geometry = width > 0 ? volumeGeometry(candles, intervalSeconds, width, height, { top: 0, right: side, bottom: 0, left: side }, 3) : null
+  const side = width > 0 ? wide / (2 * (steps + 1)) : 0
+  const geometry = width > 0 ? volumeGeometry(candles, intervalSeconds, wide, height, { top: 0, right: side, bottom: 0, left: side }, 3) : null
 
   const inspect = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!geometry) return
     const rect = event.currentTarget.getBoundingClientRect()
-    const bar = nearest(geometry.bars, event.clientX - rect.left)
+    const bar = nearest(geometry.bars, (event.clientX - rect.left) / scale)
     const start = bar ? bar.candle.startTimestamp : null
     if (start === inspected) return
     setInspected(start)
@@ -141,9 +145,9 @@ export function VolumeBarsSvg({
   }
 
   return (
-    <div ref={box} className={cx('w-full', className)} style={{ height }}>
+    <div ref={box} className={cx('w-full', className)} style={{ height: rem(height) }}>
       {geometry && (
-        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label} className="block overflow-visible" onPointerMove={inspect} onPointerLeave={leave}>
+        <svg width={width} height={height * scale} viewBox={`0 0 ${wide} ${height}`} role="img" aria-label={label} className="block overflow-visible" onPointerMove={inspect} onPointerLeave={leave}>
           <VolumeBarsGroup bars={geometry.bars} inspected={inspected} title={title} />
         </svg>
       )}

@@ -291,20 +291,24 @@ const PAGE_ROWS = 10
  * Nothing shown blanks for a refresh (the owner, 2026-09-27, round 6), and a
  * row opened, or rows shown with Show more, stay so. While the wallet's
  * session is checked, its kept receipts show. With nothing kept and the
- * service off, busy or failing, the card is a neutral empty line; why is in
- * its title and data attributes. One short row per receipt, its detail one
+ * service off, busy or failing, the card says that receipts could not be read;
+ * a failed update keeps the existing rows with a visible saved-data note.
+ * One short row per receipt, its detail one
  * click away. `limit`: Positions' short preview, at most that many rows (its
  * card links the full page); the full page shows ten rows, and ten more on
  * each Show more, reading on past the receipts read when it runs out.
  */
-export default function Execution({ limit, onShows }: { limit?: number; onShows?: (shows: CardShows | null) => void }) {
+export default function Execution({ limit, onShows, publicReceipts = false }: { limit?: number; onShows?: (shows: CardShows | null) => void; publicReceipts?: boolean }) {
   const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
   // Why there is no session, said as itself (2026-10-01, audit D2): sign-in may be switched off, the wallet elsewhere.
   const session = useSyncExternalStore(livePort.subscribe, livePort.getSnapshot)
-  const out = signedOutLine(session.kind, 'receipts')
+  const out = signedOutLine(session.kind, publicReceipts ? 'history' : 'receipts')
   useEffect(watch, [])
   const early = useKeptWhileChecking(view.state === 'checking', keptReceipts)
   const items = view.state === 'checking' ? early ?? [] : view.items
+  // A public receipt is already useful without sign-in. Keep the additional private history reachable,
+  // without placing a full empty-state plate above rows the person can already read.
+  const compactEmpty = publicReceipts && items.length === 0
   // What this card has to show, for Positions (2026-10-01, audit D2, lib/automationCards.ts): nothing while signed out or
   // once read with none yet; a line of its own when the receipts could not be read; null while it is still being decided.
   // Told after every render; the page keeps what it was told before when this says the same.
@@ -318,18 +322,24 @@ export default function Execution({ limit, onShows }: { limit?: number; onShows?
   const rows = all.slice(0, limit ?? shown)
   const hidden = all.length > rows.length
   const tokens = useTokenDetails(rows.flatMap(row => row[0].receipt?.sources.map(source => source.currency) ?? []))
+  const updating = view.state === 'checking' || view.state === 'loading'
+  const updateNote = items.length === 0 ? null
+    : view.state === 'unavailable' ? 'Showing saved receipts. New activity couldn’t be loaded.'
+      : updating ? 'Showing saved receipts while we check for updates.'
+        : Object.keys(view.refreshFailed).length > 0 ? 'Some receipts couldn’t be updated.' : null
   return <section className="dm-acct-exec" aria-label="Execution receipts" aria-busy={view.busy || view.reading || undefined} data-execution={view.state} data-execution-reason={view.reason ?? undefined}
     data-execution-rows={rows.length}>
     <h2 className="sr-only">Execution receipts</h2>
     {/* One plain line; the rule for uncertain transactions is its title, and each receipt's chip says where it stands. */}
-    <p className="dm-acct-desc" title="An uncertain or reorganized transaction is never shown as completed.">What automation did for your positions.</p>
-    {/* While the session is checked with nothing kept, the plate says nothing yet: the check is a moment, and its outcome decides the line. */}
-    {view.state === 'signed_out' ? <div className="dm-acct-quiet" data-signed-out={session.kind}>
+    <p className="dm-acct-desc" title="An uncertain or reorganized transaction is never shown as completed.">{publicReceipts ? 'Activity for your positions.' : 'What automation did for your positions.'}</p>
+    {/* Loading, empty and unavailable are different states; an unread history is never described as empty. */}
+    {view.state === 'signed_out' ? <div className={compactEmpty ? 'dm-rcpt-session' : 'dm-acct-quiet'} data-signed-out={session.kind}>
       <p>{out.text}</p>
       {out.action && <Button variant="outline" size="sm" onClick={openWalletDialog}>{out.action}</Button>}
     </div>
-      : items.length === 0 ? <p className="dm-acct-quiet" title={view.reason ? `Receipts could not be read: ${words(view.reason)}` : undefined}>{view.state === 'ready' ? 'Nothing yet. Each time automation adds your fees back, its receipt shows here.' : view.state !== 'checking' && 'Receipts for this wallet appear here.'}</p>
+      : items.length === 0 ? <p className={compactEmpty ? 'dm-rcpt-note' : 'dm-acct-quiet'} role="status" title={view.reason ? `Receipts could not be read: ${words(view.reason)}` : undefined}>{view.state === 'ready' ? (compactEmpty ? 'No additional automation history yet.' : 'Nothing yet. Each time automation adds your fees back, its receipt shows here.') : view.state === 'checking' ? 'Checking wallet sign-in…' : view.state === 'loading' ? (compactEmpty ? 'Loading more automation history…' : 'Loading receipts…') : compactEmpty ? 'More automation history is unavailable right now.' : 'Receipts are unavailable right now.'}</p>
       : <>
+        {updateNote && <p className="dm-rcpt-note" role="status" data-receipts-update={view.state}>{updateNote}</p>}
         <ol className="dm-rcpt-list">{rows.map(row => row[0].state === 'cancelled'
           ? <CancelledRow key="cancelled" items={row} />
           : <ReceiptRow key={row[0].intentId} item={row[0]} refreshFailed={view.refreshFailed[row[0].intentId]} tokens={tokens} />)}</ol>

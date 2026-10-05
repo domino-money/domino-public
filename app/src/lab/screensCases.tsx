@@ -259,12 +259,12 @@ function SelectionDialog({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="step-dialog-title"
-        className="max-h-[90vh] w-full max-w-[720px] overflow-auto rounded-[24px] border bg-surface-1 p-6"
+        className="max-h-[90vh] w-full max-w-[45rem] overflow-auto rounded-[1.5rem] border bg-surface-1 p-6"
       >
-        <Display as="h2" id="step-dialog-title" ref={heading} tabIndex={-1} className="text-[23px] outline-none">
+        <Display as="h2" id="step-dialog-title" ref={heading} tabIndex={-1} className="text-[1.4375rem] outline-none">
           {chrome ? chrome.title : 'Start with a token you know.'}
         </Display>
-        {chrome && <p className="mt-1 text-[13px] text-fg-muted">{chrome.description}</p>}
+        {chrome && <p className="mt-1 text-[0.8125rem] text-fg-muted">{chrome.description}</p>}
         <div className="mt-4">
           <ChainSelectionPanel onChrome={setChrome} />
         </div>
@@ -279,7 +279,7 @@ function SelectionDialog({ onClose }: { onClose: () => void }) {
           </div>
         )}
         {chrome?.error && (
-          <p role="alert" className="mt-3 text-[13px]" style={{ color: 'var(--money-out)' }}>
+          <p role="alert" className="mt-3 text-[0.8125rem]" style={{ color: 'var(--money-out)' }}>
             {chrome.error}
           </p>
         )}
@@ -321,8 +321,8 @@ function CaseView({ scenario }: { scenario: ScreenCase }) {
     )
   return (
     <ReadSourceProvider source={setup.source}>
-      <section data-screen-case={scenario.id} className="mx-auto max-w-[1100px] px-5 py-8">
-        <Display as="h1" className="text-[28px]">
+      <section data-screen-case={scenario.id} className="mx-auto max-w-[68.75rem] px-5 py-8">
+        <Display as="h1" className="text-[1.75rem]">
           {scenario.id}
         </Display>
         <div className="mt-4">{body}</div>
@@ -339,12 +339,12 @@ export function ScreensLab({ caseId }: { caseId: string }) {
       {scenario ? (
         <CaseView scenario={scenario} />
       ) : (
-        <main className="mx-auto max-w-[1100px] px-5 py-10">
-          <Display as="h1" className="text-[32px]">
+        <main className="mx-auto max-w-[68.75rem] px-5 py-10">
+          <Display as="h1" className="text-[2rem]">
             Read screens lab
           </Display>
-          <p className="mt-2 text-[14px] text-fg-muted">Open read-lab.html#screens/&lt;case&gt; for one of:</p>
-          <ul className="mt-3 grid gap-1 font-mono text-[13px]">
+          <p className="mt-2 text-[0.875rem] text-fg-muted">Open read-lab.html#screens/&lt;case&gt; for one of:</p>
+          <ul className="mt-3 grid gap-1 font-mono text-[0.8125rem]">
             {SCREEN_CASES.map((c) => (
               <li key={c.id}>{c.id}</li>
             ))}

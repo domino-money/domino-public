@@ -14,7 +14,7 @@ import { TokenMark } from '../TokenIcon'
 import { Button } from '../ui'
 import { AmountField } from './fields'
 import type { PairBalancesState } from './usePairBalances'
-import { rawBalances, usdOfSide } from './valuation'
+import { heldAmounts, rawBalances, usdOfSide } from './valuation'
 
 /** A raw amount in whole tokens, grouped as the read writes it; the raw digits when the decimals are unknown. */
 const unitsOf = (raw: bigint | string, decimals: number | null) => {
@@ -90,6 +90,9 @@ export function PairedAmounts({
   const only = takesOnly(state)
   // How the wallet funds it, from the balances the read service reported (Review's own reading, lib/create/reviewPlan.ts).
   const plan = reviewPlan(state, rawBalances(balances))?.plan ?? null
+  // The same qualified estimate as Review and the live preview. No new prices or money calculations.
+  const held = heldAmounts(state, balances)
+  const total = held !== null && held.sides.every((side) => side.usd !== null) ? held.total : null
   const swap = plan && plan.kind === 'swap' && plan.swap > 0n ? plan : null
   // All of the deposit is swapped: said so, never "part" or "about" a figure that is all of it.
   const whole = swap !== null && swap.swap >= swap.deposit
@@ -150,6 +153,7 @@ export function PairedAmounts({
                 </span>
               )}
               <div className="dm-flow-pair-row" data-pair-side={side} data-pair-role={mine ? 'typed' : 'derived'} data-plan-side={side === quiet ? 'swapped' : undefined}>
+                <span className="dm-flow-pair-caption" aria-hidden="true">{mine ? CREATE.amount.entered : CREATE.amount.paired}</span>
                 <AmountField
                   id={`create-amount-${side}`}
                   label={<SymbolText token={currency} />}
@@ -196,6 +200,15 @@ export function PairedAmounts({
           )
         })}
       </div>
+      {held && (
+        <div className="dm-flow-deposit-total" data-amount-total={total !== null ? 'valued' : 'unavailable'}>
+          <div className="dm-flow-deposit-total-head">
+            <span>{CREATE.amount.total}</span>
+            <strong className="tnum">{total !== null ? <UsdText value={total} /> : CREATE.amount.totalUnavailable}</strong>
+          </div>
+          <p>{held.estimate ? CREATE.amount.totalSwapNote : held.only !== null ? CREATE.amount.totalOneNote : CREATE.amount.totalNote}</p>
+        </div>
+      )}
       {disconnected && (
         <p className="dm-hint" data-pair-balance="disconnected">
           {CREATE.amount.connectForBalance}

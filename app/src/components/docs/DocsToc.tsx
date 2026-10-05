@@ -1,6 +1,7 @@
 import { useEffect, useState, type MouseEvent } from 'react'
 import type { TocEntry } from '../../lib/docs/types'
 import { scrollToSection } from '../../lib/sectionScroll'
+import { rootScale } from '../../lib/rootScale'
 import { docsHref } from '../explore/routes'
 
 /**
@@ -17,7 +18,7 @@ function useActiveSection(ids: string): string | null {
     let frame = 0
     const measure = () => {
       frame = 0
-      const line = (document.querySelector('header')?.getBoundingClientRect().height ?? 0) + 24
+      const line = (document.querySelector('header')?.getBoundingClientRect().height ?? 0) + 24 * rootScale()
       let current = list[0]
       for (const id of list) {
         const top = document.getElementById(id)?.getBoundingClientRect().top

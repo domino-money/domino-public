@@ -8,7 +8,7 @@ import tomllib
 import unittest
 from unittest.mock import patch
 import check_bridge_configs
-from check_bridge_configs import ROOT, SERVICES, KNOWN_CONFIGS, GATE_CONFIG, inventory_errors, validate, validate_gate
+from check_bridge_configs import ROOT, SERVICES, KNOWN_CONFIGS, GATE_CONFIG, flag_prefix, inventory_errors, validate, validate_gate
 
 
 class DisabledBridgeConfigs(unittest.TestCase):
@@ -105,8 +105,8 @@ class DisabledBridgeConfigs(unittest.TestCase):
     def test_refuses_enabled_flags_secrets_and_cross_service_origins(self):
         for service, original in self.configs.items():
             variants = [
-                {f"{service.upper()}_BRIDGE_ENABLED": "true"},
-                {f"{service.upper()}_BRIDGE_ENABLED": False},
+                {f"{flag_prefix(service)}_BRIDGE_ENABLED": "true"},
+                {f"{flag_prefix(service)}_BRIDGE_ENABLED": False},
                 {"ACCESS_CLIENT_SECRET": "synthetic-test-value"},
                 {"SETUP_WALLET_ENABLED": "true"},
                 {"SEQUENCE_WALLET_ENABLED": "true"},
@@ -125,6 +125,10 @@ class DisabledBridgeConfigs(unittest.TestCase):
                 {"READ_V5_BRIDGE_ENABLED": "true"},
                 {"READ_V5_BRIDGE_ENABLED": False},
                 {"ENABLED_V5_READS": "featured-pools"},
+                {"READ_V6_BRIDGE_ENABLED": "true"},
+                {"READ_V6_BRIDGE_ENABLED": False},
+                {"ENABLED_V6_READS": "portfolio,activity"},
+                {"POSITION_PLAN_ACCESS_CLIENT_SECRET": "synthetic-test-value"},
             ]
             for update in variants:
                 with self.subTest(service=service, update=update):
@@ -134,12 +138,28 @@ class DisabledBridgeConfigs(unittest.TestCase):
 
     def test_requires_explicit_disabled_read_versions_and_empty_route_lists(self):
         for key in ("READ_BRIDGE_ENABLED", "READ_V2_BRIDGE_ENABLED", "READ_V3_BRIDGE_ENABLED", "READ_V4_BRIDGE_ENABLED",
-                    "READ_V5_BRIDGE_ENABLED", "ENABLED_READS", "ENABLED_V2_READS", "ENABLED_V3_READS", "ENABLED_V4_READS",
-                    "ENABLED_V5_READS"):
+                    "READ_V5_BRIDGE_ENABLED", "READ_V6_BRIDGE_ENABLED", "ENABLED_READS", "ENABLED_V2_READS", "ENABLED_V3_READS",
+                    "ENABLED_V4_READS", "ENABLED_V5_READS", "ENABLED_V6_READS"):
             with self.subTest(missing=key):
                 config = copy.deepcopy(self.configs["read"])
                 del config["vars"][key]
                 self.assertTrue(validate("read", config))
+
+    def test_the_position_plan_worker_is_its_own_disabled_family(self):
+        """2026-10-02 (spec F7 §2.4): its own name, entry, flag, gateway and no logging; never the onboarding Worker's."""
+        config = self.configs["position-plan"]
+        self.assertEqual(flag_prefix("position-plan"), "POSITION_PLAN")
+        self.assertEqual(config["name"], "domino-position-plan-bridge")
+        self.assertEqual(config["main"], "src/position-plan-worker.mjs")
+        self.assertEqual(config["vars"], {"POSITION_PLAN_BRIDGE_ENABLED": "false", "APP_ORIGIN": "https://domino.money",
+                                          "POSITION_PLAN_GATEWAY_ORIGIN": "https://vm-position-plan.domino.money"})
+        self.assertEqual(config["observability"], {"enabled": False})
+        for update in ({"POSITION_PLAN_GATEWAY_ORIGIN": "https://vm-onboarding.domino.money"},
+                       {"ONBOARDING_BRIDGE_ENABLED": "false"}, {"POSITION-PLAN_BRIDGE_ENABLED": "false"}):
+            with self.subTest(update=update):
+                changed = copy.deepcopy(config)
+                changed["vars"].update(update)
+                self.assertTrue(validate("position-plan", changed))
 
     def test_requires_explicit_disabled_public_entry_points(self):
         for service, original in self.configs.items():

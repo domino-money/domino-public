@@ -76,9 +76,8 @@ export function PoolActivitySummary({ read, listed, option, now, day, usd, volum
   const state = waiting ? 'loading' : lines.length ? 'ready' : 'none'
   return (
     <section className="dm-card dm-pool-card dm-pool-recent" aria-labelledby="pool-recent-title" data-pool-activity-summary={state} data-activity-source={view ? 'chain' : 'market'} title={view ? undefined : reason}>
-      <h2 id="pool-recent-title" className="dm-title">
-        Recent activity
-      </h2>
+      <details className="dm-pool-recent-disclosure">
+      <summary><h2 id="pool-recent-title" className="dm-title">Recent activity</h2><span aria-hidden="true" className="dm-pool-details-chevron" /></summary>
       {state === 'ready' ? (
         <ul className="dm-pool-recent-list">
           {lines.map((line, index) => (
@@ -96,6 +95,7 @@ export function PoolActivitySummary({ read, listed, option, now, day, usd, volum
       <p role="status" className="sr-only">
         {state === 'loading' ? 'Reading recent activity…' : ''}
       </p>
+      </details>
     </section>
   )
 }

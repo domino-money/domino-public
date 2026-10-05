@@ -92,7 +92,7 @@ export function ReadStatus({
       {status && (
         <>
           <p className="text-body font-medium text-fg">{status.title}</p>
-          {status.detail && <p className="mt-0.5 text-[13px] leading-[18px] text-fg-muted">{status.detail}</p>}
+          {status.detail && <p className="mt-0.5 text-[0.8125rem] leading-[1.125rem] text-fg-muted">{status.detail}</p>}
           {status.lines?.map((line) => (
             <p key={line} className="mt-1 text-caption text-fg-subtle">
               {line}

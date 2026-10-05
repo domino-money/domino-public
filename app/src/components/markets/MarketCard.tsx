@@ -18,6 +18,7 @@ import { poolHref } from '../explore/routes'
 import { CatalogueLabel, PoolTokenLabel } from '../PoolCatalogueIdentity'
 import { TokenIcon, TokenMark, TokenMarkPair } from '../TokenIcon'
 import { FigureDash } from '../ui'
+import { rem } from '../../lib/rootScale'
 
 /**
  * The card plot's height (px): what the card's fixed height (markets.css, 300px) leaves under the head and the price
@@ -39,7 +40,7 @@ function CatalogueMarks({ entry }: { entry: PoolCatalogueEntry }) {
   return (
     <span className="inline-flex shrink-0 items-center" aria-hidden="true">
       {entry.artwork.map((artwork, index) => {
-        const style = { marginLeft: index ? -6 : 0 }
+        const style = { marginLeft: index ? rem(-6) : 0 }
         if (artwork) return <TokenIcon key={index} symbol={artwork} size={20} ring="var(--surface-3)" style={style} />
         if (entry.addresses) return <TokenMark key={index} token={unreadToken(entry.addresses[index])} size={20} ring="var(--surface-3)" style={style} />
         return <span key={index} className="dm-mkt-disc" style={style} />
@@ -195,7 +196,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
       <div className="dm-mkt-card-head">
         <Pair market={market} catalogue={catalogue} />
         <span className="dm-mkt-card-tvl">
-          <span className="dm-mkt-card-label">TVL</span>
+          <span className="dm-mkt-card-label">TVL{market?.tvlUsd.state === 'stale' && market.tvlUsd.value !== null ? ' · saved' : ''}</span>
           <span className="dm-mkt-card-figure">
             {market && !(market.figuresPending && presentMetric(market.tvlUsd).kind === 'unavailable') ? (
               <MetricCell metric={market.tvlUsd} retrieved={retrieved} />
@@ -212,7 +213,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
       <div className="dm-mkt-plot" data-series-stale={(line ?? bars)?.stale ? '' : undefined}>
         {plot}
       </div>
-      <p className="dm-mkt-card-caption">{caption}</p>
+      <p className="dm-mkt-card-caption">{caption}{((line ?? bars)?.stale || (series.kind === 'figure' && (market?.volume24hUsd ?? series.metric)?.state === 'stale' && (market?.volume24hUsd ?? series.metric)?.value !== null)) && <span data-saved-data="chart"> · saved</span>}</p>
     </a>
   )
 }

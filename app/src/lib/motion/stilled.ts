@@ -2,8 +2,10 @@ import { useSyncExternalStore } from 'react'
 
 /**
  * Whether motion is stilled (DESIGN-V2 §5.4): the reader asked for reduced
- * motion, or the footer's Pause motion put `dm-still` on <html>. CSS motion is
- * stilled by tokens.css already; JS that moves anything asks here first.
+ * motion, or something put `dm-still` on <html> (the footer's Pause motion did
+ * until 2026-10-03, when the owner had it removed; the class still stills
+ * everything). CSS motion is stilled by tokens.css already; JS that moves
+ * anything asks here first.
  * Safe to import in Node: nothing is read until a function is called.
  */
 

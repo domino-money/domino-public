@@ -170,7 +170,7 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
           </Panel>
 
           <Panel id="figures-qualified" heading="Domino history, 24h" data-figures-qualified={qualified ? 'yes' : 'no'}>
-            <dl className="grid gap-1 text-[13px] leading-[18px]">
+            <dl className="grid gap-1 text-[0.8125rem] leading-[1.125rem]">
               <div className="flex justify-between gap-3">
                 <dt className="text-fg-muted">TVL</dt>
                 <dd className="tnum font-medium"><History metric={market.tvlUsd} /></dd>
@@ -201,7 +201,7 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
             ) : coming ? (
               loading('Provider figures', { 'data-metric': 'pending' })
             ) : (
-              <p className="text-[13px] leading-[18px]" data-no-provider-figure="">
+              <p className="text-[0.8125rem] leading-[1.125rem]" data-no-provider-figure="">
                 <FigureDash reason={noProviderFigure} />
               </p>
             )}
@@ -212,7 +212,7 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
           {reference.length > 0 && (
             <details className="dm-details dm-inset" data-figures-reference="">
               <summary>{COPY.figures.reference}</summary>
-              <dl className="grid gap-1 text-[13px] leading-[18px]">
+              <dl className="grid gap-1 text-[0.8125rem] leading-[1.125rem]">
                 {reference.map(([label, metric]) => (
                   <div key={label} className="flex justify-between gap-3">
                     <dt className="text-fg-muted">{label}</dt>
@@ -234,7 +234,7 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
             >
               <p role="status" className="sr-only">{activity.kind === 'loading' ? COPY.figures.activityLoading : activity.kind === 'failed' || tooOld ? activityReason : ''}</p>
               {facts ? (
-                <div className="grid gap-1 text-[13px] leading-[18px]">
+                <div className="grid gap-1 text-[0.8125rem] leading-[1.125rem]">
                   {facts.age ? (
                     <p>Pool is {duration(facts.age.seconds)} old; the 24h window isn’t complete, so no full-window figure applies.</p>
                   ) : (
@@ -248,7 +248,7 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
                   </p>
                 </div>
               ) : (
-                <p className="text-[13px] leading-[18px]">{fact(null)}</p>
+                <p className="text-[0.8125rem] leading-[1.125rem]">{fact(null)}</p>
               )}
             </Panel>
           )}

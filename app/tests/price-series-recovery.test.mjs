@@ -2,68 +2,116 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
-import { loadCase, stateOfCase } from './support/fees/relay-fixture.mjs';
+import { CASES, historyFor } from './support/price-range-cases.mjs';
 
+/**
+ * The Price range chart (components/positions/visual/PriceVsRange.tsx) rendered as plain elements, its React and its
+ * frame stubbed. Changed on purpose 2026-10-02 (RPC-SPEC §11.4): no hook builds a line from a fees history any more (the
+ * replay's reads of the pool's Swaps are gone, rugged97's rule 2). Changed on purpose 2026-10-03 (the owner's point 10:
+ * "it doesn't show the history"): the line is the pool's stored hourly closes from the read service (read-v3 `history`,
+ * usePoolHistory.ts, stubbed here with an answer), and a retained history is never rewritten with the page's price now:
+ * its last point is its own last close, and the price now is the chip and the dot apart from it. The card's status, unit
+ * and box are RangeStatus.tsx's, which loads with the page while the chart is a chunk of its own.
+ */
 const require = createRequire(import.meta.url);
 const ts = require('typescript');
-const source = readFileSync(new URL('../src/components/positions/visual/PriceVsRange.tsx', import.meta.url), 'utf8');
-const compiled = ts.transpileModule(`${source}\nexport { PriceChart };`, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-}).outputText;
-const mod = { exports: {} };
+let answer = { phase: 'reading' };
+let status = null;
+/** The imports of the two modules: React and the frame stubbed, the pure modules from the unit build. */
+const LIB = /^\.\.\/\.\.\/\.\.\/lib\/(format\/|chart\/|read\/orientation$)/;
 const local = (name) => {
   if (name === 'react') return { createContext: () => null, useContext: () => null, useMemo: (run) => run(), useCallback: (run) => run };
   if (name === 'react/jsx-runtime') return require(name);
   if (name.endsWith('/useMediaQuery')) return { useMediaQuery: () => false };
+  // 2026-10-03 (the density change): labels are placed in rem, 16 design px to the rem (lib/rootScale.ts).
+  if (name.endsWith('/rootScale')) return { rem: (px) => `${Number((px / 16).toFixed(5))}rem`, rootScale: () => 1, useRootScale: () => 1 };
   if (name.endsWith('/ChartFrame')) return { ChartFrame: 'chart-frame' };
-  if (/^\.\.\/\.\.\/\.\.\/lib\/(format\/|read\/orientation$)/.test(name)) return require(`../.test-build/app/src/lib/${name.slice('../../../lib/'.length)}.js`);
+  if (name.endsWith('/series')) return { useSvgId: (prefix) => prefix, Crosshair: 'crosshair' };
+  if (name === './usePoolHistory') return { usePoolHistory: () => answer };
+  if (name === './RangeStatus') return (status ??= load('RangeStatus.tsx'));
+  if (LIB.test(name)) return require(`../.test-build/app/src/lib/${name.slice('../../../lib/'.length)}.js`);
   return {};
 };
-new Function('require', 'module', 'exports', compiled)(local, mod, mod.exports);
+/** A .tsx module of components/positions/visual, transpiled and run with `local` for its imports. */
+function load(file, extra = '') {
+  const source = readFileSync(new URL(`../src/components/positions/visual/${file}`, import.meta.url), 'utf8');
+  const compiled = ts.transpileModule(`${source}\n${extra}`, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText;
+  const module = { exports: {} };
+  new Function('require', 'module', 'exports', compiled)(local, module, module.exports);
+  return module.exports;
+}
+const mod = { exports: load('PriceVsRange.tsx', 'export { PriceChart };') };
 const { PriceChart } = mod.exports;
-const { state } = stateOfCase(loadCase('3136705'));
-/**
- * A line of the pool's prices as PriceChart takes it. Changed on purpose 2026-10-02 (RPC-SPEC §11.4): no hook builds one
- * from a fees history any more (the replay's reads of the pool's Swaps are gone, rugged97's rule 2); the chart keeps its
- * `series` for a later source, and draws the range and the price now without one.
- */
-const series = (quality) => ({
-  points: [2, 1, 0].map((ago) => ({ t: state.timestamp - ago * 3_600, price: 120 + ago, text: String(120 + ago), inRange: true })),
-  gapAt: -1,
-  state,
-  quality,
-});
-const facts = { base: {}, quote: {}, lower: 0, upper: Infinity, lowerText: null, upperText: null, now: 123, nowText: '123', where: 'inside', block: state.block + 10 };
 
-test('the module builds no price line from a fees history any more: no hook, and without a series the legend names the range and no line', () => {
+const item = CASES.inside;
+const facts = { base: item.base, quote: item.quote, lower: 0.0018, upper: 0.0035, lowerText: '0.0018', upperText: '0.0035', now: 0.0025, nowText: '0.0025', where: 'inside', block: 74_000_010 };
+const ask = { poolId: item.poolId, base: item.base.address, quote: item.quote.address };
+const END = 1_790_000_000;
+/** Every element of a rendered tree, depth first, the card's own components (RangeHead) drawn as React would. */
+function* walk(node) {
+  if (Array.isArray(node)) for (const child of node) yield* walk(child);
+  else if (node && typeof node === 'object' && node.props) {
+    yield node;
+    if (typeof node.type === 'function') yield* walk(node.type(node.props));
+    else yield* walk(node.props.children);
+  }
+}
+const text = (node) => (node == null || typeof node === 'boolean' ? '' : typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(text).join('') : text(node.props?.children));
+
+test('the module builds no price line from a fees history: no hook of its own, and without a history the legend names the range and the price now, and says why', () => {
   assert.equal(mod.exports.usePriceSeries, undefined);
   assert.equal(mod.exports.usePriceMissing, undefined);
-  const chart = PriceChart({ series: null, facts, missing: false });
-  const frame = chart.props.children.find((child) => child?.type === 'chart-frame');
+  answer = { phase: 'not_listed' };
+  const chart = PriceChart({ openedAt: END - 8 * 86_400, facts, ask });
+  const nodes = [...walk(chart)];
+  const frame = nodes.find((node) => node.type === 'chart-frame');
   assert.ok(frame, 'the chart’s frame stands, with the range and the price now');
-  const legend = JSON.stringify(chart.props.children[2].props.children);
-  assert.match(legend, /Your range/);
-  assert.doesNotMatch(legend, /"Price"|no-price|isn’t available/);
+  assert.equal(frame.props.points, 0, 'nothing to inspect without a line');
+  assert.equal(chart.props['data-pvr-line'], undefined);
+  const legend = nodes.find((node) => node.props.className === 'dm-pvr-legend');
+  assert.equal(text(legend), 'Your rangePrice nowPrice history isn’t available yet.');
 });
 
-test('an older historical endpoint is never rewritten with the current price at its old timestamp', () => {
-  for (const quality of ['verified', 'cached']) {
-    const got = series(quality);
-    const original = structuredClone(got.points);
-    const chart = PriceChart({ series: got, facts });
-    const frame = chart.props.children.find((child) => child?.type === 'chart-frame');
-    assert.ok(frame);
-    assert.ok(frame.props.valueText(got.points.length - 1).endsWith(`, ${got.points.at(-1).text}`));
-    assert.deepEqual(got.points, original, 'the reusable source series is immutable');
-    assert.equal(chart.props['data-pvr-quality'], quality);
-    assert.equal(frame.props.label.includes(quality), quality !== 'verified');
-    assert.ok(chart.props.children[2].props.children[1].props.children.includes('Price'), 'the visible legend is unchanged; qualification stays in chart semantics');
-  }
+test('a history is drawn as it was stored: its last point is its own last close, never the page’s price now at its old time', () => {
+  const data = historyFor(item, { poolId: item.poolId, currency: item.base.address, windowSeconds: 604_800, resolutionSeconds: 3_600 }, { end: END });
+  const before = structuredClone(data);
+  answer = { phase: 'answered', data, at: END * 1000 };
+  // The page's read a little later than the history's snapshot: the price moved since.
+  const later = { ...facts, now: 0.00262, nowText: '0.00262' };
+  const chart = PriceChart({ openedAt: END - 8 * 86_400, facts: later, ask });
+  const frame = [...walk(chart)].find((node) => node.type === 'chart-frame');
+  assert.equal(chart.props['data-pvr-line'], '');
+  assert.equal(frame.props.points, data.candles.length, 'every hourly close can be inspected');
+  const last = data.candles.at(-1);
+  const exact = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 6 }).format(Number(last.close));
+  assert.ok(frame.props.valueText(data.candles.length - 1).includes(`, ${exact}, `), frame.props.valueText(data.candles.length - 1));
+  assert.notEqual(exact, later.nowText, 'the last close is not the price now, so the check above means something');
+  assert.ok(!frame.props.valueText(data.candles.length - 1).includes(later.nowText), 'the price now is not written into the line');
+  assert.deepEqual(data, before, 'the stored answer is left as it came');
 });
 
-test('the same snapshot still writes the current endpoint exactly as the header does', () => {
-  const got = series('verified');
-  const chart = PriceChart({ series: got, facts: { ...facts, block: state.block } });
-  const frame = chart.props.children.find((child) => child?.type === 'chart-frame');
-  assert.ok(frame.props.valueText(got.points.length - 1).endsWith(', 123'));
+test('the price now is written exactly as the key figures write it, in its chip, and the range’s ends beside it', () => {
+  answer = { phase: 'reading' };
+  const chart = PriceChart({ openedAt: END - 8 * 86_400, facts: { ...facts, now: 7.10148e-7, nowText: '0.000000710148', lower: 3.66503e-7, upper: 7.99485e-7, lowerText: '0.000000366503', upperText: '0.000000799485', where: 'closed' }, ask });
+  const frame = [...walk(chart)].find((node) => node.type === 'chart-frame');
+  const plot = { width: 600, height: 242, left: 0, right: 500, top: 16, bottom: 212 };
+  const overlay = [...walk(frame.props.overlay(plot, null))];
+  const chip = overlay.find((node) => node.props['data-pvr-now'] === '');
+  assert.equal(text(chip), '0.0₆710148');
+  assert.equal(chip.props['data-pvr-price'], '0.000000710148');
+  assert.deepEqual(overlay.filter((node) => node.props['data-pvr-end']).map((node) => node.props['data-pvr-end']), ['max', 'min']);
+  assert.equal(text([...walk(chart)].find((node) => node.props.className === 'dm-pvr-says')), 'Closed — this position no longer earns fees');
+});
+
+test('while the chart’s code loads, its place holds the same status and a box of the chart’s own height, and nothing that reads as the chart', () => {
+  const { RangeChartWaiting, PAD_TOP, PAD_BOTTOM, PLOT_HEIGHT } = local('./RangeStatus');
+  const waiting = RangeChartWaiting({ facts: { ...facts, where: 'over', now: 0.0025, upper: 0.0018 } });
+  const nodes = [...walk(waiting)];
+  assert.equal(waiting.props['data-pvr-where'], undefined, 'the suites wait for [data-pvr-where]: the chart itself');
+  assert.equal(text(nodes.find((node) => node.props.className === 'dm-pvr-says')), 'Not earning — the price is above your range');
+  assert.equal(text(nodes.find((node) => node.props.className === 'dm-pvr-move')), 'It must fall 28% to come back into your range.');
+  // In rem since the density change, as ChartFrame sizes the chart that replaces it (16 design px to the rem).
+  assert.equal(nodes.find((node) => node.props.className === 'dm-pvr').props.style.height, `${Number(((PAD_TOP + PLOT_HEIGHT + PAD_BOTTOM) / 16).toFixed(5))}rem`);
 });
