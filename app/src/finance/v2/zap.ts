@@ -346,6 +346,17 @@ const POOL_KEY = [{ type: 'tuple', components: [
   { name: 'currency0', type: 'address' }, { name: 'currency1', type: 'address' }, { name: 'fee', type: 'uint24' },
   { name: 'tickSpacing', type: 'int24' }, { name: 'hooks', type: 'address' },
 ] }] as const
+/**
+ * Multicall3's aggregate3 at the chain profile's `multicall3` (a manifest dependency of every V2 chain): many reads in one
+ * eth_call, each allowed to fail on its own. Added 2026-10-05 (readPools).
+ */
+const MULTICALL3_ABI = [{
+  name: 'aggregate3', type: 'function', stateMutability: 'payable',
+  inputs: [{ name: 'calls', type: 'tuple[]', components: [{ name: 'target', type: 'address' }, { name: 'allowFailure', type: 'bool' }, { name: 'callData', type: 'bytes' }] }],
+  outputs: [{ name: 'returnData', type: 'tuple[]', components: [{ name: 'success', type: 'bool' }, { name: 'returnData', type: 'bytes' }] }],
+}] as const
+/** One read inside an aggregate3. */
+type Ask = { target: Address; abi: Abi; functionName: string; args: readonly unknown[] }
 
 /** The PositionManager's packed PositionInfo: 200 bits of pool id | 24 tickUpper | 24 tickLower | 8 hasSubscriber (finance/position.ts). */
 function positionInfo(info: bigint) {
@@ -1561,6 +1572,92 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
     })
   }
 
+  /**
+   * Reads inside one aggregate3, in order: each answer decoded with its own ABI, or null for one that failed or answered
+   * something its ABI does not (never a guessed value).
+   */
+  async function aggregate(rpc: Rpc, asks: readonly Ask[], block: Hex): Promise<(unknown | null)[]> {
+    const data = encodeFunctionData({ abi: MULTICALL3_ABI, functionName: 'aggregate3', args: [asks.map((ask) => ({ target: ask.target, allowFailure: true, callData: encodeFunctionData({ abi: ask.abi, functionName: ask.functionName, args: ask.args }) }))] })
+    const replies = decodeFunctionResult({ abi: MULTICALL3_ABI, functionName: 'aggregate3', data: await t.call(rpc, chain.multicall3, data, block) }) as readonly { success: boolean; returnData: Hex }[]
+    if (replies.length !== asks.length) fail('invalid_wallet_reply')
+    return replies.map((reply, index) => {
+      if (!reply.success || reply.returnData === '0x') return null
+      try {
+        return decodeFunctionResult({ abi: asks[index].abi, functionName: asks[index].functionName, data: reply.returnData })
+      } catch {
+        return null
+      }
+    })
+  }
+
+  /**
+   * Many pools at one block, in two reads through the wallet. Changed on purpose (data) 2026-10-05 (the owner's New position
+   * on Base and Arbitrum One, src/v2in/journey/otherChains.ts): a token's pools there are found by reading every pair and
+   * fee tier its network's profile names, about two dozen pools, which one readPool each made a quarter of a minute's
+   * wait. The chain profile's Multicall3 asks the v4 StateView and the v3 factory about all of them at once (and the
+   * factory for each v3 tier's spacing), then every v3 pool that exists for its slot0 and liquidity. Each answer is what
+   * readPool says of that pool, in the order asked; a read that failed reads as no pool, never as a price.
+   */
+  async function readPools(pools: readonly PoolRef[]): Promise<(PoolOnChain & { spacingOk: boolean })[]> {
+    guard()
+    for (const pool of pools) {
+      if (pool.dex !== 3 && pool.dex !== 4) fail('plan_pool_dex')
+      if (!addr(pool.currency0) || !addr(pool.currency1) || !addr(pool.hooks) || BigInt(pool.currency0) >= BigInt(pool.currency1)) fail('plan_pool_order')
+    }
+    if (pools.length === 0) return []
+    return t.bounded(async (rpc) => {
+      await t.identity(rpc)
+      const block = await t.latestBlock(rpc)
+      const refs: PoolRef[] = pools.map((pool) => ({ ...pool, currency0: lower(pool.currency0), currency1: lower(pool.currency1), hooks: lower(pool.hooks) }))
+      const ids = refs.map((pool) => (pool.dex === 4 ? keccak256(encodeAbiParameters(POOL_KEY, [{ currency0: pool.currency0, currency1: pool.currency1, fee: pool.fee, tickSpacing: pool.tickSpacing, hooks: pool.hooks }])) : null))
+      const fees = [...new Set(refs.filter((pool) => pool.dex === 3).map((pool) => pool.fee))]
+      const first: Ask[] = []
+      refs.forEach((pool, index) => {
+        if (pool.dex === 4) {
+          first.push({ target: chain.uniswap.v4.stateView, abi: V4_STATE_VIEW_ABI, functionName: 'getSlot0', args: [ids[index]] })
+          first.push({ target: chain.uniswap.v4.stateView, abi: V4_STATE_VIEW_ABI, functionName: 'getLiquidity', args: [ids[index]] })
+        } else {
+          first.push({ target: chain.uniswap.v3.factory, abi: V3_FACTORY_ABI, functionName: 'getPool', args: [pool.currency0, pool.currency1, pool.fee] })
+        }
+      })
+      for (const fee of fees) first.push({ target: chain.uniswap.v3.factory, abi: V3_FACTORY_ABI, functionName: 'feeAmountTickSpacing', args: [fee] })
+      const answers = await aggregate(rpc, first, block.tag)
+      const spacing = new Map(fees.map((fee, index) => {
+        const answer = answers[answers.length - fees.length + index]
+        return [fee, answer === null ? 0 : Number(answer)] as const
+      }))
+      let at = 0
+      const found = refs.map((pool, index) => {
+        if (pool.dex === 4) {
+          const slot0 = answers[at++] as readonly [bigint, number, number, number] | null
+          const liquidity = answers[at++] as bigint | null
+          const sqrt = slot0?.[0] ?? 0n
+          return { pool, id: ids[index] as Hex, exists: sqrt !== 0n, initialized: sqrt !== 0n, sqrtPriceX96: sqrt, tick: slot0 ? Number(slot0[1]) : 0, liquidity: liquidity ?? 0n, block: block.number }
+        }
+        const answer = answers[at++] as string | null
+        const address = answer !== null && ADDRESS.test(answer) ? (answer.toLowerCase() as Address) : ZERO_ADDRESS
+        return { pool, id: address as Hex, exists: !isNative(address), initialized: false, sqrtPriceX96: 0n, tick: 0, liquidity: 0n, block: block.number }
+      })
+      // The v3 pools that exist: their slot0 and liquidity, at the same block.
+      const live = found.filter((entry) => entry.pool.dex === 3 && entry.exists)
+      if (live.length > 0) {
+        const second = await aggregate(rpc, live.flatMap((entry): Ask[] => [
+          { target: entry.id as Address, abi: V3_POOL_ABI, functionName: 'slot0', args: [] },
+          { target: entry.id as Address, abi: V3_POOL_ABI, functionName: 'liquidity', args: [] },
+        ]), block.tag)
+        live.forEach((entry, index) => {
+          const slot0 = second[index * 2] as readonly [bigint, number] | null
+          const liquidity = second[index * 2 + 1] as bigint | null
+          entry.sqrtPriceX96 = slot0?.[0] ?? 0n
+          entry.initialized = entry.sqrtPriceX96 !== 0n
+          entry.tick = slot0 ? Number(slot0[1]) : 0
+          entry.liquidity = liquidity ?? 0n
+        })
+      }
+      return found.map((entry) => ({ ...entry, spacingOk: entry.pool.dex === 3 ? spacing.get(entry.pool.fee) === entry.pool.tickSpacing : true }))
+    })
+  }
+
   /** A token read that reverted, or answered something that is not the ABI's (no such function, a bytes32 symbol): unread, not a failure. */
   const unreadable = (error: unknown) => revertIn(error) || (error instanceof BaseError && /^(Abi|PositionOutOfBounds|InvalidBytes|SizeOverflow|InvalidHex)/.test(error.name))
 
@@ -1649,6 +1746,7 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
     review,
     acknowledgePause,
     readPool,
+    readPools,
     readTokens,
     /**
      * Whether `vault` (a Domino V2 vault of this chain, as `vaultProbe` says) holds this position as its root, and whether

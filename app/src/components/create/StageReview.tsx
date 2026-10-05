@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, type LazyExoticComponent } from 'react'
 import { CREATE } from '../../lib/create/copy'
+import { poolOnOtherChain } from '../../lib/create/otherChains'
 import type { PairBalancesState } from './usePairBalances'
 import { batchedSteps, priceOf, takesOnly, validateSlippage, walletSteps, type JourneyState } from '../../lib/create/journey'
 import { slippageWarns, slippageWritten } from '../../lib/create/slippage'
@@ -414,6 +415,10 @@ export function FinalControl({ state, balances, onBusy }: { state: JourneyState;
   // Create position as the chunk asked ahead left it, drawn at once; else lazily, behind the stand-in, as before
   // (2026-09-28). Chosen once for the control's life, so it never changes type, and loses nothing, under the person.
   const [Control] = useState(() => loadedCreate ?? CreateControl)
+  // Added 2026-10-05 (New position on Base and Arbitrum One): a pool of another network opens through Domino V2 alone
+  // (src/v2in/journey/JourneyCreateV2.tsx), never through Domino V1's setup contract, which is Robinhood Chain's. This
+  // control stands there only when that code could not load.
+  if (poolOnOtherChain(state.pool)) return <Unavailable note={CREATE.review.otherNetwork} />
   if (Control) {
     return (
       <>

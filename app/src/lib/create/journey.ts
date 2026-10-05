@@ -119,6 +119,13 @@ const tokenAddress = (token: TokenDisplay) => token.address
 /** Whether a pool trades the currency at `key`. */
 export const poolHolds = (pool: PoolOption, key: AddressKey) => pool.currencies.some((currency) => tokenAddress(currency) === key)
 
+/**
+ * Whether a pool trades a chosen token: the same network and the same address. Added 2026-10-05 (New position on Base and
+ * Arbitrum One, lib/create/otherChains.ts): identity is chain plus address, so Base's ETH is never in a Robinhood Chain
+ * pool. Every token of the read service is Robinhood Chain's, so there this is exactly poolHolds.
+ */
+export const poolHoldsToken = (pool: PoolOption, token: TokenCandidate) => pool.currencies[0].chainId === token.token.chainId && poolHolds(pool, token.key)
+
 /** The pool's other currency, given one of its two. Null when `key` is not in the pool. */
 export function otherCurrency(pool: PoolOption, key: AddressKey): TokenDisplay | null {
   if (!poolHolds(pool, key)) return null
@@ -296,7 +303,7 @@ export function canContinue(stage: Stage, state: JourneyState, now: number): Che
     case 'pool':
       if (!state.token) return fail(CREATE.token.needToken)
       if (!state.pool) return fail(CREATE.pool.needPool)
-      if (!poolHolds(state.pool, state.token.key)) return fail(CREATE.pool.poolMismatch)
+      if (!poolHoldsToken(state.pool, state.token)) return fail(CREATE.pool.poolMismatch)
       // Create position opens positions through Domino V1's setup contract, which takes hookless, fixed-fee pools only.
       if (state.pool.hooks !== NATIVE_CURRENCY) return fail(CREATE.pool.unsupportedHooks)
       if (state.pool.feePips === DYNAMIC_FEE_PIPS) return fail(CREATE.pool.unsupportedDynamic)
@@ -352,8 +359,8 @@ export function goTo(state: JourneyState, stage: Stage, now: number): JourneySta
 
 /** A different token changes the units of the budget and may leave the chosen pool: both go. */
 export function withToken(state: JourneyState, token: TokenCandidate | null): JourneyState {
-  const same = token !== null && state.token !== null && token.key === state.token.key
-  const pool = token && state.pool && poolHolds(state.pool, token.key) ? state.pool : null
+  const same = token !== null && state.token !== null && token.key === state.token.key && token.token.chainId === state.token.token.chainId
+  const pool = token && state.pool && poolHoldsToken(state.pool, token) ? state.pool : null
   return {
     ...state,
     token,
@@ -366,7 +373,7 @@ export function withToken(state: JourneyState, token: TokenCandidate | null): Jo
 
 /** A second asset only narrows the pool list; a chosen pool that does not hold it goes. */
 export function withPaired(state: JourneyState, paired: TokenCandidate | null): JourneyState {
-  const pool = state.pool && (!paired || poolHolds(state.pool, paired.key)) ? state.pool : null
+  const pool = state.pool && (!paired || poolHoldsToken(state.pool, paired)) ? state.pool : null
   return { ...state, paired, pool, range: pool ? state.range : null }
 }
 

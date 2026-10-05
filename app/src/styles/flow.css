@@ -160,6 +160,8 @@
   [data-picker-variant="create"] .dm-mkt-option-head:hover { background: none; }
   .dm-flow-pool-id { display: grid; flex: 0 1 auto; gap: 2px; min-width: 0; text-align: left; }
   .dm-flow-pool-pair { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  /* 2026-10-05: a pool's network (New position on Base and Arbitrum One), a small chip under its pair. */
+  .dm-flow-pool-net { justify-self: start; }
   /* The fee is a fee-tier chip, as in every table and list (§3.4): radius 8 on surface-3. */
   /* Changed on purpose (round 6, 2026-09-27): the row names its pair and fee only, one line, so the chip centres on it. */
   [data-picker-variant="create"] .dm-mkt-option-head > .dm-chip { align-self: center; margin-top: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-muted); }

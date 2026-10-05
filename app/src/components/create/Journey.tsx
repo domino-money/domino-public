@@ -28,6 +28,7 @@ import {
   type Stage,
   type TickRange,
 } from '../../lib/create/journey'
+import { useOtherChains } from '../../lib/create/otherChains'
 import { forgetCreatePools } from '../../lib/create/poolsAhead'
 import { featuredStore, useFeatured } from '../../lib/read/featuredSource'
 import { verifyCandidate } from '../../lib/read/screens/catalogueSession'
@@ -146,6 +147,10 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   const running = useRef<AbortController | null>(null)
   // The list on screen (lib/read/featuredSource.ts): a linked pool it names is found by its entry.
   const featured = useFeatured()
+  // Added 2026-10-05 (the owner: New position across the three networks Domino V2 serves): Base and Arbitrum One beside
+  // Robinhood Chain, handed in by the journey's wrapper in a build that carries V2 (lib/create/otherChains.ts); null
+  // everywhere else, where every step is exactly today's.
+  const others = useOtherChains()
 
   // Leaving the flow cancels its link verification, and its pools reads still out, and forgets the lists it kept.
   useEffect(
@@ -384,7 +389,7 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   // as soon as a pool is chosen and is settled by the time Review reads it:
   // the amount step names the second token with it, and Review and Create
   // position plan the deposit from it.
-  const pair = usePairBalances(source, state.pool)
+  const pair = usePairBalances(source, state.pool, others)
 
   const checkFor: Record<VisualStep, Check> = { pool: poolCheck, range: rangeCheck, amount: amountCheck, review: canContinue('review', state, now) }
   const check = checkFor[current]
@@ -438,7 +443,7 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
         if (__DOMINO_V2__ && V2PoolAdvanced) {
           return (
             <div className="dm-flow-stack" data-pool-stage="">
-              <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} onPreview={setPreview} />
+              <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} onPreview={setPreview} others={others} />
               {!state.pool && (
                 <Suspense fallback={null}>
                   <V2PoolAdvanced />
@@ -449,7 +454,7 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
         }
         return <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} onPreview={setPreview} />
       case 'range':
-        return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} />
+        return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} others={others} />
       case 'amount':
         return <StageAmount state={state} balances={pair} onBudget={setBudget} onDeposit={setDeposit} onSlippage={setSlippage} />
       case 'review':

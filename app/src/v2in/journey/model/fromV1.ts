@@ -11,7 +11,8 @@ import { rangeCheckOn, type JourneyState } from './state'
  * behind them): what his journey chose, read for the zap path's plan and review. Pure.
  *
  *   - zapStateFromV1: the pool (V1's verified PoolOption, poolFromList's v4 hookless fixed-fee JourneyPool), the range and
- *     the slippage exactly as chosen; Robinhood Chain; no starting price (V1 lists only pools with one);
+ *     the slippage exactly as chosen; the pool's network (Robinhood Chain, or since 2026-10-05 Base or Arbitrum One, whose
+ *     pools today's journey reads through the wallet, v3 or v4); no starting price (V1 lists only pools with one);
  *   - inputsFromV1: what the wallet puts in, from V1's own funding of the deposit (lib/create/reviewPlan.ts, the same
  *     reading its Review draws from): both of the pool's tokens at the amounts the amount step showed, or the one token the
  *     wallet holds, all of it, for the planner to swap in; short says which token lacks and by how much; wait while the
@@ -23,7 +24,7 @@ export function zapStateFromV1(state: Pick<V1JourneyState, 'pool' | 'range' | 's
   if (!option || !state.range) return null
   const pool = poolFromList({ ...option, currencies: option.currencies, readAt: option.readAt })
   if (!pool) return null
-  return { chainId: 4663, pool, start: null, range: state.range, amounts: { mode: 'pool', other: null, text: {} }, slippage: state.slippageBps, step: 'review', furthest: 'review' }
+  return { chainId: pool.chainId, pool, start: null, range: state.range, amounts: { mode: 'pool', other: null, text: {} }, slippage: state.slippageBps, step: 'review', furthest: 'review' }
 }
 
 export type V1Funding =

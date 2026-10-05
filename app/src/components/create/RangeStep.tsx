@@ -197,6 +197,7 @@ export function RangeStep({
   token,
   onRange,
   onPool,
+  reread = null,
 }: {
   source: ReadSource
   state: JourneyState
@@ -204,6 +205,8 @@ export function RangeStep({
   token: AddressKey
   onRange: (range: TickRange) => void
   onPool: (option: PoolOption) => void
+  /** Another network's pool (2026-10-05): its price read again there, through the wallet; null for every other pool. */
+  reread?: ((signal: AbortSignal) => Promise<PoolOption | null>) | null
 }) {
   const now = useStaleClock(pool.readAt)
   const price = poolPrice(pool, now)
@@ -214,7 +217,7 @@ export function RangeStep({
   const shown = usable ? shownPrice(usable) : null
   // Only a tie-break and an explicit "Custom"; the checked width is derived from the range on the price as read now.
   const [picked, setPicked] = useState<RangeMode | null>(null)
-  const { said, readIfStale } = useStalePriceRead(source, token, state.paired?.key ?? null, pool.key, onPool)
+  const { said, readIfStale } = useStalePriceRead(source, token, state.paired?.key ?? null, pool.key, onPool, reread)
   const range = state.range
   const view = range ? shownRange(range, inverted) : null
   const mode = shown && view ? rangeMode(view, shown.tick, shown.tickSpacing, picked) : null

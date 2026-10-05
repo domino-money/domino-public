@@ -78,10 +78,14 @@ export function feePercent(pips: number): string {
  * read service), as the zap path takes it. Structural, so this module imports nothing of V1's read layer: the option's
  * currencies (lowercase, native ETH as address(0)), fee in pips, spacing, hooks, its price and tick as read, the block.
  * Null for one the zap path never takes (a hook, a dynamic fee, a price that is not an integer).
+ * Changed on purpose 2026-10-05 (New position on Base and Arbitrum One, ../otherChains.ts): a pool today's journey read on
+ * another network through the wallet carries its network on its currencies and its version (`dex`; a v3 pool's key is its
+ * address as a 32-byte word). Without them, Robinhood Chain and v4, as before.
  */
 export function poolFromList(option: {
   key: string
-  currencies: readonly [{ address: string; symbol: string | null; decimals: number | null }, { address: string; symbol: string | null; decimals: number | null }]
+  dex?: Dex
+  currencies: readonly [{ address: string; symbol: string | null; decimals: number | null; chainId?: number }, { address: string; symbol: string | null; decimals: number | null; chainId?: number }]
   feePips: number
   tickSpacing: number
   hooks: string
@@ -99,13 +103,18 @@ export function poolFromList(option: {
     return null
   }
   const [a, b] = option.currencies
-  const pool = poolOf(4, a.address as Address, b.address as Address, option.feePips, option.tickSpacing)
+  const dex: Dex = option.dex ?? 4
+  const chainId = (a.chainId ?? 4663) as V2ChainId
+  if (![4663, 8453, 42161].includes(chainId) || (b.chainId ?? 4663) !== chainId) return null
+  const pool = poolOf(dex, a.address as Address, b.address as Address, option.feePips, option.tickSpacing)
   if (!pool || pool.currency0 !== lower(a.address)) return null
   if (!/^0x[0-9a-fA-F]{64}$/.test(option.key)) return null
+  // A v3 pool's id is its address, the key's last 20 bytes (its first 12 are zero).
+  if (dex === 3 && !/^0x0{24}[0-9a-fA-F]{40}$/.test(option.key)) return null
   return {
-    chainId: 4663,
+    chainId,
     pool,
-    id: lower(option.key) as Hex,
+    id: (dex === 3 ? `0x${option.key.slice(26).toLowerCase()}` : lower(option.key)) as Hex,
     exists: sqrt !== 0n,
     initialized: sqrt !== 0n,
     sqrtPriceX96: sqrt,

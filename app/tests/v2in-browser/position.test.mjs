@@ -154,7 +154,9 @@ test('(b) live on Base: the same page from read-v6, no USD and no APR; Domino\'s
     assert.equal(await detail.locator('[data-cell="apr"] [data-figure="none"]').count(), 1, 'no APR without a qualified source: a dash');
     // Changed on purpose 2026-10-03: the price's two sides are the app's one way round (lib/read/orientation.ts), as its
     // figure and the Price range chart are; the tile wrote the pool's order beside it ("1 ETH = 0.000333 USDC").
-    assert.match(await text(detail.locator('[data-stat="price"]')), /^1 USDC = \S+ ETH$/, 'the price now, in V1\'s own words');
+    // Changed on purpose 2026-10-05 (New position on Base and Arbitrum One): Base's USDC is a quote there as USDG is on
+    // Robinhood Chain, so ether is priced in dollars, as Domino V2's review writes it ("1 USDC = 0.00044 ETH" before).
+    assert.match(await text(detail.locator('[data-stat="price"]')), /^1 ETH = \S+ USDC$/, 'the price now, in V1\'s own words');
     assert.doesNotMatch(await text(detail), /\$/, 'no USD anywhere');
     // V1's row (review #5): one primary Collect fees, then the "···" menu with the three other actions.
     await detail.locator('[data-position-v2-action="protect"]').waitFor();

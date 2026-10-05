@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { catalogueTokens } from '../../config/selectedPoolCatalogue'
 import { CREATE } from '../../lib/create/copy'
+import { networkCandidate, type NetworkToken, type OtherChains } from '../../lib/create/otherChains'
 import { dropCreatePools, startCreatePools, warmPoolHints } from '../../lib/create/poolsAhead'
 import { stilled } from '../../lib/motion/stilled'
 import { rootScale } from '../../lib/rootScale'
@@ -11,7 +12,7 @@ import type { StatusLine } from '../../lib/read/screens/statusLine'
 import { knownTokens } from '../../lib/read/screens/tokenSearch'
 import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
 import type { ReadSource } from '../../lib/read/types'
-import { TokenSearch } from '../read/screens/TokenSearch'
+import { TokenSearch, type NetworkChoice } from '../read/screens/TokenSearch'
 import { Button, Skeleton } from '../ui'
 import { ChosenPool, PoolList } from './StagePool'
 
@@ -98,6 +99,7 @@ export function StageToken({
   onToken,
   onPool,
   onPreview,
+  others = null,
 }: {
   source: ReadSource | null
   state: JourneyState
@@ -108,13 +110,35 @@ export function StageToken({
   onPool: (option: PoolOption | null) => void
   /** A pool row pointed at or focused, or null once the list is left: the preview beside the steps shows it. */
   onPreview?: (option: PoolOption | null) => void
+  /**
+   * The other networks New position offers (2026-10-05, lib/create/otherChains.ts), from the journey's wrapper in a build
+   * that carries V2; null everywhere else, where this step is exactly today's.
+   */
+  others?: OtherChains | null
 }) {
   const [changing, setChanging] = useState(false)
   const known = knownTokens({ catalogue: catalogueTokens(), candidates })
+  // Another network's pasted address, read through the wallet once chosen; a newer choice, or leaving, stops it.
+  const resolving = useRef<AbortController | null>(null)
+  useEffect(() => () => resolving.current?.abort(), [])
 
   const fromSearch = (candidate: TokenCandidate) => {
+    resolving.current?.abort()
     onCandidates(mergeCandidates(candidates, [candidate]))
     onToken(candidate)
+  }
+  // Another network's token (2026-10-05): chosen as it is, or once its symbol and decimals are read on its network. Never
+  // merged into today's candidates, which are keyed by address alone (Base's ETH is not Robinhood Chain's).
+  const fromNetwork = async (row: NetworkToken): Promise<NetworkChoice> => {
+    resolving.current?.abort()
+    if (!others) return { ok: false, code: 'unavailable', reason: CREATE.token.notSelectable }
+    const controller = new AbortController()
+    resolving.current = controller
+    const resolved = row.unread ? await others.resolve(row, controller.signal) : ({ ok: true, token: row.token } as const)
+    if (controller.signal.aborted) return { ok: true }
+    if (!resolved.ok) return resolved
+    onToken(networkCandidate(resolved.token))
+    return { ok: true }
   }
   // Speed wave, 2026-09-28 (study item 27): the chosen token's pools are asked beside its token read, not after it; the
   // list below takes that read when it mounts (lib/create/poolsAhead.ts). Nothing is drawn sooner than before.
@@ -169,7 +193,7 @@ export function StageToken({
           </div>
         </div>
       ) : chosen ? (
-        <ChosenPool option={chosen} onChange={() => setChanging(true)} />
+        <ChosenPool option={chosen} onChange={() => setChanging(true)} network={others?.name(chosen.currencies[0].chainId) ?? null} />
       ) : (
         <>
           {state.pool && (
@@ -190,13 +214,16 @@ export function StageToken({
               initialValue={state.token ? searchName(state.token) : undefined}
               onChoose={choosing}
               onPoint={warmPoolHints}
+              home={others?.home}
+              others={others?.tokens}
+              onOther={others ? fromNetwork : undefined}
             />
           ) : (
             <p role="status" className="text-body text-fg-muted">
               {CREATE.page.sourceLoading}
             </p>
           )}
-          {source && state.token && <PoolList source={source} state={state} onPool={pickPool} onPreview={onPreview} />}
+          {source && state.token && <PoolList source={source} state={state} onPool={pickPool} onPreview={onPreview} others={others} />}
         </>
       )}
     </div>

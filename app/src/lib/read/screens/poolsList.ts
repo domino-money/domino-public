@@ -43,6 +43,12 @@ export interface PoolOption {
   /** The pool's packed directional protocol fee at `block`, as read (figures.ts `protocolFee`). */
   protocolFeeRaw?: number
   integration: 'hookless_fixed_fee' | 'requires_separate_adapter'
+  /**
+   * Added 2026-10-05 (New position on Base and Arbitrum One, lib/create/otherChains.ts): the Uniswap version of a pool read
+   * on another network through the wallet. Absent on every pool of the read service (Robinhood Chain), which are v4. A v3
+   * pool's `key` is its address as a 32-byte word (twelve zero bytes, then the address), the way the ABI writes one.
+   */
+  dex?: 3 | 4
   /** The block the pool was verified at. */
   block: number
   catalogue: { source: 'initialize_event' | 'verified_observation'; block: number } | null

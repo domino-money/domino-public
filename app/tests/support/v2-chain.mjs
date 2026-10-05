@@ -67,6 +67,12 @@ const V3_NPM_ABI = [...abiOf('IUniswapV3PositionManagerMinimal'), ...parseAbi(['
 const V3_FACTORY_ABI = abiOf('IUniswapV3FactoryMinimal');
 // Added 2026-10-02 (rev2 §2.6.5, §6.2): pools the app reads through the wallet (StateView on v4, the factory and the pool on v3).
 const STATE_VIEW_ABI = abiOf('IV4StateViewMinimal');
+/** Multicall3's aggregate3 (added 2026-10-05, finance/v2/zap.ts readPools). */
+const MULTICALL3_ABI = parseAbi([
+  'struct Call3 { address target; bool allowFailure; bytes callData; }',
+  'struct Result3 { bool success; bytes returnData; }',
+  'function aggregate3(Call3[] calls) payable returns (Result3[] returnData)',
+]);
 const V3_POOL_ABI = abiOf('IUniswapV3PoolMinimal');
 const POOL_KEY_TYPE = [{ type: 'tuple', components: [{ name: 'currency0', type: 'address' }, { name: 'currency1', type: 'address' }, { name: 'fee', type: 'uint24' }, { name: 'tickSpacing', type: 'int24' }, { name: 'hooks', type: 'address' }] }];
 /** A v4 pool's id, keccak256(abi.encode(PoolKey)), as StateView takes it. */
@@ -154,6 +160,7 @@ function profileOf(chainId) {
     v3PositionManager: lower(raw.uniswap.v3.positionManager),
     v3Factory: lower(raw.uniswap.v3.factory),
     v4StateView: lower(raw.uniswap.v4.stateView),
+    multicall3: lower(raw.multicall3),
     universalRouter: lower(raw.uniswap.universalRouter.address),
     permit2: lower(raw.permit2),
     weth: lower(raw.wrappedNative.address),
@@ -269,6 +276,8 @@ export function createV2Chain({
   let refuseSend = false, refuseSign = false, revertNext = false, priceMoved = false, legsMoved = false;
   let managerOverride = null;
   const log = [], asked = [], offChain = [], sends = [], declined = [], signed = [], missing = [];
+  // How many calls each aggregate3 carried (added 2026-10-05).
+  const multicalls = [];
   // The batch path (added 2026-10-02): what wallet_sendCalls was asked, the next refusal, and a hold on the status.
   const batches = [];
   let refuseBatch = null, holdBatch = false;
@@ -430,6 +439,26 @@ export function createV2Chain({
     if (functionName === 'getSlot0') return encodeFunctionResult({ abi: STATE_VIEW_ABI, functionName, result: [found?.sqrtPriceX96 ?? 0n, found?.tick ?? 0, 0, found?.pool.fee ?? 0] });
     if (functionName === 'getLiquidity') return encodeFunctionResult({ abi: STATE_VIEW_ABI, functionName, result: found?.liquidity ?? 0n });
     throw new Error(`unexpected ${functionName} on StateView`);
+  }
+  /**
+   * Multicall3's aggregate3 (added 2026-10-05, finance/v2/zap.ts readPools): each call run against this world as a call of
+   * its own from the Multicall3 address, in order; one that reverts answers (false, its revert data) when it may fail.
+   */
+  async function multicall(w, data) {
+    const { functionName, args } = decodeFunctionData({ abi: MULTICALL3_ABI, data });
+    if (functionName !== 'aggregate3') throw new Error(`unexpected ${functionName} on Multicall3`);
+    const results = [];
+    for (const call of args[0]) {
+      try {
+        const { result } = await execute(w, { to: call.target, from: profile.multicall3, data: call.callData });
+        results.push({ success: true, returnData: result });
+      } catch (error) {
+        if (!(error instanceof Revert) || !call.allowFailure) throw error;
+        results.push({ success: false, returnData: error.data ?? '0x' });
+      }
+    }
+    multicalls.push(args[0].length);
+    return encodeFunctionResult({ abi: MULTICALL3_ABI, functionName, result: results });
   }
   /** A v3 pool this fake knows: slot0 and liquidity. */
   function v3Pool(entry, data) {
@@ -676,6 +705,7 @@ export function createV2Chain({
       else if (to === profile.v3PositionManager) result = positionManager(ctx, 3, data);
       else if (to === profile.v3Factory) result = factory(w, data);
       else if (to === profile.v4StateView) result = stateView(w, data);
+      else if (to === profile.multicall3) result = await multicall(w, data);
       else if ([...w.pools.values()].some((p) => p.pool.dex === 3 && v3PoolOf(p.pool) === to)) result = v3Pool([...w.pools.values()].find((p) => p.pool.dex === 3 && v3PoolOf(p.pool) === to), data);
       else result = erc20(ctx, to, data);
     }
@@ -862,7 +892,7 @@ export function createV2Chain({
 
   const nftOf = (dex, tokenId) => world.nfts[dex].get(BigInt(tokenId));
   return {
-    owner, home, profile, contracts, account, log, asked, offChain, sends, declined, signed, missing, request,
+    owner, home, profile, contracts, account, log, asked, offChain, sends, declined, signed, missing, multicalls, request,
     /** The chain the wallet is on now. */
     get chainId() { return current; },
     /** The block the next read sees. */

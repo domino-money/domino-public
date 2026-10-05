@@ -29,6 +29,10 @@ export const JOURNEY = {
     unsupported: 'This pool isn’t supported.',
     sameToken: 'Choose two different tokens.',
     decimalsUnknown: 'This token doesn’t say how many decimals it has, so it can’t be used here.',
+    /** Another network's token chosen in today's journey with no wallet connected (2026-10-05, ./otherChains.ts). */
+    connectFor: (chain: string) => `Connect your wallet to see the pools on ${chain}.`,
+    /** Its S1 gate closed while the page was open. */
+    networkClosed: (chain: string) => `New positions on ${chain} aren’t open right now.`,
     connectFirst: 'Connect a wallet to read a pool on this network.',
     change: 'Change pool',
     readAt: (block: string) => `Read at block ${block}`,

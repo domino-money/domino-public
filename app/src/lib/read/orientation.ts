@@ -20,11 +20,22 @@
  */
 import { NATIVE_ETH, USDG, WETH } from '../../config/mainTokens'
 
-/** How strongly a token is the one a price is counted in: the dollar first, then ether, then any other token. */
+/**
+ * How strongly a token is the one a price is counted in: the dollar first, then ether, then any other token.
+ * Changed on purpose 2026-10-05 (New position on Base and Arbitrum One, lib/create/otherChains.ts): those networks' USDC
+ * and WETH (spec F7 rev4 §1.2, their chain profiles' rank 1 and wrapped native), so their pools read "1 ETH = X USDC" on
+ * every step as on Domino V2's review (src/v2in/journey/model/price.ts). Robinhood Chain's pools are unchanged.
+ */
 const QUOTE_RANK: ReadonlyMap<string, number> = new Map([
   [USDG, 2],
   [NATIVE_ETH, 1],
   [WETH, 1],
+  // Base: USDC, WETH.
+  ['0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 2],
+  ['0x4200000000000000000000000000000000000006', 1],
+  // Arbitrum One: USDC, WETH.
+  ['0xaf88d065e77c8cc2239327c5edb3a432268e5831', 2],
+  ['0x82af49447d8a07e3bd95bd0d56f35241523fbab1', 1],
 ])
 
 /** A token's rank as a quote (2 for USDG, 1 for ETH and WETH, 0 for any other), by its address in any case. */

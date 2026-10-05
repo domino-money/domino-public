@@ -1,9 +1,10 @@
 import { CREATE } from '../../lib/create/copy'
 import type { JourneyState } from '../../lib/create/journey'
+import { onOtherChain, type OtherChains } from '../../lib/create/otherChains'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { ReadSource } from '../../lib/read/types'
 import { IconCheck } from '../icons'
-import { PoolPicker } from '../read/screens/PoolPicker'
+import { NetworkPoolPicker, PoolPicker } from '../read/screens/PoolPicker'
 import { SymbolText } from '../read/screens/SymbolText'
 import { TokenMarkPair } from '../TokenIcon'
 import { Button, Chip } from '../ui'
@@ -18,7 +19,7 @@ import { Button, Chip } from '../ui'
  * amount is typed in is the independent one (PairedAmounts.tsx). A currency
  * the read could not identify is said there, on its own row.
  */
-export function ChosenPool({ option, onChange }: { option: PoolOption; onChange: () => void }) {
+export function ChosenPool({ option, onChange, network = null }: { option: PoolOption; onChange: () => void; network?: string | null }) {
   return (
     <div className="dm-flow-panel" data-chosen-pool={option.key}>
       <div className="dm-flow-pool-head">
@@ -32,6 +33,8 @@ export function ChosenPool({ option, onChange }: { option: PoolOption; onChange:
             <SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} />
           </p>
           <p className="flex flex-wrap items-center gap-1.5">
+            {/* 2026-10-05 (New position on Base and Arbitrum One): the pool's network, once other networks are offered. */}
+            {network !== null && <Chip data-chain-chip={option.currencies[0].chainId}>{network}</Chip>}
             {/* Changed on purpose (round 6, 2026-09-27): the fee in plain words, "0.30% fee"; Uniswap is every pool's. */}
             <Chip title={CREATE.pool.verifiedAt(option.block)}>{CREATE.pool.fee(option.fee)}</Chip>
           </p>
@@ -59,14 +62,31 @@ export function PoolList({
   state,
   onPool,
   onPreview,
+  others = null,
 }: {
   source: ReadSource
   state: JourneyState
   onPool: (option: PoolOption | null) => void
   onPreview?: (option: PoolOption | null) => void
+  /** The other networks New position offers (2026-10-05): another network's token lists that network's pools. */
+  others?: OtherChains | null
 }) {
   const token = state.token
   if (!token) return null
+  // Another network's token (2026-10-05): its pools are read through the wallet on that network, drawn as today's rows.
+  if (others && onOtherChain(token.token)) {
+    const chosen = token.token
+    return (
+      <NetworkPoolPicker
+        key={`${chosen.chainId}:${token.key}`}
+        read={(signal) => others.pools(chosen, signal)}
+        network={others.name(chosen.chainId)}
+        pending={state.pool}
+        onPending={onPool}
+        onPreview={onPreview}
+      />
+    )
+  }
   return (
     <PoolPicker
       key={`${token.key}:${state.paired?.key ?? ''}`}
@@ -79,6 +99,7 @@ export function PoolList({
       compact
       variant="create"
       catalogue={false}
+      network={others?.home ?? null}
     />
   )
 }

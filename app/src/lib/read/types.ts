@@ -270,6 +270,12 @@ export type OpaqueCursor = string & { readonly [opaque]: true }
 export type ArtworkKey = 'ETH' | 'WETH' | 'USDG' | 'MARLIN' | 'UNI'
 
 /**
+ * The networks a token on screen can be on: Robinhood Chain, and since 2026-10-05 (the owner: New position across the
+ * three networks Domino V2 serves, spec F7 §1.2) Base and Arbitrum One. Read-service tokens are always Robinhood Chain's.
+ */
+export type TokenChainId = 4663 | 8453 | 42161
+
+/**
  * A token as a screen may show it. Identity is chain plus address. `symbol` on
  * a read token is untrusted text: render it only as React text, never as
  * markup, an attribute, a URL or an artwork key.
@@ -277,7 +283,7 @@ export type ArtworkKey = 'ETH' | 'WETH' | 'USDG' | 'MARLIN' | 'UNI'
 export type TokenDisplay =
   | {
       origin: 'read'
-      chainId: 4663
+      chainId: TokenChainId
       /** Lowercase. */
       address: string
       symbol: string | null

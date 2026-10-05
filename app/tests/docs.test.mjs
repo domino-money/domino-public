@@ -507,10 +507,12 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   assert.match(journey, /NEW_POOL_TITLE = 'Create a new pool \(advanced\)'/);
   assert.match(sectionText(create, 'step-pool'), /Create a new pool \(advanced\)/);
   // Four steps, none of them Automation, and the summary counts them; New position is Robinhood Chain's (no network choice).
+  // Changed on purpose 2026-10-05 (the owner: the search across the three networks, each result with its network's tag):
+  // still no network choice, and the search finds Base's and Arbitrum One's tokens too.
   assert.match(create.summary, /^Plan a position in four steps,/);
   assert.deepEqual(blocksOf(create).find((block) => block.kind === 'steps').items.map((step) => step.title), ['Pool', 'Range', 'Amount', 'Review']);
-  assert.match(sectionText(create, 'four-steps'), /New position opens positions on Robinhood Chain\./);
-  assert.match(readText(join(APP, 'src/v2in/journey/model/routing.ts')), /No network choice exists \(the owner, 2026-10-02 night\): New position is Robinhood Chain's\./);
+  assert.match(sectionText(create, 'four-steps'), /New position works on Robinhood Chain, Base and Arbitrum One\./);
+  assert.match(readText(join(APP, 'src/v2in/journey/model/routing.ts')), /No network choice exists \(the owner, 2026-10-02 night\): New position is Robinhood Chain's journey, whose search also finds\n \* Base's and Arbitrum One's tokens since 2026-10-05/);
 
   const positions = page('positions');
   // Changed on purpose (owner, 2026-09-24): the list is the positions the wallet created with Domino, read from chain; no lookup by NFT id.

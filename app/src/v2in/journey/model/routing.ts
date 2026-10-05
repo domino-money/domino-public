@@ -8,7 +8,8 @@ import { JOURNEY_STAYS_ON_ROBINHOOD, SETUP_STAYS_WHILE_PREVIEW } from '../consta
  *   - `zap`: the same four steps on Domino's new contracts (the zap): to the review then the locked sentence under
  *     `preview`, for real under `live`;
  *   - `closed`: not offered (Base or Arbitrum One with its gate `off`).
- * No network choice exists (the owner, 2026-10-02 night): New position is Robinhood Chain's. Pure.
+ * No network choice exists (the owner, 2026-10-02 night): New position is Robinhood Chain's journey, whose search also finds
+ * Base's and Arbitrum One's tokens since 2026-10-05 (../otherChains.ts). Pure.
  */
 export type GateMode = 'off' | 'preview' | 'live'
 export type JourneyRoute = 'setup' | 'zap' | 'closed'

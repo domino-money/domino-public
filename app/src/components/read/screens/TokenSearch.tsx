@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type KeyboardEvent } from 'react'
+import type { NetworkToken } from '../../../lib/create/otherChains'
 import { unreadToken } from '../../../lib/read/project'
 import { formatUsdCompact } from '../../../lib/read/decimal'
 import { dexStore, usdText } from '../../../lib/read/dexFigures'
@@ -139,6 +140,41 @@ function AddressRow({ wire }: { wire: string }) {
   )
 }
 
+/** A hit's network, in the journey's chip style (2026-10-05, the owner: "the results get the network's tag"). */
+function NetworkTag({ chainId, name }: { chainId: number; name: string }) {
+  return (
+    <span className="dm-chip shrink-0" data-chain-chip={chainId}>
+      {name}
+    </span>
+  )
+}
+
+/**
+ * Another network's token as a hit (2026-10-05, New position on Base and Arbitrum One): its name and address, and its
+ * network's tag. Nothing is looked up for it here, no artwork lookup, no liquidity, no lookalike check (those are
+ * Robinhood Chain's); a pasted address is offered as one to look up on that network.
+ */
+function NetworkRow({ row }: { row: NetworkToken }) {
+  const symbol = row.token.symbol
+  return (
+    <>
+      {row.unread ? <span aria-hidden="true" className="dm-flow-hit-blank" /> : <TokenMark token={row.token} size={28} />}
+      <span className="grid min-w-0 flex-1 gap-0.5">
+        <span className="dm-flow-hit-name">
+          {row.unread ? READ_ADDRESS : symbol === null ? <span className="text-fg-subtle">{UNNAMED}</span> : <bdi className="inline-block max-w-[24ch] truncate align-bottom">{symbol}</bdi>}
+        </span>
+        <span className="dm-flow-hit-meta">
+          <Address value={row.token.address} short />
+        </span>
+      </span>
+      <NetworkTag chainId={row.chainId} name={row.network} />
+    </>
+  )
+}
+
+/** What choosing another network's token came to: chosen, or why not, in words for the line under the field. */
+export type NetworkChoice = { ok: true } | { ok: false; code: string; reason: string }
+
 /**
  * A token found by name, the way an exchange finds one: type a few letters
  * and the tokens this app knows appear; paste an address and it is offered
@@ -166,6 +202,9 @@ export function TokenSearch({
   initialValue,
   onChoose,
   onPoint,
+  home,
+  others,
+  onOther,
 }: {
   source: ReadSource
   known: readonly KnownToken[]
@@ -185,6 +224,14 @@ export function TokenSearch({
   onChoose?: (key: AddressKey | null) => void
   /** New position: the address of the row pointed at while the list is open, so its pool hints can be asked early. */
   onPoint?: (key: AddressKey) => void
+  /**
+   * New position on the other networks (2026-10-05, lib/create/otherChains.ts): Robinhood Chain's tag on today's hits,
+   * the other networks' hits for the text typed, listed after today's with their tag, and what choosing one does. All
+   * three absent everywhere else, where the list is exactly today's.
+   */
+  home?: string
+  others?: (query: string) => readonly NetworkToken[]
+  onOther?: (row: NetworkToken) => Promise<NetworkChoice>
 }) {
   const [value, setValue] = useState(initialValue ?? '')
   const [open, setOpen] = useState(false)
@@ -194,7 +241,8 @@ export function TokenSearch({
   useSyncExternalStore(dexStore.subscribe, dexStore.version, dexStore.version)
   const [problem, setProblem] = useState<string | null>(() => typedProblem(initialValue ?? ''))
   const [said, setSaid] = useState<Said | null>(null)
-  const [failed, setFailed] = useState<{ code: string; reason: string } | null>(null)
+  // `text`: the line itself, for another network's token, whose reasons are the wallet's (2026-10-05).
+  const [failed, setFailed] = useState<{ code: string; reason: string; text?: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [stored, setStored] = useState<{ query: string; candidates: TokenCandidate[] } | null>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -205,11 +253,15 @@ export function TokenSearch({
   const foundRef = useRef(onFound)
   const chose = useRef(onChoose)
   const point = useRef(onPoint)
+  const other = useRef(onOther)
+  // Each choice of another network's token, counted: an answer for an earlier one is dropped.
+  const otherTurn = useRef(0)
   useEffect(() => {
     foundRef.current = onFound
     chose.current = onChoose
     point.current = onPoint
-  }, [onFound, onChoose, onPoint])
+    other.current = onOther
+  }, [onFound, onChoose, onPoint, onOther])
   useEffect(
     () => () => {
       running.current?.abort()
@@ -285,14 +337,19 @@ export function TokenSearch({
   // hands over the search's answer instead of reading it again (study item 28, 2026-09-28).
   const verifiedBySearch = new Map(persisted.flatMap((token) => (token.candidate ? [[token.key, token.candidate] as const] : [])))
   const expanded = open && problem === null
-  const highlighted = results.length === 0 ? -1 : active === null ? preselect : Math.min(active, results.length - 1)
+  // The other networks' hits (2026-10-05), after today's: one list for the keyboard, today's preselection unchanged.
+  const extra = expanded && others ? others(query) : []
+  const total = results.length + extra.length
+  const highlighted = total === 0 ? -1 : active === null ? preselect : Math.min(active, total - 1)
   const listboxId = `${id}-listbox`
   const optionId = (result: SearchResult) => `${id}-option-${keyOf(result)}`
+  const networkOptionId = (row: NetworkToken) => `${id}-option-${row.chainId}-${row.token.address}`
+  const highlightedId = highlighted < 0 ? undefined : highlighted < results.length ? optionId(results[highlighted]) : networkOptionId(extra[highlighted - results.length])
   // A hit that passes for one of the site's main tokens, or carries a misleading name, is listed and never chosen (I1).
   const warned = (result: SearchResult) => result.kind === 'known' && tokenWarning({ symbol: result.token.label, address: result.token.key }) !== null
   const excluded = (result: SearchResult) => (exclude !== null && keyOf(result) === exclude) || warned(result)
   // The row pointed at while the list is open: New position asks its pool hints now (speed wave, 2026-09-28).
-  const pointed = expanded && highlighted >= 0 ? keyOf(results[highlighted]) : null
+  const pointed = expanded && highlighted >= 0 && highlighted < results.length ? keyOf(results[highlighted]) : null
   useEffect(() => {
     if (pointed) point.current?.(pointed)
   }, [pointed])
@@ -377,6 +434,40 @@ export function TokenSearch({
     read(result.token.wire, name)
   }
 
+  /** Another network's token: handed to New position, which reads what it needs of it through the wallet. */
+  const chooseOther = (row: NetworkToken) => {
+    stop()
+    // Anything today's choice started (its pools read) stops: this token is another network's.
+    chose.current?.(null)
+    setOpen(false)
+    setProblem(null)
+    setFailed(null)
+    const name = row.unread ? shortAddress(row.token.address) : (row.token.symbol ?? shortAddress(row.token.address))
+    setValue(row.unread ? row.token.address : name)
+    const turn = ++otherTurn.current
+    const outcome = other.current?.(row)
+    if (!outcome) return
+    setBusy(true)
+    setSaid({ code: 'loading', words: reading(name) })
+    void outcome.then(
+      (done) => {
+        if (otherTurn.current !== turn) return
+        setBusy(false)
+        if (done.ok) {
+          setSaid(null)
+          return
+        }
+        setFailed({ code: done.code, reason: done.reason, text: done.reason })
+        setSaid({ code: done.code, words: done.reason })
+      },
+      () => {
+        if (otherTurn.current !== turn) return
+        setBusy(false)
+        setFailed({ code: 'unavailable', reason: NOT_READ })
+      },
+    )
+  }
+
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     switch (event.key) {
       case 'ArrowDown':
@@ -384,18 +475,19 @@ export function TokenSearch({
         if (!open) {
           setOpen(true)
           setActive(null)
-        } else if (results.length > 0) {
-          setActive(Math.min(highlighted + 1, results.length - 1))
+        } else if (total > 0) {
+          setActive(Math.min(highlighted + 1, total - 1))
         }
         return
       case 'ArrowUp':
         event.preventDefault()
-        if (expanded && results.length > 0) setActive(Math.max(highlighted - 1, 0))
+        if (expanded && total > 0) setActive(Math.max(highlighted - 1, 0))
         return
       case 'Enter': {
         event.preventDefault()
         if (expanded && highlighted >= 0) {
-          choose(results[highlighted])
+          if (highlighted < results.length) choose(results[highlighted])
+          else chooseOther(extra[highlighted - results.length])
           return
         }
         const trimmed = value.trim()
@@ -436,7 +528,7 @@ export function TokenSearch({
           aria-expanded={expanded}
           aria-controls={listboxId}
           aria-autocomplete="list"
-          aria-activedescendant={expanded && highlighted >= 0 ? optionId(results[highlighted]) : undefined}
+          aria-activedescendant={expanded ? highlightedId : undefined}
           aria-invalid={problem ? true : undefined}
           aria-describedby={problem ? `${id}-error` : undefined}
           value={value}
@@ -487,11 +579,33 @@ export function TokenSearch({
                   >
                     {result.kind === 'known' ? <KnownRow token={result.token} twin={twins.has(result.token.key)} /> : <AddressRow wire={result.wire} />}
                     {disabled && !warned(result) && <span className="dm-flow-hit-meta shrink-0">{ALREADY_CHOSEN}</span>}
+                    {home !== undefined && <NetworkTag chainId={4663} name={home} />}
                   </button>
                 )
               })}
+            {extra.map((row, index) => {
+              const current = results.length + index === highlighted
+              return (
+                <button
+                  key={`${row.chainId}:${row.token.address}`}
+                  type="button"
+                  id={networkOptionId(row)}
+                  role="option"
+                  tabIndex={-1}
+                  aria-selected={current}
+                  data-token-network-option={`${row.chainId}:${row.token.address}`}
+                  data-active={current ? '' : undefined}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setActive(results.length + index)}
+                  onClick={() => chooseOther(row)}
+                  className="dm-flow-hit"
+                >
+                  <NetworkRow row={row} />
+                </button>
+              )
+            })}
           </div>
-          {expanded && results.length === 0 && <p className="dm-flow-listbox-empty">{NO_MATCH}</p>}
+          {expanded && total === 0 && <p className="dm-flow-listbox-empty">{NO_MATCH}</p>}
         </div>
       </div>
       {problem && (
@@ -501,7 +615,7 @@ export function TokenSearch({
       )}
       {failed && !busy && (
         <p className="dm-hint" data-token-search-failed={failed.code} title={failed.reason}>
-          {NOT_READ}
+          {failed.text ?? NOT_READ}
         </p>
       )}
       <p role="status" aria-live="polite" className="sr-only" data-token-search-status={said?.code ?? 'none'}>

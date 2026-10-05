@@ -237,14 +237,27 @@ type Said = { code: string; text: string }
  * return the pool, nothing is read again until the person leaves and comes
  * back. Leaving cancels whatever is reading or waiting.
  */
-export function useStalePriceRead(source: ReadSource, token: AddressKey, paired: AddressKey | null, poolKey: PoolOption['key'], onOption: (option: PoolOption) => void) {
+export function useStalePriceRead(
+  source: ReadSource,
+  token: AddressKey,
+  paired: AddressKey | null,
+  poolKey: PoolOption['key'],
+  onOption: (option: PoolOption) => void,
+  /**
+   * Added 2026-10-05 (New position on Base and Arbitrum One, lib/create/otherChains.ts): a pool of another network is read
+   * again there, through the wallet, never through the read service (Robinhood Chain's). Absent for every other pool.
+   */
+  reread?: ((signal: AbortSignal) => Promise<PoolOption | null>) | null,
+) {
   const [said, setSaid] = useState<Said | null>(null)
   const question = useRef<{ busy: boolean; done: boolean; attempts: number; controller: AbortController } | null>(null)
   // The latest onOption, so an answer that lands after a re-render still reaches the page's own.
   const latest = useRef(onOption)
+  const again = useRef(reread)
   useEffect(() => {
     latest.current = onOption
-  }, [onOption])
+    again.current = reread
+  }, [onOption, reread])
 
   useEffect(() => {
     const current = { busy: false, done: false, attempts: 0, controller: new AbortController() }
@@ -259,6 +272,30 @@ export function useStalePriceRead(source: ReadSource, token: AddressKey, paired:
     const { signal } = current.controller
     current.busy = true
     setSaid({ code: 'loading', text: COPY.range.rereading })
+    const network = again.current
+    if (network) {
+      // Another network's pool (2026-10-05): one read through the wallet; it is not asked again on its own.
+      void network(signal).then(
+        (option) => {
+          if (signal.aborted) return
+          current.busy = false
+          if (option) {
+            setSaid({ code: 'ok', text: `Price read again at block ${option.block}.` })
+            latest.current(option)
+            return
+          }
+          current.done = true
+          setSaid({ code: 'not_found', text: COPY.range.notReturned })
+        },
+        () => {
+          if (signal.aborted) return
+          current.busy = false
+          current.done = true
+          setSaid({ code: 'unavailable', text: COPY.range.notReturned })
+        },
+      )
+      return
+    }
     void verifyCandidate(source, token, paired, poolKey, { signal }).then(async (result) => {
       if (signal.aborted) return
       if (result.failure) {

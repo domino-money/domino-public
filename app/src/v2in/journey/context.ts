@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 import type { V2Gate } from '../../v2/gate'
 import type { V2ChainId } from '../../v2/types'
+import type { JourneyGates } from './source'
 
 /**
  * What New position's wrapper (./NewPositionV2.tsx) tells the journeys it draws: the network (Robinhood Chain; no network
@@ -21,6 +22,11 @@ export interface JourneyNetwork {
    * the zap behind the owner's screens once it is `live`, 2026-10-05); undefined while the wrapper still reads it.
    */
   s1?: V2Gate
+  /**
+   * Every network's S1 gate (2026-10-05, the owner: New position on Base and Arbitrum One too): Review and Create position
+   * on another network's pool go by that network's gate. Undefined while the wrapper still reads them.
+   */
+  gates?: JourneyGates
 }
 
 export const JourneyNetworkContext = createContext<JourneyNetwork | null>(null)

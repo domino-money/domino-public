@@ -9,7 +9,9 @@ import { publishCreated } from '../../lib/create/createProgress'
 import type { JourneyState as V1JourneyState } from '../../lib/create/journey'
 import { reviewPlan } from '../../lib/create/reviewPlan'
 import { useWalletIdentity } from '../../lib/walletIdentity'
+import { v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
+import type { V2ChainId } from '../../v2/types'
 import { useJourneyNetwork } from './context'
 import { JOURNEY } from './copy'
 import { inputsFromV1, requestFromV1, zapStateFromV1, type V1Funding } from './model/fromV1'
@@ -29,6 +31,12 @@ import { amountText, labelOf, tokenBook } from './tokens'
  *
  * Two lazily mounted parts, as Journey.tsx draws its step: the footer (the default export) owns the run, as today's
  * footer owns Create position; Review's body (ReviewV2) draws the same run's review, through the small store below.
+ *
+ * Changed on purpose 2026-10-05 (the owner: New position on Base and Arbitrum One, through his screens): a pool of another
+ * network (read through the wallet, ./otherChains.ts) goes by that network's S1 gate, its plan and its contracts, and is
+ * never handed back to today's control (Domino V1 is Robinhood Chain's): where that gate is not live, Create position
+ * stays disabled and says so. Once made, such a position is shown by the zap path's own created view (its receipt and
+ * its link on its network), not today's, whose lists are Robinhood Chain's.
  */
 
 type Gate = Extract<V2Gate, { mode: 'preview' | 'live' }>
@@ -50,12 +58,16 @@ const sharedNow = (): Shared | null => shared
 
 const IDLE: RunView = { stage: 'idle', requoting: false, reviewed: null, asked: null, steps: [], current: 0, busy: false, error: null, receipt: null, feePerGas: null, cancel: null, round: 0 }
 
-/** The live S1 gate this page's wrapper read, or why there is none: outside the wrapper, still reading, or not live. */
-function useLiveGate(): Gate | 'outside' | 'reading' | 'not-live' {
+/** The network of the pool chosen: its currencies' (Robinhood Chain until one is chosen). */
+const chainOf = (state: Pick<V1JourneyState, 'pool'>): V2ChainId => (state.pool?.currencies[0].chainId ?? 4663) as V2ChainId
+
+/** The live S1 gate of `chainId` this page's wrapper read, or why there is none: outside the wrapper, still reading, or not live. */
+function useLiveGate(chainId: V2ChainId): Gate | 'outside' | 'reading' | 'not-live' {
   const network = useJourneyNetwork()
   if (network === null) return 'outside'
-  if (network.s1 === undefined) return 'reading'
-  return network.s1.mode === 'live' ? network.s1 : 'not-live'
+  const gate = chainId === 4663 ? network.s1 : network.gates?.[chainId]
+  if (gate === undefined) return 'reading'
+  return gate.mode === 'live' ? gate : 'not-live'
 }
 
 /** What a short wallet lacks, in today's words for the zap path ("Your wallet has X; this position needs Y."). */
@@ -67,7 +79,21 @@ type CreateProps = { state: V1JourneyState; balances: PairBalancesState; onBusy?
 
 /** Review's footer: Create position on the new contracts once the gate is live, else today's own control (`v1`). */
 export default function JourneyCreateV2({ state, balances, onBusy, v1 }: CreateProps) {
-  const gate = useLiveGate()
+  const chainId = chainOf(state)
+  const gate = useLiveGate(chainId)
+  // Another network's pool is never today's control's (2026-10-05): closed there, it says so.
+  if (chainId !== 4663 && (gate === 'outside' || gate === 'not-live')) {
+    return (
+      <>
+        <Button type="button" variant="primary" size="xl" className="w-full" disabled data-create-position="closed" aria-describedby="create-reason">
+          {JOURNEY.final.create}
+        </Button>
+        <p id="create-reason" className="dm-flow-reason" data-align="start" data-zap-reason="network-closed">
+          {JOURNEY.pool.networkClosed(v2Chain(chainId).name)}
+        </p>
+      </>
+    )
+  }
   if (gate === 'outside' || gate === 'not-live') return v1
   // Never today's Create position while the gate is still read: it could leave a Domino V1 deposit held.
   if (gate === 'reading') {
@@ -77,10 +103,10 @@ export default function JourneyCreateV2({ state, balances, onBusy, v1 }: CreateP
       </Button>
     )
   }
-  return <LiveCreate state={state} balances={balances} onBusy={onBusy} gate={gate} />
+  return <LiveCreate state={state} balances={balances} onBusy={onBusy} gate={gate} chainId={chainId} />
 }
 
-function LiveCreate({ state, balances, onBusy, gate }: Omit<CreateProps, 'v1'> & { gate: Gate }) {
+function LiveCreate({ state, balances, onBusy, gate, chainId }: Omit<CreateProps, 'v1'> & { gate: Gate; chainId: V2ChainId }) {
   const identity = useWalletIdentity()
   const connected = identity.kind === 'connected'
   const owner = identity.kind === 'connected' ? identity.address : null
@@ -89,9 +115,9 @@ function LiveCreate({ state, balances, onBusy, gate }: Omit<CreateProps, 'v1'> &
   const signedIn = access.startsWith('ready:') || testPlannerOn()
   const zap = zapStateFromV1(state)
   const funding = inputsFromV1(zap, reviewPlan(state, rawBalances(balances)))
-  const book = tokenBook(4663, zap?.pool ? [...zap.pool.tokens] : [])
+  const book = tokenBook(chainId, zap?.pool ? [...zap.pool.tokens] : [])
   const run = useJourneyRun({
-    chainId: 4663,
+    chainId,
     gate,
     inputs: funding.kind === 'inputs' ? funding.inputs : [],
     label: (token) => labelOf(book, token),
@@ -132,11 +158,13 @@ function LiveCreate({ state, balances, onBusy, gate }: Omit<CreateProps, 'v1'> &
     onBusy?.(busy)
   }, [busy, onBusy])
   const tokenId = view.receipt?.read?.summary.tokenId ?? null
+  // Today's created view and its lists are Robinhood Chain's: another network's position is shown by FinalControl's own.
+  const home = chainId === 4663
   useEffect(() => {
-    if (tokenId !== null) publishCreated(tokenId.toString(), owner)
-  }, [tokenId, owner])
+    if (home && tokenId !== null) publishCreated(tokenId.toString(), owner)
+  }, [home, tokenId, owner])
 
-  if (tokenId !== null) return <CreatedNext tokenId={tokenId.toString()} />
+  if (home && tokenId !== null) return <CreatedNext tokenId={tokenId.toString()} />
   if (connected && !signedIn) {
     return (
       <>
@@ -179,13 +207,14 @@ type ReviewProps = { state: V1JourneyState; now: number; balances: PairBalancesS
 
 /** Review's body: the plan's review once the gate is live, else today's own Review (`v1`). */
 export function ReviewV2({ state, now, balances, v1 }: ReviewProps) {
-  const gate = useLiveGate()
+  const chainId = chainOf(state)
+  const gate = useLiveGate(chainId)
   const run = useSyncExternalStore(subscribeShared, sharedNow, () => null)
   const zap = zapStateFromV1(state)
   if (gate === 'outside' || gate === 'not-live' || !zap) return v1
   if (gate === 'reading') return null
   const funding = inputsFromV1(zap, reviewPlan(state, rawBalances(balances)))
-  const book = tokenBook(4663, zap.pool ? [...zap.pool.tokens] : [])
+  const book = tokenBook(chainId, zap.pool ? [...zap.pool.tokens] : [])
   // A short wallet asks no quote: said where the review's notes stand.
   const view: RunView =
     funding.kind === 'short' ? { ...IDLE, stage: 'failed', error: { copy: shortCopy(funding, book), code: 'wallet_short', recovery: 'none' } } : (run?.view ?? IDLE)

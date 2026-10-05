@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import type { JourneyState, TickRange } from '../../lib/create/journey'
+import { poolOnOtherChain, type OtherChains } from '../../lib/create/otherChains'
 import { slippageValue, slippageWarns, slippageWritten } from '../../lib/create/slippage'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { ReadSource } from '../../lib/read/types'
@@ -38,11 +39,14 @@ export function StageRange({
   state,
   onRange,
   onPool,
+  others = null,
 }: {
   source: ReadSource | null
   state: JourneyState
   onRange: (range: TickRange) => void
   onPool: (option: PoolOption) => void
+  /** The other networks New position offers (2026-10-05): another network's pool has its price read again there. */
+  others?: OtherChains | null
 }) {
   const token = state.token
   const pool = state.pool
@@ -56,7 +60,8 @@ export function StageRange({
       </div>
     )
   }
-  return <RangeStep source={source} state={state} pool={pool} token={token.key} onRange={onRange} onPool={onPool} />
+  const reread = others && poolOnOtherChain(pool) ? (signal: AbortSignal) => others.reread(pool, signal) : null
+  return <RangeStep source={source} state={state} pool={pool} token={token.key} onRange={onRange} onPool={onPool} reread={reread} />
 }
 
 /**

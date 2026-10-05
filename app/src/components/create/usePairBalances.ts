@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { budgetFields, pairBalances, pairTokens, type BudgetFields, type CurrencyBalance } from '../../lib/create/budgets'
+import { poolOnOtherChain, type OtherChains } from '../../lib/create/otherChains'
 import { parseAddressInput } from '../../lib/read/screens/identity'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import { createWalletSession, type WalletSnapshot } from '../../lib/read/screens/walletSession'
@@ -38,19 +39,47 @@ export interface PairBalancesState {
 
 const NOTHING: PairBalancesState = { status: 'waiting', balances: null, budgets: {} }
 
-export function usePairBalances(source: ReadSource | null, pool: PoolOption | null): PairBalancesState {
+/**
+ * Changed on purpose 2026-10-05 (New position on Base and Arbitrum One, lib/create/otherChains.ts): a pool on another
+ * network is read there, through the wallet (`others.balances`), never through the read service, whose wallet read is
+ * Robinhood Chain's (it would answer Robinhood Chain's ETH for Base's). Everything else is as before.
+ */
+export function usePairBalances(source: ReadSource | null, pool: PoolOption | null, others: OtherChains | null = null): PairBalancesState {
   const identity = useWalletIdentity()
   const connected = identity.kind === 'connected' ? identity.address : null
   const parsed = connected === null ? null : parseAddressInput(connected)
   const wallet = parsed?.ok ? parsed.wire : null
   const poolKey = pool?.key ?? null
   const tokensKey = pool ? pairTokens(pool).join(',') : ''
-  // Keyed by what the read was about: a page for another wallet or pool is never shown.
-  const target = `${wallet ?? ''}|${poolKey ?? ''}|${tokensKey}`
+  const network = pool && poolOnOtherChain(pool) ? pool.currencies[0].chainId : null
+  // Keyed by what the read was about: a page for another wallet or pool is never shown (another network's, with its chain).
+  const target = network === null ? `${wallet ?? ''}|${poolKey ?? ''}|${tokensKey}` : `${wallet ?? ''}|${network}|${poolKey ?? ''}|${tokensKey}`
   const [page, setPage] = useState<{ target: string; snapshot: WalletSnapshot | null } | null>(null)
+  const [read, setRead] = useState<{ target: string; balances: readonly [CurrencyBalance, CurrencyBalance] | null } | null>(null)
+  // The pool as of the last draw, for the other network's read, which goes by the keys above, not by each new pool value.
+  const latest = useRef(pool)
+  useEffect(() => {
+    latest.current = pool
+  })
 
   useEffect(() => {
-    if (!source || wallet === null || poolKey === null || tokensKey === '') return
+    const current = latest.current
+    if (network === null || !others || wallet === null || poolKey === null || tokensKey === '' || !current) return
+    const controller = new AbortController()
+    const at = `${wallet}|${network}|${poolKey}|${tokensKey}`
+    void others.balances(current, wallet, controller.signal).then(
+      (balances) => {
+        if (!controller.signal.aborted) setRead({ target: at, balances })
+      },
+      () => {
+        if (!controller.signal.aborted) setRead({ target: at, balances: null })
+      },
+    )
+    return () => controller.abort()
+  }, [others, network, wallet, poolKey, tokensKey])
+
+  useEffect(() => {
+    if (!source || wallet === null || poolKey === null || tokensKey === '' || network !== null) return
     const controller = new AbortController()
     const at = `${wallet}|${poolKey}|${tokensKey}`
     const settle = (snapshot: WalletSnapshot | null) => {
@@ -64,9 +93,14 @@ export function usePairBalances(source: ReadSource | null, pool: PoolOption | nu
       .then(settle)
       .catch(() => settle(null))
     return () => controller.abort()
-  }, [source, wallet, poolKey, tokensKey])
+  }, [source, wallet, poolKey, tokensKey, network])
 
   if (connected === null || wallet === null) return { ...NOTHING, status: 'disconnected' }
+  if (network !== null) {
+    if (!others || !pool) return NOTHING
+    if (read?.target !== target) return { ...NOTHING, status: 'loading' }
+    return { status: 'ready', balances: read.balances, budgets: read.balances ? budgetFields(read.balances) : {} }
+  }
   if (!source || !pool) return NOTHING
   if (page?.target !== target) return { ...NOTHING, status: 'loading' }
   const balances = page.snapshot ? pairBalances(page.snapshot, pool) : null

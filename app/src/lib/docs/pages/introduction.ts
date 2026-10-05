@@ -46,7 +46,7 @@ export const WHAT_IS_DOMINO: DocPage = {
       blocks: [
         list(
           [doc('Markets', 'markets'), ': the pools you can use on Robinhood Chain, with a page for each.'],
-          [doc('New position', 'new-position'), ': four steps on Robinhood Chain, then your wallet creates the position. Tokens on another network can be ', doc('brought over first', 'bring-funds'), '.'],
+          [doc('New position', 'new-position'), ': four steps on Robinhood Chain, Base or Arbitrum One, then your wallet creates the position. Tokens on another network can be ', doc('brought over first', 'bring-funds'), '.'],
           [doc('Positions', 'positions'), ': your positions on Robinhood Chain, Base and Arbitrum One, each with a page where you ', doc('manage it', 'manage-position'), '.'],
           [b('Automate'), ': the three ways and a stop-loss side by side, and where ', doc('Auto-compound', 'auto-compound'), ' and ', doc('Domino-compound', 'domino-compound'), ' are set up.'],
         ),

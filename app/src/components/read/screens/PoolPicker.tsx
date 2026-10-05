@@ -4,6 +4,7 @@ import { aprDigits } from '../../../lib/format/apr'
 import { feeWords } from '../../../lib/format/fee'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { cataloguePoolId, createCatalogueSession, verifyCandidate, type CatalogueSession, type CatalogueSnapshot } from '../../../lib/read/screens/catalogueSession'
+import type { NetworkPools } from '../../../lib/create/otherChains'
 import { keptCreatePools, readCreatePools, type PoolsAnswer } from '../../../lib/create/poolsAhead'
 import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from '../../../lib/read/screens/identity'
 import { pricePair } from '../../../lib/read/orientation'
@@ -18,6 +19,7 @@ import { Button, Skeleton, cx } from '../../ui'
 import { Address } from './Address'
 import { ProviderFigure } from './ProviderFigure'
 import { rowApr, rowAprReasonText } from '../../../lib/read/screens/rowApr'
+import { useWalletIdentity } from '../../../lib/walletIdentity'
 import { SymbolText } from './SymbolText'
 
 /** A candidate's verification: `loading`, `ok`, `not_found` or a read state, and its words for the title and the live region. */
@@ -36,7 +38,7 @@ const plainNotes = (option: PoolOption) =>
  * and APR, always in that order, a dash for a figure nobody reports. No
  * details to open and no note lines: what they said is in titles and data.
  */
-function PoolRow({ option, checked, onPick, name, compact = false, open = false, plain = false }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean; open?: boolean; plain?: boolean }) {
+function PoolRow({ option, checked, onPick, name, compact = false, open = false, plain = false, network = null }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean; open?: boolean; plain?: boolean; network?: string | null }) {
   // New position's plain rows sit flat on the card: 32px marks ringed in the card, the pair over its id, the fee right after them.
   // The pair is named as its price is written, "TOKEN / USDG" (audit E21, lib/read/orientation.ts).
   const pair = pricePair(option.currencies[0], option.currencies[1])
@@ -48,6 +50,9 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false,
         {/* Changed on purpose (round 6, 2026-09-27, New position for beginners): a plain row names its pair and fee only;
             the pool id is on the row's data-pool-key. */}
         {!plain && <span className="text-caption text-fg-subtle">Uniswap · <Address value={option.key} short /></span>}
+        {/* 2026-10-05 (New position on Base and Arbitrum One): the pool's network under its pair, once other networks are
+            offered; beside the fee it would cut the pair's name, and on a phone sit on the fee's chip. */}
+        {network !== null && <span className="dm-chip dm-flow-pool-net" data-chain-chip={option.currencies[0].chainId}>{network}</span>}
       </span>
       {/* The fee as every chip writes it (lib/format/fee.ts, audit E21): "0.30% fee". */}
       <span className="dm-chip shrink-0" data-fee="">{feeWords(option.fee)}</span>
@@ -406,6 +411,7 @@ export function PoolPicker({
   compact = false,
   variant,
   onPreview,
+  network = null,
 }: {
   source: ReadSource
   token: AddressKey
@@ -421,6 +427,8 @@ export function PoolPicker({
    * both have left the list. Handlers only, so the rendered markup is the same.
    */
   onPreview?: (option: PoolOption | null) => void
+  /** New position, once other networks are offered (2026-10-05): Robinhood Chain's tag on every row; null otherwise. */
+  network?: string | null
 }) {
   const create = variant === 'create'
   const question = `${token}:${paired ?? ''}`
@@ -468,7 +476,7 @@ export function PoolPicker({
   const list = (
     <ul className={create ? 'dm-flow-pool-rows' : 'grid gap-2'}>
       {options.map((option) => (
-        <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} compact={compact} plain={create} />
+        <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} compact={compact} plain={create} network={network} />
       ))}
     </ul>
   )
@@ -593,6 +601,127 @@ export function PoolPicker({
           </div>
         </details>
       )}
+    </div>
+  )
+}
+
+/**
+ * New position's pool list for a token of another network (2026-10-05, the owner: New position on Base and Arbitrum One;
+ * lib/create/otherChains.ts): the same container, rows, legend, preview handlers and empty line as PoolPicker's
+ * `create` variant, every row with its network's tag. The pools come from `read`, through the wallet on that network
+ * (no read service exists there yet, spec F7 §6.2), already in the order to show; nothing is asked again on its own. A
+ * list that could not be read says why in its own words (a wallet that does not know the network, a refused switch),
+ * which are the person's to act on.
+ */
+export function NetworkPoolPicker({
+  read,
+  network,
+  pending,
+  onPending,
+  onPreview,
+}: {
+  read: (signal: AbortSignal) => Promise<NetworkPools>
+  network: string | null
+  pending: PoolOption | null
+  onPending: (option: PoolOption | null) => void
+  onPreview?: (option: PoolOption | null) => void
+}) {
+  // The read as it was handed in when this list mounted: the caller remounts the list (its key) for another token.
+  const reader = useRef(read)
+  // Read again when the wallet connects or changes, the pools being read through it: an answer for another wallet is
+  // never shown.
+  const identity = useWalletIdentity()
+  const owner = identity.kind === 'connected' ? identity.address.toLowerCase() : null
+  const [answer, setAnswer] = useState<{ owner: string | null; result: NetworkPools } | null>(null)
+  const result: NetworkPools | { kind: 'loading' } = answer !== null && answer.owner === owner ? answer.result : { kind: 'loading' }
+  useEffect(() => {
+    const controller = new AbortController()
+    void reader.current(controller.signal).then(
+      (pools) => {
+        if (!controller.signal.aborted) setAnswer({ owner, result: pools })
+      },
+      () => {
+        if (!controller.signal.aborted) setAnswer({ owner, result: { kind: 'failed', code: 'unavailable', reason: COPY.picker.poolsNone } })
+      },
+    )
+    return () => controller.abort()
+  }, [owner])
+  const options = result.kind === 'ok' ? result.options : []
+  const list = (
+    <ul className="dm-flow-pool-rows">
+      {options.map((option) => (
+        <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} compact plain network={network} />
+      ))}
+    </ul>
+  )
+  return (
+    <div className="grid gap-3" data-picker="pool" data-picker-variant="create" data-picker-network={options[0]?.currencies[0].chainId ?? ''} data-pools-state={result.kind === 'failed' ? result.code : result.kind}>
+      <p role="status" aria-live="polite" className="sr-only">{result.kind === 'loading' ? COPY.picker.poolsLoading : result.kind === 'failed' ? result.reason : ''}</p>
+      {result.kind === 'loading' && <RestingCreateRows />}
+      {result.kind === 'failed' && (
+        <p className="px-1 py-4 text-center text-body text-fg-muted" data-pools-unavailable={result.code}>
+          {result.reason}
+        </p>
+      )}
+      {result.kind === 'ok' && options.length === 0 && (
+        <p className="px-1 py-4 text-center text-body text-fg-muted" data-pools-empty="">
+          {COPY.picker.poolsNone}
+        </p>
+      )}
+      {options.length > 0 && (
+        <fieldset className="grid gap-2">
+          <legend className="dm-flow-pools-legend">{COPY.picker.poolsLegend}</legend>
+          {onPreview ? (
+            <div
+              role="presentation"
+              onPointerOver={(event) => {
+                const option = rowAt(options, event.target)
+                if (option) onPreview(option)
+              }}
+              onPointerLeave={() => onPreview(null)}
+              onFocus={(event) => {
+                const option = rowAt(options, event.target)
+                if (option) onPreview(option)
+              }}
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onPreview(null)
+              }}
+            >
+              {list}
+            </div>
+          ) : (
+            list
+          )}
+        </fieldset>
+      )}
+    </div>
+  )
+}
+
+/** The create variant's resting shape while its pools are read: two rows, each with its three figures. */
+function RestingCreateRows() {
+  return (
+    <div className="grid gap-3" aria-hidden="true">
+      <div className="grid">
+        <Skeleton className="mb-2 h-5 w-28" />
+        <ul className="grid gap-2">
+          {[0, 1].map((row) => (
+            <li key={row} className="dm-mkt-option">
+              <div className="flex min-h-14 items-center gap-3 px-3">
+                <Skeleton className="h-7 w-12 shrink-0 rounded-full" />
+                <span className="grid min-w-0 flex-1 gap-0.5">
+                  <Skeleton className="h-5 w-40 max-w-full" />
+                  <Skeleton className="h-4 w-28 max-w-full" />
+                </span>
+                <Skeleton className="h-5 w-12 shrink-0 rounded-full" />
+              </div>
+              <div className="dm-mkt-option-figures dm-flow-pool-figures">
+                {[0, 1, 2].map((cell) => <Skeleton key={cell} className="h-[1.125rem] w-full" />)}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   )
 }

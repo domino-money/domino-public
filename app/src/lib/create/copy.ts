@@ -273,6 +273,8 @@ export const CREATE = {
     loading: 'Loading the wallet steps…',
     loadFailed: 'The wallet steps could not load. Reload the page to try again.',
     noWallet: 'Creating a position needs a wallet, which isn’t available here.',
+    /** 2026-10-05: a pool of another network opens through Domino V2 only; this page could not load it. */
+    otherNetwork: 'This page couldn’t load what opens positions on this network. Reload the page and try again.',
     /** Words before an estimate: the one-token plan's amounts after its swap. */
     about: 'About',
     /**

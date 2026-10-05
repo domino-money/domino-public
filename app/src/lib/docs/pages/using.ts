@@ -116,7 +116,9 @@ export const NEW_POSITION: DocPage = {
         },
         // 2026-09-27 (the owner's round 6, point 8): one flow, wherever it starts; the pool page's button is Create a
         // position (r6/poolpage). 2026-10-04: New position has no network choice (the owner, 2026-10-02).
-        p('New position opens positions on Robinhood Chain. From a pool’s page, ', b('Create a position'), ' opens these same four steps, with that pool already chosen.'),
+        // Changed on purpose 2026-10-05 (the owner: the search across the three networks, each result with its network's
+        // tag): still no network choice; the search finds tokens on Base and Arbitrum One too.
+        p('New position works on Robinhood Chain, Base and Arbitrum One. From a pool’s page, ', b('Create a position'), ' opens these same four steps, with that pool already chosen.'),
       ],
     },
     {

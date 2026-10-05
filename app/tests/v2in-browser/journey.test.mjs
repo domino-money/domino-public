@@ -259,3 +259,161 @@ test('(d) the owner’s journey on V2: his steps, his preview and balances, the 
     assert.equal(await page.locator('a[href^="#/sequence/compound/"]').count() >= 1, true, 'his created view, with what comes next');
   } finally { await s.close(); }
 });
+
+// Added 2026-10-05 (the owner: "the search on the screen, across the three networks; the results get the network's tag",
+// and creating there through Domino V2): his journey on Base, from his search to his created position.
+const USDC_BASE = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+const POOL_BASE = { dex: 4, currency0: ZERO, currency1: USDC_BASE, fee: 500, tickSpacing: 10, hooks: ZERO };
+const TICK_BASE = -198080;
+const SQRT_BASE = position.sqrtPriceAtTick(TICK_BASE);
+
+/** position-plan-v1 as it would answer a create on Base: 500 USDC swapped for ETH when the wallet pays USDC. */
+function basePlanner(answers = []) {
+  return (wire) => {
+    if (wire.action !== 'create' || wire.chainId !== 8453) return undefined;
+    const pays = wire.inputs.some((input) => input.token === USDC_BASE);
+    const legs = pays ? [{ tokenIn: USDC_BASE, tokenOut: ZERO, amountIn: 500_000_000n, expectedOut: 190_000_000_000_000_000n, data: v4Path(POOL_BASE) }] : [];
+    const body = planAnswer(wire, { owner: OWNER, zap: ZAP_V4, now: now(), pool: { sqrtPriceX96: SQRT_BASE, tick: TICK_BASE }, legs, nonce: { word: 9, bit: answers.length }, expected: { amounts: [190_000_000_000_000_000n, 490_000_000n], returned: [{ token: USDC_BASE, amountRaw: '6750000' }] } });
+    answers.push(body);
+    return body;
+  };
+}
+
+test('(e) his journey on Base: Base\'s USDC in his search with its tag, the wallet moved to Base once, Base\'s pools in his list, his steps, the plan and the create on Base', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
+  // The wallet starts on Robinhood Chain, as the site's own network.
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const answers = [];
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner(answers),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    assert.equal(await page.locator('[data-zap-journey]').count(), 0, 'his journey, never the zap path\'s screens');
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
+    // Base's USDC, with Base's tag; Arbitrum One's gate is not live, so it offers nothing.
+    const hit = page.locator(`[data-token-network-option="8453:${USDC_BASE}"]`);
+    await hit.waitFor();
+    assert.equal((await hit.locator('[data-chain-chip="8453"]').innerText()).trim(), 'Base');
+    assert.equal(await page.locator('[data-token-network-option^="42161:"]').count(), 0);
+    assert.equal(chain.chainNow(), 4663, 'nothing asked of the wallet for a search');
+    await hit.click();
+    // Base's pools, read through the wallet once it moved to Base, in his list's rows with Base's tag.
+    const pools = page.locator('[data-picker="pool"][data-picker-network="8453"]');
+    await pools.locator('input[name="pool-option"]').first().waitFor({ timeout: 30_000 });
+    assert.equal(chain.chainNow(), 8453, 'the wallet moved to Base');
+    assert.deepEqual(chain.offChain, [], 'nothing of Base read before the wallet was on Base');
+    assert.equal(chain.multicalls.length, 1, 'the token\'s pools in one read (a second only for v3 pools that exist, and none does here)');
+    assert.equal(await pools.locator(`li[data-pool-key="${poolIdOf(POOL_BASE)}"]`).count(), 1, 'the one pool with a price and liquidity');
+    assert.equal((await pools.locator('[data-chain-chip="8453"]').first().innerText()).trim(), 'Base');
+    assert.equal(await page.locator('[data-pools-unavailable]').count(), 0);
+    await pools.locator('input[name="pool-option"]').first().click();
+    const chosen = page.locator('[data-chosen-pool]');
+    await chosen.waitFor();
+    assert.equal((await chosen.locator('[data-chain-chip="8453"]').innerText()).trim(), 'Base');
+    const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+    await pressContinue(current('pool'));
+    await current('range').waitFor();
+    await pressContinue(current('range'));
+    await current('amount').waitFor();
+    // His amount step, with the wallet's balances read on Base.
+    await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    assert.ok(await page.locator('li[data-step="amount"] [data-pair-max]').count() >= 1, 'his Max, from the balances on Base');
+    const field = 'li[data-step="amount"][aria-current="step"] [data-pair-side="1"] input[inputmode="decimal"]';
+    await page.locator(field).fill('1000');
+    await pressContinue(current('amount'));
+    // Review: the plan for Base, then Create position on Base's zap.
+    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]');
+    await review.waitFor({ timeout: 30_000 });
+    assert.equal(s.planned.length, 1, 'one plan');
+    assert.deepEqual([s.planned[0].action, s.planned[0].chainId], ['create', 8453]);
+    assert.deepEqual(s.planned[0].inputs.map((input) => input.token), [ZERO, USDC_BASE]);
+    assert.equal(s.planned[0].inputs[1].amountRaw, '1000000000', 'the 1,000 USDC he typed');
+    assert.equal(await page.locator('[data-create-position="idle"]').count(), 0, 'not Domino V1\'s Create position');
+    await page.locator('[data-create-position="live"]:not([disabled])').click({ timeout: 30_000 });
+    await page.locator('[data-created-position][data-zap-receipt]').waitFor({ timeout: 60_000 });
+    const [approve, createTx] = chain.sends.map((entry) => entry.tx);
+    assert.deepEqual([approve.to, approve.chainId], [USDC_BASE, '0x2105'], 'the exact approval, on Base');
+    assert.equal(decodeFunctionData({ abi: ERC20, data: approve.data }).args[0].toLowerCase(), ZAP_V4);
+    assert.deepEqual([createTx.to, createTx.chainId], [ZAP_V4, '0x2105'], 'the create on Base\'s zap');
+    assert.equal(createTx.data, answers.at(-1).plan.call.data, 'the call data the plan carried');
+    // The created view is the zap path's (its receipt, its link on Base), never today's Robinhood Chain lists.
+    assert.match(await page.locator('a[data-created-next="position"]').getAttribute('href'), /^#\/positions\/base-v4-\d+$/);
+    assert.equal(await page.locator('a[href^="#/sequence/compound/"]').count(), 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-05 (the owner: "and if he wants to build on Arbitrum, the same thing"): his journey on Arbitrum One, in a
+// v3 pool, with both networks offered.
+const WETH_ARB = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
+const USDC_ARB = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
+const ZAP_V3 = '0x00000000000000000000000000000000d0d00003';
+const POOL_ARB = { dex: 3, currency0: WETH_ARB, currency1: USDC_ARB, fee: 500, tickSpacing: 10, hooks: ZERO };
+
+/** position-plan-v1 as it would answer a create on Arbitrum One that the wallet funds with both tokens: no swap. */
+function arbitrumPlanner(answers = []) {
+  return (wire) => {
+    if (wire.action !== 'create' || wire.chainId !== 42161) return undefined;
+    const body = planAnswer(wire, { owner: OWNER, zap: ZAP_V3, now: now(), pool: { sqrtPriceX96: SQRT_BASE, tick: TICK_BASE }, legs: [], nonce: { word: 9, bit: answers.length }, expected: { amounts: [10n ** 17n, 250_000_000n], returned: [] } });
+    answers.push(body);
+    return body;
+  };
+}
+
+test('(f) his journey on Arbitrum One: both networks in his search, each with its tag; Arbitrum One\'s WETH, its v3 pool, the plan and the create on Arbitrum One', async () => {
+  const chain = createV2Chain({ chainId: 42161, timestamp: now(), balances: { [WETH_ARB]: 2n * 10n ** 18n, [USDC_ARB]: 5_000_000_000n }, pools: [{ pool: POOL_ARB, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const answers = [];
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [8453, 42161], contracts: { 8453: contractsFor(8453), 42161: contractsFor(42161) }, planner: arbitrumPlanner(answers),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('WETH');
+    const base = page.locator('[data-token-network-option="8453:0x4200000000000000000000000000000000000006"]');
+    const arbitrum = page.locator(`[data-token-network-option="42161:${WETH_ARB}"]`);
+    await arbitrum.waitFor();
+    assert.equal((await base.locator('[data-chain-chip]').innerText()).trim(), 'Base');
+    assert.equal((await arbitrum.locator('[data-chain-chip]').innerText()).trim(), 'Arbitrum One');
+    await arbitrum.click();
+    const pools = page.locator('[data-picker="pool"][data-picker-network="42161"]');
+    await pools.locator('input[name="pool-option"]').first().waitFor({ timeout: 30_000 });
+    assert.equal(chain.chainNow(), 42161, 'the wallet moved to Arbitrum One');
+    assert.deepEqual(chain.offChain, [], 'nothing of Arbitrum One read before the wallet was on Arbitrum One');
+    assert.equal(chain.multicalls.length, 2, 'two reads: every pool asked, then the v3 pool that exists');
+    const row = pools.locator('li[data-pool-key]');
+    assert.equal(await row.count(), 1);
+    assert.match(await row.getAttribute('data-pool-key'), /^0x0{24}[0-9a-f]{40}$/, 'a v3 pool keyed by its address');
+    assert.equal((await row.locator('[data-chain-chip="42161"]').innerText()).trim(), 'Arbitrum One');
+    await pools.locator('input[name="pool-option"]').first().click();
+    await page.locator('[data-chosen-pool] [data-chain-chip="42161"]').waitFor();
+    const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+    await pressContinue(current('pool'));
+    await current('range').waitFor();
+    await pressContinue(current('range'));
+    await current('amount').waitFor();
+    await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    const field = 'li[data-step="amount"][aria-current="step"] [data-pair-side="1"] input[inputmode="decimal"]';
+    await page.locator(field).fill('250');
+    await pressContinue(current('amount'));
+    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]');
+    await review.waitFor({ timeout: 30_000 });
+    assert.deepEqual([s.planned[0].action, s.planned[0].chainId, s.planned[0].pool.dex], ['create', 42161, 3]);
+    assert.deepEqual(s.planned[0].inputs.map((input) => input.token), [WETH_ARB, USDC_ARB], 'both of the pool\'s tokens, as his amount step showed them');
+    await page.locator('[data-create-position="live"]:not([disabled])').click({ timeout: 30_000 });
+    await page.locator('[data-created-position][data-zap-receipt]').waitFor({ timeout: 60_000 });
+    const txs = chain.sends.map((entry) => entry.tx);
+    assert.ok(txs.every((tx) => tx.chainId === '0xa4b1'), 'every step on Arbitrum One');
+    assert.deepEqual(txs.slice(0, -1).map((tx) => tx.to).sort(), [WETH_ARB, USDC_ARB].sort(), 'an exact approval of each token');
+    assert.equal(txs.at(-1).to, ZAP_V3, 'the create on Arbitrum One\'s v3 zap');
+    // Two tokens to pull: the client takes one Permit2 signature for both (createWithPermit), else the direct create.
+    assert.ok(['0x0e97b041', '0xec627dfe'].includes(txs.at(-1).data.slice(0, 10)), 'create, or create with its Permit2 signature');
+    assert.match(await page.locator('a[data-created-next="position"]').getAttribute('href'), /^#\/positions\/arbitrum-v3-\d+$/);
+  } finally { await s.close(); }
+});
