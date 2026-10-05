@@ -102,9 +102,9 @@ test('imports stay inside the module, the V2 foundation and the package’s type
 // Changed on purpose (data) 2026-10-02 (S2 wired): the app's side of open point #17 is done. The HTTP transport is wired
 // by the page's one V2 route module (finance/v2/http.ts liveCrosschainTransport), the routes probe (v2/routes.ts) knows
 // the crosschain route's capabilities, the offer's page module (v2in/funds/live.ts) takes the runtime, and the forwarder
-// has the family (functions/_lib/bridge.ts), declared ahead of its Worker. wrangler.toml still binds no crosschain Worker:
-// that binding is declared only once the Worker is deployed (the forwarder answers not_found until then, read as "off").
-test('S2 wired: the offer, the origin sender, the page\'s route module and the routes probe import it; the HTTP transport by finance/v2/http.ts alone; the forwarder has the family, wrangler.toml no binding yet', () => {
+// has the family (functions/_lib/bridge.ts). Since 2026-10-05 the Worker is deployed, off, and production binds it (it
+// answers route_not_available and capabilities "disabled" until switched on, read as "off").
+test('S2 wired: the offer, the origin sender, the page\'s route module and the routes probe import it; the HTTP transport by finance/v2/http.ts alone; the forwarder has the family, production binds its Worker', () => {
   const outside = ALL.filter(({ path }) => !path.startsWith('v2/crosschain/'));
   const target = (path, spec) => posix.normalize(posix.join(posix.dirname(path), spec));
   const importers = outside.filter(({ path, code }) => specifiers(code).some((spec) => spec.startsWith('.') && target(path, spec).startsWith('v2/crosschain')));
@@ -126,7 +126,11 @@ test('S2 wired: the offer, the origin sender, the page\'s route module and the r
   assert.deepEqual(usersOf('version').filter((path) => !path.startsWith('v2/crosschain/')), ['v2/routes.ts'], 'outside the module, the routes probe takes the contract\'s header and version');
   const functions = sources(resolve(APP, 'functions'));
   assert.deepEqual(hits(functions, /crosschain|CROSSCHAIN/), ['../functions/_lib/bridge.ts'], 'the forwarder has the crosschain family, and nothing else of functions/ names it');
-  assert.equal(/CROSSCHAIN|crosschain/.test(readFileSync(resolve(APP, 'wrangler.toml'), 'utf8')), false, 'no crosschain binding until the Worker is deployed');
+  // Changed on purpose 2026-10-05 (the owner: everything integrated on our side): the Worker is deployed, off, so
+  // production binds it, and production alone (tests/forwarder.test.mjs holds the layout).
+  const toml = readFileSync(resolve(APP, 'wrangler.toml'), 'utf8');
+  assert.match(toml, /\[\[env\.production\.services\]\]\nbinding = "CROSSCHAIN_BRIDGE"\nservice = "domino-crosschain-bridge"\n/, 'production binds the crosschain Worker');
+  assert.equal(toml.match(/binding = "CROSSCHAIN_BRIDGE"/g)?.length, 1, 'once: the preview binds no crosschain Worker');
 });
 
 test('the forwarder design is exactly the family the spec writes (§3.2), frozen, and the family functions/_lib/bridge.ts declares carries it field for field, ahead of its Worker', () => {

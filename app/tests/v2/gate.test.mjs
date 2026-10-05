@@ -130,6 +130,29 @@ test('every other service keeps its gate: the manifest and the backend\'s word, 
   }
 });
 
+// Added 2026-10-05 (rugged97: the planner plans on Robinhood Chain only until Base and Arbitrum One pass their fork
+// qualification; keep plans on those chains off meanwhile).
+test('S1 goes live only where the planner plans: Robinhood Chain; Base and Arbitrum One stay preview, their plan route unasked', async () => {
+  const { v2Gate, S1_PLAN_CHAINS } = gateWith(true);
+  assert.deepEqual(S1_PLAN_CHAINS, [4663]);
+  const robinhood = probe(ON(['plan']));
+  const live = await v2Gate('s1', 4663, PREVIEW_ALIAS, robinhood.routes);
+  assert.equal(live.mode, 'live');
+  assert.equal(live.contracts.fixture, false);
+  assert.deepEqual(robinhood.asked, ['plan']);
+  for (const chainId of [8453, 42161]) {
+    const p = probe(ON(['plan']));
+    const gate = await v2Gate('s1', chainId, PREVIEW_ALIAS, p.routes);
+    assert.equal(gate.mode, 'preview', `${chainId}: the plan route on, the planner not yet there`);
+    assert.equal(gate.locked, true);
+    assert.equal(gate.contracts.deployment.admission, 'production', 'the pinned set, as everywhere');
+    assert.deepEqual(p.asked, [], `${chainId}: the plan route is not asked`);
+    // The vault and auto-exit are read-v6's, indexed on every chain: not held to S1's chains.
+    const read = probe(ON(['portfolio', 'activity']));
+    assert.equal((await v2Gate('vault', chainId, PREVIEW_ALIAS, read.routes)).mode, 'live', `${chainId}: the vault follows read-v6`);
+  }
+});
+
 test('the pure rule: origins and quote served, whatever else is', () => {
   const { s2RouteOpen } = gateWith(true);
   assert.equal(s2RouteOpen(ON(['origins', 'quote', 'status'])), true);

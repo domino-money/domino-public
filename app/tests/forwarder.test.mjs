@@ -132,6 +132,8 @@ const FAMILY = {
 const FAMILIES = ['read', 'session', 'onboarding', 'deposit', 'performance', 'execution', 'setup'];
 /** 2026-10-04 (the owner: the site runs on Domino V2): S1's plan Worker, bound in production beside the seven, deployed off. */
 const PLAN_SERVICE = { binding: 'POSITION_PLAN_BRIDGE', service: 'domino-position-plan-bridge' };
+/** 2026-10-05 (the owner: everything integrated and ready on our side): S2's crosschain Worker, bound after it, deployed off. */
+const XC_SERVICE = { binding: 'CROSSCHAIN_BRIDGE', service: 'domino-crosschain-bridge' };
 
 /** A well-formed browser call per family, on a route each Worker really has. */
 const ROUTE = {
@@ -1219,9 +1221,11 @@ test('wrangler.toml: preview gets its public-read opt-in, its setup release and 
   // Worker and nothing else (no entrypoint, no environment).
   const services = tables.filter(({ header }) => header === '[[env.production.services]]');
   // Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2): and S1's plan Worker (PLAN_SERVICE), deployed off.
-  assert.equal(services.length, FAMILIES.length + 1);
+  // Changed on purpose 2026-10-05 (the owner: everything integrated on our side): then S2's crosschain Worker, deployed off.
+  assert.equal(services.length, FAMILIES.length + 2);
   for (const { keys } of services) assert.deepEqual(Object.keys(keys).sort(), ['binding', 'service']);
-  assert.deepEqual(services.at(-1).keys, { binding: `"${PLAN_SERVICE.binding}"`, service: `"${PLAN_SERVICE.service}"` });
+  assert.deepEqual(services.at(-2).keys, { binding: `"${PLAN_SERVICE.binding}"`, service: `"${PLAN_SERVICE.service}"` });
+  assert.deepEqual(services.at(-1).keys, { binding: `"${XC_SERVICE.binding}"`, service: `"${XC_SERVICE.service}"` });
   // Changed on purpose 2026-10-01 (platform workstream, H7): and the setup release, public deployment identities, named
   // in PREVIEW_FAMILIES and bound to production's own setup Worker (reached like the reads, translated).
   // Changed on purpose 2026-10-01 (the chain2 workstream, part B): and CHAIN2_PREVIEW, the middleware's own setting that
@@ -1314,7 +1318,8 @@ test('wrangler 4.130.0 reads seven production Workers, and for preview only the 
   // Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2): and S1's plan Worker, last.
   assert.deepEqual(
     read.production.services,
-    [...FAMILIES.map((family) => ({ binding: FAMILY[family].binding, service: FAMILY[family].service })), PLAN_SERVICE],
+    // 2026-10-05: then S2's crosschain Worker, last.
+    [...FAMILIES.map((family) => ({ binding: FAMILY[family].binding, service: FAMILY[family].service })), PLAN_SERVICE, XC_SERVICE],
   );
   assert.equal(read.preview.targetEnvironment, 'preview');
   // Changed on purpose 2026-10-01 (the chain2 workstream, part B): and CHAIN2_PREVIEW, for the preview alone.
@@ -1337,7 +1342,9 @@ test("the binding names forward() looks up are exactly the names wrangler.toml b
   // Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2): S1's plans look their own binding up too (their
   // tests below), bound to the plan Worker.
   assert.equal(bound[PLAN_SERVICE.binding], PLAN_SERVICE.service);
-  assert.deepEqual(looked.sort(), Object.keys(bound).filter((name) => name !== PLAN_SERVICE.binding).sort());
+  // 2026-10-05: and S2's deposits theirs, bound to the crosschain Worker (their tests below).
+  assert.equal(bound[XC_SERVICE.binding], XC_SERVICE.service);
+  assert.deepEqual(looked.sort(), Object.keys(bound).filter((name) => name !== PLAN_SERVICE.binding && name !== XC_SERVICE.binding).sort());
 });
 
 test('both deploys target the Pages project wrangler.toml names, domino-app, and no doc calls domino-app-e65 anything but its pages.dev hostname', async () => {
@@ -1395,6 +1402,16 @@ function deployed(environment) {
         fetch(request) {
           calls.push(`${service} ${request.method} ${request.url}`);
           return PLAN_WORKER.fetch(request, PLAN_DISABLED);
+        },
+      };
+      continue;
+    }
+    // 2026-10-05: S2's crosschain Worker, under its reviewed disabled config.
+    if (service === XC_SERVICE.service) {
+      env[binding] = {
+        fetch(request) {
+          calls.push(`${service} ${request.method} ${request.url}`);
+          return XC_WORKER.fetch(request, XC_DISABLED);
         },
       };
       continue;
@@ -2104,17 +2121,26 @@ const XC_CAPABILITIES = '/api/crosschain/v1/capabilities';
 const XC_HEADER = 'x-domino-crosschain-contract';
 const xcBinding = (settings) => ({ fetch: (request) => XC_WORKER.fetch(request, settings) });
 
-test('S2 deposits, declared ahead of their Worker: production as wrangler.toml binds it answers exactly as before, 404 not_found', async () => {
+// Changed on purpose 2026-10-05 (the owner: everything integrated and ready on our side): production binds S2's crosschain
+// Worker, deployed off; it answered 404 not_found while no Worker was bound.
+test('S2 deposits: production as wrangler.toml binds it reaches the crosschain Worker, off: route_not_available and capabilities "disabled", nothing upstream', async () => {
   const { env, calls } = deployed('production');
-  assert.equal(env.CROSSCHAIN_BRIDGE, undefined, 'wrangler.toml binds no crosschain Worker yet');
-  for (const [path, options] of [
-    ...XC_ROUTES.map((route) => [`/api/crosschain/v1/${route}`, { method: 'POST', body: '{}', cookie: `${BETA}; ${SESSION}`, headers: { 'X-Domino-CSRF': CSRF } }]),
-    [XC_CAPABILITIES, {}],
-    [XC_PATH, { method: 'POST', body: '{}', headers: { 'CF-Worker': 'x.example' } }],
-  ]) {
-    await refused(await pages(call(path, options), env), 404, 'not_found');
+  assert.equal(typeof env.CROSSCHAIN_BRIDGE?.fetch, 'function', 'wrangler.toml binds the crosschain Worker');
+  for (const route of XC_ROUTES) {
+    const answer = await pages(call(`/api/crosschain/v1/${route}`, { method: 'POST', body: '{}', cookie: `${BETA}; ${SESSION}`, headers: { 'X-Domino-CSRF': CSRF } }), env);
+    assert.equal(answer.status, 404, route);
+    assert.equal(answer.headers.get(XC_HEADER), XC_RUNTIME.CONTRACT_VERSION, 'the Worker’s own answer');
+    assert.deepEqual(await answer.json(), { error: 'route_not_available' });
   }
-  assert.deepEqual(calls, []);
+  const capability = await pages(call(XC_CAPABILITIES), env);
+  assert.equal(capability.status, 200);
+  assert.deepEqual(await capability.json(), { contractVersion: XC_RUNTIME.CONTRACT_VERSION, dataMode: 'disabled', enabledRoutes: [] });
+  // A Worker's own request never reaches it: the forwarder refuses it first.
+  await refused(await pages(call(XC_PATH, { method: 'POST', body: '{}', headers: { 'CF-Worker': 'x.example' } }), env), 403, 'worker_subrequest_refused');
+  assert.deepEqual(calls, [
+    ...XC_ROUTES.map((route) => `${XC_SERVICE.service} POST https://domino.money/api/crosschain/v1/${route}`),
+    `${XC_SERVICE.service} GET https://domino.money${XC_CAPABILITIES}`,
+  ]);
   assert.equal(served, 0);
   assert.deepEqual(upstream, []);
 });

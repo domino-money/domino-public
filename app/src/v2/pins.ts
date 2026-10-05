@@ -19,5 +19,7 @@ export const READ_V6_PIN = {
 
 export const POSITION_PLAN_V1_PIN = {
   version: '1.0.0-rc.2',
-  manifestSha256: '511546cc0523f4d5375ce7308f05ffaa32eedf4c75620ec07c5e6907ffd73db9',
+  // Changed on purpose (data) 2026-10-05: main's #337 and #338 changed two backend sources the manifest lists
+  // (v2_uniswap_api.py, v2_position_plan.py); the package's own files and its version are unchanged.
+  manifestSha256: '6206c9454bcfe2ed88d9e860bbb3e0ff9924e4e2a8c425b72e6e47b93dad6110',
 } as const

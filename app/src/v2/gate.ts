@@ -123,6 +123,13 @@ export async function serviceRouteOpen(service: Exclude<V2Service, 's2'>, routes
   }
 }
 
+/**
+ * Where S1's plans go live once the plan route is on (rugged97, 2026-10-05: the planner plans on Robinhood Chain only until
+ * Base and Arbitrum One pass their fork qualification; keep plans on those chains off meanwhile). Elsewhere S1 stays
+ * `preview`, locked after its review, and its route is not asked. Widen it when he says a chain's plans are qualified.
+ */
+export const S1_PLAN_CHAINS: readonly V2ChainId[] = Object.freeze([4663])
+
 /** The gate for one service on one chain at `origin`, with the probe its backend word comes from (none: the table's word). */
 export async function v2Gate(service: V2Service, chainId: number, origin: string = pageOrigin(), routes: S2Routes = noRoutes): Promise<V2Gate> {
   if (!v2OriginOpen(origin) || !isV2ChainId(chainId)) return OFF
@@ -134,7 +141,8 @@ export async function v2Gate(service: V2Service, chainId: number, origin: string
   if (live.open && !live.contracts.fixture) return Object.freeze({ mode: 'live', chainId, contracts: live.contracts, locked: false })
   // The pinned, production-admitted set with the route's own word (the table above said nothing): live for real.
   const pinned = v2Availability(chainId)
-  if (pinned.available && !pinned.contracts.fixture && routes !== noRoutes && (await serviceRouteOpen(service, routes))) {
+  const planned = service !== 's1' || S1_PLAN_CHAINS.includes(chainId)
+  if (pinned.available && !pinned.contracts.fixture && routes !== noRoutes && planned && (await serviceRouteOpen(service, routes))) {
     return Object.freeze({ mode: 'live', chainId, contracts: pinned.contracts, locked: false })
   }
   // Before the backend's word: locked, on the set previewSet gives (fixtures only where the build takes them).

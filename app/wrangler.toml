@@ -121,3 +121,11 @@ service = "domino-setup-bridge"
 [[env.production.services]]
 binding = "POSITION_PLAN_BRIDGE"
 service = "domino-position-plan-bridge"
+
+# 2026-10-05 (the owner: everything integrated and ready on our side): S2's deposits from another network (crosschain-v1,
+# spec F7 §3.2), bound to their own Worker (bridge/wrangler.crosschain.toml, deployed off: CROSSCHAIN_BRIDGE_ENABLED
+# "false" until rugged97's listener on 127.0.0.1:8910, behind vm-crosschain.domino.money and its Access app, is live).
+# The forwarder's crosschain family (functions/_lib/bridge.ts) answers through it.
+[[env.production.services]]
+binding = "CROSSCHAIN_BRIDGE"
+service = "domino-crosschain-bridge"
