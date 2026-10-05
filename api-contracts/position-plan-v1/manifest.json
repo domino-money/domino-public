@@ -135,7 +135,7 @@
     },
     {
       "path": "backend/v2_uniswap_api.py",
-      "sha256": "b37bfc5379277d3bf44ced91a9f3572853dfb9afe97a216f930795f64736a6b3"
+      "sha256": "ee904c35d6e7c494fd733d4ff4259f0e07efe2916ce75cb2085559557b4dbc02"
     },
     {
       "path": "backend/authenticated_api.py",

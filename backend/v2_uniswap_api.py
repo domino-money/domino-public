@@ -48,6 +48,10 @@ MSG_SENDER, ADDRESS_THIS = '0x' + '00' * 19 + '01', '0x' + '00' * 19 + '02'
 V3_SWAP_EXACT_IN, SWEEP, WRAP_ETH, UNWRAP_WETH, BALANCE_CHECK_ERC20, V4_SWAP = 0x00, 0x04, 0x0b, 0x0c, 0x0e, 0x10
 ALLOWED_COMMANDS = frozenset({V3_SWAP_EXACT_IN, SWEEP, WRAP_ETH, UNWRAP_WETH, BALANCE_CHECK_ERC20, V4_SWAP})
 PROTOCOLS = ('V3', 'V4')
+# Uniswap v4's LPFeeLibrary.DYNAMIC_FEE_FLAG: the pool's hook sets the fee of each swap. A router leg may cross
+# such a pool (hooks admitted, F1b); its fee is shown as the flag, never as a rate. The API's best WETH -> USDG
+# route on Robinhood crossed one on 4 Oct, and these routes were refused as quote_invalid until then.
+DYNAMIC_FEE_FLAG = 0x800000
 
 
 class RouterLegError(DataError):
@@ -67,9 +71,17 @@ def _token(raw, chain_id):
     return address(raw.get('address'))
 
 
-def route_pools(raw, chain_id, token_in, token_out, amount_in, amount_out):
+def route_pools(raw, chain_id, token_in, token_out, amount_in, amount_out, wrapped=None):
     """The quoted route: [{paths}] with each pool's identity, fee and the
-    amounts the API states (first input and last output of each path)."""
+    amounts the API states (first input and last output of each path).
+
+    Native ETH and the chain's wrapped native (`wrapped`) are one currency for
+    the route's connections: the router wraps or unwraps between them
+    (WRAP_ETH, UNWRAP_WETH), and the zap judges the leg by what it holds after.
+    The API's USDG -> ETH route on Robinhood ended in WETH on 4 Oct and was
+    refused as disconnected until then."""
+    def joined(a, b):
+        return a == b or (wrapped is not None and {a, b} == {ZERO, wrapped})
     if not isinstance(raw, list) or not 1 <= len(raw) <= MAX_PATHS:
         _fail('route_invalid')
     paths, seen, total_in, total_out = [], set(), 0, 0
@@ -81,10 +93,13 @@ def route_pools(raw, chain_id, token_in, token_out, amount_in, amount_out):
             if not isinstance(hop, dict) or hop.get('type') not in ('v3-pool', 'v4-pool'):
                 _fail('route_unsupported')
             a, b = _token(hop.get('tokenIn'), chain_id), _token(hop.get('tokenOut'), chain_id)
-            if a != current:
+            if not joined(a, current):
                 _fail('route_disconnected')
             current = b
-            fee = _integer(hop.get('fee'), 0, 1_000_000, string=True)
+            if hop['type'] == 'v4-pool' and hop.get('fee') in (DYNAMIC_FEE_FLAG, str(DYNAMIC_FEE_FLAG)):
+                fee = DYNAMIC_FEE_FLAG
+            else:
+                fee = _integer(hop.get('fee'), 0, 1_000_000, string=True)
             if hop['type'] == 'v3-pool':
                 pool = {'dex': 3, 'id': address(hop.get('address')), 'fee': fee, 'tickSpacing': None, 'hooks': None}
             else:
@@ -96,7 +111,7 @@ def route_pools(raw, chain_id, token_in, token_out, amount_in, amount_out):
             seen.add(pool['id'])
             pool.update(tokenIn=a, tokenOut=b)
             hops.append(pool)
-        if current != token_out:
+        if not joined(current, token_out):
             _fail('route_disconnected')
         first_in = _raw(path[0].get('amountIn'), positive=True)
         last_out = _raw(path[-1].get('amountOut'), positive=True)
@@ -209,7 +224,8 @@ class TradingApiLegs:
             for name in ('portionBips', 'portionAmount'):
                 if quote.get(name) not in (None, 0, '0'):
                     _fail('fee_output_unsupported')
-            paths = route_pools(quote.get('route'), chain.chainId, token_in, token_out, amount_in, out)
+            paths = route_pools(quote.get('route'), chain.chainId, token_in, token_out, amount_in, out,
+                                address(chain.wrappedNative.address))
             impact = quote.get('priceImpact')
             impact = None if impact is None else format(_decimal(impact, maximum=100, signed=True), 'f')
             quote_id = quote.get('quoteId')

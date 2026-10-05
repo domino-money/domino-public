@@ -142,6 +142,57 @@ class RouterLegTests(unittest.TestCase):
         answer['quote']['route'][0][0]['amountOut'] = '5'
         self.assertRefused('route_amount_mismatch', answer)
 
+    def test_a_hooked_v4_pool_with_a_dynamic_fee_is_admitted_and_shown_as_the_flag(self):
+        # The API's best WETH -> USDG route on Robinhood, 4 Oct 2026: a v4 pool whose hook sets each swap's fee.
+        hooks = '0x64e9ae1066c47ac4a3cc0a5bd7b135908590e088'
+        answer = quote_answer()
+        answer['quote']['route'][0][0].update(fee='8388608', tickSpacing='1', hooks=hooks)
+        result, _ = leg(answer)
+        pool = result['paths'][0]['pools'][0]
+        self.assertEqual((pool['fee'], pool['tickSpacing'], pool['hooks']), (0x800000, 1, hooks))
+        # Only the flag itself, and only on v4: any other value above a rate is still refused.
+        for kind, fee in (('v4-pool', '1000001'), ('v4-pool', '8388609'), ('v3-pool', '8388608')):
+            answer = quote_answer()
+            answer['quote']['route'][0][0].update(type=kind, fee=fee)
+            if kind == 'v3-pool':
+                answer['quote']['route'][0][0]['address'] = '0x' + '44' * 20
+            with self.subTest(kind=kind, fee=fee):
+                self.assertRefused('quote_invalid', answer)
+
+    def test_native_eth_and_weth_join_through_the_router_s_wrap_and_unwrap(self):
+        # USDG -> ETH on Robinhood, 4 Oct 2026: the route ended in WETH and the router unwrapped it.
+        answer = quote_answer(token_out=ZERO)
+        answer['quote']['route'][0][0]['tokenOut']['address'] = WETH
+        result, _ = leg(answer, swap_answer(data=v4_swap(commands=bytes([0x10, 0x0c]))), token_out=ZERO)
+        self.assertEqual((result['tokenOut'], result['paths'][0]['pools'][0]['tokenOut']), (ZERO, WETH))
+        # ETH in, a route starting from WETH: the router wraps the value it was sent.
+        answer = quote_answer(token_in=ZERO)
+        answer['quote']['route'][0][0]['tokenIn']['address'] = WETH
+        result, _ = leg(answer, swap_answer(data=v4_swap(commands=bytes([0x0b, 0x10])), value=hex(10**9)),
+                        token_in=ZERO)
+        self.assertEqual(result['paths'][0]['pools'][0]['tokenIn'], WETH)
+        # Between two hops too: WETH out of a v3 pool, unwrapped, into a native ETH v4 pool.
+        other = '0x' + '77' * 20
+        answer = quote_answer(token_in=USDC, token_out=other)
+        first = answer['quote']['route'][0][0]
+        first.update(type='v3-pool', address='0x' + '44' * 20, tokenOut={'address': WETH, 'chainId': 8453},
+                     amountOut='7')
+        second = {**deepcopy(first), 'type': 'v4-pool', 'address': '0x' + '6b' * 32,
+                  'tokenIn': {'address': '0x' + '55' * 20, 'chainId': 8453},
+                  'tokenOut': {'address': other, 'chainId': 8453}, 'amountIn': '7',
+                  'amountOut': answer['quote']['output']['amount']}
+        answer['quote']['route'][0] = [first, second]
+        unwrapped = swap_answer(data=v4_swap(commands=bytes([0x00, 0x0c, 0x10])))
+        self.assertRefused('route_disconnected', answer, unwrapped, token_out=other)
+        second['tokenIn'] = {'address': ZERO, 'chainId': 8453}
+        result, _ = leg(answer, unwrapped, token_out=other)
+        self.assertEqual([(pool['tokenIn'], pool['tokenOut']) for pool in result['paths'][0]['pools']],
+                         [(USDC, WETH), (ZERO, other)])
+        # Any other token never joins WETH.
+        answer = quote_answer()
+        answer['quote']['route'][0][0]['tokenIn']['address'] = WETH
+        self.assertRefused('route_disconnected', answer)
+
     def test_the_call_goes_to_the_profiles_router_2_1_2_and_carries_allowed_commands_only(self):
         self.assertRefused('router_mismatch', swap=swap_answer(to='0x' + '44' * 20))
         self.assertRefused('calldata_invalid', swap=swap_answer(data='0x12345678' + '00' * 64))
