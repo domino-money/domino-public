@@ -88,9 +88,12 @@ test('a chain read is about the chain, token, query, wallet and tokens asked', (
   assert(!runtime.validateExchange('chain-tokens', { ...query, limit: 1 }, tokens));
 });
 
-test('no answer claims a total, a price or a valuation it does not hold', () => {
+test('no answer claims a total, a valuation or a price the contract does not qualify', () => {
+  // Every token has a price or the reason it has none; the stable is US$ 1 and a pool price names its pool and depth.
   const tokens = read('./fixtures/valid/portfolio.json').tokens;
-  assert(tokens.length > 0 && tokens.every((t) => t.price === null && t.priceReason === 'no_qualified_price_source'));
+  assert(tokens.length > 0 && tokens.every((t) => (t.price === null) !== (t.priceReason === null)));
+  assert(tokens.some((t) => t.price !== null && t.price.source === 'chain_stable' && t.price.usd === '1.000000000000000000'));
+  assert(tokens.some((t) => t.price !== null && t.price.source === 'pool' && t.price.pool !== null));
   const body = read('./fixtures/valid/activity.json');
   const withTotal = clone(body);
   withTotal.items[0].tx.gas.totalFeeWei = '1';
@@ -99,8 +102,9 @@ test('no answer claims a total, a price or a valuation it does not hold', () => 
   const priced = clone(portfolio);
   priced.positions[0].state.valueUsd = '12.5';
   assert(!runtime.validateResponse('portfolio', priced));
+  // A pool's market is its depth within the band, never a TVL.
   const pools = read('./fixtures/valid/chain-pools.json');
-  assert(pools.pools.every((p) => p.market.status === 'unavailable' && p.market.reason === 'no_qualified_price_source'));
+  assert(pools.pools.every((p) => (p.market.status === 'measured') === (p.market.depthUsd !== null)));
   const withTvl = clone(pools);
   withTvl.pools[0].tvlUsd = '10';
   assert(!runtime.validateResponse('chain-pools', withTvl));

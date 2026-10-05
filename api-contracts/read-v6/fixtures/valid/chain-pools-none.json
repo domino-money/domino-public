@@ -1,6 +1,6 @@
 {
   "chainId": 8453,
-  "contractVersion": "1.0.0-rc.1",
+  "contractVersion": "1.1.0-rc.1",
   "coverage": "standard_hookless_pools",
   "executionAvailable": false,
   "freshness": {
@@ -8,7 +8,7 @@
     "status": "fresh"
   },
   "limitations": [
-    "raw_amounts_no_usd_valuation",
+    "usd_from_qualified_sources_only",
     "token_metadata_untrusted",
     "state_as_of_last_read",
     "no_execution_or_signing"
@@ -28,12 +28,23 @@
     {
       "address": "0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
       "decimals": null,
+      "price": null,
+      "priceReason": "decimals_unknown",
       "status": "unavailable",
       "symbol": null
     },
     {
       "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
       "decimals": 6,
+      "price": {
+        "depthUsd": null,
+        "ethUsd": null,
+        "pool": null,
+        "snapshot": null,
+        "source": "chain_stable",
+        "usd": "1.000000000000000000"
+      },
+      "priceReason": null,
       "status": "available",
       "symbol": "USDC"
     }

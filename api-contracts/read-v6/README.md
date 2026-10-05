@@ -1,6 +1,6 @@
 # read-v6: Domino V2 wallet reads
 
-Contract `1.0.0-rc.1` for the app (F7) of [#283](https://github.com/domino-money/domino/issues/283): one wallet's Domino V2 state and receipts on Robinhood (4663), Base (8453) and Arbitrum One (42161), read from the V2 index. How the index is built, what each table holds and what remains are in [docs/v2/V2_INDEXER_READ_API.md](../../docs/v2/V2_INDEXER_READ_API.md).
+Contract `1.1.0-rc.1` for the app (F7) of [#283](https://github.com/domino-money/domino/issues/283): one wallet's Domino V2 state and receipts on Robinhood (4663), Base (8453) and Arbitrum One (42161), read from the V2 index. How the index is built, what each table holds and what remains are in [docs/v2/V2_INDEXER_READ_API.md](../../docs/v2/V2_INDEXER_READ_API.md).
 
 Two stored routes of the local reader (`backend/read_api.py`), separate from read-v1 to read-v5, and three live chain reads (below):
 
@@ -12,13 +12,13 @@ Two stored routes of the local reader (`backend/read_api.py`), separate from rea
 | `POST /v6/read/chain-balances` | `{wallet, tokens?}` | A wallet's balances on each chain asked, every chain's base currencies by default |
 | `POST /v6/read/chain-tokens` | `{chainId, query, limit?}` | The tokens Domino knows on Base or Arbitrum One that match a query |
 
-Header `X-Domino-Read-Contract: 1.0.0-rc.1`. Through the gateway the paths are `/internal/read/v6/<route>`, with `--enable-v6` and each route named in `DOMINO_BRIDGE_V6_READS`, both off by default. The reader serves the stored routes only with `DOMINO_V2_READ=1` and the chain reads only with `DOMINO_V2_CHAIN_READS=1` (otherwise `upstream_unavailable`). The Worker forwards `/api/read/v6/<route>` for the routes its `ENABLED_V6_READS` names.
+Header `X-Domino-Read-Contract: 1.1.0-rc.1`. Through the gateway the paths are `/internal/read/v6/<route>`, with `--enable-v6` and each route named in `DOMINO_BRIDGE_V6_READS`, both off by default. The reader serves the stored routes only with `DOMINO_V2_READ=1` and the chain reads only with `DOMINO_V2_CHAIN_READS=1` (otherwise `upstream_unavailable`). The Worker forwards `/api/read/v6/<route>` for the routes its `ENABLED_V6_READS` names.
 
 `wallet` is lower case. The read API does not authenticate wallets: everything here is public chain data, the same for anyone who asks about that address, and the reader refuses browser origins. Errors are read-v1's codes (`ERROR_STATUS_BY_CODE`): `catalogue_database_unavailable` or `upstream_unavailable` (503) when the index cannot be read at all, never a partial answer.
 
 ## What an answer says, and what it never says
 
-- **Amounts are raw integer strings** in the token's own units (signed where a flow can go both ways). There is no USD, no APR and no price: every token has `price: null` with `priceReason: "no_qualified_price_source"`, and nothing is summed across chains. `tokens` lists every token an answer names with its metadata as read on chain: `symbol` is untrusted text; `decimals` is `null` when it could not be read, never guessed (`status`: `available`, `partial`, `unavailable`, `not_read`).
+- **Amounts are raw integer strings** in the token's own units (signed where a flow can go both ways). USD comes only from a qualified source ([below](#qualified-usd)): each token in `tokens` has its `price` or the `priceReason` it has none, and nothing is summed across chains. There is no APR. `tokens` lists every token an answer names with its metadata as read on chain: `symbol` is untrusted text; `decimals` is `null` when it could not be read, never guessed (`status`: `available`, `partial`, `unavailable`, `not_read`).
 - **Per chain** (`chains`, always the three chains in id order):
 
   | `status` | `reason` | Meaning |
@@ -32,6 +32,37 @@ Header `X-Domino-Read-Contract: 1.0.0-rc.1`. Through the gateway the paths are `
   `coverage` is `complete` only when every chain is `current`, otherwise `partial`: one chain out never empties the others. `indexedThrough` (`{number, hash, timestamp}`) is the block every event-derived fact is true at; `finalizedThrough` the chain's finalized block as last observed; `head`, `lagBlocks` and `lagSeconds` how far behind the index is; `lastError` the indexer's last failure. `automationHalted` is the registry's global halt and `operatorsAdmitted` how many operators it admits (automation availability on that chain). `waitingReasons` says whether that chain's automation reports why things wait: `reporting`, `stale` (its last pass is more than 600 s old: the reasons are shown with their age), `unavailable` (the indexer's last read found its file missing or malformed) or `not_configured` (the chain's indexer reads no automation file), with the pass's `block`, `timestamp` and `ageSeconds`.
 - **Reads are snapshots.** A vault's state and a position are read at a committed block: `snapshot` is `{number, hash, timestamp}` and `freshness` is `{ageSeconds, status: fresh|stale}`, `stale` once an event touched them after the read or the read is older than two hours. A read that failed is `unavailable` with its `reason`; one not made yet is `not_read`. A zero is only ever a measured zero.
 - **Gas** (`tx.gas`) is the receipt's own fields: the sender, gas used, effective gas price, and on OP Stack the L1 data fee. No total is claimed (a stack may charge what the receipt does not state). `tx.finality` is `finalized` at or below the chain's `finalizedThrough`, else `unfinalized`.
+
+## Qualified USD
+
+`1.1.0-rc.1` (0xdecimal's item 4). The rules are the owner's decision #22 of 2 Oct 2026 (F7 §6.3) and the owner's answers of 5 Oct 2026. The backend's code is `backend/v2_chain_reads.py`. A token has a USD price from one of three sources and from nothing else:
+
+| `price.source` | Token | Price |
+| --- | --- | --- |
+| `chain_stable` | The chain's stable, its rank-1 charge currency (USDG on Robinhood, USDC on Base and Arbitrum One) | US$ 1, fixed (`"1.000000000000000000"`) |
+| `chainlink_eth_usd` | ETH (the zero address) and its wrapped token | The profile's Chainlink ETH/USD. It counts while its round is no older than the feed's heartbeat at the block read (24 h on Robinhood, 1,200 s on Base, 1,755 s on Arbitrum). On Base and Arbitrum the sequencer must also have been up for more than an hour. The round is `ethUsd`: `{feed, usd, roundId, updatedAt}` |
+| `pool` | Any other token | Its deepest pool against one of those, among the app's candidates (Uniswap's standard hookless v4 keys and the v3 tiers the factory enables), at that pool's price. It counts only when the pool releases at least US$ 10,000 of the partner as the token is sold into it until its price falls 10%. This is the featured pools' reference depth, walked tick by tick and read in the same block as the price. `pool` is that pool, `depthUsd` that depth. A pool against ETH or WETH carries its `ethUsd` |
+
+- **Format.** `usd` has 18 decimal places and amounts in USD have 6, all rounded down. Every non-stable price has the `snapshot` it was read at.
+- **Reasons.** Without a price, `priceReason` says why:
+
+  | `priceReason` | Why |
+  | --- | --- |
+  | `no_qualified_price_source` | The reader has no endpoints for that chain, or the chain reads are off |
+  | `price_read_failed` | The read failed or ran past its 3 s budget; it is not kept |
+  | `pricing_limit_reached` | Beyond 32 tokens a chain in one answer |
+  | `decimals_unknown` | The token's decimals could not be read |
+  | `eth_usd_stale` | The feed's round is past its heartbeat |
+  | `sequencer_down` | The sequencer is down or within its grace hour; only the stable keeps its price |
+  | `no_pool` | No pool against a base currency |
+  | `pool_depth_below_floor` | No pool reaches the floor |
+  | `pool_depth_unmeasurable` | The walk would take more than 300 steps, or a word of the pool's map could not be read |
+  | `price_below_precision` | Below 10⁻¹⁸ USD |
+
+- **Caching.** Prices are kept 30 s per chain and token.
+- **Checks.** The contract checks:
+  - each price against its chain's profile (`PRICE_PROFILES`): the stable is 1; ETH and WETH come from that feed within its heartbeat; a pool contains the token and a base currency, has no hooks and is at or above the floor;
+  - each balance's value and each total to the micro-dollar.
 
 ## portfolio
 
@@ -81,14 +112,25 @@ node --test api-contracts/read-v6/consumer.test.mjs
 
 ## Chain reads: chain-pools, chain-balances, chain-tokens
 
-The app spec's §6.2 reads that need the chain itself (0xdecimal's list of 5 Oct 2026), so the app lists pools and balances without moving the wallet to another network; it still does, to sign. They read the chains when asked (`backend/v2_chain_reads.py`): Robinhood through Domino's own node, Base and Arbitrum through the hosted endpoints of the V2 chain RPC file, one Multicall3 call per chain at its head, cached for a few seconds. They take the reader's provider lane; `chain-tokens` reads no chain and takes the stored lane. Their `limitations` are `raw_amounts_no_usd_valuation`, `token_metadata_untrusted`, `state_as_of_last_read` and `no_execution_or_signing`, in that order.
+The app spec's §6.2 reads that need the chain itself (0xdecimal's list of 5 Oct 2026), so the app lists pools and balances without moving the wallet to another network; it still does, to sign. They read the chains when asked (`backend/v2_chain_reads.py`): Robinhood through Domino's own node, Base and Arbitrum through the hosted endpoints of the V2 chain RPC file, one Multicall3 call per chain at its head, cached for a few seconds. They take the reader's provider lane; `chain-tokens` reads no chain and takes the stored lane. Their `limitations` are `usd_from_qualified_sources_only`, `token_metadata_untrusted`, `state_as_of_last_read` and `no_execution_or_signing`, in that order.
 
 - **`chain-pools`** reads the pools the app reads today through the wallet: `token` against the chain's base currencies (its charge currencies: the stable, the native currency and its wrapped token) or against `pairedToken` alone, in Uniswap's standard hookless v4 keys (fee 100, 500, 3000 or 10000 with spacing 1, 10, 60 or 200) and the v3 fee tiers the factory enables (Base adds 200, 300 and 400). Native ETH has no v3 pool; in v3 it pairs as WETH. A pool is listed when it exists, is priced and holds liquidity: partners ETH and WETH first, then the stable, then by active liquidity, at most 32 (`truncated`).
   - Each pool: `pool` (its `PoolRef`), `id` (v4's pool id) or `address` (v3's pool), `sqrtPriceX96`, `tick`, active `liquidity`, `lpFeePips` (the tier's), `protocolFee` as the pool reports it, and `swapFeePips` per direction (v4's protocol fee taken before the LP fee; v3's protocol fee is a share of the LP fee, not on top of it).
-  - `market` is `{status: "unavailable", reason: "no_qualified_price_source"}`: TVL, volume and APR wait for a qualified USD source (§6.3).
-  - `tokens`: every currency the answer names (`token`, `pairedToken` and each pool's pair), sorted, with its metadata as read (`available`, `partial`, `unavailable`).
+  - `market` is the pool's depth within the band ([Qualified USD](#qualified-usd)), measured in the same block as the pool's price: `{status: "measured", reference, depthUsd}`. `reference` is the token's partner, the stable or ETH/WETH. Otherwise it is `{status: "unavailable", reason}`, with `reason`:
+    - `no_qualified_reference`: a pair without a base currency;
+    - `eth_usd_stale`, `sequencer_down` or `price_read_failed`: an ETH or WETH partner without a feed price;
+    - `pool_depth_unmeasurable`.
+
+    There is no TVL, volume or APR: they need history.
+  - `tokens`: every currency the answer names (`token`, `pairedToken` and each pool's pair), sorted, with its metadata as read (`available`, `partial`, `unavailable`) and its `price` or `priceReason`.
+    - The base currencies are priced in this same read.
+    - The token is priced in this read when no `pairedToken` was asked, because its pools against the base currencies are all here.
+    - Every other token is priced from its own pools.
   - `snapshot` is the block read; `freshness` is its age at `servedAt`, `fresh` up to 60 s.
 - **`chain-balances`**: per chain asked (ascending), `current` with the `snapshot` read and each token's `balanceRaw` (`read`, or `unavailable` when the call failed), or `unavailable` with `chain_not_configured` or `chain_read_failed` and every balance unavailable. `coverage` is `complete` when every chain is `current`. Without `tokens`, every chain's base currencies; with them (at most 24, no repeats), exactly those, in the order asked. The native currency is the zero address.
+  - Each balance has its token's `price` or `priceReason`, and `valueUsd`: the balance at that price, rounded down to the micro-dollar, when the balance, its decimals and the price are known.
+  - A chain's `totalUsd` sums its balances. It exists only when the chain is `current` and every balance above zero has a value (a zero balance needs no price).
+  - The answer's `totalUsd` sums the chains, only when every chain has its total (the owner, 2 Oct: no sum across chains without all of them).
 - **`chain-tokens`** (Base and Arbitrum One; Robinhood's search is read-v3's): the tokens Domino knows there. Like read-v3's search it covers known tokens only (`coverage: "known_tokens_only"`). Each token's `sources`, in this order:
   - `profile`: the chain's own currencies;
   - `uniswap_default_list`: the Uniswap Labs Default token list, pinned in the release with its version and SHA-256 (`tokenList`), GPL-3.0;

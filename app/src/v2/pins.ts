@@ -6,18 +6,20 @@
  * V1's pin module is byte for byte what it was.
  *
  * Both packages are candidates, switched off until the deploy and the Worker routes exist:
- * - read-v6 `1.0.0-rc.1` (main 4edd0720, #305): `candidate_disabled_pending_bridge_and_deployment`;
+ * - read-v6 `1.1.0-rc.1` (main 4edd0720, #305; qualified USD, 0xdecimal's item 4): `candidate_disabled_pending_bridge_and_deployment`;
  * - position-plan-v1 `1.0.0-rc.2` (PR #308 a620b6d1): `candidate_disabled_pending_deployment_and_worker`.
  */
 export const READ_V6_PIN = {
-  version: '1.0.0-rc.1',
+  // Changed on purpose 2026-10-05: 1.0.0-rc.1 -> 1.1.0-rc.1, qualified USD (0xdecimal's item 4): token prices, chain-pools'
+  // depth, chain-balances' values and totals.
+  version: '1.1.0-rc.1',
   // Changed on purpose (data) 2026-10-02: main d1ad6c41 (#311) added read-v6's reserves waiting reasons; same version.
   // Changed on purpose (data) 2026-10-04: main's V2 audit remediation (#323) added TwapWindowTooLong and two portfolio
   // fields to read-v6; same version, new manifest.
   // Changed on purpose (data) 2026-10-05: the live chain reads chain-pools, chain-balances and chain-tokens joined
   // read-v6 (0xdecimal's items 1-3); same version, new manifest.
   // Changed on purpose (data) 2026-10-05: activity's reserves_returned kind (0xdecimal's item 8); same version.
-  manifestSha256: '8a22dcd1897e172c7f17f8c40f18df4e3abd7bf28225288f111e6985235259f5',
+  manifestSha256: '58e7af0757b8caa92d25b0aa3310388d2053a7b94ea6066d4c0da2b19c17a793',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {

@@ -42,7 +42,7 @@ from pydantic import AfterValidator, Field, StrictBool, StrictInt, model_validat
 
 from read_contract import WireModel
 
-CONTRACT_VERSION = '1.0.0-rc.1'
+CONTRACT_VERSION = '1.1.0-rc.1'
 ROUTES = ('portfolio', 'activity', 'chain-pools', 'chain-balances', 'chain-tokens')
 # The routes that read stored data only; chain-pools and chain-balances read the chains at request time
 # (v2_chain_reads) and take the reader's provider lane.
@@ -61,11 +61,33 @@ HEAD_MAX_AGE_SECONDS, MAX_LAG_SECONDS, STALE_SECONDS = 180, 120, 7200
 CHAIN_STATUSES = ('current', 'stale', 'unavailable')
 CHAIN_REASONS = ('deployment_not_registered', 'never_indexed', 'head_not_observed_recently',
                  'indexer_behind_head')
-LIMITATIONS = ('raw_amounts_no_usd_valuation', 'token_metadata_untrusted', 'positions_known_to_domino_only',
+LIMITATIONS = ('usd_from_qualified_sources_only', 'token_metadata_untrusted', 'positions_known_to_domino_only',
                'state_as_of_last_read', 'no_execution_or_signing')
-# The live chain reads' own: no USD, untrusted metadata, state as of the block read, nothing executed.
-LIVE_LIMITATIONS = ('raw_amounts_no_usd_valuation', 'token_metadata_untrusted', 'state_as_of_last_read',
+# The live chain reads' own: USD only where qualified, untrusted metadata, state as of the block read, nothing
+# executed.
+LIVE_LIMITATIONS = ('usd_from_qualified_sources_only', 'token_metadata_untrusted', 'state_as_of_last_read',
                     'no_execution_or_signing')
+# Qualified USD (0xdecimal's item 4; the owner's decision #22 of 2 Oct 2026 and answers of 5 Oct 2026,
+# v2_chain_reads): the chain's stable at US$ 1, ETH and WETH at the profile's Chainlink ETH/USD within its heartbeat
+# (and past the sequencer's grace where it has an uptime feed), any other token at its deepest pool against those
+# holding at least PRICE_FLOOR_USD within PRICE_BAND_PERCENT of its price.
+PRICE_SOURCES = ('chain_stable', 'chainlink_eth_usd', 'pool')
+PRICE_REASONS = ('no_qualified_price_source', 'price_read_failed', 'pricing_limit_reached', 'decimals_unknown',
+                 'eth_usd_stale', 'sequencer_down', 'no_pool', 'pool_depth_below_floor', 'pool_depth_unmeasurable',
+                 'price_below_precision')
+MARKET_REASONS = ('no_qualified_reference', 'price_read_failed', 'eth_usd_stale', 'sequencer_down',
+                  'pool_depth_unmeasurable')
+PRICE_FLOOR_USD, PRICE_BAND_PERCENT = '10000.000000', 10
+# Each chain's stable, wrapped native token and Chainlink ETH/USD feed, from its profile (api-contracts/v2/chains;
+# test_read_v6_contract holds them equal).
+PRICE_PROFILES = {
+    4663: {'stable': '0x5fc5360d0400a0fd4f2af552add042d716f1d168', 'wrapped': '0x0bd7d308f8e1639fab988df18a8011f41eacad73',
+           'feed': '0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9', 'heartbeatSeconds': 86400},
+    8453: {'stable': '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 'wrapped': '0x4200000000000000000000000000000000000006',
+           'feed': '0x50015f8b17fb2c290dde41fdc246ed0dcee93a8b', 'heartbeatSeconds': 1200},
+    42161: {'stable': '0xaf88d065e77c8cc2239327c5edb3a432268e5831', 'wrapped': '0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
+            'feed': '0x639fe6ab55c921f74e7fac1ee960c0b6293ba612', 'heartbeatSeconds': 1755},
+}
 SEARCH_CHAIN_IDS = (8453, 42161)
 MAX_CHAIN_POOLS, MAX_POOL_TOKENS, MAX_BALANCE_TOKENS, MAX_SEARCH_TOKENS = 32, 8, 24, 24
 MAX_QUERY, DEFAULT_SEARCH_TOKENS, LIVE_FRESH_SECONDS = 96, 20, 60
@@ -177,19 +199,86 @@ class PoolRef(WireModel):
         return self
 
 
+UsdPrice = Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,23})\.[0-9]{18}$', max_length=43)]
+Usd = Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,23})\.[0-9]{6}$', max_length=31)]
+
+
+def fixed(text):
+    """A wire decimal as an integer of its smallest unit."""
+    return int(text.replace('.', ''))
+
+
+class EthUsd(WireModel):
+    """The Chainlink ETH/USD round behind a price: the profile's feed (its proxy), the answer and its time."""
+    feed: Address
+    usd: UsdPrice
+    roundId: Raw
+    updatedAt: UInt
+
+
+class TokenPrice(WireModel):
+    """A qualified USD price: the chain's stable, the feed's ETH, or a pool's spot against one of them at the block read,
+    with the pool and its depth within the band."""
+    usd: UsdPrice
+    source: Literal[PRICE_SOURCES]
+    snapshot: BlockRef | None
+    ethUsd: EthUsd | None
+    pool: PoolRef | None
+    depthUsd: Usd | None
+
+    @model_validator(mode='after')
+    def consistent(self):
+        stable, from_pool = self.source == 'chain_stable', self.source == 'pool'
+        if (stable == (self.snapshot is not None) or from_pool != (self.pool is not None)
+                or from_pool != (self.depthUsd is not None) or fixed(self.usd) == 0):
+            raise ValueError('price_shape')
+        if stable and (fixed(self.usd) != 10 ** 18 or self.ethUsd is not None):
+            raise ValueError('price_stable')
+        if self.source == 'chainlink_eth_usd' and (self.ethUsd is None or self.ethUsd.usd != self.usd):
+            raise ValueError('price_eth_usd')
+        if self.ethUsd is not None and self.ethUsd.updatedAt > self.snapshot.timestamp:
+            raise ValueError('price_eth_usd')
+        if from_pool and (self.pool.hooks != ZERO or fixed(self.depthUsd) < fixed(PRICE_FLOOR_USD)):
+            raise ValueError('price_pool')
+        return self
+
+
+def priced(chain_id, token, price, reason):
+    """A token's price or the reason it has none, as its chain's profile allows: the stable from itself, ETH and WETH
+    from the feed within its heartbeat, any other token from a pool against one of those."""
+    if (price is None) == (reason is None):
+        raise ValueError('price_reason')
+    if price is None:
+        return
+    profile = PRICE_PROFILES[chain_id]
+    eth = (ZERO, profile['wrapped'])
+    if (price.source == 'chain_stable') != (token == profile['stable']) or (price.source == 'chainlink_eth_usd') != (
+            token in eth):
+        raise ValueError('price_source')
+    if price.pool is not None:
+        pair = (price.pool.currency0, price.pool.currency1)
+        partner = pair[1] if pair[0] == token else pair[0] if pair[1] == token else None
+        if partner not in (profile['stable'], *eth) or (price.ethUsd is not None) != (partner in eth):
+            raise ValueError('price_pool')
+    if price.ethUsd is not None and (price.ethUsd.feed != profile['feed'] or
+                                     price.snapshot.timestamp - price.ethUsd.updatedAt > profile['heartbeatSeconds']):
+        raise ValueError('price_eth_usd')
+
+
 class IndexedToken(WireModel):
     chainId: ChainId
     address: Address
     status: Literal['available', 'partial', 'unavailable', 'not_read']
     decimals: Annotated[StrictInt, Field(ge=0, le=255)] | None
     symbol: Symbol | None
-    price: None
-    priceReason: Literal['no_qualified_price_source']
+    price: TokenPrice | None
+    priceReason: Literal[PRICE_REASONS] | None
 
     @model_validator(mode='after')
     def consistent(self):
         if self.symbol is not None and not self.symbol.isprintable():
             raise ValueError('unsafe_symbol')
+        priced(self.chainId, self.address, self.price, self.priceReason)
         if self.status == 'available' and (self.decimals is None or self.symbol is None):
             raise ValueError('token_status')
         if self.status in ('unavailable', 'not_read') and (self.decimals is not None or self.symbol is not None):
@@ -1021,11 +1110,14 @@ def _fresh(served_at, snapshot, freshness):
 
 
 class LiveToken(WireModel):
-    """A token's metadata as read at the block: untrusted text, decimals null when unread, never guessed."""
+    """A token's metadata as read at the block: untrusted text, decimals null when unread, never guessed; its USD
+    price, or why it has none."""
     address: Address
     symbol: Symbol | None
     decimals: Annotated[StrictInt, Field(ge=0, le=255)] | None
     status: Literal['available', 'partial', 'unavailable']
+    price: TokenPrice | None
+    priceReason: Literal[PRICE_REASONS] | None
 
     @model_validator(mode='after')
     def consistent(self):
@@ -1044,9 +1136,20 @@ class SwapFees(WireModel):
 
 
 class PoolMarket(WireModel):
-    """TVL, volume and APR need a qualified USD source (§6.3); until then the pool says why it has none."""
-    status: Literal['unavailable']
-    reason: Literal['no_qualified_price_source']
+    """The pool's depth in USD within the band: what it releases of `reference`, the token's partner, as the token is
+    sold into it until its price falls by PRICE_BAND_PERCENT. No TVL, volume or APR."""
+    status: Literal['measured', 'unavailable']
+    reference: Address | None
+    depthUsd: Usd | None
+    reason: Literal[MARKET_REASONS] | None
+
+    @model_validator(mode='after')
+    def consistent(self):
+        measured = self.status == 'measured'
+        if measured != (self.reference is not None) or measured != (self.depthUsd is not None) or measured == (
+                self.reason is not None):
+            raise ValueError('market_status')
+        return self
 
 
 class LivePool(WireModel):
@@ -1122,15 +1225,26 @@ class ChainPoolsResponse(WireModel):
             if key in keys:
                 raise ValueError('pool_duplicate')
             keys.add(key)
+            profile = PRICE_PROFILES[self.chainId]
+            reference = item.market.reference
+            if reference is not None and (reference not in pair or reference == self.token or reference not in (
+                    profile['stable'], ZERO, profile['wrapped'])):
+                raise ValueError('market_reference')
+        for token in self.tokens:
+            priced(self.chainId, token.address, token.price, token.priceReason)
         return self
 
 
 class TokenBalance(WireModel):
+    """A balance as read, its token's USD price or why it has none, and its value at that price, rounded down."""
     address: Address
     symbol: Symbol | None
     decimals: Annotated[StrictInt, Field(ge=0, le=255)] | None
     balanceRaw: Raw | None
     status: Literal['read', 'unavailable']
+    price: TokenPrice | None
+    priceReason: Literal[PRICE_REASONS] | None
+    valueUsd: Usd | None
 
     @model_validator(mode='after')
     def consistent(self):
@@ -1138,14 +1252,20 @@ class TokenBalance(WireModel):
             raise ValueError('unsafe_symbol')
         if (self.status == 'read') != (self.balanceRaw is not None):
             raise ValueError('balance_status')
+        valued = self.balanceRaw is not None and self.decimals is not None and self.price is not None
+        if valued != (self.valueUsd is not None) or (valued and fixed(self.valueUsd) != int(
+                self.balanceRaw) * fixed(self.price.usd) // 10 ** (self.decimals + 12)):
+            raise ValueError('balance_value')
         return self
 
 
 class ChainBalances(WireModel):
+    """One chain's balances; `totalUsd` once every balance above zero has a value."""
     chainId: ChainId
     status: Literal['current', 'unavailable']
     reason: Literal['chain_not_configured', 'chain_read_failed'] | None
     snapshot: BlockRef | None
+    totalUsd: Usd | None
     balances: Annotated[list[TokenBalance], Field(min_length=1, max_length=MAX_BALANCE_TOKENS)]
 
     @model_validator(mode='after')
@@ -1158,6 +1278,12 @@ class ChainBalances(WireModel):
         addresses = [balance.address for balance in self.balances]
         if len(addresses) != len(set(addresses)):
             raise ValueError('balances_duplicate')
+        for balance in self.balances:
+            priced(self.chainId, balance.address, balance.price, balance.priceReason)
+        values = [balance.valueUsd for balance in self.balances if balance.balanceRaw != '0']
+        if (self.totalUsd is not None) != (None not in values) or (
+                self.totalUsd is not None and fixed(self.totalUsd) != sum(fixed(value) for value in values)):
+            raise ValueError('balances_total')
         return self
 
 
@@ -1170,6 +1296,7 @@ class ChainBalancesResponse(WireModel):
     servedAt: UInt
     coverage: Literal['complete', 'partial']
     chains: Annotated[list[ChainBalances], Field(min_length=1, max_length=len(CHAIN_IDS))]
+    totalUsd: Usd | None
     limitations: Annotated[list[Literal[LIVE_LIMITATIONS]], Field(min_length=len(LIVE_LIMITATIONS),
                                                                  max_length=len(LIVE_LIMITATIONS))]
     executionAvailable: Literal[False]
@@ -1182,6 +1309,11 @@ class ChainBalancesResponse(WireModel):
             raise ValueError('chains_order')
         if (self.coverage == 'complete') != all(chain.status == 'current' for chain in self.chains):
             raise ValueError('coverage')
+        # Chains are summed only when every one has its total (the owner, 2 Oct: §6.3's multi-chain rules).
+        totals = [chain.totalUsd for chain in self.chains]
+        if (self.totalUsd is not None) != (None not in totals) or (
+                self.totalUsd is not None and fixed(self.totalUsd) != sum(fixed(total) for total in totals)):
+            raise ValueError('balances_total')
         return self
 
 

@@ -357,6 +357,14 @@ def configured_chain_reads(provider_config, catalogue):
         return None
 
 
+def configured_v2_reader(catalogue, chain_reads):
+    """read-v6's stored routes over the V2 index, through the catalogue reader role: their tokens priced by the
+    chain reads' pricer when those are on (qualified USD), and said unpriced otherwise."""
+    from v2_index_store import V2Store
+    from v2_read_service import V2ReadService
+    return V2ReadService(V2Store(catalogue.settings), pricer=None if chain_reads is None else chain_reads.pricer)
+
+
 def create_app(service=None, *, gate=None, read_budget_seconds=60,
                snapshot_refresh_seconds=None, v2_reader=None, chain_reads=None):
     from markets_snapshot import DEFAULT_REFRESH_SECONDS, MarketsSnapshot, SnapshotRefresher
@@ -388,13 +396,10 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
                                                        path=SNAPSHOT_STORE))
         if public_data is not None:
             service.market_cache.reserve_provider = public_data.repository.reserve_provider
-        if catalogue is not None and os.environ.get('DOMINO_V2_READ') == '1':
-            # The V2 index (read-v6), through the same catalogue reader role.
-            from v2_index_store import V2Store
-            from v2_read_service import V2ReadService
-            v2_reader = V2ReadService(V2Store(catalogue.settings))
         if os.environ.get('DOMINO_V2_CHAIN_READS') == '1':
             chain_reads = configured_chain_reads(config, catalogue)
+        if catalogue is not None and os.environ.get('DOMINO_V2_READ') == '1':
+            v2_reader = configured_v2_reader(catalogue, chain_reads)
     # The featured list lives beside the public observations, read through the same reader role.
     repository = getattr(getattr(service, 'public_data', None), 'repository', None)
     featured = FeaturedReader(repository) if repository is not None else None

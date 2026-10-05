@@ -25,7 +25,9 @@ qualified price source exists (§6.3).
 """
 from collections import OrderedDict
 from dataclasses import dataclass
+from fractions import Fraction
 import json
+from math import isqrt
 import os
 from pathlib import Path
 import re
@@ -39,9 +41,10 @@ from discovery import ZERO, DataError, address
 from v2_abi import function
 from v2_chains import DEX_V3, DEX_V4, default_registry
 from v2_quotes import ERC20_BALANCE_OF, GET_ETH_BALANCE, V4_STANDARD_KEYS, Abi, multicall
+from read_deadline import read_deadline
 from v2_read_contract import CONTRACT_VERSION, LIVE_LIMITATIONS, MAX_CHAIN_POOLS
 from v2_uniswap import PIPS, PoolRef, v3_pool_address
-from v4_math import MAX_SQRT, MIN_SQRT
+from v4_math import MAX_SQRT, MIN_SQRT, amount_delta, sqrt_at_tick, tick_at_sqrt
 
 POOL_CHAINS = (4663, 8453, 42161)
 SEARCH_CHAINS = (8453, 42161)
@@ -240,6 +243,395 @@ class TimedCache:
                 self.items.popitem(last=False)
 
 
+# ------------------------------------------------------------ qualified USD
+# read-v6's USD (0xdecimal's item 4): the owner's decision #22 of 2 Oct 2026 (F7 §6.3) and the owner's answers
+# of 5 Oct 2026. A token has a USD price from one of three sources and from nothing else:
+# - the chain's stable, its rank-1 charge currency (USDG on Robinhood Chain, USDC on Base and Arbitrum One):
+#   US$ 1, fixed;
+# - ETH and its wrapped token: the profile's Chainlink ETH/USD (gasPrice.chainlinkEthUsd) while its round is no
+#   older than the feed's heartbeat at the block read and, where the profile names a sequencer uptime feed (Base,
+#   Arbitrum), the sequencer has been up for longer than SEQUENCER_GRACE_SECONDS;
+# - any other token: its deepest pool against one of those, among the app's candidates (pool_candidates), once that
+#   pool releases at least FLOOR_USD of the partner as the token is sold into it until its price falls by BAND:
+#   the featured pools' reference depth (featured_pools.reference_depth with featured_policy.json's floor, band
+#   and steps), its liquidity walked tick by tick and read in the same block as its price.
+# Anything else has no USD, with its reason. While a chain's sequencer is down, only its stable keeps a price.
+CHAINLINK_ROUND = Abi('latestRoundData()', (), ('uint80', 'int256', 'uint256', 'uint256', 'uint80'))
+V4_TICK_BITMAP = Abi('getTickBitmap(bytes32,int16)', ('bytes32', 'int16'), ('uint256',))
+V4_TICK_LIQUIDITY = Abi('getTickLiquidity(bytes32,int24)', ('bytes32', 'int24'), ('uint128', 'int128'))
+V3_TICK_BITMAP = Abi('tickBitmap(int16)', ('int16',), ('uint256',))
+V3_TICK = Abi('ticks(int24)', ('int24',), ('uint128', 'int128', 'uint256', 'uint256', 'int56', 'uint160', 'uint32',
+                                          'bool'))
+FLOOR_USD, BAND, MAX_STEPS = Fraction(10_000), Fraction(1, 10), 300
+SEQUENCER_GRACE_SECONDS = 3600  # Chainlink's own L2 example: an hour after the sequencer is back up
+PRICES_CACHE_SECONDS, MAX_PRICED = 30, 32  # a pass prices at most MAX_PRICED tokens a chain
+# A pass has this long on its chain, so a slow endpoint costs the answer its prices, never the answer.
+PRICING_BUDGET_SECONDS = 3
+PRICE_SCALE, USD_SCALE = 10 ** 18, 10 ** 6
+U256_MASK = (1 << 256) - 1
+
+
+def decimal_text(value, scale):
+    """A non-negative amount as a decimal with as many places as `scale` has zeros, rounded down."""
+    scaled = value.numerator * scale // value.denominator
+    return f'{scaled // scale}.{scaled % scale:0{len(str(scale)) - 1}d}'
+
+
+def stable_of(chain):
+    """The chain's stable: its rank-1 charge currency."""
+    return base_currencies(chain)[0]
+
+
+def snapshot_of(block):
+    return {'number': block.number, 'hash': block.hash, 'timestamp': block.timestamp}
+
+
+def eth_usd(chain, feed_row, uptime_row, block):
+    """The profile's Chainlink ETH/USD at `block`: (usd, its wire entry, None), or (None, None, reason)."""
+    feed = chain.gasPrice.chainlinkEthUsd
+    if feed.sequencerUptimeFeed is not None:
+        status = word(*uptime_row, CHAINLINK_ROUND.outputs)
+        if status is None:
+            return None, None, 'price_read_failed'
+        # 0 is up; startedAt is when the status last changed (0 on a feed not yet initialized).
+        if status[1] != 0 or status[2] == 0 or block.timestamp - status[2] <= SEQUENCER_GRACE_SECONDS:
+            return None, None, 'sequencer_down'
+    answer = word(*feed_row, CHAINLINK_ROUND.outputs)
+    if answer is None:
+        return None, None, 'price_read_failed'
+    round_id, value, _, updated_at, _ = answer
+    if value <= 0 or updated_at > block.timestamp or block.timestamp - updated_at > feed.heartbeatSeconds:
+        return None, None, 'eth_usd_stale'
+    usd = Fraction(value, 10 ** feed.decimals)
+    return usd, {'feed': address(feed.proxy), 'usd': decimal_text(usd, PRICE_SCALE), 'roundId': str(round_id),
+                 'updatedAt': updated_at}, None
+
+
+def _next_initialized(bitmap, tick, spacing, zero_for_one):
+    """TickBitmap.nextInitializedTickWithinOneWord, on integers (automation_evidence's)."""
+    compressed = tick // spacing
+    if zero_for_one:
+        word_pos, bit_pos = compressed >> 8, compressed & 255
+        masked = bitmap(word_pos) & ((1 << (bit_pos + 1)) - 1)
+        if masked:
+            return (compressed - (bit_pos - (masked.bit_length() - 1))) * spacing, True
+        return (compressed - bit_pos) * spacing, False
+    compressed += 1
+    word_pos, bit_pos = compressed >> 8, compressed & 255
+    masked = bitmap(word_pos) & (~((1 << bit_pos) - 1) & U256_MASK)
+    if masked:
+        return (compressed + ((masked & -masked).bit_length() - 1 - bit_pos)) * spacing, True
+    return (compressed + (255 - bit_pos)) * spacing, False
+
+
+def band_bound(sqrt_price, zero_for_one):
+    """The square-root price at which the token sold into the pool is BAND cheaper (featured_pools.band_bound)."""
+    keep = 1 - BAND
+    square = sqrt_price * sqrt_price
+    bound = (isqrt(square * keep.numerator // keep.denominator) if zero_for_one
+             else isqrt(square * keep.denominator // keep.numerator))
+    return min(max(bound, MIN_SQRT), MAX_SQRT - 1)
+
+
+def reference_depth(bitmap, tick_net, *, sqrt_price, tick, liquidity, spacing, zero_for_one):
+    """The partner, raw, the pool releases as the other currency is sold into it until the band is crossed
+    (featured_pools.reference_depth): None when the walk needs more than MAX_STEPS steps."""
+    bound = band_bound(sqrt_price, zero_for_one)
+    currency = 1 if zero_for_one else 0
+    price, amount, steps = sqrt_price, 0, 0
+    while price != bound:
+        steps += 1
+        if steps > MAX_STEPS:
+            return None
+        next_tick, initialized = _next_initialized(bitmap, tick, spacing, zero_for_one)
+        next_tick = max(MIN_TICK, min(MAX_TICK, next_tick))
+        next_price = sqrt_at_tick(next_tick)
+        target = max(next_price, bound) if zero_for_one else min(next_price, bound)
+        if target != price:
+            amount += amount_delta(price, target, max(0, liquidity), currency, False)
+            price = target
+        if price == bound:
+            break
+        if initialized:
+            net = tick_net(next_tick)
+            liquidity += -net if zero_for_one else net
+        tick = next_tick - 1 if zero_for_one else next_tick
+    return amount
+
+
+def band_ticks(sqrt_price, tick, spacing, zero_for_one):
+    """The compressed ticks a walk from `tick` to the band's bound can touch, one word of margin each side."""
+    bound = tick_at_sqrt(band_bound(sqrt_price, zero_for_one)) // spacing
+    low, high = sorted((tick // spacing, bound))
+    return low - 256, high + 256
+
+
+@dataclass
+class PoolRead:
+    ref: object
+    address: object  # a v3 pool's; None for v4
+    sqrt: int
+    tick: int
+    liquidity: int
+    lp_fee: int
+    protocol: int
+
+
+@dataclass
+class Survey:
+    """One chain's pools at one block, with the feed and each listed pool's depth in USD."""
+    chain: object
+    block: object
+    pools: list  # PoolRead, listed: existing, priced, holding liquidity, in shape
+    subjects: dict  # PoolRef -> the token the pool is read for
+    metadata: dict  # token -> (decimals, symbol, name) as read
+    eth: tuple  # eth_usd's
+    depths: dict  # PoolRef -> (USD, None) or (None, reason), for each listed pool
+
+    def partner(self, pool):
+        subject = self.subjects[pool.ref]
+        return pool.ref.currency1 if pool.ref.currency0 == subject else pool.ref.currency0
+
+    def reference_prices(self):
+        """{base currency: (USD, decimals)} this survey can value a pool's partner in."""
+        out = {}
+        for token, _, decimals in base_currencies(self.chain):
+            if token == stable_of(self.chain)[0]:
+                out[token] = (Fraction(1), decimals)
+            elif self.eth[0] is not None:
+                out[token] = (self.eth[0], decimals)
+        return out
+
+    def price(self, token, decimals):
+        """(price wire entry, None) or (None, reason) for `token`, from this survey alone."""
+        chain, wrapped = self.chain, self.chain.wrappedNative.address
+        if token == stable_of(chain)[0]:
+            return {'usd': decimal_text(Fraction(1), PRICE_SCALE), 'source': 'chain_stable', 'snapshot': None,
+                    'ethUsd': None, 'pool': None, 'depthUsd': None}, None
+        usd, entry, reason = self.eth
+        if token in (ZERO, wrapped):
+            if usd is None:
+                return None, reason
+            return {'usd': entry['usd'], 'source': 'chainlink_eth_usd', 'snapshot': snapshot_of(self.block),
+                    'ethUsd': entry, 'pool': None, 'depthUsd': None}, None
+        if reason == 'sequencer_down':
+            return None, reason
+        if decimals is None:
+            return None, 'decimals_unknown'
+        own = [pool for pool in self.pools if self.subjects[pool.ref] == token]
+        measured = [(self.depths[pool.ref][0], pool) for pool in own if self.depths[pool.ref][0] is not None]
+        qualified = [(depth, pool) for depth, pool in measured if depth >= FLOOR_USD]
+        if not qualified:
+            reasons = {self.depths[pool.ref][1] for pool in own}
+            return None, ('pool_depth_below_floor' if measured else 'pool_depth_unmeasurable'
+                          if 'pool_depth_unmeasurable' in reasons else reason
+                          if reason is not None and any(self.partner(pool) != stable_of(chain)[0] for pool in own)
+                          else 'no_pool')
+        depth, pool = min(qualified, key=lambda item: (-item[0], partner_rank(chain, item[1].ref, token),
+                                                       item[1].ref.dex == DEX_V3, item[1].ref.fee))
+        partner = self.partner(pool)
+        partner_usd, partner_decimals = self.reference_prices()[partner]
+        ratio = Fraction(pool.sqrt * pool.sqrt, 1 << 192)  # currency1 per currency0, raw
+        spot = (ratio if pool.ref.currency0 == token else 1 / ratio) * Fraction(10 ** decimals, 10 ** partner_decimals)
+        usd_text = decimal_text(spot * partner_usd, PRICE_SCALE)
+        if usd_text == decimal_text(Fraction(0), PRICE_SCALE):
+            return None, 'price_below_precision'
+        return {'usd': usd_text, 'source': 'pool', 'snapshot': snapshot_of(self.block),
+                'ethUsd': entry if partner in (ZERO, wrapped) else None, 'pool': pool_wire(pool.ref),
+                'depthUsd': decimal_text(depth, USD_SCALE)}, None
+
+
+def pool_wire(ref):
+    return {'dex': ref.dex, 'currency0': ref.currency0, 'currency1': ref.currency1, 'fee': ref.fee,
+            'tickSpacing': ref.tick_spacing, 'hooks': ref.hooks}
+
+
+def survey(chain, rpc, block, refs, subjects, metadata=()):
+    """The pools `refs` at `block` with what qualified USD needs, in three Multicall3 rounds: each pool's state, the
+    Chainlink feed (and its sequencer's) and the tokens' metadata; the listed pools' bitmap words within the band;
+    the initialized ticks there. `subjects`: PoolRef -> the token it is read for (its partner is the reference)."""
+    calls = []
+
+    def add(target, abi, *args):
+        calls.append((target, abi.calldata(*args)))
+        return len(calls) - 1
+    feed = chain.gasPrice.chainlinkEthUsd
+    feed_at = add(feed.proxy, CHAINLINK_ROUND)
+    uptime_at = None if feed.sequencerUptimeFeed is None else add(feed.sequencerUptimeFeed, CHAINLINK_ROUND)
+    state, factory = chain.uniswap.v4.stateView, chain.uniswap.v3.factory
+    slots = []
+    for ref in refs:
+        if ref.dex == DEX_V4:
+            pool_id = bytes.fromhex(ref.pool_id[2:])
+            slots.append((ref, None, add(state, function(V4_STATE, 'getSlot0'), pool_id),
+                          add(state, function(V4_STATE, 'getLiquidity'), pool_id)))
+        else:
+            pool = v3_pool_address(chain, ref.currency0, ref.currency1, ref.fee)
+            slots.append((ref, pool, add(pool, function(V3_POOL, 'slot0')), add(pool, function(V3_POOL, 'liquidity'))))
+    spacing_of = {fee: add(factory, function(V3_FACTORY, 'feeAmountTickSpacing'), fee)
+                  for fee in sorted({ref.fee for ref in refs if ref.dex == DEX_V3})}
+    meta_at = {token: (add(token, DECIMALS), add(token, SYMBOL), add(token, NAME)) for token in metadata}
+    rows = multicall(rpc, chain, block, calls)
+
+    spacings = {fee: (word(*rows[index], ('int24',)) or (None,))[0] for fee, index in spacing_of.items()}
+    pools = []
+    for ref, pool, first, second in slots:
+        if ref.dex == DEX_V4:
+            slot0, liquidity = word(*rows[first], ('uint160', 'int24', 'uint24', 'uint24')), word(*rows[second], ('uint128',))
+            if slot0 is None or liquidity is None:
+                continue
+            sqrt_price, tick, protocol, lp_fee = slot0
+            if protocol & 0xfff > 1000 or protocol >> 12 > 1000 or lp_fee != ref.fee:
+                continue  # out of shape; a hookless key's LP fee is its own
+        else:
+            slot0 = word(*rows[first], ('uint160', 'int24', 'uint16', 'uint16', 'uint16', 'uint8', 'bool'))
+            liquidity = word(*rows[second], ('uint128',))
+            if slot0 is None or liquidity is None or spacings.get(ref.fee) != ref.tick_spacing:
+                continue  # no pool, a tier the factory does not enable, or another spacing
+            sqrt_price, tick, protocol, lp_fee = slot0[0], slot0[1], slot0[5], ref.fee
+        liquidity, = liquidity
+        if not MIN_SQRT <= sqrt_price < MAX_SQRT or not MIN_TICK <= tick <= MAX_TICK or liquidity == 0:
+            continue  # not initialized, out of shape, or empty
+        pools.append(PoolRead(ref, pool, sqrt_price, tick, liquidity, lp_fee, protocol))
+    metadata_read = {token: ((word(*rows[d], ('uint8',)) or (None,))[0], raw_text(*rows[s], MAX_SYMBOL),
+                             raw_text(*rows[n], MAX_NAME)) for token, (d, s, n) in meta_at.items()}
+    found = Survey(chain, block, pools, dict(subjects), metadata_read,
+                   eth_usd(chain, rows[feed_at], None if uptime_at is None else rows[uptime_at], block), {})
+    found.depths = measure_depths(found, rpc)
+    return found
+
+
+def measure_depths(found, rpc):
+    """Each listed pool's depth within the band, in USD, or why not, in two more rounds."""
+    chain, block = found.chain, found.block
+    base, references = {entry[0] for entry in base_currencies(chain)}, found.reference_prices()
+    state = chain.uniswap.v4.stateView
+    depths, walks, calls = {}, [], []
+
+    def add(target, abi, *args):
+        calls.append((target, abi.calldata(*args)))
+        return len(calls) - 1
+    for pool in found.pools:
+        partner = found.partner(pool)
+        if partner not in base:
+            depths[pool.ref] = (None, 'no_qualified_reference')
+        elif found.eth[2] == 'sequencer_down':
+            depths[pool.ref] = (None, 'sequencer_down')
+        elif partner not in references:
+            depths[pool.ref] = (None, found.eth[2])
+        else:
+            zero_for_one = partner == pool.ref.currency1  # the token, currency0, sold into the pool
+            low, high = band_ticks(pool.sqrt, pool.tick, pool.ref.tick_spacing, zero_for_one)
+            words = {}
+            for position in range(low >> 8, (high >> 8) + 1):
+                words[position] = (add(state, V4_TICK_BITMAP, bytes.fromhex(pool.ref.pool_id[2:]), position)
+                                   if pool.ref.dex == DEX_V4 else add(pool.address, V3_TICK_BITMAP, position))
+            walks.append((pool, partner, zero_for_one, low, high, words))
+    rows = multicall(rpc, chain, block, calls) if calls else []
+    calls, scheduled = [], []
+    for pool, partner, zero_for_one, low, high, words in walks:
+        bitmap = {position: word(*rows[index], ('uint256',)) for position, index in words.items()}
+        if any(value is None for value in bitmap.values()):
+            depths[pool.ref] = (None, 'pool_depth_unmeasurable')
+            continue
+        spacing = pool.ref.tick_spacing
+        ticks = [(position * 256 + bit) * spacing for position, value in bitmap.items() for bit in range(256)
+                 if value[0] >> bit & 1 and low <= position * 256 + bit <= high]
+        if len(ticks) > MAX_STEPS:
+            depths[pool.ref] = (None, 'pool_depth_unmeasurable')
+            continue
+        nets = {tick: (add(state, V4_TICK_LIQUIDITY, bytes.fromhex(pool.ref.pool_id[2:]), tick)
+                       if pool.ref.dex == DEX_V4 else add(pool.address, V3_TICK, tick)) for tick in ticks}
+        scheduled.append((pool, partner, zero_for_one, {position: value[0] for position, value in bitmap.items()}, nets))
+    rows = multicall(rpc, chain, block, calls) if calls else []
+    for pool, partner, zero_for_one, bitmap, nets in scheduled:
+        read = {tick: word(*rows[index], V4_TICK_LIQUIDITY.outputs if pool.ref.dex == DEX_V4 else V3_TICK.outputs)
+                for tick, index in nets.items()}
+        try:
+            if any(value is None for value in read.values()):
+                raise KeyError(pool.ref)
+            raw = reference_depth(lambda position: bitmap[position], lambda tick: read[tick][1],
+                                  sqrt_price=pool.sqrt, tick=pool.tick, liquidity=pool.liquidity,
+                                  spacing=pool.ref.tick_spacing, zero_for_one=zero_for_one)
+        except KeyError:
+            raw = None  # the walk left the words read
+        if raw is None:
+            depths[pool.ref] = (None, 'pool_depth_unmeasurable')
+            continue
+        usd, decimals = references[partner]
+        depths[pool.ref] = (Fraction(raw, 10 ** decimals) * usd, None)
+    return depths
+
+
+def usd_sum(values):
+    """Wire USD amounts summed, as one."""
+    return decimal_text(sum((Fraction(value) for value in values), Fraction(0)), USD_SCALE)
+
+
+def balance_value(entry):
+    """A balance's USD at its price, rounded down to a micro-dollar; None without a balance, decimals or price."""
+    if entry['balanceRaw'] is None or entry['decimals'] is None or entry['price'] is None:
+        return None
+    return decimal_text(Fraction(int(entry['balanceRaw'])) * Fraction(entry['price']['usd']) / 10 ** entry['decimals'],
+                        USD_SCALE)
+
+
+class Pricer:
+    """Qualified USD per (chain, token), kept PRICES_CACHE_SECONDS: what a chain is missing is priced in one survey
+    at its head. A failed read is never kept."""
+
+    def __init__(self, sources, *, monotonic=time.monotonic):
+        self.sources = sources
+        self.cache = TimedCache(PRICES_CACHE_SECONDS, clock=monotonic, limit=MAX_CACHED)
+
+    def prices(self, tokens):
+        """{(chain id, token): (price, None) or (None, reason)} for [(chain id, token, decimals or None)]: decimals
+        as already read, None to read them here (a base currency needs none)."""
+        out, missing = {}, {}
+        for chain_id, token, decimals in tokens:
+            hit = self.cache.get((chain_id, token))
+            if hit is not None:
+                out[(chain_id, token)] = hit
+            else:
+                missing.setdefault(chain_id, {})[token] = decimals
+        for chain_id, asked in sorted(missing.items()):
+            for token, result in self._chain(chain_id, asked).items():
+                out[(chain_id, token)] = result
+                self.offer(chain_id, token, result)
+        return out
+
+    def offer(self, chain_id, token, result):
+        """Keeps a price another read made (chain-pools' own survey), unless its read failed."""
+        if result[1] not in ('price_read_failed', 'pricing_limit_reached'):
+            self.cache.put((chain_id, token), result)
+
+    def _chain(self, chain_id, asked):
+        source = self.sources.get(chain_id)
+        if source is None:
+            return {token: (None, 'no_qualified_price_source') for token in asked}
+        chain = source.chain
+        base = {entry[0] for entry in base_currencies(chain)}
+        priced = sorted(asked)[:MAX_PRICED]
+        refs, subjects = [], {}
+        for token in priced:
+            if token not in base:
+                for ref in pool_candidates(chain, token):
+                    refs.append(ref)
+                    subjects[ref] = token
+        unknown = [token for token in priced if token not in base and asked[token] is None]
+        try:
+            with read_deadline(PRICING_BUDGET_SECONDS):
+                block, rpc = source.at_head()
+                found = survey(chain, rpc, block, refs, subjects, unknown)
+        except DataError:
+            return {token: (None, 'price_read_failed') for token in asked}
+        out = {token: (None, 'pricing_limit_reached') for token in asked}
+        for token in priced:
+            decimals = asked[token] if asked[token] is not None else found.metadata.get(token, (None,))[0]
+            out[token] = found.price(token, decimals)
+        return out
+
+
 # ------------------------------------------------------------------ reads
 @dataclass
 class ChainSource:
@@ -263,6 +655,7 @@ class ChainReads:
         self.pool_cache = TimedCache(POOLS_CACHE_SECONDS, clock=monotonic)
         self.balance_cache = TimedCache(BALANCES_CACHE_SECONDS, clock=monotonic)
         self.index_cache = TimedCache(INDEX_TOKENS_CACHE_SECONDS, clock=monotonic, limit=len(SEARCH_CHAINS))
+        self.pricer = Pricer(self.sources, monotonic=monotonic)
 
     def source(self, chain_id):
         source = self.sources.get(chain_id)
@@ -289,57 +682,23 @@ class ChainReads:
         source = self.source(chain_id)
         chain = source.chain
         refs = pool_candidates(chain, token, paired)
-        state, factory = chain.uniswap.v4.stateView, chain.uniswap.v3.factory
-        calls, slots = [], []
-
-        def add(target, abi, *args):
-            calls.append((target, abi.calldata(*args)))
-            return len(calls) - 1
-        for ref in refs:
-            if ref.dex == DEX_V4:
-                pool_id = bytes.fromhex(ref.pool_id[2:])
-                slots.append((ref, None, add(state, function(V4_STATE, 'getSlot0'), pool_id),
-                              add(state, function(V4_STATE, 'getLiquidity'), pool_id)))
-            else:
-                pool = v3_pool_address(chain, ref.currency0, ref.currency1, ref.fee)
-                slots.append((ref, pool, add(pool, function(V3_POOL, 'slot0')), add(pool, function(V3_POOL, 'liquidity'))))
-        spacing_of = {fee: add(factory, function(V3_FACTORY, 'feeAmountTickSpacing'), fee)
-                      for fee in sorted({ref.fee for ref in refs if ref.dex == DEX_V3})}
         known = {entry[0]: entry for entry in base_currencies(chain)}
-        metadata = {}
         asked = {token} | ({paired} if paired is not None else set())
-        for currency in sorted(asked - set(known)):
-            metadata[currency] = (add(currency, DECIMALS), add(currency, SYMBOL), add(currency, NAME))
         block, rpc = source.at_head()
-        rows = multicall(rpc, chain, block, calls) if calls else []
-
-        spacings = {fee: (word(*rows[index], ('int24',)) or (None,))[0] for fee, index in spacing_of.items()}
+        found = survey(chain, rpc, block, refs, {ref: token for ref in refs}, sorted(asked - set(known)))
         pools = []
-        for ref, pool, first, second in slots:
-            if ref.dex == DEX_V4:
-                slot0, liquidity = word(*rows[first], ('uint160', 'int24', 'uint24', 'uint24')), word(*rows[second], ('uint128',))
-                if slot0 is None or liquidity is None:
-                    continue
-                sqrt_price, tick, protocol, lp_fee = slot0
-                if protocol & 0xfff > 1000 or protocol >> 12 > 1000 or lp_fee != ref.fee:
-                    continue  # out of shape; a hookless key's LP fee is its own
-            else:
-                slot0 = word(*rows[first], ('uint160', 'int24', 'uint16', 'uint16', 'uint16', 'uint8', 'bool'))
-                liquidity = word(*rows[second], ('uint128',))
-                if slot0 is None or liquidity is None or spacings.get(ref.fee) != ref.tick_spacing:
-                    continue  # no pool, a tier the factory does not enable, or another spacing
-                sqrt_price, tick, protocol, lp_fee = slot0[0], slot0[1], slot0[5], ref.fee
-            liquidity, = liquidity
-            if not MIN_SQRT <= sqrt_price < MAX_SQRT or not MIN_TICK <= tick <= MAX_TICK or liquidity == 0:
-                continue  # not initialized, out of shape, or empty
-            zero_for_one, one_for_zero = swap_fees(ref.dex, lp_fee, protocol)
-            pools.append((partner_rank(chain, ref, token), -liquidity, ref.dex == DEX_V3, ref.fee, {
-                'pool': {'dex': ref.dex, 'currency0': ref.currency0, 'currency1': ref.currency1, 'fee': ref.fee,
-                         'tickSpacing': ref.tick_spacing, 'hooks': ref.hooks},
-                'id': ref.pool_id if ref.dex == DEX_V4 else None, 'address': pool,
-                'sqrtPriceX96': str(sqrt_price), 'tick': tick, 'liquidity': str(liquidity), 'lpFeePips': lp_fee,
-                'protocolFee': protocol, 'swapFeePips': {'zeroForOne': zero_for_one, 'oneForZero': one_for_zero},
-                'market': {'status': 'unavailable', 'reason': 'no_qualified_price_source'}}))
+        for pool in found.pools:
+            ref = pool.ref
+            zero_for_one, one_for_zero = swap_fees(ref.dex, pool.lp_fee, pool.protocol)
+            depth, reason = found.depths[ref]
+            market = ({'status': 'measured', 'reference': found.partner(pool), 'depthUsd': decimal_text(depth, USD_SCALE),
+                       'reason': None} if depth is not None else
+                      {'status': 'unavailable', 'reference': None, 'depthUsd': None, 'reason': reason})
+            pools.append((partner_rank(chain, ref, token), -pool.liquidity, ref.dex == DEX_V3, ref.fee, {
+                'pool': pool_wire(ref), 'id': ref.pool_id if ref.dex == DEX_V4 else None, 'address': pool.address,
+                'sqrtPriceX96': str(pool.sqrt), 'tick': pool.tick, 'liquidity': str(pool.liquidity),
+                'lpFeePips': pool.lp_fee, 'protocolFee': pool.protocol,
+                'swapFeePips': {'zeroForOne': zero_for_one, 'oneForZero': one_for_zero}, 'market': market}))
         pools.sort(key=lambda item: item[:4])
 
         tokens = []
@@ -348,18 +707,29 @@ class ChainReads:
                 tokens.append({'address': currency, 'symbol': known[currency][1], 'decimals': known[currency][2],
                                'status': 'available'})
                 continue
-            decimals_at, symbol_at, name_at = metadata[currency]
-            decimals = (word(*rows[decimals_at], ('uint8',)) or (None,))[0]
-            symbol = raw_text(*rows[symbol_at], MAX_SYMBOL)
+            decimals, symbol, name = found.metadata[currency]
             status = ('available' if decimals is not None and symbol is not None else
                       'unavailable' if decimals is None and symbol is None else 'partial')
             tokens.append({'address': currency, 'symbol': symbol, 'decimals': decimals, 'status': status})
             if currency == token and status == 'available' and pools:
-                self.learned.learn(chain_id, token, symbol, raw_text(*rows[name_at], MAX_NAME), decimals)
-        snapshot = {'number': block.number, 'hash': block.hash, 'timestamp': block.timestamp}
+                self.learned.learn(chain_id, token, symbol, name, decimals)
+        # This survey prices the base currencies, and the token when it read all its pools against them (no paired
+        # token); the pricer prices the rest from their own pools, as every other route does.
+        others = []
+        for entry in tokens:
+            if entry['address'] in known or (paired is None and entry['address'] == token):
+                price, reason = found.price(entry['address'], entry['decimals'])
+                entry.update(price=price, priceReason=reason)
+                if entry['address'] == token:
+                    self.pricer.offer(chain_id, token, (price, reason))
+            else:
+                others.append(entry)
+        priced = self.pricer.prices([(chain_id, entry['address'], entry['decimals']) for entry in others])
+        for entry in others:
+            entry['price'], entry['priceReason'] = priced[(chain_id, entry['address'])]
         return {'schemaVersion': 1, 'contractVersion': CONTRACT_VERSION, 'mode': 'live_chain_pools',
                 'chainId': chain_id, 'token': token,
-                'pairedToken': paired, 'snapshot': snapshot, 'tokens': tokens,
+                'pairedToken': paired, 'snapshot': snapshot_of(block), 'tokens': tokens,
                 'pools': [item[4] for item in pools[:MAX_CHAIN_POOLS]], 'truncated': len(pools) > MAX_CHAIN_POOLS,
                 'coverage': 'standard_hookless_pools', 'limitations': list(LIVE_LIMITATIONS),
                 'executionAvailable': False}
@@ -384,18 +754,24 @@ class ChainReads:
                     self.balance_cache.put(key, entry)
             chains.append(entry)
         now = int(self.clock())
+        totals = [c['totalUsd'] for c in chains]
         return {'schemaVersion': 1, 'contractVersion': CONTRACT_VERSION, 'mode': 'live_chain_balances',
                 'wallet': wallet, 'servedAt': now,
                 'coverage': 'complete' if all(c['status'] == 'current' for c in chains) else 'partial',
-                'chains': chains, 'limitations': list(LIVE_LIMITATIONS), 'executionAvailable': False}
+                'chains': chains,
+                # Chains are summed only when every one is (the owner, 2 Oct: §6.3's multi-chain rules).
+                'totalUsd': None if None in totals else usd_sum(totals),
+                'limitations': list(LIVE_LIMITATIONS), 'executionAvailable': False}
 
     def _balances(self, chain_id, wallet, tokens):
-        unread = {'chainId': chain_id, 'status': 'unavailable', 'snapshot': None,
-                  'balances': [{'address': token, 'symbol': None, 'decimals': None, 'balanceRaw': None,
-                                'status': 'unavailable'} for token in tokens]}
+        def unread(reason, price_reason):
+            return {'chainId': chain_id, 'status': 'unavailable', 'reason': reason, 'snapshot': None, 'totalUsd': None,
+                    'balances': [{'address': token, 'symbol': None, 'decimals': None, 'balanceRaw': None,
+                                  'status': 'unavailable', 'price': None, 'priceReason': price_reason,
+                                  'valueUsd': None} for token in tokens]}
         source = self.sources.get(chain_id)
         if source is None:
-            return {**unread, 'reason': 'chain_not_configured'}
+            return unread('chain_not_configured', 'no_qualified_price_source')
         chain = source.chain
         known = {entry[0]: entry for entry in base_currencies(chain)}
         calls, slots = [], []
@@ -413,7 +789,7 @@ class ChainReads:
             block, rpc = source.at_head()
             rows = multicall(rpc, chain, block, calls)
         except DataError:
-            return {**unread, 'reason': 'chain_read_failed'}
+            return unread('chain_read_failed', 'price_read_failed')
         balances = []
         for token, at, meta in slots:
             balance = word(*rows[at], ('uint256',))
@@ -425,9 +801,15 @@ class ChainReads:
             balances.append({'address': token, 'symbol': symbol, 'decimals': decimals,
                              'balanceRaw': None if balance is None else str(balance[0]),
                              'status': 'unavailable' if balance is None else 'read'})
-        return {'chainId': chain_id, 'status': 'current', 'reason': None,
-                'snapshot': {'number': block.number, 'hash': block.hash, 'timestamp': block.timestamp},
-                'balances': balances}
+        priced = self.pricer.prices([(chain_id, entry['address'], entry['decimals']) for entry in balances])
+        for entry in balances:
+            entry['price'], entry['priceReason'] = priced[(chain_id, entry['address'])]
+            entry['valueUsd'] = balance_value(entry)
+        # A chain's total counts every balance: a read that failed, or a balance above zero without a value, leaves
+        # it unknown; a zero balance needs no price.
+        values = [entry['valueUsd'] for entry in balances if entry['balanceRaw'] != '0']
+        return {'chainId': chain_id, 'status': 'current', 'reason': None, 'snapshot': snapshot_of(block),
+                'totalUsd': None if None in values else usd_sum(values), 'balances': balances}
 
     # --------------------------------------------------------- chain-tokens
     def known_tokens(self, chain_id):

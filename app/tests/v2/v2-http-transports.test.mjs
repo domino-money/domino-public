@@ -1,7 +1,7 @@
 /**
  * Domino V2's two routes over the page's same-origin HTTP (the base agent's item 5, 2026-10-02):
  *
- *   - read-v6 (src/v2/read/v6HttpTransport.ts): the route's path, a JSON body, `X-Domino-Read-Contract: 1.0.0-rc.1`,
+ *   - read-v6 (src/v2/read/v6HttpTransport.ts): the route's path, a JSON body, `X-Domino-Read-Contract: 1.1.0-rc.1`,
  *     the read Worker's bounds; a reply without the contract's header (the gate, the SPA's page, a route not deployed) is
  *     never read as the contract's: a dash (`unavailable`), never data; the route's own non-JSON answer is `invalid`; the
  *     package's own fixtures pass through readPortfolio and readActivity as `ok`;
@@ -38,7 +38,7 @@ function recordingPost(reply) {
   };
   return { sent, post };
 }
-const answer = (status, body, { header = '1.0.0-rc.1', contentType = 'application/json' } = {}) => ({
+const answer = (status, body, { header = '1.1.0-rc.1', contentType = 'application/json' } = {}) => ({
   kind: 'reply',
   reply: { status, opaqueRedirect: false, contentType, contractHeader: header, requestIdHeader: null, retryAfterHeader: null, body: { kind: 'text', text: typeof body === 'string' ? body : JSON.stringify(body) } },
 });
@@ -56,7 +56,7 @@ test('read-v6 over HTTP: each route\'s path, the JSON body, the contract\'s head
     'chain-pools': '/api/read/v6/chain-pools', 'chain-balances': '/api/read/v6/chain-balances',
     'chain-tokens': '/api/read/v6/chain-tokens' });
   for (const request of sent) {
-    assert.deepEqual(request.init.headers, { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Domino-Read-Contract': '1.0.0-rc.1' });
+    assert.deepEqual(request.init.headers, { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Domino-Read-Contract': '1.1.0-rc.1' });
     assert.deepEqual(request.options, { contractHeader: 'X-Domino-Read-Contract', maxBytes: READ_V6_MAX_RESPONSE_BYTES, timeoutMs: READ_V6_TIMEOUT_MS });
   }
   assert.deepEqual(JSON.parse(sent[0].init.body), { wallet: PORTFOLIO.wallet.toLowerCase() });
@@ -69,7 +69,8 @@ test('read-v6 over HTTP: a reply that is not the route\'s is a dash, never data;
     ['the beta gate', answer(401, { error: 'beta_access_required' }, { header: null })],
     ['the SPA\'s page', answer(200, '<!doctype html>', { header: null, contentType: 'text/html' })],
     ['the forwarder\'s not_found', answer(404, { error: 'not_found' }, { header: null })],
-    ['another contract version', answer(200, PORTFOLIO, { header: '1.0.0-rc.0' })],
+    // Changed on purpose 2026-10-05 (read-v6 1.1.0-rc.1, qualified USD): the previous version is another version.
+    ['another contract version', answer(200, PORTFOLIO, { header: '1.0.0-rc.1' })],
     ['a redirect', { kind: 'reply', reply: { ...answer(200, PORTFOLIO).reply, opaqueRedirect: true } }],
     ['the network', { kind: 'network' }],
     ['the page\'s deadline', { kind: 'timeout' }],

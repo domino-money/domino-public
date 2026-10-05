@@ -1,5 +1,6 @@
 /**
- * Domino V2's read API, the app's side: `read-v6` `1.0.0-rc.1` (spec F7 rev2 §6.2; api-contracts/read-v6, main #305).
+ * Domino V2's read API, the app's side: `read-v6` `1.1.0-rc.1` (spec F7 rev2 §6.2; api-contracts/read-v6, main #305;
+ * qualified USD since 1.1.0-rc.1, 0xdecimal's item 4).
  * Two routes, `portfolio` ({wallet}) and `activity` ({wallet, limit?, cursor?}): one wallet's V2 state and receipts on
  * Robinhood Chain, Base and Arbitrum One, read from the V2 index. Every answer passes the package's own validator
  * (runtime.mjs `validateResponse` and `validateExchange`: about the wallet asked, a page no longer than asked) before
@@ -9,7 +10,7 @@
  * The answer carries no USD, APR or price (every token `price: null`, `priceReason: "no_qualified_price_source"`),
  * nothing summed across chains, `symbol` as untrusted text and `decimals` null when unread: the screens keep it so.
  *
- * The Worker route (`/api/read/v6/portfolio`, `/api/read/v6/activity`, header `X-Domino-Read-Contract: 1.0.0-rc.1`)
+ * The Worker route (`/api/read/v6/portfolio`, `/api/read/v6/activity`, header `X-Domino-Read-Contract: 1.1.0-rc.1`)
  * does not exist yet (the bridge side's); until it does, only the v2-test build's screens read, through a fixture
  * transport serving the package's own fixtures. This module imports no runtime: the caller hands it in (as
  * src/v2/crosschain does), so the node tests load api-contracts/read-v6/runtime.mjs themselves.
@@ -19,7 +20,7 @@ import type {
   ReadV6ErrorCode, ReadV6Route,
 } from 'api-contracts/read-v6/types'
 
-export const READ_V6_CONTRACT_VERSION = '1.0.0-rc.1' as const
+export const READ_V6_CONTRACT_VERSION = '1.1.0-rc.1' as const
 export const READ_V6_HEADER = 'X-Domino-Read-Contract' as const
 
 /** The package's validators (api-contracts/read-v6/runtime.mjs), handed in. */

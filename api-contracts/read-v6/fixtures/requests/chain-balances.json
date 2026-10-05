@@ -7,6 +7,10 @@
     {
       "address": "0x0000000000000000000000000000000000000000",
       "chainId": 8453
+    },
+    {
+      "address": "0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+      "chainId": 8453
     }
   ],
   "wallet": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"

@@ -40,7 +40,7 @@ export const SCHEMAS = {
       ],
       "title": "ActivityPageRequest",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     },
     "response": {
       "$defs": {
@@ -775,6 +775,46 @@ export const SCHEMAS = {
           "title": "Deployment",
           "type": "object"
         },
+        "EthUsd": {
+          "additionalProperties": false,
+          "description": "The Chainlink ETH/USD round behind a price: the profile's feed (its proxy), the answer and its time.",
+          "properties": {
+            "feed": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Feed",
+              "type": "string"
+            },
+            "roundId": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Roundid",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "updatedAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Updatedat",
+              "type": "integer"
+            },
+            "usd": {
+              "maxLength": 43,
+              "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{18}$",
+              "title": "Usd",
+              "type": "string"
+            }
+          },
+          "required": [
+            "feed",
+            "usd",
+            "roundId",
+            "updatedAt"
+          ],
+          "title": "EthUsd",
+          "type": "object"
+        },
         "ExitModuleSet": {
           "additionalProperties": false,
           "properties": {
@@ -993,13 +1033,37 @@ export const SCHEMAS = {
               "title": "Decimals"
             },
             "price": {
-              "title": "Price",
-              "type": "null"
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TokenPrice"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "priceReason": {
-              "const": "no_qualified_price_source",
-              "title": "Pricereason",
-              "type": "string"
+              "anyOf": [
+                {
+                  "enum": [
+                    "no_qualified_price_source",
+                    "price_read_failed",
+                    "pricing_limit_reached",
+                    "decimals_unknown",
+                    "eth_usd_stale",
+                    "sequencer_down",
+                    "no_pool",
+                    "pool_depth_below_floor",
+                    "pool_depth_unmeasurable",
+                    "price_below_precision"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pricereason"
             },
             "status": {
               "enum": [
@@ -1930,6 +1994,80 @@ export const SCHEMAS = {
           "title": "Tariff",
           "type": "object"
         },
+        "TokenPrice": {
+          "additionalProperties": false,
+          "description": "A qualified USD price: the chain's stable, the feed's ETH, or a pool's spot against one of them at the block read,\nwith the pool and its depth within the band.",
+          "properties": {
+            "depthUsd": {
+              "anyOf": [
+                {
+                  "maxLength": 31,
+                  "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Depthusd"
+            },
+            "ethUsd": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EthUsd"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pool": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PoolRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snapshot": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BlockRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "chain_stable",
+                "chainlink_eth_usd",
+                "pool"
+              ],
+              "title": "Source",
+              "type": "string"
+            },
+            "usd": {
+              "maxLength": 43,
+              "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{18}$",
+              "title": "Usd",
+              "type": "string"
+            }
+          },
+          "required": [
+            "usd",
+            "source",
+            "snapshot",
+            "ethUsd",
+            "pool",
+            "depthUsd"
+          ],
+          "title": "TokenPrice",
+          "type": "object"
+        },
         "TokenRecovered": {
           "additionalProperties": false,
           "properties": {
@@ -2490,7 +2628,7 @@ export const SCHEMAS = {
           "type": "array"
         },
         "contractVersion": {
-          "const": "1.0.0-rc.1",
+          "const": "1.1.0-rc.1",
           "title": "Contractversion",
           "type": "string"
         },
@@ -2556,7 +2694,7 @@ export const SCHEMAS = {
         "limitations": {
           "items": {
             "enum": [
-              "raw_amounts_no_usd_valuation",
+              "usd_from_qualified_sources_only",
               "token_metadata_untrusted",
               "positions_known_to_domino_only",
               "state_as_of_last_read",
@@ -2636,7 +2774,7 @@ export const SCHEMAS = {
       ],
       "title": "ActivityResponse",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     }
   },
   "chain-balances": {
@@ -2705,7 +2843,7 @@ export const SCHEMAS = {
       ],
       "title": "ChainBalancesRequest",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     },
     "response": {
       "$defs": {
@@ -2743,6 +2881,7 @@ export const SCHEMAS = {
         },
         "ChainBalances": {
           "additionalProperties": false,
+          "description": "One chain's balances; `totalUsd` once every balance above zero has a value.",
           "properties": {
             "balances": {
               "items": {
@@ -2794,6 +2933,19 @@ export const SCHEMAS = {
               ],
               "title": "Status",
               "type": "string"
+            },
+            "totalUsd": {
+              "anyOf": [
+                {
+                  "maxLength": 31,
+                  "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Totalusd"
             }
           },
           "required": [
@@ -2801,13 +2953,111 @@ export const SCHEMAS = {
             "status",
             "reason",
             "snapshot",
+            "totalUsd",
             "balances"
           ],
           "title": "ChainBalances",
           "type": "object"
         },
+        "EthUsd": {
+          "additionalProperties": false,
+          "description": "The Chainlink ETH/USD round behind a price: the profile's feed (its proxy), the answer and its time.",
+          "properties": {
+            "feed": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Feed",
+              "type": "string"
+            },
+            "roundId": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Roundid",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "updatedAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Updatedat",
+              "type": "integer"
+            },
+            "usd": {
+              "maxLength": 43,
+              "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{18}$",
+              "title": "Usd",
+              "type": "string"
+            }
+          },
+          "required": [
+            "feed",
+            "usd",
+            "roundId",
+            "updatedAt"
+          ],
+          "title": "EthUsd",
+          "type": "object"
+        },
+        "PoolRef": {
+          "additionalProperties": false,
+          "properties": {
+            "currency0": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Currency0",
+              "type": "string"
+            },
+            "currency1": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Currency1",
+              "type": "string"
+            },
+            "dex": {
+              "enum": [
+                3,
+                4
+              ],
+              "title": "Dex",
+              "type": "integer"
+            },
+            "fee": {
+              "maximum": 8388608,
+              "minimum": 0,
+              "title": "Fee",
+              "type": "integer"
+            },
+            "hooks": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Hooks",
+              "type": "string"
+            },
+            "tickSpacing": {
+              "maximum": 32767,
+              "minimum": 1,
+              "title": "Tickspacing",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "dex",
+            "currency0",
+            "currency1",
+            "fee",
+            "tickSpacing",
+            "hooks"
+          ],
+          "title": "PoolRef",
+          "type": "object"
+        },
         "TokenBalance": {
           "additionalProperties": false,
+          "description": "A balance as read, its token's USD price or why it has none, and its value at that price, rounded down.",
           "properties": {
             "address": {
               "maxLength": 42,
@@ -2843,6 +3093,39 @@ export const SCHEMAS = {
               ],
               "title": "Decimals"
             },
+            "price": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TokenPrice"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priceReason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "no_qualified_price_source",
+                    "price_read_failed",
+                    "pricing_limit_reached",
+                    "decimals_unknown",
+                    "eth_usd_stale",
+                    "sequencer_down",
+                    "no_pool",
+                    "pool_depth_below_floor",
+                    "pool_depth_unmeasurable",
+                    "price_below_precision"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pricereason"
+            },
             "status": {
               "enum": [
                 "read",
@@ -2863,6 +3146,19 @@ export const SCHEMAS = {
                 }
               ],
               "title": "Symbol"
+            },
+            "valueUsd": {
+              "anyOf": [
+                {
+                  "maxLength": 31,
+                  "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Valueusd"
             }
           },
           "required": [
@@ -2870,9 +3166,86 @@ export const SCHEMAS = {
             "symbol",
             "decimals",
             "balanceRaw",
-            "status"
+            "status",
+            "price",
+            "priceReason",
+            "valueUsd"
           ],
           "title": "TokenBalance",
+          "type": "object"
+        },
+        "TokenPrice": {
+          "additionalProperties": false,
+          "description": "A qualified USD price: the chain's stable, the feed's ETH, or a pool's spot against one of them at the block read,\nwith the pool and its depth within the band.",
+          "properties": {
+            "depthUsd": {
+              "anyOf": [
+                {
+                  "maxLength": 31,
+                  "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Depthusd"
+            },
+            "ethUsd": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EthUsd"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pool": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PoolRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snapshot": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BlockRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "chain_stable",
+                "chainlink_eth_usd",
+                "pool"
+              ],
+              "title": "Source",
+              "type": "string"
+            },
+            "usd": {
+              "maxLength": 43,
+              "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{18}$",
+              "title": "Usd",
+              "type": "string"
+            }
+          },
+          "required": [
+            "usd",
+            "source",
+            "snapshot",
+            "ethUsd",
+            "pool",
+            "depthUsd"
+          ],
+          "title": "TokenPrice",
           "type": "object"
         }
       },
@@ -2891,7 +3264,7 @@ export const SCHEMAS = {
           "type": "array"
         },
         "contractVersion": {
-          "const": "1.0.0-rc.1",
+          "const": "1.1.0-rc.1",
           "title": "Contractversion",
           "type": "string"
         },
@@ -2911,7 +3284,7 @@ export const SCHEMAS = {
         "limitations": {
           "items": {
             "enum": [
-              "raw_amounts_no_usd_valuation",
+              "usd_from_qualified_sources_only",
               "token_metadata_untrusted",
               "state_as_of_last_read",
               "no_execution_or_signing"
@@ -2939,6 +3312,19 @@ export const SCHEMAS = {
           "title": "Servedat",
           "type": "integer"
         },
+        "totalUsd": {
+          "anyOf": [
+            {
+              "maxLength": 31,
+              "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Totalusd"
+        },
         "wallet": {
           "maxLength": 42,
           "minLength": 42,
@@ -2955,12 +3341,13 @@ export const SCHEMAS = {
         "servedAt",
         "coverage",
         "chains",
+        "totalUsd",
         "limitations",
         "executionAvailable"
       ],
       "title": "ChainBalancesResponse",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     }
   },
   "chain-pools": {
@@ -3007,7 +3394,7 @@ export const SCHEMAS = {
       ],
       "title": "ChainPoolsRequest",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     },
     "response": {
       "$defs": {
@@ -3041,6 +3428,46 @@ export const SCHEMAS = {
             "timestamp"
           ],
           "title": "BlockRef",
+          "type": "object"
+        },
+        "EthUsd": {
+          "additionalProperties": false,
+          "description": "The Chainlink ETH/USD round behind a price: the profile's feed (its proxy), the answer and its time.",
+          "properties": {
+            "feed": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Feed",
+              "type": "string"
+            },
+            "roundId": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Roundid",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "updatedAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Updatedat",
+              "type": "integer"
+            },
+            "usd": {
+              "maxLength": 43,
+              "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{18}$",
+              "title": "Usd",
+              "type": "string"
+            }
+          },
+          "required": [
+            "feed",
+            "usd",
+            "roundId",
+            "updatedAt"
+          ],
+          "title": "EthUsd",
           "type": "object"
         },
         "Freshness": {
@@ -3158,7 +3585,7 @@ export const SCHEMAS = {
         },
         "LiveToken": {
           "additionalProperties": false,
-          "description": "A token's metadata as read at the block: untrusted text, decimals null when unread, never guessed.",
+          "description": "A token's metadata as read at the block: untrusted text, decimals null when unread, never guessed; its USD\nprice, or why it has none.",
           "properties": {
             "address": {
               "maxLength": 42,
@@ -3179,6 +3606,39 @@ export const SCHEMAS = {
                 }
               ],
               "title": "Decimals"
+            },
+            "price": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TokenPrice"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priceReason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "no_qualified_price_source",
+                    "price_read_failed",
+                    "pricing_limit_reached",
+                    "decimals_unknown",
+                    "eth_usd_stale",
+                    "sequencer_down",
+                    "no_pool",
+                    "pool_depth_below_floor",
+                    "pool_depth_unmeasurable",
+                    "price_below_precision"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pricereason"
             },
             "status": {
               "enum": [
@@ -3207,28 +3667,75 @@ export const SCHEMAS = {
             "address",
             "symbol",
             "decimals",
-            "status"
+            "status",
+            "price",
+            "priceReason"
           ],
           "title": "LiveToken",
           "type": "object"
         },
         "PoolMarket": {
           "additionalProperties": false,
-          "description": "TVL, volume and APR need a qualified USD source (\u00a76.3); until then the pool says why it has none.",
+          "description": "The pool's depth in USD within the band: what it releases of `reference`, the token's partner, as the token is\nsold into it until its price falls by PRICE_BAND_PERCENT. No TVL, volume or APR.",
           "properties": {
+            "depthUsd": {
+              "anyOf": [
+                {
+                  "maxLength": 31,
+                  "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Depthusd"
+            },
             "reason": {
-              "const": "no_qualified_price_source",
-              "title": "Reason",
-              "type": "string"
+              "anyOf": [
+                {
+                  "enum": [
+                    "no_qualified_reference",
+                    "price_read_failed",
+                    "eth_usd_stale",
+                    "sequencer_down",
+                    "pool_depth_unmeasurable"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reason"
+            },
+            "reference": {
+              "anyOf": [
+                {
+                  "maxLength": 42,
+                  "minLength": 42,
+                  "pattern": "^0x[0-9a-f]{40}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reference"
             },
             "status": {
-              "const": "unavailable",
+              "enum": [
+                "measured",
+                "unavailable"
+              ],
               "title": "Status",
               "type": "string"
             }
           },
           "required": [
             "status",
+            "reference",
+            "depthUsd",
             "reason"
           ],
           "title": "PoolMarket",
@@ -3313,6 +3820,80 @@ export const SCHEMAS = {
           ],
           "title": "SwapFees",
           "type": "object"
+        },
+        "TokenPrice": {
+          "additionalProperties": false,
+          "description": "A qualified USD price: the chain's stable, the feed's ETH, or a pool's spot against one of them at the block read,\nwith the pool and its depth within the band.",
+          "properties": {
+            "depthUsd": {
+              "anyOf": [
+                {
+                  "maxLength": 31,
+                  "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Depthusd"
+            },
+            "ethUsd": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EthUsd"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pool": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PoolRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snapshot": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BlockRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "chain_stable",
+                "chainlink_eth_usd",
+                "pool"
+              ],
+              "title": "Source",
+              "type": "string"
+            },
+            "usd": {
+              "maxLength": 43,
+              "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{18}$",
+              "title": "Usd",
+              "type": "string"
+            }
+          },
+          "required": [
+            "usd",
+            "source",
+            "snapshot",
+            "ethUsd",
+            "pool",
+            "depthUsd"
+          ],
+          "title": "TokenPrice",
+          "type": "object"
         }
       },
       "$id": "https://domino.invalid/contracts/read-v6/chain-pools.response.schema.json",
@@ -3330,7 +3911,7 @@ export const SCHEMAS = {
           "type": "integer"
         },
         "contractVersion": {
-          "const": "1.0.0-rc.1",
+          "const": "1.1.0-rc.1",
           "title": "Contractversion",
           "type": "string"
         },
@@ -3350,7 +3931,7 @@ export const SCHEMAS = {
         "limitations": {
           "items": {
             "enum": [
-              "raw_amounts_no_usd_valuation",
+              "usd_from_qualified_sources_only",
               "token_metadata_untrusted",
               "state_as_of_last_read",
               "no_execution_or_signing"
@@ -3443,7 +4024,7 @@ export const SCHEMAS = {
       ],
       "title": "ChainPoolsResponse",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     }
   },
   "chain-tokens": {
@@ -3480,7 +4061,7 @@ export const SCHEMAS = {
       ],
       "title": "ChainTokensRequest",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     },
     "response": {
       "$defs": {
@@ -3589,7 +4170,7 @@ export const SCHEMAS = {
           "type": "integer"
         },
         "contractVersion": {
-          "const": "1.0.0-rc.1",
+          "const": "1.1.0-rc.1",
           "title": "Contractversion",
           "type": "string"
         },
@@ -3606,7 +4187,7 @@ export const SCHEMAS = {
         "limitations": {
           "items": {
             "enum": [
-              "raw_amounts_no_usd_valuation",
+              "usd_from_qualified_sources_only",
               "token_metadata_untrusted",
               "state_as_of_last_read",
               "no_execution_or_signing"
@@ -3672,7 +4253,7 @@ export const SCHEMAS = {
       ],
       "title": "ChainTokensResponse",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     }
   },
   "portfolio": {
@@ -3694,7 +4275,7 @@ export const SCHEMAS = {
       ],
       "title": "PortfolioRequest",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     },
     "response": {
       "$defs": {
@@ -4025,6 +4606,46 @@ export const SCHEMAS = {
           "title": "Deployment",
           "type": "object"
         },
+        "EthUsd": {
+          "additionalProperties": false,
+          "description": "The Chainlink ETH/USD round behind a price: the profile's feed (its proxy), the answer and its time.",
+          "properties": {
+            "feed": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Feed",
+              "type": "string"
+            },
+            "roundId": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Roundid",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "updatedAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Updatedat",
+              "type": "integer"
+            },
+            "usd": {
+              "maxLength": 43,
+              "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{18}$",
+              "title": "Usd",
+              "type": "string"
+            }
+          },
+          "required": [
+            "feed",
+            "usd",
+            "roundId",
+            "updatedAt"
+          ],
+          "title": "EthUsd",
+          "type": "object"
+        },
         "Freshness": {
           "additionalProperties": false,
           "properties": {
@@ -4135,13 +4756,37 @@ export const SCHEMAS = {
               "title": "Decimals"
             },
             "price": {
-              "title": "Price",
-              "type": "null"
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TokenPrice"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "priceReason": {
-              "const": "no_qualified_price_source",
-              "title": "Pricereason",
-              "type": "string"
+              "anyOf": [
+                {
+                  "enum": [
+                    "no_qualified_price_source",
+                    "price_read_failed",
+                    "pricing_limit_reached",
+                    "decimals_unknown",
+                    "eth_usd_stale",
+                    "sequencer_down",
+                    "no_pool",
+                    "pool_depth_below_floor",
+                    "pool_depth_unmeasurable",
+                    "price_below_precision"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pricereason"
             },
             "status": {
               "enum": [
@@ -5119,6 +5764,80 @@ export const SCHEMAS = {
           "title": "StateUnavailable",
           "type": "object"
         },
+        "TokenPrice": {
+          "additionalProperties": false,
+          "description": "A qualified USD price: the chain's stable, the feed's ETH, or a pool's spot against one of them at the block read,\nwith the pool and its depth within the band.",
+          "properties": {
+            "depthUsd": {
+              "anyOf": [
+                {
+                  "maxLength": 31,
+                  "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Depthusd"
+            },
+            "ethUsd": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EthUsd"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pool": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PoolRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snapshot": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BlockRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "chain_stable",
+                "chainlink_eth_usd",
+                "pool"
+              ],
+              "title": "Source",
+              "type": "string"
+            },
+            "usd": {
+              "maxLength": 43,
+              "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{18}$",
+              "title": "Usd",
+              "type": "string"
+            }
+          },
+          "required": [
+            "usd",
+            "source",
+            "snapshot",
+            "ethUsd",
+            "pool",
+            "depthUsd"
+          ],
+          "title": "TokenPrice",
+          "type": "object"
+        },
         "Truncated": {
           "additionalProperties": false,
           "properties": {
@@ -5853,7 +6572,7 @@ export const SCHEMAS = {
           "type": "array"
         },
         "contractVersion": {
-          "const": "1.0.0-rc.1",
+          "const": "1.1.0-rc.1",
           "title": "Contractversion",
           "type": "string"
         },
@@ -5881,7 +6600,7 @@ export const SCHEMAS = {
         "limitations": {
           "items": {
             "enum": [
-              "raw_amounts_no_usd_valuation",
+              "usd_from_qualified_sources_only",
               "token_metadata_untrusted",
               "positions_known_to_domino_only",
               "state_as_of_last_read",
@@ -5978,7 +6697,7 @@ export const SCHEMAS = {
       ],
       "title": "PortfolioResponse",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     }
   }
 };
@@ -6075,7 +6794,7 @@ export const CONSTANTS = {
   ],
   "headMaxAgeSeconds": 180,
   "limitations": [
-    "raw_amounts_no_usd_valuation",
+    "usd_from_qualified_sources_only",
     "token_metadata_untrusted",
     "positions_known_to_domino_only",
     "state_as_of_last_read",
@@ -6083,12 +6802,33 @@ export const CONSTANTS = {
   ],
   "liveFreshSeconds": 60,
   "liveLimitations": [
-    "raw_amounts_no_usd_valuation",
+    "usd_from_qualified_sources_only",
     "token_metadata_untrusted",
     "state_as_of_last_read",
     "no_execution_or_signing"
   ],
   "maxLagSeconds": 120,
+  "priceFloorUsd": "10000.000000",
+  "priceProfiles": {
+    "42161": {
+      "feed": "0x639fe6ab55c921f74e7fac1ee960c0b6293ba612",
+      "heartbeatSeconds": 1755,
+      "stable": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+      "wrapped": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"
+    },
+    "4663": {
+      "feed": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+      "heartbeatSeconds": 86400,
+      "stable": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "wrapped": "0x0bd7d308f8e1639fab988df18a8011f41eacad73"
+    },
+    "8453": {
+      "feed": "0x50015f8b17fb2c290dde41fdc246ed0dcee93a8b",
+      "heartbeatSeconds": 1200,
+      "stable": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "wrapped": "0x4200000000000000000000000000000000000006"
+    }
+  },
   "staleSeconds": 7200,
   "tariffRates": {
     "assisted_swap": [

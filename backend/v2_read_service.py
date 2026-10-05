@@ -135,11 +135,18 @@ def envelope(mode, wallet, now, chain_rows, tokens):
             'suggested': False, 'executionAvailable': False}
 
 
-def token_list(keys, rows):
+def token_list(keys, rows, prices=None):
+    """The answer's tokens with their metadata as the index read it and their qualified USD: `prices` takes
+    [(chain id, token, decimals or None)] and gives each (price, None) or (None, reason) (v2_chain_reads.Pricer);
+    without it, no token has a price."""
+    chosen = sorted(set(keys))[:MAX_TOKENS]
+    found = {} if prices is None else prices([(chain_id, address, (rows.get((chain_id, address)) or {}).get('decimals'))
+                                              for chain_id, address in chosen])
     out = []
-    for chain_id, address in sorted(set(keys))[:MAX_TOKENS]:
+    for chain_id, address in chosen:
         row = rows.get((chain_id, address))
-        entry = {'chainId': chain_id, 'address': address, 'price': None, 'priceReason': 'no_qualified_price_source'}
+        price, reason = found.get((chain_id, address), (None, 'no_qualified_price_source'))
+        entry = {'chainId': chain_id, 'address': address, 'price': price, 'priceReason': reason}
         if row is None:
             entry.update(status='not_read', decimals=None, symbol=None)
         else:
@@ -342,7 +349,7 @@ def waiting_keys(vaults, mandates):
 
 
 def build_portfolio(wallet, now, *, deployments, vaults, positions, mandates, credits, tokens, waiting_reports=None,
-                    waiting=None):
+                    waiting=None, prices=None):
     """waiting_reports: chain id -> its waiting_reports row; waiting: (chain, kind,
     subject) -> its waiting row. A row is shown only while its chain's file was read."""
     reports, rows = waiting_reports or {}, waiting or {}
@@ -377,7 +384,7 @@ def build_portfolio(wallet, now, *, deployments, vaults, positions, mandates, cr
         if mandate['terms'] is not None and mandate['terms']['convertTo'] is not None:
             keys.append((mandate['chainId'], mandate['terms']['convertTo']))
     keys += [(credit['chainId'], credit['token']) for credit in credit_entries[:MAX_CREDITS]]
-    body = envelope('stored_v2_portfolio', wallet, now, chain_rows, token_list(keys, tokens(keys)))
+    body = envelope('stored_v2_portfolio', wallet, now, chain_rows, token_list(keys, tokens(keys), prices))
     body.update(vaults=vault_entries, positions=position_entries, mandates=mandate_entries,
                 credits=credit_entries[:MAX_CREDITS],
                 truncated={'vaults': len(vaults) > MAX_VAULTS, 'positions': len(positions) > MAX_POSITIONS,
@@ -568,7 +575,7 @@ def _item_tokens(item):
 
 
 def build_activity(wallet, now, limit, *, deployments, rows, logs, transactions, modes, tokens, waiting_reports=None,
-                   operators=None):
+                   operators=None, prices=None):
     """rows: activity rows newest first (limit + 1 at most); logs: (chain, block,
     log index) -> log row; transactions: (chain, tx) -> row; modes: (chain,
     vault, block, log index) -> the vault's mode at that execution; operators:
@@ -586,7 +593,7 @@ def build_activity(wallet, now, limit, *, deployments, rows, logs, transactions,
                                    finalized.get(chain_id), operators))
     keys = [key for item in items for key in _item_tokens(item)]
     last = page[-1] if page else None
-    body = envelope('stored_v2_activity', wallet, now, chain_rows, token_list(keys, tokens(keys)))
+    body = envelope('stored_v2_activity', wallet, now, chain_rows, token_list(keys, tokens(keys), prices))
     body.update(items=items, nextCursor=make_cursor(int(last['block_timestamp']), int(last['chain_id']),
                                                     int(last['block_number']), int(last['log_index']))
                 if len(rows) > limit else None)
@@ -597,8 +604,9 @@ class V2ReadService:
     """The two read-v6 routes over the V2 index, through the catalogue reader:
     one read-only snapshot per answer, the automation's waiting reasons included
     (the indexer keeps them, v2_waiting)."""
-    def __init__(self, store, clock=time.time):
+    def __init__(self, store, clock=time.time, pricer=None):
         self.store, self.clock = store, clock
+        self.prices = None if pricer is None else pricer.prices
 
     def portfolio(self, wallet):
         with self.store.reader() as reader:
@@ -609,7 +617,7 @@ class V2ReadService:
                                    positions=reader.positions(wallet, MAX_POSITIONS + 1), mandates=mandates,
                                    credits=reader.credits(wallet), tokens=reader.tokens,
                                    waiting_reports=reader.waiting_reports(),
-                                   waiting=reader.waiting(waiting_keys(vaults, mandates)))
+                                   waiting=reader.waiting(waiting_keys(vaults, mandates)), prices=self.prices)
 
     def activity(self, wallet, limit=20, cursor=None):
         if type(limit) is not int or not 1 <= limit <= MAX_ITEMS:
@@ -628,4 +636,5 @@ class V2ReadService:
                                   modes=reader.execution_modes([r for r in page if r['kind'] == 'vault_execution']),
                                   tokens=reader.tokens, waiting_reports=reader.waiting_reports(),
                                   operators=reader.operator_changes({int(r['chain_id']) for r in page
-                                                                     if r['kind'] == 'vault_event'}))
+                                                                     if r['kind'] == 'vault_event'}),
+                                  prices=self.prices)

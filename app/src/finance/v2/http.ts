@@ -3,7 +3,7 @@
  * integration, the base agent's item 5): the one reviewed place where V2's requests meet the page.
  *
  *   - read-v6 (spec F7 rev2 §6.2): POST /api/read/v6/portfolio and /api/read/v6/activity, public reads (the read
- *     Worker's, off until its flag), `X-Domino-Read-Contract: 1.0.0-rc.1` (src/v2/read/v6HttpTransport.ts);
+ *     Worker's, off until its flag), `X-Domino-Read-Contract: 1.1.0-rc.1` (src/v2/read/v6HttpTransport.ts);
  *   - position-plan-v1 (§2.4): POST /api/position-plan/v1/plan, the session cookie and its CSRF,
  *     `X-Domino-Position-Plan-Contract: 1.0.0-rc.2` (src/v2/plan/httpTransport.ts);
  *   - crosschain-v1 (§3.2; Changed on purpose (data) 2026-10-02 (S2 wired), open point #17): POST

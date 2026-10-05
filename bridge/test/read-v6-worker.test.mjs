@@ -191,7 +191,7 @@ test('the capabilities name the three chains every stored answer carries, in the
 });
 
 test('every invalid answer the producer could serve is refused as upstream_contract_mismatch, never relayed', async () => {
-  assert.equal(INVALID.length, 139);
+  assert.equal(INVALID.length, 170);
   const every = { ...env, ENABLED_V6_READS: ALL_READS };
   for (const [name, body] of INVALID) {
     const route = routeOf(name);

@@ -19,7 +19,8 @@ from read_contract import ERROR_STATUS_BY_CODE  # noqa: E402
 from v2_read_contract import (BLOCKERS, CHAIN_IDS, CHAIN_REASONS, CONTRACT_VERSION, DISARM_REASONS,  # noqa: E402
                               HEAD_MAX_AGE_SECONDS, LIMITATIONS, MAX_LAG_SECONDS, REQUEST_MODELS, RESPONSE_MODELS,
                               ROUTES, STALE_SECONDS, V2_ERRORS, WAITING_STALE_SECONDS, WAITING_STATUSES,
-                              LIVE_FRESH_SECONDS, LIVE_LIMITATIONS, TOKEN_SOURCES)
+                              LIVE_FRESH_SECONDS, LIVE_LIMITATIONS, TOKEN_SOURCES, PRICE_FLOOR_USD,
+                              PRICE_PROFILES)
 import read_v6_contract_fixtures as fixtures  # noqa: E402
 
 DEST = ROOT / 'api-contracts/read-v6'
@@ -91,7 +92,9 @@ def constants():
                                                           'auto_exit': [20]},
             'waitingStatuses': list(WAITING_STATUSES), 'waitingStaleSeconds': WAITING_STALE_SECONDS,
             'v2Errors': list(V2_ERRORS), 'liveLimitations': list(LIVE_LIMITATIONS),
-            'liveFreshSeconds': LIVE_FRESH_SECONDS, 'tokenSources': list(TOKEN_SOURCES)}
+            'liveFreshSeconds': LIVE_FRESH_SECONDS, 'tokenSources': list(TOKEN_SOURCES),
+            'priceFloorUsd': PRICE_FLOOR_USD,
+            'priceProfiles': {str(chain_id): profile for chain_id, profile in PRICE_PROFILES.items()}}
 
 
 def build():

@@ -72,12 +72,12 @@
       }
     }
   ],
-  "contractVersion": "1.0.0-rc.1",
+  "contractVersion": "1.1.0-rc.1",
   "coverage": "partial",
   "credits": [],
   "executionAvailable": false,
   "limitations": [
-    "raw_amounts_no_usd_valuation",
+    "usd_from_qualified_sources_only",
     "token_metadata_untrusted",
     "positions_known_to_domino_only",
     "state_as_of_last_read",
@@ -292,8 +292,15 @@
       "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
       "chainId": 4663,
       "decimals": 6,
-      "price": null,
-      "priceReason": "no_qualified_price_source",
+      "price": {
+        "depthUsd": null,
+        "ethUsd": null,
+        "pool": null,
+        "snapshot": null,
+        "source": "chain_stable",
+        "usd": "1.000000000000000000"
+      },
+      "priceReason": null,
       "status": "available",
       "symbol": "USDG"
     },
@@ -301,8 +308,26 @@
       "address": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
       "chainId": 4663,
       "decimals": null,
-      "price": null,
-      "priceReason": "no_qualified_price_source",
+      "price": {
+        "depthUsd": "25300.415000",
+        "ethUsd": null,
+        "pool": {
+          "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "currency1": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+          "dex": 4,
+          "fee": 3000,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "tickSpacing": 60
+        },
+        "snapshot": {
+          "hash": "0x182ffc0841a7997ffcfa6443dff3ed8900f1c62ae8753dcb93714192a0ca8674",
+          "number": 73400100,
+          "timestamp": 1790431232
+        },
+        "source": "pool",
+        "usd": "0.000000000000981234"
+      },
+      "priceReason": null,
       "status": "partial",
       "symbol": "MANY"
     }

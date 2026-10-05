@@ -338,7 +338,7 @@
             "type": "array"
           },
           "contractVersion": {
-            "const": "1.0.0-rc.1",
+            "const": "1.1.0-rc.1",
             "title": "Contractversion",
             "type": "string"
           },
@@ -404,7 +404,7 @@
           "limitations": {
             "items": {
               "enum": [
-                "raw_amounts_no_usd_valuation",
+                "usd_from_qualified_sources_only",
                 "token_metadata_untrusted",
                 "positions_known_to_domino_only",
                 "state_as_of_last_read",
@@ -2477,6 +2477,7 @@
       },
       "ChainBalances": {
         "additionalProperties": false,
+        "description": "One chain's balances; `totalUsd` once every balance above zero has a value.",
         "properties": {
           "balances": {
             "items": {
@@ -2528,6 +2529,19 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "totalUsd": {
+            "anyOf": [
+              {
+                "maxLength": 31,
+                "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalusd"
           }
         },
         "required": [
@@ -2535,6 +2549,7 @@
           "status",
           "reason",
           "snapshot",
+          "totalUsd",
           "balances"
         ],
         "title": "ChainBalances",
@@ -2588,7 +2603,7 @@
             "type": "array"
           },
           "contractVersion": {
-            "const": "1.0.0-rc.1",
+            "const": "1.1.0-rc.1",
             "title": "Contractversion",
             "type": "string"
           },
@@ -2608,7 +2623,7 @@
           "limitations": {
             "items": {
               "enum": [
-                "raw_amounts_no_usd_valuation",
+                "usd_from_qualified_sources_only",
                 "token_metadata_untrusted",
                 "state_as_of_last_read",
                 "no_execution_or_signing"
@@ -2636,6 +2651,19 @@
             "title": "Servedat",
             "type": "integer"
           },
+          "totalUsd": {
+            "anyOf": [
+              {
+                "maxLength": 31,
+                "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalusd"
+          },
           "wallet": {
             "maxLength": 42,
             "minLength": 42,
@@ -2652,6 +2680,7 @@
           "servedAt",
           "coverage",
           "chains",
+          "totalUsd",
           "limitations",
           "executionAvailable"
         ],
@@ -2713,7 +2742,7 @@
             "type": "integer"
           },
           "contractVersion": {
-            "const": "1.0.0-rc.1",
+            "const": "1.1.0-rc.1",
             "title": "Contractversion",
             "type": "string"
           },
@@ -2733,7 +2762,7 @@
           "limitations": {
             "items": {
               "enum": [
-                "raw_amounts_no_usd_valuation",
+                "usd_from_qualified_sources_only",
                 "token_metadata_untrusted",
                 "state_as_of_last_read",
                 "no_execution_or_signing"
@@ -3032,7 +3061,7 @@
             "type": "integer"
           },
           "contractVersion": {
-            "const": "1.0.0-rc.1",
+            "const": "1.1.0-rc.1",
             "title": "Contractversion",
             "type": "string"
           },
@@ -3049,7 +3078,7 @@
           "limitations": {
             "items": {
               "enum": [
-                "raw_amounts_no_usd_valuation",
+                "usd_from_qualified_sources_only",
                 "token_metadata_untrusted",
                 "state_as_of_last_read",
                 "no_execution_or_signing"
@@ -4019,6 +4048,46 @@
           "error"
         ],
         "title": "ErrorResponse",
+        "type": "object"
+      },
+      "EthUsd": {
+        "additionalProperties": false,
+        "description": "The Chainlink ETH/USD round behind a price: the profile's feed (its proxy), the answer and its time.",
+        "properties": {
+          "feed": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Feed",
+            "type": "string"
+          },
+          "roundId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Roundid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "updatedAt": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Updatedat",
+            "type": "integer"
+          },
+          "usd": {
+            "maxLength": 43,
+            "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{18}$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "feed",
+          "usd",
+          "roundId",
+          "updatedAt"
+        ],
+        "title": "EthUsd",
         "type": "object"
       },
       "Evaluation": {
@@ -5336,13 +5405,37 @@
             "title": "Decimals"
           },
           "price": {
-            "title": "Price",
-            "type": "null"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenPrice"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "priceReason": {
-            "const": "no_qualified_price_source",
-            "title": "Pricereason",
-            "type": "string"
+            "anyOf": [
+              {
+                "enum": [
+                  "no_qualified_price_source",
+                  "price_read_failed",
+                  "pricing_limit_reached",
+                  "decimals_unknown",
+                  "eth_usd_stale",
+                  "sequencer_down",
+                  "no_pool",
+                  "pool_depth_below_floor",
+                  "pool_depth_unmeasurable",
+                  "price_below_precision"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricereason"
           },
           "status": {
             "enum": [
@@ -6229,7 +6322,7 @@
       },
       "LiveToken": {
         "additionalProperties": false,
-        "description": "A token's metadata as read at the block: untrusted text, decimals null when unread, never guessed.",
+        "description": "A token's metadata as read at the block: untrusted text, decimals null when unread, never guessed; its USD\nprice, or why it has none.",
         "properties": {
           "address": {
             "maxLength": 42,
@@ -6250,6 +6343,39 @@
               }
             ],
             "title": "Decimals"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenPrice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priceReason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_qualified_price_source",
+                  "price_read_failed",
+                  "pricing_limit_reached",
+                  "decimals_unknown",
+                  "eth_usd_stale",
+                  "sequencer_down",
+                  "no_pool",
+                  "pool_depth_below_floor",
+                  "pool_depth_unmeasurable",
+                  "price_below_precision"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricereason"
           },
           "status": {
             "enum": [
@@ -6278,7 +6404,9 @@
           "address",
           "symbol",
           "decimals",
-          "status"
+          "status",
+          "price",
+          "priceReason"
         ],
         "title": "LiveToken",
         "type": "object"
@@ -8329,21 +8457,66 @@
       },
       "PoolMarket": {
         "additionalProperties": false,
-        "description": "TVL, volume and APR need a qualified USD source (\u00a76.3); until then the pool says why it has none.",
+        "description": "The pool's depth in USD within the band: what it releases of `reference`, the token's partner, as the token is\nsold into it until its price falls by PRICE_BAND_PERCENT. No TVL, volume or APR.",
         "properties": {
+          "depthUsd": {
+            "anyOf": [
+              {
+                "maxLength": 31,
+                "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depthusd"
+          },
           "reason": {
-            "const": "no_qualified_price_source",
-            "title": "Reason",
-            "type": "string"
+            "anyOf": [
+              {
+                "enum": [
+                  "no_qualified_reference",
+                  "price_read_failed",
+                  "eth_usd_stale",
+                  "sequencer_down",
+                  "pool_depth_unmeasurable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "maxLength": 42,
+                "minLength": 42,
+                "pattern": "^0x[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
           },
           "status": {
-            "const": "unavailable",
+            "enum": [
+              "measured",
+              "unavailable"
+            ],
             "title": "Status",
             "type": "string"
           }
         },
         "required": [
           "status",
+          "reference",
+          "depthUsd",
           "reason"
         ],
         "title": "PoolMarket",
@@ -9104,7 +9277,7 @@
             "type": "array"
           },
           "contractVersion": {
-            "const": "1.0.0-rc.1",
+            "const": "1.1.0-rc.1",
             "title": "Contractversion",
             "type": "string"
           },
@@ -9132,7 +9305,7 @@
           "limitations": {
             "items": {
               "enum": [
-                "raw_amounts_no_usd_valuation",
+                "usd_from_qualified_sources_only",
                 "token_metadata_untrusted",
                 "positions_known_to_domino_only",
                 "state_as_of_last_read",
@@ -11659,6 +11832,7 @@
       },
       "TokenBalance": {
         "additionalProperties": false,
+        "description": "A balance as read, its token's USD price or why it has none, and its value at that price, rounded down.",
         "properties": {
           "address": {
             "maxLength": 42,
@@ -11694,6 +11868,39 @@
             ],
             "title": "Decimals"
           },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenPrice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priceReason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_qualified_price_source",
+                  "price_read_failed",
+                  "pricing_limit_reached",
+                  "decimals_unknown",
+                  "eth_usd_stale",
+                  "sequencer_down",
+                  "no_pool",
+                  "pool_depth_below_floor",
+                  "pool_depth_unmeasurable",
+                  "price_below_precision"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricereason"
+          },
           "status": {
             "enum": [
               "read",
@@ -11714,6 +11921,19 @@
               }
             ],
             "title": "Symbol"
+          },
+          "valueUsd": {
+            "anyOf": [
+              {
+                "maxLength": 31,
+                "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valueusd"
           }
         },
         "required": [
@@ -11721,7 +11941,10 @@
           "symbol",
           "decimals",
           "balanceRaw",
-          "status"
+          "status",
+          "price",
+          "priceReason",
+          "valueUsd"
         ],
         "title": "TokenBalance",
         "type": "object"
@@ -11829,6 +12052,80 @@
           "executionAvailable"
         ],
         "title": "TokenMetadata",
+        "type": "object"
+      },
+      "TokenPrice": {
+        "additionalProperties": false,
+        "description": "A qualified USD price: the chain's stable, the feed's ETH, or a pool's spot against one of them at the block read,\nwith the pool and its depth within the band.",
+        "properties": {
+          "depthUsd": {
+            "anyOf": [
+              {
+                "maxLength": 31,
+                "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depthusd"
+          },
+          "ethUsd": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EthUsd"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pool": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PoolRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "chain_stable",
+              "chainlink_eth_usd",
+              "pool"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "usd": {
+            "maxLength": 43,
+            "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{18}$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "usd",
+          "source",
+          "snapshot",
+          "ethUsd",
+          "pool",
+          "depthUsd"
+        ],
+        "title": "TokenPrice",
         "type": "object"
       },
       "TokenRecovered": {

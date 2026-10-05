@@ -1,6 +1,6 @@
 /**
  * `read-v6` over same-origin HTTP (spec F7 rev2 §6.2; Domino V2 integration, 2026-10-02, the base agent's item 5):
- * `POST /api/read/v6/portfolio` and `POST /api/read/v6/activity`, a JSON body, `X-Domino-Read-Contract: 1.0.0-rc.1`.
+ * `POST /api/read/v6/portfolio` and `POST /api/read/v6/activity`, a JSON body, `X-Domino-Read-Contract: 1.1.0-rc.1`.
  * The read Worker's own route (bridge/src/worker.mjs, off until its flag: src/v2/routes.ts says whether it is on).
  *
  * The POST itself is injected, as ./../plan/httpTransport.ts takes its own: lib/http/rawReply.ts's `fetchRaw` over the

@@ -18,7 +18,7 @@ Left for the next slices (see [What remains](#what-remains)): the bridge Worker 
 | --- | --- | --- |
 | Chains: Robinhood (own node), Base and Arbitrum (hosted RPC billed per call) | 1–2 Oct | One indexer per chain, one `getLogs` per range per 100 addresses with the topic filter, header reads batched, the finalized block read at most once a minute, no `eth_chainId`, enrichment only when something is due. Per-chain `unavailable`/`stale` from day one; one chain out never empties the others. |
 | Browser reads of Base and Arbitrum go through this API for lists and history (F7 §9 item 9) | 2 Oct | read-v6 serves every chain's lists and history; the app reads only pre-sign data through the wallet. |
-| USD only from qualified sources (pool against the chain's stable, or the profile's Chainlink ETH/USD), never totalled across chains without it | 2 Oct | No source is qualified in this slice: every `price` is `null` with `priceReason: no_qualified_price_source`, and no answer sums anything across chains. |
+| USD only from qualified sources (pool against the chain's stable, or the profile's Chainlink ETH/USD), never totalled across chains without it | 2 Oct; the answers of 5 Oct | Since read-v6 `1.1.0-rc.1` (0xdecimal's item 4), the owner's answers of 5 Oct 2026 apply. **Sources:** the stable is a fixed US$ 1; ETH and WETH come from the profile's feed within its heartbeat, with the sequencer up for more than an hour; any other token comes from its deepest pool against those, priced only with at least US$ 10,000 of depth within 10% (the featured pools' reference depth). **Totals:** a chain total only when every balance is valued, and an answer total only when every chain has its total. [Qualified USD](../../api-contracts/read-v6/README.md#qualified-usd) has the rules. |
 | Waiting reasons (§9 item 24): the automation records the last simulation revert per vault and mandate; expose `waiting: {reason, since}` | 2 Oct | `waiting` on every vault and active mandate, read from the automation's waiting file (below), with the contract error's name. |
 | A vault may be paused while auto-exit protects it | 2 Oct | `paused`, `pausedBy`, `exitModule`, `rootArmed`, the custody reason: states, not errors; `paused` is not a mandate blocker. |
 | Hooked v4 pools are refused; tariffs per PRICING_POLICY V2 | 1 Oct | The index records what the contracts did; tariffs are shown with their rate (65, 200/400, 20 bps) and token, as charged. |
@@ -96,14 +96,18 @@ The automation (3a, docs/v2/V2_AUTOMATION_BACKEND.md, "Why a vault or a mandate 
 | `POST /v6/read/chain-balances` `{wallet, tokens?}` | A wallet's balances per chain, each chain's base currencies by default |
 | `POST /v6/read/chain-tokens` `{chainId, query, limit?}` | Known tokens on Base or Arbitrum One that match (≤ 24) |
 
-Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Contract: 1.0.0-rc.1`) when `DOMINO_V2_READ=1`, and through the gateway (`read_gateway.py`, `--enable-v6`, `DOMINO_BRIDGE_V6_READS=portfolio,activity`; it re-validates every answer and that it is about the wallet asked); `bridge_http.py`'s client knows the routes. Field by field, the package's [README](../../api-contracts/read-v6/README.md) is the reference; the generated schemas and `types.ts` are the contract.
+Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Contract: 1.1.0-rc.1`) when `DOMINO_V2_READ=1`, and through the gateway (`read_gateway.py`, `--enable-v6`, `DOMINO_BRIDGE_V6_READS=portfolio,activity`; it re-validates every answer and that it is about the wallet asked); `bridge_http.py`'s client knows the routes. Field by field, the package's [README](../../api-contracts/read-v6/README.md) is the reference; the generated schemas and `types.ts` are the contract.
 
-### The chain reads (0xdecimal's items 1-3, 5 Oct 2026)
+### The chain reads (0xdecimal's items 1-4, 5 Oct 2026)
 
 `chain-pools`, `chain-balances` and `chain-tokens` are not index reads (`backend/v2_chain_reads.py`):
 
 - **Where they read:** at request time, one Multicall3 call per chain at the chain's head (`v2_head`). Robinhood goes through the reader's provider file (the own node); Base and Arbitrum go through the V2 chain RPC file's hosted endpoints (F6), billed per call.
-- **Cache:** pools for 15 s, balances for 10 s, the index's known tokens for 60 s.
+- **Cache:** pools for 15 s, balances for 10 s, the index's known tokens for 60 s, prices for 30 s.
+- **Prices** (item 4):
+  - The pricer prices a chain's tokens in one survey of three Multicall3 rounds at its head: the pools' state, the feed and its sequencer; the band's bitmap words; the initialized ticks in them.
+  - A pass is bounded: 32 tokens a chain, 300 steps a walk, 3 s a chain. A failure costs the answer its prices, never the answer.
+  - portfolio and activity price their tokens through it when the chain reads are on, with the decimals the index read; otherwise each says `no_qualified_price_source`.
 - **Lanes:** `chain-pools` and `chain-balances` take the reader's provider lane; `chain-tokens` reads no chain and takes the stored lane.
 - **Search sources:** the profile's currencies; the Uniswap Labs Default token list, pinned in `backend/data/token-lists` with its version, SHA-256 and GPL-3.0 license (`scripts/update-uniswap-token-list.py` refreshes it; the owner's decision of 5 Oct 2026); tokens the index read in full; tokens a `chain-pools` read found priced pools for. The last are kept in the reader's runtime (`v2-learned-tokens.json`), at most 5,000 per chain.
 - **Turning them on:** `install_read_activation.py --read-v6 --chain-reads` adds to the reader `DOMINO_V2_CHAIN_READS=1`, `DOMINO_V2_CHAIN_RPC_FILE` and `ImportCredential=v2-rpc-*` with the TPM, and adds the three routes to the gateway.
@@ -124,13 +128,13 @@ Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Co
 | §6.2 vaults per owner | `portfolio.vaults`: chain, dex, root, members with ledgers and lots, policy, limits, `paused` + `pausedBy`, `rootArmed` + `custody {reason, source, since}`, reserves and idle per token, `exitModule`, `stateNonce`, `lastExecutionAt`, `quoteCurrency`, `lastExecution`, `totals`; chain `automationHalted`, `operatorsAdmitted` |
 | §6.2 mandates per owner, §4.5 | `portfolio.mandates`: hash, vault, token id, `terms`, `validUntil`, `status`, `expired`, `moduleEnabled`, `blockedBy`, `executed`; `credits` (unclaimed per token); `waiting` (§4.9) |
 | §6.2 activity, §2.11 receipts | `activity.items`: per transaction, decoded events with raw values: S1 (inputs, legs, steps, refunds, tariff), vault executions, auto-exits, owner and mandate events, and a closed vault's reserves returned to its owner by someone else's `returnReserves()` (`reserves_returned`, with `returnedBy` and `byOperator`; 0xdecimal's item 8, 5 Oct 2026); `tx.gas` (receipt fields, L1 fee on Base) and `tx.finality` per chain |
-| §6.2 tokens and prices | `tokens`: metadata as read; `price: null` with its reason |
+| §6.2 tokens and prices | `tokens`: metadata as read; the qualified `price` (source, pool and depth, feed round, block) or `priceReason`; chain-balances' `valueUsd` and totals |
 | §6.3 states | zero: a measured `"0"`; unavailable: `status: unavailable` + `reason` (chain, read, token); stale: `freshness.status` and chain `stale`; partial: `coverage: partial`, per-chain status, `truncated`; unqualified: `price: null` + `priceReason` |
 
 ### F7 §9 open points this answers
 
 - **9 (Base and Arbitrum reads in the browser):** lists and history come from read-v6, all three chains in one answer with per-chain status; the app reads only pre-sign data through the wallet.
-- **10 (V2 read API fields):** read-v6 `1.0.0-rc.1` as above; the fields §6.2 lists that are not here are in [What remains](#what-remains).
+- **10 (V2 read API fields):** read-v6 `1.1.0-rc.1` as above; the fields §6.2 lists that are not here are in [What remains](#what-remains).
 - **24 (auto-exit waiting reasons):** `waiting` on vaults and active mandates, with `chains[].waitingReasons` saying whether the automation reports. The app's copy table (§4.9) keys on `waiting.error` (the contract error's name) and, for the planner's own codes, on `waiting.reason`.
 
 ## Operating it
@@ -188,8 +192,7 @@ The writer reads their hosted providers from its private V2 chain RPC file (`bac
 | Item | Why it is not here |
 | --- | --- |
 | The shared head file (`--head-file`) | Optional: each follower reads its own head. |
-| Pools' market metrics (TVL, volume, APR) on `chain-pools` | They need qualified USD (next row); each pool says `no_qualified_price_source` until then. |
-| Qualified USD (pool against the chain's stable; Chainlink ETH/USD from the profile, with heartbeat and sequencer uptime) | Its own qualification; prices are `null` with a reason until then. |
+| Pools' TVL, volume and APR on `chain-pools` | They need history (events per pool over a window). `chain-pools` gives each pool's depth within the band in USD. |
 | The anchor's reference price per vault with its age (§5.2 distance) | Needs the publisher's observations or a TWAP read per vault. |
 | `approvedForAll` in a position's custody | Not read yet (`isApprovedForAll(owner, vault)` for a vault's root); the vault's live `rootArmed` covers its custody. |
 | Pool cost per leg (tiers, approximate cost on one-hop legs, §2.11) | Derivable from the legs and pool fees; not derived yet. |

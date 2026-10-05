@@ -105,7 +105,7 @@
       "type": "integer"
     },
     "contractVersion": {
-      "const": "1.0.0-rc.1",
+      "const": "1.1.0-rc.1",
       "title": "Contractversion",
       "type": "string"
     },
@@ -122,7 +122,7 @@
     "limitations": {
       "items": {
         "enum": [
-          "raw_amounts_no_usd_valuation",
+          "usd_from_qualified_sources_only",
           "token_metadata_untrusted",
           "state_as_of_last_read",
           "no_execution_or_signing"
@@ -188,5 +188,5 @@
   ],
   "title": "ChainTokensResponse",
   "type": "object",
-  "x-contract-version": "1.0.0-rc.1"
+  "x-contract-version": "1.1.0-rc.1"
 }

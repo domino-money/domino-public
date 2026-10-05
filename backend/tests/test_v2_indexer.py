@@ -450,6 +450,31 @@ class IndexerTests(unittest.TestCase):
         self.assertEqual(items[2]['events'], [{'event': 'ReservesWithdrawn', 'stateNonce': '2', 'token': T1,
                                                'amount': '5'}])
 
+    def test_the_answers_tokens_are_priced_with_the_decimals_the_index_read(self):
+        # Qualified USD on the stored routes: the read service asks the chain reads' pricer, with what it read.
+        self.register()
+        self.create_vault(22)
+        self.s1_create(23)
+        self.serve_token(USDG, 6, 'USDG')
+        self.serve_token(MANY, 18, 'MANY')
+        self.indexer.step(span=100)
+        asked = []
+
+        class Pricer:
+            def prices(self, tokens):
+                asked.extend(tokens)
+                return {(chain_id, token): ({'usd': '1.000000000000000000', 'source': 'chain_stable', 'snapshot': None,
+                                             'ethUsd': None, 'pool': None, 'depthUsd': None}, None)
+                        if token == USDG else (None, 'no_pool') for chain_id, token, _ in tokens}
+        service = V2ReadService(self.store, clock=lambda: self.clock[0] + 5, pricer=Pricer())
+        tokens = {t['address']: (t['decimals'], t['price'] and t['price']['source'], t['priceReason'])
+                  for t in service.activity(OWNER)['tokens']}
+        self.assertEqual(tokens, {USDG: (6, 'chain_stable', None), MANY: (18, None, 'no_pool')})
+        self.assertEqual(sorted(asked), sorted([(4663, USDG, 6), (4663, MANY, 18)]))
+        # Without the chain reads, no token has a price.
+        unpriced = V2ReadService(self.store, clock=lambda: self.clock[0] + 5).activity(OWNER)['tokens']
+        self.assertEqual({t['priceReason'] for t in unpriced}, {'no_qualified_price_source'})
+
     def test_the_tokens_read_in_full_feed_the_chain_search(self):
         # read-v6 chain-tokens' v2_activity source: a chain's available tokens, by address, through the reader role.
         rows = [(CHAIN.chainId, '0x' + '03' * 20, 6, 'ALPHA', 'available'),  # by address, not by symbol

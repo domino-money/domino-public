@@ -105,6 +105,19 @@ class PackageTests(unittest.TestCase):
         on_disk = {path.relative_to(PACKAGE).as_posix() for path in PACKAGE.glob('fixtures/**/*.json')}
         self.assertEqual(on_disk, {name for name in expected if name.startswith('fixtures/')})
 
+    def test_the_price_profiles_are_the_chain_profiles(self):
+        # Qualified USD checks each chain's stable, wrapped token and feed from this table: it is the profiles'.
+        from v2_chains import default_registry
+        from v2_read_contract import PRICE_PROFILES
+        registry = default_registry()
+        for chain_id, profile in PRICE_PROFILES.items():
+            chain = registry.chain(chain_id)
+            feed = chain.gasPrice.chainlinkEthUsd
+            stable = min(chain.chargeCurrencies, key=lambda currency: (currency.rank, currency.address))
+            with self.subTest(chain=chain_id):
+                self.assertEqual(profile, {'stable': stable.address.lower(), 'wrapped': chain.wrappedNative.address.lower(),
+                                           'feed': feed.proxy.lower(), 'heartbeatSeconds': feed.heartbeatSeconds})
+
     def test_the_chains_are_the_enabled_profiles(self):
         self.assertEqual(CHAIN_IDS, tuple(profile.chainId for profile in default_registry().chains))
 
@@ -212,6 +225,14 @@ class ChainReadContractTests(unittest.TestCase):
             with self.subTest(case=name), self.assertRaises(ValueError):
                 validate_v6_request_response('chain-balances', ask, body)
 
+    def test_the_stored_routes_price_with_the_chain_reads_pricer_when_they_are_on(self):
+        import read_api
+        catalogue = type('Catalogue', (), {'settings': {'host': '/nonexistent', 'dbname': 'x'}})()
+        pricer = type('Pricer', (), {'prices': lambda self, tokens: {}})()
+        reads = type('ChainReads', (), {'pricer': pricer})()
+        self.assertEqual(read_api.configured_v2_reader(catalogue, reads).prices, pricer.prices)
+        self.assertIsNone(read_api.configured_v2_reader(catalogue, None).prices)
+
     def test_a_fault_in_the_chain_reads_configuration_leaves_the_read_path_up(self):
         import io
         import os
@@ -302,7 +323,8 @@ class RouteTests(unittest.TestCase):
                 self.assertEqual(response.json(), fixtures.valid()[name])
         self.assertEqual(reads.calls, [
             ('pools', 8453, fixtures.LIVE_TOKEN, None), ('pools', 8453, fixtures.LIVE_TOKEN, fixtures.BASE_WETH),
-            ('balances', WALLET, None), ('balances', WALLET, [(8453, fixtures.LIVE_TOKEN), (8453, fixtures.ZERO)]),
+            ('balances', WALLET, None), ('balances', WALLET, [(8453, fixtures.LIVE_TOKEN), (8453, fixtures.ZERO),
+                                                             (8453, fixtures.ZERO_BALANCE)]),
             ('tokens', 8453, 'aero', 20), ('tokens', 8453, 'aero', 20), ('tokens', 8453, 'aero', 5)])
 
     def test_chain_reads_refuse_bad_requests_unconfigured_reads_and_answers_about_something_else(self):

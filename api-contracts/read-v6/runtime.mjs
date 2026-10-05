@@ -5,7 +5,7 @@
 import { SCHEMAS, ERRORS, CONSTANTS } from './schema-data.mjs';
 import { createContractValidators } from '../shared/closed-schema.mjs';
 
-export const CONTRACT_VERSION = '1.0.0-rc.1';
+export const CONTRACT_VERSION = '1.1.0-rc.1';
 export const ROUTES = Object.freeze(Object.keys(SCHEMAS));
 export const ERROR_STATUS_BY_CODE = Object.freeze({ ...ERRORS });
 
@@ -42,6 +42,37 @@ function chainStatus(c) {
   if ((c.lagSeconds === null) !== (c.lagBlocks === null)) return false;
   if ((c.automationHalted === null) === indexed || (c.operatorsAdmitted === null) === indexed) return false;
   return !(c.finalizedThrough !== null && c.deployment === null);
+}
+
+// Qualified USD (0xdecimal's item 4): a wire decimal as an integer of its smallest unit.
+const fixed = (text) => BigInt(text.replace('.', ''));
+
+function tokenPrice(p) {
+  const stable = p.source === 'chain_stable';
+  const fromPool = p.source === 'pool';
+  if (stable === (p.snapshot !== null) || fromPool !== (p.pool !== null) || fromPool !== (p.depthUsd !== null) ||
+    fixed(p.usd) === 0n) return false;
+  if (stable && (fixed(p.usd) !== 10n ** 18n || p.ethUsd !== null)) return false;
+  if (p.source === 'chainlink_eth_usd' && (p.ethUsd === null || p.ethUsd.usd !== p.usd)) return false;
+  if (p.ethUsd !== null && p.ethUsd.updatedAt > p.snapshot.timestamp) return false;
+  return !(fromPool && (p.pool.hooks !== ZERO || fixed(p.depthUsd) < fixed(CONSTANTS.priceFloorUsd)));
+}
+
+// A token's price or its reason, as its chain's profile allows (v2_read_contract.priced).
+function priced(chainId, token, price, reason) {
+  if ((price === null) === (reason === null)) return false;
+  if (price === null) return true;
+  const profile = CONSTANTS.priceProfiles[chainId];
+  const eth = [ZERO, profile.wrapped];
+  if ((price.source === 'chain_stable') !== (token === profile.stable) ||
+    (price.source === 'chainlink_eth_usd') !== eth.includes(token)) return false;
+  if (price.pool !== null) {
+    const pair = [price.pool.currency0, price.pool.currency1];
+    const partner = pair[0] === token ? pair[1] : pair[1] === token ? pair[0] : null;
+    if (![profile.stable, ...eth].includes(partner) || (price.ethUsd !== null) !== eth.includes(partner)) return false;
+  }
+  return !(price.ethUsd !== null && (price.ethUsd.feed !== profile.feed ||
+    price.snapshot.timestamp - price.ethUsd.updatedAt > profile.heartbeatSeconds));
 }
 
 function token(t) {
@@ -195,15 +226,23 @@ function chainPools(body) {
     const key = [item.pool.dex, ...pair, item.pool.fee, item.pool.tickSpacing].join(':');
     if (keys.has(key)) return false;
     keys.add(key);
+    const profile = CONSTANTS.priceProfiles[body.chainId];
+    const reference = item.market.reference;
+    if (reference !== null && (!pair.includes(reference) || reference === body.token ||
+      ![profile.stable, ZERO, profile.wrapped].includes(reference))) return false;
   }
-  return true;
+  return body.tokens.every((t) => priced(body.chainId, t.address, t.price, t.priceReason));
 }
 
 function chainBalances(c) {
   const current = c.status === 'current';
   if (current !== (c.snapshot !== null) || current === (c.reason !== null)) return false;
   if (!current && c.balances.some((b) => b.status !== 'unavailable')) return false;
-  return unique(c.balances.map((b) => b.address));
+  if (!unique(c.balances.map((b) => b.address))) return false;
+  if (!c.balances.every((b) => priced(c.chainId, b.address, b.price, b.priceReason))) return false;
+  const values = c.balances.filter((b) => b.balanceRaw !== '0').map((b) => b.valueUsd);
+  return (c.totalUsd !== null) === !values.includes(null) &&
+    (c.totalUsd === null || fixed(c.totalUsd) === values.reduce((sum, value) => sum + fixed(value), 0n));
 }
 
 function knownToken(t) {
@@ -215,7 +254,13 @@ function knownToken(t) {
 function semantic(name, value) {
   switch (name) {
     case 'PoolRef': return value.currency0 < value.currency1 && !(value.dex === 3 && value.hooks !== ZERO);
-    case 'IndexedToken': return token(value);
+    case 'IndexedToken': return token(value) && priced(value.chainId, value.address, value.price, value.priceReason);
+    case 'TokenPrice': return tokenPrice(value);
+    case 'PoolMarket': {
+      const measured = value.status === 'measured';
+      return measured === (value.reference !== null) && measured === (value.depthUsd !== null) &&
+        measured !== (value.reason !== null);
+    }
     case 'ChainStatus': return chainStatus(value);
     case 'WaitingReport': return waitingReport(value);
     case 'WaitingRevert': return value.error === errorOf(value.reason);
@@ -248,12 +293,22 @@ function semantic(name, value) {
     case 'LiveToken': return liveToken(value);
     case 'LivePool': return livePool(value);
     case 'ChainPoolsResponse': return chainPools(value);
-    case 'TokenBalance': return (value.symbol === null || printable(value.symbol)) &&
-      (value.status === 'read') === (value.balanceRaw !== null);
+    case 'TokenBalance': {
+      const valued = value.balanceRaw !== null && value.decimals !== null && value.price !== null;
+      return (value.symbol === null || printable(value.symbol)) &&
+        (value.status === 'read') === (value.balanceRaw !== null) && valued === (value.valueUsd !== null) &&
+        (!valued || fixed(value.valueUsd) ===
+          BigInt(value.balanceRaw) * fixed(value.price.usd) / 10n ** BigInt(value.decimals + 12));
+    }
     case 'ChainBalances': return chainBalances(value);
-    case 'ChainBalancesResponse': return same(value.limitations, CONSTANTS.liveLimitations) &&
-      ascending(value.chains.map((c) => c.chainId)) &&
-      (value.coverage === 'complete') === value.chains.every((c) => c.status === 'current');
+    case 'ChainBalancesResponse': {
+      // Chains are summed only when every one has its total (the owner, 2 Oct: §6.3's multi-chain rules).
+      const totals = value.chains.map((c) => c.totalUsd);
+      return same(value.limitations, CONSTANTS.liveLimitations) && ascending(value.chains.map((c) => c.chainId)) &&
+        (value.coverage === 'complete') === value.chains.every((c) => c.status === 'current') &&
+        (value.totalUsd !== null) === !totals.includes(null) &&
+        (value.totalUsd === null || fixed(value.totalUsd) === totals.reduce((sum, total) => sum + fixed(total), 0n));
+    }
     case 'KnownToken': return knownToken(value);
     case 'ChainTokensResponse': return same(value.limitations, CONSTANTS.liveLimitations) &&
       unique(value.tokens.map((t) => t.address));

@@ -90,12 +90,12 @@
       }
     }
   ],
-  "contractVersion": "1.0.0-rc.1",
+  "contractVersion": "1.1.0-rc.1",
   "coverage": "partial",
   "executionAvailable": false,
   "items": [],
   "limitations": [
-    "raw_amounts_no_usd_valuation",
+    "usd_from_qualified_sources_only",
     "token_metadata_untrusted",
     "positions_known_to_domino_only",
     "state_as_of_last_read",

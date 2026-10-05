@@ -224,6 +224,30 @@ def tokens(keys):
     return {key: TOKENS[key] for key in keys if key in TOKENS}
 
 
+ROBINHOOD_FEED, ROBINHOOD_WETH = '0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9', '0x0bd7d308f8e1639fab988df18a8011f41eacad73'
+PRICE_SNAPSHOT = {'number': 73_400_100, 'hash': block_hash(73_400_100), 'timestamp': NOW - 2}
+
+
+def prices(asked):
+    """v2_chain_reads.Pricer's answer on Robinhood: USDG at US$ 1, ETH and WETH at the feed, MANY at the USDG/MANY pool."""
+    eth = {'feed': ROBINHOOD_FEED, 'usd': '4000.123456780000000000', 'roundId': '18446744073709552117',
+           'updatedAt': NOW - 1800}
+    out = {}
+    for chain_id, token, _ in asked:
+        if chain_id == CHAIN and token == USDG:
+            out[(chain_id, token)] = ({'usd': '1.000000000000000000', 'source': 'chain_stable', 'snapshot': None,
+                                       'ethUsd': None, 'pool': None, 'depthUsd': None}, None)
+        elif chain_id == CHAIN and token in (ZERO, ROBINHOOD_WETH):
+            out[(chain_id, token)] = ({'usd': eth['usd'], 'source': 'chainlink_eth_usd', 'snapshot': PRICE_SNAPSHOT,
+                                       'ethUsd': eth, 'pool': None, 'depthUsd': None}, None)
+        elif chain_id == CHAIN and token == MANY:
+            out[(chain_id, token)] = ({'usd': '0.000000000000981234', 'source': 'pool', 'snapshot': PRICE_SNAPSHOT,
+                                       'ethUsd': None, 'pool': dict(POOL), 'depthUsd': '25300.415000'}, None)
+        else:
+            out[(chain_id, token)] = (None, 'no_pool')
+    return out
+
+
 # ------------------------------------------------------------------ waiting
 def waiting_row(reason, *, at, since, block=73_400_090, revert=None):
     """A domino_v2.waiting row as the store reads it; `since` seconds before `at`, one block a second."""
@@ -257,7 +281,7 @@ def waiting(age=40):
 
 def portfolio(**overrides):
     rows = dict(deployments=deployments(), vaults=vaults(), positions=positions(), mandates=mandates(),
-                credits=credits(), tokens=tokens, waiting_reports=waiting_reports(), waiting=waiting())
+                credits=credits(), tokens=tokens, waiting_reports=waiting_reports(), waiting=waiting(), prices=prices)
     rows.update(overrides)
     return build_portfolio(WALLET, NOW, **rows)
 
@@ -390,7 +414,7 @@ def activity(limit=50, rows=None, book=None):
                           transactions=book.transactions, modes={(CHAIN, VAULT, r['block_number'], r['log_index']):
                                                                  'domino' for r in rows
                                                                  if r['kind'] == 'vault_execution'},
-                          tokens=tokens, waiting_reports=waiting_reports(), operators=OPERATORS)
+                          tokens=tokens, waiting_reports=waiting_reports(), operators=OPERATORS, prices=prices)
 
 
 # ------------------------------------------------------------ chain reads
@@ -398,6 +422,10 @@ def activity(limit=50, rows=None, book=None):
 LIVE_TOKEN = '0x' + '5e' * 20
 BASE_USDC, BASE_WETH = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', '0x4200000000000000000000000000000000000006'
 LIVE_BLOCK = (52_214_620, '0x' + 'de' * 32, NOW - 4)
+# ETH at US$ 4,000.12345678 (the feed's 8 decimals); the v3 WETH/LIVE pool deep enough to price LIVE.
+LIVE_ETH_USD, LIVE_ROUND, LIVE_V3_LIQUIDITY = 400_012_345_678, 110_680_464_442_257_320_001, 10**21
+# A token the wallet holds none of, its decimals unreadable: no price, and none needed for a total.
+ZERO_BALANCE = '0x' + '6f' * 20
 
 
 class LiveChain:
@@ -460,7 +488,7 @@ def live_answers():
         (view, selector('getLiquidity(bytes32)'), pool_id): (True, encode(['uint128'], [4_200_000])),
         (v3, selector('slot0()'), b''): (True, encode(['uint160', 'int24', 'uint16', 'uint16', 'uint16', 'uint8', 'bool'],
                                                       [2**96 * 2, 13_863, 0, 1, 1, 68, True])),
-        (v3, selector('liquidity()'), b''): (True, encode(['uint128'], [9_100_000])),
+        (v3, selector('liquidity()'), b''): (True, encode(['uint128'], [LIVE_V3_LIQUIDITY])),
         (base.uniswap.v3.factory, selector('feeAmountTickSpacing(uint24)'), encode(['uint24'], [500])):
             (True, encode(['int24'], [10])),
         (LIVE_TOKEN, selector('decimals()'), b''): (True, encode(['uint8'], [18])),
@@ -469,7 +497,37 @@ def live_answers():
         (base.multicall3, selector('getEthBalance(address)'), wallet): (True, encode(['uint256'], [10**17])),
         (BASE_USDC, selector('balanceOf(address)'), wallet): (True, encode(['uint256'], [2_500_000])),
         (LIVE_TOKEN, selector('balanceOf(address)'), wallet): (True, encode(['uint256'], [7 * 10**18])),
+        (ZERO_BALANCE, selector('balanceOf(address)'), wallet): (True, encode(['uint256'], [0])),
+        **price_answers(base, selector),
     }
+
+
+def price_answers(base, selector):
+    """Base's Chainlink ETH/USD a minute old, its sequencer up for a day, and the two pools' bitmap words within the
+    band: no initialized tick there, so each pool's depth is its active liquidity's."""
+    from eth_abi import encode
+    import v2_chain_reads as reads
+    from v2_uniswap import PoolRef, v3_pool_address
+    feed = base.gasPrice.chainlinkEthUsd
+    rounds = ['uint80', 'int256', 'uint256', 'uint256', 'uint80']
+    answers = {(feed.proxy.lower(), selector('latestRoundData()'), b''):
+               (True, encode(rounds, [LIVE_ROUND, LIVE_ETH_USD, NOW - 64, NOW - 64, LIVE_ROUND])),
+               (feed.sequencerUptimeFeed.lower(), selector('latestRoundData()'), b''):
+               (True, encode(rounds, [7, 0, NOW - 86_400, NOW - 86_400, 7]))}
+    v4 = PoolRef(4, ZERO, LIVE_TOKEN, 3000, 60)
+    v3 = PoolRef(3, *sorted((LIVE_TOKEN, BASE_WETH)), 500, 10)
+    for ref, sqrt, tick in ((v4, 2**96 * 3, 21_972), (v3, 2**96 * 2, 13_863)):
+        # LIVE is currency1 in both: sold into the pool, the price rises.
+        low, high = reads.band_ticks(sqrt, tick, ref.tick_spacing, False)
+        for position in range(low >> 8, (high >> 8) + 1):
+            if ref.dex == 4:
+                key = (base.uniswap.v4.stateView, selector('getTickBitmap(bytes32,int16)'),
+                       encode(['bytes32', 'int16'], [bytes.fromhex(ref.pool_id[2:]), position]))
+            else:
+                key = (v3_pool_address(base, ref.currency0, ref.currency1, ref.fee), selector('tickBitmap(int16)'),
+                       encode(['int16'], [position]))
+            answers[key] = (True, encode(['uint256'], [0]))
+    return answers
 
 
 def live_fixtures():
@@ -479,7 +537,7 @@ def live_fixtures():
         'chain-pools-paired': reads.pools(8453, LIVE_TOKEN, BASE_WETH),
         'chain-pools-none': live_reads({}).pools(8453, '0x' + '6f' * 20, BASE_USDC),
         'chain-balances': reads.balances(WALLET),
-        'chain-balances-asked': reads.balances(WALLET, [(8453, LIVE_TOKEN), (8453, ZERO)]),
+        'chain-balances-asked': reads.balances(WALLET, [(8453, LIVE_TOKEN), (8453, ZERO), (8453, ZERO_BALANCE)]),
         'chain-tokens': reads.tokens(8453, 'aero', 20),
         'chain-tokens-usdc': reads.tokens(8453, 'USDC', 5),
         'chain-tokens-none': reads.tokens(42161, 'nothing', 20),
@@ -541,7 +599,8 @@ REQUESTS = {'portfolio': {'wallet': WALLET},
             'activity': {'wallet': WALLET, 'limit': 3, 'cursor': '1790425234.4663.73391000.4'},
             'chain-pools': {'chainId': 8453, 'token': LIVE_TOKEN, 'pairedToken': None},
             'chain-balances': {'wallet': WALLET, 'tokens': [{'chainId': 8453, 'address': LIVE_TOKEN},
-                                                       {'chainId': 8453, 'address': ZERO}]},
+                                                       {'chainId': 8453, 'address': ZERO},
+                                                       {'chainId': 8453, 'address': ZERO_BALANCE}]},
             'chain-tokens': {'chainId': 8453, 'query': 'aero', 'limit': 20}}
 
 
@@ -559,6 +618,20 @@ def invalid():
     def item(kind):
         return lambda body: next(i for i in body['items'] if i['kind'] == kind)
 
+    def asked(change):
+        """A defect of chain-balances' answer for the tokens asked: Base alone, every balance valued, both totals."""
+        body = copy.deepcopy(answers['chain-balances-asked'])
+        change(body)
+        return 'chain-balances', body
+
+    def token(body, address):
+        return next(entry for entry in body['tokens'] if entry['address'] == address)
+
+    def plus(text, units=1):
+        whole, part = text.split('.')
+        value = int(whole + part) + units
+        return f'{value // 10 ** len(part)}.{value % 10 ** len(part):0{len(part)}d}'
+
     execution, exit_, returned = item('vault_execution'), item('auto_exit'), item('reserves_returned')
     s1 = lambda b: next(i for i in b['items'] if i['kind'] == 's1_action' and i['action'] == 'create')  # noqa: E731
     vault = lambda b: b['vaults'][0]  # noqa: E731
@@ -567,6 +640,28 @@ def invalid():
     mandate = lambda b, i=0: b['mandates'][i]  # noqa: E731
     return {
         'portfolio.extra-key': defect('portfolio', lambda b: b.update(cached=True)),
+        # Qualified USD on Robinhood: USDG at 1, MANY at the USDG/MANY pool.
+        'portfolio.price-and-a-reason': defect('portfolio', lambda b: token(b, USDG).update(priceReason='no_pool')),
+        'portfolio.neither-price-nor-reason': defect('portfolio', lambda b: token(b, MANY).update(price=None)),
+        'portfolio.stable-not-one': defect('portfolio', lambda b: token(b, USDG)['price'].update(
+            usd='0.999000000000000000')),
+        'portfolio.stable-from-a-pool': defect('portfolio', lambda b: token(b, USDG).update(
+            price=copy.deepcopy(token(b, MANY)['price']))),
+        'portfolio.pool-below-the-floor': defect('portfolio', lambda b: token(b, MANY)['price'].update(
+            depthUsd='9999.999999')),
+        'portfolio.pool-without-the-token': defect('portfolio', lambda b: token(b, MANY)['price']['pool'].update(
+            currency0=ZERO, currency1=USDG)),
+        'portfolio.pool-against-another-token': defect('portfolio', lambda b: token(b, MANY)['price']['pool'].update(
+            currency0=MANY, currency1='0x' + '99' * 20)),
+        'portfolio.pool-against-the-stable-with-a-round': defect('portfolio', lambda b: token(b, MANY)['price'].update(
+            ethUsd={'feed': ROBINHOOD_FEED, 'usd': '4000.000000000000000000', 'roundId': '1',
+                    'updatedAt': PRICE_SNAPSHOT['timestamp']})),
+        'portfolio.hooked-price-pool': defect('portfolio', lambda b: token(b, MANY)['price']['pool'].update(
+            hooks='0x' + '40' * 20)),
+        'portfolio.price-of-zero': defect('portfolio', lambda b: token(b, MANY)['price'].update(
+            usd='0.000000000000000000')),
+        'portfolio.chain-stable-for-another-token': defect('portfolio', lambda b: token(b, MANY).update(
+            price=copy.deepcopy(token(b, USDG)['price']))),
         'portfolio.wrong-version': defect('portfolio', lambda b: b.update(contractVersion='1.0.0-rc.2')),
         'portfolio.wrong-mode': defect('portfolio', lambda b: b.update(mode='stored_v2_activity')),
         'portfolio.complete-with-a-stale-chain': defect('portfolio', lambda b: b.update(coverage='complete')),
@@ -663,7 +758,7 @@ def invalid():
             status='available')),
         'portfolio.token-unread-with-a-symbol': defect('portfolio', lambda b: b['tokens'][1].update(
             status='not_read', decimals=None)),
-        'portfolio.token-with-a-price': defect('portfolio', lambda b: b['tokens'][0].update(price='1.00')),
+        'portfolio.price-as-a-bare-number': defect('portfolio', lambda b: b['tokens'][0].update(price='1.00')),
         'portfolio.control-symbol': defect('portfolio', lambda b: b['tokens'][0].update(symbol='US\u0007DG')),
         'portfolio.tokens-unsorted': defect('portfolio', lambda b: b['tokens'].reverse()),
         'portfolio.too-many-vaults': defect('portfolio', lambda b: b.update(vaults=b['vaults'] * 17)),
@@ -747,9 +842,32 @@ def invalid():
         'chain-pools.unsafe-symbol': defect('chain-pools', lambda b: next(
             t for t in b['tokens'] if t['address'] == LIVE_TOKEN).update(symbol='LI\u202eVE')),
         'chain-pools.execution-available': defect('chain-pools', lambda b: b.update(executionAvailable=True)),
+        'chain-pools.limitations-of-rc1': defect('chain-pools', lambda b: b['limitations'].__setitem__(
+            0, 'raw_amounts_no_usd_valuation')),
+        # Qualified USD on chain-pools: ETH and WETH at the feed, LIVE at the v3 pool against WETH, USDC at 1.
+        'chain-pools.eth-usd-older-than-its-heartbeat': defect('chain-pools', lambda b: token(b, ZERO)['price'][
+            'ethUsd'].update(updatedAt=b['snapshot']['timestamp'] - 1201)),
+        'chain-pools.eth-usd-from-another-feed': defect('chain-pools', lambda b: token(b, ZERO)['price'][
+            'ethUsd'].update(feed='0x' + '99' * 20)),
+        'chain-pools.eth-usd-after-its-block': defect('chain-pools', lambda b: token(b, ZERO)['price'][
+            'ethUsd'].update(updatedAt=b['snapshot']['timestamp'] + 1)),
+        'chain-pools.eth-price-not-its-round': defect('chain-pools', lambda b: token(b, ZERO)['price'].update(
+            usd=plus(token(b, ZERO)['price']['usd']))),
+        'chain-pools.price-against-weth-without-its-round': defect('chain-pools', lambda b: token(
+            b, LIVE_TOKEN)['price'].update(ethUsd=None)),
+        'chain-pools.stable-with-a-block': defect('chain-pools', lambda b: token(b, BASE_USDC)['price'].update(
+            snapshot=dict(b['snapshot']))),
+        'chain-pools.measured-without-a-depth': defect('chain-pools', lambda b: pool_of(b, 3)['market'].update(
+            depthUsd=None)),
+        'chain-pools.unmeasured-with-a-reference': defect('chain-pools', lambda b: pool_of(b, 4).update(market={
+            'status': 'unavailable', 'reference': ZERO, 'depthUsd': None, 'reason': 'no_qualified_reference'})),
+        'chain-pools.reference-outside-the-pool': defect('chain-pools', lambda b: pool_of(b, 3)['market'].update(
+            reference=BASE_USDC)),
+        'chain-pools.reference-is-the-token': defect('chain-pools', lambda b: (
+            b.update(token=BASE_WETH, pools=[pool_of(b, 3)]), pool_of(b, 3)['market'].update(reference=BASE_WETH))),
         # chain-balances: Robinhood unconfigured (unavailable), then Base, then Arbitrum unconfigured.
         'chain-balances.read-without-an-amount': defect('chain-balances', lambda b: b['chains'][1]['balances'][0].update(
-            balanceRaw=None)),
+            balanceRaw=None, valueUsd=None)),
         'chain-balances.amount-unread': defect('chain-balances', lambda b: b['chains'][1]['balances'][0].update(
             status='unavailable')),
         'chain-balances.unavailable-with-a-block': defect('chain-balances', lambda b: b['chains'][0].update(
@@ -766,6 +884,27 @@ def invalid():
         'chain-balances.negative-amount': defect('chain-balances', lambda b: b['chains'][1]['balances'][0].update(
             balanceRaw='-1')),
         'chain-balances.unknown-reason': defect('chain-balances', lambda b: b['chains'][0].update(reason='rpc_down')),
+        # Values and totals: Base's USDC and ETH valued, its WETH unread, the other chains not configured.
+        'chain-balances.value-without-a-price': defect('chain-balances', lambda b: b['chains'][1]['balances'][
+            1].update(price=None, priceReason='eth_usd_stale')),
+        'chain-balances.priced-but-not-valued': defect('chain-balances', lambda b: b['chains'][1]['balances'][
+            0].update(valueUsd=None)),
+        'chain-balances.total-over-an-unread-balance': defect('chain-balances', lambda b: b['chains'][1].update(
+            totalUsd='402.512345')),
+        'chain-balances.total-without-every-chain': defect('chain-balances', lambda b: b.update(totalUsd='402.512345')),
+        'chain-balances.value-off-by-a-micro-dollar': asked(lambda b: (
+            b['chains'][0]['balances'][0].update(valueUsd=plus(b['chains'][0]['balances'][0]['valueUsd'])),
+            b['chains'][0].update(totalUsd=plus(b['chains'][0]['totalUsd'])), b.update(totalUsd=plus(b['totalUsd'])))),
+        'chain-balances.chain-total-off': asked(lambda b: (
+            b['chains'][0].update(totalUsd=plus(b['chains'][0]['totalUsd'])), b.update(totalUsd=plus(b['totalUsd'])))),
+        'chain-balances.total-off': asked(lambda b: b.update(totalUsd=plus(b['totalUsd']))),
+        'chain-balances.price-and-a-reason': asked(lambda b: b['chains'][0]['balances'][0].update(priceReason='no_pool')),
+        # Base's total right, but Arbitrum read nothing: no answer-wide total.
+        'chain-balances.total-over-an-unavailable-chain': asked(lambda b: (b.update(coverage='partial'), b['chains'].append({
+            'chainId': 42161, 'status': 'unavailable', 'reason': 'chain_not_configured', 'snapshot': None,
+            'totalUsd': None, 'balances': [{'address': ZERO, 'symbol': None, 'decimals': None, 'balanceRaw': None,
+                                            'status': 'unavailable', 'price': None,
+                                            'priceReason': 'no_qualified_price_source', 'valueUsd': None}]}))),
         # chain-tokens: AERO from the list, AEROX looked up.
         'chain-tokens.sources-unordered': defect('chain-tokens', lambda b: b['tokens'][0].update(
             sources=['looked_up', 'uniswap_default_list'])),

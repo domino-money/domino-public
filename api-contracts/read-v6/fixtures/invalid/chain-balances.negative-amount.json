@@ -6,28 +6,38 @@
           "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
           "balanceRaw": null,
           "decimals": null,
+          "price": null,
+          "priceReason": "no_qualified_price_source",
           "status": "unavailable",
-          "symbol": null
+          "symbol": null,
+          "valueUsd": null
         },
         {
           "address": "0x0000000000000000000000000000000000000000",
           "balanceRaw": null,
           "decimals": null,
+          "price": null,
+          "priceReason": "no_qualified_price_source",
           "status": "unavailable",
-          "symbol": null
+          "symbol": null,
+          "valueUsd": null
         },
         {
           "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
           "balanceRaw": null,
           "decimals": null,
+          "price": null,
+          "priceReason": "no_qualified_price_source",
           "status": "unavailable",
-          "symbol": null
+          "symbol": null,
+          "valueUsd": null
         }
       ],
       "chainId": 4663,
       "reason": "chain_not_configured",
       "snapshot": null,
-      "status": "unavailable"
+      "status": "unavailable",
+      "totalUsd": null
     },
     {
       "balances": [
@@ -35,22 +45,70 @@
           "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
           "balanceRaw": "-1",
           "decimals": 6,
+          "price": {
+            "depthUsd": null,
+            "ethUsd": null,
+            "pool": null,
+            "snapshot": null,
+            "source": "chain_stable",
+            "usd": "1.000000000000000000"
+          },
+          "priceReason": null,
           "status": "read",
-          "symbol": "USDC"
+          "symbol": "USDC",
+          "valueUsd": "2.500000"
         },
         {
           "address": "0x0000000000000000000000000000000000000000",
           "balanceRaw": "100000000000000000",
           "decimals": 18,
+          "price": {
+            "depthUsd": null,
+            "ethUsd": {
+              "feed": "0x50015f8b17fb2c290dde41fdc246ed0dcee93a8b",
+              "roundId": "110680464442257320001",
+              "updatedAt": 1790431170,
+              "usd": "4000.123456780000000000"
+            },
+            "pool": null,
+            "snapshot": {
+              "hash": "0xdededededededededededededededededededededededededededededededede",
+              "number": 52214620,
+              "timestamp": 1790431230
+            },
+            "source": "chainlink_eth_usd",
+            "usd": "4000.123456780000000000"
+          },
+          "priceReason": null,
           "status": "read",
-          "symbol": "ETH"
+          "symbol": "ETH",
+          "valueUsd": "400.012345"
         },
         {
           "address": "0x4200000000000000000000000000000000000006",
           "balanceRaw": null,
           "decimals": 18,
+          "price": {
+            "depthUsd": null,
+            "ethUsd": {
+              "feed": "0x50015f8b17fb2c290dde41fdc246ed0dcee93a8b",
+              "roundId": "110680464442257320001",
+              "updatedAt": 1790431170,
+              "usd": "4000.123456780000000000"
+            },
+            "pool": null,
+            "snapshot": {
+              "hash": "0xdededededededededededededededededededededededededededededededede",
+              "number": 52214620,
+              "timestamp": 1790431230
+            },
+            "source": "chainlink_eth_usd",
+            "usd": "4000.123456780000000000"
+          },
+          "priceReason": null,
           "status": "unavailable",
-          "symbol": "WETH"
+          "symbol": "WETH",
+          "valueUsd": null
         }
       ],
       "chainId": 8453,
@@ -60,7 +118,8 @@
         "number": 52214620,
         "timestamp": 1790431230
       },
-      "status": "current"
+      "status": "current",
+      "totalUsd": null
     },
     {
       "balances": [
@@ -68,35 +127,45 @@
           "address": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
           "balanceRaw": null,
           "decimals": null,
+          "price": null,
+          "priceReason": "no_qualified_price_source",
           "status": "unavailable",
-          "symbol": null
+          "symbol": null,
+          "valueUsd": null
         },
         {
           "address": "0x0000000000000000000000000000000000000000",
           "balanceRaw": null,
           "decimals": null,
+          "price": null,
+          "priceReason": "no_qualified_price_source",
           "status": "unavailable",
-          "symbol": null
+          "symbol": null,
+          "valueUsd": null
         },
         {
           "address": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
           "balanceRaw": null,
           "decimals": null,
+          "price": null,
+          "priceReason": "no_qualified_price_source",
           "status": "unavailable",
-          "symbol": null
+          "symbol": null,
+          "valueUsd": null
         }
       ],
       "chainId": 42161,
       "reason": "chain_not_configured",
       "snapshot": null,
-      "status": "unavailable"
+      "status": "unavailable",
+      "totalUsd": null
     }
   ],
-  "contractVersion": "1.0.0-rc.1",
+  "contractVersion": "1.1.0-rc.1",
   "coverage": "partial",
   "executionAvailable": false,
   "limitations": [
-    "raw_amounts_no_usd_valuation",
+    "usd_from_qualified_sources_only",
     "token_metadata_untrusted",
     "state_as_of_last_read",
     "no_execution_or_signing"
@@ -104,5 +173,6 @@
   "mode": "live_chain_balances",
   "schemaVersion": 1,
   "servedAt": 1790431234,
+  "totalUsd": null,
   "wallet": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
 }

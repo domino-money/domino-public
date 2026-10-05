@@ -116,7 +116,7 @@ export const PRODUCER_PIN = {
       version: '1.1.0-rc.3',
       // Changed on purpose (data) 2026-10-05: read_api.py, which the manifest hashes, gained read-v6's chain reads; no
       // read-v1 route, schema or version moved.
-      manifestSha256: '602ed227bbab2e0d56fa97e351d6ba39af7053559c952daef1f5c38d5c054109',
+      manifestSha256: 'de252f2014178f2d538f1ef0777bba8e619cf1afc22fa09d75a12bf760db41d2',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -139,7 +139,7 @@ export const PRODUCER_PIN = {
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
   // Changed on purpose (data) 2026-10-05: read_api.py gained read-v6's chain reads; no read-v2 route, schema or version moved.
-  manifestSha256: '0a3ce6cf1f5856edd5a467f6acfc9a01bb38d783223246492c869042c3c4705e',
+  manifestSha256: '6db809aa48c6df713e98e2bbfe0c518d095ad0a3092124d06930ae5aa5440b5c',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
@@ -182,7 +182,8 @@ export const BACKEND_OPENAPI_PIN = {
   infoVersion: '0.8.0',
   // Changed on purpose (data) 2026-10-05: three read-v6 paths (chain-pools, chain-balances, chain-tokens).
   // Changed on purpose (data) 2026-10-05: read-v6 activity's reserves_returned item.
-  sha256: 'b229a8729a29e2af618e330829a3e9c24fd3d9869f813886c41a084825d7fdaa',
+  // Changed on purpose (data) 2026-10-05: read-v6 1.1.0-rc.1's qualified USD (prices, depth, values and totals).
+  sha256: '32c8416f859fa9eea495107a1915e2e9ab73c6b956a27db71901b9b37e89f88e',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']
