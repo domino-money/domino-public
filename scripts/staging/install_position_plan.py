@@ -201,8 +201,10 @@ def plan(files, commit, digest):
 
 
 def write_new(path, payload, mode):
+    """One file that must not exist yet, with exactly this mode whatever the umask."""
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
     with os.fdopen(fd, 'wb') as stream:
+        os.fchmod(stream.fileno(), mode)
         stream.write(payload)
         stream.flush()
         os.fsync(stream.fileno())

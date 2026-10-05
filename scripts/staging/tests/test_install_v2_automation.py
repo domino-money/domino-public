@@ -160,6 +160,21 @@ class HostTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '^unit_changed_since_apply$'):
                 installer.rollback(NEXT)
 
+    def test_the_release_s_modes_do_not_depend_on_the_installer_s_umask(self):
+        # The first production install ran from a shell with umask 077 (5 Oct 2026): open()'s 0o444 became 0o400
+        # and no instance could read its own entry script.
+        files = {**archive(), 'backend/tool.sh': (b'#!/bin/sh\n', True)}
+        previous = os.umask(0o077)
+        try:
+            installer.install_source(files, COMMIT)
+        finally:
+            os.umask(previous)
+        release = self.root / 'releases' / COMMIT
+        tree = release / 'v2-automation'
+        self.assertEqual(stat.S_IMODE((tree / 'backend/v2_automation.py').stat().st_mode), 0o444)
+        self.assertEqual(stat.S_IMODE((tree / 'backend/tool.sh').stat().st_mode), 0o555)
+        self.assertEqual({stat.S_IMODE(p.stat().st_mode) for p in (release, *tree.rglob('*')) if p.is_dir()}, {0o555})
+
     def test_apply_creates_the_identity_its_directories_the_release_the_target_and_the_template(self):
         calls, owned = [], {}
         user = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())

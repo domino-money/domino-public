@@ -1,6 +1,7 @@
 """Public release staging and rollback stay inside their named file boundaries."""
 import os
 from pathlib import Path
+import stat
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -129,6 +130,19 @@ class PublicInstallTests(unittest.TestCase):
         self.assertEqual(unrelated.read_bytes(),b'financial untouched')
         self.assertTrue(release.is_dir())
         self.assertFalse((self.systemd/'domino-public-history.service').exists())
+
+    def test_the_release_and_its_units_keep_their_modes_under_any_umask(self):
+        # open() applies the installer's umask: from a shell with umask 077 the code was left root-only.
+        self.files['backend/tool.sh']=(b'#!/bin/sh\n',True)
+        previous=os.umask(0o077)
+        try:installer.apply(self.files,self.plan())
+        finally:os.umask(previous)
+        release=self.base/'releases'/COMMIT
+        mode=lambda path:stat.S_IMODE(path.stat().st_mode)
+        self.assertEqual((mode(release/'backend/public_history.py'),mode(release/'backend/tool.sh')),(0o444,0o555))
+        self.assertEqual({mode(path) for path in (release,*release.rglob('*')) if path.is_dir() and not path.is_symlink()},{0o555})
+        self.assertEqual(mode(self.systemd/'domino-public-history.service'),0o444)
+        self.assertEqual(mode(self.base/'receipts'/(COMMIT+'.json')),0o600)
 
     def test_dependency_or_runtime_permission_change_is_refused(self):
         lock=self.queue/'release/backend/requirements-api.lock';lock.write_bytes(b'changed')

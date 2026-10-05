@@ -131,16 +131,20 @@ def apply(files, planned, *, owner=0):
     filesystem.protected_parents(RELEASES)
     root = RELEASES / planned['commit']
     require(not root.exists(), 'release_directory_exists')
+    # Every mode below is set explicitly: mkdir and open apply the installer's
+    # umask, and a shell with umask 077 would leave a tree the services cannot read.
     root.mkdir(mode=0o755)
+    os.chmod(root, 0o755)
     for component in COMPONENTS:
         base = root / component
         base.mkdir(mode=0o755)
         for name, (payload, executable) in sorted(files.items()):
             path = base / name
             path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                         0o755 if executable else 0o644)
+            mode = 0o755 if executable else 0o644
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
             with os.fdopen(fd, 'wb') as stream:
+                os.fchmod(stream.fileno(), mode)
                 stream.write(payload)
         for name in LINKS:
             path = base / name
@@ -148,6 +152,9 @@ def apply(files, planned, *, owner=0):
             if path.exists() or path.is_symlink():
                 path.unlink()
             path.symlink_to(planned['links'][f'{component}/{name}'])
+        # The tree's own directories only: never through the runtime and venv links.
+        for directory, _, _ in os.walk(base, followlinks=False):
+            os.chmod(directory, 0o755)
         os.chmod(base, 0o555)
     return verify(planned, owner=owner)
 

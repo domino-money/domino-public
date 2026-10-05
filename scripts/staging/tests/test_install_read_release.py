@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tempfile
@@ -152,6 +153,29 @@ class ReadReleaseTests(unittest.TestCase):
             with patch.object(installer.os, 'geteuid', lambda: 0), \
                  patch.object(installer.filesystem, 'protected_parents', lambda path: None):
                 installer.apply(self.files, planned, owner=os.getuid())
+
+    def test_the_trees_keep_their_modes_under_any_umask(self):
+        # mkdir and open() apply the installer's umask: with 077 the release root would be 0700, so no service
+        # identity could reach its code, and verify() would still pass it.
+        planned = self.plan()
+        previous = os.umask(0o077)
+        try:
+            with patch.object(installer.os, 'geteuid', lambda: 0), \
+                 patch.object(installer.filesystem, 'protected_parents', lambda path: None):
+                installer.apply(self.files, planned, owner=os.getuid())
+        finally:
+            os.umask(previous)
+        root = self.releases / self.commit
+        mode = lambda path: stat.S_IMODE(path.stat().st_mode)
+        self.assertEqual(mode(root), 0o755)
+        executable = next(name for name, (_, flag) in self.files.items() if flag)
+        for component in installer.COMPONENTS:
+            base = root / component
+            self.assertEqual(mode(base), 0o555)
+            inside = {mode(path) for path in base.rglob('*') if path.is_dir() and not path.is_symlink()}
+            self.assertEqual(inside, {0o755})
+            self.assertEqual(mode(base / 'backend/read_api.py'), 0o644)
+            self.assertEqual(mode(base / executable), 0o755)
 
     def test_apply_requires_root(self):
         planned = self.plan()

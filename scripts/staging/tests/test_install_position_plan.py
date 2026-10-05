@@ -3,6 +3,7 @@ refusals and its rollback. No root, no PostgreSQL, no systemd: paths are a tempo
 import json
 import os
 from pathlib import Path
+import stat
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -202,6 +203,20 @@ class HostTests(unittest.TestCase):
             unit.write_text(moved['unit'] + '# edited\n')
             with self.assertRaisesRegex(ValueError, '^unit_changed_since_apply$'):
                 installer.rollback(NEXT)
+
+    def test_the_release_s_modes_do_not_depend_on_the_installer_s_umask(self):
+        # A deploy shell with umask 077 turned open()'s 0o444 into 0o400 (the V2 automation, 5 Oct 2026).
+        files = {**archive(), 'backend/tool.sh': (b'#!/bin/sh\n', True)}
+        previous = os.umask(0o077)
+        try:
+            installer.install_source(files, COMMIT)
+        finally:
+            os.umask(previous)
+        release = self.root / 'releases' / COMMIT
+        tree = release / 'position-plan'
+        self.assertEqual(stat.S_IMODE((tree / 'backend/v2_position_plan_api.py').stat().st_mode), 0o444)
+        self.assertEqual(stat.S_IMODE((tree / 'backend/tool.sh').stat().st_mode), 0o555)
+        self.assertEqual({stat.S_IMODE(p.stat().st_mode) for p in (release, *tree.rglob('*')) if p.is_dir()}, {0o555})
 
     def test_apply_proves_the_peer_row_before_writing_the_release_receipt_and_unit(self):
         calls, sql = [], []
