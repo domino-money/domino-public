@@ -303,15 +303,47 @@ The credential names in the configuration are free (`[a-z0-9][a-z0-9-]{0,62}`); 
 | `intents` | none | The journal's unresolved and `attention` intents. |
 | `acknowledge --intent <id>` | none | An operator looked at an `attention` intent: the signer may claim again. |
 
-## Service units still to install (F8)
+## In production
 
-Nothing is installed by this front. Per chain, F8 provisions:
-- **`domino-v2-automation@<chain>.service`** running `backend/v2_automation.py --config /etc/domino/v2/automation/<chain>.json serve` as its own user, with `StateDirectory=domino-v2-automation/<chain>` (the journal), `LoadCredentialEncrypted=` lines for the two keystore passwords and, on Base and Arbitrum, each keyed RPC URL; `ReadOnlyPaths=` for the configuration, keystores, provider or chain RPC file and the manifest; `Restart=on-failure`; the egress to the chain's admitted RPC hosts only (docs/CONTINUOUS_EGRESS.md).
-- **The shared head directory** `/run/domino-v2/` (F6: which user owns it and its group permissions are still open), so the automation, the indexer (3b) and the read path share one head per chain.
-- **Funding** of the operator on each chain, and its admission (and the publisher's) in each chain's registry.
-- **Monitoring**: the pass reports (one JSON line per pass), `intents` for `attention`, the operator's balance, the daily spend against `dailyCapWei`, and the registry's `ChangeScheduled`, `OperatorSet`, `PublisherSet` and `AutomationHaltSet` (F1a, "Monitoring").
+`scripts/staging/install_v2_automation.py` installs the service and moves it to newer releases (`--inspect`, `--apply`, `--rollback`). It starts, enables and reloads nothing.
 
-The publisher runs inside the automation process, with its own key; splitting it into its own unit (serving signed observations over a local socket) is a follow-up if the owner wants the two keys in separate processes.
+1. **Install.** Run `install_v2_automation.py --archive <tar> --archive-sha256 <hex> --commit <sha>`, first with `--inspect`, then with `--apply`.
+   - **The first install** creates:
+     - the identity `domino-v2-automation`, with no database role: the journal is SQLite and the service only reads the chain;
+     - `/etc/domino/v2/automation` (0700), the private files, bound read-only at `/run/domino-v2-automation-config`;
+     - `/var/lib/domino-v2-automation-public` (0755), each chain's `waitingFile`;
+     - `domino-v2-automation.target`, wanted at boot.
+   - **Every release:**
+     - writes `/opt/domino/financial/releases/<sha>/v2-automation` (the backend, `api-contracts/v2` and the manifests, bound at `/run/domino-v2-deployments`);
+     - writes the template `domino-v2-automation@.service`, one instance per chain. Each instance has its own `StateDirectory` (`/var/lib/domino-v2-automation/<chain>`, 0700) for the journal, the scans' state and the head.
+2. **Credentials.** The keystore passwords are sealed once, by the owner, as `/etc/credstore.encrypted/v2-operator-keystore-password` and `…/v2-publisher-keystore-password` (`systemd-creds encrypt --with-key=host+tpm2`).
+   - The template loads them with `LoadCredentialEncrypted=`, and imports the hosted chains' `v2-rpc-*` URLs, with the TPM in its device policy.
+   - The owner makes the keystores on their own machine. `make_keystore.py` checks that the key is the manifests' `roles.operator` or `roles.publisher`; `cast wallet import` works too.
+3. **Private files**, each owned by `domino-v2-automation`, mode 0600, in `/etc/domino/v2/automation`:
+   - `v2-operator.json`, `v2-publisher.json`: the encrypted keystores;
+   - `providers.json`: a copy of the reader's provider file, Domino's own node through its proxy (`127.0.0.1:18547`) first;
+   - `chain-rpc.json`: a copy of `/etc/domino/v2/chain-rpc.json`;
+   - `<chain>.json`: each chain's configuration.
+     - `headFile`, `journalFile`: in the instance's state directory;
+     - `waitingFile`: `/var/lib/domino-v2-automation-public/<chain>.waiting.json`, which the V2 indexer reads (`--waiting-file`).
+4. **Egress.** Collect with `v2-automation` enabled, `--node-loopback-reads` and `--v2-chains`; render, update, then `nft -f`.
+   - The role is optional until the identity exists. It has no unit of its own: the template binds `/etc/domino/continuous-reads/v2-automation.hosts` over `/etc/hosts`.
+   - It reaches the node's proxy, its provider file's fallbacks (`rpc`), and Base's and Arbitrum's providers (`chains`).
+5. **Start without sending.** Run `daemon-reload`, then `systemctl enable --now domino-v2-automation@<chain>.service` for each chain, with `gas.enabled` false.
+   - Each pass plans, presimulates and records why every vault waits; nothing is sent.
+   - Then set `gas.enabled` to true and restart the instance.
+
+**The owner's numbers (5 Oct 2026):**
+- `gas.dailyCapWei` is 0.0025 ETH per chain (`2500000000000000`), on Robinhood, Base and Arbitrum.
+- The rest of each chain's gas policy follows V1's on Robinhood: at most 3,000,000 gas, and at most 0.0005 ETH per transaction. The fee caps and the balance floor are set per chain in its file.
+
+Still open:
+- **Funding and admission:** the operator needs ETH on each chain. The registry admitted both roles at deployment.
+- **Monitoring:**
+  - the pass reports (one JSON line per pass), and `intents` for `attention`;
+  - the operator's balance, and the daily spend against `dailyCapWei`;
+  - the registry's `ChangeScheduled`, `OperatorSet`, `PublisherSet` and `AutomationHaltSet` (F1a, "Monitoring").
+- **The publisher in its own process:** it runs inside the automation process, with its own key. Splitting it into its own unit, serving signed observations over a local socket, is a follow-up if the owner wants the two keys in separate processes.
 
 ## Verification
 
@@ -342,7 +374,7 @@ The publisher runs inside the automation process, with its own key; splitting it
 3. **v3 on an EVM**: the v3 paths (TWAP evidence, v3 fee growth, v3 legs) are unit-tested and the v3 contracts are F1c's and F3's; an end-to-end v3 compound needs a v3 swap driver on the Anvil, which #300's Forge suites or #301's local deployment can provide.
 4. **The fixture deployer** (`backend/tests/v2_local_chain.py`) stays until #301's local mode can deploy against real Uniswap runtimes: `deploy-local.mjs` (PR #302) installs synthetic dependencies offline ("this mode does not test Uniswap, Permit2, swaps, positions or user journeys") and needs a fork otherwise. The fixture's manifest is already #302's format.
 5. **Numbers the owner still sets per chain** (the decisions of 2 Oct are in the configuration already: the vault defaults, the economic cadence, the daily budget, paused vaults that exit): each chain's gas policy and daily budget (`gas.*`), the margins (`gasBufferBps`, `platformMinProfitWei`, `ownerMarginBps`), the owner gate's horizon (`ownerHorizonSeconds`, the number that most changes how often a quiet pool compounds; see the table above) and haircut, the publisher's look-back and band, and whether auto-exit runs on each chain.
-6. **F8**: the units above, the head directory's owner, egress, funding, monitoring and alerting on `attention`.
+6. **F8**: installed by `install_v2_automation.py` and the continuous egress policy ("In production" above). Funding, monitoring and alerting on `attention` remain.
 7. **The publisher as its own unit**, if the owner wants the operator and publisher keys in separate processes.
 8. **The operator rearm on v3** (`operatorRearm` after a third party's dust addition) is not automated yet: the pass reports such a root as disarmed.
 9. **Multicall3 aggregation** of the state reads (F6's next billing lever).

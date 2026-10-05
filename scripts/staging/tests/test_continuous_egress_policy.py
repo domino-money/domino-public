@@ -30,8 +30,9 @@ UNISWAP = {'trade-api.gateway.uniswap.org': ['15.0.0.1'], 'liquidity.api.uniswap
 NEW_CHAINS = ('performance', 'performance_collector', 'execution_status', 'execution_signer')
 
 
-def identities(plan_listener=False):
-    """The live host's identities. The S1 plan listener's exists only once install_position_plan.py ran."""
+def identities(plan_listener=False, automation=False):
+    """The live host's identities. The S1 plan listener's exists only once install_position_plan.py ran, the V2
+    automation's once install_v2_automation.py did."""
     result = {}
     for index, role in enumerate(policy.ROLES):
         unit = policy.unit_of(role)
@@ -40,6 +41,8 @@ def identities(plan_listener=False):
                         'cgroup': '/system.slice/' + unit if unit else None}
     if not plan_listener:
         result['position-plan'] = None
+    if not automation:
+        result['v2-automation'] = None
     return result
 
 
@@ -228,8 +231,9 @@ class ContinuousEgressTests(unittest.TestCase):
 
     def test_a_refused_connection_attempt_is_reset_and_any_other_packet_still_dropped(self):
         every = LIVE_ENABLED + ('auth', 'onboarding', 'deposit', 'performance',
-                                'performance-collector', 'execution-status', 'execution-signer', 'position-plan')
-        data = {**snapshot(every, {**PINS, **UNISWAP}), 'identities': identities(plan_listener=True)}
+                                'performance-collector', 'execution-status', 'execution-signer', 'position-plan',
+                                'v2-automation')
+        data = {**snapshot(every, {**PINS, **UNISWAP}), 'identities': identities(plan_listener=True, automation=True)}
         chains, _ = parse(nft(policy.render(data)))
         for role in policy.ROLES:
             chain = policy.nft_name(role)
@@ -409,8 +413,9 @@ class ContinuousEgressTests(unittest.TestCase):
 
     def test_every_family_enabled_renders_only_hyphen_free_nft_identifiers(self):
         every = LIVE_ENABLED + ('auth', 'onboarding', 'deposit', 'performance',
-                                'performance-collector', 'execution-status', 'execution-signer', 'position-plan')
-        text = nft(policy.render({**snapshot(every, {**PINS, **UNISWAP}), 'identities': identities(plan_listener=True)}))
+                                'performance-collector', 'execution-status', 'execution-signer', 'position-plan',
+                                'v2-automation')
+        text = nft(policy.render({**snapshot(every, {**PINS, **UNISWAP}), 'identities': identities(plan_listener=True, automation=True)}))
         names = re.findall(r'add (?:chain|counter|set) inet \w+ (\S+)', text) + re.findall(r'jump (\S+)', text)
         self.assertTrue(names)
         for name in names:
@@ -534,9 +539,9 @@ class ContinuousEgressTests(unittest.TestCase):
     def test_the_v2_chains_grant_is_explicit_and_reaches_only_the_writer_and_the_plan_listener(self):
         # Base and Arbitrum (backend/v2_rpc.py): the writer's indexer instances and the plan listener's plans.
         chains = {host: [f'17.0.0.{index}'] for index, host in enumerate(sorted(policy.CHAIN_HOSTS), 1)}
-        enabled = (*LIVE_ENABLED, 'auth', 'position-plan')
-        before = policy.render({**snapshot(enabled, {**PINS, **UNISWAP}), 'identities': identities(plan_listener=True)})
-        granted = {**snapshot(enabled, {**PINS, **UNISWAP, **chains}), 'identities': identities(plan_listener=True),
+        enabled = (*LIVE_ENABLED, 'auth', 'position-plan', 'v2-automation')
+        before = policy.render({**snapshot(enabled, {**PINS, **UNISWAP}), 'identities': identities(plan_listener=True, automation=True)})
+        granted = {**snapshot(enabled, {**PINS, **UNISWAP, **chains}), 'identities': identities(plan_listener=True, automation=True),
                    'v2Chains': True}
         after = policy.render(granted)
         for role in policy.CHAIN_ROLES:
@@ -548,10 +553,10 @@ class ContinuousEgressTests(unittest.TestCase):
             if role not in policy.CHAIN_ROLES:
                 self.assertEqual(hosts, before['roleHosts'][role], role)
         sets_before, sets_after = parse(nft(before))[1], parse(nft(after))[1]
-        for name in ('write_ipv4', 'position_plan_ipv4'):
+        for name in ('write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4'):
             self.assertEqual(sets_after[name], sets_before[name] + len(chains), name)
-        self.assertEqual({name: count for name, count in sets_after.items() if name not in ('write_ipv4', 'position_plan_ipv4')},
-                         {name: count for name, count in sets_before.items() if name not in ('write_ipv4', 'position_plan_ipv4')})
+        self.assertEqual({name: count for name, count in sets_after.items() if name not in ('write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4')},
+                         {name: count for name, count in sets_before.items() if name not in ('write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4')})
         listener = after['artifacts'][policy.UNIT_DIR + 'domino-position-plan.service.d/' + policy.DROPIN]
         for (address,) in chains.values():
             self.assertIn(f'IPAddressAllow={address}/32\n', listener)
@@ -586,6 +591,29 @@ class ContinuousEgressTests(unittest.TestCase):
         data['hosts'] = [{'hostname': f'h{index}.example.com', 'addresses': ['16.0.0.1']}
                          for index in range(policy.MAX_HOSTS + 1)]
         self.reject(data, 'invalid_host_inventory')
+
+    def test_the_v2_automation_reaches_the_node_and_its_rpc_through_a_hosts_file_of_its_own(self):
+        # Optional until install_v2_automation.py creates the account; enabled, it needs that identity.
+        self.assertEqual(policy.render(snapshot()), policy.render({**snapshot(), 'identities': identities()}))
+        self.reject({**snapshot((*LIVE_ENABLED, 'v2-automation')), 'identities': identities()},
+                    'enabled_role_without_identity')
+        enabled = (*LIVE_ENABLED, 'v2-automation')
+        rendered = policy.render({**snapshot(enabled), 'identities': identities(automation=True),
+                                  'nodeLoopbackReads': True})
+        chains, sets = parse(nft(rendered))
+        rules = chains['v2_automation']
+        self.assertIn('oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp dport 18547 ct direction original '
+                      'counter accept comment "private node RPC"', rules)
+        self.assertFalse(any('sport' in rule for rule in rules))  # it serves nothing
+        self.assertFalse(any('dport 53' in rule for rule in rules))  # it reads its hosts file, never the stub
+        self.assertEqual(sorted(rendered['roleHosts']['v2-automation']), sorted(policy.RPC_HOSTS & set(PINS)))
+        self.assertEqual(sets['v2_automation_ipv4'], sum(len(PINS[h]) for h in policy.RPC_HOSTS & set(PINS)))
+        hosts = rendered['artifacts'][policy.ROOT + '/v2-automation.hosts']
+        self.assertIn('robinhood-mainnet.g.alchemy.com', hosts)
+        # One template per chain binds that file itself: no drop-in, and the target does not name it.
+        self.assertFalse(any('v2-automation' in path for path in rendered['artifacts'] if path.endswith('.conf')))
+        self.assertNotIn('v2-automation', rendered['artifacts'][policy.UNIT_DIR + policy.TARGET])
+        self.assertNotIn('domino-v2-automation', ' '.join(rendered['units']))
 
     def test_enable_commands_are_derived_from_the_installer_not_copied(self):
         for role in policy.ENABLE_ARGUMENTS:

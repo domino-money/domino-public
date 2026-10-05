@@ -32,6 +32,7 @@ import install_automation_release as automation
 import continuous_egress_policy as egress_policy
 import install_financial_release as installer
 import install_position_plan as position_plan
+import install_v2_automation as automation_v2
 import upgrade_financial as financial
 
 RUNTIME_UNITS = Path('/run/systemd/system')
@@ -226,7 +227,9 @@ class RealSystemdTests(unittest.TestCase):
         self.assertEqual(shown['LoadState'], 'loaded')
         self.assertIn('argv[]=/opt/domino/queue-worker/venv/bin/python -B v2_indexer.py follow '
                       '--chain robinhood-4663 --chain-rpc-file '
-                      '/opt/domino/queue-worker/release/backend/runtime/chain-rpc.json ;', shown['ExecStart'])
+                      '/opt/domino/queue-worker/release/backend/runtime/chain-rpc.json '
+                      '--waiting-file /var/lib/domino-v2-automation-public/robinhood-4663.waiting.json ;',
+                      shown['ExecStart'])
         # Base and Arbitrum read hosted providers whose keys are sealed credentials; the glob takes all of them.
         # systemd shows a glob quoted (CI run 37243142942).
         self.assertEqual(shlex.split(shown['ImportCredential']), ['v2-rpc-*'])
@@ -242,6 +245,34 @@ class RealSystemdTests(unittest.TestCase):
         self.assertEqual(shown['ProtectSystem'], 'strict')
         # Installed is not enabled: no instance is wanted until an operator enables it. The template has an
         # [Install] section, so it is never static either.
+        self.assertIn(shown['UnitFileState'], ('disabled', 'indirect'))
+
+    def test_the_v2_automation_template_runs_each_chain_with_its_sealed_passwords(self):
+        # One instance per chain: its configuration, its own state directory, the two keystore passwords as
+        # encrypted credentials, the hosted RPC URLs imported, and the TPM open for both.
+        template = RUNTIME_UNITS / 'domino-v2-automation-under-test@.service'
+        self.assertFalse(os.path.lexists(template), template)
+        self.written.append(template)
+        template.write_text(automation_v2.unit_text(AFTER))
+        self.plan_reload()
+        name = 'domino-v2-automation-under-test@base-8453'
+        raw = subprocess.run(['systemctl', 'show', '--all', f'{name}.service',
+                              '--property=LoadState,ExecStart,User,StateDirectory,ImportCredential,'
+                              'LoadCredentialEncrypted,DeviceAllow,BindReadOnlyPaths,ProtectSystem,UnitFileState'],
+                             check=True, capture_output=True, text=True).stdout
+        shown = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+        self.assertEqual((shown['LoadState'], shown['User'], shown['ProtectSystem']),
+                         ('loaded', 'domino-v2-automation', 'strict'))
+        self.assertIn('-B backend/v2_automation.py --config /run/domino-v2-automation-config/base-8453.json serve ;',
+                      shown['ExecStart'])
+        self.assertEqual(shown['StateDirectory'], 'domino-v2-automation/base-8453')
+        self.assertEqual(shlex.split(shown['ImportCredential']), ['v2-rpc-*'])
+        # systemd 255 shows this list as "[unprintable]" (CI run 37252557773): present, its names pinned offline
+        # by test_install_v2_automation.py; loaded here means both lines parsed.
+        self.assertEqual(shown['LoadCredentialEncrypted'], '[unprintable]')
+        self.assertIn('DeviceAllow=char-tpm rw', raw.splitlines())
+        for target in ('/run/domino-v2-automation-config', '/run/domino-v2-deployments', '/etc/hosts'):
+            self.assertIn(target, shown['BindReadOnlyPaths'])
         self.assertIn(shown['UnitFileState'], ('disabled', 'indirect'))
 
     def test_the_plan_listener_loads_disabled_and_the_egress_drop_in_enables_it(self):

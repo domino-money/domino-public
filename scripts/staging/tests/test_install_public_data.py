@@ -73,7 +73,8 @@ class PublicInstallTests(unittest.TestCase):
         unit=self.plan()['units']['domino-v2-indexer@.service']
         for field in ('User=domino-write','SupplementaryGroups=domino-db','ProtectSystem=strict',
                       'BindsTo=domino-continuous-egress.service','PartOf=domino-public-data.target',
-                      f'v2_indexer.py follow --chain %i --chain-rpc-file {self.queue}/release/backend/runtime/chain-rpc.json\n',
+                      f'v2_indexer.py follow --chain %i --chain-rpc-file {self.queue}/release/backend/runtime/chain-rpc.json '
+                      '--waiting-file /var/lib/domino-v2-automation-public/%i.waiting.json\n',
                       'ImportCredential=v2-rpc-*\n','DeviceAllow=char-tpm rw\n','Restart=always\n',
                       'WantedBy=domino-public-data.target'):
             self.assertIn(field,unit)

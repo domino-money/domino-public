@@ -35,14 +35,17 @@ UNIT_DIR = '/etc/systemd/system/'
 # order; the four financial identities of 13 September follow deposit.
 ROLES = ('read', 'gateway', 'auth', 'onboarding', 'deposit', 'performance',
          'performance-collector', 'execution-status', 'execution-signer',
-         'tunnel', 'write', 'operator', 'admin', 'position-plan')
-# Identities a host may not have: the admin account, and the S1 plan listener
-# until install_position_plan.py has created it. An enabled role needs its own.
-OPTIONAL = ('admin', 'position-plan')
+         'tunnel', 'write', 'operator', 'admin', 'position-plan', 'v2-automation')
+# Identities a host may not have: the admin account, the S1 plan listener until
+# install_position_plan.py has created it, and the V2 automation until
+# install_v2_automation.py has. An enabled role needs its own.
+OPTIONAL = ('admin', 'position-plan', 'v2-automation')
 # Identities with no single service unit: the indexer role runs two
 # timer-driven units whose systemd layer is not this file's, and the two
 # accounts never run a service at all.
-NO_UNIT = ('write', 'operator', 'admin')
+# The V2 automation runs one instance of a template per chain
+# (domino-v2-automation@<chain>.service), which binds its hosts file itself.
+NO_UNIT = ('write', 'operator', 'admin', 'v2-automation')
 # The units the public read path cannot run without; every other enabled unit is a family.
 READ_PATH_UNITS = ('domino-read.service', 'domino-gateway.service', 'domino-tunnel.service')
 LISTENERS = {'read': 8876, 'gateway': 8878, 'auth': 8879, 'onboarding': 8880,
@@ -52,7 +55,7 @@ LISTENERS = {'read': 8876, 'gateway': 8878, 'auth': 8879, 'onboarding': 8880,
 # `nodeLoopbackReads`, the reader and the writer (public-data lanes, featured,
 # queue worker, followers) lead their chain reads with it, not with Cloudflare.
 SNAPSHOT_RPC_PORT = 18547
-NODE_LOOPBACK_ROLES = ('read', 'write')
+NODE_LOOPBACK_ROLES = ('read', 'write', 'v2-automation')
 # Robinhood's public RPC is not an egress destination: reads go to our node
 # (rpc.domino.money), with Alchemy as the verified fallback for old state.
 RPC_HOSTS = frozenset(('robinhood-mainnet.g.alchemy.com', 'rpc.domino.money'))
@@ -83,11 +86,15 @@ CLASSES = {'read': ('rpc', 'analytics'), 'gateway': ('jwks',),
            # The S1 plan listener: its session account check and its plans read the
            # chain (rpc), it verifies the bridge's Access assertion (jwks), and its
            # router legs ask the Trading API (uniswap).
-           'position-plan': ('rpc', 'jwks', 'uniswap')}
+           'position-plan': ('rpc', 'jwks', 'uniswap'),
+           # The V2 automation: Robinhood through the node's proxy first, its
+           # provider file's fallbacks (rpc), and chains with v2Chains. It serves
+           # nothing and verifies no assertion.
+           'v2-automation': ('rpc',)}
 # Who reads the V2 chains' hosted RPC (`chains`), and only with `v2Chains`:
 # the writer's indexer instances for Base and Arbitrum, and the plan listener's
 # plans there. A host that serves Robinhood alone pins none of it.
-CHAIN_ROLES = ('write', 'position-plan')
+CHAIN_ROLES = ('write', 'position-plan', 'v2-automation')
 # A class an enabled role cannot run without. Analytics is optional for the
 # reader: the market provider is a fallback, not the read path.
 REQUIRED = {'rpc', 'jwks', 'uniswap', 'edges'}

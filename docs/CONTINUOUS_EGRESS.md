@@ -13,7 +13,7 @@ only to the gateway — so a listener behind `vm-session` or `vm-onboarding` is
 unreachable from the connector today, whatever the Cloudflare route says.
 
 `scripts/staging/continuous_egress_policy.py` renders the whole policy for all
-fourteen production identities, from operator pins on stdin, together with the
+fifteen production identities, from operator pins on stdin, together with the
 per-unit drop-in, hosts file and target that activate a unit behind it. A
 family gets its external destinations, and the tunnel a way to reach its
 listener, only when the family is named in `enabled`. The three layers cannot
@@ -42,6 +42,7 @@ rendered only for an enabled role and only for the hostnames actually pinned.
 | `write` | — | rpc; chains with `v2Chains` | the public-data lanes, featured, the queue worker, the followers and the V2 indexer |
 | `operator`, `admin` | — | — | never |
 | `position-plan` | 8911 | rpc, jwks, uniswap; chains with `v2Chains` | the S1 plan listener (`install_position_plan.py`): `EoaChecker` and plans; assertion verification; Trading API router legs. Optional: a host without the identity renders no chain for it |
+| `v2-automation` | — | rpc; chains with `v2Chains`; the node's proxy with `nodeLoopbackReads` | the V2 automation (`install_v2_automation.py`), one instance of `domino-v2-automation@.service` per chain, which binds `v2-automation.hosts` itself. Optional: a host without the identity renders no chain for it |
 
 Classes: `rpc` is `robinhood-mainnet.g.alchemy.com` or the private
 `rpc.domino.money` route (Robinhood's public RPC is not admitted);
@@ -118,11 +119,12 @@ same for the reader and the writer, and requires either in `enabled`.
 `v2Chains` (`--v2-chains` when collecting) grants `chains` to the writer and the
 plan listener, and requires either in `enabled`.
 
-`identities` names all fourteen roles exactly. `admin` may be `null`, and so
-may `position-plan` until `install_position_plan.py` creates the account; an
+`identities` names all fifteen roles exactly. `admin` may be `null`, and so
+may `position-plan` and `v2-automation` until their installers create the
+accounts; an
 enabled role with a `null` identity is refused (`enabled_role_without_identity`).
 Roles with a service unit must name `domino-<role>.service` and its system-slice
-cgroup; `write`, `operator` and `admin` must name none. `hosts` are the
+cgroup; `write`, `operator`, `admin` and `v2-automation` must name none. `hosts` are the
 operator's pins: public IPv4 only, no private, loopback, metadata or reserved
 address, no duplicates, edges only from the official inventory. Every pinned
 hostname must be needed by some enabled role, and every enabled role must find

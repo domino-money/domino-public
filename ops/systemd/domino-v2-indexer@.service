@@ -29,7 +29,10 @@ ImportCredential=v2-rpc-*
 # ImportCredential=, and under PrivateDevices=yes the decryption then fails
 # with EPERM on /dev/tpmrm0. The plan listener did, on 4 Oct.
 DeviceAllow=char-tpm rw
-ExecStart=@QUEUE_ROOT@/venv/bin/python -B v2_indexer.py follow --chain %i --chain-rpc-file @QUEUE_ROOT@/release/backend/runtime/chain-rpc.json
+# The chain's automation writes why each vault and mandate waits to its public
+# file (install_v2_automation.py); the index serves it to read-v6. A file not
+# there yet leaves the chain's waiting unavailable, never the pass.
+ExecStart=@QUEUE_ROOT@/venv/bin/python -B v2_indexer.py follow --chain %i --chain-rpc-file @QUEUE_ROOT@/release/backend/runtime/chain-rpc.json --waiting-file /var/lib/domino-v2-automation-public/%i.waiting.json
 Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 # `follow` returns 0 after five failed rounds in a row (a refused head included),
 # so only `always` brings it back.
