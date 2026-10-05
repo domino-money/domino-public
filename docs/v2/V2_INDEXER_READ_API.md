@@ -165,6 +165,23 @@ The indexer runs as the catalogue writer, `domino-write`, from the public-data r
 5. **read-v6 on the read path.** Use a read release that has #305 (`install_read_release.py`). Move the two 70 drop-ins aside, then run `install_read_activation.py --commit <sha> --read-v6`, first with `--inspect`, then with `--apply`. It adds `DOMINO_V2_READ=1` to the reader, and `--enable-v6` with `DOMINO_BRIDGE_V6_READS=portfolio,activity` to the gateway, keeping v1 to v5 as they were. Restart `domino-continuous-reads.target`.
 6. **Check locally:** `POST http://127.0.0.1:8876/v6/read/portfolio {"wallet": "0x…"}` should show chain 4663 `current`. Base and Arbitrum stay `unavailable` until their deployments are registered.
 
+7. **The chain reads (#360, #361, #364): live since 5 Oct 2026, 20:58:23 UTC.**
+   - **Release:** `5b3ffbc5` (#360's chain routes and #361's `reserves_returned`; the same tree as `main`'s `c27cfa31`), activated with `--read-v6 --chain-reads` after the two 70 drop-ins were moved aside.
+   - **The file:** `/etc/domino/read/chain-rpc.json` (`domino-read`, 0700 and 0600), the operator's copy of `/etc/domino/v2/chain-rpc.json`.
+     - The first activation, at 20:54, had put it in the reader's runtime directory. The reader logged `v2_chain_rpc_config_unreadable` because that directory is inside a release tree, and the three routes answered 503.
+     - #364's bound directory replaced it at 20:58, applied from its branch. The stray copy was removed.
+   - **Egress:** collected with `--v2-chains`, now that `read` is one of the `CHAIN_ROLES`. The reader gained Base's and Arbitrum's hosted hosts (Chainstack, Alchemy and each chain's public endpoint); no other role changed.
+   - **Restarts:** `domino-continuous-reads.target`, at 20:53:58 and 20:58:17 UTC. Portfolio and activity kept answering.
+   - **Checked:**
+     - chain-pools lists 13 pools for USDC on Base and 7 for WETH on Arbitrum, fresh;
+     - chain-balances has the three chains `current`;
+     - chain-tokens answers from the pinned list;
+     - the gateway refuses without Access.
+   - **Tunnel:** the path opened on 5 Oct 2026, 22:28 UTC, by *Publish read path* `tunnels-v6` (run 37382665095, tunnel configuration version 15): `v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens)`, every other setting kept.
+   - **Not yet:**
+     - The read Worker still names `portfolio,activity` only.
+     - read-v6 `1.1.0-rc.1` (#363, qualified USD) moves the reader, the Worker (`worker-v6`) and the app together, in a window agreed with the app's owner: the beta reads read-v6 (about 250 portfolio and activity reads a day) and both sides check the version.
+
 ### Base and Arbitrum
 
 The writer reads their hosted providers from its private V2 chain RPC file (`backend/v2_rpc.py`). A provider's URL carries its key, so each URL is a sealed credential, never a file in clear.
