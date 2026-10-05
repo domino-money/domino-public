@@ -16,7 +16,8 @@ export const READ_V6_PIN = {
   // fields to read-v6; same version, new manifest.
   // Changed on purpose (data) 2026-10-05: the live chain reads chain-pools, chain-balances and chain-tokens joined
   // read-v6 (0xdecimal's items 1-3); same version, new manifest.
-  manifestSha256: '012e41dd45edc18166abfec5a740d7047befd5bc5e295a5d38f9818ecfe85abf',
+  // Changed on purpose (data) 2026-10-05: activity's reserves_returned kind (0xdecimal's item 8); same version.
+  manifestSha256: '8a22dcd1897e172c7f17f8c40f18df4e3abd7bf28225288f111e6985235259f5',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {

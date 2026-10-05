@@ -64,6 +64,7 @@ Items, newest first by block time, chain, block and log index, each with `id` (`
 | `auto_exit` | A mandate executed: what the vault withdrew, the conversion legs, the fee (`auto_exit`, 20 bps), what was delivered and what was deferred as credit, reserves returned without fee |
 | `vault_created` | A vault created, with its policy and limits |
 | `vault_event` | The vault's other events in one transaction: owner actions (policy, limits, pause, resume, rearm, withdrawals, recovery, exit module, exitAll) and custody changes |
+| `reserves_returned` | A closed vault's reserves paid to its owner by a `returnReserves()` someone else sent (`returnedBy`, the transaction's sender; `byOperator` when the registry admitted it as an operator before that transaction): the automation sends one once the owner closed the root and no successor is active. `reservesReturned` lists each token paid, at one `stateNonce`. The owner's own withdrawals stay `vault_event` |
 | `auto_exit_event` | A mandate registered or revoked, a nonce cancelled, a credit claimed |
 | `zap_event` | Relayed-action nonces invalidated |
 

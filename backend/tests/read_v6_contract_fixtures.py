@@ -268,7 +268,7 @@ class Ledger:
     def __init__(self):
         self.logs, self.rows, self.transactions, self.block = {}, [], {}, 73_390_000
 
-    def tx(self, label, entries, *, seconds_ago, gas=True, l1_fee=None):
+    def tx(self, label, entries, *, seconds_ago, gas=True, l1_fee=None, sender=WALLET):
         self.block += 1000
         number, decoded = self.block, []
         for index, (address, name, args) in enumerate(entries):
@@ -291,7 +291,7 @@ class Ledger:
                                   'tx_hash': tx_hash(label), 'address': item.address, 'vault': item.vault,
                                   'ref': item.ref, 'log_indexes': [log.log_index for log in item.logs]})
         if gas:
-            self.transactions[(CHAIN, tx_hash(label))] = {'sender': WALLET, 'gas_used': 412345,
+            self.transactions[(CHAIN, tx_hash(label))] = {'sender': sender, 'gas_used': 412345,
                                                           'effective_gas_price': 20_000_000, 'l1_fee': l1_fee}
 
     def newest_first(self):
@@ -369,7 +369,18 @@ def ledger():
                        (MODULE, 'NonceCancelled', {'owner': WALLET, 'nonce': 77})], seconds_ago=1000)
     book.tx('nonces', [(ZAP, 'NoncesInvalidated', {'owner': WALLET, 'word': 0, 'mask': 6})], seconds_ago=500,
             l1_fee=150_000_000)
+    # The owner's own withdrawal stays a vault event; the operator's returnReserves() after the owner closed the
+    # root is reserves_returned.
+    book.tx('withdraw', [(VAULT, 'ReservesWithdrawn', {'token': T1, 'amount': 5_000, 'stateNonce': 10})],
+            seconds_ago=400)
+    book.tx('return', [(VAULT, 'ReservesWithdrawn', {'token': T0, 'amount': 1_200, 'stateNonce': 11}),
+                       (VAULT, 'ReservesWithdrawn', {'token': T1, 'amount': 3_000, 'stateNonce': 11})],
+            seconds_ago=300, sender=OPERATOR)
     return book
+
+
+# The registry admitted the operator before any item.
+OPERATORS = {(CHAIN, OPERATOR): [(73_380_000, 0, True)]}
 
 
 def activity(limit=50, rows=None, book=None):
@@ -379,7 +390,7 @@ def activity(limit=50, rows=None, book=None):
                           transactions=book.transactions, modes={(CHAIN, VAULT, r['block_number'], r['log_index']):
                                                                  'domino' for r in rows
                                                                  if r['kind'] == 'vault_execution'},
-                          tokens=tokens, waiting_reports=waiting_reports())
+                          tokens=tokens, waiting_reports=waiting_reports(), operators=OPERATORS)
 
 
 # ------------------------------------------------------------ chain reads
@@ -548,7 +559,7 @@ def invalid():
     def item(kind):
         return lambda body: next(i for i in body['items'] if i['kind'] == kind)
 
-    execution, exit_ = item('vault_execution'), item('auto_exit')
+    execution, exit_, returned = item('vault_execution'), item('auto_exit'), item('reserves_returned')
     s1 = lambda b: next(i for i in b['items'] if i['kind'] == 's1_action' and i['action'] == 'create')  # noqa: E731
     vault = lambda b: b['vaults'][0]  # noqa: E731
     read = lambda b: b['vaults'][0]['state']  # noqa: E731
@@ -688,6 +699,16 @@ def invalid():
             i for i in b['items'] if i['kind'] == 'auto_exit_event' and i['event'] == 'MandateRegistered'
         ).update(amount='1')),
         'activity.too-many-items': defect('activity', lambda b: b.update(items=b['items'] * 5)),
+        # reserves_returned: the operator's returnReserves(), both tokens at one nonce.
+        'activity.returned-by-the-owner': defect('activity', lambda b: (
+            returned(b).update(returnedBy=WALLET), returned(b)['tx']['gas'].update(sender=WALLET))),
+        'activity.returned-by-another-sender': defect('activity', lambda b: returned(b).update(returnedBy=OTHER)),
+        'activity.returned-without-gas': defect('activity', lambda b: returned(b)['tx'].update(gas=None)),
+        'activity.returned-twice-the-token': defect('activity', lambda b: returned(b)['reservesReturned'][1].update(
+            token=returned(b)['reservesReturned'][0]['token'])),
+        'activity.returned-nothing': defect('activity', lambda b: returned(b).update(reservesReturned=[])),
+        'activity.returned-three-tokens': defect('activity', lambda b: returned(b)['reservesReturned'].append(
+            {'token': WETH, 'amount': '1'})),
         # chain-pools: a v4 pool (ETH/LIVE, a protocol fee each way) and a v3 one (LIVE/WETH).
         'chain-pools.tokens-unsorted': defect('chain-pools', lambda b: b['tokens'].reverse()),
         # Without its pools, which would name the token too.

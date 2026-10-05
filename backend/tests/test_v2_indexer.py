@@ -423,6 +423,33 @@ class IndexerTests(unittest.TestCase):
                          ('create', 65, 'v4_pool'))
         self.assertEqual(service.activity(OTHER)['items'], [])
 
+    def test_a_return_the_owner_did_not_send_reads_as_reserves_returned(self):
+        # read-v6's reserves_returned (0xdecimal's item 8), told apart at read time: the stored sender and the
+        # registry's OperatorSet events (the constructor admitted 0x64..; OTHER is admitted, then revoked).
+        self.register()
+        self.create_vault(22)
+        for number, allowed in ((23, True), (25, False)):
+            self.chain.emit('registry', 'OperatorSet', {'operator': OTHER, 'allowed': allowed},
+                            address=self.contracts['registry'], number=number, tx=f'operator-{number}')
+        self.chain.emit('vault', 'ReservesWithdrawn', {'token': T1, 'amount': 5, 'stateNonce': 2}, address=VAULT,
+                        number=24, tx='withdraw')
+        for token, amount in ((T0, 7), (T1, 9)):
+            self.chain.emit('vault', 'ReservesWithdrawn', {'token': token, 'amount': amount, 'stateNonce': 3},
+                            address=VAULT, number=25, tx='return')
+        self.chain.emit('vault', 'ReservesWithdrawn', {'token': T0, 'amount': 4, 'stateNonce': 4}, address=VAULT,
+                        number=26, tx='revoked')
+        self.chain.receipts.update({tx_hash('withdraw'): (24, OWNER), tx_hash('return'): (25, '0x' + '64' * 20),
+                                    tx_hash('revoked'): (26, OTHER)})
+        self.indexer.step(span=100)
+        items = V2ReadService(self.store, clock=lambda: self.clock[0] + 5).activity(OWNER)['items']
+        self.assertEqual([(i['kind'], i.get('returnedBy'), i.get('byOperator')) for i in items],
+                         [('reserves_returned', OTHER, False), ('reserves_returned', '0x' + '64' * 20, True),
+                          ('vault_event', None, None), ('vault_created', None, None)])
+        self.assertEqual(items[1]['reservesReturned'], [{'token': T0, 'amount': '7'}, {'token': T1, 'amount': '9'}])
+        self.assertEqual(items[1]['stateNonce'], '3')
+        self.assertEqual(items[2]['events'], [{'event': 'ReservesWithdrawn', 'stateNonce': '2', 'token': T1,
+                                               'amount': '5'}])
+
     def test_the_tokens_read_in_full_feed_the_chain_search(self):
         # read-v6 chain-tokens' v2_activity source: a chain's available tokens, by address, through the reader role.
         rows = [(CHAIN.chainId, '0x' + '03' * 20, 6, 'ALPHA', 'available'),  # by address, not by symbol

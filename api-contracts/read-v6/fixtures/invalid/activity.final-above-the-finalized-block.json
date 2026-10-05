@@ -95,6 +95,71 @@
   "executionAvailable": false,
   "items": [
     {
+      "byOperator": true,
+      "chainId": 4663,
+      "id": "4663:73403000:1",
+      "kind": "reserves_returned",
+      "reservesReturned": [
+        {
+          "amount": "1200",
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        },
+        {
+          "amount": "3000",
+          "token": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+        }
+      ],
+      "returnedBy": "0x6464646464646464646464646464646464646464",
+      "stateNonce": "11",
+      "tx": {
+        "finality": "finalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0x6464646464646464646464646464646464646464",
+          "status": "success"
+        },
+        "hash": "0xfb88a3e67659dd05f5575c5026e7950495e2ac9f66a7a05a7aa8010f39b6618c",
+        "snapshot": {
+          "hash": "0x3ccaa6e4229668a8b176103bc700bebb40ef3ee1c4d629ff042c75785e7bacd1",
+          "number": 73403000,
+          "timestamp": 1790430934
+        }
+      },
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    },
+    {
+      "chainId": 4663,
+      "events": [
+        {
+          "amount": "5000",
+          "event": "ReservesWithdrawn",
+          "stateNonce": "10",
+          "token": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+        }
+      ],
+      "id": "4663:73402000:0",
+      "kind": "vault_event",
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0xa8fcc8183a21a0c572b5321dc91721e9a3b291ed37b2573c8617d9386228cbdd",
+        "snapshot": {
+          "hash": "0x8b7b6429e43e52314b05152fb14e57906186367e26581349a5cd7fa8781c08fd",
+          "number": 73402000,
+          "timestamp": 1790430834
+        }
+      },
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    },
+    {
       "chainId": 4663,
       "event": "NoncesInvalidated",
       "id": "4663:73401000:0",
@@ -102,7 +167,7 @@
       "mask": "6",
       "owner": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
       "tx": {
-        "finality": "finalized",
+        "finality": "unfinalized",
         "gas": {
           "effectiveGasPriceWei": "20000000",
           "gasUsed": "412345",

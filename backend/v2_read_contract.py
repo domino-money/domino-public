@@ -917,6 +917,28 @@ class VaultEvent(ItemBase):
     events: Annotated[list[VaultEventEntry], Field(min_length=1, max_length=MAX_EVENTS)]
 
 
+class ReservesReturned(ItemBase):
+    """A closed vault's reserves paid to its owner by a returnReserves() someone else sent: the automation's operator
+    sends one once the root is closed and no successor is active, and the call is open to anyone. The owner's own
+    withdrawals (withdrawReserves, exitAll) stay vault_event."""
+    kind: Literal['reserves_returned']
+    vault: Address
+    returnedBy: Address
+    byOperator: StrictBool
+    stateNonce: Raw
+    reservesReturned: Annotated[list[Amount], Field(min_length=1, max_length=2)]
+
+    @model_validator(mode='after')
+    def consistent(self):
+        # Who returned them is the transaction's sender: an item without it is never one.
+        if self.tx.gas is None or self.tx.gas.sender != self.returnedBy:
+            raise ValueError('returned_by')
+        tokens = [line.token for line in self.reservesReturned]
+        if len(set(tokens)) != len(tokens):
+            raise ValueError('returned_tokens')
+        return self
+
+
 class AutoExitEvent(ItemBase):
     kind: Literal['auto_exit_event']
     module: Address
@@ -951,8 +973,8 @@ class ZapEvent(ItemBase):
     mask: Raw
 
 
-ActivityItem = Annotated[Union[S1Action, VaultExecution, AutoExit, VaultCreated, VaultEvent, AutoExitEvent, ZapEvent],
-                         Field(discriminator='kind')]
+ActivityItem = Annotated[Union[S1Action, VaultExecution, AutoExit, VaultCreated, VaultEvent, ReservesReturned,
+                               AutoExitEvent, ZapEvent], Field(discriminator='kind')]
 Cursor = Annotated[str, Field(pattern=r'^[0-9]{1,19}\.[1-9][0-9]{0,18}\.[0-9]{1,19}\.[0-9]{1,10}$', max_length=64)]
 
 
@@ -978,6 +1000,8 @@ class ActivityResponse(Envelope):
             final = finalized[item.chainId]
             if (item.tx.finality == 'finalized') != (final is not None and item.tx.snapshot.number <= final.number):
                 raise ValueError('item_finality')
+            if item.kind == 'reserves_returned' and item.returnedBy == self.wallet:
+                raise ValueError('returned_by_owner')  # the owner's own are vault_event
         return self
 
 

@@ -502,6 +502,12 @@ function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer
       if (said.length === 0) return null
       return { ...base, what: said[0], amount: null, lines: said.slice(1).map((value) => ({ label: 'Also', value, data: 'event' })), fees: [] }
     }
+    // read-v6's own kind for a returnReserves() the owner did not send (0xdecimal's item 8): the words a vault_event
+    // with such a ReservesWithdrawn had before.
+    case 'reserves_returned': {
+      const said = item.reservesReturned.map((line) => `Returned to your wallet: ${amountWords(line.amount, token(line.token))}`)
+      return { ...base, what: said[0], amount: null, lines: said.slice(1).map((value) => ({ label: 'Also', value, data: 'event' })), fees: [] }
+    }
     case 'auto_exit_event': {
       if (item.event === 'MandateRegistered') return { ...base, what: `Exit order registered${item.tokenId ? ` for position #${item.tokenId}` : ''}`, amount: null, lines: [], fees: [] }
       if (item.event === 'MandateRevoked') return { ...base, what: 'Exit order cancelled', amount: null, lines: [], fees: [] }

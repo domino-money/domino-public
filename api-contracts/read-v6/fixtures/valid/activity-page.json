@@ -95,6 +95,71 @@
   "executionAvailable": false,
   "items": [
     {
+      "byOperator": true,
+      "chainId": 4663,
+      "id": "4663:73403000:1",
+      "kind": "reserves_returned",
+      "reservesReturned": [
+        {
+          "amount": "1200",
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        },
+        {
+          "amount": "3000",
+          "token": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+        }
+      ],
+      "returnedBy": "0x6464646464646464646464646464646464646464",
+      "stateNonce": "11",
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0x6464646464646464646464646464646464646464",
+          "status": "success"
+        },
+        "hash": "0xfb88a3e67659dd05f5575c5026e7950495e2ac9f66a7a05a7aa8010f39b6618c",
+        "snapshot": {
+          "hash": "0x3ccaa6e4229668a8b176103bc700bebb40ef3ee1c4d629ff042c75785e7bacd1",
+          "number": 73403000,
+          "timestamp": 1790430934
+        }
+      },
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    },
+    {
+      "chainId": 4663,
+      "events": [
+        {
+          "amount": "5000",
+          "event": "ReservesWithdrawn",
+          "stateNonce": "10",
+          "token": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+        }
+      ],
+      "id": "4663:73402000:0",
+      "kind": "vault_event",
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0xa8fcc8183a21a0c572b5321dc91721e9a3b291ed37b2573c8617d9386228cbdd",
+        "snapshot": {
+          "hash": "0x8b7b6429e43e52314b05152fb14e57906186367e26581349a5cd7fa8781c08fd",
+          "number": 73402000,
+          "timestamp": 1790430834
+        }
+      },
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    },
+    {
       "chainId": 4663,
       "event": "NoncesInvalidated",
       "id": "4663:73401000:0",
@@ -119,68 +184,6 @@
       },
       "word": "0",
       "zap": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
-    },
-    {
-      "amount": null,
-      "chainId": 4663,
-      "event": "NonceCancelled",
-      "id": "4663:73400000:1",
-      "kind": "auto_exit_event",
-      "mandateHash": null,
-      "module": "0xa4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
-      "nonce": "77",
-      "recipient": null,
-      "token": null,
-      "tokenId": null,
-      "tx": {
-        "finality": "unfinalized",
-        "gas": {
-          "effectiveGasPriceWei": "20000000",
-          "gasUsed": "412345",
-          "l1FeeWei": null,
-          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
-          "status": "success"
-        },
-        "hash": "0x4eaf4b44a9b7c0f49e6b2f7174ae7d4e25f21dcd3f80a3b5a0358485c5fa104f",
-        "snapshot": {
-          "hash": "0xf5b54cbd53f80b29161c8c1fc38942aec9d1fc02c413a6bf4ca84e25f922ebf8",
-          "number": 73400000,
-          "timestamp": 1790430234
-        }
-      },
-      "validUntil": null,
-      "vault": null
-    },
-    {
-      "amount": null,
-      "chainId": 4663,
-      "event": "MandateRevoked",
-      "id": "4663:73400000:0",
-      "kind": "auto_exit_event",
-      "mandateHash": "0xd2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2",
-      "module": "0xa4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
-      "nonce": null,
-      "recipient": null,
-      "token": null,
-      "tokenId": null,
-      "tx": {
-        "finality": "unfinalized",
-        "gas": {
-          "effectiveGasPriceWei": "20000000",
-          "gasUsed": "412345",
-          "l1FeeWei": null,
-          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
-          "status": "success"
-        },
-        "hash": "0x4eaf4b44a9b7c0f49e6b2f7174ae7d4e25f21dcd3f80a3b5a0358485c5fa104f",
-        "snapshot": {
-          "hash": "0xf5b54cbd53f80b29161c8c1fc38942aec9d1fc02c413a6bf4ca84e25f922ebf8",
-          "number": 73400000,
-          "timestamp": 1790430234
-        }
-      },
-      "validUntil": null,
-      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
     }
   ],
   "limitations": [
@@ -191,10 +194,29 @@
     "no_execution_or_signing"
   ],
   "mode": "stored_v2_activity",
-  "nextCursor": "1790430234.4663.73400000.0",
+  "nextCursor": "1790430734.4663.73401000.0",
   "schemaVersion": 1,
   "servedAt": 1790431234,
   "suggested": false,
-  "tokens": [],
+  "tokens": [
+    {
+      "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "chainId": 4663,
+      "decimals": 6,
+      "price": null,
+      "priceReason": "no_qualified_price_source",
+      "status": "available",
+      "symbol": "USDG"
+    },
+    {
+      "address": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+      "chainId": 4663,
+      "decimals": null,
+      "price": null,
+      "priceReason": "no_qualified_price_source",
+      "status": "partial",
+      "symbol": "MANY"
+    }
+  ],
   "wallet": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
 }

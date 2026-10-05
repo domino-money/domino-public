@@ -181,7 +181,8 @@ export const BACKEND_OPENAPI_PIN = {
   path: 'backend/openapi-read.json',
   infoVersion: '0.8.0',
   // Changed on purpose (data) 2026-10-05: three read-v6 paths (chain-pools, chain-balances, chain-tokens).
-  sha256: 'ddd7b328008c8cb75e3f0340da27283a0bd1c38ecb4fe5ed1ccb6874c44b6d4b',
+  // Changed on purpose (data) 2026-10-05: read-v6 activity's reserves_returned item.
+  sha256: 'b229a8729a29e2af618e330829a3e9c24fd3d9869f813886c41a084825d7fdaa',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']

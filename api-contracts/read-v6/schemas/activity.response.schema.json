@@ -1330,6 +1330,82 @@
       "title": "Refund",
       "type": "object"
     },
+    "ReservesReturned": {
+      "additionalProperties": false,
+      "description": "A closed vault's reserves paid to its owner by a returnReserves() someone else sent: the automation's operator\nsends one once the root is closed and no successor is active, and the call is open to anyone. The owner's own\nwithdrawals (withdrawReserves, exitAll) stay vault_event.",
+      "properties": {
+        "byOperator": {
+          "title": "Byoperator",
+          "type": "boolean"
+        },
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "id": {
+          "maxLength": 52,
+          "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "reserves_returned",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reservesReturned": {
+          "items": {
+            "$ref": "#/$defs/Amount"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Reservesreturned",
+          "type": "array"
+        },
+        "returnedBy": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Returnedby",
+          "type": "string"
+        },
+        "stateNonce": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Statenonce",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "tx": {
+          "$ref": "#/$defs/Tx"
+        },
+        "vault": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Vault",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "chainId",
+        "tx",
+        "kind",
+        "vault",
+        "returnedBy",
+        "byOperator",
+        "stateNonce",
+        "reservesReturned"
+      ],
+      "title": "ReservesReturned",
+      "type": "object"
+    },
     "ReservesWithdrawn": {
       "additionalProperties": false,
       "properties": {
@@ -2393,6 +2469,7 @@
           "mapping": {
             "auto_exit": "#/$defs/AutoExit",
             "auto_exit_event": "#/$defs/AutoExitEvent",
+            "reserves_returned": "#/$defs/ReservesReturned",
             "s1_action": "#/$defs/S1Action",
             "vault_created": "#/$defs/VaultCreated",
             "vault_event": "#/$defs/VaultEvent",
@@ -2416,6 +2493,9 @@
           },
           {
             "$ref": "#/$defs/VaultEvent"
+          },
+          {
+            "$ref": "#/$defs/ReservesReturned"
           },
           {
             "$ref": "#/$defs/AutoExitEvent"

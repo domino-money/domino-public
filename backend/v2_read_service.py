@@ -435,9 +435,29 @@ def _vault_event(log):
     return entry
 
 
-def activity_item(row, logs, transaction, automation_mode, finalized):
+def _returned(row, events, transaction, operators):
+    """A vault_event that is a returnReserves() the owner did not send, as reserves_returned, or None. Only
+    returnReserves pays reserves on a sender other than the owner's (withdrawReserves and exitAll are the owner's),
+    and it pays each token once, at one nonce. `operators`: the sender's OperatorSet changes, oldest first."""
+    sender = None if transaction is None else transaction['sender']
+    tokens = [event.get('token') for event in events]
+    if (sender is None or sender == row['wallet'] or any(event['event'] != 'ReservesWithdrawn' for event in events)
+            or len(set(tokens)) != len(tokens) or len({event['stateNonce'] for event in events}) != 1):
+        return None
+    at = (int(row['block_number']), int(row['log_index']))
+    admitted = False
+    for block, index, allowed in operators.get((int(row['chain_id']), sender), ()):
+        if (block, index) < at:
+            admitted = allowed
+    return {'kind': 'reserves_returned', 'vault': row['vault'], 'returnedBy': sender, 'byOperator': admitted,
+            'stateNonce': events[0]['stateNonce'],
+            'reservesReturned': [{'token': event['token'], 'amount': event['amount']} for event in events]}
+
+
+def activity_item(row, logs, transaction, automation_mode, finalized, operators=None):
     """One item from its activity row, its logs (log order) and its transaction;
-    `finalized` is the chain's finalized block number, or None."""
+    `finalized` is the chain's finalized block number, or None; `operators`:
+    (chain id, address) -> its OperatorSet changes, oldest first."""
     anchor = next(log for log in logs if log['log_index'] == row['log_index'])
     chain_id, number = int(row['chain_id']), int(row['block_number'])
     gas = None
@@ -508,7 +528,8 @@ def activity_item(row, logs, transaction, automation_mode, finalized):
                     rootTokenId=a['rootTokenId'], ownerNonce=a['ownerNonce'], policy=_policy(policy['args']['policy']),
                     limits=_limits(limits['args']['limits']))
     elif kind == 'vault_event':
-        item.update(vault=row['vault'], events=[_vault_event(log) for log in logs])
+        events = [_vault_event(log) for log in logs]
+        item.update(_returned(row, events, transaction, operators or {}) or {'vault': row['vault'], 'events': events})
     elif kind == 'auto_exit_event':
         event = anchor['event']
         fields = dict.fromkeys(('mandateHash', 'vault', 'tokenId', 'validUntil', 'nonce', 'token', 'recipient',
@@ -546,10 +567,12 @@ def _item_tokens(item):
     return keys
 
 
-def build_activity(wallet, now, limit, *, deployments, rows, logs, transactions, modes, tokens, waiting_reports=None):
+def build_activity(wallet, now, limit, *, deployments, rows, logs, transactions, modes, tokens, waiting_reports=None,
+                   operators=None):
     """rows: activity rows newest first (limit + 1 at most); logs: (chain, block,
     log index) -> log row; transactions: (chain, tx) -> row; modes: (chain,
-    vault, block, log index) -> the vault's mode at that execution."""
+    vault, block, log index) -> the vault's mode at that execution; operators:
+    (chain, address) -> the registry's OperatorSet changes for it, oldest first."""
     page = rows[:limit]
     chain_rows = chains(deployments, now, waiting_reports)
     finalized = {c['chainId']: None if c['finalizedThrough'] is None else c['finalizedThrough']['number']
@@ -560,7 +583,7 @@ def build_activity(wallet, now, limit, *, deployments, rows, logs, transactions,
         item_logs = [logs[(chain_id, int(row['block_number']), index)] for index in row['log_indexes']]
         items.append(activity_item(row, item_logs, transactions.get((chain_id, row['tx_hash'])),
                                    modes.get((chain_id, row['vault'], int(row['block_number']), int(row['log_index']))),
-                                   finalized.get(chain_id)))
+                                   finalized.get(chain_id), operators))
     keys = [key for item in items for key in _item_tokens(item)]
     last = page[-1] if page else None
     body = envelope('stored_v2_activity', wallet, now, chain_rows, token_list(keys, tokens(keys)))
@@ -603,4 +626,6 @@ class V2ReadService:
                                   logs=reader.item_logs(page),
                                   transactions=reader.transactions({(int(r['chain_id']), r['tx_hash']) for r in page}),
                                   modes=reader.execution_modes([r for r in page if r['kind'] == 'vault_execution']),
-                                  tokens=reader.tokens, waiting_reports=reader.waiting_reports())
+                                  tokens=reader.tokens, waiting_reports=reader.waiting_reports(),
+                                  operators=reader.operator_changes({int(r['chain_id']) for r in page
+                                                                     if r['kind'] == 'vault_event'}))

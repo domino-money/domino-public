@@ -160,3 +160,15 @@ test('§8.2: a successor\'s sentence says your automation holds it and to withdr
   assert.match(positionConstants.SUCCESSOR_BLOCKED_COPY, /held by your automation|[Yy]our automation holds/);
   assert.doesNotMatch(positionConstants.SUCCESSOR_BLOCKED_COPY, /vault/i);
 });
+
+test('item 8 (5 Oct): a reserves return someone else sent is in the vault\'s history, in the words its vault_event had', () => {
+  const activity = JSON.parse(readFileSync(join(CONTRACTS, 'read-v6', 'fixtures', 'valid', 'activity.json'), 'utf8'));
+  assert.equal(runtime.validateResponse('activity', activity), true);
+  const history = portfolio.historyOf(activity.items, 4663, VAULT);
+  const returned = history.find((item) => item.kind === 'reserves_returned');
+  assert.ok(returned, 'the return is the vault\'s');
+  const words = portfolio.historyWords(returned, { chain: chains.v2Chain(4663), owner: WALLET, pool: null, meta: () => null });
+  assert.equal(words.title, 'Returned to your wallet: 0.0012 USDG');
+  assert.equal(words.lines.length, 1);
+  assert.match(words.lines[0].value, /^Returned to your wallet: /);
+});

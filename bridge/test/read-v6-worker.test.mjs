@@ -191,7 +191,7 @@ test('the capabilities name the three chains every stored answer carries, in the
 });
 
 test('every invalid answer the producer could serve is refused as upstream_contract_mismatch, never relayed', async () => {
-  assert.equal(INVALID.length, 133);
+  assert.equal(INVALID.length, 139);
   const every = { ...env, ENABLED_V6_READS: ALL_READS };
   for (const [name, body] of INVALID) {
     const route = routeOf(name);
@@ -211,10 +211,10 @@ test('an answer about another wallet, or a page longer than asked, is refused: t
   const page = text('valid/activity-page.json');
   const shorter = JSON.stringify({ ...JSON.parse(REQUESTS.activity), limit: 2 });
   await expectError(await harness(() => upstream({ body: page })).worker.fetch(request('activity', { body: shorter }), env), 502, 'upstream_contract_mismatch');
-  // activity.json's twelve items answer a first page at the default limit (20), and not a page of ten.
-  const twelve = text('valid/activity.json');
-  assert.equal((await harness(() => upstream({ body: twelve })).worker.fetch(request('activity'), env)).status, 200);
-  await expectError(await harness(() => upstream({ body: twelve })).worker.fetch(request('activity', { body: JSON.stringify({ wallet: WALLET, limit: 10 }) }), env), 502, 'upstream_contract_mismatch');
+  // activity.json's fourteen items answer a first page at the default limit (20), and not a page of ten.
+  const fourteen = text('valid/activity.json');
+  assert.equal((await harness(() => upstream({ body: fourteen })).worker.fetch(request('activity'), env)).status, 200);
+  await expectError(await harness(() => upstream({ body: fourteen })).worker.fetch(request('activity', { body: JSON.stringify({ wallet: WALLET, limit: 10 }) }), env), 502, 'upstream_contract_mismatch');
 });
 
 test('a request is the package\'s exactly: any other key, case, bound, lexeme or shape is refused before upstream I/O', async () => {

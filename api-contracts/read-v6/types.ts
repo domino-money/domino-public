@@ -363,6 +363,18 @@ export type Reserve = {
   "idle": string;
 };
 
+export type ReservesReturned = {
+  "id": string;
+  "chainId": 4663 | 8453 | 42161;
+  "tx": Tx;
+  "kind": "reserves_returned";
+  "vault": string;
+  "returnedBy": string;
+  "byOperator": boolean;
+  "stateNonce": string;
+  "reservesReturned": Array<Amount>;
+};
+
 export type ReservesWithdrawn = {
   "stateNonce": string | null;
   "event": "ReservesWithdrawn";
@@ -656,7 +668,7 @@ export type ActivityResponse = {
   "suggested": false;
   "executionAvailable": false;
   "mode": "stored_v2_activity";
-  "items": Array<S1Action | VaultExecution | AutoExit | VaultCreated | VaultEvent | AutoExitEvent | ZapEvent>;
+  "items": Array<S1Action | VaultExecution | AutoExit | VaultCreated | VaultEvent | ReservesReturned | AutoExitEvent | ZapEvent>;
   "nextCursor": string | null;
 };
 

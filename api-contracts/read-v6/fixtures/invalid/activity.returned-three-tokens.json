@@ -1,0 +1,745 @@
+{
+  "chains": [
+    {
+      "automationHalted": false,
+      "chainId": 4663,
+      "deployment": {
+        "manifestSha256": "0000000000000000000000000000000000000000000000000000000000001237",
+        "startBlock": 100
+      },
+      "finalizedThrough": {
+        "hash": "0x0dc9747d536bc0a71bf9d3baabb5c7950aa68a165a75aeb95cffdfa785f00127",
+        "number": 73395500,
+        "timestamp": 1790430774
+      },
+      "head": {
+        "number": 73400100,
+        "observedAt": 1790431231,
+        "timestamp": 1790431232
+      },
+      "indexedThrough": {
+        "hash": "0xf5b54cbd53f80b29161c8c1fc38942aec9d1fc02c413a6bf4ca84e25f922ebf8",
+        "number": 73400000,
+        "timestamp": 1790431222
+      },
+      "lagBlocks": 100,
+      "lagSeconds": 10,
+      "lastError": null,
+      "operatorsAdmitted": 1,
+      "reason": null,
+      "status": "current",
+      "waitingReasons": {
+        "ageSeconds": 40,
+        "block": 73400090,
+        "status": "reporting",
+        "timestamp": 1790431194
+      }
+    },
+    {
+      "automationHalted": true,
+      "chainId": 8453,
+      "deployment": {
+        "manifestSha256": "0000000000000000000000000000000000000000000000000000000000002105",
+        "startBlock": 100
+      },
+      "finalizedThrough": null,
+      "head": {
+        "number": 52100010,
+        "observedAt": 1790430874,
+        "timestamp": 1790430854
+      },
+      "indexedThrough": {
+        "hash": "0xc63a241be483d4020df726015f61704a08c19165a4f3e69c76c44f67cb72d20d",
+        "number": 52100000,
+        "timestamp": 1790430834
+      },
+      "lagBlocks": 10,
+      "lagSeconds": 20,
+      "lastError": {
+        "at": 1790431204,
+        "code": "http_429"
+      },
+      "operatorsAdmitted": 1,
+      "reason": "head_not_observed_recently",
+      "status": "stale",
+      "waitingReasons": {
+        "ageSeconds": null,
+        "block": null,
+        "status": "unavailable",
+        "timestamp": null
+      }
+    },
+    {
+      "automationHalted": null,
+      "chainId": 42161,
+      "deployment": null,
+      "finalizedThrough": null,
+      "head": null,
+      "indexedThrough": null,
+      "lagBlocks": null,
+      "lagSeconds": null,
+      "lastError": null,
+      "operatorsAdmitted": null,
+      "reason": "deployment_not_registered",
+      "status": "unavailable",
+      "waitingReasons": {
+        "ageSeconds": null,
+        "block": null,
+        "status": "not_configured",
+        "timestamp": null
+      }
+    }
+  ],
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": "partial",
+  "executionAvailable": false,
+  "items": [
+    {
+      "byOperator": true,
+      "chainId": 4663,
+      "id": "4663:73403000:1",
+      "kind": "reserves_returned",
+      "reservesReturned": [
+        {
+          "amount": "1200",
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        },
+        {
+          "amount": "3000",
+          "token": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+        },
+        {
+          "amount": "1",
+          "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73"
+        }
+      ],
+      "returnedBy": "0x6464646464646464646464646464646464646464",
+      "stateNonce": "11",
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0x6464646464646464646464646464646464646464",
+          "status": "success"
+        },
+        "hash": "0xfb88a3e67659dd05f5575c5026e7950495e2ac9f66a7a05a7aa8010f39b6618c",
+        "snapshot": {
+          "hash": "0x3ccaa6e4229668a8b176103bc700bebb40ef3ee1c4d629ff042c75785e7bacd1",
+          "number": 73403000,
+          "timestamp": 1790430934
+        }
+      },
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    },
+    {
+      "chainId": 4663,
+      "events": [
+        {
+          "amount": "5000",
+          "event": "ReservesWithdrawn",
+          "stateNonce": "10",
+          "token": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+        }
+      ],
+      "id": "4663:73402000:0",
+      "kind": "vault_event",
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0xa8fcc8183a21a0c572b5321dc91721e9a3b291ed37b2573c8617d9386228cbdd",
+        "snapshot": {
+          "hash": "0x8b7b6429e43e52314b05152fb14e57906186367e26581349a5cd7fa8781c08fd",
+          "number": 73402000,
+          "timestamp": 1790430834
+        }
+      },
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    },
+    {
+      "chainId": 4663,
+      "event": "NoncesInvalidated",
+      "id": "4663:73401000:0",
+      "kind": "zap_event",
+      "mask": "6",
+      "owner": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": "150000000",
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0x9ebe7d074305ddc5e73550c5d3ecf5793fc3d9b85fa5e0f2f49b892f63dde9fc",
+        "snapshot": {
+          "hash": "0xc5877c21ac77608e822740010c8ffcc6ecf99bd0c637223476e071cb5f391be9",
+          "number": 73401000,
+          "timestamp": 1790430734
+        }
+      },
+      "word": "0",
+      "zap": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    },
+    {
+      "amount": null,
+      "chainId": 4663,
+      "event": "NonceCancelled",
+      "id": "4663:73400000:1",
+      "kind": "auto_exit_event",
+      "mandateHash": null,
+      "module": "0xa4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+      "nonce": "77",
+      "recipient": null,
+      "token": null,
+      "tokenId": null,
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0x4eaf4b44a9b7c0f49e6b2f7174ae7d4e25f21dcd3f80a3b5a0358485c5fa104f",
+        "snapshot": {
+          "hash": "0xf5b54cbd53f80b29161c8c1fc38942aec9d1fc02c413a6bf4ca84e25f922ebf8",
+          "number": 73400000,
+          "timestamp": 1790430234
+        }
+      },
+      "validUntil": null,
+      "vault": null
+    },
+    {
+      "amount": null,
+      "chainId": 4663,
+      "event": "MandateRevoked",
+      "id": "4663:73400000:0",
+      "kind": "auto_exit_event",
+      "mandateHash": "0xd2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2",
+      "module": "0xa4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+      "nonce": null,
+      "recipient": null,
+      "token": null,
+      "tokenId": null,
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0x4eaf4b44a9b7c0f49e6b2f7174ae7d4e25f21dcd3f80a3b5a0358485c5fa104f",
+        "snapshot": {
+          "hash": "0xf5b54cbd53f80b29161c8c1fc38942aec9d1fc02c413a6bf4ca84e25f922ebf8",
+          "number": 73400000,
+          "timestamp": 1790430234
+        }
+      },
+      "validUntil": null,
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    },
+    {
+      "amount": "29641",
+      "chainId": 4663,
+      "event": "Claimed",
+      "id": "4663:73399000:0",
+      "kind": "auto_exit_event",
+      "mandateHash": null,
+      "module": "0xa4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+      "nonce": null,
+      "recipient": "0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "tokenId": null,
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0x425bae54d37357bcba6134252ee58cc4e35f9e9488cdb4a5717ffac6326af571",
+        "snapshot": {
+          "hash": "0x56adc5611ae8e680978afd51c7a9de244b04cba092665d3ce23cf677969a1601",
+          "number": 73399000,
+          "timestamp": 1790429734
+        }
+      },
+      "validUntil": null,
+      "vault": null
+    },
+    {
+      "anchorSqrtPriceX96": "39614081257132168796771975168",
+      "chainId": 4663,
+      "deferred": [
+        {
+          "amount": "29641",
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        }
+      ],
+      "delivered": [
+        "29641",
+        "0"
+      ],
+      "id": "4663:73398000:6",
+      "kind": "auto_exit",
+      "legs": [
+        {
+          "amountIn": "20000000000000000000",
+          "amountOut": "19700",
+          "kind": "v4_pool",
+          "tokenIn": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+          "tokenOut": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "venue": "0x8366a39cc670b4001a1121b8f6a443a643e40951"
+        }
+      ],
+      "mandateHash": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+      "member": "successor",
+      "module": "0xa4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+      "recipient": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "reservesReturned": [
+        {
+          "amount": "2",
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        }
+      ],
+      "tariffs": [
+        {
+          "amount": "59",
+          "deferred": "0",
+          "kind": "auto_exit",
+          "rateBps": 20,
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        }
+      ],
+      "tokenId": "8",
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0x93a04d6fa8518ab8988a8acd079dbb64277f65ed29c7d0b08192cec79da78f8d",
+        "snapshot": {
+          "hash": "0x22d01f229c73d97afefd67081d8ee400d676c65cc7d6aee360635816669ae5aa",
+          "number": 73398000,
+          "timestamp": 1790429234
+        }
+      },
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+      "withdrawn": [
+        "10000",
+        "20000000000000000000"
+      ]
+    },
+    {
+      "amount": null,
+      "chainId": 4663,
+      "event": "MandateRegistered",
+      "id": "4663:73397000:0",
+      "kind": "auto_exit_event",
+      "mandateHash": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+      "module": "0xa4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+      "nonce": null,
+      "recipient": null,
+      "token": null,
+      "tokenId": "8",
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0xf99aa21f757ad92e3d940f93413de7045162c0f1bcdc07be8ebf5dd96360a7d9",
+        "snapshot": {
+          "hash": "0xa14a534869c180f3f8452aea537b641f74dc93f274fd7c3d729325df4d123199",
+          "number": 73397000,
+          "timestamp": 1790428234
+        }
+      },
+      "validUntil": 1790517634,
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    },
+    {
+      "chainId": 4663,
+      "events": [
+        {
+          "event": "RootDisarmed",
+          "reason": "changed_outside_domino",
+          "stateNonce": "8"
+        }
+      ],
+      "id": "4663:73396000:0",
+      "kind": "vault_event",
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0xff88053f18abbc48a9e467a5c59d854cebc24150601dcd0bc415d762aa9ffbb9",
+        "snapshot": {
+          "hash": "0xecbff14901d1bbab0395d8c6dbe16397b058b143a55dedadaf9d232e3c663f29",
+          "number": 73396000,
+          "timestamp": 1790428034
+        }
+      },
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    },
+    {
+      "chainId": 4663,
+      "events": [
+        {
+          "event": "PolicyChanged",
+          "policy": {
+            "maxOverlapBps": 100,
+            "maxPositions": 4,
+            "minimumIntervalSeconds": 3600,
+            "mode": "domino",
+            "triggerDistanceBps": 200
+          },
+          "stateNonce": "5"
+        },
+        {
+          "actor": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "event": "AutomationPaused",
+          "stateNonce": "6"
+        },
+        {
+          "event": "ExitModuleSet",
+          "module": "0xa4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+          "stateNonce": "7"
+        }
+      ],
+      "id": "4663:73395000:2",
+      "kind": "vault_event",
+      "tx": {
+        "finality": "finalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0x1050a1b4efce01aca00736cf0d6eb6c8b801b0239e5dec7dcb18cf4315128a95",
+        "snapshot": {
+          "hash": "0xcada8ec429097415c50cbe83fc5f86a5b82b304ca7cc21ebbef43fe8a14c966b",
+          "number": 73395000,
+          "timestamp": 1790427734
+        }
+      },
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    },
+    {
+      "action": "mint",
+      "chainId": 4663,
+      "compounded": {
+        "fees0": "1200",
+        "fees1": "3400000000000000000",
+        "liquidityAdded": "500000000000000000",
+        "serviceFee0": "48",
+        "serviceFee1": "136000000000000000",
+        "tokenId": "8"
+      },
+      "feesCollected": [
+        {
+          "amount0": "1200",
+          "amount1": "3400000000000000000",
+          "tokenId": "7"
+        }
+      ],
+      "id": "4663:73394000:8",
+      "kind": "vault_execution",
+      "legs": [
+        {
+          "amountIn": "1000000000000000000",
+          "amountOut": "990",
+          "kind": "v4_pool",
+          "tokenIn": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+          "tokenOut": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "venue": "0x8366a39cc670b4001a1121b8f6a443a643e40951"
+        }
+      ],
+      "planHash": "0xc2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+      "stateNonce": "4",
+      "successor": {
+        "parentTokenId": "7",
+        "tokenId": "8"
+      },
+      "swaps": [
+        {
+          "amountIn": "1000000000000000000",
+          "amountOut": "990",
+          "source": "7",
+          "zeroForOne": false
+        }
+      ],
+      "tariffs": [
+        {
+          "amount": "48",
+          "deferred": "0",
+          "kind": "automation",
+          "rateBps": 400,
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        },
+        {
+          "amount": "136000000000000000",
+          "deferred": "136000000000000000",
+          "kind": "automation",
+          "rateBps": 400,
+          "token": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+        }
+      ],
+      "tx": {
+        "finality": "finalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0x30dd9adf85380254e298043c62b9129a5bbc7ec3c5cbfd199b2c0b1382715c90",
+        "snapshot": {
+          "hash": "0xb18e2a857df224758bee98dcc42afadfe1f944c85b002922c14cd62d6ebfffb1",
+          "number": 73394000,
+          "timestamp": 1790427234
+        }
+      },
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    },
+    {
+      "action": "exit",
+      "chainId": 4663,
+      "id": "4663:73393000:3",
+      "inputs": [],
+      "intentHash": "0xc4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+      "kind": "s1_action",
+      "legs": [],
+      "liquidity": "1000000000000000000",
+      "owner": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "previousTokenId": "9",
+      "recipient": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "refunds": [
+        {
+          "amount": "49000",
+          "recipient": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        },
+        {
+          "amount": "50000000",
+          "recipient": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "token": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+        }
+      ],
+      "steps": [
+        {
+          "amount0": "49000",
+          "amount1": "50000000",
+          "liquidityDelta": "-1000000000000000000",
+          "pool": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+            "dex": 4,
+            "fee": 3000,
+            "hooks": "0x0000000000000000000000000000000000000000",
+            "tickSpacing": 60
+          },
+          "tokenId": "9"
+        }
+      ],
+      "tariffs": [],
+      "tokenId": "9",
+      "tx": {
+        "finality": "finalized",
+        "gas": null,
+        "hash": "0xf5d8354e36f1bd24c05a6951baf4b978ed94fee6dfd4843863459dd72a67534f",
+        "snapshot": {
+          "hash": "0x97e18b0c4dacc96d92c92153575887e5f2976fb9e603b256499915b9aac91c26",
+          "number": 73393000,
+          "timestamp": 1790425734
+        }
+      },
+      "zap": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    },
+    {
+      "action": "create",
+      "chainId": 4663,
+      "id": "4663:73392000:6",
+      "inputs": [
+        {
+          "amount": "100000000",
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        }
+      ],
+      "intentHash": "0xc1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+      "kind": "s1_action",
+      "legs": [
+        {
+          "amountIn": "50000000",
+          "amountOut": "49500000000000000000",
+          "kind": "universal_router",
+          "tokenIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "tokenOut": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+          "venue": "0x204faca1764b154221e35c0d20abb3c525710498"
+        }
+      ],
+      "liquidity": "1000000000000000000",
+      "owner": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "previousTokenId": null,
+      "recipient": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "refunds": [
+        {
+          "amount": "0",
+          "recipient": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        },
+        {
+          "amount": "100000000000000000",
+          "recipient": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "token": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+        }
+      ],
+      "steps": [
+        {
+          "amount0": "-49400000000000000000",
+          "amount1": "-49675000",
+          "liquidityDelta": "1000000000000000000",
+          "pool": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+            "dex": 4,
+            "fee": 3000,
+            "hooks": "0x0000000000000000000000000000000000000000",
+            "tickSpacing": 60
+          },
+          "tokenId": "9"
+        }
+      ],
+      "tariffs": [
+        {
+          "amount": "325000",
+          "deferred": "0",
+          "kind": "assisted_swap",
+          "rateBps": 65,
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        }
+      ],
+      "tokenId": "9",
+      "tx": {
+        "finality": "finalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0x18c41045c04a0e82f43a2c1a60e5c51a6e2c22cfafda0ca79ad59a4b60653ca4",
+        "snapshot": {
+          "hash": "0xca0a06482301a734d1bfc5b8bdffa4f46ecb13c66473c2de8884ddcb434f5471",
+          "number": 73392000,
+          "timestamp": 1790425234
+        }
+      },
+      "zap": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    },
+    {
+      "chainId": 4663,
+      "dex": 4,
+      "factory": "0xa3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3",
+      "id": "4663:73391000:4",
+      "kind": "vault_created",
+      "limits": {
+        "maxObservationAgeSeconds": 300,
+        "maxPriceImpactBps": 150,
+        "maxSlippageBps": 100,
+        "upsideBps": 2000
+      },
+      "owner": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "ownerNonce": "0",
+      "policy": {
+        "maxOverlapBps": 100,
+        "maxPositions": 4,
+        "minimumIntervalSeconds": 3600,
+        "mode": "domino",
+        "triggerDistanceBps": 150
+      },
+      "rootTokenId": "7",
+      "tx": {
+        "finality": "finalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0xe7ce35e7d3ec56f82e81eb2ef2ac56fae4c999a24e34470feb5e825b273d2fb5",
+        "snapshot": {
+          "hash": "0x44cddd3253fe43c1207ae7b4f6092c74bdad529d952b4c93b2544a9b2e3a84bd",
+          "number": 73391000,
+          "timestamp": 1790424234
+        }
+      },
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    }
+  ],
+  "limitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "positions_known_to_domino_only",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "stored_v2_activity",
+  "nextCursor": null,
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "suggested": false,
+  "tokens": [
+    {
+      "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "chainId": 4663,
+      "decimals": 6,
+      "price": null,
+      "priceReason": "no_qualified_price_source",
+      "status": "available",
+      "symbol": "USDG"
+    },
+    {
+      "address": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+      "chainId": 4663,
+      "decimals": null,
+      "price": null,
+      "priceReason": "no_qualified_price_source",
+      "status": "partial",
+      "symbol": "MANY"
+    }
+  ],
+  "wallet": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+}

@@ -536,6 +536,20 @@ class V2Reader:
                                  (list(chains), list(hashes))).fetchall()
         return {(row['chain_id'], row['tx_hash']): row for row in rows}
 
+    def operator_changes(self, chain_ids):
+        """(chain id, operator) -> [(block, log index, allowed)], oldest first: the registry's OperatorSet events on
+        the chains named, to tell whether a transaction's sender was admitted."""
+        if not chain_ids:
+            return {}
+        rows = self.conn.execute('''SELECT chain_id,args->>'operator' AS operator,(args->>'allowed')::boolean AS allowed,
+          block_number,log_index FROM domino_v2.logs WHERE chain_id=ANY(%s) AND emitter='registry'
+          AND event='OperatorSet' ORDER BY chain_id,block_number,log_index''', (sorted(chain_ids),)).fetchall()
+        out = {}
+        for row in rows:
+            out.setdefault((int(row['chain_id']), row['operator']), []).append(
+                (int(row['block_number']), int(row['log_index']), bool(row['allowed'])))
+        return out
+
     def execution_modes(self, rows):
         """(chain, vault, block, log index) -> the vault's mode at that execution:
         its last PolicyChanged before the execution's Executed."""

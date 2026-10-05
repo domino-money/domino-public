@@ -120,6 +120,10 @@ test('receipts: what moved, the fee with its kind, rate, token, amount and defer
   const portfolio = valid('portfolio', fixture('portfolio.json'));
   const views = model.receiptViews(activity, ALL, portfolio);
   assert.deepEqual(views.map((view) => [view.kind, view.what]), [
+    // Changed on purpose 2026-10-05 (0xdecimal's item 8): the fixture's operator returnReserves() is read-v6's own kind,
+    // in the words a vault_event with such a ReservesWithdrawn had; the owner's own withdrawal stays a vault event.
+    ['reserves_returned', 'Returned to your wallet: 0.0012 USDG'],
+    ['vault_event', 'Withdrawn to your wallet: 5,000 raw units of MANY'],
     ['zap_event', 'Unused signatures cancelled'],
     ['auto_exit_event', 'Signed order cancelled'],
     ['auto_exit_event', 'Exit order cancelled'],
@@ -169,6 +173,8 @@ test('receipts: what moved, the fee with its kind, rate, token, amount and defer
   // The L1 data fee exactly as the receipt states it (OP Stack); never added into a claimed total.
   assert.deepEqual(byId['4663:73401000:0'].gas, { sender: WALLET, gasUsed: '412,345', gasPrice: '0.02 gwei', l1Fee: '0.00000000015 ETH' });
   assert.equal(byId['4663:73399000:0'].amount, '0.029641 USDG');
+  // Both tokens of one return: the second as a line of its own.
+  assert.deepEqual(byId['4663:73403000:1'].lines, [{ label: 'Also', value: 'Returned to your wallet: 3,000 raw units of MANY', data: 'event' }]);
   const policy = byId['4663:73395000:2'];
   assert.deepEqual(policy.lines.map((line) => line.value), ['Paused by you', 'Auto-exit turned on']);
   assert.deepEqual(model.receiptViews(activity, () => false, portfolio), [], 'a chain the gate keeps off lists nothing');

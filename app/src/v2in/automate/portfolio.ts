@@ -1,5 +1,5 @@
 import type {
-  ActivityResponse, AutoExit, AutoExitEvent, ChainStatus, Credit, IndexedToken, Mandate, PortfolioResponse, Tariff, Vault, VaultCreated, VaultEvent, VaultExecution, Waiting,
+  ActivityResponse, AutoExit, AutoExitEvent, ChainStatus, Credit, IndexedToken, Mandate, PortfolioResponse, ReservesReturned, Tariff, Vault, VaultCreated, VaultEvent, VaultExecution, Waiting,
 } from 'api-contracts/read-v6/types'
 import { automationFeeText, VAULT_TEXT, type VaultMember, type VaultSnapshot } from '../../finance/v2/vault'
 import { v2Chain, type V2Chain } from '../../v2/chains'
@@ -422,12 +422,12 @@ export function waitingWords(waiting: Waiting | null, chainId: V2ChainId, nowSec
 export type HistoryItem = ActivityResponse['items'][number]
 
 /** The history items of one vault on one chain: its runs, auto-exits, creation, vault events and orders' events. */
-export function historyOf(items: readonly HistoryItem[], chainId: V2ChainId, vault: Address): readonly (VaultExecution | AutoExit | VaultCreated | VaultEvent | AutoExitEvent)[] {
+export function historyOf(items: readonly HistoryItem[], chainId: V2ChainId, vault: Address): readonly (VaultExecution | AutoExit | VaultCreated | VaultEvent | ReservesReturned | AutoExitEvent)[] {
   const at = vault.toLowerCase()
-  const out: (VaultExecution | AutoExit | VaultCreated | VaultEvent | AutoExitEvent)[] = []
+  const out: (VaultExecution | AutoExit | VaultCreated | VaultEvent | ReservesReturned | AutoExitEvent)[] = []
   for (const item of items) {
     if (item.chainId !== chainId) continue
-    if ((item.kind === 'vault_execution' || item.kind === 'auto_exit' || item.kind === 'vault_created' || item.kind === 'vault_event' || item.kind === 'auto_exit_event') && item.vault === at) out.push(item)
+    if ((item.kind === 'vault_execution' || item.kind === 'auto_exit' || item.kind === 'vault_created' || item.kind === 'vault_event' || item.kind === 'reserves_returned' || item.kind === 'auto_exit_event') && item.vault === at) out.push(item)
   }
   return out
 }
@@ -522,6 +522,12 @@ export function historyWords(item: HistoryItem, ctx: HistoryContext): HistoryWor
       const sender = item.tx.gas?.sender?.toLowerCase() ?? null
       const said = item.events.map((event) => vaultEventWords(event, ctx, sender)).filter((line): line is string => line !== null)
       if (said.length === 0) return null
+      return { ...base, title: said[0], lines: said.slice(1).map((value) => ({ label: '', value })) }
+    }
+    // read-v6's own kind for a returnReserves() the owner did not send (0xdecimal's item 8): the words a vault_event
+    // with such a ReservesWithdrawn had before.
+    case 'reserves_returned': {
+      const said = item.reservesReturned.map((line) => `Returned to your wallet: ${amountOf(ctx, line.token, line.amount)}`)
       return { ...base, title: said[0], lines: said.slice(1).map((value) => ({ label: '', value })) }
     }
     case 'auto_exit_event': {

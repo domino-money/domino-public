@@ -145,7 +145,8 @@ function activity(body) {
     const [chain, block] = item.id.split(':');
     const final = finalized[item.chainId];
     return Number(chain) === item.chainId && Number(block) === item.tx.snapshot.number &&
-      (item.tx.finality === 'finalized') === (final !== null && item.tx.snapshot.number <= final.number);
+      (item.tx.finality === 'finalized') === (final !== null && item.tx.snapshot.number <= final.number) &&
+      !(item.kind === 'reserves_returned' && item.returnedBy === body.wallet); // the owner's own are vault_event
   }) && (body.nextCursor === null || cursorKey(body.nextCursor) !== null);
 }
 
@@ -238,6 +239,8 @@ function semantic(name, value) {
     case 'VaultExecution': return (value.action === 'mint') === (value.successor !== null) &&
       kinds(value.tariffs, 'automation');
     case 'AutoExit': return kinds(value.tariffs, 'auto_exit');
+    case 'ReservesReturned': return value.tx.gas !== null && value.tx.gas.sender === value.returnedBy &&
+      new Set(value.reservesReturned.map((line) => line.token)).size === value.reservesReturned.length;
     case 'AutoExitEvent': return autoExitEvent(value);
     case 'ActivityPageRequest': return value.cursor === undefined || value.cursor === null || cursorKey(value.cursor) !== null;
     case 'PortfolioResponse': return portfolio(value);
