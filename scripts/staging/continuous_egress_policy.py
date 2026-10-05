@@ -61,6 +61,12 @@ ANALYTICS_HOSTS = frozenset(('api.geckoterminal.com', 'api.dexscreener.com'))
 # position preview and pool-info reads post to (backend/uniswap_position.py,
 # backend/uniswap_liquidity.py): a listener that reaches one reaches the other.
 UNISWAP_HOSTS = frozenset(('trade-api.gateway.uniswap.org', 'liquidity.api.uniswap.org'))
+# The V2 chains other than Robinhood (backend/v2_rpc.py): the hosted providers
+# of the private V2 chain RPC file, in its order (Chainstack, Alchemy), and the
+# chains' public endpoints as its last resort. Each URL's key is a sealed
+# credential (v2-rpc-<chain>-<name>); only the host is pinned here.
+CHAIN_HOSTS = frozenset(('base-mainnet.core.chainstack.com', 'base-mainnet.g.alchemy.com', 'mainnet.base.org',
+                         'arbitrum-mainnet.core.chainstack.com', 'arb-mainnet.g.alchemy.com', 'arb1.arbitrum.io'))
 EDGE_HOSTS = frozenset(shared.EDGE_ADDRESSES)
 ISSUER = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com')
 # What each identity's own code reaches for, by hostname class. `jwks` is the
@@ -78,6 +84,10 @@ CLASSES = {'read': ('rpc', 'analytics'), 'gateway': ('jwks',),
            # chain (rpc), it verifies the bridge's Access assertion (jwks), and its
            # router legs ask the Trading API (uniswap).
            'position-plan': ('rpc', 'jwks', 'uniswap')}
+# Who reads the V2 chains' hosted RPC (`chains`), and only with `v2Chains`:
+# the writer's indexer instances for Base and Arbitrum, and the plan listener's
+# plans there. A host that serves Robinhood alone pins none of it.
+CHAIN_ROLES = ('write', 'position-plan')
 # A class an enabled role cannot run without. Analytics is optional for the
 # reader: the market provider is a fallback, not the read path.
 REQUIRED = {'rpc', 'jwks', 'uniswap', 'edges'}
@@ -111,6 +121,8 @@ UNSET = ('UnsetEnvironment=HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy 
          'all_proxy no_proxy SSL_CERT_FILE SSL_CERT_DIR REQUESTS_CA_BUNDLE CURL_CA_BUNDLE '
          'PYTHONPATH PYTHONHOME')
 FIELDS = ('version', 'resolver', 'accessIssuer', 'enabled', 'identities', 'hosts')
+# Every class's hosts and the issuer fit, with room for one more provider.
+MAX_HOSTS = 24
 
 InvalidSnapshot = shared.InvalidSnapshot
 require = shared.require
@@ -132,20 +144,22 @@ def classes_of(hostname, issuer):
     if hostname in RPC_HOSTS: result.add('rpc')
     if hostname in ANALYTICS_HOSTS: result.add('analytics')
     if hostname in UNISWAP_HOSTS: result.add('uniswap')
+    if hostname in CHAIN_HOSTS: result.add('chains')
     if hostname in EDGE_HOSTS: result.add('edges')
     if hostname == issuer: result.add('jwks')
     return result
 
 
 def validate(snapshot):
-    optional = tuple(name for name in ('publicDataCollectors', 'sequenceSnapshotLoopback', 'nodeLoopbackReads')
-                     if name in snapshot)
+    optional = tuple(name for name in ('publicDataCollectors', 'sequenceSnapshotLoopback', 'nodeLoopbackReads',
+                                       'v2Chains') if name in snapshot)
     fields = (*FIELDS, *optional)
     exact(snapshot, fields, 'invalid_snapshot_fields')
     require(type(snapshot.get('publicDataCollectors',False)) is bool,'invalid_public_data_collectors')
     require(type(snapshot.get('sequenceSnapshotLoopback', False)) is bool,
             'invalid_sequence_snapshot_loopback')
     require(type(snapshot.get('nodeLoopbackReads', False)) is bool, 'invalid_node_loopback_reads')
+    require(type(snapshot.get('v2Chains', False)) is bool, 'invalid_v2_chains')
     require(type(snapshot['version']) is int and snapshot['version'] == 1, 'invalid_snapshot_version')
     require(snapshot['resolver'] == '127.0.0.53', 'invalid_resolver')
     issuer = snapshot['accessIssuer']
@@ -160,6 +174,8 @@ def validate(snapshot):
             'snapshot_loopback_requires_reader')
     require(not snapshot.get('nodeLoopbackReads') or any(role in enabled for role in NODE_LOOPBACK_ROLES),
             'node_loopback_requires_reader_or_writer')
+    require(not snapshot.get('v2Chains') or any(role in enabled for role in CHAIN_ROLES),
+            'v2_chains_require_writer_or_plan_listener')
     enabled = tuple(role for role in ROLES if role in enabled)
     exact(snapshot['identities'], ROLES, 'invalid_identity_roles')
     seen_uids = set()
@@ -188,7 +204,7 @@ def validate(snapshot):
             require(identity['unit'] == unit, 'invalid_service_unit')
             require(identity['cgroup'] == '/system.slice/' + unit, 'invalid_service_cgroup')
     records = snapshot['hosts']
-    require(type(records) is list and len(records) <= 16, 'invalid_host_inventory')
+    require(type(records) is list and len(records) <= MAX_HOSTS, 'invalid_host_inventory')
     pins = {}
     for item in records:
         exact(item, ('hostname', 'addresses'), 'invalid_host_fields')
@@ -204,6 +220,8 @@ def validate(snapshot):
         wanted = set(CLASSES[role]) if role in enabled else set()
         if role == 'write' and snapshot.get('publicDataCollectors'):
             wanted.add('analytics')
+        if role in CHAIN_ROLES and role in enabled and snapshot.get('v2Chains'):
+            wanted.add('chains')
         role_hosts[role] = sorted(host for host in pins if classes_of(host, issuer) & wanted)
         for kind in wanted & REQUIRED:
             present = {host for host in pins if kind in classes_of(host, issuer)}
@@ -365,6 +383,8 @@ def render(snapshot):
         pin_scope += ':sequence-snapshot-loopback'
     if snapshot.get('nodeLoopbackReads'):
         pin_scope += ':node-loopback-reads'
+    if snapshot.get('v2Chains'):
+        pin_scope += ':v2-chains'
     return {'version': 1, 'kind': 'domino-continuous-egress-v1', 'applied': False,
             'policyQualified': False, 'enabled': list(enabled),
             'roleHosts': {role: hosts for role, hosts in role_hosts.items() if hosts},

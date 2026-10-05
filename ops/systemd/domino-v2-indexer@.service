@@ -15,10 +15,21 @@ WorkingDirectory=@PUBLIC_ROOT@/current/backend
 # The writer reads only the names continuous_egress_policy.py pinned with its
 # egress set, never a DNS answer outside that set (#315).
 BindReadOnlyPaths=/etc/domino/continuous-reads/write.hosts:/etc/hosts
-# The instance is the chain profile (robinhood-4663). The writer's provider file
-# leads with the node's loopback proxy; registration is a one-time step before
-# the first start (docs/v2/V2_INDEXER_READ_API.md, "Operating it").
-ExecStart=@QUEUE_ROOT@/venv/bin/python -B v2_indexer.py follow --chain %i
+# The instance is the chain profile (robinhood-4663, base-8453, arbitrum-42161).
+# Robinhood reads the writer's provider file, which leads with the node's
+# loopback proxy, and never the chain RPC file. Base and Arbitrum read the
+# writer's private V2 chain RPC file (backend/v2_rpc.py). Its providers' URLs
+# carry their keys, sealed on the host as v2-rpc-<chain>-<name>. Its loader
+# checks every chain it names, so every one of them is imported. Registration
+# is a one-time step before the first start (docs/v2/V2_INDEXER_READ_API.md,
+# "Operating it").
+ImportCredential=v2-rpc-*
+# The credentials are sealed with the host's TPM. systemd 255 opens the TPM
+# to the device policy for LoadCredentialEncrypted= but not for
+# ImportCredential=, and under PrivateDevices=yes the decryption then fails
+# with EPERM on /dev/tpmrm0. The plan listener did, on 4 Oct.
+DeviceAllow=char-tpm rw
+ExecStart=@QUEUE_ROOT@/venv/bin/python -B v2_indexer.py follow --chain %i --chain-rpc-file @QUEUE_ROOT@/release/backend/runtime/chain-rpc.json
 Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 # `follow` returns 0 after five failed rounds in a row (a refused head included),
 # so only `always` brings it back.

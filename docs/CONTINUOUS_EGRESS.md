@@ -39,16 +39,20 @@ rendered only for an enabled role and only for the hostnames actually pinned.
 | `execution-status` | 8901 | jwks | Access assertions, database and exact VM-local EOA RPC at `127.0.0.1:18547` |
 | `execution-signer` | — | rpc | `ExecutionRpc` broadcast |
 | `tunnel` | 20241 | edges, jwks | 7844 to the official edge inventory; connector JWKS |
-| `write` | — | rpc | the public-data lanes, featured, the queue worker and the followers |
+| `write` | — | rpc; chains with `v2Chains` | the public-data lanes, featured, the queue worker, the followers and the V2 indexer |
 | `operator`, `admin` | — | — | never |
-| `position-plan` | 8911 | rpc, jwks, uniswap | the S1 plan listener (`install_position_plan.py`): `EoaChecker` and plans; assertion verification; Trading API router legs. Optional: a host without the identity renders no chain for it |
+| `position-plan` | 8911 | rpc, jwks, uniswap; chains with `v2Chains` | the S1 plan listener (`install_position_plan.py`): `EoaChecker` and plans; assertion verification; Trading API router legs. Optional: a host without the identity renders no chain for it |
 
 Classes: `rpc` is `robinhood-mainnet.g.alchemy.com` or the private
 `rpc.domino.money` route (Robinhood's public RPC is not admitted);
 `analytics` is `api.geckoterminal.com` or
 `api.dexscreener.com`; `uniswap` is `trade-api.gateway.uniswap.org`; `jwks` is
 exactly the pinned Access issuer; `edges` are the two `argotunnel.com` names,
-whose pins must be members of the official inventory the module carries.
+whose pins must be members of the official inventory the module carries;
+`chains` is Base's and Arbitrum's hosted RPC: Chainstack, Alchemy, and each
+chain's public endpoint as a last resort (`CHAIN_HOSTS`). It is granted only
+by `v2Chains`, and only to the writer (its V2 indexer instances) and the plan
+listener. A host that serves Robinhood alone pins none of it.
 
 Loopback: the gateway may originate to the reader; the tunnel may originate to
 every enabled listener it fronts. The tunnel uses the stub resolver; every
@@ -100,6 +104,7 @@ destination is the separately pinned Access issuer for JWKS refresh.
   "enabled": ["read", "gateway", "tunnel", "write"],
   "sequenceSnapshotLoopback": true,
   "nodeLoopbackReads": true,
+  "v2Chains": true,
   "identities": { "<role>": { "user", "realUid", "effectiveUid", "gid",
                               "supplementaryGids", "unit", "cgroup" } },
   "hosts": [ { "hostname": "...", "addresses": ["..."] } ]
@@ -110,6 +115,8 @@ The optional `sequenceSnapshotLoopback` field defaults to false and requires
 `read` in `enabled` when true. It changes the nft policy and its pin digest,
 not the unit drop-ins or the public Worker flag. `nodeLoopbackReads` does the
 same for the reader and the writer, and requires either in `enabled`.
+`v2Chains` (`--v2-chains` when collecting) grants `chains` to the writer and the
+plan listener, and requires either in `enabled`.
 
 `identities` names all fourteen roles exactly. `admin` may be `null`, and so
 may `position-plan` until `install_position_plan.py` creates the account; an

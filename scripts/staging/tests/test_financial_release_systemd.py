@@ -19,6 +19,7 @@ started. Every file it writes is under /run/systemd/system and removed after.
 """
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -218,12 +219,19 @@ class RealSystemdTests(unittest.TestCase):
         subprocess.run(['systemctl', 'daemon-reload'], check=True)
         raw = subprocess.run(['systemctl', 'show', '--all', 'domino-v2-indexer-under-test@robinhood-4663.service',
                               '--property=LoadState,ExecStart,Restart,User,SupplementaryGroups,WorkingDirectory,'
-                              'PartOf,BindsTo,BindReadOnlyPaths,ProtectSystem,UnitFileState'],
+                              'PartOf,BindsTo,BindReadOnlyPaths,ProtectSystem,UnitFileState,ImportCredential,'
+                              'DeviceAllow'],
                              check=True, capture_output=True, text=True).stdout
         shown = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
         self.assertEqual(shown['LoadState'], 'loaded')
         self.assertIn('argv[]=/opt/domino/queue-worker/venv/bin/python -B v2_indexer.py follow '
-                      '--chain robinhood-4663 ;', shown['ExecStart'])
+                      '--chain robinhood-4663 --chain-rpc-file '
+                      '/opt/domino/queue-worker/release/backend/runtime/chain-rpc.json ;', shown['ExecStart'])
+        # Base and Arbitrum read hosted providers whose keys are sealed credentials; the glob takes all of them.
+        # systemd shows a glob quoted (CI run 37243142942).
+        self.assertEqual(shlex.split(shown['ImportCredential']), ['v2-rpc-*'])
+        # One line per entry, so not in the dict: the TPM the sealed credentials need, beside ProtectClock's rtc.
+        self.assertIn('DeviceAllow=char-tpm rw', raw.splitlines())
         self.assertEqual(shown['Restart'], 'always')
         self.assertEqual((shown['User'], shown['SupplementaryGroups']), ('domino-write', 'domino-db'))
         self.assertEqual(shown['WorkingDirectory'], '/opt/domino/public-data/current/backend')
@@ -248,7 +256,13 @@ class RealSystemdTests(unittest.TestCase):
                          ('loaded', 'domino-position-plan', 'strict'))
         self.assertIn('-B backend/v2_position_plan_api.py --port 8911 ;', shown['ExecStart'])
         self.assertNotIn('--enable', shown['ExecStart'])
-        self.assertIn('uniswap-api-key', shown['ImportCredential'])
+        # A set in systemd, shown in no fixed order and with the glob quoted (CI run 37243142942).
+        self.assertEqual(sorted(shlex.split(shown['ImportCredential'])), ['uniswap-api-key', 'v2-rpc-*'])
+        # systemd 255 leaves the TPM out of the device policy for ImportCredential=; on the VM the sealed key
+        # then failed to decrypt under PrivateDevices=yes (4 Oct). The unit opens it itself.
+        devices = subprocess.run(['systemctl', 'show', f'{name}.service', '--property=DeviceAllow'],
+                                 check=True, capture_output=True, text=True).stdout.splitlines()
+        self.assertIn('DeviceAllow=char-tpm rw', devices)
         self.assertIn('DOMINO_UNISWAP_API_KEY', shown['UnsetEnvironment'])
         for target in ('/run/domino-financial-position-plan-config', '/run/domino-v2-deployments'):
             self.assertIn(target, shown['BindReadOnlyPaths'])

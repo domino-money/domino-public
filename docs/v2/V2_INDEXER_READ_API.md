@@ -140,6 +140,20 @@ The indexer runs as the catalogue writer, `domino-write`, from the public-data r
 5. **read-v6 on the read path.** Use a read release that has #305 (`install_read_release.py`). Move the two 70 drop-ins aside, then run `install_read_activation.py --commit <sha> --read-v6`, first with `--inspect`, then with `--apply`. It adds `DOMINO_V2_READ=1` to the reader, and `--enable-v6` with `DOMINO_BRIDGE_V6_READS=portfolio,activity` to the gateway, keeping v1 to v5 as they were. Restart `domino-continuous-reads.target`.
 6. **Check locally:** `POST http://127.0.0.1:8876/v6/read/portfolio {"wallet": "0x…"}` should show chain 4663 `current`. Base and Arbitrum stay `unavailable` until their deployments are registered.
 
+### Base and Arbitrum
+
+The writer reads their hosted providers from its private V2 chain RPC file (`backend/v2_rpc.py`). A provider's URL carries its key, so each URL is a sealed credential, never a file in clear.
+
+1. **Credentials and file.**
+   - **The URLs:** `/etc/credstore.encrypted/v2-rpc-<chain>-<name>` (`systemd-creds encrypt --with-key=host+tpm2 --name=v2-rpc-base-8453-chainstack …`). They were sealed on 3 Oct, for `chainstack` and `alchemy` on both chains.
+   - **The file:** the operator's `/etc/domino/v2/chain-rpc.json`, which lists Chainstack, then Alchemy, then each chain's public endpoint. Copy it for the writer to `/opt/domino/queue-worker/release/backend/runtime/chain-rpc.json`, owned by `domino-write`, mode 0600. Its loader refuses a file outside a private directory, behind a symlink or inside a checkout.
+   - **The unit:** `domino-v2-indexer@.service` imports every `v2-rpc-*` credential, because the loader checks every chain the file names. It also opens the TPM that decrypts them (`DeviceAllow=char-tpm rw`), which systemd 255 adds by itself only for `LoadCredentialEncrypted=`. It passes that file to every instance; Robinhood's instance never reads it.
+2. **Egress.** Collect with `--v2-chains`. That pins Base's and Arbitrum's hosts (`chains` in CONTINUOUS_EGRESS.md) for the writer and, once enabled, for the plan listener. Render, update, then `nft -f`.
+3. **Preflight and registration.** Run both with the unit's sandbox and credentials: `systemd-run --pipe --wait -p User=domino-write -p SupplementaryGroups=domino-db -p 'ImportCredential=v2-rpc-*' -p WorkingDirectory=/opt/domino/public-data/current/backend -p BindReadOnlyPaths=/etc/domino/continuous-reads/write.hosts:/etc/hosts …`.
+   - `v2_rpc.py check --chain base-8453 --chain-rpc-file <the writer's file>` checks each endpoint's chain, its head, the profile's 25 code hashes and the archive probe. On 4 Oct, Chainstack and Alchemy passed on both chains. The public endpoints were refused locally at their 2 requests per second, by design: they stay a last resort.
+   - `v2_indexer.py register --chain base-8453 --deployment ../docs/deployments/v2-base-8453-2026-10-04/deployment.json --chain-rpc-file <the writer's file>`, then the same for `arbitrum-42161`.
+4. **Start:** `systemctl enable --now domino-v2-indexer@base-8453.service domino-v2-indexer@arbitrum-42161.service`. read-v6 then shows both chains as `current`.
+
 `status` connects as the catalogue reader, which the writer's identity is not mapped to. Read `domino_v2.deployments` with psql as the operator instead, or run `status` from the reader's release.
 
 ## What 3a, #301 and F7 must align with
@@ -153,7 +167,7 @@ The indexer runs as the catalogue writer, `domino-write`, from the public-data r
 | Item | Why it is not here |
 | --- | --- |
 | The bridge Worker route and the app's pin of read-v6 | The bridge's and the app's (F7) side. |
-| Installation on the VM for Base and Arbitrum: their chain RPC files (F6, hosted providers) and the writer's egress to them; the shared head file | Needs the owner's providers. Robinhood is installed as "In production" above describes. |
+| The shared head file (`--head-file`) | Optional: each follower reads its own head. |
 | Pools per chain (§6.2) for pool selection on Base and Arbitrum | A separate read (market data with sources), not derivable from V2 events. |
 | Qualified USD (pool against the chain's stable; Chainlink ETH/USD from the profile, with heartbeat and sequencer uptime) | Its own qualification; prices are `null` with a reason until then. |
 | The anchor's reference price per vault with its age (§5.2 distance) | Needs the publisher's observations or a TWAP read per vault. |

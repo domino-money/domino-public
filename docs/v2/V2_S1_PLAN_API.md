@@ -331,13 +331,17 @@ Before its first plan, the planner proves on-chain the code of the components it
      - `DOMINO_POSITION_PLAN_MANIFEST_ROBINHOOD_4663=/run/domino-v2-deployments/v2-robinhood-4663-2026-10-04/deployment.json`. The unit binds every release's manifests at that fixed path;
      - the Access application's issuer, audience and service ID;
      - the session listener's `DOMINO_SESSION_ORIGIN` and `DOMINO_SESSION_ABUSE_SECRET`.
-3. **The Trading API key** is optional. Seal it once as `/etc/credstore.encrypted/uniswap-api-key` with `systemd-creds encrypt --with-key=host+tpm2 --name=uniswap-api-key`. The unit imports it (`ImportCredential=`) and unsets the environment variable, so the key is never read from a file in clear.
+3. **The Trading API key** is optional. Seal it once as `/etc/credstore.encrypted/uniswap-api-key` with `systemd-creds encrypt --with-key=host+tpm2 --name=uniswap-api-key`. The unit imports it (`ImportCredential=`) and unsets the environment variable, so the key is never read from a file in clear. The unit also opens the TPM to its device policy (`DeviceAllow=char-tpm rw`). systemd 255 does that by itself only for `LoadCredentialEncrypted=`. On 4 Oct the sealed key stopped the listener at start, with EPERM on `/dev/tpmrm0`, until a hand drop-in added the line.
 4. **Egress.** Collect with `position-plan` enabled, render, review, update, then `nft -f`.
    - The role gets the `rpc`, `jwks` and `uniswap` classes, and the replies of its listener on 8911.
    - The tunnel gets the origin rule to 8911.
    - The 60 drop-in adds `--enable --rpc-config /run/domino-financial-position-plan-config/rpc.json`.
    - `domino-continuous-reads.target` wants the unit as a family.
 5. **Start.** Run `daemon-reload`, then start the unit. A request without an Access assertion gets 403. Then a plan through the bridge.
+6. **Base and Arbitrum,** once their fork qualification passes:
+   - add them to `DOMINO_POSITION_PLAN_CHAINS`, each with its `DOMINO_POSITION_PLAN_MANIFEST_<CHAIN>`;
+   - set `DOMINO_V2_CHAIN_RPC_FILE=/run/domino-financial-position-plan-config/chain-rpc.json`, a copy of the operator's file owned by `domino-position-plan`. The unit already imports the sealed `v2-rpc-*` URLs;
+   - collect egress with `--v2-chains`.
 
 ## Calls and cost
 

@@ -19,7 +19,12 @@ Every release:
   the verified V2 manifests (docs/deployments/v2-*/deployment.json), 0555;
 - domino-position-plan.service names that release. The listener starts without --enable, which only the continuous
   egress policy's drop-in adds. It takes its private files and, when it is sealed on the host, the Uniswap Trading
-  API key (ImportCredential=uniswap-api-key, never an environment variable). The manifests are bound at a fixed
+  API key (ImportCredential=uniswap-api-key, never an environment variable), and the sealed URLs of Base's and
+  Arbitrum's hosted RPC (ImportCredential=v2-rpc-*), which its V2 chain RPC file names when those chains are
+  enabled; the loader checks every chain the file names, so all of them come. Both are sealed with the host's
+  TPM, which systemd 255 leaves out of the device policy for ImportCredential= (it adds it only for
+  LoadCredentialEncrypted=): without DeviceAllow=char-tpm rw the listener stopped at start on 4 Oct, once the
+  key was sealed, with EPERM on /dev/tpmrm0. The manifests are bound at a fixed
   path, /run/domino-v2-deployments, so the environment names them once for every release.
 
 Rollback puts back the unit that was there before, or its absence. The identity, its peer row, the directories,
@@ -90,6 +95,8 @@ ExecStart={install.PYTHON} -B backend/v2_position_plan_api.py --port {PORT}
 Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 WEB_CONCURRENCY=1 UVICORN_WORKERS=1
 EnvironmentFile=-{PRIVATE}/environment
 ImportCredential=uniswap-api-key
+ImportCredential=v2-rpc-*
+DeviceAllow=char-tpm rw
 UnsetEnvironment=PYTHONPATH PYTHONHOME DOMINO_DISCOVERY_RPC_URL DOMINO_INVENTORY_RPC_URL DOMINO_UNISWAP_API_KEY
 UMask=0077
 ProtectSystem=strict

@@ -35,7 +35,7 @@ class UnitTests(unittest.TestCase):
         for line in ('User=domino-position-plan', 'SupplementaryGroups=domino-db', f'WorkingDirectory={root}',
                      'ExecStart=/opt/domino/backend-venv/bin/python3.14 -B backend/v2_position_plan_api.py --port 8911',
                      'EnvironmentFile=-/etc/domino/financial/position-plan/environment',
-                     'ImportCredential=uniswap-api-key',
+                     'ImportCredential=uniswap-api-key', 'ImportCredential=v2-rpc-*', 'DeviceAllow=char-tpm rw',
                      f'BindPaths=/var/lib/domino-financial/position-plan:{root}/backend/runtime',
                      'BindReadOnlyPaths=/etc/domino/financial/position-plan:/run/domino-financial-position-plan-config',
                      f'BindReadOnlyPaths={root}/docs/deployments:/run/domino-v2-deployments',

@@ -531,6 +531,62 @@ class ContinuousEgressTests(unittest.TestCase):
         self.assertIn('domino-position-plan.service', target.split('Wants=', 2)[1].split('\n')[0])
         self.assertNotIn('domino-position-plan.service', target.split('Requires=')[1].split('\n')[0])
 
+    def test_the_v2_chains_grant_is_explicit_and_reaches_only_the_writer_and_the_plan_listener(self):
+        # Base and Arbitrum (backend/v2_rpc.py): the writer's indexer instances and the plan listener's plans.
+        chains = {host: [f'17.0.0.{index}'] for index, host in enumerate(sorted(policy.CHAIN_HOSTS), 1)}
+        enabled = (*LIVE_ENABLED, 'auth', 'position-plan')
+        before = policy.render({**snapshot(enabled, {**PINS, **UNISWAP}), 'identities': identities(plan_listener=True)})
+        granted = {**snapshot(enabled, {**PINS, **UNISWAP, **chains}), 'identities': identities(plan_listener=True),
+                   'v2Chains': True}
+        after = policy.render(granted)
+        for role in policy.CHAIN_ROLES:
+            self.assertEqual(sorted(after['roleHosts'][role]), sorted({*before['roleHosts'][role], *chains}))
+            hosts = after['artifacts'][f'{policy.ROOT}/{role}.hosts']
+            for host, (address,) in chains.items():
+                self.assertIn(f'{address} {host}\n', hosts)
+        for role, hosts in after['roleHosts'].items():
+            if role not in policy.CHAIN_ROLES:
+                self.assertEqual(hosts, before['roleHosts'][role], role)
+        sets_before, sets_after = parse(nft(before))[1], parse(nft(after))[1]
+        for name in ('write_ipv4', 'position_plan_ipv4'):
+            self.assertEqual(sets_after[name], sets_before[name] + len(chains), name)
+        self.assertEqual({name: count for name, count in sets_after.items() if name not in ('write_ipv4', 'position_plan_ipv4')},
+                         {name: count for name, count in sets_before.items() if name not in ('write_ipv4', 'position_plan_ipv4')})
+        listener = after['artifacts'][policy.UNIT_DIR + 'domino-position-plan.service.d/' + policy.DROPIN]
+        for (address,) in chains.values():
+            self.assertIn(f'IPAddressAllow={address}/32\n', listener)
+        self.assertNotEqual(before['pinSetSha256'], after['pinSetSha256'])
+        # Pinned without the grant, they are no role's.
+        self.reject({**granted, 'v2Chains': False}, 'unapproved_hostname')
+        self.reject({key: value for key, value in granted.items() if key != 'v2Chains'}, 'unapproved_hostname')
+
+    def test_the_chains_class_is_every_host_the_provisioned_file_names(self):
+        # /etc/domino/v2/chain-rpc.json since 3 Oct: Chainstack, then Alchemy, then each chain's public endpoint
+        # (docs/v2/F6_BACKEND.md). A host the file names and the set lacks would be refused at the socket, and
+        # the clients would fail over past it.
+        self.assertEqual(policy.CHAIN_HOSTS, frozenset((
+            'base-mainnet.core.chainstack.com', 'base-mainnet.g.alchemy.com', 'mainnet.base.org',
+            'arbitrum-mainnet.core.chainstack.com', 'arb-mainnet.g.alchemy.com', 'arb1.arbitrum.io')))
+
+    def test_the_v2_chains_grant_needs_a_boolean_and_a_role_that_reads_them(self):
+        self.reject({**snapshot(), 'v2Chains': 'true'}, 'invalid_v2_chains')
+        self.reject({**snapshot(('read', 'gateway', 'tunnel')), 'v2Chains': True},
+                    'v2_chains_require_writer_or_plan_listener')
+        # The writer alone takes it, before the plan listener's identity exists.
+        chains = {host: [f'17.0.0.{index}'] for index, host in enumerate(sorted(policy.CHAIN_HOSTS), 1)}
+        result = policy.render({**snapshot(pins={**PINS, **chains}), 'v2Chains': True})
+        self.assertLessEqual(set(chains), set(result['roleHosts']['write']))
+        self.assertNotIn('position-plan', result['roleHosts'])
+
+    def test_every_class_fits_the_host_inventory_and_one_more_host_is_refused(self):
+        every = {*policy.RPC_HOSTS, *policy.ANALYTICS_HOSTS, *policy.UNISWAP_HOSTS, *policy.EDGE_HOSTS,
+                 *policy.CHAIN_HOSTS, ISSUER}
+        self.assertLess(len(every), policy.MAX_HOSTS)
+        data = snapshot()
+        data['hosts'] = [{'hostname': f'h{index}.example.com', 'addresses': ['16.0.0.1']}
+                         for index in range(policy.MAX_HOSTS + 1)]
+        self.reject(data, 'invalid_host_inventory')
+
     def test_enable_commands_are_derived_from_the_installer_not_copied(self):
         for role in policy.ENABLE_ARGUMENTS:
             with self.subTest(role=role):

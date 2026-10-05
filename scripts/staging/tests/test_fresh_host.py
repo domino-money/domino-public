@@ -415,6 +415,13 @@ class ContinuousEgressTests(unittest.TestCase):
                          | {'team.cloudflareaccess.com'})
         self.assertFalse(set(needed) & set(policy.UNISWAP_HOSTS))
 
+    def test_the_v2_chains_hosts_are_collected_only_when_asked(self):
+        live = ['read', 'gateway', 'tunnel', 'write']
+        without = install_continuous_egress.needed_hosts(live, 'team.cloudflareaccess.com', True)
+        self.assertFalse(set(without) & set(policy.CHAIN_HOSTS))
+        granted = install_continuous_egress.needed_hosts(live, 'team.cloudflareaccess.com', True, chains=True)
+        self.assertEqual(set(granted), set(without) | set(policy.CHAIN_HOSTS))
+
     def test_collect_names_the_node_loopback_reads_only_when_asked(self):
         def identity(role):
             unit = policy.unit_of(role)
@@ -424,8 +431,9 @@ class ContinuousEgressTests(unittest.TestCase):
         def resolve(hostname):
             if hostname in egress_policy.EDGE_ADDRESSES:
                 return sorted(egress_policy.EDGE_ADDRESSES[hostname])[:1]
-            return ['16.0.0.%d' % (1 + sorted(policy.RPC_HOSTS | policy.ANALYTICS_HOSTS).index(hostname))
-                    if hostname != 'team.cloudflareaccess.com' else '16.0.0.9']
+            return ['16.0.0.%d' % (1 + sorted(policy.RPC_HOSTS | policy.ANALYTICS_HOSTS | policy.CHAIN_HOSTS)
+                                   .index(hostname))
+                    if hostname != 'team.cloudflareaccess.com' else '16.0.0.99']
         with patch.object(install_continuous_egress, 'identity', identity), \
              patch.object(install_continuous_egress, 'resolve', resolve):
             arguments = ['--collect', '--access-issuer', 'team.cloudflareaccess.com',
@@ -437,6 +445,15 @@ class ContinuousEgressTests(unittest.TestCase):
                     self.assertEqual(snapshot.get('nodeLoopbackReads'), expected)
                     text = policy.render(snapshot)['artifacts'][policy.ROOT + '/policy.nft']
                     self.assertEqual('tcp dport 18547' in text, bool(expected))
+            for extra, expected in (([], None), (['--v2-chains'], True)):
+                with self.subTest(extra=extra), patch('sys.stdout', new_callable=io.StringIO) as printed:
+                    self.assertEqual(install_continuous_egress.main(arguments + extra), 0)
+                    snapshot = json.loads(printed.getvalue())
+                    self.assertEqual(snapshot.get('v2Chains'), expected)
+                    pinned = {item['hostname'] for item in snapshot['hosts']}
+                    self.assertEqual(bool(pinned & policy.CHAIN_HOSTS), bool(expected))
+                    hosts = policy.render(snapshot)['artifacts'][policy.ROOT + '/write.hosts']
+                    self.assertEqual('base-mainnet.core.chainstack.com' in hosts, bool(expected))
 
     def test_edge_answers_outside_the_official_inventory_are_dropped(self):
         name = 'region1.v2.argotunnel.com'
