@@ -13,7 +13,7 @@ only to the gateway — so a listener behind `vm-session` or `vm-onboarding` is
 unreachable from the connector today, whatever the Cloudflare route says.
 
 `scripts/staging/continuous_egress_policy.py` renders the whole policy for all
-fifteen production identities, from operator pins on stdin, together with the
+sixteen production identities, from operator pins on stdin, together with the
 per-unit drop-in, hosts file and target that activate a unit behind it. A
 family gets its external destinations, and the tunnel a way to reach its
 listener, only when the family is named in `enabled`. The three layers cannot
@@ -43,6 +43,7 @@ rendered only for an enabled role and only for the hostnames actually pinned.
 | `operator`, `admin` | — | — | never |
 | `position-plan` | 8911 | rpc, jwks, uniswap; chains with `v2Chains` | the S1 plan listener (`install_position_plan.py`): `EoaChecker` and plans; assertion verification; Trading API router legs. Optional: a host without the identity renders no chain for it |
 | `v2-automation` | — | rpc; chains with `v2Chains`; the node's proxy with `nodeLoopbackReads` | the V2 automation (`install_v2_automation.py`), one instance of `domino-v2-automation@.service` per chain, which binds `v2-automation.hosts` itself. Optional: a host without the identity renders no chain for it |
+| `crosschain` | 8910 | rpc, jwks, bridges | the S2 crosschain listener (`install_crosschain.py`): `EoaChecker` and the Across fee proof on Robinhood; assertion verification; Relay and Across quotes and status. Optional: a host without the identity renders no chain for it |
 
 Classes: `rpc` is `robinhood-mainnet.g.alchemy.com` or the private
 `rpc.domino.money` route (Robinhood's public RPC is not admitted);
@@ -53,7 +54,11 @@ whose pins must be members of the official inventory the module carries;
 `chains` is Base's and Arbitrum's hosted RPC: Chainstack, Alchemy, and each
 chain's public endpoint as a last resort (`CHAIN_HOSTS`). It is granted only
 by `v2Chains`, and only to the writer (its V2 indexer instances) and the plan
-listener. A host that serves Robinhood alone pins none of it.
+listener. A host that serves Robinhood alone pins none of it. `bridges` is
+`api.relay.link` and `app.across.to` (`BRIDGE_HOSTS`), the crosschain listener's
+alone and required by it. Relay's API sits behind CloudFront, whose edge
+addresses differ by resolver and move over time: collect on the VM itself, and
+again when Relay calls start failing to connect.
 
 Loopback: the gateway may originate to the reader; the tunnel may originate to
 every enabled listener it fronts. The tunnel uses the stub resolver; every
@@ -119,9 +124,9 @@ same for the reader and the writer, and requires either in `enabled`.
 `v2Chains` (`--v2-chains` when collecting) grants `chains` to the writer and the
 plan listener, and requires either in `enabled`.
 
-`identities` names all fifteen roles exactly. `admin` may be `null`, and so
-may `position-plan` and `v2-automation` until their installers create the
-accounts; an
+`identities` names all sixteen roles exactly. `admin` may be `null`, and so
+may `position-plan`, `v2-automation` and `crosschain` until their installers
+create the accounts; an
 enabled role with a `null` identity is refused (`enabled_role_without_identity`).
 Roles with a service unit must name `domino-<role>.service` and its system-slice
 cgroup; `write`, `operator`, `admin` and `v2-automation` must name none. `hosts` are the
@@ -129,7 +134,8 @@ operator's pins: public IPv4 only, no private, loopback, metadata or reserved
 address, no duplicates, edges only from the official inventory. Every pinned
 hostname must be needed by some enabled role, and every enabled role must find
 its required classes pinned — a family enabled without the issuer, or
-`onboarding` without the trade API, is refused as `incomplete_host_inventory`.
+`onboarding` without the trade API, or `crosschain` missing either bridge's host, is refused as
+`incomplete_host_inventory`.
 
 ```sh
 python3 scripts/staging/continuous_egress_policy.py < pins.json > candidate.json

@@ -21,6 +21,7 @@ import re
 import sys
 
 import egress_policy as shared
+import install_crosschain as crosschain
 import install_position_plan as position_plan
 import upgrade_financial as financial
 
@@ -35,11 +36,12 @@ UNIT_DIR = '/etc/systemd/system/'
 # order; the four financial identities of 13 September follow deposit.
 ROLES = ('read', 'gateway', 'auth', 'onboarding', 'deposit', 'performance',
          'performance-collector', 'execution-status', 'execution-signer',
-         'tunnel', 'write', 'operator', 'admin', 'position-plan', 'v2-automation')
+         'tunnel', 'write', 'operator', 'admin', 'position-plan', 'v2-automation', 'crosschain')
 # Identities a host may not have: the admin account, the S1 plan listener until
-# install_position_plan.py has created it, and the V2 automation until
-# install_v2_automation.py has. An enabled role needs its own.
-OPTIONAL = ('admin', 'position-plan', 'v2-automation')
+# install_position_plan.py has created it, the V2 automation until
+# install_v2_automation.py has, and the S2 crosschain listener until
+# install_crosschain.py has. An enabled role needs its own.
+OPTIONAL = ('admin', 'position-plan', 'v2-automation', 'crosschain')
 # Identities with no single service unit: the indexer role runs two
 # timer-driven units whose systemd layer is not this file's, and the two
 # accounts never run a service at all.
@@ -50,7 +52,7 @@ NO_UNIT = ('write', 'operator', 'admin', 'v2-automation')
 READ_PATH_UNITS = ('domino-read.service', 'domino-gateway.service', 'domino-tunnel.service')
 LISTENERS = {'read': 8876, 'gateway': 8878, 'auth': 8879, 'onboarding': 8880,
              'deposit': 8881, 'performance': 8900, 'execution-status': 8901,
-             'tunnel': 20241, 'position-plan': position_plan.PORT}
+             'tunnel': 20241, 'position-plan': position_plan.PORT, 'crosschain': crosschain.PORT}
 # The node's proxy on this host (install_node_rpc_endpoint.py). With
 # `nodeLoopbackReads`, the reader and the writer (public-data lanes, featured,
 # queue worker, followers) lead their chain reads with it, not with Cloudflare.
@@ -70,6 +72,12 @@ UNISWAP_HOSTS = frozenset(('trade-api.gateway.uniswap.org', 'liquidity.api.unisw
 # credential (v2-rpc-<chain>-<name>); only the host is pinned here.
 CHAIN_HOSTS = frozenset(('base-mainnet.core.chainstack.com', 'base-mainnet.g.alchemy.com', 'mainnet.base.org',
                          'arbitrum-mainnet.core.chainstack.com', 'arb-mainnet.g.alchemy.com', 'arb1.arbitrum.io'))
+# The two bridge providers the S2 crosschain listener quotes and tracks through
+# (backend/crosschain_relay.py, crosschain_across.py). Relay's API sits behind
+# CloudFront, whose edge addresses differ by resolver and move over time: the
+# pins are the VM resolver's answer, and a provider that stops answering is the
+# sign to collect them again.
+BRIDGE_HOSTS = frozenset(('api.relay.link', 'app.across.to'))
 EDGE_HOSTS = frozenset(shared.EDGE_ADDRESSES)
 ISSUER = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com')
 # What each identity's own code reaches for, by hostname class. `jwks` is the
@@ -90,19 +98,27 @@ CLASSES = {'read': ('rpc', 'analytics'), 'gateway': ('jwks',),
            # The V2 automation: Robinhood through the node's proxy first, its
            # provider file's fallbacks (rpc), and chains with v2Chains. It serves
            # nothing and verifies no assertion.
-           'v2-automation': ('rpc',)}
+           'v2-automation': ('rpc',),
+           # The S2 crosschain listener: its session account check and the Across fee
+           # proof on Robinhood read the chain (rpc), it verifies the bridge's Access
+           # assertion (jwks), and it quotes and tracks through Relay and Across (bridges).
+           'crosschain': ('rpc', 'jwks', 'bridges')}
 # Who reads the V2 chains' hosted RPC (`chains`), and only with `v2Chains`:
 # the writer's indexer instances for Base and Arbitrum, and the plan listener's
 # plans there. A host that serves Robinhood alone pins none of it.
 CHAIN_ROLES = ('write', 'position-plan', 'v2-automation')
 # A class an enabled role cannot run without. Analytics is optional for the
 # reader: the market provider is a fallback, not the read path.
-REQUIRED = {'rpc', 'jwks', 'uniswap', 'edges'}
+REQUIRED = {'rpc', 'jwks', 'uniswap', 'edges', 'bridges'}
+# Classes whose every host must be pinned: the connector's two regions, and the
+# two bridge providers, each its own service (one alone would fail every quote
+# and status of the other).
+COMPLETE = {'edges': EDGE_HOSTS, 'bridges': BRIDGE_HOSTS}
 # Who originates a loopback connection to whose listener. The tunnel fronts
 # every listener behind an Access hostname; the gateway fronts the reader.
 ORIGINS = {'gateway': ('read',),
            'tunnel': ('gateway', 'auth', 'onboarding', 'deposit', 'performance', 'execution-status',
-                      'position-plan')}
+                      'position-plan', 'crosschain')}
 # Identities that resolve names at runtime. Every other enabled unit reads a
 # pinned hosts file bound over /etc/hosts and never needs the stub resolver.
 # The writer's units bind theirs too (ops/systemd); the stub stays for the
@@ -123,7 +139,8 @@ ENABLE_ARGUMENTS = {
     'deposit': f'--enable --rpc-config {private_config("deposit", "rpc.json")}',
     'performance': f'--enable --profile {private_config("performance", "profile.json")}',
     'execution-status': f'--enable --config {private_config("execution-status", "profile.json")}',
-    'position-plan': f'--enable --rpc-config {private_config("position-plan", "rpc.json")}'}
+    'position-plan': f'--enable --rpc-config {private_config("position-plan", "rpc.json")}',
+    'crosschain': f'--enable --rpc-config {private_config("crosschain", "rpc.json")}'}
 UNSET = ('UnsetEnvironment=HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy '
          'all_proxy no_proxy SSL_CERT_FILE SSL_CERT_DIR REQUESTS_CA_BUNDLE CURL_CA_BUNDLE '
          'PYTHONPATH PYTHONHOME')
@@ -152,6 +169,7 @@ def classes_of(hostname, issuer):
     if hostname in ANALYTICS_HOSTS: result.add('analytics')
     if hostname in UNISWAP_HOSTS: result.add('uniswap')
     if hostname in CHAIN_HOSTS: result.add('chains')
+    if hostname in BRIDGE_HOSTS: result.add('bridges')
     if hostname in EDGE_HOSTS: result.add('edges')
     if hostname == issuer: result.add('jwks')
     return result
@@ -232,8 +250,8 @@ def validate(snapshot):
         role_hosts[role] = sorted(host for host in pins if classes_of(host, issuer) & wanted)
         for kind in wanted & REQUIRED:
             present = {host for host in pins if kind in classes_of(host, issuer)}
-            if kind == 'edges':
-                require(present == EDGE_HOSTS, 'incomplete_host_inventory')
+            if kind in COMPLETE:
+                require(present == COMPLETE[kind], 'incomplete_host_inventory')
             else:
                 require(present, 'incomplete_host_inventory')
     used = {host for hosts in role_hosts.values() for host in hosts}
@@ -247,7 +265,8 @@ def ordered(values):
 
 def enable_command(role):
     """The installer's exact ExecStart for this component, plus its enable flags."""
-    text = position_plan.unit_text('0' * 40) if role == 'position-plan' else financial.unit_text(role, '0' * 40)
+    installers = {'position-plan': position_plan, 'crosschain': crosschain}
+    text = installers[role].unit_text('0' * 40) if role in installers else financial.unit_text(role, '0' * 40)
     command = next(line for line in text.splitlines() if line.startswith('ExecStart='))
     return command + ' ' + ENABLE_ARGUMENTS[role]
 

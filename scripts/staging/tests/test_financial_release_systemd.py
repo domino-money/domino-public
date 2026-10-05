@@ -30,6 +30,7 @@ import install_auth_release as auth
 import install_automation_boot as boot
 import install_automation_release as automation
 import continuous_egress_policy as egress_policy
+import install_crosschain as crosschain
 import install_financial_release as installer
 import install_position_plan as position_plan
 import install_v2_automation as automation_v2
@@ -306,6 +307,37 @@ class RealSystemdTests(unittest.TestCase):
         self.plan_reload()
         shown = self.plan_show(name, 'ExecStart')
         self.assertIn('--port 8911 --enable --rpc-config /run/domino-financial-position-plan-config/rpc.json ;',
+                      shown['ExecStart'])
+        self.assertEqual(shown['ExecStart'].count('argv[]='), 1)
+
+    def test_the_crosschain_listener_loads_disabled_and_the_egress_drop_in_enables_it(self):
+        # As the plan listener: no --enable in the unit, the providers' keys only as credentials with the TPM in
+        # the device policy, and the continuous egress policy's drop-in is what switches it on.
+        name = 'domino-crosschain-under-test'
+        self.install(name, crosschain.unit_text(AFTER))
+        self.plan_reload()
+        shown = self.plan_show(name, 'LoadState', 'ExecStart', 'User', 'ImportCredential', 'BindReadOnlyPaths',
+                               'UnsetEnvironment', 'ProtectSystem')
+        self.assertEqual((shown['LoadState'], shown['User'], shown['ProtectSystem']),
+                         ('loaded', 'domino-crosschain', 'strict'))
+        self.assertIn('-B backend/crosschain_api.py --port 8910 ;', shown['ExecStart'])
+        self.assertNotIn('--enable', shown['ExecStart'])
+        self.assertEqual(sorted(shlex.split(shown['ImportCredential'])), ['across-api-key', 'relay-api-key'])
+        devices = subprocess.run(['systemctl', 'show', f'{name}.service', '--property=DeviceAllow'],
+                                 check=True, capture_output=True, text=True).stdout.splitlines()
+        self.assertIn('DeviceAllow=char-tpm rw', devices)
+        for variable in ('DOMINO_RELAY_API_KEY', 'DOMINO_ACROSS_API_KEY'):
+            self.assertIn(variable, shown['UnsetEnvironment'])
+        self.assertIn('/run/domino-financial-crosschain-config', shown['BindReadOnlyPaths'])
+        enable = egress_policy.enable_command('crosschain')
+        dropin_dir = RUNTIME_UNITS / f'{name}.service.d'
+        self.assertFalse(os.path.lexists(dropin_dir), dropin_dir)
+        self.written.append(dropin_dir)
+        dropin_dir.mkdir()
+        (dropin_dir / egress_policy.DROPIN).write_text('[Service]\nExecStart=\n' + enable + '\n')
+        self.plan_reload()
+        shown = self.plan_show(name, 'ExecStart')
+        self.assertIn('--port 8910 --enable --rpc-config /run/domino-financial-crosschain-config/rpc.json ;',
                       shown['ExecStart'])
         self.assertEqual(shown['ExecStart'].count('argv[]='), 1)
 

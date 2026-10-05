@@ -65,6 +65,8 @@ jobs:
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_position_plan.py -v
       - name: Check the V2 automation installer without host access
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_v2_automation.py -v
+      - name: Check the S2 crosschain listener installer without host access
+        run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_crosschain.py -v
       - name: Check every release installer's drop-ins and the automation boot target against the runner's own systemd
         run: sudo -n env DOMINO_TEST_REAL_SYSTEMD=1 python3 -B -m unittest discover -s scripts/staging/tests -p test_financial_release_systemd.py -v
       - name: Check the public-data installer and rollback without host access

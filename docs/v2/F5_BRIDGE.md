@@ -145,7 +145,7 @@ The per-minute defaults are 45 with a Relay key and 20 without; 60 with an Acros
 
 ### What the owner must provide
 
-1. **The fee recipient address.** It receives Across fees on Robinhood, Base and Arbitrum, and owns Relay's app balance.
+1. **The fee recipient address.** It receives Across fees on Robinhood, Base and Arbitrum, and owns Relay's app balance. The owner chose `0x1488C84dAFc03F7f4c4fB986F83bA99Fd530c6f4` on 5 Oct 2026: the V2 registry's fee recipient, with no code on any of the three chains. Its key has never signed there (nonce 0), and Relay's balance is claimed only with its signature.
    - An EOA is the safe choice: it can sign Relay's EIP-191 claim, and it accepts ETH and every token on all three chains.
    - A contract that rejects ETH would make every native Across fill revert, so those deposits would only be refunded hours later.
    - Relay accepts an EIP-1271 contract for claims.
@@ -153,7 +153,46 @@ The per-minute defaults are 45 with a Relay key and 20 without; 60 with an Acros
 2. **Across API key and integrator id**, requested at docs.across.to → Tools → Get API Key & Integrator ID. Production traffic without them gets strict, unpublished limits and may be rejected.
 3. **Relay API key and its key id**, from dashboard.relay.link. Quotes and status work without a key. Fee measurement (`/requests/v3`) and the default 50 quotes per minute need one.
 4. **Hosted RPC endpoints for Base and Arbitrum.** Optional: without them the Across fee is reported from the provider's record instead of the destination receipt.
-5. **Egress and the Worker.** The VM's egress policy must admit `api.relay.link`, `app.across.to` and the RPC hosts. A Worker route (`/api/crosschain/v1/` → this listener, as `bridge/src/onboarding-worker.mjs` does) must be deployed before the app can call it. Neither is part of this change.
+5. **Egress and the Worker.** The VM's egress policy admits `api.relay.link` and `app.across.to` through the role `crosschain` ([In production](#in-production)). The Worker route (`/api/crosschain/v1/` → this listener) is the bridge's `domino-crosschain-bridge`.
+
+## In production
+
+`scripts/staging/install_crosschain.py` installs the listener and moves it to newer releases. It starts nothing.
+
+The bridge owns the rest of the path (0xdecimal, 5 Oct 2026):
+- the tunnel hostname `vm-crosschain.domino.money`;
+- its route `^/internal/crosschain/v1/(origins|quote|status)$` to `127.0.0.1:8910`;
+- its Access application;
+- the Worker `domino-crosschain-bridge`, which stays off until this listener answers.
+
+1. **Install.** Run `install_crosschain.py --archive <tar> --archive-sha256 <hex> --commit <sha>`, first with `--inspect`, then with `--apply`.
+   - **The first install** creates:
+     - the identity `domino-crosschain`;
+     - its peer row `domino domino-crosschain domino_session_auth`, proven by a connection as that user;
+     - `/etc/domino/financial/crosschain`;
+     - `/var/lib/domino-financial/crosschain`, with `catalogue-db.json` and the process lock.
+   - **Every release** writes `/opt/domino/financial/releases/<sha>/crosschain` (the backend with `crosschain_pins.json`, and `api-contracts/v2`'s chain profiles) and the unit naming it. Every file and directory mode is set explicitly, whatever the shell's umask.
+   - **Rollback:** `--rollback <sha>` puts back the previous unit, or removes it.
+2. **Private files.** They go in `/etc/domino/financial/crosschain`, owned by `domino-crosschain`, mode 0600.
+   - **`rpc.json`:** the plan listener's version 4 provider file, led by `https://rpc.domino.money/<token>/`. `EoaChecker` refuses the loopback proxy. Its first endpoint also serves Robinhood's Across fee proof.
+   - **`environment`:**
+     - `DOMINO_CROSSCHAIN_FEE_RECIPIENT`, the owner's address above;
+     - `DOMINO_CROSSCHAIN_ACCESS_ISSUER`, `_AUDIENCE` and `_SERVICE_ID`, the Access application's;
+     - the session listener's `DOMINO_SESSION_ORIGIN` and `DOMINO_SESSION_ABUSE_SECRET`;
+     - with Across' key, `DOMINO_ACROSS_INTEGRATOR_ID`, which is not a secret.
+3. **The providers' keys,** when the owner has them. Seal each once with `systemd-creds encrypt --with-key=host+tpm2 --name=<name>`, as `/etc/credstore.encrypted/relay-api-key` and `/etc/credstore.encrypted/across-api-key`, then restart the listener.
+   - The unit imports them (`ImportCredential=`) with the TPM in its device policy (`DeviceAllow=char-tpm rw`; systemd 255 adds it only for `LoadCredentialEncrypted=`).
+   - It unsets `DOMINO_RELAY_API_KEY`, `DOMINO_ACROSS_API_KEY` and the destination RPC variables, so no key is ever read in clear.
+   - Relay quotes and tracks without a key. Across' keyless limits are strict and unpublished.
+4. **Egress.** Collect with `crosschain` enabled, render, review, update, then `nft -f`.
+   - The role gets the `rpc`, `jwks` and `bridges` classes. `bridges` is `api.relay.link` and `app.across.to`, both required. It also gets the replies of its listener on 8910.
+   - The tunnel gets the origin rule to 8910.
+   - The 60 drop-in adds `--enable --rpc-config /run/domino-financial-crosschain-config/rpc.json`.
+   - `domino-continuous-reads.target` wants the unit as a family.
+   - Relay's API is behind CloudFront: its pins are the VM resolver's answer, and they move. If Relay calls stop connecting, collect again.
+5. **Start.** Run `daemon-reload`, then start the unit. A request without an Access assertion gets 403. Then the bridge switches its Worker on.
+
+Not installed: hosted RPC for the Across fee proof on Base and Arbitrum (`crosschain-rpc-8453`, `crosschain-rpc-42161`). The unit imports neither, so the fee there is reported from Across' own record. These endpoints belong on F6's chain registry (below).
 
 ## Operations
 
@@ -190,6 +229,6 @@ The per-minute defaults are 45 with a Relay key and 20 without; 60 with an Acros
   - read destination chains, tokens and RPCs from the chain registry instead of `api-contracts/v2/chains` and `DOMINO_CROSSCHAIN_RPC_URL_*`;
   - Relay and Across pins may move there too.
 - **For F7:** the screens, through the Worker route. The contract's README lists what the app reads.
-- **For F8:** egress for the two provider hosts and the hosted RPCs, and the listener's unit with its credentials.
+- **For F8:** done by `install_crosschain.py` and the egress role `crosschain` ([In production](#in-production)), except the hosted RPCs.
 
 Sources: the Relay and Across documentation and live keyless answers of 1–2 Oct 2026, recorded with synthetic wallets in `backend/tests/fixtures/crosschain/`, and the adversarial verification of both fee mechanisms done for #283.

@@ -422,6 +422,13 @@ class ContinuousEgressTests(unittest.TestCase):
         granted = install_continuous_egress.needed_hosts(live, 'team.cloudflareaccess.com', True, chains=True)
         self.assertEqual(set(granted), set(without) | set(policy.CHAIN_HOSTS))
 
+    def test_the_bridge_hosts_are_collected_for_the_crosschain_listener_alone(self):
+        live = ['read', 'gateway', 'tunnel', 'write']
+        without = install_continuous_egress.needed_hosts(live, 'team.cloudflareaccess.com', True)
+        self.assertFalse(set(without) & set(policy.BRIDGE_HOSTS))
+        bridged = install_continuous_egress.needed_hosts([*live, 'crosschain'], 'team.cloudflareaccess.com', True)
+        self.assertEqual(set(bridged), set(without) | {'api.relay.link', 'app.across.to'})
+
     def test_collect_names_the_node_loopback_reads_only_when_asked(self):
         def identity(role):
             unit = policy.unit_of(role)
