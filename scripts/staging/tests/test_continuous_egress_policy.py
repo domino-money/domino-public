@@ -565,7 +565,7 @@ class ContinuousEgressTests(unittest.TestCase):
             if role not in policy.CHAIN_ROLES:
                 self.assertEqual(hosts, before['roleHosts'][role], role)
         sets_before, sets_after = parse(nft(before))[1], parse(nft(after))[1]
-        granted_sets = ('write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4', 'monitor_ipv4')
+        granted_sets = ('write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4', 'ops_monitor_ipv4')
         for name in granted_sets:
             self.assertEqual(sets_after[name], sets_before[name] + len(chains), name)
         self.assertEqual({name: count for name, count in sets_after.items() if name not in granted_sets},
@@ -690,14 +690,19 @@ class ContinuousEgressTests(unittest.TestCase):
         rendered = policy.render({**snapshot(enabled, {**PINS, **TELEGRAM}), 'identities': identities(monitor=True),
                                   'nodeLoopbackReads': True})
         chains, sets = parse(nft(rendered))
-        rules = chains['monitor']
+        # nft reads `monitor` as its event command where a chain's name goes (refused on the VM, 5 Oct).
+        self.assertNotIn('monitor', chains)
+        uid = identities(monitor=True)['monitor']['realUid']
+        self.assertIn(f'add rule inet domino_continuous_reads output meta skuid {uid} jump ops_monitor',
+                      nft(rendered).splitlines())
+        rules = chains['ops_monitor']
         self.assertIn('oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp dport 18547 ct direction original '
                       'counter accept comment "private node RPC"', rules)
         self.assertFalse(any('sport' in rule for rule in rules))  # it serves nothing
         self.assertFalse(any('dport 53' in rule for rule in rules))  # its hosts file, never the stub
         self.assertEqual(sorted(rendered['roleHosts']['monitor']),
                          sorted([*(policy.RPC_HOSTS & set(PINS)), 'api.telegram.org']))
-        self.assertEqual(sets['monitor_ipv4'], sum(len(PINS[h]) for h in policy.RPC_HOSTS & set(PINS)) + 1)
+        self.assertEqual(sets['ops_monitor_ipv4'], sum(len(PINS[h]) for h in policy.RPC_HOSTS & set(PINS)) + 1)
         hosts = rendered['artifacts'][policy.ROOT + '/monitor.hosts']
         self.assertIn('20.0.0.1 api.telegram.org\n', hosts)
         # Its own unit binds that file and is wanted at boot by itself: no drop-in, and the read path's target,

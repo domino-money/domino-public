@@ -397,6 +397,15 @@ class PolicyTests(unittest.TestCase):
         messages = monitor.transitions(self.cycle(NOW, monitor.OK, [(monitor.OK, 'novo vault'),
                                                                    (monitor.CRIT, 'halt')]), state)
         self.assertEqual(messages, ['ℹ️ novo vault', '🔴 halt'])
+        # Kept for the dashboard, the last RECENT of them with their time.
+        self.assertEqual(state['recentEvents'], [{'at': int(NOW), 'text': 'ℹ️ novo vault'},
+                                                 {'at': int(NOW), 'text': '🔴 halt'}])
+        for index in range(monitor.RECENT):
+            monitor.transitions(self.cycle(NOW + index, monitor.OK, [(monitor.OK, f'e{index}')]), state)
+        self.assertEqual(len(state['recentEvents']), monitor.RECENT)
+        self.assertEqual(state['recentEvents'][-1]['text'], f'ℹ️ e{monitor.RECENT - 1}')
+        self.assertEqual(monitor.snapshot(monitor.Cycle(NOW), state, telegram_status='off')['recentEvents'],
+                         state['recentEvents'])
 
 
 class TelegramTests(unittest.TestCase):

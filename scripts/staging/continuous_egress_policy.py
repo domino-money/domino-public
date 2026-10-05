@@ -167,9 +167,14 @@ def unit_of(role):
     return None if role in NO_UNIT else 'domino-' + role + '.service'
 
 
+# Roles whose name nft reads as a keyword where a chain's name goes: `monitor`
+# is its event command (nft 1.0.9 refused the chain on 5 Oct 2026).
+NFT_NAMES = {'monitor': 'ops_monitor'}
+
+
 def nft_name(role):
-    """nft identifiers admit no hyphen; unit and account names keep theirs."""
-    return role.replace('-', '_')
+    """nft identifiers admit no hyphen, nor some of nft's keywords; unit and account names keep theirs."""
+    return NFT_NAMES.get(role, role.replace('-', '_'))
 
 
 def classes_of(hostname, issuer):

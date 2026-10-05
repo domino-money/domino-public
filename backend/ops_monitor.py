@@ -51,6 +51,7 @@ MAX_MESSAGE = 3900  # Telegram's limit is 4096 characters
 # restart, a slow read or one late pass alerts no one.
 CONFIRM_CYCLES = 2
 REALERT_CRIT_SECONDS = 3 * 3600
+RECENT = 50
 HOUR = 3600
 DAY = 24 * HOUR
 WEI = 10**18
@@ -244,7 +245,7 @@ def json_message(message):
 def empty_state():
     return {'version': 1, 'cursors': {}, 'levels': {}, 'pending': {}, 'alerted': {}, 'restarts': {},
             'registry': {}, 'hours': {}, 'samples': {}, 'automation': {}, 'indexers': {}, 'v1': {},
-            'telegramOffset': 0, 'summaryDate': None, 'lastCheck': None}
+            'telegramOffset': 0, 'summaryDate': None, 'lastCheck': None, 'recentEvents': []}
 
 
 def load_state(path):
@@ -681,6 +682,10 @@ def transitions(cycle, state):
         state['pending'].pop(key, None)
         state['alerted'].pop(key, None)
     messages += [f'{MARK[level] if level else "ℹ️"} {text}' for level, text in cycle.events]
+    # The dashboard's history: the last RECENT events and confirmed changes, with their time.
+    recent = state.setdefault('recentEvents', [])
+    recent.extend({'at': int(cycle.now), 'text': message} for message in messages)
+    del recent[:-RECENT]
     return messages
 
 
@@ -754,6 +759,7 @@ def snapshot(cycle, state, *, telegram_status):
             'checks': [{'key': c.key, 'level': state['levels'].get(c.key, OK), 'observed': c.level, 'text': c.text}
                        for c in cycle.checks],
             'events': [{'level': level, 'text': text} for level, text in cycle.events],
+            'recentEvents': list(state.get('recentEvents', [])),
             'telegram': telegram_status, **cycle.sections}
 
 

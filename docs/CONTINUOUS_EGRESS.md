@@ -166,6 +166,10 @@ packet keeps the silent drop: a reset for a stray packet of a connection a rule
 accepted, a listener's late reply for one, would tear that connection down.
 Both rules count in the chain's `denied_<role>` counter.
 
+A chain, its set and its counter take the role's name with `_` for `-`. The monitor's are `ops_monitor`,
+`ops_monitor_ipv4` and `denied_ops_monitor`: nft reads `monitor` as its event command where a chain's name
+goes, and refused the policy at `nft -c` on 5 Oct 2026 (`NFT_NAMES`).
+
 ## The procedure
 
 Render, then review the candidate against what is installed before anything
