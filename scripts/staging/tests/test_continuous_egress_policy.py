@@ -29,12 +29,14 @@ PINS = {'api.geckoterminal.com': ['11.0.0.1', '11.0.0.2'],
         **{host: sorted(addresses) for host, addresses in shared.EDGE_ADDRESSES.items()}}
 UNISWAP = {'trade-api.gateway.uniswap.org': ['15.0.0.1'], 'liquidity.api.uniswap.org': ['15.0.0.2']}
 BRIDGES = {'api.relay.link': ['18.0.0.1', '18.0.0.2', '18.0.0.3', '18.0.0.4'], 'app.across.to': ['19.0.0.1', '19.0.0.2']}
+TELEGRAM = {'api.telegram.org': ['20.0.0.1']}
 NEW_CHAINS = ('performance', 'performance_collector', 'execution_status', 'execution_signer')
 
 
-def identities(plan_listener=False, automation=False, bridge=False):
+def identities(plan_listener=False, automation=False, bridge=False, monitor=False):
     """The live host's identities. The S1 plan listener's exists only once install_position_plan.py ran, the V2
-    automation's once install_v2_automation.py did, the S2 crosschain listener's once install_crosschain.py did."""
+    automation's once install_v2_automation.py did, the S2 crosschain listener's once install_crosschain.py did,
+    the monitor's once install_monitor.py did."""
     result = {}
     for index, role in enumerate(policy.ROLES):
         unit = policy.unit_of(role)
@@ -47,6 +49,8 @@ def identities(plan_listener=False, automation=False, bridge=False):
         result['v2-automation'] = None
     if not bridge:
         result['crosschain'] = None
+    if not monitor:
+        result['monitor'] = None
     return result
 
 
@@ -236,9 +240,9 @@ class ContinuousEgressTests(unittest.TestCase):
     def test_a_refused_connection_attempt_is_reset_and_any_other_packet_still_dropped(self):
         every = LIVE_ENABLED + ('auth', 'onboarding', 'deposit', 'performance',
                                 'performance-collector', 'execution-status', 'execution-signer', 'position-plan',
-                                'v2-automation', 'crosschain')
-        data = {**snapshot(every, {**PINS, **UNISWAP, **BRIDGES}),
-                'identities': identities(plan_listener=True, automation=True, bridge=True)}
+                                'v2-automation', 'crosschain', 'monitor')
+        data = {**snapshot(every, {**PINS, **UNISWAP, **BRIDGES, **TELEGRAM}),
+                'identities': identities(plan_listener=True, automation=True, bridge=True, monitor=True)}
         chains, _ = parse(nft(policy.render(data)))
         for role in policy.ROLES:
             chain = policy.nft_name(role)
@@ -419,9 +423,10 @@ class ContinuousEgressTests(unittest.TestCase):
     def test_every_family_enabled_renders_only_hyphen_free_nft_identifiers(self):
         every = LIVE_ENABLED + ('auth', 'onboarding', 'deposit', 'performance',
                                 'performance-collector', 'execution-status', 'execution-signer', 'position-plan',
-                                'v2-automation', 'crosschain')
-        text = nft(policy.render({**snapshot(every, {**PINS, **UNISWAP, **BRIDGES}),
-                                  'identities': identities(plan_listener=True, automation=True, bridge=True)}))
+                                'v2-automation', 'crosschain', 'monitor')
+        text = nft(policy.render({**snapshot(every, {**PINS, **UNISWAP, **BRIDGES, **TELEGRAM}),
+                                  'identities': identities(plan_listener=True, automation=True, bridge=True,
+                                                           monitor=True)}))
         names = re.findall(r'add (?:chain|counter|set) inet \w+ (\S+)', text) + re.findall(r'jump (\S+)', text)
         self.assertTrue(names)
         for name in names:
@@ -545,9 +550,10 @@ class ContinuousEgressTests(unittest.TestCase):
     def test_the_v2_chains_grant_is_explicit_and_reaches_only_the_writer_and_the_plan_listener(self):
         # Base and Arbitrum (backend/v2_rpc.py): the writer's indexer instances and the plan listener's plans.
         chains = {host: [f'17.0.0.{index}'] for index, host in enumerate(sorted(policy.CHAIN_HOSTS), 1)}
-        enabled = (*LIVE_ENABLED, 'auth', 'position-plan', 'v2-automation')
-        before = policy.render({**snapshot(enabled, {**PINS, **UNISWAP}), 'identities': identities(plan_listener=True, automation=True)})
-        granted = {**snapshot(enabled, {**PINS, **UNISWAP, **chains}), 'identities': identities(plan_listener=True, automation=True),
+        enabled = (*LIVE_ENABLED, 'auth', 'position-plan', 'v2-automation', 'monitor')
+        everyone = identities(plan_listener=True, automation=True, monitor=True)
+        before = policy.render({**snapshot(enabled, {**PINS, **UNISWAP, **TELEGRAM}), 'identities': everyone})
+        granted = {**snapshot(enabled, {**PINS, **UNISWAP, **TELEGRAM, **chains}), 'identities': everyone,
                    'v2Chains': True}
         after = policy.render(granted)
         for role in policy.CHAIN_ROLES:
@@ -559,10 +565,11 @@ class ContinuousEgressTests(unittest.TestCase):
             if role not in policy.CHAIN_ROLES:
                 self.assertEqual(hosts, before['roleHosts'][role], role)
         sets_before, sets_after = parse(nft(before))[1], parse(nft(after))[1]
-        for name in ('write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4'):
+        granted_sets = ('write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4', 'monitor_ipv4')
+        for name in granted_sets:
             self.assertEqual(sets_after[name], sets_before[name] + len(chains), name)
-        self.assertEqual({name: count for name, count in sets_after.items() if name not in ('write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4')},
-                         {name: count for name, count in sets_before.items() if name not in ('write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4')})
+        self.assertEqual({name: count for name, count in sets_after.items() if name not in granted_sets},
+                         {name: count for name, count in sets_before.items() if name not in granted_sets})
         listener = after['artifacts'][policy.UNIT_DIR + 'domino-position-plan.service.d/' + policy.DROPIN]
         for (address,) in chains.values():
             self.assertIn(f'IPAddressAllow={address}/32\n', listener)
@@ -591,7 +598,7 @@ class ContinuousEgressTests(unittest.TestCase):
 
     def test_every_class_fits_the_host_inventory_and_one_more_host_is_refused(self):
         every = {*policy.RPC_HOSTS, *policy.ANALYTICS_HOSTS, *policy.UNISWAP_HOSTS, *policy.EDGE_HOSTS,
-                 *policy.CHAIN_HOSTS, *policy.BRIDGE_HOSTS, ISSUER}
+                 *policy.CHAIN_HOSTS, *policy.BRIDGE_HOSTS, *policy.TELEGRAM_HOSTS, ISSUER}
         self.assertLess(len(every), policy.MAX_HOSTS)
         data = snapshot()
         data['hosts'] = [{'hostname': f'h{index}.example.com', 'addresses': ['16.0.0.1']}
@@ -673,6 +680,44 @@ class ContinuousEgressTests(unittest.TestCase):
         # Pinned while the listener is not enabled, they are no role's.
         self.reject({**snapshot(LIVE_ENABLED, {**PINS, **BRIDGES}), 'identities': identities(bridge=True)},
                     'unapproved_hostname')
+
+    def test_the_monitor_reaches_telegram_the_node_and_its_rpc_through_a_hosts_file_of_its_own(self):
+        # Optional until install_monitor.py creates the account; enabled, it needs that identity and Telegram.
+        self.assertEqual(policy.render(snapshot()), policy.render({**snapshot(), 'identities': identities()}))
+        enabled = (*LIVE_ENABLED, 'monitor')
+        self.reject(snapshot(enabled, {**PINS, **TELEGRAM}), 'enabled_role_without_identity')
+        self.reject({**snapshot(enabled), 'identities': identities(monitor=True)}, 'incomplete_host_inventory')
+        rendered = policy.render({**snapshot(enabled, {**PINS, **TELEGRAM}), 'identities': identities(monitor=True),
+                                  'nodeLoopbackReads': True})
+        chains, sets = parse(nft(rendered))
+        rules = chains['monitor']
+        self.assertIn('oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp dport 18547 ct direction original '
+                      'counter accept comment "private node RPC"', rules)
+        self.assertFalse(any('sport' in rule for rule in rules))  # it serves nothing
+        self.assertFalse(any('dport 53' in rule for rule in rules))  # its hosts file, never the stub
+        self.assertEqual(sorted(rendered['roleHosts']['monitor']),
+                         sorted([*(policy.RPC_HOSTS & set(PINS)), 'api.telegram.org']))
+        self.assertEqual(sets['monitor_ipv4'], sum(len(PINS[h]) for h in policy.RPC_HOSTS & set(PINS)) + 1)
+        hosts = rendered['artifacts'][policy.ROOT + '/monitor.hosts']
+        self.assertIn('20.0.0.1 api.telegram.org\n', hosts)
+        # Its own unit binds that file and is wanted at boot by itself: no drop-in, and the read path's target,
+        # whose stop would take its members with it, does not name it.
+        self.assertFalse(any('monitor' in path for path in rendered['artifacts'] if path.endswith('.conf')))
+        self.assertNotIn('monitor', rendered['artifacts'][policy.UNIT_DIR + policy.TARGET])
+        # Telegram is the monitor's alone.
+        for role, hosts in rendered['roleHosts'].items():
+            if role != 'monitor':
+                self.assertNotIn('api.telegram.org', hosts, role)
+        self.reject({**snapshot(LIVE_ENABLED, {**PINS, **TELEGRAM}), 'identities': identities(monitor=True)},
+                    'unapproved_hostname')
+
+    def test_the_monitor_reads_base_and_arbitrum_only_with_the_v2_chains_grant(self):
+        chains = {host: [f'17.0.0.{index}'] for index, host in enumerate(sorted(policy.CHAIN_HOSTS), 1)}
+        enabled = (*LIVE_ENABLED, 'monitor')
+        data = {**snapshot(enabled, {**PINS, **TELEGRAM, **chains}), 'identities': identities(monitor=True),
+                'v2Chains': True}
+        self.assertLessEqual(set(chains), set(policy.render(data)['roleHosts']['monitor']))
+        self.reject({**data, 'v2Chains': False}, 'unapproved_hostname')
 
     def test_enable_commands_are_derived_from_the_installer_not_copied(self):
         for role in policy.ENABLE_ARGUMENTS:

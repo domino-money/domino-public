@@ -36,18 +36,21 @@ UNIT_DIR = '/etc/systemd/system/'
 # order; the four financial identities of 13 September follow deposit.
 ROLES = ('read', 'gateway', 'auth', 'onboarding', 'deposit', 'performance',
          'performance-collector', 'execution-status', 'execution-signer',
-         'tunnel', 'write', 'operator', 'admin', 'position-plan', 'v2-automation', 'crosschain')
+         'tunnel', 'write', 'operator', 'admin', 'position-plan', 'v2-automation', 'crosschain', 'monitor')
 # Identities a host may not have: the admin account, the S1 plan listener until
 # install_position_plan.py has created it, the V2 automation until
-# install_v2_automation.py has, and the S2 crosschain listener until
-# install_crosschain.py has. An enabled role needs its own.
-OPTIONAL = ('admin', 'position-plan', 'v2-automation', 'crosschain')
+# install_v2_automation.py has, the S2 crosschain listener until
+# install_crosschain.py has, and the monitor until install_monitor.py has. An
+# enabled role needs its own.
+OPTIONAL = ('admin', 'position-plan', 'v2-automation', 'crosschain', 'monitor')
 # Identities with no single service unit: the indexer role runs two
 # timer-driven units whose systemd layer is not this file's, and the two
 # accounts never run a service at all.
 # The V2 automation runs one instance of a template per chain
 # (domino-v2-automation@<chain>.service), which binds its hosts file itself.
-NO_UNIT = ('write', 'operator', 'admin', 'v2-automation')
+# So does the monitor's unit, wanted at boot on its own rather than by the read
+# path's target: it must keep running when that target stops.
+NO_UNIT = ('write', 'operator', 'admin', 'v2-automation', 'monitor')
 # The units the public read path cannot run without; every other enabled unit is a family.
 READ_PATH_UNITS = ('domino-read.service', 'domino-gateway.service', 'domino-tunnel.service')
 LISTENERS = {'read': 8876, 'gateway': 8878, 'auth': 8879, 'onboarding': 8880,
@@ -57,7 +60,7 @@ LISTENERS = {'read': 8876, 'gateway': 8878, 'auth': 8879, 'onboarding': 8880,
 # `nodeLoopbackReads`, the reader and the writer (public-data lanes, featured,
 # queue worker, followers) lead their chain reads with it, not with Cloudflare.
 SNAPSHOT_RPC_PORT = 18547
-NODE_LOOPBACK_ROLES = ('read', 'write', 'v2-automation')
+NODE_LOOPBACK_ROLES = ('read', 'write', 'v2-automation', 'monitor')
 # Robinhood's public RPC is not an egress destination: reads go to our node
 # (rpc.domino.money), with Alchemy as the verified fallback for old state.
 RPC_HOSTS = frozenset(('robinhood-mainnet.g.alchemy.com', 'rpc.domino.money'))
@@ -78,6 +81,8 @@ CHAIN_HOSTS = frozenset(('base-mainnet.core.chainstack.com', 'base-mainnet.g.alc
 # pins are the VM resolver's answer, and a provider that stops answering is the
 # sign to collect them again.
 BRIDGE_HOSTS = frozenset(('api.relay.link', 'app.across.to'))
+# Where the monitor sends its alerts and reads the operator's commands.
+TELEGRAM_HOSTS = frozenset(('api.telegram.org',))
 EDGE_HOSTS = frozenset(shared.EDGE_ADDRESSES)
 ISSUER = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com')
 # What each identity's own code reaches for, by hostname class. `jwks` is the
@@ -102,14 +107,18 @@ CLASSES = {'read': ('rpc', 'analytics'), 'gateway': ('jwks',),
            # The S2 crosschain listener: its session account check and the Across fee
            # proof on Robinhood read the chain (rpc), it verifies the bridge's Access
            # assertion (jwks), and it quotes and tracks through Relay and Across (bridges).
-           'crosschain': ('rpc', 'jwks', 'bridges')}
+           'crosschain': ('rpc', 'jwks', 'bridges'),
+           # The monitor: balances, the node's head and the registry's logs (rpc;
+           # the node's proxy with nodeLoopbackReads; chains with v2Chains), and
+           # its alerts (telegram). It serves nothing and verifies no assertion.
+           'monitor': ('rpc', 'telegram')}
 # Who reads the V2 chains' hosted RPC (`chains`), and only with `v2Chains`:
 # the writer's indexer instances for Base and Arbitrum, and the plan listener's
 # plans there. A host that serves Robinhood alone pins none of it.
-CHAIN_ROLES = ('write', 'position-plan', 'v2-automation')
+CHAIN_ROLES = ('write', 'position-plan', 'v2-automation', 'monitor')
 # A class an enabled role cannot run without. Analytics is optional for the
 # reader: the market provider is a fallback, not the read path.
-REQUIRED = {'rpc', 'jwks', 'uniswap', 'edges', 'bridges'}
+REQUIRED = {'rpc', 'jwks', 'uniswap', 'edges', 'bridges', 'telegram'}
 # Classes whose every host must be pinned: the connector's two regions, and the
 # two bridge providers, each its own service (one alone would fail every quote
 # and status of the other).
@@ -170,6 +179,7 @@ def classes_of(hostname, issuer):
     if hostname in UNISWAP_HOSTS: result.add('uniswap')
     if hostname in CHAIN_HOSTS: result.add('chains')
     if hostname in BRIDGE_HOSTS: result.add('bridges')
+    if hostname in TELEGRAM_HOSTS: result.add('telegram')
     if hostname in EDGE_HOSTS: result.add('edges')
     if hostname == issuer: result.add('jwks')
     return result

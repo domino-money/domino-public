@@ -429,6 +429,13 @@ class ContinuousEgressTests(unittest.TestCase):
         bridged = install_continuous_egress.needed_hosts([*live, 'crosschain'], 'team.cloudflareaccess.com', True)
         self.assertEqual(set(bridged), set(without) | {'api.relay.link', 'app.across.to'})
 
+    def test_the_telegram_host_is_collected_for_the_monitor_alone(self):
+        live = ['read', 'gateway', 'tunnel', 'write']
+        without = install_continuous_egress.needed_hosts(live, 'team.cloudflareaccess.com', True)
+        self.assertNotIn('api.telegram.org', without)
+        watched = install_continuous_egress.needed_hosts([*live, 'monitor'], 'team.cloudflareaccess.com', True)
+        self.assertEqual(set(watched), set(without) | {'api.telegram.org'})
+
     def test_collect_names_the_node_loopback_reads_only_when_asked(self):
         def identity(role):
             unit = policy.unit_of(role)

@@ -31,6 +31,7 @@ import install_automation_boot as boot
 import install_automation_release as automation
 import continuous_egress_policy as egress_policy
 import install_crosschain as crosschain
+import install_monitor as monitor
 import install_financial_release as installer
 import install_position_plan as position_plan
 import install_v2_automation as automation_v2
@@ -340,6 +341,29 @@ class RealSystemdTests(unittest.TestCase):
         self.assertIn('--port 8910 --enable --rpc-config /run/domino-financial-crosschain-config/rpc.json ;',
                       shown['ExecStart'])
         self.assertEqual(shown['ExecStart'].count('argv[]='), 1)
+
+    def test_the_monitor_unit_reads_the_journal_takes_its_credentials_and_is_wanted_at_boot(self):
+        # Its own unit, outside the read path's target; the journal through its group; the Telegram token and the
+        # hosted chains' URLs as credentials, with the TPM in the device policy.
+        name = 'domino-monitor-under-test'
+        self.install(name, monitor.unit_text(AFTER))
+        self.plan_reload()
+        shown = self.plan_show(name, 'LoadState', 'ExecStart', 'User', 'SupplementaryGroups', 'ImportCredential',
+                               'BindReadOnlyPaths', 'StateDirectory', 'ProtectSystem', 'Restart', 'WantedBy',
+                               'PartOf', 'BindsTo')
+        self.assertEqual((shown['LoadState'], shown['User'], shown['ProtectSystem'], shown['Restart']),
+                         ('loaded', 'domino-monitor', 'strict', 'always'))
+        self.assertEqual(shown['SupplementaryGroups'], 'systemd-journal')
+        self.assertIn('-B backend/ops_monitor.py --config /run/domino-monitor-config/config.json serve ;',
+                      shown['ExecStart'])
+        self.assertEqual(sorted(shlex.split(shown['ImportCredential'])), ['telegram-bot-token', 'v2-rpc-*'])
+        devices = subprocess.run(['systemctl', 'show', f'{name}.service', '--property=DeviceAllow'],
+                                 check=True, capture_output=True, text=True).stdout.splitlines()
+        self.assertIn('DeviceAllow=char-tpm rw', devices)
+        for target in ('/run/domino-monitor-config', '/etc/domino/continuous-reads/monitor.hosts:/etc/hosts'):
+            self.assertIn(target.split(':')[0], shown['BindReadOnlyPaths'])
+        self.assertEqual(shown['StateDirectory'], 'domino-monitor')
+        self.assertEqual((shown['PartOf'], shown['BindsTo']), ('', ''))
 
     def plan_reload(self):
         subprocess.run(['systemctl', 'daemon-reload'], check=True)

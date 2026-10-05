@@ -65,7 +65,7 @@ RestrictAddressFamilies=AF_NETLINK
 """
 CLASS_HOSTS = {'rpc': policy.RPC_HOSTS, 'analytics': policy.ANALYTICS_HOSTS,
                'uniswap': policy.UNISWAP_HOSTS, 'edges': policy.EDGE_HOSTS, 'chains': policy.CHAIN_HOSTS,
-               'bridges': policy.BRIDGE_HOSTS}
+               'bridges': policy.BRIDGE_HOSTS, 'telegram': policy.TELEGRAM_HOSTS}
 
 
 def identity(role):
