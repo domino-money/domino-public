@@ -335,7 +335,11 @@ The credential names in the configuration are free (`[a-z0-9][a-z0-9-]{0,62}`); 
 
 **The owner's numbers (5 Oct 2026):** `gas.dailyCapWei` is 0.0025 ETH per chain (`2500000000000000`), on Robinhood, Base and Arbitrum.
 
-**Live since 5 Oct 2026, 02:44 UTC, without sending** (`gas.enabled` false), from main `cdf3b73b`. Each pass plans, presimulates and writes its waiting file; the executor refuses every send with `v2_executor_disabled`. The configuration as installed, per chain:
+**Live since 5 Oct 2026, 02:44 UTC**, from main `cdf3b73b`.
+- **Without sending** at first (`gas.enabled` false): each pass planned, presimulated and wrote its waiting file, and the executor refused every send with `v2_executor_disabled`. Robinhood ran 2,196 passes, Base 1,002 and Arbitrum 1,008 in 9 hours, without an error.
+- **Sending since 12:00:54 UTC** (the owner's decision): `gas.enabled` true in the three files, and the instances restarted. No V2 vault existed yet, so nothing had been sent.
+
+The configuration as installed, per chain:
 
 | | Robinhood (4663) | Base (8453) | Arbitrum One (42161) |
 | --- | --- | --- | --- |
@@ -353,7 +357,6 @@ All three: `twapSeconds` 300 (the anchor's minimum is 60), `exitTwapSeconds` 600
 The first start failed: the install ran from a shell with `umask 077`, which left the release's files `0400`, and the instances could not read their entry script (`EACCES`). The files were set back to `0444`/`0555` in place. #346 sets every installer's modes explicitly.
 
 Still open:
-- **Sending:** set `gas.enabled` to true in a chain's file and restart its instance, once the owner has reviewed the dry passes.
 - **Funding and admission:** the operator needs ETH on each chain (about 0.0065 ETH on Robinhood and 0.005 ETH on Base and Arbitrum on 5 Oct). The registry admitted both roles at deployment.
 - **Monitoring:**
   - the pass reports (one JSON line per pass), and `intents` for `attention`;

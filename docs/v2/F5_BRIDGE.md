@@ -192,6 +192,11 @@ The bridge owns the rest of the path (0xdecimal, 5 Oct 2026):
    - Relay's API is behind CloudFront: its pins are the VM resolver's answer, and they move. If Relay calls stop connecting, collect again.
 5. **Start.** Run `daemon-reload`, then start the unit. A request without an Access assertion gets 403. Then the bridge switches its Worker on.
 
+**Live since 5 Oct 2026, 12:16:55 UTC**, from main `b03bc53f`:
+- The owner sealed `relay-api-key` and `across-api-key` at 12:05 UTC, and both are imported. The Across integrator id `0x0380` is in the environment. The fee recipient is the owner's `0x1488…c6f4`.
+- On the VM, without an Access assertion, `origins`, `quote` and `status` answer 403. So does `vm-crosschain.domino.money` from outside, without a token.
+- As `domino-crosschain`, through its hosts file and its nft chain, `api.relay.link` and `app.across.to` both answer 200.
+
 Not installed: hosted RPC for the Across fee proof on Base and Arbitrum (`crosschain-rpc-8453`, `crosschain-rpc-42161`). The unit imports neither, so the fee there is reported from Across' own record. These endpoints belong on F6's chain registry (below).
 
 ## Operations
