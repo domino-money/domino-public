@@ -121,7 +121,7 @@ The publisher signs the EIP-712 digest of `PriceObservation`:
   - the operator picks it, and the floor keeps it from picking one short enough to move by holding a manipulated price for a few blocks;
   - the ceiling keeps the anchor from containing prices older than the caller allows.
 - **Same-block manipulation** cannot reach the TWAP. A swap writes the block's observation with the pre-swap tick before moving the price.
-- **Too-short history.** A window older than the pool's history (Uniswap's `OLD`) is `TwapUnavailable`, as are a v4 pool, a zero window and a mean tick outside the tick range. Pools need enough observation cardinality, which the vault or the operator must provision (`increaseObservationCardinalityNext`). The anchor only fails closed.
+- **Too-short history.** A window older than the pool's history (Uniswap's `OLD`) is `TwapUnavailable`, as are a v4 pool, a zero window and a mean tick outside the tick range. Pools need enough observation cardinality (`increaseObservationCardinalityNext`). The V2 automation does not pay for it (the owner's decision of 5 Oct 2026): when a pool's own history cannot guarantee the window, it anchors on a signed observation instead ([V2_AUTOMATION_BACKEND.md](V2_AUTOMATION_BACKEND.md), "A v3 vault's anchor"). The anchor only fails closed.
 - **`twapSqrtPrice(pool, secondsAgo)`** is the raw reading: any nonzero window the history covers, without the floor or the maximum.
 
 ### Spot

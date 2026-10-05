@@ -423,6 +423,7 @@ class AutomationEvmTests(unittest.TestCase):
         entry = next(v for v in report['vaults'] if v['vault'] == vault)
         self.assertTrue(entry['act'], entry)
         self.assertEqual(entry['action'], 'mint', entry)
+        self.assertEqual(entry['anchorSource'], 'twap', entry)  # 250 slots hold Base's 300 s window (151)
         self.assertEqual(entry['considered'][f'{root}:all'], 'awaiting_successor')
         lower, upper = entry['successor']
         # The owner's floor is the TWAP's cell, not the spot's.
@@ -476,6 +477,56 @@ class AutomationEvmTests(unittest.TestCase):
         collected = {log['tokenId'] for log in self.logs(effect, 'IDominoVaultLedger', 'FeesCollected', vault)}
         self.assertEqual(collected, {root, child})
         self.local.send(self.owner, vault, calldata('pause()'), impersonate=True)
+
+    def test_on_v3_a_pool_with_one_slot_that_trades_anchors_on_the_signed_spot(self):
+        # Uniswap creates every pool with one oracle slot: while it trades, observe([300, 0]) reverts OLD and the
+        # anchor refuses the TWAP. The pass anchors such a vault on the publisher's signed spot, as on v4 (v2_oracle;
+        # the owner's decision of 5 Oct 2026), and the vault takes it: a compound on chain, with no slot paid for.
+        local, v3 = self.local, self.chain.uniswap.v3
+        setup = local.deploy(self.deployer, 'DominoSetup.t.sol', 'SetupToken')
+        token = '0x3000000000000000000000000000000000000003'
+        local.request('anvil_setCode', [token, local.request('eth_getCode', [setup, 'latest'])])
+        driver = local.deploy(self.deployer, 'OfficialV3Fixture.sol', 'OfficialV3SwapDriver')
+        c0, c1 = sorted([self.weth, token])
+        local.send(self.deployer, v3.positionManager, calldata(
+            'createAndInitializePoolIfNecessary(address,address,uint24,uint160)',
+            ['address', 'address', 'uint24', 'uint160'], [c0, c1, 500, 2**96]))
+        address, = local.call(v3.factory, 'getPool(address,address,uint24)', ['address'],
+                              ['address', 'address', 'uint24'], [c0, c1, 500])
+        address = address.lower()
+        pool = PoolRef(3, c0, c1, 500, 10)
+        for holder in (self.deployer, driver):
+            self.fund_tokens(holder, 10**21, token)
+        for currency in (c0, c1):
+            local.send(self.deployer, currency, calldata('approve(address,uint256)', ['address', 'uint256'],
+                                                         [v3.positionManager, 2**256 - 1]))
+        self.v3_position(self.lp, pool, 12 * 10**18)
+        root = self.v3_position(self.owner, pool, 3 * 10**18)
+        vault = self.vault(root, dex=3)
+        # It trades both ways about the range's middle (the fees), then holds still over the publisher's look-back.
+        self.hold_v3(driver, address, 0)
+        local.mine(35, 2)
+        slots = ['uint160', 'int24', 'uint16', 'uint16', 'uint16', 'uint8', 'bool']
+        self.assertEqual(local.call(address, 'slot0()', slots)[3:5], (1, 1))
+        with self.assertRaises(AssertionError):
+            self.twap_sqrt(pool)  # the last write is 70 s old: no 300 s TWAP
+
+        service = self.service()
+        before = self.v3_liquidity(root)
+        report = service.run_once()
+        entry = next(v for v in report['vaults'] if v['vault'] == vault)
+        self.assertEqual(entry['anchorSource'], 'signed', entry)
+        self.assertTrue(entry['act'], entry)
+        self.assertEqual((report['submitted']['kind'], report['submitted']['target']), ('compound', vault), report)
+        local.mine(1, 1)
+        service.run_once()
+        intent = service.executor.journal.intent(report['submitted']['intent'])
+        self.assertEqual(intent['state'], 'confirmed', intent)
+        compounded, = self.logs(json.loads(intent['effect']), 'IDominoVault', 'Compounded', vault)
+        self.assertGreater(compounded['liquidityAdded'], 0)
+        self.assertEqual(self.v3_liquidity(root) - before, compounded['liquidityAdded'])
+        self.assertEqual(local.call(address, 'slot0()', slots)[3:5], (1, 1))  # still one slot: nothing paid for
+        local.send(self.owner, vault, calldata('pause()'), impersonate=True)
 
     def v3_position(self, recipient, pool, amount):
         """A [-600, 600) position from `amount` of each token, minted to `recipient` by Base's v3 manager."""

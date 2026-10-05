@@ -1,0 +1,146 @@
+{
+ "kind": "domino-v3-oracle-cardinality-census",
+ "date": "2026-10-05",
+ "method": "canonical Uniswap v3 pools (factory() and CREATE2 of token0/token1/fee) that emitted a v3 Swap log in the window; slot0 read at the window end",
+ "chains": {
+  "robinhood-4663": {
+   "window": "24 h",
+   "source": "own Nitro node (clawber) through an SSH tunnel",
+   "pools": 4027,
+   "swaps": 773119,
+   "buckets": [
+    {
+     "cardinalityNextAtMost": 1,
+     "pools": 3493,
+     "swaps": 374864
+    },
+    {
+     "cardinalityNextAtMost": 10,
+     "pools": 2,
+     "swaps": 337
+    },
+    {
+     "cardinalityNextAtMost": 50,
+     "pools": 15,
+     "swaps": 1735
+    },
+    {
+     "cardinalityNextAtMost": 150,
+     "pools": 70,
+     "swaps": 11909
+    },
+    {
+     "cardinalityNextAtMost": 300,
+     "pools": 133,
+     "swaps": 21715
+    },
+    {
+     "cardinalityNextAtMost": 600,
+     "pools": 17,
+     "swaps": 4013
+    },
+    {
+     "cardinalityNextAtMost": 65535,
+     "pools": 297,
+     "swaps": 358546
+    }
+   ]
+  },
+  "base-8453": {
+   "window": "1 h",
+   "source": "hosted RPC (the VM credential, through a loopback forwarder)",
+   "head": {
+    "number": 52212628,
+    "timestamp": 1791214603,
+    "baseFee": 5000000
+   },
+   "pools": 1049,
+   "swaps": 33250,
+   "buckets": [
+    {
+     "cardinalityNextAtMost": 1,
+     "pools": 626,
+     "swaps": 5965
+    },
+    {
+     "cardinalityNextAtMost": 10,
+     "pools": 118,
+     "swaps": 810
+    },
+    {
+     "cardinalityNextAtMost": 50,
+     "pools": 58,
+     "swaps": 14959
+    },
+    {
+     "cardinalityNextAtMost": 150,
+     "pools": 33,
+     "swaps": 235
+    },
+    {
+     "cardinalityNextAtMost": 300,
+     "pools": 25,
+     "swaps": 754
+    },
+    {
+     "cardinalityNextAtMost": 600,
+     "pools": 91,
+     "swaps": 1334
+    },
+    {
+     "cardinalityNextAtMost": 65535,
+     "pools": 98,
+     "swaps": 9193
+    }
+   ]
+  },
+  "arbitrum-42161": {
+   "window": "1 h",
+   "source": "hosted RPC (the VM credential, through a loopback forwarder)",
+   "head": {
+    "number": 511965278,
+    "timestamp": 1791214604,
+    "baseFee": 20032000
+   },
+   "pools": 183,
+   "swaps": 7748,
+   "buckets": [
+    {
+     "cardinalityNextAtMost": 1,
+     "pools": 37,
+     "swaps": 167
+    },
+    {
+     "cardinalityNextAtMost": 10,
+     "pools": 24,
+     "swaps": 79
+    },
+    {
+     "cardinalityNextAtMost": 50,
+     "pools": 29,
+     "swaps": 931
+    },
+    {
+     "cardinalityNextAtMost": 150,
+     "pools": 16,
+     "swaps": 283
+    },
+    {
+     "cardinalityNextAtMost": 300,
+     "pools": 8,
+     "swaps": 774
+    },
+    {
+     "cardinalityNextAtMost": 600,
+     "pools": 6,
+     "swaps": 150
+    },
+    {
+     "cardinalityNextAtMost": 65535,
+     "pools": 63,
+     "swaps": 5364
+    }
+   ]
+  }
+ }
+}

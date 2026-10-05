@@ -1,0 +1,2741 @@
+{
+ "chainId": 4663,
+ "chain": "Robinhood",
+ "head": {
+  "number": 80895387,
+  "timestamp": 1791214532,
+  "baseFee": 20300000
+ },
+ "hours": 24.0,
+ "pools": [
+  {
+   "pool": "0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "cardinality": 10809,
+   "cardinalityNext": 10809,
+   "liquidity": "5350968363953435319",
+   "periodSeconds": 86400,
+   "writes": 12185,
+   "blocksWithSwaps": 110780,
+   "counts": {
+    "swaps": 181860,
+    "tickMoves": 18267,
+    "mintsInRange": 207,
+    "burnsInRange": 74,
+    "mints": 373,
+    "burns": 578
+   },
+   "writes300": {
+    "max": 196,
+    "p99": 137,
+    "p95": 102,
+    "p50": 35,
+    "zeroShare": 0.0
+   },
+   "writes600": {
+    "max": 335,
+    "p99": 257,
+    "p95": 198,
+    "p50": 74,
+    "zeroShare": 0.0
+   },
+   "swapBlocks300": {
+    "max": 1176,
+    "p99": 853,
+    "p95": 690,
+    "p50": 348,
+    "zeroShare": 0.0
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 22.8
+  },
+  {
+   "pool": "0x69bfaf19c9f377bb306a89aed9f6b07e2c1a8d9a",
+   "fee": 500,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "cardinality": 3000,
+   "cardinalityNext": 3000,
+   "liquidity": "1135862767637893623",
+   "periodSeconds": 86400,
+   "writes": 2652,
+   "blocksWithSwaps": 9837,
+   "counts": {
+    "swaps": 16381,
+    "tickMoves": 3670,
+    "mintsInRange": 96,
+    "burnsInRange": 20,
+    "mints": 107,
+    "burns": 224
+   },
+   "writes300": {
+    "max": 54,
+    "p99": 42,
+    "p95": 27,
+    "p50": 7,
+    "zeroShare": 0.0757
+   },
+   "writes600": {
+    "max": 90,
+    "p99": 72,
+    "p95": 51,
+    "p50": 14,
+    "zeroShare": 0.0197
+   },
+   "swapBlocks300": {
+    "max": 180,
+    "p99": 127,
+    "p95": 84,
+    "p50": 26,
+    "zeroShare": 0.0
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 3.4
+  },
+  {
+   "pool": "0xa9188730fe85be88ad499d7d52b099e800fb0334",
+   "fee": 3000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "cardinality": 2500,
+   "cardinalityNext": 2500,
+   "liquidity": "271049957673305733",
+   "periodSeconds": 86400,
+   "writes": 194,
+   "blocksWithSwaps": 364,
+   "counts": {
+    "swaps": 722,
+    "tickMoves": 374,
+    "mintsInRange": 9,
+    "burnsInRange": 0,
+    "mints": 10,
+    "burns": 39
+   },
+   "writes300": {
+    "max": 20,
+    "p99": 10,
+    "p95": 5,
+    "p50": 0,
+    "zeroShare": 0.8248
+   },
+   "writes600": {
+    "max": 27,
+    "p99": 19,
+    "p95": 7,
+    "p50": 0,
+    "zeroShare": 0.7237
+   },
+   "swapBlocks300": {
+    "max": 41,
+    "p99": 16,
+    "p95": 8,
+    "p50": 0,
+    "zeroShare": 0.7567
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.4
+  },
+  {
+   "pool": "0x5f009e071f07e92b6c624e83f52f17bbda34680d",
+   "fee": 10000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "cardinality": 2500,
+   "cardinalityNext": 2500,
+   "liquidity": "61467418647969466",
+   "periodSeconds": 86400,
+   "writes": 84,
+   "blocksWithSwaps": 109,
+   "counts": {
+    "swaps": 126,
+    "tickMoves": 84,
+    "mintsInRange": 14,
+    "burnsInRange": 10,
+    "mints": 18,
+    "burns": 23
+   },
+   "writes300": {
+    "max": 22,
+    "p99": 7,
+    "p95": 1,
+    "p50": 0,
+    "zeroShare": 0.8771
+   },
+   "writes600": {
+    "max": 29,
+    "p99": 12,
+    "p95": 2,
+    "p50": 0,
+    "zeroShare": 0.7873
+   },
+   "swapBlocks300": {
+    "max": 25,
+    "p99": 12,
+    "p95": 1,
+    "p50": 0,
+    "zeroShare": 0.8992
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.2
+  },
+  {
+   "pool": "0x6e8a6a1af8ec53f3f09c7303e5403558dee42d0a",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xba1a2d9783ebe2b76493c5c12eb9813a0e062843",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31622807953636212567716",
+   "periodSeconds": 86400,
+   "writes": 22054,
+   "blocksWithSwaps": 42788,
+   "counts": {
+    "swaps": 56606,
+    "tickMoves": 49230,
+    "mintsInRange": 3,
+    "burnsInRange": 1,
+    "mints": 4,
+    "burns": 7
+   },
+   "writes300": {
+    "max": 300,
+    "p99": 289,
+    "p95": 270,
+    "p50": 4,
+    "zeroShare": 0.1681
+   },
+   "writes600": {
+    "max": 581,
+    "p99": 559,
+    "p95": 519,
+    "p50": 8,
+    "zeroShare": 0.0513
+   },
+   "swapBlocks300": {
+    "max": 1302,
+    "p99": 917,
+    "p95": 546,
+    "p50": 5,
+    "zeroShare": 0.1502
+   },
+   "observe300": "OLD",
+   "observe600": "OLD",
+   "seconds": 8.9
+  },
+  {
+   "pool": "0x92a4f531f82e1440d6e349bbc2ed42ba389e013f",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xee049979960d5e42b389b941ec45790ca7b6e1f7",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31677529698077802230941",
+   "periodSeconds": 86400,
+   "writes": 29392,
+   "blocksWithSwaps": 36482,
+   "counts": {
+    "swaps": 45350,
+    "tickMoves": 44854,
+    "mintsInRange": 7,
+    "burnsInRange": 0,
+    "mints": 50,
+    "burns": 6
+   },
+   "writes300": {
+    "max": 260,
+    "p99": 186,
+    "p95": 157,
+    "p50": 95,
+    "zeroShare": 0.0
+   },
+   "writes600": {
+    "max": 392,
+    "p99": 367,
+    "p95": 309,
+    "p50": 190,
+    "zeroShare": 0.0
+   },
+   "swapBlocks300": {
+    "max": 376,
+    "p99": 247,
+    "p95": 208,
+    "p50": 117,
+    "zeroShare": 0.0
+   },
+   "observe300": "OLD",
+   "observe600": "OLD",
+   "seconds": 8.2
+  },
+  {
+   "pool": "0xba2ca7b9cf44cd44fc8dbd60e2e7ed88b8587d83",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x577bc74a99aabbd43a354668dc7b7ed4b5e303ae",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31902225460689694585769",
+   "periodSeconds": 86400,
+   "writes": 13139,
+   "blocksWithSwaps": 14969,
+   "counts": {
+    "swaps": 20097,
+    "tickMoves": 19853,
+    "mintsInRange": 9,
+    "burnsInRange": 3,
+    "mints": 128,
+    "burns": 84
+   },
+   "writes300": {
+    "max": 192,
+    "p99": 160,
+    "p95": 103,
+    "p50": 43,
+    "zeroShare": 0.2318
+   },
+   "writes600": {
+    "max": 366,
+    "p99": 291,
+    "p95": 202,
+    "p50": 86,
+    "zeroShare": 0.2318
+   },
+   "swapBlocks300": {
+    "max": 244,
+    "p99": 203,
+    "p95": 119,
+    "p50": 47,
+    "zeroShare": 0.2318
+   },
+   "observe300": "OLD",
+   "observe600": "OLD",
+   "seconds": 2.8
+  },
+  {
+   "pool": "0x5560b76440e9b6660ab6ca8c7ae1941c92abffcf",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xff4c3278e735fa52b1012b06748407d26e047f18",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31622807953636212567716",
+   "periodSeconds": 86400,
+   "writes": 16453,
+   "blocksWithSwaps": 18131,
+   "counts": {
+    "swaps": 18755,
+    "tickMoves": 18653,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 0
+   },
+   "writes300": {
+    "max": 298,
+    "p99": 289,
+    "p95": 176,
+    "p50": 59,
+    "zeroShare": 0.3466
+   },
+   "writes600": {
+    "max": 587,
+    "p99": 569,
+    "p95": 344,
+    "p50": 118,
+    "zeroShare": 0.3386
+   },
+   "swapBlocks300": {
+    "max": 485,
+    "p99": 370,
+    "p95": 236,
+    "p50": 60,
+    "zeroShare": 0.3456
+   },
+   "observe300": "OLD",
+   "observe600": "OLD",
+   "seconds": 3.0
+  },
+  {
+   "pool": "0x7608c38ea8cc2082b043e886185979942cdeb58e",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x8e41fd25e85e624560fa50ff9f117a02cd30b8b3",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31622807953636212567716",
+   "periodSeconds": 86400,
+   "writes": 8715,
+   "blocksWithSwaps": 10642,
+   "counts": {
+    "swaps": 14969,
+    "tickMoves": 14775,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 0
+   },
+   "writes300": {
+    "max": 102,
+    "p99": 93,
+    "p95": 65,
+    "p50": 24,
+    "zeroShare": 0.0001
+   },
+   "writes600": {
+    "max": 196,
+    "p99": 184,
+    "p95": 125,
+    "p50": 49,
+    "zeroShare": 0.0001
+   },
+   "swapBlocks300": {
+    "max": 136,
+    "p99": 114,
+    "p95": 81,
+    "p50": 31,
+    "zeroShare": 0.0001
+   },
+   "observe300": "OLD",
+   "observe600": "OLD",
+   "seconds": 2.3
+  },
+  {
+   "pool": "0x2a878208df14eecf7761daa73f4c1c070cece119",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x9ba4d84ac1571a0788b2bb7a6412e73529d12dc6",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31622807953636212567716",
+   "periodSeconds": 86400,
+   "writes": 8859,
+   "blocksWithSwaps": 10145,
+   "counts": {
+    "swaps": 13550,
+    "tickMoves": 13472,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 0
+   },
+   "writes300": {
+    "max": 195,
+    "p99": 150,
+    "p95": 87,
+    "p50": 29,
+    "zeroShare": 0.0471
+   },
+   "writes600": {
+    "max": 319,
+    "p99": 270,
+    "p95": 172,
+    "p50": 58,
+    "zeroShare": 0.0416
+   },
+   "swapBlocks300": {
+    "max": 273,
+    "p99": 193,
+    "p95": 99,
+    "p50": 32,
+    "zeroShare": 0.0455
+   },
+   "observe300": "OLD",
+   "observe600": "OLD",
+   "seconds": 2.0
+  },
+  {
+   "pool": "0xa213ec692b2d6d37d075e7cb67577a1acae3f3a3",
+   "fee": 100,
+   "token0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "token1": "0xd0ca71118ca21d674f9018a53026a38a0ab54dbf",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "890851439259642",
+   "periodSeconds": 86400,
+   "writes": 6322,
+   "blocksWithSwaps": 7060,
+   "counts": {
+    "swaps": 12395,
+    "tickMoves": 12391,
+    "mintsInRange": 0,
+    "burnsInRange": 0,
+    "mints": 0,
+    "burns": 0
+   },
+   "writes300": {
+    "max": 49,
+    "p99": 40,
+    "p95": 36,
+    "p50": 27,
+    "zeroShare": 0.1223
+   },
+   "writes600": {
+    "max": 85,
+    "p99": 73,
+    "p95": 69,
+    "p50": 55,
+    "zeroShare": 0.0739
+   },
+   "swapBlocks300": {
+    "max": 57,
+    "p99": 45,
+    "p95": 41,
+    "p50": 30,
+    "zeroShare": 0.1204
+   },
+   "observe300": "OLD",
+   "observe600": "OLD",
+   "seconds": 1.6
+  },
+  {
+   "pool": "0x6b7bd7990729180c82cfdddee7f5fbaee8cdc315",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x58f7e271641bb4a29a99604cf11d799a26f498e8",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 4936,
+   "blocksWithSwaps": 6493,
+   "counts": {
+    "swaps": 11687,
+    "tickMoves": 11661,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 299,
+    "p99": 295,
+    "p95": 195,
+    "p50": 0,
+    "zeroShare": 0.917
+   },
+   "writes600": {
+    "max": 595,
+    "p99": 581,
+    "p95": 396,
+    "p50": 0,
+    "zeroShare": 0.9135
+   },
+   "swapBlocks300": {
+    "max": 533,
+    "p99": 429,
+    "p95": 230,
+    "p50": 0,
+    "zeroShare": 0.9178
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 1.5
+  },
+  {
+   "pool": "0x62ab521f71431f78ac374cdbadc6cda3c8916b6c",
+   "fee": 500,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec",
+   "cardinality": 7871,
+   "cardinalityNext": 7871,
+   "liquidity": "16631013160616854296826",
+   "periodSeconds": 86400,
+   "writes": 2720,
+   "blocksWithSwaps": 9508,
+   "counts": {
+    "swaps": 11436,
+    "tickMoves": 3669,
+    "mintsInRange": 19,
+    "burnsInRange": 10,
+    "mints": 28,
+    "burns": 87
+   },
+   "writes300": {
+    "max": 92,
+    "p99": 49,
+    "p95": 29,
+    "p50": 7,
+    "zeroShare": 0.0605
+   },
+   "writes600": {
+    "max": 159,
+    "p99": 90,
+    "p95": 56,
+    "p50": 14,
+    "zeroShare": 0.0162
+   },
+   "swapBlocks300": {
+    "max": 271,
+    "p99": 180,
+    "p95": 80,
+    "p50": 25,
+    "zeroShare": 0.0011
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 2.7
+  },
+  {
+   "pool": "0xd4eb21209c4d6093f80b5b84f5c45cc093ea14a3",
+   "fee": 500,
+   "token0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "token1": "0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec",
+   "cardinality": 7200,
+   "cardinalityNext": 7200,
+   "liquidity": "7275645407324536379",
+   "periodSeconds": 86400,
+   "writes": 2327,
+   "blocksWithSwaps": 8454,
+   "counts": {
+    "swaps": 10877,
+    "tickMoves": 1267,
+    "mintsInRange": 1036,
+    "burnsInRange": 902,
+    "mints": 1094,
+    "burns": 1202
+   },
+   "writes300": {
+    "max": 191,
+    "p99": 127,
+    "p95": 29,
+    "p50": 3,
+    "zeroShare": 0.1534
+   },
+   "writes600": {
+    "max": 368,
+    "p99": 232,
+    "p95": 58,
+    "p50": 6,
+    "zeroShare": 0.0419
+   },
+   "swapBlocks300": {
+    "max": 540,
+    "p99": 405,
+    "p95": 95,
+    "p50": 13,
+    "zeroShare": 0.0027
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 2.4
+  },
+  {
+   "pool": "0xc3c9f0171490ef0f4536fe493f3b0ebb5ee0cb5e",
+   "fee": 500,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea",
+   "cardinality": 8014,
+   "cardinalityNext": 8014,
+   "liquidity": "8848757689786261132207",
+   "periodSeconds": 86400,
+   "writes": 2916,
+   "blocksWithSwaps": 7156,
+   "counts": {
+    "swaps": 9629,
+    "tickMoves": 4516,
+    "mintsInRange": 11,
+    "burnsInRange": 6,
+    "mints": 25,
+    "burns": 68
+   },
+   "writes300": {
+    "max": 120,
+    "p99": 65,
+    "p95": 38,
+    "p50": 6,
+    "zeroShare": 0.0407
+   },
+   "writes600": {
+    "max": 201,
+    "p99": 123,
+    "p95": 75,
+    "p50": 12,
+    "zeroShare": 0.0065
+   },
+   "swapBlocks300": {
+    "max": 246,
+    "p99": 135,
+    "p95": 79,
+    "p50": 17,
+    "zeroShare": 0.0001
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 2.3
+  },
+  {
+   "pool": "0x9cc8c4f6118419a27f113723f1dea646685be55f",
+   "fee": 500,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xc6911796042b15d7fa4f6cde69e245ddcd3d9c31",
+   "cardinality": 1024,
+   "cardinalityNext": 1024,
+   "liquidity": "23440287833408425966740",
+   "periodSeconds": 86400,
+   "writes": 4446,
+   "blocksWithSwaps": 7020,
+   "counts": {
+    "swaps": 8798,
+    "tickMoves": 7408,
+    "mintsInRange": 19,
+    "burnsInRange": 3,
+    "mints": 71,
+    "burns": 126
+   },
+   "writes300": {
+    "max": 78,
+    "p99": 58,
+    "p95": 36,
+    "p50": 12,
+    "zeroShare": 0.001
+   },
+   "writes600": {
+    "max": 148,
+    "p99": 102,
+    "p95": 67,
+    "p50": 25,
+    "zeroShare": 0.0001
+   },
+   "swapBlocks300": {
+    "max": 170,
+    "p99": 115,
+    "p95": 61,
+    "p50": 18,
+    "zeroShare": 0.0002
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 1.8
+  },
+  {
+   "pool": "0x34f73f488309208b8cb6012eb47ffeb086ca1c2d",
+   "fee": 3000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xaa07a0e9209e16ac99708c3ec70159c6ef3128a3",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "20375424758147791923333",
+   "periodSeconds": 86400,
+   "writes": 4738,
+   "blocksWithSwaps": 6634,
+   "counts": {
+    "swaps": 8409,
+    "tickMoves": 6834,
+    "mintsInRange": 59,
+    "burnsInRange": 31,
+    "mints": 210,
+    "burns": 253
+   },
+   "writes300": {
+    "max": 95,
+    "p99": 71,
+    "p95": 43,
+    "p50": 12,
+    "zeroShare": 0.0001
+   },
+   "writes600": {
+    "max": 168,
+    "p99": 123,
+    "p95": 82,
+    "p50": 25,
+    "zeroShare": 0.0001
+   },
+   "swapBlocks300": {
+    "max": 169,
+    "p99": 117,
+    "p95": 62,
+    "p50": 16,
+    "zeroShare": 0.0001
+   },
+   "observe300": "OLD",
+   "observe600": "OLD",
+   "seconds": 1.8
+  },
+  {
+   "pool": "0x46540a2e4b27ff778f8ec6648616660472945fc6",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x369dfc595d9215ef984f7f521ef09c85adb15ee3",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "67083695638153680707333",
+   "periodSeconds": 86400,
+   "writes": 4602,
+   "blocksWithSwaps": 5891,
+   "counts": {
+    "swaps": 7434,
+    "tickMoves": 7357,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 0
+   },
+   "writes300": {
+    "max": 114,
+    "p99": 98,
+    "p95": 85,
+    "p50": 0,
+    "zeroShare": 0.7778
+   },
+   "writes600": {
+    "max": 210,
+    "p99": 193,
+    "p95": 168,
+    "p50": 0,
+    "zeroShare": 0.7724
+   },
+   "swapBlocks300": {
+    "max": 146,
+    "p99": 128,
+    "p95": 113,
+    "p50": 0,
+    "zeroShare": 0.7778
+   },
+   "observe300": "OLD",
+   "observe600": "OLD",
+   "seconds": 1.1
+  },
+  {
+   "pool": "0x52e34db288692d9487131c53d678c60bffd859fd",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xad556f9a3b8cbde1acfab7be01ca792acba0f6ec",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 2487,
+   "blocksWithSwaps": 3442,
+   "counts": {
+    "swaps": 7909,
+    "tickMoves": 7826,
+    "mintsInRange": 0,
+    "burnsInRange": 1,
+    "mints": 0,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 138,
+    "p99": 115,
+    "p95": 89,
+    "p50": 0,
+    "zeroShare": 0.8985
+   },
+   "writes600": {
+    "max": 254,
+    "p99": 228,
+    "p95": 177,
+    "p50": 0,
+    "zeroShare": 0.895
+   },
+   "swapBlocks300": {
+    "max": 203,
+    "p99": 175,
+    "p95": 114,
+    "p50": 0,
+    "zeroShare": 0.8985
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.9
+  },
+  {
+   "pool": "0x0f6741982785a62e850b611cd012eb798b738037",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xf5a9da666eb257c0859b47efe8c2cb6745baff94",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 3475,
+   "blocksWithSwaps": 4131,
+   "counts": {
+    "swaps": 6865,
+    "tickMoves": 6833,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 300,
+    "p99": 297,
+    "p95": 76,
+    "p50": 0,
+    "zeroShare": 0.7597
+   },
+   "writes600": {
+    "max": 597,
+    "p99": 585,
+    "p95": 140,
+    "p50": 0,
+    "zeroShare": 0.7562
+   },
+   "swapBlocks300": {
+    "max": 371,
+    "p99": 358,
+    "p95": 84,
+    "p50": 0,
+    "zeroShare": 0.7609
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.9
+  },
+  {
+   "pool": "0xed50bdeea8adc232f159486192a4157281d722ff",
+   "fee": 3000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+   "cardinality": 2400,
+   "cardinalityNext": 2400,
+   "liquidity": "136563332968925119865373",
+   "periodSeconds": 86400,
+   "writes": 2431,
+   "blocksWithSwaps": 4088,
+   "counts": {
+    "swaps": 6761,
+    "tickMoves": 4749,
+    "mintsInRange": 195,
+    "burnsInRange": 135,
+    "mints": 512,
+    "burns": 1061
+   },
+   "writes300": {
+    "max": 59,
+    "p99": 37,
+    "p95": 23,
+    "p50": 6,
+    "zeroShare": 0.0419
+   },
+   "writes600": {
+    "max": 89,
+    "p99": 69,
+    "p95": 40,
+    "p50": 14,
+    "zeroShare": 0.0022
+   },
+   "swapBlocks300": {
+    "max": 137,
+    "p99": 71,
+    "p95": 37,
+    "p50": 11,
+    "zeroShare": 0.0167
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 1.5
+  },
+  {
+   "pool": "0x76a4c5b933c29c859fab6b3f38b540dbe7ac2aec",
+   "fee": 100,
+   "token0": "0x0631a4a5ba03ac2b4630c4a33177cb69469a0fd5",
+   "token1": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 3339,
+   "blocksWithSwaps": 4152,
+   "counts": {
+    "swaps": 6078,
+    "tickMoves": 5983,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 135,
+    "p99": 114,
+    "p95": 93,
+    "p50": 0,
+    "zeroShare": 0.6549
+   },
+   "writes600": {
+    "max": 246,
+    "p99": 222,
+    "p95": 181,
+    "p50": 0,
+    "zeroShare": 0.6479
+   },
+   "swapBlocks300": {
+    "max": 162,
+    "p99": 147,
+    "p95": 115,
+    "p50": 0,
+    "zeroShare": 0.6515
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.9
+  },
+  {
+   "pool": "0xc61284332117c3fb23a2a56cceffd07f7af60029",
+   "fee": 500,
+   "token0": "0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea",
+   "token1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "cardinality": 7200,
+   "cardinalityNext": 7200,
+   "liquidity": "812688491633324745",
+   "periodSeconds": 86400,
+   "writes": 1856,
+   "blocksWithSwaps": 4906,
+   "counts": {
+    "swaps": 6193,
+    "tickMoves": 2754,
+    "mintsInRange": 115,
+    "burnsInRange": 31,
+    "mints": 220,
+    "burns": 438
+   },
+   "writes300": {
+    "max": 124,
+    "p99": 61,
+    "p95": 33,
+    "p50": 2,
+    "zeroShare": 0.2084
+   },
+   "writes600": {
+    "max": 196,
+    "p99": 125,
+    "p95": 63,
+    "p50": 5,
+    "zeroShare": 0.067
+   },
+   "swapBlocks300": {
+    "max": 346,
+    "p99": 124,
+    "p95": 60,
+    "p50": 10,
+    "zeroShare": 0.0077
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 1.8
+  },
+  {
+   "pool": "0xddcbba3666f578e3f09516f21ff85bfee859ab5e",
+   "fee": 500,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x117cc2133c37b721f49de2a7a74833232b3b4c0c",
+   "cardinality": 5331,
+   "cardinalityNext": 5331,
+   "liquidity": "18816851104629631760808",
+   "periodSeconds": 86400,
+   "writes": 1816,
+   "blocksWithSwaps": 4948,
+   "counts": {
+    "swaps": 6051,
+    "tickMoves": 2418,
+    "mintsInRange": 34,
+    "burnsInRange": 18,
+    "mints": 40,
+    "burns": 91
+   },
+   "writes300": {
+    "max": 57,
+    "p99": 28,
+    "p95": 19,
+    "p50": 5,
+    "zeroShare": 0.1096
+   },
+   "writes600": {
+    "max": 85,
+    "p99": 55,
+    "p95": 35,
+    "p50": 10,
+    "zeroShare": 0.0255
+   },
+   "swapBlocks300": {
+    "max": 128,
+    "p99": 82,
+    "p95": 52,
+    "p50": 13,
+    "zeroShare": 0.0084
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 1.8
+  },
+  {
+   "pool": "0x74b8781a7ef65304b3e2a5fdd038865499a75bc9",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x85cbd6b586df43eb0899abf79b53316330f1abe9",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 1091,
+   "blocksWithSwaps": 2205,
+   "counts": {
+    "swaps": 4863,
+    "tickMoves": 4846,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 296,
+    "p99": 173,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9777
+   },
+   "writes600": {
+    "max": 589,
+    "p99": 365,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9742
+   },
+   "swapBlocks300": {
+    "max": 818,
+    "p99": 286,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9779
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.6
+  },
+  {
+   "pool": "0xf9689f1e92c0a3010f5f1d9770a32ee03168dae8",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x13042dbe191db48f8ab78be1cb22fcd29d05a2df",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "63246764568802612649417",
+   "periodSeconds": 86400,
+   "writes": 2118,
+   "blocksWithSwaps": 2721,
+   "counts": {
+    "swaps": 4365,
+    "tickMoves": 4299,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 0
+   },
+   "writes300": {
+    "max": 125,
+    "p99": 97,
+    "p95": 28,
+    "p50": 0,
+    "zeroShare": 0.7508
+   },
+   "writes600": {
+    "max": 228,
+    "p99": 185,
+    "p95": 61,
+    "p50": 0,
+    "zeroShare": 0.7264
+   },
+   "swapBlocks300": {
+    "max": 175,
+    "p99": 131,
+    "p95": 34,
+    "p50": 0,
+    "zeroShare": 0.7403
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.7
+  },
+  {
+   "pool": "0xa0335035dd8875066e53c5041671646daed40b41",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xee8b791e1344996126a7bb6b4e3b53f13367fea4",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 1818,
+   "blocksWithSwaps": 2379,
+   "counts": {
+    "swaps": 4175,
+    "tickMoves": 4093,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 122,
+    "p99": 112,
+    "p95": 76,
+    "p50": 0,
+    "zeroShare": 0.9257
+   },
+   "writes600": {
+    "max": 233,
+    "p99": 220,
+    "p95": 155,
+    "p50": 0,
+    "zeroShare": 0.9222
+   },
+   "swapBlocks300": {
+    "max": 163,
+    "p99": 147,
+    "p95": 94,
+    "p50": 0,
+    "zeroShare": 0.926
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.6
+  },
+  {
+   "pool": "0xd78480cafef722d75519e13b9f516e5704d0d659",
+   "fee": 3000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x2e8c31162b855a2ffa90f6f8634643ad6f111e18",
+   "cardinality": 1400,
+   "cardinalityNext": 1400,
+   "liquidity": "11923551549593692284102",
+   "periodSeconds": 86400,
+   "writes": 2784,
+   "blocksWithSwaps": 3640,
+   "counts": {
+    "swaps": 4310,
+    "tickMoves": 3830,
+    "mintsInRange": 17,
+    "burnsInRange": 16,
+    "mints": 137,
+    "burns": 307
+   },
+   "writes300": {
+    "max": 80,
+    "p99": 56,
+    "p95": 26,
+    "p50": 7,
+    "zeroShare": 0.0161
+   },
+   "writes600": {
+    "max": 144,
+    "p99": 109,
+    "p95": 51,
+    "p50": 15,
+    "zeroShare": 0.0024
+   },
+   "swapBlocks300": {
+    "max": 103,
+    "p99": 74,
+    "p95": 35,
+    "p50": 9,
+    "zeroShare": 0.0054
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 1.3
+  },
+  {
+   "pool": "0x385daf9305b9f132657d5946478202ca43fc3126",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xd1aaf85e66a9ff756f3b7e2179ecc1c7747b6293",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "54773207779044021846921",
+   "periodSeconds": 86400,
+   "writes": 2430,
+   "blocksWithSwaps": 3067,
+   "counts": {
+    "swaps": 4033,
+    "tickMoves": 3987,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 0
+   },
+   "writes300": {
+    "max": 129,
+    "p99": 106,
+    "p95": 77,
+    "p50": 0,
+    "zeroShare": 0.887
+   },
+   "writes600": {
+    "max": 246,
+    "p99": 203,
+    "p95": 149,
+    "p50": 0,
+    "zeroShare": 0.887
+   },
+   "swapBlocks300": {
+    "max": 170,
+    "p99": 136,
+    "p95": 99,
+    "p50": 0,
+    "zeroShare": 0.887
+   },
+   "observe300": "OLD",
+   "observe600": "OLD",
+   "seconds": 0.7
+  },
+  {
+   "pool": "0x8bb3514e2204e1cdf3ac149efee7ff04d91b719f",
+   "fee": 500,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xaf3d76f1834a1d425780943c99ea8a608f8a93f9",
+   "cardinality": 10371,
+   "cardinalityNext": 14400,
+   "liquidity": "3052875554452995540172",
+   "periodSeconds": 86400,
+   "writes": 1820,
+   "blocksWithSwaps": 3361,
+   "counts": {
+    "swaps": 3873,
+    "tickMoves": 2515,
+    "mintsInRange": 6,
+    "burnsInRange": 1,
+    "mints": 7,
+    "burns": 34
+   },
+   "writes300": {
+    "max": 80,
+    "p99": 40,
+    "p95": 19,
+    "p50": 4,
+    "zeroShare": 0.0902
+   },
+   "writes600": {
+    "max": 125,
+    "p99": 83,
+    "p95": 35,
+    "p50": 9,
+    "zeroShare": 0.0141
+   },
+   "swapBlocks300": {
+    "max": 153,
+    "p99": 67,
+    "p95": 30,
+    "p50": 8,
+    "zeroShare": 0.0074
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 1.3
+  },
+  {
+   "pool": "0xb388b849db3d86aa5219a43a00c05476277ac8a4",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xa33c6e20349ba916660ffaeff7dc5d3d614e0236",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 1399,
+   "blocksWithSwaps": 2058,
+   "counts": {
+    "swaps": 3485,
+    "tickMoves": 3473,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 2
+   },
+   "writes300": {
+    "max": 296,
+    "p99": 265,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9755
+   },
+   "writes600": {
+    "max": 571,
+    "p99": 488,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.972
+   },
+   "swapBlocks300": {
+    "max": 452,
+    "p99": 376,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9756
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.6
+  },
+  {
+   "pool": "0x4a18d53e80ab9f3b08b4cf36c2fe855edbca3a8b",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x7cb499776cef107a94aa44f8d00c9a116294c3ea",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31622807953636212567716",
+   "periodSeconds": 86400,
+   "writes": 1695,
+   "blocksWithSwaps": 1990,
+   "counts": {
+    "swaps": 3383,
+    "tickMoves": 3371,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 291,
+    "p99": 173,
+    "p95": 1,
+    "p50": 0,
+    "zeroShare": 0.9496
+   },
+   "writes600": {
+    "max": 469,
+    "p99": 345,
+    "p95": 2,
+    "p50": 0,
+    "zeroShare": 0.9427
+   },
+   "swapBlocks300": {
+    "max": 367,
+    "p99": 191,
+    "p95": 1,
+    "p50": 0,
+    "zeroShare": 0.9496
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.5
+  },
+  {
+   "pool": "0xe2b46c905e12ab8e2f864e4821a4325884c1b126",
+   "fee": 500,
+   "token0": "0x1b0e319c6a659f002271b69db8a7df2f911c153e",
+   "token1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "cardinality": 1860,
+   "cardinalityNext": 1860,
+   "liquidity": "918572019465914276",
+   "periodSeconds": 86400,
+   "writes": 1230,
+   "blocksWithSwaps": 2473,
+   "counts": {
+    "swaps": 3221,
+    "tickMoves": 2027,
+    "mintsInRange": 116,
+    "burnsInRange": 22,
+    "mints": 158,
+    "burns": 216
+   },
+   "writes300": {
+    "max": 46,
+    "p99": 34,
+    "p95": 19,
+    "p50": 2,
+    "zeroShare": 0.2267
+   },
+   "writes600": {
+    "max": 73,
+    "p99": 61,
+    "p95": 36,
+    "p50": 4,
+    "zeroShare": 0.0541
+   },
+   "swapBlocks300": {
+    "max": 99,
+    "p99": 64,
+    "p95": 37,
+    "p50": 4,
+    "zeroShare": 0.0515
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.8
+  },
+  {
+   "pool": "0x5f3489255cf4c6f3be06222b825180071634e4b6",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x0de0704da60b2a9ee761dd19ffcf66aaecaff5ab",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 1090,
+   "blocksWithSwaps": 1545,
+   "counts": {
+    "swaps": 3047,
+    "tickMoves": 3031,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 261,
+    "p99": 194,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9777
+   },
+   "writes600": {
+    "max": 505,
+    "p99": 346,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9742
+   },
+   "swapBlocks300": {
+    "max": 487,
+    "p99": 259,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9783
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.4
+  },
+  {
+   "pool": "0xec7fe2cb601715adea4b64e50480ec73b5ee047f",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x0cd229f1bbad5ae58e9a84950aebcf5816229d75",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 1854,
+   "blocksWithSwaps": 2313,
+   "counts": {
+    "swaps": 3032,
+    "tickMoves": 2985,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 109,
+    "p99": 90,
+    "p95": 69,
+    "p50": 0,
+    "zeroShare": 0.9066
+   },
+   "writes600": {
+    "max": 195,
+    "p99": 171,
+    "p95": 137,
+    "p50": 0,
+    "zeroShare": 0.9031
+   },
+   "swapBlocks300": {
+    "max": 155,
+    "p99": 108,
+    "p95": 87,
+    "p50": 0,
+    "zeroShare": 0.9067
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.5
+  },
+  {
+   "pool": "0x7279a8712f5b2d99a66e0d6fe0b94dbb746bf1f3",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x221103322a5fb113eab40e08540d91d0d529c8c0",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31622807953636212567716",
+   "periodSeconds": 86400,
+   "writes": 1751,
+   "blocksWithSwaps": 2053,
+   "counts": {
+    "swaps": 2984,
+    "tickMoves": 2964,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 296,
+    "p99": 274,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9617
+   },
+   "writes600": {
+    "max": 581,
+    "p99": 540,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9547
+   },
+   "swapBlocks300": {
+    "max": 364,
+    "p99": 326,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9617
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.5
+  },
+  {
+   "pool": "0xd42a491087a15e5afd51feb3606066cc152d2b09",
+   "fee": 3000,
+   "token0": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+   "token1": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "cardinality": 14400,
+   "cardinalityNext": 14400,
+   "liquidity": "138035958587411820246116",
+   "periodSeconds": 86400,
+   "writes": 1124,
+   "blocksWithSwaps": 2438,
+   "counts": {
+    "swaps": 3037,
+    "tickMoves": 1851,
+    "mintsInRange": 25,
+    "burnsInRange": 26,
+    "mints": 31,
+    "burns": 124
+   },
+   "writes300": {
+    "max": 28,
+    "p99": 22,
+    "p95": 13,
+    "p50": 2,
+    "zeroShare": 0.2159
+   },
+   "writes600": {
+    "max": 49,
+    "p99": 34,
+    "p95": 24,
+    "p50": 6,
+    "zeroShare": 0.0595
+   },
+   "swapBlocks300": {
+    "max": 65,
+    "p99": 40,
+    "p95": 25,
+    "p50": 6,
+    "zeroShare": 0.0667
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.8
+  },
+  {
+   "pool": "0xeccb91d8df9002e4c0e04a1f1a327afa6b8a9172",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x16797b0fc2477a25994d338bd390c5b378ac5b15",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 1608,
+   "blocksWithSwaps": 2103,
+   "counts": {
+    "swaps": 2917,
+    "tickMoves": 2885,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 120,
+    "p99": 89,
+    "p95": 56,
+    "p50": 0,
+    "zeroShare": 0.8979
+   },
+   "writes600": {
+    "max": 231,
+    "p99": 167,
+    "p95": 115,
+    "p50": 0,
+    "zeroShare": 0.8944
+   },
+   "swapBlocks300": {
+    "max": 174,
+    "p99": 119,
+    "p95": 71,
+    "p50": 0,
+    "zeroShare": 0.8985
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.5
+  },
+  {
+   "pool": "0x334b2010e0613fb0da2fc248e1c33b7850407596",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x3d633499b75437170c5e1bcc7e3f1fa522e509f7",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 1514,
+   "blocksWithSwaps": 1960,
+   "counts": {
+    "swaps": 2856,
+    "tickMoves": 2770,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 104,
+    "p99": 74,
+    "p95": 55,
+    "p50": 0,
+    "zeroShare": 0.905
+   },
+   "writes600": {
+    "max": 185,
+    "p99": 141,
+    "p95": 109,
+    "p50": 0,
+    "zeroShare": 0.9015
+   },
+   "swapBlocks300": {
+    "max": 156,
+    "p99": 101,
+    "p95": 67,
+    "p50": 0,
+    "zeroShare": 0.905
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.5
+  },
+  {
+   "pool": "0xc0be1cb0f674d9737c72b2a63fc542361185b807",
+   "fee": 3000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec",
+   "cardinality": 1500,
+   "cardinalityNext": 1500,
+   "liquidity": "4726984815343546797844",
+   "periodSeconds": 86400,
+   "writes": 385,
+   "blocksWithSwaps": 2044,
+   "counts": {
+    "swaps": 2728,
+    "tickMoves": 534,
+    "mintsInRange": 9,
+    "burnsInRange": 8,
+    "mints": 16,
+    "burns": 45
+   },
+   "writes300": {
+    "max": 36,
+    "p99": 19,
+    "p95": 8,
+    "p50": 0,
+    "zeroShare": 0.6915
+   },
+   "writes600": {
+    "max": 45,
+    "p99": 34,
+    "p95": 15,
+    "p50": 0,
+    "zeroShare": 0.5433
+   },
+   "swapBlocks300": {
+    "max": 214,
+    "p99": 112,
+    "p95": 23,
+    "p50": 2,
+    "zeroShare": 0.1555
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.7
+  },
+  {
+   "pool": "0x7004acfd0e4564f699a5fd590c847c1b224788e2",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x2478abed48a7d9c527fda12fb473c634fe7cd46b",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 1316,
+   "blocksWithSwaps": 1738,
+   "counts": {
+    "swaps": 2653,
+    "tickMoves": 2610,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 112,
+    "p99": 89,
+    "p95": 59,
+    "p50": 0,
+    "zeroShare": 0.9364
+   },
+   "writes600": {
+    "max": 203,
+    "p99": 178,
+    "p95": 118,
+    "p50": 0,
+    "zeroShare": 0.933
+   },
+   "swapBlocks300": {
+    "max": 155,
+    "p99": 116,
+    "p95": 80,
+    "p50": 0,
+    "zeroShare": 0.9364
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.4
+  },
+  {
+   "pool": "0xd97922599591a2db384974c6ebeebd53b8144faa",
+   "fee": 10000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xe893548c9b9aec903004695c6412b06d6c6819a9",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "36819258015569838458222",
+   "periodSeconds": 86400,
+   "writes": 851,
+   "blocksWithSwaps": 2102,
+   "counts": {
+    "swaps": 2522,
+    "tickMoves": 1536,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 3
+   },
+   "writes300": {
+    "max": 281,
+    "p99": 180,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9784
+   },
+   "writes600": {
+    "max": 531,
+    "p99": 313,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9715
+   },
+   "swapBlocks300": {
+    "max": 696,
+    "p99": 500,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9778
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.4
+  },
+  {
+   "pool": "0xc9f3c23ab14f919b4bd3ab168bbe690812f53183",
+   "fee": 10000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x4e7cc93d0f85daaa16618067ab76dd29820fade0",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "36819258015569838458222",
+   "periodSeconds": 86400,
+   "writes": 805,
+   "blocksWithSwaps": 2051,
+   "counts": {
+    "swaps": 2382,
+    "tickMoves": 1504,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 2
+   },
+   "writes300": {
+    "max": 282,
+    "p99": 156,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9801
+   },
+   "writes600": {
+    "max": 552,
+    "p99": 283,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9731
+   },
+   "swapBlocks300": {
+    "max": 705,
+    "p99": 449,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9761
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.4
+  },
+  {
+   "pool": "0xe2c12a7379706a291cadaaec1d22458be2f7239d",
+   "fee": 3000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x385f4f8ae47651ce5f58f5265395a669f8281e18",
+   "cardinality": 2400,
+   "cardinalityNext": 2400,
+   "liquidity": "18950107738701036159530",
+   "periodSeconds": 86400,
+   "writes": 1578,
+   "blocksWithSwaps": 1972,
+   "counts": {
+    "swaps": 2276,
+    "tickMoves": 2079,
+    "mintsInRange": 3,
+    "burnsInRange": 1,
+    "mints": 5,
+    "burns": 7
+   },
+   "writes300": {
+    "max": 36,
+    "p99": 21,
+    "p95": 13,
+    "p50": 4,
+    "zeroShare": 0.0241
+   },
+   "writes600": {
+    "max": 44,
+    "p99": 33,
+    "p95": 25,
+    "p50": 9,
+    "zeroShare": 0.0012
+   },
+   "swapBlocks300": {
+    "max": 49,
+    "p99": 27,
+    "p95": 18,
+    "p50": 6,
+    "zeroShare": 0.0175
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.6
+  },
+  {
+   "pool": "0x549d4948559e9e56cfb4a05b19b17b19ad3067f0",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x0d42a3af337fbdd7985a478ad41e75caea1974d1",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 1006,
+   "blocksWithSwaps": 1257,
+   "counts": {
+    "swaps": 2217,
+    "tickMoves": 2203,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 140,
+    "p99": 118,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9651
+   },
+   "writes600": {
+    "max": 258,
+    "p99": 231,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9616
+   },
+   "swapBlocks300": {
+    "max": 176,
+    "p99": 150,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9651
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.4
+  },
+  {
+   "pool": "0x5fd94e94fe055b81441fd81f3d7b8a357d6c1f8b",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xe7bf3f14e751a93c375cd5b66d36c5fa8e042c45",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31622807953636212567716",
+   "periodSeconds": 86400,
+   "writes": 928,
+   "blocksWithSwaps": 1128,
+   "counts": {
+    "swaps": 2190,
+    "tickMoves": 2175,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 2
+   },
+   "writes300": {
+    "max": 225,
+    "p99": 104,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9666
+   },
+   "writes600": {
+    "max": 444,
+    "p99": 211,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9597
+   },
+   "swapBlocks300": {
+    "max": 280,
+    "p99": 130,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9604
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.3
+  },
+  {
+   "pool": "0xbd5cd6515ca6285941fbc177381dc8ed4844e6b8",
+   "fee": 10000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x98096d17e191b3da1d5f99a6d7b3584351b11e18",
+   "cardinality": 1900,
+   "cardinalityNext": 1900,
+   "liquidity": "56294097023979761218846",
+   "periodSeconds": 86400,
+   "writes": 1367,
+   "blocksWithSwaps": 1818,
+   "counts": {
+    "swaps": 2204,
+    "tickMoves": 1680,
+    "mintsInRange": 116,
+    "burnsInRange": 35,
+    "mints": 681,
+    "burns": 1022
+   },
+   "writes300": {
+    "max": 110,
+    "p99": 36,
+    "p95": 12,
+    "p50": 3,
+    "zeroShare": 0.0824
+   },
+   "writes600": {
+    "max": 145,
+    "p99": 70,
+    "p95": 25,
+    "p50": 7,
+    "zeroShare": 0.007
+   },
+   "swapBlocks300": {
+    "max": 174,
+    "p99": 60,
+    "p95": 18,
+    "p50": 4,
+    "zeroShare": 0.0647
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 1.1
+  },
+  {
+   "pool": "0x9b2782fd747ca0d2d24142bb4629633c6b9ea27e",
+   "fee": 10000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x9528edd1f8fe1b9188c141ad55a994ddcf8d271b",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "36819258015569838458222",
+   "periodSeconds": 86400,
+   "writes": 696,
+   "blocksWithSwaps": 1761,
+   "counts": {
+    "swaps": 2031,
+    "tickMoves": 1109,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 4
+   },
+   "writes300": {
+    "max": 249,
+    "p99": 123,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9777
+   },
+   "writes600": {
+    "max": 489,
+    "p99": 244,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9672
+   },
+   "swapBlocks300": {
+    "max": 655,
+    "p99": 333,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9773
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.5
+  },
+  {
+   "pool": "0xc6bcc95043dc48c204bb2d57fb264a10efe0a607",
+   "fee": 500,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x1b0e319c6a659f002271b69db8a7df2f911c153e",
+   "cardinality": 2437,
+   "cardinalityNext": 2437,
+   "liquidity": "987548165025295389783",
+   "periodSeconds": 86400,
+   "writes": 1169,
+   "blocksWithSwaps": 1749,
+   "counts": {
+    "swaps": 1997,
+    "tickMoves": 1611,
+    "mintsInRange": 1,
+    "burnsInRange": 3,
+    "mints": 14,
+    "burns": 32
+   },
+   "writes300": {
+    "max": 41,
+    "p99": 25,
+    "p95": 14,
+    "p50": 2,
+    "zeroShare": 0.1506
+   },
+   "writes600": {
+    "max": 60,
+    "p99": 45,
+    "p95": 27,
+    "p50": 5,
+    "zeroShare": 0.0277
+   },
+   "swapBlocks300": {
+    "max": 77,
+    "p99": 38,
+    "p95": 19,
+    "p50": 4,
+    "zeroShare": 0.0653
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.9
+  },
+  {
+   "pool": "0x34d0dc122cf9a8eb296fc5e0d3a233625d7d19b7",
+   "fee": 500,
+   "token0": "0x2e0847e8910a9732eb3fb1bb4b70a580adad4fe3",
+   "token1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "cardinality": 7200,
+   "cardinalityNext": 7200,
+   "liquidity": "992015636248072773",
+   "periodSeconds": 86400,
+   "writes": 652,
+   "blocksWithSwaps": 1740,
+   "counts": {
+    "swaps": 1939,
+    "tickMoves": 774,
+    "mintsInRange": 48,
+    "burnsInRange": 24,
+    "mints": 59,
+    "burns": 97
+   },
+   "writes300": {
+    "max": 52,
+    "p99": 25,
+    "p95": 9,
+    "p50": 1,
+    "zeroShare": 0.4487
+   },
+   "writes600": {
+    "max": 87,
+    "p99": 49,
+    "p95": 17,
+    "p50": 2,
+    "zeroShare": 0.2917
+   },
+   "swapBlocks300": {
+    "max": 138,
+    "p99": 51,
+    "p95": 24,
+    "p50": 3,
+    "zeroShare": 0.1276
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.7
+  },
+  {
+   "pool": "0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d",
+   "fee": 500,
+   "token0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "token1": "0xaf3d76f1834a1d425780943c99ea8a608f8a93f9",
+   "cardinality": 7200,
+   "cardinalityNext": 7200,
+   "liquidity": "546053663867131221",
+   "periodSeconds": 86400,
+   "writes": 509,
+   "blocksWithSwaps": 1483,
+   "counts": {
+    "swaps": 1939,
+    "tickMoves": 784,
+    "mintsInRange": 11,
+    "burnsInRange": 5,
+    "mints": 11,
+    "burns": 23
+   },
+   "writes300": {
+    "max": 69,
+    "p99": 28,
+    "p95": 7,
+    "p50": 0,
+    "zeroShare": 0.549
+   },
+   "writes600": {
+    "max": 95,
+    "p99": 50,
+    "p95": 14,
+    "p50": 1,
+    "zeroShare": 0.3497
+   },
+   "swapBlocks300": {
+    "max": 160,
+    "p99": 51,
+    "p95": 16,
+    "p50": 3,
+    "zeroShare": 0.1657
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.7
+  },
+  {
+   "pool": "0x644158ee4f85a2d0dbc5b6f35ba93f400e9ae16c",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0xe17470fbb83c657a160b1b6af96872aba04b0a7b",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 927,
+   "blocksWithSwaps": 1190,
+   "counts": {
+    "swaps": 1901,
+    "tickMoves": 1857,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 120,
+    "p99": 79,
+    "p95": 1,
+    "p50": 0,
+    "zeroShare": 0.9494
+   },
+   "writes600": {
+    "max": 200,
+    "p99": 153,
+    "p95": 19,
+    "p50": 0,
+    "zeroShare": 0.9459
+   },
+   "swapBlocks300": {
+    "max": 152,
+    "p99": 107,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9502
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.4
+  },
+  {
+   "pool": "0xa884ef3cee3f30d7e568801786a15dddad0bc1cb",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x3e5776259f0e2f52f885e7fb5b3d82d81d2187e3",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 559,
+   "blocksWithSwaps": 916,
+   "counts": {
+    "swaps": 1847,
+    "tickMoves": 1834,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 238,
+    "p99": 91,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9858
+   },
+   "writes600": {
+    "max": 436,
+    "p99": 192,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9823
+   },
+   "swapBlocks300": {
+    "max": 386,
+    "p99": 175,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9864
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.3
+  },
+  {
+   "pool": "0x85513696664eb7fed854dce3817252225a01ac2b",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x50c35c073e95d7e4143847502806f3bb1cf46059",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31942230398369514935678",
+   "periodSeconds": 86400,
+   "writes": 1196,
+   "blocksWithSwaps": 1775,
+   "counts": {
+    "swaps": 1819,
+    "tickMoves": 1293,
+    "mintsInRange": 0,
+    "burnsInRange": 0,
+    "mints": 0,
+    "burns": 0
+   },
+   "writes300": {
+    "max": 34,
+    "p99": 21,
+    "p95": 16,
+    "p50": 2,
+    "zeroShare": 0.3653
+   },
+   "writes600": {
+    "max": 46,
+    "p99": 37,
+    "p95": 31,
+    "p50": 5,
+    "zeroShare": 0.2723
+   },
+   "swapBlocks300": {
+    "max": 65,
+    "p99": 35,
+    "p95": 24,
+    "p50": 3,
+    "zeroShare": 0.3226
+   },
+   "observe300": "ok",
+   "observe600": "OLD",
+   "seconds": 0.7
+  },
+  {
+   "pool": "0x15f3b81d3533e3e4048e6aa2e995dc5fa6a349fe",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x9adf7ee0f57cceec8a38a2418c591faca83ae5e6",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31942230398369514935678",
+   "periodSeconds": 86400,
+   "writes": 1225,
+   "blocksWithSwaps": 1786,
+   "counts": {
+    "swaps": 1818,
+    "tickMoves": 1323,
+    "mintsInRange": 0,
+    "burnsInRange": 0,
+    "mints": 0,
+    "burns": 0
+   },
+   "writes300": {
+    "max": 31,
+    "p99": 22,
+    "p95": 16,
+    "p50": 2,
+    "zeroShare": 0.3251
+   },
+   "writes600": {
+    "max": 41,
+    "p99": 37,
+    "p95": 32,
+    "p50": 5,
+    "zeroShare": 0.2264
+   },
+   "swapBlocks300": {
+    "max": 51,
+    "p99": 33,
+    "p95": 24,
+    "p50": 3,
+    "zeroShare": 0.267
+   },
+   "observe300": "ok",
+   "observe600": "OLD",
+   "seconds": 0.8
+  },
+  {
+   "pool": "0x8912f8d8a4eca2ec1347163a0391027d77e7e508",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x55015e0df4247e3927e71123c645873920cab388",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "0",
+   "periodSeconds": 86400,
+   "writes": 628,
+   "blocksWithSwaps": 925,
+   "counts": {
+    "swaps": 1771,
+    "tickMoves": 1756,
+    "mintsInRange": 1,
+    "burnsInRange": 1,
+    "mints": 1,
+    "burns": 1
+   },
+   "writes300": {
+    "max": 270,
+    "p99": 110,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9821
+   },
+   "writes600": {
+    "max": 414,
+    "p99": 209,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9786
+   },
+   "swapBlocks300": {
+    "max": 418,
+    "p99": 150,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9836
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.4
+  },
+  {
+   "pool": "0xba2f1ed4ceb2169d538d1e614d847e83c5a55913",
+   "fee": 500,
+   "token0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "token1": "0xc9a981fee1f9dec688bb123ccdecc63d0debfc4e",
+   "cardinality": 1800,
+   "cardinalityNext": 1800,
+   "liquidity": "1352217815176138949",
+   "periodSeconds": 86400,
+   "writes": 762,
+   "blocksWithSwaps": 1679,
+   "counts": {
+    "swaps": 1777,
+    "tickMoves": 863,
+    "mintsInRange": 16,
+    "burnsInRange": 10,
+    "mints": 19,
+    "burns": 23
+   },
+   "writes300": {
+    "max": 28,
+    "p99": 17,
+    "p95": 10,
+    "p50": 1,
+    "zeroShare": 0.3358
+   },
+   "writes600": {
+    "max": 44,
+    "p99": 29,
+    "p95": 18,
+    "p50": 3,
+    "zeroShare": 0.1746
+   },
+   "swapBlocks300": {
+    "max": 52,
+    "p99": 27,
+    "p95": 18,
+    "p50": 4,
+    "zeroShare": 0.0676
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.7
+  },
+  {
+   "pool": "0xd7dcadcd9ede9ce3efa3fc27d80987821dd90a7c",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x5fc02e17f85d39b5e68648aa7ec775d0f1b8c7e4",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31622807953636212567716",
+   "periodSeconds": 86400,
+   "writes": 0,
+   "blocksWithSwaps": 0,
+   "counts": {
+    "swaps": 1767,
+    "tickMoves": 1760,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 0
+   },
+   "writes300": {
+    "max": 0,
+    "p99": 0,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 1.0
+   },
+   "writes600": {
+    "max": 0,
+    "p99": 0,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 1.0
+   },
+   "swapBlocks300": {
+    "max": 0,
+    "p99": 0,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 1.0
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.3
+  },
+  {
+   "pool": "0x6e4fc50f2fd35de7cda899b2f1c942551f30acfa",
+   "fee": 100,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x26ab1337c727b53e9d7662e04ccf74f5be0dc1d4",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "31942230398369514935678",
+   "periodSeconds": 86400,
+   "writes": 1177,
+   "blocksWithSwaps": 1699,
+   "counts": {
+    "swaps": 1754,
+    "tickMoves": 1278,
+    "mintsInRange": 0,
+    "burnsInRange": 0,
+    "mints": 0,
+    "burns": 0
+   },
+   "writes300": {
+    "max": 32,
+    "p99": 20,
+    "p95": 15,
+    "p50": 2,
+    "zeroShare": 0.3662
+   },
+   "writes600": {
+    "max": 43,
+    "p99": 36,
+    "p95": 30,
+    "p50": 5,
+    "zeroShare": 0.2547
+   },
+   "swapBlocks300": {
+    "max": 57,
+    "p99": 31,
+    "p95": 23,
+    "p50": 3,
+    "zeroShare": 0.3453
+   },
+   "observe300": "ok",
+   "observe600": "OLD",
+   "seconds": 0.6
+  },
+  {
+   "pool": "0x10cc6bd38112cac182db90b6a71d8bb5939526ba",
+   "fee": 10000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+   "cardinality": 20000,
+   "cardinalityNext": 20000,
+   "liquidity": "122312296909530749616988",
+   "periodSeconds": 86400,
+   "writes": 650,
+   "blocksWithSwaps": 1170,
+   "counts": {
+    "swaps": 1840,
+    "tickMoves": 1167,
+    "mintsInRange": 185,
+    "burnsInRange": 120,
+    "mints": 370,
+    "burns": 426
+   },
+   "writes300": {
+    "max": 56,
+    "p99": 21,
+    "p95": 9,
+    "p50": 1,
+    "zeroShare": 0.3228
+   },
+   "writes600": {
+    "max": 72,
+    "p99": 31,
+    "p95": 16,
+    "p50": 2,
+    "zeroShare": 0.0905
+   },
+   "swapBlocks300": {
+    "max": 110,
+    "p99": 33,
+    "p95": 16,
+    "p50": 2,
+    "zeroShare": 0.1304
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.8
+  },
+  {
+   "pool": "0x5ff9a8bf56f937e78e5ef52643ce3fbb0f8b5093",
+   "fee": 10000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x198eaf0db68b035d431bd635c96dfeb686d33661",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "36819258015569838458222",
+   "periodSeconds": 86400,
+   "writes": 1277,
+   "blocksWithSwaps": 1554,
+   "counts": {
+    "swaps": 1714,
+    "tickMoves": 1690,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 2
+   },
+   "writes300": {
+    "max": 127,
+    "p99": 102,
+    "p95": 1,
+    "p50": 0,
+    "zeroShare": 0.9492
+   },
+   "writes600": {
+    "max": 237,
+    "p99": 203,
+    "p95": 15,
+    "p50": 0,
+    "zeroShare": 0.9458
+   },
+   "swapBlocks300": {
+    "max": 196,
+    "p99": 119,
+    "p95": 1,
+    "p50": 0,
+    "zeroShare": 0.9491
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.5
+  },
+  {
+   "pool": "0x23cac41c38c167df86a8e53aed774dcfa5faa617",
+   "fee": 10000,
+   "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "token1": "0x597705bca3c4538ca7b66c3e7d48a39e26deb106",
+   "cardinality": 1,
+   "cardinalityNext": 1,
+   "liquidity": "36819258015569838458222",
+   "periodSeconds": 86400,
+   "writes": 516,
+   "blocksWithSwaps": 1405,
+   "counts": {
+    "swaps": 1711,
+    "tickMoves": 1162,
+    "mintsInRange": 1,
+    "burnsInRange": 0,
+    "mints": 1,
+    "burns": 2
+   },
+   "writes300": {
+    "max": 296,
+    "p99": 2,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9856
+   },
+   "writes600": {
+    "max": 513,
+    "p99": 128,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9786
+   },
+   "swapBlocks300": {
+    "max": 791,
+    "p99": 3,
+    "p95": 0,
+    "p50": 0,
+    "zeroShare": 0.9856
+   },
+   "observe300": "ok",
+   "observe600": "ok",
+   "seconds": 0.4
+  }
+ ],
+ "calls": 1675
+}

@@ -1,0 +1,18 @@
+{
+ "kind": "domino-v3-oracle-cardinality-gas",
+ "date": "2026-10-05",
+ "method": "eth_estimateGas of increaseObservationCardinalityNext(n) from the V2 operator on a one-slot pool (nothing sent); the EVM test's receipts on Base's v3 bytecode",
+ "estimates": {
+  "robinhood-4663": {"pool": "0x6e8a6a1af8ec53f3f09c7303e5403558dee42d0a", "baseFeeGwei": 0.020418,
+                     "gas": {"2": 61892, "3": 84394, "11": 262802, "51": 1159382, "131": 2952541, "151": 3400831, "301": 6763017, "601": 13487365, "1201": 26936060},
+                     "noOpCall": 38002},
+  "base-8453": {"pool": "0x7d6a4db5242543a30e767986b900b4181018d912", "baseFeeGwei": 0.005,
+                "gas": {"101": 2271750, "151": 3392474, "301": 6754660, "601": 13479008}},
+  "arbitrum-42161": {"pool": "0xf87da73cfb22804ccd9562c714b6cbf06dc7d0cb", "baseFeeGwei": 0.020042,
+                     "gas": {"101": 2276534, "151": 3397258, "301": 6759444, "601": 13483792}}
+ },
+ "evmTestReceipts": {"chain": "Base bytecode on Anvil", "gasUsed": {"1 -> 101": 2252704, "101 -> 201": 2252704, "201 -> 301": 2252716}},
+ "perSlotGas": 22410,
+ "perCallGas": 39500,
+ "ethUsd": {"robinhood-4663": 2702.49, "base-8453": 2702.64, "arbitrum-42161": 2702.66, "source": "each chain's WETH/stable 0.05% v3 pool spot, 5 Oct 2026 ~15:35 UTC"}
+}

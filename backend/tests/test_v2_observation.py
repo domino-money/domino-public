@@ -178,11 +178,21 @@ class PublisherTests(unittest.TestCase):
                 self.publisher(FakeHistory(prices)).observe(self.pool, self.head, max_age_seconds=300)
             self.assertEqual(str(caught.exception), 'v2_observation_unstable')
 
-    def test_only_v4_pools_get_observations(self):
+    def test_a_v3_pool_gets_observations_too(self):
+        # A v3 vault whose pool's own history cannot guarantee the TWAP window is anchored on the signed spot, as a
+        # v4 one (v2_oracle; the owner's decision of 5 Oct 2026): same look-back, same band, the pool's own PoolRef.
         v3 = PoolRef(3, '0x4200000000000000000000000000000000000006', '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
                      500, 10)
-        with self.assertRaises(DataError):
-            self.publisher(FakeHistory({})).observe(v3, self.head, max_age_seconds=300)
+        history = FakeHistory({994: self.PRICE, 970: self.PRICE})
+        signed = self.publisher(history).observe(v3, self.head, max_age_seconds=300)
+        self.assertEqual((signed.observation.pool, signed.observation.sqrt_price_x96), (v3, self.PRICE))
+        self.assertEqual(recover_signer(8453, '0x' + 'ab' * 20, signed), self.signer.address)
+        with self.assertRaisesRegex(DataError, '^v2_observation_unstable$'):
+            self.publisher(FakeHistory({994: self.PRICE * 2, 970: self.PRICE})).observe(v3, self.head,
+                                                                                      max_age_seconds=300)
+        for pool, head in ((('pool',), self.head), (v3, 1000)):
+            with self.subTest(pool=pool, head=head), self.assertRaisesRegex(DataError, '^v2_invalid_observation$'):
+                self.publisher(history).observe(pool, head, max_age_seconds=300)
 
     def test_the_band_is_the_anchors(self):
         # AnchorMath.withinBand on the price, both orders, exact at the edge.

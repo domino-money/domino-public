@@ -22,7 +22,9 @@ pattern, never a plain key on the VM). Each pass:
    is read and planned (v2_planner); the best one that clears both gates
    with the presimulated gas is sent. A v4 vault's anchor is the publisher's
    observation of the spot at the head the plan was made at; a v3 vault's,
-   the pool's TWAP through the price anchor.
+   the pool's TWAP through the price anchor when the pool's own history
+   guarantees the window until inclusion (v2_oracle), else the publisher's
+   observation too (the owner's decision of 5 Oct 2026). A v3 exit likewise.
 One transaction at most per pass, in that order.
 Output is one JSON object per command, with decisions and fixed codes; no
 key, password, keyed URL or raw provider message ever reaches it.
@@ -31,7 +33,7 @@ The configuration is a private file (0600 in a 0700 directory outside any
 checkout), every value validated; see docs/v2/V2_AUTOMATION_BACKEND.md.
 """
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import os
 from pathlib import Path
@@ -50,6 +52,7 @@ from v2_manifest import load_deployment
 from v2_executor import CallReverted, ChainExecutor, GasPolicy, Journal, OperatorKey, OperatorRpc
 from v2_head import HeadFollower
 from v2_observation import HistoricalPrices, ObservationSigner, Publisher, PublisherPolicy
+from v2_oracle import twap_guaranteed
 from v2_plan import (ACTION_MINT, execute_calldata, plan_hash, return_reserves_calldata, return_subject,
                      returned_amounts, twap_evidence)
 from v2_domino import full_range
@@ -57,7 +60,7 @@ from v2_planner import (FeeGrowth, GasQuote, PlannerConfig, decide, precondition
                         returnable)
 from v2_rpc import ChainIndexRpc, configured_endpoints, load_chain_rpc_config
 from v2_scan_state import ScanState
-from v2_uniswap import UniswapReader
+from v2_uniswap import UniswapReader, v3_pool_address
 from v2_vaults import (VaultDiscovery, VaultReader, anchor_min_twap, checked_references, earlier_block,
                        fee_growth_inside, l1_fee, reference_prices, twap_price, twap_window)
 
@@ -271,6 +274,9 @@ class ChainAutomation:
         # every change to a vault's reserves advances its nonce, so one is read
         # again only once its nonce moves.
         self.empty = {}
+        # v3 pools whose own history guarantees a TWAP window, by address: the widest such window. A ring never
+        # shrinks and a guaranteed window never uncovers, so such a pool is not read again (v2_oracle).
+        self.twap_ready = {}
 
     # ------------------------------------------------------------ clients
     def _clients(self, head):
@@ -294,7 +300,7 @@ class ChainAutomation:
                   'exits': [], 'vaults': [], 'submitted': None}
         rpc, uniswap, history, history_uniswap = self._clients(head)
         # Reads shared by every vault of this pass: billed calls, made once.
-        self._pass = {'references': None, 'growth': {}, 'min_twap': None}
+        self._pass = {'references': None, 'growth': {}, 'min_twap': None, 'oracles': {}}
         self.deployment.verify_code(rpc, block)
         busy = False
         if act and self.executor is not None:
@@ -387,13 +393,7 @@ class ChainAutomation:
         if blocked is not None:  # nothing to price while the vault would refuse any plan
             return {'act': False, 'reason': blocked, 'stateNonce': vault.state_nonce}
         pool = vault.pool.pool
-        if pool.dex == DEX_V4:
-            anchor, evidence = vault.pool.sqrt_price_x96, None
-        else:
-            if self._pass['min_twap'] is None:
-                self._pass['min_twap'] = anchor_min_twap(rpc, self.deployment, block)
-            window = twap_window(vault.limits, self._pass['min_twap'], self.twap_seconds)
-            anchor, evidence = twap_price(rpc, self.deployment, pool, window, block), twap_evidence(window)
+        anchor, evidence, planner, source = self._anchor(vault, rpc, block)
         if self._pass['references'] is None:
             self._pass['references'] = reference_prices(self.chain, uniswap, self.references, block)
         prices = price_book(pool, anchor, self._pass['references'])
@@ -403,7 +403,7 @@ class ChainAutomation:
         quoter = self.quoter_factory(vault, rpc, block) if self.quoter_factory else None
 
         def plan(growth, mint_growth=None):
-            return decide(vault, anchor, prices, gas, self.planner, growth_by_target=growth, mint_growth=mint_growth,
+            return decide(vault, anchor, prices, gas, planner, growth_by_target=growth, mint_growth=mint_growth,
                           quoter=quoter, max_gas_cost_wei=ceiling)
         # The owner gate's evidence costs history reads: only for members whose
         # candidates already clear everything else, and the whole price range
@@ -419,6 +419,8 @@ class ChainAutomation:
             decision = plan(growth, mint_growth)
         result = {'act': decision.act, 'reason': decision.reason, 'considered': dict(decision.considered),
                   'stateNonce': vault.state_nonce}
+        if source is not None:
+            result['anchorSource'] = source
         if not decision.act:
             return result
         if decision.candidate.action == ACTION_MINT:
@@ -439,7 +441,7 @@ class ChainAutomation:
         calldata = execute_calldata(raw)
         gas_limit, estimate = self.executor.presimulate(record.vault, calldata, block)
         gas = GasQuote(gas.fee_per_gas, l1_fee(self.chain, rpc, len(calldata) // 2 - 1, block))
-        checked = remeasured(decision, vault, prices, gas, self.planner, estimate,
+        checked = remeasured(decision, vault, prices, gas, planner, estimate,
                              growth=(mint_growth if decision.candidate.action == ACTION_MINT
                                      else growth.get(decision.candidate.target)), max_gas_cost_wei=ceiling)
         economics = checked.economics
@@ -450,6 +452,24 @@ class ChainAutomation:
                       subject=plan_hash(self.chain.chainId, record.vault, raw),
                       plan={'calldata': calldata, 'deadline': deadline, 'gas': gas_limit})
         return result
+
+    def _anchor(self, vault, rpc, block):
+        """The price the vault's anchor call will return, the plan's evidence for it (None: the publisher signs the
+        spot once a plan acts), the planner configuration to plan with, and on v3 where the price comes from: the
+        pool's TWAP when its own history guarantees the window until inclusion (v2_oracle), else the spot the
+        publisher signs, as on v4 (the owner's decision of 5 Oct 2026), which does not drift until inclusion."""
+        pool = vault.pool.pool
+        if pool.dex == DEX_V4:
+            return vault.pool.sqrt_price_x96, None, self.planner, None
+        if self._pass['min_twap'] is None:
+            self._pass['min_twap'] = anchor_min_twap(rpc, self.deployment, block)
+        try:
+            window = twap_window(vault.limits, self._pass['min_twap'], self.twap_seconds)
+        except DataError:
+            window = None  # no TWAP the anchor takes fits the vault's observation age
+        if window is not None and self._twap_holds(rpc, pool, window, block):
+            return twap_price(rpc, self.deployment, pool, window, block), twap_evidence(window), self.planner, 'twap'
+        return vault.pool.sqrt_price_x96, None, replace(self.planner, twap_drift_bps=0), 'signed'
 
     def _return(self, vault, reader, rpc, head):
         """A closed vault with no active successor gives every reserve back to
@@ -543,7 +563,13 @@ class ChainAutomation:
                     entries.append(entry)
                     continue
                 position = uniswap.position(position_ref(self.chain, pool, mandate.token_id), block)
-                if pool.dex == DEX_V4:
+                twap = None
+                if pool.dex != DEX_V4:
+                    window, twap = twap_exit_evidence(parameters, self.exit_twap_seconds)
+                    if not self._twap_holds(rpc, pool, window, block):
+                        twap = None  # the publisher signs the spot, as on v4 (the owner's decision of 5 Oct 2026)
+                    entry['anchorSource'] = 'signed' if twap is None else 'twap'
+                if twap is None:
                     anchor = position.pool.sqrt_price_x96  # what the publisher signs at this block
                     if not mandate.triggered(anchor):
                         entry.update(act=False, reason='trigger_not_reached')
@@ -556,8 +582,7 @@ class ChainAutomation:
                     signed = publisher.observe(pool, block, max_age_seconds=parameters.max_observation_age_seconds)
                     evidence, deadline = signed.evidence(), signed.observation.valid_until
                 else:
-                    window, evidence = twap_exit_evidence(parameters, self.exit_twap_seconds)
-                    anchor = twap_price(rpc, self.deployment, pool, window, block)
+                    anchor, evidence = twap_price(rpc, self.deployment, pool, window, block), twap
                     deadline = block.timestamp + self.deadline_seconds
                 exit_plan = plan_exit(mandate, pool, position, anchor, evidence, deadline)
                 if exit_plan is None:
@@ -575,6 +600,19 @@ class ChainAutomation:
                 entry.update(act=False, reason=str(error))
             entries.append(entry)
         return entries
+
+    def _twap_holds(self, rpc, pool, window, block):
+        """Whether a v3 pool's TWAP over `window` can anchor (v2_oracle.twap_guaranteed): read once per pass and
+        pool, and never again once the pool guarantees it."""
+        target = v3_pool_address(self.chain, pool.currency0, pool.currency1, pool.fee)
+        if self.twap_ready.get(target, 0) >= window:
+            return True
+        key = (target, window)
+        if key not in self._pass['oracles']:
+            self._pass['oracles'][key] = twap_guaranteed(rpc, self.chain, pool, window, block)
+            if self._pass['oracles'][key]:
+                self.twap_ready[target] = window
+        return self._pass['oracles'][key]
 
 
 # --------------------------------------------------------------------- CLI

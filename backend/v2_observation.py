@@ -3,7 +3,9 @@
 A v4 vault (and the auto-exit on a v4 pool) is bounded by an anchor price that
 an admitted publisher signs off-chain, EIP-712, and the operator passes as
 evidence; there is no publication transaction (docs/v2/F0_INTERFACES.md,
-docs/v2/F1_REGISTRY_ANCHOR.md, "Publisher service"). This module:
+docs/v2/F1_REGISTRY_ANCHOR.md, "Publisher service"). So is a v3 one whose
+pool's own history cannot guarantee the TWAP window (v2_oracle; the owner's
+decision of 5 Oct 2026). This module:
 
 - builds the typed data from the frozen export api-contracts/v2/eip712.json
   (domain Domino/2, the chain id, verifyingContract = the chain's priceAnchor
@@ -36,7 +38,7 @@ from eth_keys import keys
 from eth_utils import to_checksum_address
 
 from discovery import Block, DataError, address, parse_block
-from v2_chains import DEX_V4, ChainProfile
+from v2_chains import ChainProfile
 from v2_uniswap import PoolRef
 from v4_math import MAX_SQRT, MIN_SQRT
 
@@ -229,7 +231,7 @@ class HistoricalPrices:
 
 
 class Publisher:
-    """Reads a v4 pool's spot at a pinned block and signs it.
+    """Reads a v3 or v4 pool's spot at a pinned block and signs it.
 
     `reader` reads current state at the head (a UniswapReader over the chain's
     ChainReadRpc seeded with the head); `history` gives earlier spots
@@ -255,8 +257,8 @@ class Publisher:
 
     def observe(self, pool, head, *, max_age_seconds):
         """A signed observation of `pool` at `head`, valid for at most max_age_seconds."""
-        if not isinstance(pool, PoolRef) or pool.dex != DEX_V4 or not isinstance(head, Block):
-            raise DataError('v2_observation_v4_only')
+        if not isinstance(pool, PoolRef) or not isinstance(head, Block):
+            raise DataError('v2_invalid_observation')
         if type(max_age_seconds) is not int or max_age_seconds <= 0:
             raise DataError('v2_invalid_observation')
         state = self.reader.pool(pool, head)
