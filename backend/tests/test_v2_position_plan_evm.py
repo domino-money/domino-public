@@ -26,7 +26,9 @@ from pathlib import Path
 import random
 import sys
 import time
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 from eth_abi import decode, encode
 from eth_account import Account
@@ -40,6 +42,7 @@ import v2_l1_fee as l1_fee  # noqa: E402
 import v2_liquidity as liq  # noqa: E402
 import v2_plan_codec as codec  # noqa: E402
 from v2_head import Head  # noqa: E402
+import v2_position_plan  # noqa: E402
 from v2_position_plan import PlanError, PositionPlanner, decode_revert  # noqa: E402
 from v2_position_plan_models import CONTRACT_VERSION, PlanRequest, PlanResponse  # noqa: E402
 from v4_math import tick_at_sqrt  # noqa: E402
@@ -56,6 +59,13 @@ TOPICS = {name: '0x' + keccak(signature.encode()).hex() for name, signature in {
     'SwapLegExecuted': 'SwapLegExecuted(uint8,address,address,address,uint256,uint256)',
     'Refunded': 'Refunded(address,address,uint256)',
     'InputPulled': 'InputPulled(bytes32,address,address,uint256)'}.items()}
+
+
+def liq_pool_id(pool):
+    """The v4 pool id of a pool dict: keccak of its PoolKey."""
+    return '0x' + keccak(encode(['address', 'address', 'uint24', 'int24', 'address'],
+                                [pool['currency0'], pool['currency1'], pool['fee'], pool['tickSpacing'],
+                                 pool['hooks']])).hex()
 
 
 def topic_address(topic):
@@ -377,6 +387,32 @@ class S1JourneyEvmTests(unittest.TestCase):
                           'inputs': [{'token': self.usd, 'amountRaw': str(10**21)}]}, owner)
         self.assertEqual({leg['tokenOut'] for leg in body['legs']}, {self.tka, self.tkb})
         self.assertEqual((body['fee']['token'], body['fee']['place']), (self.usd, 'input'))
+        self.assertExecutedAsPlanned(body, self.execute(body, account))
+
+    def test_two_legs_crossing_one_pool_are_planned_from_what_the_call_delivers(self):
+        # A token whose only pool is against ETH, paying a pool of two other tokens each paired with ETH: both
+        # legs run through the token's ETH pool, then a hop out of ETH. Quoted alone, the second leg misses the
+        # first one's trade (the Robinhood fork qualification of 4 Oct 2026: a router leg and a pool leg both
+        # through PONS/USDG). The plan takes both outputs from its simulated call, and executes exactly.
+        tkc, tkd, tke = self.fx.tokens(3)
+        for token in (tkc, tkd, tke):
+            self.fx.mint(token, self.lp, 10**30)
+            self.fx.approve(self.lp, token, self.fx.zap_v4, 2**256 - 1)
+        crossed = self.seed(4, ZERO, tkc, 3000, 60, Q96)
+        for token in (tkd, tke):
+            self.seed(4, ZERO, token, 3000, 60, Q96)
+        target = self.seed(4, tkd, tke, 500, 10, Q96)
+        account, owner = self.owner('two legs one pool')
+        self.fx.mint(tkc, owner, 10**22)
+        request = {'chainId': 8453, 'action': 'create', 'consent': 'direct', 'pool': target,
+                   'tickLower': -500, 'tickUpper': 500, 'inputs': [{'token': tkc, 'amountRaw': str(10**21)}]}
+        with mock.patch.object(v2_position_plan, 'MAX_CORRECTIONS', 0):
+            quoted = self.plan(request, owner)
+        body = self.plan(request, owner)
+        self.assertEqual([leg['pools'][0]['id'] for leg in body['legs']], [liq_pool_id(crossed)] * 2)
+        self.assertEqual([leg['amountInRaw'] for leg in quoted['legs']], [leg['amountInRaw'] for leg in body['legs']])
+        self.assertNotEqual([leg['expectedOutRaw'] for leg in quoted['legs']],
+                            [leg['expectedOutRaw'] for leg in body['legs']])
         self.assertExecutedAsPlanned(body, self.execute(body, account))
 
     def test_eth_pays_a_v3_weth_pool_and_the_rest_returns_as_weth(self):
@@ -730,6 +766,40 @@ class S1JourneyDeployedEvmTests(S1JourneyEvmTests):
     FLAVOR = 'deployed'
 
 
+class LegOutputTests(unittest.TestCase):
+    """What a simulated call delivered is read only from the zap's own receipt lines, one per leg, in order."""
+
+    ZAP = '0x' + 'a0' * 20
+    LEGS = [{'tokenIn': '0x' + '01' * 20, 'tokenOut': '0x' + '02' * 20, 'amountIn': '100'},
+            {'tokenIn': '0x' + '01' * 20, 'tokenOut': '0x' + '03' * 20, 'amountIn': '200'}]
+
+    def line(self, leg, out, *, emitter=None, topic=None):
+        return {'address': emitter or self.ZAP,
+                'topics': [topic or TOPICS['SwapLegExecuted'], '0x' + '00' * 31 + '03',
+                           '0x' + '00' * 12 + leg['tokenIn'][2:], '0x' + '00' * 12 + leg['tokenOut'][2:]],
+                'data': '0x' + encode(['address', 'uint256', 'uint256'], [ZERO, int(leg['amountIn']), out]).hex()}
+
+    def outputs(self, logs):
+        context = SimpleNamespace(zap=self.ZAP)
+        return v2_position_plan._Context._leg_outputs(context, logs, {'legs': self.LEGS})
+
+    def test_one_line_per_leg_in_order(self):
+        other = {'address': self.ZAP, 'topics': [TOPICS['Refunded']], 'data': '0x'}
+        lines = [self.line(self.LEGS[0], 7), other, self.line(self.LEGS[1], 9)]
+        self.assertEqual(self.outputs(lines), [7, 9])
+        self.assertEqual(v2_position_plan.SWAP_LEG_TOPIC, TOPICS['SwapLegExecuted'])
+
+    def test_anything_but_a_one_for_one_match_keeps_the_quotes(self):
+        first, second = self.line(self.LEGS[0], 7), self.line(self.LEGS[1], 9)
+        swapped = {**self.LEGS[1], 'amountIn': '201'}
+        for name, logs in (('missing', [first]), ('extra', [first, second, second]), ('order', [second, first]),
+                           ('input', [first, self.line(swapped, 9)]), ('foreign emitter',
+                            [first, self.line(self.LEGS[1], 9, emitter='0x' + 'b0' * 20)]),
+                           ('not a list', None)):
+            with self.subTest(name=name):
+                self.assertIsNone(self.outputs(logs))
+
+
 # ----------------------------------------------------------- router legs
 
 class FakeTradingApi:
@@ -741,8 +811,9 @@ class FakeTradingApi:
     encoding F1b runs through Universal Router 2.1.2 (testAV4SwapThroughTheDeployedRouter).
     `route_id` overrides the pool id the route names (to name the position's pool)."""
 
-    def __init__(self, fixture, pool, route_id=None):
+    def __init__(self, fixture, pool, route_id=None, bias_bps=0):
         self.fixture, self.pool, self.route_id, self.calls = fixture, pool, route_id, []
+        self.bias_bps = bias_bps  # a quote off the plan's block: the API's state, not the chain's at the block
 
     def output(self, token_in, amount):
         from v2_liquidity import simulate_exact_in
@@ -759,7 +830,7 @@ class FakeTradingApi:
         self.calls.append(url)
         if url == TRADING_QUOTE_ENDPOINT:
             token_in, token_out, amount = body['tokenIn'], body['tokenOut'], int(body['amount'])
-            out = self.output(token_in, amount)
+            out = self.output(token_in, amount) * (10000 + self.bias_bps) // 10000
             bps = round(body['slippageTolerance'] * 100)
             minimum = out * (10000 - bps) // 10000
             hop = {'type': 'v4-pool', 'address': self.route_id or self.pool.pool_id,
@@ -844,6 +915,33 @@ class S1RouterLegEvmTests(unittest.TestCase):
         allowance, = self.local.call(self.usd, 'allowance(address,address)', ['uint256'], ['address', 'address'],
                                      [self.fx.zap_v4, PERMIT2])
         self.assertEqual(allowance, 0)
+
+    def test_a_router_leg_quoted_off_the_block_is_planned_from_what_it_delivers(self):
+        # The API quotes its own latest state, not the plan's block. Within the slippage the first simulation
+        # shows what the leg delivers; past it the call stops on the leg's own minimum, and the legs are measured
+        # with their minimums at the floor. Either way the plan executes exactly.
+        for bias, uncorrected in ((20, 'ok'), (200, 'reverted')):
+            with self.subTest(bias=bias):
+                account = self.local.account(f'router off the block {bias}')
+                owner = account.address.lower()
+                self.fx.mint(self.usd, owner, 10**22)
+                api = FakeTradingApi(self.fx, self.hidden, bias_bps=bias)
+                request = PlanRequest.model_validate({'chainId': 4663, 'action': 'create', 'consent': 'direct',
+                                                      'pool': self.own, 'tickLower': -1200, 'tickUpper': 1200,
+                                                      'inputs': [{'token': self.usd, 'amountRaw': str(10**21)}]}).model_dump()
+                with mock.patch.object(v2_position_plan, 'MAX_CORRECTIONS', 0):
+                    quoted = self.planner(api).plan(request, owner)
+                self.assertEqual(quoted['simulation']['status'], uncorrected)
+                body = self.planner(api).plan(request, owner)
+                PlanResponse.model_validate({'contractVersion': CONTRACT_VERSION, 'plan': body})
+                leg, = body['legs']
+                self.assertEqual((leg['source'], body['simulation']['status'], body['warnings']),
+                                 ('uniswap_trading_api', 'ok', []))
+                self.assertEqual(leg['expectedOutRaw'], str(api.output(self.usd, int(leg['amountInRaw']))))
+                self.assertNotEqual(leg['expectedOutRaw'], quoted['legs'][0]['expectedOutRaw'])
+                case = S1JourneyEvmTests('test_create_with_a_swap_signed_through_permit2')
+                case.local, case.fx = self.local, self.fx
+                case.assertExecutedAsPlanned(body, case.execute(body, account))
 
     def test_the_l1_data_fee_on_nitro_is_node_interfaces_estimate(self):
         """On Nitro the plan asks NodeInterface once (here its stand-in: 16 L2 gas per

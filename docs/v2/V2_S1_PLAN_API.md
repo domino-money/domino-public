@@ -100,7 +100,7 @@ A field outside its action, an unknown field, or a malformed value is `invalid_r
 | `l1DataFee` | The transaction's L1 data fee at `block`, apart from the simulation's L2 gas: `status`, `source` (`op_gas_price_oracle` or `nitro_node_interface`), `weiRaw`, and per source the bound and size (`upperBoundWeiRaw`, `transactionBytes`) or the L1 gas and its L2 price (`l1GasUnits`, `l2BaseFeeWei`); `unavailable` when the chain did not answer |
 | `warnings` | `simulation_reverted`, `simulated_liquidity_below_minimum` |
 
-`expected` is exact at `block`: on the test chains every swap delivered exactly `expectedOutRaw`, every fee was exactly `fee.amountRaw`, the liquidity exactly `expected.liquidity`, and the zap's refunds exactly `expected.returned` (see [Evidence](#evidence)). The exception is two legs that cross the same pool ([What remains](#what-remains)).
+`expected` is exact at `block`: on the test chains every swap delivered exactly `expectedOutRaw`, every fee was exactly `fee.amountRaw`, the liquidity exactly `expected.liquidity`, and the zap's refunds exactly `expected.returned` (see [Evidence](#evidence)). When a leg's quote is not what the call delivers, the plan is rebuilt from what its simulated call delivered ([Simulation and gas](#simulation-and-gas)).
 
 ### What the app checks
 
@@ -231,6 +231,15 @@ Only when the pool has no price: `pool.initialized` is false and the request car
 - The direct zap call from the owner at `block`, with 30 M gas. With `eth_simulateV1` the missing approvals run first in the same simulated block (each ERC-20 input approved to the zap, the NFT approved when it is not), as the direct path's own steps would. The Permit2 and relayed paths move the same tokens through the same steps, so the direct call stands for them.
 - `eth_simulateV1` runs on a client of its own: a provider without it answers with an error, which fails over only that client. The plan then falls back to `eth_call`, which runs only when nothing is missing (`not_run` / `approvals_missing` otherwise).
 - `simulation.gasUnits` is the gas the simulated call used, L2 execution only, and `null` after the `eth_call` fallback (the app estimates gas itself before sending, F7 §2.4 check 11). The L1 data fee is reported apart, in `l1DataFee`.
+- **What the call delivers becomes the plan.** Each leg is quoted alone at `block`, and two cases make the call deliver something else:
+  - a router leg the Trading API priced at its own latest state, not at `block`;
+  - two legs crossing the same pool. Quoted alone, the second leg misses the first leg's trade. That happens when a token outside the pool is split in two (or an exit is converted into one), and both routes run through that token's pool.
+
+  So with `eth_simulateV1`, the planner reads what each leg delivered in the simulated call: the zap's `SwapLegExecuted` lines, one per leg in order, matching each leg's tokens and input. If any differs from `expectedOutRaw`, those outputs become the legs' expectations, and from them the minimums, the fee, the liquidity, the refunds, the intent and the call. The rebuilt plan is simulated again.
+  - **One rebuild converges:** only the minimums change, and they never bind on the outputs they were taken from.
+  - **When the first call reverts:** a leg quoted beyond what it delivers can stop the call on the leg's own minimum. The legs are then measured by the same call with every minimum at its floor (each `minAmountOut` 1 and, when it adds, `minLiquidity` 1). That call is only simulated; the answer keeps the real one.
+  - **Without `eth_simulateV1`, or when the lines don't match one for one,** the plan keeps its quotes.
+  - **Cost:** one more `eth_simulateV1` per rebuild, plus the readiness read (Nitro: one NodeInterface call), only for the plans that needed it. On the Robinhood fork of 4 Oct a PONS input took a router leg through the PONS/USDG pool that its other leg also crossed: the plan executed within its minimums, but not exactly as planned, until this rebuild.
 - A revert is decoded against 45 known errors: the zap's, its libraries', Permit2's, the position managers', the Universal Router's, `Error(string)` and `Panic(uint256)`. They are the 45 selectors of F7 §2.12's table, cross-checked one by one.
 
 ## L1 data fee
@@ -423,17 +432,12 @@ Permit2's, the position managers' and the Universal Router's errors stay in the 
   - **Base and Arbitrum:** still to run. They need their hosted RPC, reached through a loopback forwarder, because the tool takes no remote upstream, and their manifests added to the tool's list.
   - **The Trading API's live answers,** with the zap as swapper: run on 4 Oct 2026 with the owner's key ([evidence](#evidence)).
     - The API answered every plan.
-    - Its quote failed the planner's checks 4 times (`uniswap_api_quote_invalid`) and its route the connectivity check twice (`uniswap_api_route_disconnected`). Both still need examining against the API's raw answers; the planner fell back to pool routes each time.
-- **Legs that share a pool.** Each leg is quoted alone at the block, so when two legs cross the same pool, the second leg's quote misses the first leg's trade.
+    - Its quote failed the planner's checks 4 times (`uniswap_api_quote_invalid`: a route through a v4 pool with a dynamic fee) and its route the connectivity check twice (`uniswap_api_route_disconnected`: a USDG→ETH route ending in WETH, unwrapped by the router). The planner fell back to pool routes each time. Both routes are admitted since #337.
+- **Legs that share a pool:** resolved by the rebuild from the simulated call ([Simulation and gas](#simulation-and-gas)). Each leg is quoted alone at the block, so the second of two legs crossing one pool missed the first leg's trade.
   - **On 4 Oct, on the fork at block 80,340,418** ([report](../../reports/v2-position-plan-qualification-2026-10-04/robinhood-4663-trading-api.json)): a PONS input into WETH/USDG took a router leg PONS→WETH whose route crossed the PONS/USDG pool, and a pool leg PONS→USDG through that same pool.
-  - **On-chain, everything held:** the plan executed with each leg at its exact input, above its minimum, the fee by the rule, and the liquidity above its minimum.
-  - **What missed `expected`:**
-    - the router leg delivered 0.28% more;
-    - the pool leg delivered 0.24% less, and so did the fee charged on it;
-    - the liquidity came out 0.009% lower;
-    - the refund was 0.0000104 WETH instead of 274 wei of WETH and 0.023 USDG.
-  - **Who is affected:** single-leg plans are not, and neither are two legs on separate pools. Past the slippage, the plan's own simulation reverts before anything is signed.
-  - **The fix:** for two-leg plans, take `expected` from the zap call's simulation, or keep the legs' pools apart when choosing routes.
+  - **On-chain, everything held:** exact inputs, the minimums and the fee rule.
+  - **What missed `expected`:** the legs came out +0.28% and −0.24%, and the liquidity −0.009%.
+  - **The EVM journeys now cover it:** two legs crossing one ETH pool, and a router leg quoted off the block, within and past the slippage. Each executes exactly.
 - **Gas in money**: L2 `gasUnits` and the L1 data fee in wei; no gas price, no OP Stack operator fee, no ETH or USD value (F6's gas work).
 - **Converted exits of narrow ranges** convert what the band guarantees ([table](#minimums-at-the-worst-price-within-s-rc2)): the app should offer a lower `s` for them, or an exit to both tokens.
 - **Wrapping is never a leg.** The zap has no wrap or unwrap leg, so a WETH input for a v4 native-ETH pool, or an exit of a v3 WETH pool converted to native ETH, swaps WETH like any other token (through an ETH/WETH pool, with the fee) or finds no route. The app should offer WETH as the target on v3 and ETH on v4.

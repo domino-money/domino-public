@@ -36,7 +36,11 @@ zap's paths. This module builds the plan from the chain at one pinned block:
    transaction's L1 data fee (v2_l1_fee: Base's GasPriceOracle inside the same
    Multicall3, Nitro's NodeInterface in one call), and a simulation of the zap
    call from the owner at the same block (eth_simulateV1 with the missing
-   approvals first, or eth_call), with the L2 gas it used.
+   approvals first, or eth_call), with the L2 gas it used. When the
+   simulated call's legs did not deliver what they were quoted for (a router
+   leg the API priced off the block, or two legs crossing one pool), the plan
+   is rebuilt from what they delivered and simulated again; a call that
+   reverted on a leg's minimum is first measured with every minimum at its floor.
 
 Nothing here signs or sends: the response is unsigned data the wallet shows.
 """
@@ -47,7 +51,7 @@ import json
 import secrets
 import time
 
-from eth_abi import encode
+from eth_abi import decode, encode
 
 from discovery import ZERO, DataError, address
 from v2_abi import function
@@ -61,6 +65,7 @@ from v2_liquidity import (LiquidityError, U128, amounts_for_liquidity, check_ran
 from v2_quotes import (ERC20_ALLOWANCE, ERC20_BALANCE_OF, ERC20_DECIMALS, GET_ETH_BALANCE, Path, PoolQuoter,
                        ReadPlan, best_two_hop, candidate_paths, pool_snapshot)
 from v2_position_plan_rules import plan_minimums
+from v2_events import SWAP_LEG_EXECUTED, event_from_abi
 from v2_uniswap_api import SOURCE as ROUTER_SOURCE
 from v2_rpc import ChainReadRpc
 from v2_uniswap import PoolRef, PositionRef, UniswapReader, v3_pool_address, v4_fees_owed
@@ -77,6 +82,11 @@ DELEGATION_PREFIX = 'ef0100'
 ZAPS = {DEX_V3: 'zap.v3', DEX_V4: 'zap.v4'}  # the manifest's components
 # Stands in for the owner's signature when the signed paths' transaction is priced (L1 data fee).
 PLACEHOLDER_SIGNATURE = '0x' + '11' * 65
+# The zap's receipt line per executed leg (F1b), with its measured amounts: what a simulated call delivered.
+SWAP_LEG_TOPIC = event_from_abi(SWAP_LEG_EXECUTED).topic0
+# Rebuilds of a plan from what its simulated call delivered. One converges: only the minimums change, and they
+# never bind on the outputs they were taken from.
+MAX_CORRECTIONS = 2
 
 # Errors the zap, its libraries, Permit2, the position managers and the router
 # revert with, by selector: the simulation reports the name (F7 §2.12).
@@ -814,9 +824,69 @@ class _Context:
     def _assemble(self, sized):
         legs = sized['legs']
         for leg in legs:
-            leg.min_out = max(1, _bps_floor(leg.expected_out, self.slippage))
             if leg.router_deadline is not None and leg.router_deadline < self.deadline:
                 raise PlanError('position_plan_no_route')
+        built = self._built(sized)
+        simulation = self._simulation(built)
+        for _ in range(MAX_CORRECTIONS):
+            # Every leg is quoted alone at the block. The call delivers something else when a router leg was priced
+            # by the API off this block, or when two legs cross one pool (the second leg's quote misses the first
+            # leg's trade). Then what the simulated call delivered becomes the plan: the legs' outputs, and from
+            # them the fee, the minimums, the liquidity and the refunds, simulated again.
+            delivered = self._delivered
+            if delivered is None and simulation['status'] == 'reverted' and legs:
+                # A leg quoted past what it delivers can stop the call on its own minimum. What the legs deliver
+                # is then measured by the same call with every minimum at its floor; the answer keeps the real one.
+                self._simulation({**built, 'zapPlan': self._floor_plan(sized, built)})
+                delivered = self._delivered
+            if delivered is None or delivered == [leg.expected_out for leg in legs]:
+                break
+            for leg, out in zip(legs, delivered):
+                leg.expected_out = out
+            built = self._built(sized)
+            simulation = self._simulation(built)
+        if simulation['status'] == 'ok' and self.action != 'exit':
+            if int(simulation['result']['liquidity']) < int(built['minimums']['liquidity']):
+                self.warnings.append('simulated_liquidity_below_minimum')
+        if simulation['status'] == 'reverted':
+            self.warnings.append('simulation_reverted')
+        identity = self._identity()
+        fee_bps, fee_token, place, swapped, fee_amount = built['fee']
+        zap_plan, minimums = built['zapPlan'], built['minimums']
+        return {
+            'schemaVersion': 1, 'source': SOURCE, 'chainId': self.chain.chainId, 'action': self.action,
+            'consent': self.consent, 'owner': self.owner, 'zap': self.zap,
+            'block': {'number': str(self.block.number), 'hash': self.block.hash, 'timestamp': str(self.block.timestamp)},
+            'requestedAt': self.requested, 'retrievedAt': self.requested,
+            'expiresAt': self.requested + QUOTE_LIFETIME_SECONDS, 'deadline': str(self.deadline),
+            'requestFingerprint': hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(',', ':'))
+                                                 .encode()).hexdigest(),
+            'request': identity,
+            'pool': self._pool_view(),
+            'initialPrice': self.initial,
+            'position': self._position_view(),
+            'zapPlan': zap_plan, 'routesHash': built['intent']['routesHash'], 'intentHash': built['intentHash'],
+            'call': built['call'], 'signature': built['signature'],
+            'legs': [self._leg_view(leg) for leg in legs],
+            'fee': {'bps': fee_bps, 'token': fee_token, 'place': place, 'basisRaw': str(swapped),
+                    'amountRaw': str(fee_amount), 'ranks': self._leg_ranks(legs)},
+            'expected': built['expected'],
+            'minimums': {'liquidity': str(minimums['liquidity']), 'slippageBps': self.slippage,
+                         'amount0RemovedRaw': zap_plan.get('amount0MinRemoved'),
+                         'amount1RemovedRaw': zap_plan.get('amount1MinRemoved'),
+                         'mintBand': _band(minimums['mintBand']), 'removalBand': _band(minimums['removalBand'])},
+            'routing': {'router': self.router_status or {'status': 'not_needed', 'reason': None},
+                        'advantageBps': ROUTER_ADVANTAGE_BPS},
+            'readiness': built['readiness'], 'simulation': simulation, 'l1DataFee': built['l1DataFee'],
+            'warnings': sorted(set(self.warnings)),
+        }
+
+    def _built(self, sized):
+        """The plan from its legs' expected outputs: minimums, fee, expectation, intent, consent artifacts, call,
+        readiness and L1 data fee."""
+        legs = sized['legs']
+        for leg in legs:
+            leg.min_out = max(1, _bps_floor(leg.expected_out, self.slippage))
         outs = [leg.expected_out for leg in legs]
         fee_bps, fee_token, place, swapped, fee_amount = self._fee(legs, outs)
         wire_legs = [leg.wire() for leg in legs]
@@ -852,42 +922,25 @@ class _Context:
                 'data': codec.call_data(self.action, 'direct', zap_plan) if self.consent == 'direct' else None}
         priced = self._transaction(zap_plan, signature)
         readiness, l1_data_fee = self._readiness(zap_plan, priced)
-        simulation = self._simulate(zap_plan, readiness) if self.p.simulate else {
-            'status': 'not_run', 'reason': 'simulation_disabled', 'method': None, 'error': None, 'gasUnits': None,
-            'result': None}
-        if simulation['status'] == 'ok' and self.action != 'exit':
-            if int(simulation['result']['liquidity']) < min_liquidity:
-                self.warnings.append('simulated_liquidity_below_minimum')
-        if simulation['status'] == 'reverted':
-            self.warnings.append('simulation_reverted')
-        identity = self._identity()
-        return {
-            'schemaVersion': 1, 'source': SOURCE, 'chainId': self.chain.chainId, 'action': self.action,
-            'consent': self.consent, 'owner': self.owner, 'zap': self.zap,
-            'block': {'number': str(self.block.number), 'hash': self.block.hash, 'timestamp': str(self.block.timestamp)},
-            'requestedAt': self.requested, 'retrievedAt': self.requested,
-            'expiresAt': self.requested + QUOTE_LIFETIME_SECONDS, 'deadline': str(self.deadline),
-            'requestFingerprint': hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(',', ':'))
-                                                 .encode()).hexdigest(),
-            'request': identity,
-            'pool': self._pool_view(),
-            'initialPrice': self.initial,
-            'position': self._position_view(),
-            'zapPlan': zap_plan, 'routesHash': intent['routesHash'], 'intentHash': intent_hash,
-            'call': call, 'signature': signature,
-            'legs': [self._leg_view(leg) for leg in legs],
-            'fee': {'bps': fee_bps, 'token': fee_token, 'place': place, 'basisRaw': str(swapped),
-                    'amountRaw': str(fee_amount), 'ranks': self._leg_ranks(legs)},
-            'expected': expected,
-            'minimums': {'liquidity': str(min_liquidity), 'slippageBps': self.slippage,
-                         'amount0RemovedRaw': zap_plan.get('amount0MinRemoved'),
-                         'amount1RemovedRaw': zap_plan.get('amount1MinRemoved'),
-                         'mintBand': _band(minimums['mintBand']), 'removalBand': _band(minimums['removalBand'])},
-            'routing': {'router': self.router_status or {'status': 'not_needed', 'reason': None},
-                        'advantageBps': ROUTER_ADVANTAGE_BPS},
-            'readiness': readiness, 'simulation': simulation, 'l1DataFee': l1_data_fee,
-            'warnings': sorted(set(self.warnings)),
-        }
+        return {'fee': (fee_bps, fee_token, place, swapped, fee_amount), 'expected': expected,
+                'minimums': minimums, 'intent': intent, 'zapPlan': zap_plan, 'intentHash': intent_hash,
+                'signature': signature, 'call': call, 'readiness': readiness, 'l1DataFee': l1_data_fee}
+
+    def _floor_plan(self, sized, built):
+        """The plan's call with every minimum the legs set at its floor: each leg's minAmountOut 1 and, when it
+        adds, minLiquidity 1. Only simulated, to measure what the legs deliver."""
+        wire = [{**leg.wire(), 'minAmountOut': '1'} for leg in sized['legs']]
+        intent = {**built['intent'], 'routesHash': codec.routes_hash(wire)}
+        if self.action != 'exit':
+            intent['minLiquidity'] = '1'
+        return self._zap_plan(intent, sized, wire)
+
+    def _simulation(self, built):
+        self._delivered = None
+        if not self.p.simulate:
+            return {'status': 'not_run', 'reason': 'simulation_disabled', 'method': None, 'error': None,
+                    'gasUnits': None, 'result': None}
+        return self._simulate(built['zapPlan'], built['readiness'])
 
     def _minimums(self, sized, wire_legs, expected):
         """plan_minimums (v2_position_plan_rules) of this plan: the same function the
@@ -1139,6 +1192,7 @@ class _Context:
                 return self._simulated('reverted', 'eth_simulateV1', None, None, 'approval_reverted')
             last = results[-1]
             if last.get('status') == '0x1':
+                self._delivered = self._leg_outputs(last.get('logs'), zap_plan)
                 return self._simulated('ok', 'eth_simulateV1', last.get('returnData'), last.get('gasUsed'), None)
             data = last.get('returnData') or (last.get('error') or {}).get('data')
             return self._simulated('reverted', 'eth_simulateV1', data, last.get('gasUsed'), None)
@@ -1163,6 +1217,31 @@ class _Context:
             return {'status': 'reverted', 'reason': None, 'method': 'eth_call',
                     'error': {'selector': None, 'name': None}, 'gasUnits': None, 'result': None}
         return self._simulated('ok', 'eth_call', raw, None, None)
+
+    def _leg_outputs(self, logs, zap_plan):
+        """What each leg delivered in the simulated call: the zap's SwapLegExecuted lines, in the legs' order,
+        each matching its leg's tokens and input. None when they do not match one for one; then the plan keeps
+        its quotes."""
+        legs = zap_plan['legs']
+        if not isinstance(logs, list):
+            return None
+        found = []
+        try:
+            for log in logs:
+                topics = log.get('topics') or []
+                if address(log.get('address')) != self.zap or not topics or topics[0].lower() != SWAP_LEG_TOPIC:
+                    continue
+                if len(topics) != 4:
+                    return None
+                _, amount_in, amount_out = decode(['address', 'uint256', 'uint256'], bytes.fromhex(log['data'][2:]))
+                found.append((address('0x' + topics[2][-40:]), address('0x' + topics[3][-40:]), amount_in, amount_out))
+        except (DataError, KeyError, TypeError, ValueError, AttributeError):
+            return None
+        if len(found) != len(legs) or any(
+                (token_in, token_out, str(amount_in)) != (leg['tokenIn'], leg['tokenOut'], leg['amountIn'])
+                for (token_in, token_out, amount_in, _), leg in zip(found, legs)):
+            return None
+        return [amount_out for *_, amount_out in found]
 
     def _simulated(self, status, method, data, gas, reason):
         out = {'status': status, 'reason': reason, 'method': method, 'error': None,
