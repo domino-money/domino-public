@@ -1,5 +1,8 @@
 """The service: best route with wallet steps, origins, and tracking with transitions and fee measurement."""
+import contextlib
 from copy import deepcopy
+import io
+import json
 import unittest
 
 from crosschain_contract_fixtures import across_filled, relay_status, status_request
@@ -9,7 +12,8 @@ from crosschain_support import (CSRF, FEE, FILL_HASH, OTHER, OWNER, PRIVATE, SES
 from discovery import DataError
 from crosschain_http import ProviderError
 from crosschain_models import CrosschainError, advance, validate_response
-from crosschain_service import candidate_failure
+import crosschain_api
+from crosschain_service import DECISION_KEYS, DECISION_SERVICE, candidate_failure
 from session_models import SessionError
 
 DEPOSITORY = '0x4cd00e387622c35bddb9b4c962c136462338bc31'
@@ -149,6 +153,68 @@ class QuoteTests(unittest.TestCase):
     def test_every_answer_satisfies_the_contract(self):
         quote, _, _ = self.quote()
         validate_response('quote', {'contractVersion': '1.0.0-rc.1', 'quote': quote})
+
+
+class DecisionRecordTests(unittest.TestCase):
+    """One line per quote answered, beside the listener's request line: which provider won and why each did or
+    did not quote, in fixed codes (the owner's request of 5 Oct 2026)."""
+
+    def quoted(self, relay=None, across=None):
+        relay_routes, across_routes = default_routes()
+        if relay is not None:
+            relay_routes[('POST', '/quote/v2')] = relay
+        if across is not None:
+            across_routes[('GET', '/swap/approval')] = across
+        service, _, _ = make_service(relay_routes=relay_routes, across_routes=across_routes)
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            quote = run(service, 'quote', quote_request())['quote']
+        lines = stream.getvalue().splitlines()
+        self.assertEqual(len(lines), 1, lines)
+        return quote, lines[0], service
+
+    def test_the_winner_and_each_providers_status(self):
+        quote, line, _ = self.quoted()
+        self.assertEqual(json.loads(line), {
+            'service': 'internal-crosschain-v1', 'route': 'quote', 'record': 'decision',
+            'originChainId': quote['request']['originChainId'],
+            'destinationChainId': quote['request']['destinationChainId'],
+            'decision': 'relay', 'reason': 'best_output', 'relay': 'quoted', 'across': 'quoted',
+            'fingerprint': quote['requestFingerprint'][:8]})
+
+    def test_no_route_names_each_providers_reason(self):
+        _, line, _ = self.quoted(relay=ProviderError('relay_request_rejected', 'NO_QUOTES'),
+                                 across=ProviderError('across_credentials_rejected'))
+        record = json.loads(line)
+        self.assertEqual({k: record[k] for k in ('decision', 'reason', 'relay', 'relayReason', 'across', 'acrossReason')},
+                         {'decision': 'none', 'reason': 'no_quote', 'relay': 'no_route', 'relayReason': 'provider_no_route',
+                          'across': 'unavailable', 'acrossReason': 'provider_credentials_rejected'})
+        _, line, _ = self.quoted(relay=ProviderError('relay_rate_limited'))
+        record = json.loads(line)
+        self.assertEqual((record['decision'], record['reason'], record['relayReason']),
+                         ('across', 'only_quote', 'provider_rate_limited'))
+        self.assertNotIn('acrossReason', record)
+
+    def test_nothing_private_reaches_the_record(self):
+        quote, line, service = self.quoted()
+        request = quote['request']
+        for value in (request['owner'], request['originToken'], request['destinationToken'], request['amountRaw'],
+                      quote['feeRecipient'], quote['requestFingerprint']):
+            self.assertNotIn(value.lower(), line.lower())
+        # Only a quote leaves one: origins and status do not.
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            run(service, 'origins', {'destinationChainId': 4663, 'destinationToken': USDG})
+        self.assertEqual(stream.getvalue(), '')
+
+    def test_the_service_is_named_as_in_the_listeners_request_lines(self):
+        self.assertEqual(crosschain_api.PREFIX.strip('/').replace('/', '-'), DECISION_SERVICE)
+
+    def test_the_record_keeps_to_its_vocabulary(self):
+        _, line, _ = self.quoted(relay=ProviderError('relay_unavailable'), across=ProviderError('across_unavailable'))
+        self.assertLessEqual(set(json.loads(line)), DECISION_KEYS)
+        self.assertEqual(DECISION_KEYS, {'service', 'route', 'record', 'originChainId', 'destinationChainId', 'decision',
+                                         'reason', 'fingerprint', 'relay', 'relayReason', 'across', 'acrossReason'})
 
 
 class FailureMappingTests(unittest.TestCase):

@@ -17,12 +17,14 @@ import contextvars
 import json
 import math
 import re
+import sys
 import threading
 import time
 
 from pydantic import ValidationError
 
 from discovery import DataError
+import hop_log
 from crosschain_common import APP_FEE_BPS, PROVIDERS, ZERO, fingerprint
 from crosschain_http import ProviderError
 from crosschain_models import (CONTRACT_VERSION, MAX_ORIGIN_CHAINS, MAX_ORIGIN_TOKENS, MAX_RESPONSE,
@@ -84,6 +86,35 @@ def status_failure(error):
     if code == 'read_deadline_exceeded':
         return CrosschainError('request_timeout')
     return CrosschainError('upstream_invalid_response')
+
+
+# The listener's name in its request records (authenticated_api's SERVICE_NAME for crosschain_api.PREFIX).
+DECISION_SERVICE = 'internal-crosschain-v1'
+# The decision record's whole vocabulary, as hop_log.ALLOWED_KEYS is the request line's.
+DECISION_KEYS = frozenset(('service', 'route', 'record', 'originChainId', 'destinationChainId', 'decision', 'reason',
+                           'fingerprint', *PROVIDERS, *(provider + 'Reason' for provider in PROVIDERS)))
+
+
+def decision_record(answer):
+    """What a quote decided, beside the listener's request line (hop_log), which holds no body: the chains, the
+    provider that won or `none` and why, and each provider's status and reason, all fixed codes (the owner's request
+    of 5 Oct 2026: the first quotes could not be traced to a provider). No address, amount or provider text; the first
+    characters of the request's fingerprint tie it to the answer the Worker received, which carries the whole one."""
+    request = answer['request']
+    record = {'service': DECISION_SERVICE, 'route': 'quote', 'record': 'decision',
+              'originChainId': request['originChainId'], 'destinationChainId': request['destinationChainId'],
+              'decision': answer['decision'] or 'none', 'reason': answer['reason'],
+              'fingerprint': answer['requestFingerprint'][:8]}
+    for candidate in answer['candidates']:
+        record[candidate['provider']] = candidate['status']
+        if candidate['reason'] is not None:
+            record[candidate['provider'] + 'Reason'] = candidate['reason']
+    return {key: hop_log.safe_value(value) for key, value in record.items() if key in DECISION_KEYS}
+
+
+def emit_decision(answer):
+    # stderr, as hop_log's lines: a CLI running the service in process keeps its stdout contract.
+    print(json.dumps(decision_record(answer), separators=(',', ':'), allow_nan=False), file=sys.stderr, flush=True)
 
 
 def unpriced(provider, status, reason):
@@ -246,7 +277,7 @@ class CrosschainService:
         completed = self._now()
         if completed < started or completed >= int(started) + QUOTE_LIFETIME_SECONDS:
             raise CrosschainError('preview_expired')
-        return {'schemaVersion': 1, 'source': 'crosschain_quote_v1', 'requestedAt': int(started),
+        answer = {'schemaVersion': 1, 'source': 'crosschain_quote_v1', 'requestedAt': int(started),
                 'retrievedAt': int(completed), 'expiresAt': int(started) + QUOTE_LIFETIME_SECONDS,
                 'requestFingerprint': fingerprint(identity), 'request': identity,
                 'appFeeBps': APP_FEE_BPS, 'feeRecipient': self.fee_recipient,
@@ -257,6 +288,8 @@ class CrosschainService:
                                'advantageBps': None if advantage is None else advantage * 10000 // int(best[1]['outputRaw'])},
                 'candidates': [public(candidate) for candidate in ordered],
                 'steps': steps_for(decision, call['originChainId']) if decision else []}
+        emit_decision(answer)
+        return answer
 
     # status -----------------------------------------------------------------
 

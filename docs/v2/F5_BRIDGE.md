@@ -231,6 +231,13 @@ The bridge owns the rest of the path (0xdecimal, 5 Oct 2026):
   - Listings (`/chains`, `/available-routes`) are cached for 10 minutes and served stale for up to an hour if the provider fails.
   - Status reads retry once after a network or 5xx failure. Quotes are never retried.
 - **Records.** Each request leaves one `hop_log` line (route, status, duration). It never includes a body, address, key or provider text.
+  - Each quote answered also leaves one decision line just before it (`crosschain_service.decision_record`, the owner's request of 5 Oct 2026, after the first quotes could not be traced to a provider). Its vocabulary is closed (`DECISION_KEYS`):
+    - `record: decision`, with the origin and destination chain ids;
+    - `decision`: `relay`, `across` or `none`, and `reason`: `best_output`, `only_quote` or `no_quote`;
+    - for each provider, its status and, when there is one, its reason, as the answer's candidates give them (for example `relay: no_route`, `relayReason: provider_no_route`);
+    - `fingerprint`: the first 8 characters of the answer's `requestFingerprint`, to match the answer the Worker received.
+  - Like the request line, it holds no address, amount, key or provider text, only fixed codes:
+    `journalctl -u domino-crosschain.service -o cat | grep '"record":"decision"'`.
 
 ## Limits and follow-ups
 

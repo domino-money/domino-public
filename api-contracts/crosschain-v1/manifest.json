@@ -123,7 +123,7 @@
     },
     {
       "path": "backend/crosschain_service.py",
-      "sha256": "87c290460eb85a30aa412ed5d4db16b1933cb56770fda6206031971165279211"
+      "sha256": "207e47123b4874734e97d6df8d270eb12fbfa7fd8019f9a9d9e8f137fe2f03da"
     },
     {
       "path": "backend/crosschain_api.py",

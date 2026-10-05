@@ -17,6 +17,7 @@ import hop_log
 from crosschain_api import CrosschainGateway, build_service, create_crosschain_app, main
 from crosschain_config import load_settings
 from crosschain_models import CONTRACT_VERSION
+from crosschain_service import DECISION_KEYS
 from session_api import acquire_session_lock
 
 ORIGIN = 'https://domino.money'
@@ -48,9 +49,13 @@ class CrosschainApiTests(unittest.TestCase):
         body = response.json()
         self.assertEqual((body['quote']['decision'], body['quote']['request']['owner']), ('relay', OWNER))
         self.verifier.verify.assert_called_once()
-        records = [json.loads(line) for line in printed.getvalue().splitlines() if line]
-        self.assertEqual([(r['service'], r['route'], r['status']) for r in records], [('internal-crosschain-v1', 'quote', 200)])
-        self.assertLessEqual(set(records[0]), hop_log.ALLOWED_KEYS)
+        # The quote's decision, then the request's line (hop_log), each in its own closed vocabulary.
+        decision, record = [json.loads(line) for line in printed.getvalue().splitlines() if line]
+        self.assertEqual((record['service'], record['route'], record['status']), ('internal-crosschain-v1', 'quote', 200))
+        self.assertLessEqual(set(record), hop_log.ALLOWED_KEYS)
+        self.assertEqual((decision['service'], decision['record'], decision['decision'], decision['relay']),
+                         ('internal-crosschain-v1', 'decision', 'relay', 'quoted'))
+        self.assertLessEqual(set(decision), DECISION_KEYS)
         self.assertIsNone(re.search(r'0x[0-9a-fA-F]{40}', printed.getvalue()))
         for value in (*PRIVATE[:2], SESSION, CSRF, FEE):
             self.assertNotIn(value, printed.getvalue())

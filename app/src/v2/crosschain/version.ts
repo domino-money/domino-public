@@ -22,9 +22,9 @@ export const CROSSCHAIN_HEADER = 'X-Domino-Crosschain-Contract'
 export const CROSSCHAIN_V1_PIN = Object.freeze({
   package: 'crosschain-v1',
   version: CROSSCHAIN_CONTRACT,
-  /** sha256(api-contracts/crosschain-v1/manifest.json), as re-exported for #357: the fee proof on Base and Arbitrum
-   *  reads F6's registry. Three backend files changed; the contract and its version did not. */
-  manifestSha256: 'b3d80817cb4dec5fd3d59413df0b5f2be6b2e11a67edca6896636879b5265c20',
+  /** sha256(api-contracts/crosschain-v1/manifest.json), as re-exported for the quote's decision record (5 Oct 2026:
+   *  the listener logs which provider won and why). One backend file changed; the contract and its version did not. */
+  manifestSha256: '72012ea763a4e7c42c5587f0e879f8439838b5242c0ff673dd8af06b787a351e',
   /** The manifest's own `status`: the service is built but off until the owner's keys and the Worker route exist. */
   status: 'candidate_disabled_pending_keys_and_worker',
 } as const)
