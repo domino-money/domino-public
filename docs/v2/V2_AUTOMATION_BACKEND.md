@@ -333,12 +333,28 @@ The credential names in the configuration are free (`[a-z0-9][a-z0-9-]{0,62}`); 
    - Each pass plans, presimulates and records why every vault waits; nothing is sent.
    - Then set `gas.enabled` to true and restart the instance.
 
-**The owner's numbers (5 Oct 2026):**
-- `gas.dailyCapWei` is 0.0025 ETH per chain (`2500000000000000`), on Robinhood, Base and Arbitrum.
-- The rest of each chain's gas policy follows V1's on Robinhood: at most 3,000,000 gas, and at most 0.0005 ETH per transaction. The fee caps and the balance floor are set per chain in its file.
+**The owner's numbers (5 Oct 2026):** `gas.dailyCapWei` is 0.0025 ETH per chain (`2500000000000000`), on Robinhood, Base and Arbitrum.
+
+**Live since 5 Oct 2026, 02:44 UTC, without sending** (`gas.enabled` false), from main `cdf3b73b`. Each pass plans, presimulates and writes its waiting file; the executor refuses every send with `v2_executor_disabled`. The configuration as installed, per chain:
+
+| | Robinhood (4663) | Base (8453) | Arbitrum One (42161) |
+| --- | --- | --- | --- |
+| `maxGas` | 3,000,000 (V1's on Robinhood) | the same | the same |
+| `maxFeePerGas` | 0.5 gwei (V1's on Robinhood) | 0.5 gwei | 0.5 gwei |
+| `priorityFeePerGas` | 1 wei | 0.001 gwei (the chain's usual tip) | 1 wei (Nitro charges none) |
+| `maxCostWei` | 0.0005 ETH, a fifth of the day's cap (V1's was 0.0015 ETH) | the same | the same |
+| `minBalanceWei` | 0.001 ETH | the same | the same |
+| `passSeconds` | 15 (the own node) | 30 (billed providers) | 30 |
+| `earningsWindowSeconds` | 1200 | 3600 | 3600 |
+| `priceReferences` | v3 WETH/USDG 0.05% | v3 WETH/USDC 0.05% | v3 WETH/USDC 0.05% |
+
+All three: `twapSeconds` 300 (the anchor's minimum is 60), `exitTwapSeconds` 600 (the exit module's minimum), `deadlineSeconds` 120, `headMaxAgeSeconds` 2, `autoExit` true, the planner's and the publisher's defaults, and the vault defaults above. Base fees on 5 Oct: 0.005 gwei on Base, 0.02 gwei on Arbitrum and Robinhood, so a compound costs about 0.00001 ETH and the daily cap is not the binding limit.
+
+The first start failed: the install ran from a shell with `umask 077`, which left the release's files `0400`, and the instances could not read their entry script (`EACCES`). The files were set back to `0444`/`0555` in place. #346 sets every installer's modes explicitly.
 
 Still open:
-- **Funding and admission:** the operator needs ETH on each chain. The registry admitted both roles at deployment.
+- **Sending:** set `gas.enabled` to true in a chain's file and restart its instance, once the owner has reviewed the dry passes.
+- **Funding and admission:** the operator needs ETH on each chain (about 0.0065 ETH on Robinhood and 0.005 ETH on Base and Arbitrum on 5 Oct). The registry admitted both roles at deployment.
 - **Monitoring:**
   - the pass reports (one JSON line per pass), and `intents` for `attention`;
   - the operator's balance, and the daily spend against `dailyCapWei`;
