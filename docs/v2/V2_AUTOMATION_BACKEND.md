@@ -353,6 +353,7 @@ The credential names in the configuration are free (`[a-z0-9][a-z0-9-]{0,62}`); 
 **Live since 5 Oct 2026, 02:44 UTC**, from main `cdf3b73b`.
 - **Without sending** at first (`gas.enabled` false): each pass planned, presimulated and wrote its waiting file, and the executor refused every send with `v2_executor_disabled`. Robinhood ran 2,196 passes, Base 1,002 and Arbitrum 1,008 in 9 hours, without an error.
 - **Sending since 12:00:54 UTC** (the owner's decision): `gas.enabled` true in the three files, and the instances restarted. No V2 vault existed yet, so nothing had been sent.
+- **Domino successors (MINT) since 15:50:40 UTC**, from main `74b0c1a5` (#353; the owner's go): `install_v2_automation.py` moved the template to the new release (only its path changed), and the three instances restarted with their configurations untouched. The first passes ran without an error; still no V2 vault on any chain.
 
 The configuration as installed, per chain:
 
@@ -373,9 +374,8 @@ The first start failed: the install ran from a shell with `umask 077`, which lef
 
 Still open:
 - **Funding and admission:** the operator needs ETH on each chain (about 0.0065 ETH on Robinhood and 0.005 ETH on Base and Arbitrum on 5 Oct). The registry admitted both roles at deployment.
-- **Monitoring:**
-  - the pass reports (one JSON line per pass), and `intents` for `attention`;
-  - the operator's balance, and the daily spend against `dailyCapWei`;
+- **Monitoring:** the production monitor ([OPS_MONITOR.md](../OPS_MONITOR.md)) watches the passes, the signer and the operator's balance on each chain since 5 Oct 15:26 UTC, and alerts on Telegram since 15:41 UTC. Still to add:
+  - `intents` in `attention`, and the daily spend against `dailyCapWei`;
   - the registry's `ChangeScheduled`, `OperatorSet`, `PublisherSet` and `AutomationHaltSet` (F1a, "Monitoring").
 - **The publisher in its own process:** it runs inside the automation process, with its own key. Splitting it into its own unit, serving signed observations over a local socket, is a follow-up if the owner wants the two keys in separate processes.
 

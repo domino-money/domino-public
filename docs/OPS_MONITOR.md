@@ -110,3 +110,11 @@ One private JSON file, `/etc/domino/monitor/config.json` (0600 in a 0700 directo
    - The role reaches `api.telegram.org` (`telegram`), Robinhood's RPC hosts (`rpc`), the node's proxy, and Base's and Arbitrum's providers (`chains`).
    - It has no drop-in: its unit binds `monitor.hosts` over `/etc/hosts` itself.
 4. **Start.** Run `daemon-reload`, then `systemctl enable --now domino-monitor.service`. `ops_monitor.py --config … once`, run as the unit's user with its credentials, prints one cycle's status without writing anything.
+
+**Live since 5 Oct 2026, 15:26:20 UTC**, from main `b082eb4b`:
+- **First attempt:** release `6a966c0f` (14:59 UTC) stopped at the egress installer's `nft -c`. nft 1.0.9 reads `monitor` as its event command where a chain's name goes, so nothing was loaded and nothing started. #354 renamed the chain `ops_monitor`, and the release was installed again from its merge commit.
+- **Egress:** applied at 15:26:20 UTC with `monitor` enabled. The collected pins were merged as a union with the previous ones; Chainstack's Arbitrum host gained `208.115.226.174`.
+- **Second cycle:** 70 checks, 2 open, both critical: the V1 operator (0.0004 ETH, minimum 0.003) and the V1 publisher (0.0002 ETH, minimum 0.0004) on Robinhood.
+- **Snapshot:** `status.json` is 0644, and the local dashboard reads it over ssh.
+- **Telegram:** on since 15:41 UTC. The owner sealed `telegram-bot-token` and sent `/start`; `discover` listed the owner's private chat, and its id went into `config.json`.
+- **V1 removed (owner, 15:37 UTC):** with V1 automation turned off, the configuration no longer names its unit, its gas peer and settlement timer, or the V1 operator's and publisher's balances (`v1Automation` null). 63 checks, none open.

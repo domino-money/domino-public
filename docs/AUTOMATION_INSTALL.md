@@ -183,6 +183,10 @@ runner's own systemd, with and without the keystore drop-in, and compares what
 it shows with the units written for the new release
 (`test_financial_release_systemd.py`).
 
+## Off since 5 Oct 2026
+
+The owner turned V1 off on 5 Oct 2026. At 15:37:06 UTC `install_automation_boot.py --rollback` removed `domino-automation.target` and its link, and the automation, the gas reservation socket and service, and the settlement timer were stopped. Nothing was deleted: the release, the units, the configuration, the keys and the schema stay. The target's file is kept in `/root/v1-off-2026-10-05`. To bring V1 back, follow the next section (`--apply`, `daemon-reload`, then start the target).
+
 ## Bringing the automation back after a reboot
 
 The installer's units are static: `domino-automation`, the gas reservation
