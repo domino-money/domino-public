@@ -74,11 +74,14 @@ export function useStepsRun({ session, steps, context, labels, onStepDone, onAll
   const [notice, setNotice] = useState<ErrorView | null>(null)
   const [running, setRunning] = useState(false)
   // A new list (a new review, or the batch given up for the steps) starts over; what was signed before stays signed.
+  // Changed on purpose 2026-10-05: a run still going on the old list ends with it (its next step stops, its generation
+  // gone), so the list never rests on "running" with nothing asked of the wallet; the person presses again.
   const [seen, setSeen] = useState(steps)
   if (seen !== steps) {
     setSeen(steps)
     setPhases(start(steps))
     setNotice(null)
+    setRunning(false)
   }
   const current = useRef<StepPhase[]>(phases)
   useEffect(() => {

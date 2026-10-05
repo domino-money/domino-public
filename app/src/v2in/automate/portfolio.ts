@@ -333,6 +333,9 @@ export const WAITING_REASON_TEXT: Readonly<Record<string, string>> = Object.free
   successor_anchor_unstable: 'Waiting for the reference price to settle before opening the next position',
   // waiting.error InvalidTick: a range out of the tick bounds, which the backend never builds.
   reverted_invalid_tick: "Waiting: the next position's range isn't valid at this price",
+  // Added 2026-10-05 (rugged97's #358): a v3 pool with too little price history for the reference price (its oracle
+  // slots); Domino's automation adds the slots, paid once per pool.
+  twap_history_short: "Waiting for this pool to record enough price history",
 })
 
 /** A share in basis points as a percent: 500 → "5", 250 → "2.5", 5000 → "50". */

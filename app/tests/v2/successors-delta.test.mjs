@@ -24,6 +24,7 @@ test('§6.2: the new waiting reasons say the delta\'s words; owner_benefit_insuf
   assert.equal(portfolio.waitingWords(waiting('reverted_invalid_tick', 'InvalidTick'), 8453, NOW).code, 'InvalidTick');
   assert.equal(textOf('owner_benefit_insufficient'), "Waiting: running now wouldn't pay off yet");
   assert.equal(textOf('gas_not_covered'), 'Waiting until fees cover the network cost', 'the codes of always keep their words');
+  assert.equal(textOf('twap_history_short'), 'Waiting for this pool to record enough price history', 'rugged97 #358');
   // max_positions_reached: the vault's own maxPositions, else the same sentence without the number.
   assert.equal(textOf('max_positions_reached', null, { maxPositions: 3 }), 'Waiting: your sequence has reached 3 positions. Raise the limit or withdraw a position to continue');
   assert.equal(textOf('max_positions_reached'), 'Waiting: your sequence has reached its position limit. Raise the limit or withdraw a position to continue');

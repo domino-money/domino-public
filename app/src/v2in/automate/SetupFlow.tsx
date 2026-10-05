@@ -117,14 +117,26 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
   const [path, setPath] = useState<'batch' | 'steps'>('steps')
   const [round, setRound] = useState(0)
   const ready = !!usable && compounding && check.ok && consent
+  // Changed on purpose 2026-10-05 (the owner: "I approved the first transaction and now the set up automation transaction
+  // doesn't show, it keeps loading"). The positions list is read again after every wallet action, and each read gives new
+  // position objects; this review followed those objects, so the approval's own re-read made a new review in the middle
+  // of the run, which replaced its steps and left it waiting for nothing. The review now follows what it is about (the
+  // position's id and the choices, as text), which a run cannot change (the form rests while it runs); only a refusal that
+  // asks for a new review (`round`) makes one, once the run has ended.
+  const reviewKey = live && ready && usable && check.ok ? `${usable.tokenId}|${JSON.stringify([check.policy, check.limits], (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value))}|${round}` : null
+  const inputs = useRef({ usable, check, labels })
   useEffect(() => {
-    if (!live || !ready || !usable || !check.ok) return
+    inputs.current = { usable, check, labels }
+  })
+  useEffect(() => {
+    const { usable: position, check: choices, labels: named } = inputs.current
+    if (reviewKey === null || !position || !choices.ok) return
     let alive = true
     void (async () => {
       try {
         const current = opened.current ?? (await openAutomation(4663, gate.contracts))
         opened.current = current
-        const next = await current.serial(() => current.vault.reviewCreate({ dex: 4, tokenId: idOf(usable.tokenId), policy: check.policy, limits: check.limits, startPaused: VAULT_AUTOMATION_START_PAUSED, consentToUncollectedFees: true }))
+        const next = await current.serial(() => current.vault.reviewCreate({ dex: 4, tokenId: idOf(position.tokenId), policy: choices.policy, limits: choices.limits, startPaused: VAULT_AUTOMATION_START_PAUSED, consentToUncollectedFees: true }))
         const atomic = next.steps.length > 1 ? await current.serial(() => current.vault.atomicSupport()) : 'unsupported'
         if (!alive) return
         setSession(current)
@@ -134,13 +146,13 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
       } catch (failure) {
         if (!alive) return
         setReview(null)
-        setReviewError(describeError(failure, 'vault', { ...labels, consentGiven: true }))
+        setReviewError(describeError(failure, 'vault', { ...named, consentGiven: true }))
       }
     })()
     return () => {
       alive = false
     }
-  }, [live, ready, usable, check, round, gate.contracts, labels])
+  }, [reviewKey, gate.contracts])
 
   const steps = useMemo<readonly WalletStep[]>(() => {
     if (!session || !review) return []
