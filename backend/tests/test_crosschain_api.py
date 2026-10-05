@@ -130,5 +130,45 @@ class LauncherTests(unittest.TestCase):
         self.assertIn(PRIVATE[0], service.private_values)
 
 
+    def test_build_service_reads_base_and_arbitrum_through_the_registry_unless_a_url_is_set(self):
+        from crosschain_across import ChainRpc, EndpointsChainRpc
+        from test_crosschain_across import hosted, hosted_url
+        url = 'https://arbitrum.example.invalid/v2/' + 'k' * 24
+        settings = load_settings({'DOMINO_CROSSCHAIN_FEE_RECIPIENT': FEE, 'DOMINO_CROSSCHAIN_RPC_URL_42161': url})
+        endpoints = {8453: hosted(None), 42161: hosted(None, chain=42161)}
+        service = build_service(settings, auth=Mock(), chain_endpoints=endpoints)
+        base = service.across.rpc_factory(8453)
+        self.assertIsInstance(base, EndpointsChainRpc)
+        self.assertIs(base.endpoints, endpoints[8453])
+        self.assertIs(service.across.rpc_factory(8453), base)
+        # A destination's own URL wins over the registry.
+        self.assertIs(type(service.across.rpc_factory(42161)), ChainRpc)
+        self.assertIsNone(service.across.rpc_factory(4663))
+        for name in ('stack', 'alchemy', 'public'):
+            self.assertIn(hosted_url(name), service.private_values)
+        self.assertIn(url, service.private_values)
+
+
+class EnabledLaunchTests(unittest.TestCase):
+    def test_an_enabled_launch_reads_the_destinations_from_the_v2_chain_rpc_file(self):
+        environ = {'DOMINO_CROSSCHAIN_FEE_RECIPIENT': FEE, 'DOMINO_SESSION_ABUSE_SECRET': 'ab' * 32,
+                   'DOMINO_V2_CHAIN_RPC_FILE': '/run/domino-financial-crosschain-config/chain-rpc.json',
+                   'DOMINO_SESSION_ORIGIN': 'https://domino.money'}
+        with tempfile.TemporaryDirectory() as temporary:
+            fd = acquire_session_lock(Path(temporary) / 'runtime')
+            with patch('crosschain_api.acquire_session_lock', return_value=fd), patch.dict(os.environ, environ, clear=True), \
+                 patch.object(sys, 'argv', ['crosschain_api.py', '--enable']), \
+                 patch('crosschain_api.load_session_rpc_config', return_value={}), \
+                 patch('rpc_config.configured_rpc_urls', return_value=['https://rpc.domino.money/' + 'k' * 20 + '/']), \
+                 patch('catalogue.database_settings'), patch('session_store.SessionStore'), patch('session_chain.EoaChecker'), \
+                 patch('onboarding_auth.OnboardingAuth'), patch('bridge_identity.AccessVerifier'), \
+                 patch('crosschain_across.destination_endpoints', return_value={8453: 'base'}) as destinations, \
+                 patch('crosschain_api.build_service') as build, patch('uvicorn.run'):
+                main()
+        destinations.assert_called_once_with('/run/domino-financial-crosschain-config/chain-rpc.json')
+        self.assertEqual(build.call_args.kwargs['chain_endpoints'], {8453: 'base'})
+        self.assertEqual(build.call_args.kwargs['robinhood_rpc'], 'https://rpc.domino.money/' + 'k' * 20 + '/')
+
+
 if __name__ == '__main__':
     unittest.main()

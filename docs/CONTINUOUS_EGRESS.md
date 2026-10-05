@@ -43,7 +43,7 @@ rendered only for an enabled role and only for the hostnames actually pinned.
 | `operator`, `admin` | — | — | never |
 | `position-plan` | 8911 | rpc, jwks, uniswap; chains with `v2Chains` | the S1 plan listener (`install_position_plan.py`): `EoaChecker` and plans; assertion verification; Trading API router legs. Optional: a host without the identity renders no chain for it |
 | `v2-automation` | — | rpc; chains with `v2Chains`; the node's proxy with `nodeLoopbackReads` | the V2 automation (`install_v2_automation.py`), one instance of `domino-v2-automation@.service` per chain, which binds `v2-automation.hosts` itself. Optional: a host without the identity renders no chain for it |
-| `crosschain` | 8910 | rpc, jwks, bridges | the S2 crosschain listener (`install_crosschain.py`): `EoaChecker` and the Across fee proof on Robinhood; assertion verification; Relay and Across quotes and status. Optional: a host without the identity renders no chain for it |
+| `crosschain` | 8910 | rpc, jwks, bridges; chains with `v2Chains` | the S2 crosschain listener (`install_crosschain.py`): `EoaChecker` and the Across fee proof on Robinhood (and on Base and Arbitrum through `chains`); assertion verification; Relay and Across quotes and status. Optional: a host without the identity renders no chain for it |
 | `monitor` | — | rpc, telegram; chains with `v2Chains`; the node's proxy with `nodeLoopbackReads` | the production monitor (`install_monitor.py`, [OPS_MONITOR.md](OPS_MONITOR.md)): balances, the node's head and the registry's logs; its alerts. Its own unit binds `monitor.hosts` and is wanted at boot by itself, outside the target. Optional: a host without the identity renders no chain for it |
 
 Classes: `rpc` is `robinhood-mainnet.g.alchemy.com` or the private
@@ -123,8 +123,9 @@ The optional `sequenceSnapshotLoopback` field defaults to false and requires
 `read` in `enabled` when true. It changes the nft policy and its pin digest,
 not the unit drop-ins or the public Worker flag. `nodeLoopbackReads` does the
 same for the reader and the writer, and requires either in `enabled`.
-`v2Chains` (`--v2-chains` when collecting) grants `chains` to the writer and the
-plan listener, and requires either in `enabled`.
+`v2Chains` (`--v2-chains` when collecting) grants `chains` to the writer, the
+plan listener, the V2 automation, the monitor and the crosschain listener
+(`CHAIN_ROLES`), and requires the writer or the plan listener in `enabled`.
 
 `identities` names all seventeen roles exactly. `admin` may be `null`, and so
 may `position-plan`, `v2-automation`, `crosschain` and `monitor` until their

@@ -404,6 +404,57 @@ class ChainRpc:
         return result
 
 
+
+class EndpointsChainRpc(ChainRpc):
+    """ChainRpc through a chain's V2 RPC registry (v2_rpc.ChainEndpoints, F6): its hosted endpoints in order, with
+    their batch, log-range and pace limits. An endpoint that fails is cooled down by the registry and the next one
+    answers. Like every F6 client it never asks eth_chainId: each endpoint proved its chain when it was provisioned
+    (`v2_rpc check`), so only the registry's own chain is checked here."""
+
+    def __init__(self, endpoints, expected_chain):
+        if endpoints.chain.chainId != expected_chain:
+            raise DataError('across_rpc_wrong_chain')
+        super().__init__(None, expected_chain)
+        self.endpoints, self.checked = endpoints, True
+
+    def request(self, method, params):
+        if method not in self.METHODS:
+            raise DataError('across_rpc_method')
+        try:
+            candidates = self.endpoints.usable()
+        except DataError:
+            raise DataError('across_rpc_unavailable') from None
+        for endpoint in candidates:
+            try:
+                reply = self.endpoints(endpoint.url, {'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params})
+            except DataError:
+                continue
+            if isinstance(reply, dict) and 'error' not in reply and 'result' in reply:
+                return reply['result']
+        raise DataError('across_rpc_unavailable')
+
+
+# The destinations with hosted RPC in the V2 chain RPC file. Robinhood is the listener's own node (--rpc-config),
+# which that file can never name (v2_rpc).
+HOSTED_DESTINATIONS = (8453, 42161)
+
+
+def destination_endpoints(chain_rpc_file, registry=None):
+    """{chain id: ChainEndpoints} for the hosted destinations the V2 chain RPC file names; none without the file.
+    The file and every credential it names are checked whole (v2_rpc), so a broken one stops the caller."""
+    if chain_rpc_file is None:
+        return {}
+    from v2_chains import default_registry
+    from v2_rpc import configured_endpoints, load_chain_rpc_config
+    registry = registry or default_registry()
+    config = load_chain_rpc_config(chain_rpc_file, registry)
+    result = {}
+    for destination in HOSTED_DESTINATIONS:
+        chain = registry.chain(destination)
+        if chain.key in config.chains:
+            result[destination] = configured_endpoints(chain, chain_rpc_config=config)
+    return result
+
 def receipt_fee(receipt, deposit, *, spoke_pool, fee_recipient, fee, native_output):
     """Prove the fill on the destination: FilledRelay with this message, no speed-up, and the ERC-20 fee transfer."""
     if receipt is None:

@@ -38,7 +38,8 @@ class UnitTests(unittest.TestCase):
         for line in ('User=domino-crosschain', 'SupplementaryGroups=domino-db', f'WorkingDirectory={root}',
                      'ExecStart=/opt/domino/backend-venv/bin/python3.14 -B backend/crosschain_api.py --port 8910',
                      'EnvironmentFile=-/etc/domino/financial/crosschain/environment',
-                     'ImportCredential=relay-api-key', 'ImportCredential=across-api-key', 'DeviceAllow=char-tpm rw',
+                     'ImportCredential=relay-api-key', 'ImportCredential=across-api-key',
+                     'ImportCredential=v2-rpc-*', 'DeviceAllow=char-tpm rw',
                      f'BindPaths=/var/lib/domino-financial/crosschain:{root}/backend/runtime',
                      'BindReadOnlyPaths=/etc/domino/financial/crosschain:/run/domino-financial-crosschain-config',
                      'ReadWritePaths=/var/lib/domino-financial/crosschain', 'ProtectSystem=strict',
@@ -50,8 +51,8 @@ class UnitTests(unittest.TestCase):
         for name in ('DOMINO_RELAY_API_KEY', 'DOMINO_ACROSS_API_KEY', 'DOMINO_CROSSCHAIN_RPC_URL_4663',
                      'DOMINO_CROSSCHAIN_RPC_URL_8453', 'DOMINO_CROSSCHAIN_RPC_URL_42161'):
             self.assertIn(name, unset)
-        # No V2 RPC credentials and no manifests: the listener reads neither.
-        self.assertNotIn('v2-rpc', text)
+        # The V2 chains' sealed URLs (F6) serve the Across fee proof on Base and Arbitrum; no manifests: the
+        # listener reads none.
         self.assertNotIn('deployments', text)
         self.assertNotIn('[Install]', text)
         self.assertEqual(installer.release_of(text), COMMIT)

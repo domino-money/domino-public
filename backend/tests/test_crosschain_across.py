@@ -1,4 +1,9 @@
 """Across quotes, deposit records and fee proofs against recorded answers, and the tampering the checks refuse."""
+import json
+import os
+from pathlib import Path
+import shutil
+import tempfile
 import unittest
 
 from eth_abi import decode, encode
@@ -8,8 +13,11 @@ from crosschain_support import (FEE, FILL_HASH, OTHER, OWNER, USDC_ARBITRUM, USD
                                 provider_request, quote_time)
 from discovery import DataError
 from crosschain_across import (DEPOSIT, DEPOSIT_NATIVE, DRAIN, EMIT, INSTRUCTIONS, MAKE_CALL, TRANSFER, WITHDRAW,
-                               AcrossProvider, ChainRpc, message_fee, parse_deposit, parse_quote, parse_routes)
+                               AcrossProvider, ChainRpc, EndpointsChainRpc, destination_endpoints, message_fee,
+                               parse_deposit, parse_quote, parse_routes)
 from crosschain_common import encode_call, load_destinations, load_pins
+from v2_chains import default_registry
+from v2_rpc import ChainEndpoints, Endpoint
 from crosschain_http import ProviderError
 
 PINS, DESTINATIONS = load_pins(), load_destinations()
@@ -341,6 +349,110 @@ class MessageFeeTests(unittest.TestCase):
             message_fee(message + '00' * 32, **kwargs)
         with self.assertRaisesRegex(DataError, 'across_message_invalid'):
             message_fee('0x', **kwargs)
+
+
+REGISTRY = default_registry()
+NAMES = ('stack', 'alchemy', 'public')
+
+
+def hosted_url(name):
+    return f'https://{name}.example.invalid/SYNTHETIC_{name.upper()}'
+
+
+def hosted(send, chain=8453, clock=None):
+    """A destination's three hosted endpoints (F6) over a fake transport; a failure cools one for 1 s."""
+    endpoints = tuple(Endpoint(name, f'{name}.example.invalid', hosted_url(name), None, 50, 10000, None) for name in NAMES)
+    return ChainEndpoints(REGISTRY.chain(chain), endpoints, 'test', send=send, clock=clock or (lambda: 1000.0),
+                          sleep=lambda seconds: None)
+
+
+class HostedFeeProofTests(unittest.TestCase):
+    """The Across fee proof on Base and Arbitrum through the V2 chain RPC registry (F6)."""
+
+    def test_the_proof_reads_the_registry_in_order_failing_over_and_never_asks_the_chain_id(self):
+        sent, now = [], [1000.0]
+
+        def send(url, body):
+            name = next(name for name in NAMES if url == hosted_url(name))
+            sent.append((name, body['method']))
+            if name == 'stack':
+                raise DataError('http_503')
+            if name == 'alchemy':
+                return {'jsonrpc': '2.0', 'id': 1, 'error': {'code': -32000, 'message': 'header not found'}}
+            return {'jsonrpc': '2.0', 'id': 1, 'result': {'status': '0x1', 'logs': []}}
+        rpc = EndpointsChainRpc(hosted(send, clock=lambda: now[0]), 8453)
+        self.assertEqual(rpc.receipt(FILL_HASH), {'status': '0x1', 'logs': []})
+        self.assertEqual(sent, [('stack', 'eth_getTransactionReceipt'), ('alchemy', 'eth_getTransactionReceipt'),
+                                ('public', 'eth_getTransactionReceipt')])
+        # The failed endpoint cools down: the next call starts at the second one, and no call ever asks the chain id.
+        sent.clear()
+        rpc.receipt(FILL_HASH)
+        self.assertEqual([name for name, _ in sent], ['alchemy', 'public'])
+        self.assertNotIn('eth_chainId', [method for _, method in sent])
+
+    def test_a_receipt_the_endpoint_has_not_seen_yet_is_none(self):
+        rpc = EndpointsChainRpc(hosted(lambda url, body: {'jsonrpc': '2.0', 'id': 1, 'result': None}), 8453)
+        self.assertIsNone(rpc.receipt(FILL_HASH))
+
+    def test_every_endpoint_failing_or_cooling_is_unavailable(self):
+        def send(url, body):
+            raise DataError('http_503')
+        rpc = EndpointsChainRpc(hosted(send), 8453)
+        with self.assertRaisesRegex(DataError, '^across_rpc_unavailable$'):
+            rpc.receipt(FILL_HASH)
+        # Now every endpoint cools down: nothing is sent, and the answer is the same code.
+        with self.assertRaisesRegex(DataError, '^across_rpc_unavailable$'):
+            rpc.receipt(FILL_HASH)
+        # An error beside a result, a text that merely mentions one, no result at all: none is an answer.
+        replies = iter([{'jsonrpc': '2.0', 'id': 1, 'error': {'code': -32000}, 'result': '0x1'},
+                        'a result without an envelope', {'jsonrpc': '2.0', 'id': 1}])
+        rpc = EndpointsChainRpc(hosted(lambda url, body: next(replies)), 8453)
+        with self.assertRaisesRegex(DataError, '^across_rpc_unavailable$'):
+            rpc.receipt(FILL_HASH)
+
+    def test_the_registry_is_the_destinations_chain_and_the_reads_stay_bounded(self):
+        sent = []
+
+        def send(url, body):
+            sent.append(body['method'])
+            return {'jsonrpc': '2.0', 'id': 1, 'result': '0x10'}
+        with self.assertRaisesRegex(DataError, '^across_rpc_wrong_chain$'):
+            EndpointsChainRpc(hosted(send, chain=42161), 8453)
+        rpc = EndpointsChainRpc(hosted(send, chain=42161), 42161)
+        self.assertEqual(rpc.block_number(), 16)
+        with self.assertRaisesRegex(DataError, '^across_rpc_method$'):
+            rpc.request('eth_sendRawTransaction', ['0x'])
+        with self.assertRaisesRegex(DataError, '^across_log_range$'):
+            rpc.logs([], [], 0, 10000)
+        self.assertEqual(sent, ['eth_blockNumber'])
+
+
+class DestinationEndpointsTests(unittest.TestCase):
+    def setUp(self):
+        # Resolved: the private-file walk refuses links, such as macOS /var.
+        self.directory = Path(tempfile.mkdtemp(prefix='domino-crosschain-rpc-')).resolve()
+        self.addCleanup(shutil.rmtree, self.directory)
+        os.chmod(self.directory, 0o700)
+
+    def file(self, chains, mode=0o600):
+        entry = {'name': 'stack', 'host': 'stack.example.invalid', 'url': hosted_url('stack'), 'archive': True,
+                 'maxBatchItems': 50, 'maxLogBlocks': 10000, 'requestsPerSecond': None}
+        path = self.directory / 'chain-rpc.json'
+        path.write_text(json.dumps({'schemaVersion': 1, 'kind': 'domino-v2-chain-rpc',
+                                    'chains': {key: {'endpoints': [entry]} for key in chains}}))
+        path.chmod(mode)
+        return str(path)
+
+    def test_base_and_arbitrum_come_from_the_file_robinhood_never(self):
+        self.assertEqual(destination_endpoints(None), {})
+        both = destination_endpoints(self.file(('base-8453', 'arbitrum-42161')))
+        self.assertEqual({chain: endpoints.chain.chainId for chain, endpoints in both.items()}, {8453: 8453, 42161: 42161})
+        self.assertEqual([e.name for e in both[8453].endpoints], ['stack'])
+        self.assertEqual(sorted(destination_endpoints(self.file(('base-8453',)))), [8453])
+
+    def test_a_file_that_cannot_be_trusted_stops_the_caller(self):
+        with self.assertRaisesRegex(DataError, '^v2_chain_rpc_config_unreadable$'):
+            destination_endpoints(self.file(('base-8453',), mode=0o644))
 
 
 if __name__ == '__main__':

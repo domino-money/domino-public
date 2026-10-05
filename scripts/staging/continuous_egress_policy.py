@@ -106,16 +106,18 @@ CLASSES = {'read': ('rpc', 'analytics'), 'gateway': ('jwks',),
            'v2-automation': ('rpc',),
            # The S2 crosschain listener: its session account check and the Across fee
            # proof on Robinhood read the chain (rpc), it verifies the bridge's Access
-           # assertion (jwks), and it quotes and tracks through Relay and Across (bridges).
+           # assertion (jwks), and it quotes and tracks through Relay and Across (bridges);
+           # the fee proof on Base and Arbitrum reads chains with v2Chains.
            'crosschain': ('rpc', 'jwks', 'bridges'),
            # The monitor: balances, the node's head and the registry's logs (rpc;
            # the node's proxy with nodeLoopbackReads; chains with v2Chains), and
            # its alerts (telegram). It serves nothing and verifies no assertion.
            'monitor': ('rpc', 'telegram')}
 # Who reads the V2 chains' hosted RPC (`chains`), and only with `v2Chains`:
-# the writer's indexer instances for Base and Arbitrum, and the plan listener's
-# plans there. A host that serves Robinhood alone pins none of it.
-CHAIN_ROLES = ('write', 'position-plan', 'v2-automation', 'monitor')
+# the writer's indexer instances for Base and Arbitrum, the plan listener's
+# plans there, the V2 automation, the monitor, and the S2 crosschain listener's
+# Across fee proofs. A host that serves Robinhood alone pins none of it.
+CHAIN_ROLES = ('write', 'position-plan', 'v2-automation', 'monitor', 'crosschain')
 # A class an enabled role cannot run without. Analytics is optional for the
 # reader: the market provider is a fallback, not the read path.
 REQUIRED = {'rpc', 'jwks', 'uniswap', 'edges', 'bridges', 'telegram'}

@@ -133,11 +133,17 @@ All read by `backend/crosschain_config.py`.
 | Across integrator id (`0x` + 4 hex) | `DOMINO_ACROSS_INTEGRATOR_ID` | – | production |
 | Provider timeout, 2–15 s (default 10) | `DOMINO_CROSSCHAIN_PROVIDER_TIMEOUT_SECONDS` | – | optional |
 | Calls per minute per provider | `DOMINO_RELAY_REQUESTS_PER_MINUTE`, `DOMINO_ACROSS_REQUESTS_PER_MINUTE` | – | optional |
-| Destination RPC for the Across fee proof | `DOMINO_CROSSCHAIN_RPC_URL_8453`, `_42161`, `_4663` | `crosschain-rpc-<chainId>` | optional |
+| Destination RPC for the Across fee proof (wins over the chain RPC file) | `DOMINO_CROSSCHAIN_RPC_URL_8453`, `_42161`, `_4663` | `crosschain-rpc-<chainId>` | optional |
+| V2 chain RPC file (F6): Base's and Arbitrum's hosted endpoints for the fee proof | `DOMINO_V2_CHAIN_RPC_FILE` | `v2-rpc-<chain>-<name>`, its URLs | optional |
 
 The per-minute defaults are 45 with a Relay key and 20 without; 60 with an Across key and 10 without.
 
-- **Destination RPCs.** Base and Arbitrum use hosted providers, billed per call. The service reads one receipt per filled deposit and checks each endpoint's chain id once per process. Robinhood falls back to the listener's own node (`--rpc-config`). These settings should move onto F6's per-chain RPC registry (ordered endpoints with failover) once it lands.
+- **Destination RPCs.** Base and Arbitrum read the V2 chain RPC file's hosted endpoints (F6, `backend/v2_rpc.py`: Chainstack, Alchemy, then the chain's public endpoint), billed per call, one receipt per filled deposit.
+  - **Order and limits:** the endpoints go in order, each with its batch, log-range and pace limits. One that fails cools down and the next answers (`EndpointsChainRpc`).
+  - **No chain-id check:** each endpoint proved its chain when it was provisioned (`v2_rpc check`), so the proof never asks `eth_chainId` there.
+  - **Precedence:** a destination's `DOMINO_CROSSCHAIN_RPC_URL_<chainId>` wins over the file.
+  - **Robinhood** reads the listener's own node (`--rpc-config`), which the V2 file can never name.
+  - **The operator's fee view** (`crosschain_fees.py across-fees`) reads the same way.
 - **The listener** reuses the onboarding boundary: `backend/crosschain_api.py --enable --rpc-config <Robinhood RPC file>`, on loopback port 8910, with
   - `DOMINO_SESSION_ORIGIN` and `DOMINO_SESSION_ABUSE_SECRET`,
   - `DOMINO_CROSSCHAIN_ACCESS_ISSUER`, `DOMINO_CROSSCHAIN_ACCESS_AUDIENCE` and `DOMINO_CROSSCHAIN_ACCESS_SERVICE_ID` (the Cloudflare Access service identity),
@@ -175,17 +181,20 @@ The bridge owns the rest of the path (0xdecimal, 5 Oct 2026):
    - **Rollback:** `--rollback <sha>` puts back the previous unit, or removes it.
 2. **Private files.** They go in `/etc/domino/financial/crosschain`, owned by `domino-crosschain`, mode 0600.
    - **`rpc.json`:** the plan listener's version 4 provider file, led by `https://rpc.domino.money/<token>/`. `EoaChecker` refuses the loopback proxy. Its first endpoint also serves Robinhood's Across fee proof.
+   - **`chain-rpc.json`:** a copy of `/etc/domino/v2/chain-rpc.json`, F6's file for Base and Arbitrum. Its URLs are the sealed `v2-rpc-*` credentials, which the unit imports.
    - **`environment`:**
      - `DOMINO_CROSSCHAIN_FEE_RECIPIENT`, the owner's address above;
      - `DOMINO_CROSSCHAIN_ACCESS_ISSUER`, `_AUDIENCE` and `_SERVICE_ID`, the Access application's;
      - the session listener's `DOMINO_SESSION_ORIGIN` and `DOMINO_SESSION_ABUSE_SECRET`;
-     - with Across' key, `DOMINO_ACROSS_INTEGRATOR_ID`, which is not a secret.
+     - with Across' key, `DOMINO_ACROSS_INTEGRATOR_ID`, which is not a secret;
+     - `DOMINO_V2_CHAIN_RPC_FILE=/run/domino-financial-crosschain-config/chain-rpc.json`.
 3. **The providers' keys,** when the owner has them. Seal each once with `systemd-creds encrypt --with-key=host+tpm2 --name=<name>`, as `/etc/credstore.encrypted/relay-api-key` and `/etc/credstore.encrypted/across-api-key`, then restart the listener.
    - The unit imports them (`ImportCredential=`) with the TPM in its device policy (`DeviceAllow=char-tpm rw`; systemd 255 adds it only for `LoadCredentialEncrypted=`).
    - It unsets `DOMINO_RELAY_API_KEY`, `DOMINO_ACROSS_API_KEY` and the destination RPC variables, so no key is ever read in clear.
    - Relay quotes and tracks without a key. Across' keyless limits are strict and unpublished.
 4. **Egress.** Collect with `crosschain` enabled, render, review, update, then `nft -f`.
    - The role gets the `rpc`, `jwks` and `bridges` classes. `bridges` is `api.relay.link` and `app.across.to`, both required. It also gets the replies of its listener on 8910.
+   - Collected with `--v2-chains`, it also gets `chains`, Base's and Arbitrum's hosted RPC hosts, for the fee proof.
    - The tunnel gets the origin rule to 8910.
    - The 60 drop-in adds `--enable --rpc-config /run/domino-financial-crosschain-config/rpc.json`.
    - `domino-continuous-reads.target` wants the unit as a family.
@@ -197,7 +206,7 @@ The bridge owns the rest of the path (0xdecimal, 5 Oct 2026):
 - On the VM, without an Access assertion, `origins`, `quote` and `status` answer 403. So does `vm-crosschain.domino.money` from outside, without a token.
 - As `domino-crosschain`, through its hosts file and its nft chain, `api.relay.link` and `app.across.to` both answer 200.
 
-Not installed: hosted RPC for the Across fee proof on Base and Arbitrum (`crosschain-rpc-8453`, `crosschain-rpc-42161`). The unit imports neither, so the fee there is reported from Across' own record. These endpoints belong on F6's chain registry (below).
+Until the listener reads F6's file (`chain-rpc.json`, the variable and the `chains` grant above), the fee on Base and Arbitrum is reported from Across' own record.
 
 ## Operations
 
@@ -231,7 +240,7 @@ Not installed: hosted RPC for the Across fee proof on Base and Arbitrum (`crossc
   Each needs its own checks before it is offered.
 - **The bypass is by design.** The research of 1 Oct 2026 confirmed that nothing binds the fee: a user can bridge on relay.link or across.to (0% Relay platform fee on same-token bridges, 0.01% on USDC→USDG), or request the same keyless quote without `appFees`. Domino can only measure afterwards what it collected.
 - **For F6:**
-  - read destination chains, tokens and RPCs from the chain registry instead of `api-contracts/v2/chains` and `DOMINO_CROSSCHAIN_RPC_URL_*`;
+  - read destination chains and tokens from the chain registry instead of `api-contracts/v2/chains` (the RPCs already come from F6's file);
   - Relay and Across pins may move there too.
 - **For F7:** the screens, through the Worker route. The contract's README lists what the app reads.
 - **For F8:** done by `install_crosschain.py` and the egress role `crosschain` ([In production](#in-production)), except the hosted RPCs.

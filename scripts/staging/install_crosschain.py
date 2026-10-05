@@ -11,8 +11,9 @@ First install, once per host:
 - the identity domino-crosschain (system user, nologin, group domino-db);
 - its peer row `domino domino-crosschain domino_session_auth`, beside the plan listener's: the listener checks the
   app's sessions (session_store). The row is proven by a connection as that user before anything else is written;
-- its private directory /etc/domino/financial/crosschain (0700, the operator's rpc.json and environment: the fee
-  recipient, the Access application, the session origin and abuse secret) and its runtime
+- its private directory /etc/domino/financial/crosschain (0700, the operator's rpc.json, chain-rpc.json (a copy of
+  /etc/domino/v2/chain-rpc.json) and environment: the fee recipient, the Access application, the session origin
+  and abuse secret, DOMINO_V2_CHAIN_RPC_FILE) and its runtime
   /var/lib/domino-financial/crosschain (0700) with catalogue-db.json and the process lock.
 
 Every release:
@@ -21,7 +22,9 @@ Every release:
 - domino-crosschain.service names that release. The listener starts without --enable, which only the continuous
   egress policy's drop-in adds. The providers' keys, once the owner seals them on the host, come as credentials
   only (ImportCredential=relay-api-key and across-api-key; the environment's variables for them are unset): Relay
-  quotes without a key, and Across' limits without one are strict. Both are sealed with the host's TPM, which
+  quotes without a key, and Across' limits without one are strict. Base's and Arbitrum's hosted RPC URLs for the
+  Across fee proof come the same way (ImportCredential=v2-rpc-*, F6's sealed URLs). All are sealed with the
+  host's TPM, which
   systemd 255 leaves out of the device policy for ImportCredential= (it adds it only for LoadCredentialEncrypted=),
   so the unit opens it itself (the plan listener's outage of 4 Oct).
 
@@ -64,8 +67,10 @@ LOCKFILE = plan_listener.LOCKFILE
 CATALOGUE = plan_listener.CATALOGUE
 HBA_ROW = plan_listener.HBA_ROW
 PEER_ROW = (PEER_MAP, OS_USER, SQL_ROLE)
-# The providers' keys: credentials only, never the environment (crosschain_config.py reads either).
-CREDENTIALS = ('relay-api-key', 'across-api-key')
+# The providers' keys: credentials only, never the environment (crosschain_config.py reads either). The V2
+# chains' hosted RPC URLs (v2-rpc-<chain>-<name>, F6) serve the Across fee proof on Base and Arbitrum through the
+# operator's copy of the V2 chain RPC file (DOMINO_V2_CHAIN_RPC_FILE), as the plan listener's do.
+CREDENTIALS = ('relay-api-key', 'across-api-key', 'v2-rpc-*')
 KEY_VARIABLES = ('DOMINO_RELAY_API_KEY', 'DOMINO_ACROSS_API_KEY', 'DOMINO_CROSSCHAIN_RPC_URL_4663',
                  'DOMINO_CROSSCHAIN_RPC_URL_8453', 'DOMINO_CROSSCHAIN_RPC_URL_42161')
 sha = plan_listener.sha

@@ -21,7 +21,7 @@ import re
 import sys
 
 from discovery import DataError
-from crosschain_across import ERC20_TRANSFER, MAX_LOG_BLOCKS, ChainRpc
+from crosschain_across import ERC20_TRANSFER, MAX_LOG_BLOCKS, ChainRpc, EndpointsChainRpc, destination_endpoints
 from crosschain_common import address, bytes32, chain_id, load_pins, raw
 from crosschain_config import ConfigError, load_settings
 from crosschain_http import ProviderHttp
@@ -123,9 +123,13 @@ def main(argv=None, out=sys.stdout):
                 relay_requests(settings, http, out, key_id=key_id, since=args.since, until=args.until, pages=args.pages)
         else:
             url = settings.rpc_urls.get(args.chain)
-            if url is None:
-                raise ConfigError(f'crosschain_config_rpc_url_{args.chain}')
-            rpc = ChainRpc(url, chain_id(args.chain))
+            if url is not None:
+                rpc = ChainRpc(url, chain_id(args.chain))
+            else:
+                endpoints = destination_endpoints(settings.chain_rpc_file).get(args.chain)
+                if endpoints is None:
+                    raise ConfigError(f'crosschain_config_rpc_url_{args.chain}')
+                rpc = EndpointsChainRpc(endpoints, chain_id(args.chain))
             to_block = args.to_block if args.to_block is not None else rpc.block_number()
             across_fees(settings, rpc, out, chain=args.chain, from_block=args.from_block, to_block=to_block)
     except ConfigError as error:

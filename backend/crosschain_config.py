@@ -15,6 +15,9 @@ never its value. docs/v2/F5_BRIDGE.md lists every name.
 | Provider timeout, seconds (2-15) | DOMINO_CROSSCHAIN_PROVIDER_TIMEOUT_SECONDS | - | no, 10 |
 | Requests per minute per provider | DOMINO_RELAY_REQUESTS_PER_MINUTE, DOMINO_ACROSS_REQUESTS_PER_MINUTE | - | no |
 | Destination RPC for the Across fee proof | DOMINO_CROSSCHAIN_RPC_URL_<chainId> | crosschain-rpc-<chainId> | no |
+| V2 chain RPC file (F6), Base's and Arbitrum's fee proofs | DOMINO_V2_CHAIN_RPC_FILE | v2-rpc-<chain>-<name> | no |
+
+A destination's own RPC URL wins over the V2 chain RPC file, whose URLs are its v2-rpc-* credentials (v2_rpc).
 """
 from dataclasses import dataclass, field
 import os
@@ -103,6 +106,7 @@ class CrosschainSettings:
     relay_per_minute: int = 20
     across_per_minute: int = 10
     rpc_urls: dict = field(default_factory=dict, repr=False)
+    chain_rpc_file: str | None = None
 
     def private_values(self):
         """Values that must never appear in a response or a log line."""
@@ -125,6 +129,9 @@ def load_settings(environ=None):
         value = _secret(f'DOMINO_CROSSCHAIN_RPC_URL_{chain}', f'crosschain-rpc-{chain}', environ, f'rpc_url_{chain}')
         if value is not None:
             rpc_urls[chain] = rpc_url(value, f'rpc_url_{chain}')
+    chain_rpc_file = environ.get('DOMINO_V2_CHAIN_RPC_FILE') or None
+    if chain_rpc_file is not None and not Path(chain_rpc_file).is_absolute():
+        raise ConfigError('crosschain_config_chain_rpc_file')
     # Relay documents 50 quotes per minute for a default key; keyless and Across limits are unpublished.
     return CrosschainSettings(
         fee_recipient=recipient.lower(), relay_api_key=relay_key, across_api_key=across_key,
@@ -132,4 +139,4 @@ def load_settings(environ=None):
         provider_timeout=_integer(environ, 'DOMINO_CROSSCHAIN_PROVIDER_TIMEOUT_SECONDS', 10, 2, 15),
         relay_per_minute=_integer(environ, 'DOMINO_RELAY_REQUESTS_PER_MINUTE', 45 if relay_key else 20, 1, 600),
         across_per_minute=_integer(environ, 'DOMINO_ACROSS_REQUESTS_PER_MINUTE', 60 if across_key else 10, 1, 600),
-        rpc_urls=rpc_urls)
+        rpc_urls=rpc_urls, chain_rpc_file=chain_rpc_file)

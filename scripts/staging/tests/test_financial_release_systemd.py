@@ -323,7 +323,8 @@ class RealSystemdTests(unittest.TestCase):
                          ('loaded', 'domino-crosschain', 'strict'))
         self.assertIn('-B backend/crosschain_api.py --port 8910 ;', shown['ExecStart'])
         self.assertNotIn('--enable', shown['ExecStart'])
-        self.assertEqual(sorted(shlex.split(shown['ImportCredential'])), ['across-api-key', 'relay-api-key'])
+        self.assertEqual(sorted(shlex.split(shown['ImportCredential'])),
+                         ['across-api-key', 'relay-api-key', 'v2-rpc-*'])
         devices = subprocess.run(['systemctl', 'show', f'{name}.service', '--property=DeviceAllow'],
                                  check=True, capture_output=True, text=True).stdout.splitlines()
         self.assertIn('DeviceAllow=char-tpm rw', devices)

@@ -547,13 +547,14 @@ class ContinuousEgressTests(unittest.TestCase):
         self.assertIn('domino-position-plan.service', target.split('Wants=', 2)[1].split('\n')[0])
         self.assertNotIn('domino-position-plan.service', target.split('Requires=')[1].split('\n')[0])
 
-    def test_the_v2_chains_grant_is_explicit_and_reaches_only_the_writer_and_the_plan_listener(self):
-        # Base and Arbitrum (backend/v2_rpc.py): the writer's indexer instances and the plan listener's plans.
+    def test_the_v2_chains_grant_is_explicit_and_reaches_only_the_chain_roles(self):
+        # Base and Arbitrum (backend/v2_rpc.py): the writer's indexer instances, the plan listener's plans, the
+        # V2 automation, the monitor, and the crosschain listener's Across fee proofs.
         chains = {host: [f'17.0.0.{index}'] for index, host in enumerate(sorted(policy.CHAIN_HOSTS), 1)}
-        enabled = (*LIVE_ENABLED, 'auth', 'position-plan', 'v2-automation', 'monitor')
-        everyone = identities(plan_listener=True, automation=True, monitor=True)
-        before = policy.render({**snapshot(enabled, {**PINS, **UNISWAP, **TELEGRAM}), 'identities': everyone})
-        granted = {**snapshot(enabled, {**PINS, **UNISWAP, **TELEGRAM, **chains}), 'identities': everyone,
+        enabled = (*LIVE_ENABLED, 'auth', 'position-plan', 'v2-automation', 'monitor', 'crosschain')
+        everyone = identities(plan_listener=True, automation=True, bridge=True, monitor=True)
+        before = policy.render({**snapshot(enabled, {**PINS, **UNISWAP, **TELEGRAM, **BRIDGES}), 'identities': everyone})
+        granted = {**snapshot(enabled, {**PINS, **UNISWAP, **TELEGRAM, **BRIDGES, **chains}), 'identities': everyone,
                    'v2Chains': True}
         after = policy.render(granted)
         for role in policy.CHAIN_ROLES:
@@ -565,14 +566,15 @@ class ContinuousEgressTests(unittest.TestCase):
             if role not in policy.CHAIN_ROLES:
                 self.assertEqual(hosts, before['roleHosts'][role], role)
         sets_before, sets_after = parse(nft(before))[1], parse(nft(after))[1]
-        granted_sets = ('write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4', 'ops_monitor_ipv4')
+        granted_sets = ('write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4', 'ops_monitor_ipv4', 'crosschain_ipv4')
         for name in granted_sets:
             self.assertEqual(sets_after[name], sets_before[name] + len(chains), name)
         self.assertEqual({name: count for name, count in sets_after.items() if name not in granted_sets},
                          {name: count for name, count in sets_before.items() if name not in granted_sets})
-        listener = after['artifacts'][policy.UNIT_DIR + 'domino-position-plan.service.d/' + policy.DROPIN]
-        for (address,) in chains.values():
-            self.assertIn(f'IPAddressAllow={address}/32\n', listener)
+        for unit in ('domino-position-plan.service', 'domino-crosschain.service'):
+            listener = after['artifacts'][policy.UNIT_DIR + unit + '.d/' + policy.DROPIN]
+            for (address,) in chains.values():
+                self.assertIn(f'IPAddressAllow={address}/32\n', listener)
         self.assertNotEqual(before['pinSetSha256'], after['pinSetSha256'])
         # Pinned without the grant, they are no role's.
         self.reject({**granted, 'v2Chains': False}, 'unapproved_hostname')

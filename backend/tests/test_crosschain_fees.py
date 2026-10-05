@@ -3,7 +3,7 @@ import io
 import json
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from crosschain_support import FEE, OWNER, PRIVATE, RELAY_REQUEST, USDC_ARBITRUM, USDG, FakeHttp, relay_record
 from crosschain_across import ERC20_TRANSFER, MAX_LOG_BLOCKS
@@ -79,6 +79,38 @@ class FeeViewTests(unittest.TestCase):
         self.assertIn('crosschain_config_relay_api_key_id', stderr.getvalue())
         self.assertNotIn(PRIVATE[0], stderr.getvalue())
         self.assertNotIn(OWNER, stderr.getvalue())
+
+
+    def test_across_fees_read_base_through_the_v2_chain_rpc_file_without_a_url(self):
+        from crosschain_across import ChainRpc, EndpointsChainRpc
+        environ = {'DOMINO_CROSSCHAIN_FEE_RECIPIENT': FEE, 'DOMINO_V2_CHAIN_RPC_FILE': '/run/x/chain-rpc.json'}
+        endpoints = Mock()
+        endpoints.chain.chainId = 8453
+        with patch.dict(os.environ, environ, clear=True), \
+             patch('crosschain_fees.destination_endpoints', return_value={8453: endpoints}) as destinations, \
+             patch('crosschain_fees.across_fees') as fees, patch.object(EndpointsChainRpc, 'block_number', return_value=99):
+            main(['across-fees', '--chain', '8453', '--from-block', '1'], out=io.StringIO())
+        destinations.assert_called_once_with('/run/x/chain-rpc.json')
+        rpc = fees.call_args.args[1]
+        self.assertIsInstance(rpc, EndpointsChainRpc)
+        self.assertIs(rpc.endpoints, endpoints)
+        self.assertEqual(fees.call_args.kwargs['to_block'], 99)
+        # A destination's own URL wins over the file.
+        url = 'https://base.example.invalid/v2/' + 'k' * 24
+        with patch.dict(os.environ, {**environ, 'DOMINO_CROSSCHAIN_RPC_URL_8453': url}, clear=True), \
+             patch('crosschain_fees.destination_endpoints') as destinations, patch('crosschain_fees.across_fees') as fees, \
+             patch.object(ChainRpc, 'block_number', return_value=7):
+            main(['across-fees', '--chain', '8453', '--from-block', '1'], out=io.StringIO())
+        destinations.assert_not_called()
+        self.assertIs(type(fees.call_args.args[1]), ChainRpc)
+        self.assertEqual(fees.call_args.args[1].url, url)
+        # A chain the file does not name still needs its own URL.
+        stderr = io.StringIO()
+        with patch.dict(os.environ, environ, clear=True), patch('crosschain_fees.destination_endpoints', return_value={}), \
+             patch('sys.stderr', stderr), self.assertRaises(SystemExit) as exit_:
+            main(['across-fees', '--chain', '42161', '--from-block', '1'], out=io.StringIO())
+        self.assertEqual(exit_.exception.code, 2)
+        self.assertIn('crosschain_config_rpc_url_42161', stderr.getvalue())
 
 
 if __name__ == '__main__':

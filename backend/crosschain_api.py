@@ -33,14 +33,15 @@ def create_crosschain_app(gateway=None):
     return create_authenticated_app(gateway or CrosschainGateway())
 
 
-def build_service(settings, auth, *, robinhood_rpc=None):
+def build_service(settings, auth, *, robinhood_rpc=None, chain_endpoints=None):
     """The service and its two providers from validated settings; no network until a request arrives.
 
-    Destination reads (the Across fee proof) use DOMINO_CROSSCHAIN_RPC_URL_<chainId>;
-    Robinhood falls back to the listener's own node (--rpc-config). Base and
-    Arbitrum use hosted providers billed per call: one receipt per filled deposit.
+    Destination reads (the Across fee proof) use DOMINO_CROSSCHAIN_RPC_URL_<chainId> when it is set. Otherwise
+    Robinhood reads the listener's own node (--rpc-config), and Base and Arbitrum the hosted endpoints of the V2
+    chain RPC file (chain_endpoints, F6), in order and with failover; each is billed per call, one receipt per
+    filled deposit.
     """
-    from crosschain_across import ACROSS_API, AcrossProvider, ChainRpc
+    from crosschain_across import ACROSS_API, AcrossProvider, ChainRpc, EndpointsChainRpc
     from crosschain_common import load_destinations, load_pins
     from crosschain_http import ProviderHttp
     from crosschain_relay import RELAY_API, RelayProvider
@@ -54,22 +55,27 @@ def build_service(settings, auth, *, robinhood_rpc=None):
     urls = dict(settings.rpc_urls)
     if robinhood_rpc and 4663 not in urls:
         urls[4663] = robinhood_rpc
+    hosted = dict(chain_endpoints or {})
     clients = {}
 
     def rpc_factory(chain):
-        # One client per chain for the process, so its chain id is read once.
-        if chain not in urls:
-            return None
+        # One client per chain for the process, so a URL's chain id is read once; a destination's own URL wins.
         if chain not in clients:
-            clients[chain] = ChainRpc(urls[chain], chain)
+            if chain in urls:
+                clients[chain] = ChainRpc(urls[chain], chain)
+            elif chain in hosted:
+                clients[chain] = EndpointsChainRpc(hosted[chain], chain)
+            else:
+                return None
         return clients[chain]
 
     across = AcrossProvider(ProviderHttp('across', ACROSS_API, headers=across_headers, per_minute=settings.across_per_minute),
                             pins, destinations, fee_recipient=settings.fee_recipient,
                             integrator_id=settings.across_integrator_id, timeout=settings.provider_timeout,
                             rpc_factory=rpc_factory)
+    hosted_urls = tuple(endpoint.url for endpoints in hosted.values() for endpoint in endpoints.endpoints)
     return CrosschainService(auth, relay, across, fee_recipient=settings.fee_recipient,
-                             private_values=(*settings.private_values(), *urls.values()))
+                             private_values=(*settings.private_values(), *urls.values(), *hosted_urls))
 
 
 def main():
@@ -78,6 +84,7 @@ def main():
     import uvicorn
     from bridge_identity import AccessVerifier
     from catalogue import database_settings
+    from crosschain_across import destination_endpoints
     from crosschain_config import ConfigError, load_settings
     from onboarding_auth import OnboardingAuth
     from rpc_config import configured_rpc_urls, DEFAULT_RPC_HOSTS
@@ -107,8 +114,10 @@ def main():
                                   EoaChecker(robinhood, allowed_hosts=hosts))
             verifier = AccessVerifier(os.environ.get('DOMINO_CROSSCHAIN_ACCESS_ISSUER'),
                 os.environ.get('DOMINO_CROSSCHAIN_ACCESS_AUDIENCE'), os.environ.get('DOMINO_CROSSCHAIN_ACCESS_SERVICE_ID'))
-            gateway = CrosschainGateway(service=build_service(settings, auth, robinhood_rpc=robinhood[0]), verifier=verifier,
-                                        origin=os.environ.get('DOMINO_SESSION_ORIGIN'), enabled=True)
+            service = build_service(settings, auth, robinhood_rpc=robinhood[0],
+                                    chain_endpoints=destination_endpoints(settings.chain_rpc_file))
+            gateway = CrosschainGateway(service=service, verifier=verifier, origin=os.environ.get('DOMINO_SESSION_ORIGIN'),
+                                        enabled=True)
     except ConfigError as error:
         # The setting's name only, never its value.
         problem = str(error)

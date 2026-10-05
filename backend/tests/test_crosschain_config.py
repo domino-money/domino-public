@@ -56,6 +56,13 @@ class SettingsTests(unittest.TestCase):
             with self.subTest(bad=bad[:12]):
                 self.refuse({**BASE, 'DOMINO_CROSSCHAIN_RPC_URL_42161': bad}, 'rpc_url_42161')
 
+    def test_the_v2_chain_rpc_file_is_an_absolute_path(self):
+        self.assertIsNone(load_settings(BASE).chain_rpc_file)
+        self.assertIsNone(load_settings({**BASE, 'DOMINO_V2_CHAIN_RPC_FILE': ''}).chain_rpc_file)
+        path = '/run/domino-financial-crosschain-config/chain-rpc.json'
+        self.assertEqual(load_settings({**BASE, 'DOMINO_V2_CHAIN_RPC_FILE': path}).chain_rpc_file, path)
+        self.refuse({**BASE, 'DOMINO_V2_CHAIN_RPC_FILE': 'chain-rpc.json'}, 'chain_rpc_file')
+
     def test_systemd_credentials_take_precedence_over_the_environment(self):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, 'relay-api-key').write_text(PRIVATE[0] + '\n')
