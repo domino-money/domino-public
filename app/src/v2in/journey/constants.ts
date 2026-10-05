@@ -56,8 +56,14 @@ export const V4_NEW_POOL_TIERS: readonly { fee: number; tickSpacing: number }[] 
 /** [#9] No public RPC: a pool on Base or Arbitrum One is the one the person indicates, read through the wallet's provider. */
 export const JOURNEY_PUBLIC_RPC = false
 
-/** [#22] No USD, APR or TVL for a V2 pool: no qualified source is wired. */
-export const JOURNEY_USD_SHOWN = false
+/**
+ * [#22] No USD, APR or TVL for a V2 pool: no qualified source is wired.
+ * Changed on purpose 2026-10-06 (rugged97's delta of 5 Oct, item 4: read-v6 1.1.0-rc.1's qualified USD, by the owner's
+ * rules of decision #22): a pool on Base or Arbitrum One read by Domino's service carries its currencies' qualified prices,
+ * so the journey's own USD lines value its amounts (./model/chainReads.ts, components/create/valuation.ts). Still no TVL,
+ * volume or APR: they need history the service does not keep.
+ */
+export const JOURNEY_USD_SHOWN = true
 
 /** The journey's choice: a recipient other than the connected wallet is never offered (the plan API plans for the session's wallet). */
 export const JOURNEY_CHOSEN_RECIPIENT_OFFERED = false

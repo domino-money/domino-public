@@ -11,6 +11,8 @@ import { PositionSkeleton } from '../../components/positions/visual/PositionSkel
 import { Address } from '../../components/read/screens/Address'
 import { TokenMarkPair } from '../../components/TokenIcon'
 import { Badge, Button, Chip, Display, EmptyState, FigureDash, KeyValue, KeyValueList, PageShell, Stat, StatStrip } from '../../components/ui'
+import { LiveFigure, UsdText } from '../../components/figures'
+import { formatUsdFloor } from '../../lib/format/usd'
 import { shortDate, shortTime } from '../../lib/format/time'
 import { useRouteTitle } from '../../lib/routeTitle'
 import { useMediaQuery } from '../../lib/useMediaQuery'
@@ -32,7 +34,7 @@ import { actionsOfPosition, chainStatusOf, findPosition, fromV6, hookedPool, isL
 import { MoreActions, positionMenuItems } from './MoreActions'
 import { PositionDialog, type PositionMode } from './PositionDialog'
 import { activityFor, portfolioFor, type PortfolioRead, type V6Read } from './source'
-import { amountText, labelOf, tokenBook, type TokenBook } from './tokens'
+import { amountText, labelOf, tokenBook, usdOfAmounts, type TokenBook } from './tokens'
 import type { OpenGate } from './wallet'
 
 // 2026-10-03 (the owner's point 10): the Price range chart's own chunk, asked for as this page's code arrives (V1's page does the same).
@@ -198,6 +200,13 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   const items = action ? positionMenuItems(action, protect) : []
   const identity = poolIdentity(chainId, position.pool)
   const custody = successor ? COPY.custody.successor : position.vault?.role === 'root' ? COPY.custody.root : COPY.custody.walletHolds
+  // Added 2026-10-06 (read-v6 1.1.0-rc.1's qualified USD): what it holds and its fees in USD, as V1's page shows them
+  // (components/positions/KeyFigures.tsx), the token amounts under the figure; only from a fresh read, every token held
+  // above zero priced. Otherwise the token amounts alone, as before.
+  const fresh = position.freshness?.status === 'fresh' && !stale
+  const pair = [position.pool.currency0, position.pool.currency1] as const
+  const holdsUsd = fresh ? usdOfAmounts(book, pair, position.principal) : null
+  const feesUsd = fresh ? usdOfAmounts(book, pair, position.feesOwed) : null
 
   return (
     <div data-position-detail="" data-position-id={position.tokenId.toString()} data-position-v2={`${chain.slug}-v${position.dex}`} data-snapshot={position.snapshotBlock ?? undefined}>
@@ -247,17 +256,55 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
       </div>
 
       <StatStrip layout="tiles" className="dm-pos-stats" title={position.snapshotBlock !== null ? `Read at block ${position.snapshotBlock}` : undefined} data-position-stats="">
-        <Stat label={COPY.page.holds} info={COPY.page.holdsInfo} className="dm-pos-stat" data-cell="principal">
-          <span className="dm-pos-amounts" data-stat="principal">
-            <CardAmount amount={card.principal[0]} />
-            <CardAmount amount={card.principal[1]} />
-          </span>
+        <Stat
+          label={COPY.page.holds}
+          info={COPY.page.holdsInfo}
+          className="dm-pos-stat"
+          data-cell="principal"
+          sub={
+            holdsUsd !== null && (
+              <span className="dm-pos-amounts" data-stat="principal">
+                <CardAmount amount={card.principal[0]} />
+                <CardAmount amount={card.principal[1]} />
+              </span>
+            )
+          }
+        >
+          {holdsUsd !== null ? (
+            <span className="dm-arrive" title={position.snapshotBlock !== null ? `Pool price at block ${position.snapshotBlock}` : undefined} data-usd="principal">
+              <LiveFigure value={formatUsdFloor(holdsUsd)} mode="digits" dimCents className="dm-fig-lg" />
+            </span>
+          ) : (
+            <span className="dm-pos-amounts" data-stat="principal">
+              <CardAmount amount={card.principal[0]} />
+              <CardAmount amount={card.principal[1]} />
+            </span>
+          )}
         </Stat>
-        <Stat label={COPY.page.fees} info={COPY.page.feesInfo} className="dm-pos-stat" data-cell="fees">
-          <span className="dm-pos-amounts" data-stat="fees">
-            <CardAmount amount={card.unsettledFees[0]} />
-            <CardAmount amount={card.unsettledFees[1]} />
-          </span>
+        <Stat
+          label={COPY.page.fees}
+          info={COPY.page.feesInfo}
+          className="dm-pos-stat"
+          data-cell="fees"
+          sub={
+            feesUsd !== null && (
+              <span className="dm-pos-amounts" data-stat="fees">
+                <CardAmount amount={card.unsettledFees[0]} />
+                <CardAmount amount={card.unsettledFees[1]} />
+              </span>
+            )
+          }
+        >
+          {feesUsd !== null ? (
+            <span data-usd="fees">
+              <UsdText value={feesUsd} block={position.snapshotBlock ?? undefined} floor className="dm-fig-lg dm-arrive" />
+            </span>
+          ) : (
+            <span className="dm-pos-amounts" data-stat="fees">
+              <CardAmount amount={card.unsettledFees[0]} />
+              <CardAmount amount={card.unsettledFees[1]} />
+            </span>
+          )}
         </Stat>
         <Stat label={COPY.page.apr} info={COPY.page.aprInfo} className="dm-pos-stat" data-cell="apr" data-apr="no_qualified_source" sub={COPY.page.aprMissing}>
           <span className="dm-fig-lg"><FigureDash reason={COPY.page.aprMissing} /></span>

@@ -13,6 +13,7 @@ import { WALLET_V2_DIST } from '../support/wallet-dist.mjs';
 import { contractsFor, createV2Chain, poolIdOf } from '../support/v2-chain.mjs';
 import { pressContinue } from '../support/new-position.mjs';
 import { createReadStub, FIXTURE_POOL, FIXTURE_TOKEN } from '../support/read-stub.mjs';
+import { createChainReads } from '../support/chain-reads.mjs';
 
 const require = createRequire(import.meta.url);
 const position = require('../../.test-build/app/src/finance/position.js');
@@ -415,5 +416,65 @@ test('(f) his journey on Arbitrum One: both networks in his search, each with it
     // Two tokens to pull: the client takes one Permit2 signature for both (createWithPermit), else the direct create.
     assert.ok(['0x0e97b041', '0xec627dfe'].includes(txs.at(-1).data.slice(0, 10)), 'create, or create with its Permit2 signature');
     assert.match(await page.locator('a[data-created-next="position"]').getAttribute('href'), /^#\/positions\/arbitrum-v3-\d+$/);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (rugged97's delta of 5 Oct, items 1-3: read-v6's chain reads): the same journey on Base, read by Domino's
+// service. The search finds Base's USDC by its name, its pools and the wallet's balances come from the service with the
+// wallet still on Robinhood Chain, and the wallet moves to Base only for the review and the create (spec F7 §1.3).
+test('(g) his journey on Base read by Domino\'s service: found by name, pools and balances with the wallet still on Robinhood Chain, moved to Base for the review', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
+  chain.switchTo(4663);
+  const reads = createChainReads({
+    chainId: 8453,
+    tokens: [{ address: ZERO, symbol: 'ETH', name: 'Ether', decimals: 18, sources: ['profile'] }, { address: USDC_BASE, symbol: 'USDC', name: 'USD Coin', decimals: 6, sources: ['profile', 'uniswap_default_list'] }],
+    pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }],
+    balances: { [USDC_BASE]: 5_000_000_000n },
+  });
+  const read = createReadStub({ answer: robinhoodRead });
+  const answers = [];
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner(answers),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true, chainReads: reads,
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    // "coin": a word of USDC's name, which the network's own currencies alone never matched.
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('coin');
+    const hit = page.locator(`[data-token-network-option="8453:${USDC_BASE}"]`);
+    await hit.waitFor({ timeout: 30_000 });
+    assert.equal((await hit.locator('[data-chain-chip="8453"]').innerText()).trim(), 'Base');
+    assert.ok(reads.calls.some((call) => call.route === 'chain-tokens' && call.request.chainId === 8453 && call.request.query === 'coin'), 'Base searched by Domino\'s service');
+    await hit.click();
+    const pools = page.locator('[data-picker="pool"][data-picker-network="8453"]');
+    await pools.locator('input[name="pool-option"]').first().waitFor({ timeout: 30_000 });
+    assert.equal(await pools.locator(`li[data-pool-key="${poolIdOf(POOL_BASE)}"]`).count(), 1, 'Base\'s pool, from the service');
+    assert.equal(chain.chainNow(), 4663, 'the wallet stays on Robinhood Chain for the pools');
+    assert.equal(chain.multicalls.length, 0, 'nothing read through the wallet');
+    await pools.locator('input[name="pool-option"]').first().click();
+    await page.locator('[data-chosen-pool]').waitFor();
+    const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+    await pressContinue(current('pool'));
+    await current('range').waitFor();
+    await pressContinue(current('range'));
+    await current('amount').waitFor();
+    await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    assert.ok(await page.locator('li[data-step="amount"] [data-pair-max]').count() >= 1, 'his Max, from the balances the service read');
+    assert.ok(reads.calls.some((call) => call.route === 'chain-balances' && call.request.wallet === OWNER), 'the balances asked of the service');
+    assert.equal(chain.chainNow(), 4663, 'and still on Robinhood Chain for the balances');
+    assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 0, 'no switch asked so far');
+    await page.locator('li[data-step="amount"][aria-current="step"] [data-pair-side="1"] input[inputmode="decimal"]').fill('1000');
+    await pressContinue(current('amount'));
+    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]');
+    await review.waitFor({ timeout: 30_000 });
+    assert.equal(chain.chainNow(), 8453, 'the wallet moved to Base for the review');
+    assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 1, 'once');
+    assert.deepEqual([s.planned[0].action, s.planned[0].chainId], ['create', 8453]);
+    assert.equal(s.planned[0].inputs.find((input) => input.token === USDC_BASE)?.amountRaw, '1000000000', 'the 1,000 USDC he typed');
+    await page.locator('[data-create-position="live"]:not([disabled])').click({ timeout: 30_000 });
+    await page.locator('[data-created-position][data-zap-receipt]').waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.sends.map((entry) => entry.tx.chainId), ['0x2105', '0x2105'], 'the approval and the create, on Base');
+    assert.deepEqual(chain.offChain, [], 'nothing of Base asked of the wallet while it was elsewhere');
   } finally { await s.close(); }
 });

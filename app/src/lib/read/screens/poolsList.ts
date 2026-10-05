@@ -49,6 +49,13 @@ export interface PoolOption {
    * pool's `key` is its address as a 32-byte word (twelve zero bytes, then the address), the way the ABI writes one.
    */
   dex?: 3 | 4
+  /**
+   * Added 2026-10-06 (rugged97's delta of 5 Oct, item 4: read-v6 1.1.0-rc.1's qualified USD): a pool on Base or Arbitrum
+   * One read by Domino's service carries each currency's USD price as that read gave it (18 decimals; the stable at 1, ETH
+   * and WETH at Chainlink's ETH/USD, any other token at its deepest qualified pool), in pool order, null for a currency
+   * without one. Absent everywhere else: Robinhood Chain's pools are valued through USDG (components/create/valuation.ts).
+   */
+  usdPrices?: readonly [string | null, string | null]
   /** The block the pool was verified at. */
   block: number
   catalogue: { source: 'initialize_event' | 'verified_observation'; block: number } | null

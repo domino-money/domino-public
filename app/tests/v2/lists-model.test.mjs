@@ -44,8 +44,11 @@ test('each read-v6 position is a row: chain and DEX named, its own page, open or
   assert.deepEqual(root.tokens.map((token) => [token.label, token.decimals, token.symbol]), [['USDG', 6, true], ['MANY', null, true]]);
   assert.deepEqual(root.value.map((amount) => [amount.kind, amount.text, amount.raw]), [['units', '0.029551', '29551'], ['raw', '—', '30447000000000000000']]);
   assert.deepEqual(root.fees.map((amount) => [amount.kind, amount.text]), [['units', '0.0012'], ['zero', '0']], 'a measured zero is a zero');
-  // No USD and no APR anywhere in a row (§6.3, decision #22): the view has no such field at all.
-  for (const row of rows) for (const key of Object.keys(row)) assert.doesNotMatch(key, /usd|apr|price/i, key);
+  // Changed on purpose 2026-10-06 (read-v6 1.1.0-rc.1's qualified USD, rugged97's item 4): a row's value and fees in USD
+  // only from a fresh read whose every token held above zero is priced: the fees (0.0012 USDG at the stable's 1), never the
+  // value (MANY is priced, but its decimals are unknown); the stale row and the unread ones none. Still no APR in a row.
+  assert.deepEqual(rows.map((row) => [row.valueUsd, row.feesUsd]), [[null, '0.001200000000000000'], [null, null], [null, '0.001200000000000000'], [null, null], [null, null]]);
+  for (const row of rows) for (const key of Object.keys(row)) assert.doesNotMatch(key, /apr|price/i, key);
   // The vault's automation, as V1's badge: Domino-compound, running (read: not paused, root armed).
   assert.deepEqual(root.vault, { role: 'root', name: 'Domino-compound', word: null, running: true });
   assert.equal(successor.vault.role, 'successor');

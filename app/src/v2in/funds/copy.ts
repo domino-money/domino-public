@@ -50,6 +50,9 @@ export const FUNDS_TEXT = {
   reading: (network: string) => `Reading ${network}…`,
   /** "Base: 0.42 ETH · 120 USDC". */
   holdingsOn: (network: string, amounts: readonly string[]) => `${network}: ${amounts.join(' · ')}`,
+  /** Added 2026-10-06: under a network's button, what Domino's service read there (and about how much, when it could value it all). */
+  holdsThere: (amounts: readonly string[], usd: string | null) => (usd === null ? `You have ${amounts.join(' · ')}` : `You have ${amounts.join(' · ')} (about ${usd})`),
+  nothingThere: 'Nothing to bring from there',
   bring: (amount: string, network: string) => `Bring ${amount} from ${network}`,
   nothingFound: (networks: string) => `Nothing to bring: no ETH, WETH or USDC on ${networks}.`,
   notInWallet: (network: string) => `${network} isn't in your wallet.`,

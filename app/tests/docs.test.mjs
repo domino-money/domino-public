@@ -549,7 +549,8 @@ test('the docs use the product’s words for a position’s figures, say what au
   // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the rows read from Domino's new contracts name
   // their network and show tokens (no USD or APR without a qualified source, decision #22); a Domino V1 row keeps dollars
   // and Your APR, or "on its page" (components/positions/PositionRow.tsx).
-  assert.match(sectionText(positions, 'your-positions'), /Each row shows the pair, its network, whether the price is in range, what it holds and its fees ready to collect, in tokens\. A Domino V1 position shows dollars instead, and Your APR since it opened, or “on its page”\./);
+  // Changed on purpose 2026-10-06 (read-v6 1.1.0-rc.1's qualified USD): dollars on the new contracts' rows too.
+  assert.match(sectionText(positions, 'your-positions'), /Each row shows the pair, its network, whether the price is in range, what it holds and its fees ready to collect, in dollars when priced, else in tokens\. Domino V1 rows add Your APR since opening, or “on its page”\./);
   assert.doesNotMatch(readText(join(APP, 'src/components/positions/PositionRow.tsx')), />est\.</);
   assert.ok(readText(join(APP, 'src/components/positions/PositionRow.tsx')).includes('>on its page<'));
   const details = sectionText(positions, 'position-details');
@@ -929,8 +930,10 @@ test('the docs source stays inside its budget in the entry bundle', (t) => {
   // 30,707 bytes.
   // Changed on purpose 2026-10-05 (New position on the three networks, #351; rugged97's F7 delta of 5 Oct, §5.5: the
   // successors' rules and the code comments that date them): 30,800 -> 31,000; measured at 30,870 bytes.
-  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 31000)`);
-  assert.ok(size <= 31_000, `the docs source is ${size} bytes gzip, over the 31,000 byte budget`);
+  // Changed on purpose 2026-10-06 (rugged97's delta of 5 Oct: the balances Domino reads on the other networks, and dollars
+  // on the new contracts' rows): 31,000 -> 31,100; measured at 31,033 bytes.
+  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 31100)`);
+  assert.ok(size <= 31_100, `the docs source is ${size} bytes gzip, over the 31,100 byte budget`);
 });
 
 // ---------------------------------------------------------------------------

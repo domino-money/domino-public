@@ -178,6 +178,7 @@
     "functions/_lib/fees.ts",
     "src/lib/positionApr.ts",
     "src/components/positions/listApr.ts",
+    "src/components/create/valuation.ts",
     "src/components/positions/visual/activityRows.ts",
     "src/lib/automate/successor.ts",
     "src/lib/automate/fieldCheck.ts",

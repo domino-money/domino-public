@@ -43,9 +43,13 @@ export interface ScriptedAnswer {
   status: number
   body: unknown
 }
-/** What a test build's suite may script (`window.__dominoV2Test.read6` / `.plan`). */
+/**
+ * What a test build's suite may script (`window.__dominoV2Test.read6` / `.plan`). Changed on purpose 2026-10-06 (the
+ * chain reads, whose answers depend on what is asked): a read-v6 route may be scripted as a function of the request; a
+ * function that answers undefined leaves that request unscripted (refused).
+ */
 export interface V2DataScript {
-  read6?: Partial<Record<ReadV6Route, ScriptedAnswer>>
+  read6?: Partial<Record<ReadV6Route, ScriptedAnswer | ((request: Record<string, unknown>) => ScriptedAnswer | undefined | Promise<ScriptedAnswer | undefined>)>>
   plan?: (request: Record<string, unknown>) => unknown
 }
 
@@ -58,7 +62,17 @@ export interface V2DataDeps {
   script: () => V2DataScript | null
 }
 
-const ON: V2RouteState = Object.freeze({ on: true, routes: Object.freeze(['portfolio', 'activity', 'plan']) })
+const ON_ROUTES = Object.freeze(['portfolio', 'activity', 'plan'])
+const ON: V2RouteState = Object.freeze({ on: true, routes: ON_ROUTES })
+
+/** read-v6's live chain reads (2026-10-06): served under a script only when the suite scripted them, as the Worker names its own. */
+const CHAIN_READS = ['chain-pools', 'chain-balances', 'chain-tokens'] as const
+
+/** A script's routes: today's, and the chain reads it scripted. */
+function scriptedOn(script: V2DataScript): V2RouteState {
+  const chain = CHAIN_READS.filter((route) => script.read6?.[route] !== undefined)
+  return chain.length === 0 ? ON : Object.freeze({ on: true, routes: Object.freeze([...ON_ROUTES, ...chain]) })
+}
 
 /** Why a request to an off route was refused unsent (a thrown Error's message; the clients say it as unavailable). */
 const offReason = (state: V2RouteState): string => (state.on ? 'route_off' : `route_off_${state.reason}`)
@@ -88,13 +102,22 @@ function servedPlan(transport: S1PlanTransport, probe: V2RouteProbe): S1PlanTran
 }
 
 /** Scripted read-v6 answers as a transport: a read nobody scripted is refused. */
-function scriptedRead(answers: Partial<Record<ReadV6Route, ScriptedAnswer>>): ReadV6Transport {
+function scriptedRead(answers: NonNullable<V2DataScript['read6']>): ReadV6Transport {
   const transport = createReadV6FixtureTransport()
-  for (const route of ['portfolio', 'activity'] as const) {
+  for (const route of ['portfolio', 'activity', ...CHAIN_READS] as const) {
     const answer = answers[route]
-    if (answer) transport.script(route, answer.status, answer.body)
+    if (answer && typeof answer !== 'function') transport.script(route, answer.status, answer.body)
   }
-  return transport
+  return {
+    kind: transport.kind,
+    async post(route, body) {
+      const answer = answers[route]
+      if (typeof answer !== 'function') return transport.post(route, body)
+      const said = await answer(structuredClone(body) as Record<string, unknown>)
+      if (!said) throw new Error(`no read-v6 answer scripted for ${route}`)
+      return { status: said.status, body: structuredClone(said.body) }
+    },
+  }
 }
 
 /** The transports for a chain's gate, or null when it is off. */
@@ -109,7 +132,7 @@ export function createV2Transports(gate: V2Gate, deps: V2DataDeps): V2Transports
       ...runtimes,
       read: scriptedRead(script.read6 ?? {}),
       plan: createS1PlanFixtureTransport((request) => script.plan?.(request)),
-      routeState: async () => ON,
+      routeState: async () => scriptedOn(script),
     })
   }
   const live = deps.live()

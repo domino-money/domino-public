@@ -1,3 +1,4 @@
+import type { ChainBalancesResponse } from 'api-contracts/read-v6/types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AmountField } from '../../components/create/fields'
 import { Button, Card, KeyValue, KeyValueList, Select, Skeleton } from '../../components/ui'
@@ -15,6 +16,8 @@ import {
 import { CANDIDATE_ORIGINS, readHoldingsReport, type Holding, type HoldingsReport } from '../../finance/v2/holdings'
 import { openWalletDialog } from '../../finance/signedOut'
 import { maxSpend } from '../../lib/create/reviewPlan'
+import { formatUsd } from '../../lib/format/usd'
+import { formatUnits } from '../../lib/read/decimal'
 import { v2Chain } from '../../v2/chains'
 import { cleanSymbol, formatUnitsExact, knownDecimals } from '../../v2/crosschain/amounts'
 import { quoteDeadlineMono, type Timing } from '../../v2/crosschain/client'
@@ -23,6 +26,8 @@ import { destinationChoices, naming, presentOrigins } from '../../v2/crosschain/
 import { SEND_MARGIN_MS } from '../../v2/crosschain/steps'
 import type { CrosschainRequests, OriginsList, QuotePlan } from '../../v2/crosschain/types'
 import type { V2Gate } from '../../v2/gate'
+import { readChainBalances } from '../../v2/read/v6'
+import { routeServes } from '../../v2/routes'
 import type { V2ChainId } from '../../v2/types'
 import { switchToChain, switchToOrigin, v2SwitchNotice, type ChainSwitchOutcome } from '../../wallet/port'
 import { FUNDS_AUTO_REQUOTES, FUNDS_DEFAULT_SLIPPAGE_BPS, FUNDS_DESTINATION_GAS_DEFAULT_ON, FUNDS_RECEIPT_POLL_MS } from './constants'
@@ -42,9 +47,13 @@ import {
   type Lack,
   type RequestFailure,
   withMargin,
+  balancesRequest,
+  holdingsFromChainBalances,
+  totalUsdOn,
 } from './model'
 import { IDLE_STEPS, QuoteView, type StepsView } from './QuoteView'
 import type { FundsServices } from './services'
+import { v2Transports } from '../transports'
 
 const ZERO = '0x0000000000000000000000000000000000000000'
 const lower = (value: string) => value.toLowerCase()
@@ -166,6 +175,10 @@ function HeldOffer({
  * (./Holdings.tsx over finance/v2/holdings.ts; no qualified multi-chain balance route exists). Nothing is guessed, no public RPC is read, and
  * no test data stands in for a reading (the owner, 2026-10-02 night: real data only; a function that cannot run yet
  * says so).
+ * Changed on purpose 2026-10-06 (rugged97's delta of 5 Oct, item 3: read-v6's chain-balances): Domino's service reads the
+ * balances on the other networks, shown under each network's button before anything is chosen; the one click then asks
+ * the quote with the wallet where it is, and the wallet moves to that network only when the person presses the button
+ * that sends (./flow.ts runDeposit). Without the service's answer, the wallet's own read on that network, as before.
  *
  * `services` (./services.ts): the crosschain-v1 client under a `live` gate (the crosschain route's own capabilities say it
  * serves), or null under `preview` (the route off or not deployed yet). Without it the card is LOCKED and immediately says
@@ -264,6 +277,35 @@ export function BringFunds({
     (journal?.list(chainId, wallet) ?? []).map((record) => ({ record, destinationToken: null, originLabel: null, review: null, journaled: true })),
   )
   const [steps, setSteps] = useState<StepsView>(IDLE_STEPS)
+
+  // ---- the balances on the other networks, read by Domino's service (Added 2026-10-06) ------------------------------
+  // read-v6's chain-balances (rugged97's item 3): public chain data, no session and no wallet move; each network's ETH,
+  // WETH and stable, shown under its button. Read again for each pick, so a choice rests on the chain now.
+  const transports = useMemo(() => (live ? v2Transports(gate) : null), [live, gate])
+  const sources = SOURCE_CHAINS.filter((id) => id !== chainId)
+  const readServed = useCallback(async (): Promise<ChainBalancesResponse | null> => {
+    if (transports === null) return null
+    try {
+      if (!routeServes(await transports.routeState('readV6'), 'chain-balances')) return null
+      const reply = await readChainBalances(transports.read, transports.readRuntime, wallet, balancesRequest(chainId, SOURCE_CHAINS))
+      return reply.kind === 'ok' ? reply.body : null
+    } catch {
+      return null
+    }
+  }, [transports, wallet, chainId])
+  const [served, setServed] = useState<{ key: string; answer: ChainBalancesResponse } | null>(null)
+  const servedKey = live && opened ? `${wallet}|${chainId}` : null
+  useEffect(() => {
+    if (servedKey === null) return
+    let alive = true
+    void readServed().then((answer) => {
+      if (alive && answer) setServed({ key: servedKey, answer })
+    })
+    return () => {
+      alive = false
+    }
+  }, [servedKey, readServed])
+  const servedNow = served !== null && served.key === servedKey ? served.answer : null
 
   // ---- origins (§3.3), asked automatically when funds are insufficient, with a service to ask ----------------------
   const originsKey = target === null ? null : `${chainId}|${target}|${access}`
@@ -542,6 +584,7 @@ export function BringFunds({
     const origin = offered.request.originChainId
     let own: OriginSender | null = null
     const lazy = async () => (own ??= await sender())
+    setPick(null)
     setSteps({ ...IDLE_STEPS, running: true })
     const outcome = await runDeposit(
       {
@@ -565,6 +608,10 @@ export function BringFunds({
       },
     )
     if (mine !== generation.current) return
+    // Changed on purpose 2026-10-06: the run moves the wallet to the origin when it is elsewhere (the one click no longer
+    // does), and the session's epoch moves with the wallet: the quote and what the run said are kept under the new one.
+    const rekeyed = `${latest.current.access}|${JSON.stringify(sentRequest)}`
+    if (rekeyed !== key && latest.current.access.startsWith('ready:')) setQuote((previous) => (previous.state === 'ok' && previous.key === key ? { ...previous, key: rekeyed } : previous))
     if (outcome.kind === 'error') forgetSenderOn(senderRef, new OriginStepError(outcome.code))
     // A deposit handed to the wallet with no usable answer is sent for this page: this quote never offers it again (F1).
     if (outcome.kind === 'error' && outcome.offered && outcome.step === 'deposit') setHandedQuotes((previous) => new Set(previous).add(quoteKeyOf(offered)))
@@ -589,7 +636,7 @@ export function BringFunds({
       }
       case 'expired':
         setSteps(IDLE_STEPS)
-        askQuote(sentRequest, key, outcome.approved ? FUNDS_TEXT.newQuoteApproved : FUNDS_TEXT.newQuote)
+        askQuote(sentRequest, latest.current.access.startsWith('ready:') ? rekeyed : key, outcome.approved ? FUNDS_TEXT.newQuoteApproved : FUNDS_TEXT.newQuote)
         return
       case 'aborted':
         return
@@ -647,24 +694,32 @@ export function BringFunds({
       openWalletDialog()
       if (!(await until(ready, alive, 180_000))) return fail(FUNDS_TEXT.signInFirst, 'signed_out')
     }
-    if (walletChain.current !== origin) {
-      setPick({ chainId: origin, stage: 'switching' })
-      const switched = await switchToChain(origin)
-      if (!alive()) return
-      if (switched !== 'switched') return fail(switched === 'unknown_chain' ? fill(ADD_ORIGIN, { origin: network }) : v2SwitchNotice(switched, network), `switch_${switched}`)
-      // The session held there (session/machine.ts heldAway) is ready again once the move settles.
-      if (!(await until(ready, alive, 20_000))) return fail(FUNDS_TEXT.signInFirst, 'signed_out')
-    }
-    setPick({ chainId: origin, stage: 'reading' })
     const candidate = CANDIDATE_ORIGINS.find((c) => c.chainId === origin)
     if (!candidate) return fail(FUNDS_TEXT.readFailed(network), 'no_candidate')
-    let report: HoldingsReport
-    try {
-      report = await readHoldingsReport(await browserOriginWallet(), candidate)
-    } catch {
-      return fail(FUNDS_TEXT.readFailed(network), 'read_failed')
-    }
+    // Changed on purpose 2026-10-06: the balances there as Domino's service reads them now, the wallet staying where it is
+    // (it moves to that network only to send). Without that answer, the wallet's own read there, as before.
+    setPick({ chainId: origin, stage: 'reading' })
+    const fresh = await readServed()
     if (!alive()) return
+    if (fresh) setServed({ key: `${wallet}|${chainId}`, answer: fresh })
+    let report: HoldingsReport | null = fresh ? holdingsFromChainBalances(fresh, candidate) : null
+    if (report === null) {
+      if (walletChain.current !== origin) {
+        setPick({ chainId: origin, stage: 'switching' })
+        const switched = await switchToChain(origin)
+        if (!alive()) return
+        if (switched !== 'switched') return fail(switched === 'unknown_chain' ? fill(ADD_ORIGIN, { origin: network }) : v2SwitchNotice(switched, network), `switch_${switched}`)
+        // The session held there (session/machine.ts heldAway) is ready again once the move settles.
+        if (!(await until(ready, alive, 20_000))) return fail(FUNDS_TEXT.signInFirst, 'signed_out')
+      }
+      setPick({ chainId: origin, stage: 'reading' })
+      try {
+        report = await readHoldingsReport(await browserOriginWallet(), candidate)
+      } catch {
+        return fail(FUNDS_TEXT.readFailed(network), 'read_failed')
+      }
+      if (!alive()) return
+    }
     const holdings: readonly Holding[] = report.holdings
     // The listing for this token, asked again since the session moved with the wallet.
     if (!(await until(() => latest.current.list !== null, alive, 20_000))) return fail(FUNDS_TEXT.readFailed(network), 'origins_unavailable')
@@ -707,6 +762,9 @@ export function BringFunds({
     // The form takes what was chosen (the person may change it under "Change amount"); the quote is asked for exactly it.
     setOriginChainId(origin)
     setOriginAddress(lower(listed.address))
+    // The listing may not say the token's decimals; the network's own currency says them (Added 2026-10-06: the wallet
+    // need not be there to read them).
+    if (!knownDecimals(listed.decimals)) setReadDecimals({ key: `${origin}:${lower(listed.address)}`, decimals: holding.decimals })
     setAmount(units.replace(/,/g, ''))
     setKept(target)
     const wanted = requestFor(amountRaw)
@@ -741,7 +799,20 @@ export function BringFunds({
   const chains = (originsView?.chains ?? []).filter((c) => SOURCE_CHAINS.includes(c.chainId as V2ChainId) && c.chainId !== chainId)
   const tokens = chains.find((c) => c.chainId === originChainId)?.tokens ?? []
   const unit = listed ? (cleanSymbol(listed.symbol) ?? `${listed.address.slice(0, 6)}…${listed.address.slice(-4)}`) : ''
-  const sources = SOURCE_CHAINS.filter((id) => id !== chainId)
+  // What the service read on each network (Added 2026-10-06): the amounts held, about how much in USD when it could value
+  // them all; nothing at all when it could not read that network (never a zero).
+  const holdsOn = (id: V2ChainId): { code: 'holds' | 'none'; text: string } | null => {
+    const candidate = CANDIDATE_ORIGINS.find((c) => c.chainId === id)
+    const report = servedNow && candidate ? holdingsFromChainBalances(servedNow, candidate) : null
+    if (!report) return null
+    if (report.holdings.length === 0) return report.unread.length > 0 ? null : { code: 'none', text: FUNDS_TEXT.nothingThere }
+    const amounts = report.holdings.map((h) => {
+      const units = formatUnits(h.raw.toString(), h.decimals)
+      return `${units && units.kind === 'units' ? units.text : h.raw.toString()} ${h.symbol}`
+    })
+    const usd = servedNow ? totalUsdOn(servedNow, id) : null
+    return { code: 'holds', text: FUNDS_TEXT.holdsThere(amounts, report.unread.length === 0 && usd !== null ? formatUsd(usd) : null) }
+  }
   const shortUnits = lack && lack.shortRaw !== null ? formatUnitsExact(lack.shortRaw.toString(), lack.decimals) : null
   const shortText = shortUnits !== null ? `${shortUnits} ${symbol}` : null
   return (
@@ -787,21 +858,30 @@ export function BringFunds({
               {!steps.running && quote.state !== 'ok' && lacks.length > 0 && (
                 <div className="grid gap-2" data-funds-sources="">
                   <p className="text-body">{FUNDS_TEXT.bringFrom}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {sources.map((id) => (
-                      <Button
-                        key={id}
-                        type="button"
-                        size="sm"
-                        variant={pick?.chainId === id ? 'secondary' : 'outline'}
-                        aria-pressed={pick?.chainId === id}
-                        disabled={pickBusy}
-                        onClick={() => void bringFrom(id)}
-                        data-funds-network={id}
-                      >
-                        {v2Chain(id).name}
-                      </Button>
-                    ))}
+                  <div className="flex flex-wrap gap-3">
+                    {sources.map((id) => {
+                      const holds = holdsOn(id)
+                      return (
+                        <div key={id} className="grid justify-items-start gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={pick?.chainId === id ? 'secondary' : 'outline'}
+                            aria-pressed={pick?.chainId === id}
+                            disabled={pickBusy}
+                            onClick={() => void bringFrom(id)}
+                            data-funds-network={id}
+                          >
+                            {v2Chain(id).name}
+                          </Button>
+                          {holds && (
+                            <span className="dm-hint tnum" data-funds-network-holds={id} data-funds-holds={holds.code}>
+                              {holds.text}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                   <p className="dm-hint">{FUNDS_TEXT.howItWorks(chain.name)}</p>
                 </div>

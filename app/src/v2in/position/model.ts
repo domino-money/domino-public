@@ -11,6 +11,7 @@
 import type { ActivityResponse, ChainStatus, PortfolioResponse, Position as V6Position, S1Action } from 'api-contracts/read-v6/types'
 import type { WalletPosition } from '../../lib/walletPositions'
 import { ZERO_ADDRESS, type Address, type Dex, type PoolRef, type V2ChainId } from '../../v2/types'
+import { USD_SHOWN } from './constants'
 import { cleanSymbol, type PositionToken } from './tokens'
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
@@ -160,7 +161,8 @@ export function findPosition(answer: Pick<PortfolioResponse, 'positions'>, chain
 
 /** The tokens a read-v6 answer names on one chain, with their metadata as the index read it. */
 export function tokensOf(answer: Pick<PortfolioResponse, 'tokens'>, chainId: V2ChainId): PositionToken[] {
-  return answer.tokens.filter((token) => token.chainId === chainId).map((token) => ({ address: lower(token.address), symbol: cleanSymbol(token.symbol), decimals: token.decimals }))
+  // Changed on purpose 2026-10-06: with its qualified USD price (read-v6 1.1.0-rc.1), while the page shows USD.
+  return answer.tokens.filter((token) => token.chainId === chainId).map((token) => ({ address: lower(token.address), symbol: cleanSymbol(token.symbol), decimals: token.decimals, usd: USD_SHOWN && token.price ? token.price.usd : null }))
 }
 
 /** That chain's status in the answer (§6.2: shown before any of its values). */

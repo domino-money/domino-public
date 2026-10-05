@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type KeyboardEvent } from 'react'
-import type { NetworkToken } from '../../../lib/create/otherChains'
+import type { NetworkSearch, NetworkToken } from '../../../lib/create/otherChains'
 import { unreadToken } from '../../../lib/read/project'
 import { formatUsdCompact } from '../../../lib/read/decimal'
 import { dexStore, usdText } from '../../../lib/read/dexFigures'
@@ -140,6 +140,10 @@ function AddressRow({ wire }: { wire: string }) {
   )
 }
 
+/** No other networks' search: nothing to subscribe to, never a new answer. */
+const noSubscribe = () => () => undefined
+const noVersion = () => 0
+
 /** A hit's network, in the journey's chip style (2026-10-05, the owner: "the results get the network's tag"). */
 function NetworkTag({ chainId, name }: { chainId: number; name: string }) {
   return (
@@ -166,6 +170,12 @@ function NetworkRow({ row }: { row: NetworkToken }) {
         <span className="dm-flow-hit-meta">
           <Address value={row.token.address} short />
         </span>
+        {/* Added 2026-10-06: a hit that passes for ETH, WETH or USDC there without being it (never chosen). */}
+        {row.warning !== undefined && (
+          <span className="dm-flow-hit-meta text-money-out" data-token-warning="lookalike">
+            {row.warning}
+          </span>
+        )}
       </span>
       <NetworkTag chainId={row.chainId} name={row.network} />
     </>
@@ -204,6 +214,7 @@ export function TokenSearch({
   onPoint,
   home,
   others,
+  othersSearch,
   onOther,
 }: {
   source: ReadSource
@@ -231,6 +242,11 @@ export function TokenSearch({
    */
   home?: string
   others?: (query: string) => readonly NetworkToken[]
+  /**
+   * Added 2026-10-06: the other networks' search by name (lib/create/otherChains.ts NetworkSearch), asked after the same
+   * short pause as today's; its answers re-draw the list. Absent where only the profile's tokens are offered.
+   */
+  othersSearch?: NetworkSearch
   onOther?: (row: NetworkToken) => Promise<NetworkChoice>
 }) {
   const [value, setValue] = useState(initialValue ?? '')
@@ -239,6 +255,8 @@ export function TokenSearch({
   const [active, setActive] = useState<number | null>(null)
   // DEX Screener's figures arriving for the hits re-order and re-word them (audit V3).
   useSyncExternalStore(dexStore.subscribe, dexStore.version, dexStore.version)
+  // The other networks' search answers arriving add their hits (2026-10-06).
+  useSyncExternalStore(othersSearch?.subscribe ?? noSubscribe, othersSearch?.version ?? noVersion, othersSearch?.version ?? noVersion)
   const [problem, setProblem] = useState<string | null>(() => typedProblem(initialValue ?? ''))
   const [said, setSaid] = useState<Said | null>(null)
   // `text`: the line itself, for another network's token, whose reasons are the wallet's (2026-10-05).
@@ -321,6 +339,12 @@ export function TokenSearch({
       clearTimeout(timer)
     }
   }, [source, value, open])
+  // The other networks' search (2026-10-06): asked after the same short pause, while the list is open.
+  useEffect(() => {
+    if (!open || !othersSearch) return
+    const timer = setTimeout(() => othersSearch.ask(value), 350)
+    return () => clearTimeout(timer)
+  }, [othersSearch, value, open])
   const query = value.trim()
   const answered = searchable(query) ? (keptSearch(source, query) ?? (stored?.query === query ? stored.candidates : null)) : null
   const persisted = answered ? knownTokens({ catalogue: [], candidates: answered }) : []
@@ -436,6 +460,7 @@ export function TokenSearch({
 
   /** Another network's token: handed to New position, which reads what it needs of it through the wallet. */
   const chooseOther = (row: NetworkToken) => {
+    if (row.warning !== undefined) return
     stop()
     // Anything today's choice started (its pools read) stops: this token is another network's.
     chose.current?.(null)
@@ -595,10 +620,11 @@ export function TokenSearch({
                   aria-selected={current}
                   data-token-network-option={`${row.chainId}:${row.token.address}`}
                   data-active={current ? '' : undefined}
+                  aria-disabled={row.warning !== undefined ? true : undefined}
                   onMouseDown={(event) => event.preventDefault()}
                   onMouseEnter={() => setActive(results.length + index)}
                   onClick={() => chooseOther(row)}
-                  className="dm-flow-hit"
+                  className={cx('dm-flow-hit', row.warning !== undefined && 'dm-flow-hit--off')}
                 >
                   <NetworkRow row={row} />
                 </button>

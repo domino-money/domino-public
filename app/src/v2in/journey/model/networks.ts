@@ -1,7 +1,7 @@
 import type { NetworkToken, OtherChainId } from '../../../lib/create/otherChains'
 import { fixedFeePercent } from '../../../lib/read/screens/fee'
 import type { AttributedFigure } from '../../../lib/read/screens/figures'
-import { NATIVE_CURRENCY, poolIdKey } from '../../../lib/read/screens/identity'
+import { NATIVE_CURRENCY, poolIdKey, type PoolIdKey } from '../../../lib/read/screens/identity'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import type { TokenDisplay } from '../../../lib/read/types'
 import type { PoolOnChain } from '../../../finance/v2/zap'
@@ -113,20 +113,29 @@ export const optionKey = (found: Pick<PoolOnChain, 'pool' | 'id'>) => poolIdKey(
 
 /** A pool read through the wallet, as today's pool rows and steps take one (pure). */
 export function optionOf(found: PoolOnChain, currencies: readonly [TokenDisplay, TokenDisplay], readAt: number): PoolOption {
+  return poolRow({ pool: found.pool, key: optionKey(found), tick: found.tick, sqrtPriceX96: found.sqrtPriceX96.toString(), block: Number(found.block) }, currencies, readAt)
+}
+
+/**
+ * A pool as today's pool rows and steps take one (pure), from whatever read it: the wallet (`optionOf`) or Domino's service
+ * (./chainReads.ts, 2026-10-06). `key`: the v4 pool id, or a v3 pool's address as a 32-byte word.
+ */
+export function poolRow(read: { pool: PoolRef; key: PoolIdKey; tick: number; sqrtPriceX96: string; block: number; usdPrices?: readonly [string | null, string | null] }, currencies: readonly [TokenDisplay, TokenDisplay], readAt: number): PoolOption {
   return {
-    key: optionKey(found),
+    ...(read.usdPrices ? { usdPrices: read.usdPrices } : {}),
+    key: read.key,
     kind: 'discovery',
     currencies: [currencies[0], currencies[1]],
-    fee: fixedFeePercent(found.pool.fee),
-    feePips: found.pool.fee,
-    tickSpacing: found.pool.tickSpacing,
-    tick: found.tick,
-    sqrtPriceX96: found.sqrtPriceX96.toString(),
+    fee: fixedFeePercent(read.pool.fee),
+    feePips: read.pool.fee,
+    tickSpacing: read.pool.tickSpacing,
+    tick: read.tick,
+    sqrtPriceX96: read.sqrtPriceX96,
     readAt,
     hooks: NATIVE_CURRENCY,
     integration: 'hookless_fixed_fee',
-    dex: found.pool.dex,
-    block: Number(found.block),
+    dex: read.pool.dex,
+    block: read.block,
     catalogue: null,
     requestedById: false,
     liquidity: UNREPORTED,

@@ -18,6 +18,10 @@ import type { CurrencyBalance } from './budgets'
  * address, and a token's pools, a pool's price and the wallet's balances are read through the wallet's own provider on
  * that network, so the wallet is asked once to switch networks when such a token is chosen. Identity is chain plus
  * address (§1.3): Base's ETH is never Robinhood Chain's ETH.
+ * Changed on purpose 2026-10-06 (rugged97's delta of 5 Oct, items 1-3): Domino's service now reads them (read-v6's
+ * chain-pools, chain-balances and chain-tokens), so the search finds their tokens by name and their pools and balances
+ * are listed with the wallet where it is; it moves only to sign. The wallet's own reads stay as the way when the service
+ * cannot answer.
  */
 
 /** The other networks: Base and Arbitrum One. */
@@ -29,8 +33,25 @@ export interface NetworkToken {
   /** The network's name, the tag ("Base", "Arbitrum One"). */
   network: string
   token: TokenDisplay
-  /** A pasted address: its symbol and decimals are read through the wallet once it is chosen (`resolve`). */
+  /** A pasted address: its symbol and decimals are read once it is chosen (`resolve`). */
   unread: boolean
+  /**
+   * Added 2026-10-06: a hit that passes for one of the network's own currencies without being it ("Not the USDC Domino
+   * uses"): listed with this line, never chosen, as today's search treats such a hit on Robinhood Chain.
+   */
+  warning?: string
+}
+
+/**
+ * Added 2026-10-06 (rugged97's delta of 5 Oct, item 2: read-v6's chain-tokens): the other networks' known tokens a text
+ * names, read by Domino's service, for the search to list beside the network's own currencies. `ask` starts the read for
+ * a text (the search calls it after its own short pause); `subscribe` and `version` tell the search an answer arrived,
+ * after which `tokens(query)` includes it. Nothing is asked while the list is closed.
+ */
+export interface NetworkSearch {
+  ask: (query: string) => void
+  subscribe: (listener: () => void) => () => void
+  version: () => number
 }
 
 /** What reading a token's pools on its network came to; `reason` is a sentence for the screen. */
@@ -43,8 +64,10 @@ export interface OtherChains {
   home: string
   /** A network's name by id, for its tag; null for one this page does not offer. */
   name: (chainId: number) => string | null
-  /** The other networks' tokens a query names. Synchronous; reads nothing. */
+  /** The other networks' tokens a query names. Synchronous; reads nothing (what `search` read is included). */
   tokens: (query: string) => readonly NetworkToken[]
+  /** Added 2026-10-06: the read behind `tokens`, where Domino's service can search those networks; absent otherwise. */
+  search?: NetworkSearch
   /** A chosen row's token with its symbol and decimals: read through the wallet when it was a pasted address. */
   resolve: (row: NetworkToken, signal: AbortSignal) => Promise<NetworkResolved>
   /** The pools of a token on its network a position can open in, read through the wallet on that network. */

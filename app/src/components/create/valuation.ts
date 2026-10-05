@@ -1,5 +1,6 @@
 import { USDG } from '../../config/mainTokens'
-import { priceFromSqrtIn } from '../../lib/format/price'
+import { parseScaled, scaledText } from '../../lib/format/decimal'
+import { PRICE_SCALE, priceFromSqrtIn } from '../../lib/format/price'
 import { usdgValue } from '../../lib/format/usd'
 import type { JourneyState, TickRange } from '../../lib/create/journey'
 import { reviewPlan } from '../../lib/create/reviewPlan'
@@ -63,7 +64,10 @@ export function rangeView(range: TickRange, price: Usable, pool: PoolOption): Ra
   }
 }
 
-/** Which side of the pair is USDG (0 or 1), or null: USD is shown for USDG pairs only (§0.7). */
+/**
+ * Which side of the pair is USDG (0 or 1), or null: USD is shown for USDG pairs only (§0.7). Changed on purpose 2026-10-06:
+ * and for a pool on Base or Arbitrum One that carries its qualified prices (`usdPrices`, `qualifiedUsd` below).
+ */
 export function usdgSide(pool: PoolOption): 0 | 1 | null {
   const usdg = USDG
   if (pool.currencies[0].address.toLowerCase() === usdg) return 0
@@ -71,11 +75,35 @@ export function usdgSide(pool: PoolOption): 0 | 1 | null {
   return null
 }
 
-/** The USD value of raw amounts of the pool's two currencies at the pool's own price, 1 USDG = $1; null for any other pair. */
+/**
+ * Added 2026-10-06 (rugged97's delta of 5 Oct, item 4): the USD value of raw amounts at the qualified prices Domino's service
+ * read for a pool on Base or Arbitrum One (PoolOption `usdPrices`, 18 decimals), each term rounded down; null when an amount
+ * above zero has no price or no decimals (a dash, never a zero), or when the pool carries no prices.
+ */
+function qualifiedUsd(pool: PoolOption, amounts: readonly [bigint, bigint]): string | null {
+  const prices = pool.usdPrices
+  if (!prices) return null
+  let total = 0n
+  for (const index of [0, 1] as const) {
+    const raw = amounts[index]
+    if (raw === 0n) continue
+    const price = prices[index] === null ? null : parseScaled(prices[index] as string)
+    const decimals = pool.currencies[index].decimals
+    if (!price || price.units < 0n || decimals === null || raw < 0n) return null
+    total += (raw * price.units * 10n ** BigInt(PRICE_SCALE)) / (10n ** BigInt(price.scale + decimals))
+  }
+  return scaledText(total, PRICE_SCALE)
+}
+
+/**
+ * The USD value of raw amounts of the pool's two currencies at the pool's own price, 1 USDG = $1; null for any other pair.
+ * Changed on purpose 2026-10-06: a pool on Base or Arbitrum One with its qualified prices is valued at them (`qualifiedUsd`).
+ */
 export function usdOf(pool: PoolOption, amounts: readonly [bigint, bigint]): string | null {
   const side = usdgSide(pool)
   const [d0, d1] = [pool.currencies[0].decimals, pool.currencies[1].decimals]
-  if (side === null || d0 === null || d1 === null) return null
+  if (side === null) return qualifiedUsd(pool, amounts)
+  if (d0 === null || d1 === null) return null
   try {
     return usdgValue({ amounts, decimals: [d0, d1], usdgIndex: side, sqrtPriceX96: BigInt(pool.sqrtPriceX96) })
   } catch {

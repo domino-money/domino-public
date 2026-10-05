@@ -18,6 +18,7 @@ const { ARTWORK, pressContinue } = await import('../support/new-position.mjs');
 const { FIXTURE_TOKEN, createReadStub } = await import('../support/read-stub.mjs');
 const { installS2Wallet, S2_ACCOUNT, S2_OWNER } = await import('../support/s2-wallet.mjs');
 const { createWalletServer } = await import('../support/wallet-server.mjs');
+const { createChainReads } = await import('../support/chain-reads.mjs');
 
 const V2_DIST = WALLET_V2_DIST;
 const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
@@ -59,7 +60,7 @@ function walletAssets(ethWei) {
  * The build served with the read stub (TOKEN as USDG; no USDG, and `ethWei` of ETH, none unless said) and the test wallet
  * connected on Robinhood Chain, at New position's amount step.
  */
-async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, bridge = false, switching = false } = {}) {
+async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, bridge = false, switching = false, served = null } = {}) {
   const fake = createFakeSession();
   const errors = [];
   // The read stub's own fixture for each read (tests/support/read-stub.mjs), TOKEN as USDG, and the wallet's balances.
@@ -90,7 +91,17 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
     }
     return Response.json(data, { headers });
   };
-  const server = createWalletServer({ fake, dist: V2_DIST, routes: [bridgeRoute, (request, url) => read.handle(request, url) ?? undefined] });
+  // Added 2026-10-06: read-v6's chain-balances served by the site's route (`served`, ../support/chain-reads.mjs), as the read
+  // Worker answers it: its capabilities naming that read alone, and each answer with the contract's header.
+  const readV6 = { 'X-Domino-Read-Contract': '1.1.0-rc.1' };
+  const servedRoute = async (request, url) => {
+    if (!served || !url.pathname.startsWith('/api/read/v6/')) return undefined;
+    const route = url.pathname.split('/').at(-1);
+    if (route === 'capabilities') return Response.json({ contractVersion: '1.1.0-rc.1', dataMode: 'live_read_only', chainIds: [4663, 8453, 42161], enabledReads: ['chain-balances'], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false }, { headers: readV6 });
+    const said = served.answer(route, await request.json());
+    return said ? Response.json(said.body, { status: said.status, headers: readV6 }) : Response.json({ error: 'route_not_available' }, { status: 404, headers: readV6 });
+  };
+  const server = createWalletServer({ fake, dist: V2_DIST, routes: [servedRoute, bridgeRoute, (request, url) => read.handle(request, url) ?? undefined] });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
   const origin = `http://127.0.0.1:${server.address().port}`;
   fake.origin = origin;
@@ -298,5 +309,59 @@ test('the quote under the one click: fees, the least received, gas on the destin
     await s.page.waitForFunction(() => document.querySelector('[data-funds-quote]')?.getAttribute('data-funds-decision') === 'none');
     assert.equal(await quote.locator('[data-funds-deposit-button]').count(), 0, 'no send control for a plan with no route');
     assert.deepEqual(s.bridgeCalls.filter((entry) => entry.route === 'quote').map((entry) => [entry.body.destinationGas, entry.body.slippageBps]), [[false, 50], [true, 50], [false, 200]]);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (rugged97's delta of 5 Oct, item 3: read-v6's chain-balances): Domino's service reads the balances on the
+// other networks, said under each network's button before anything is chosen; the one click then asks the quote with the
+// wallet where it is, and the wallet moves to that network only when the person presses the button that sends.
+const ARB_USDC = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
+const ARB_WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
+const arbitrumHoldings = () => createChainReads({
+  chainId: 42161,
+  tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: ARB_WETH, symbol: 'WETH', decimals: 18 }, { address: ARB_USDC, symbol: 'USDC', name: 'USD Coin', decimals: 6 }],
+  balances: { [ARB_USDC]: 100_000_000n },
+});
+
+test("the service's balances under each network; one click quotes them with the wallet where it is", async () => {
+  const reads = arbitrumHoldings();
+  const s = await openNewPosition({ bridge: true, served: reads });
+  try {
+    const offer = s.page.locator('[data-funds-offer]');
+    const holds = offer.locator('[data-funds-network-holds="42161"]');
+    await holds.waitFor({ timeout: 30_000 });
+    assert.equal((await holds.innerText()).trim(), 'You have 100 USDC (about $100.00)');
+    assert.equal(await offer.locator('[data-funds-network-holds="8453"]').count(), 0, 'Base not read by the service: nothing said, never a zero');
+    assert.deepEqual(switches(s), [], 'nothing asked of the wallet to know it');
+    await shot(s.page, 'funds-served-networks.png');
+    await offer.locator('[data-funds-network="42161"]').click();
+    await signInFromDialog(s);
+    const quote = offer.locator('[data-funds-quote]');
+    await quote.waitFor({ timeout: 30_000 });
+    assert.equal(s.bridgeCalls.filter((c) => c.route === 'quote').length, 1, "the quote for Arbitrum One's 100 USDC (the stub holds its body to the fixture's)");
+    assert.deepEqual(switches(s), [], 'the wallet stays on Robinhood Chain for the quote');
+    assert.ok(reads.calls.filter((c) => c.route === 'chain-balances').length >= 2, 'read when the offer opened, and again for the choice');
+    assert.deepEqual(reads.calls[0].request.tokens.map((t) => t.chainId), [8453, 8453, 8453, 42161, 42161, 42161], "Base's and Arbitrum One's ETH, WETH and USDC, never the destination's");
+    await shot(s.page, 'funds-served-balances.png');
+  } finally { await s.close(); }
+});
+
+test('the send moves the wallet to that network once; what the run says stays on screen with its quote', async () => {
+  const s = await openNewPosition({ bridge: true, switching: true, served: arbitrumHoldings() });
+  try {
+    const offer = s.page.locator('[data-funds-offer]');
+    await offer.locator('[data-funds-network-holds="42161"]').waitFor({ timeout: 30_000 });
+    await offer.locator('[data-funds-network="42161"]').click();
+    await signInFromDialog(s);
+    const quote = offer.locator('[data-funds-quote]');
+    await quote.waitFor({ timeout: 30_000 });
+    assert.deepEqual(switches(s), []);
+    await quote.locator('[data-funds-deposit-button]').first().click();
+    // The test wallet holds nothing there, so the review on Arbitrum One stops: nothing is sent.
+    const notice = offer.locator('[data-funds-run-notice]');
+    await notice.waitFor({ timeout: 30_000 });
+    assert.deepEqual(switches(s), ['0xa4b1'], 'moved to Arbitrum One once, by the send');
+    assert.equal(await quote.isVisible(), true, 'the quote stays, its session having moved with the wallet');
+    assert.equal(await offer.locator('[data-funds-pick]').count(), 0, 'no pick left waiting');
   } finally { await s.close(); }
 });

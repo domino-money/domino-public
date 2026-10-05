@@ -164,7 +164,8 @@ test('the owner\'s decisions, one named constant each', () => {
   assert.equal(constants.HOOKED_COPY, "Pools with hooks aren't supported yet.", 'decision #6');
   // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation").
   assert.equal(constants.SUCCESSOR_BLOCKED_COPY, "Your automation holds this position. Withdraw it from your automation on your main position's page first.");
-  assert.equal(constants.USD_SHOWN, false, 'decision #22');
+  // Changed on purpose 2026-10-06 (rugged97's item 4: read-v6 1.1.0-rc.1's qualified USD, by decision #22's rules).
+  assert.equal(constants.USD_SHOWN, true, 'decision #22, with its qualified sources');
   assert.equal(constants.CHANGE_RANGE_BURNS_WHEN_ALL, true);
   assert.equal(constants.EXIT_BURNS, false);
   assert.equal(copy.COPY.custody.zapApproved, 'Domino can manage this position for you when you ask.');

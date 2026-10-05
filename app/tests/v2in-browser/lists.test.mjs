@@ -46,7 +46,8 @@ const TOKENS = { [FIXTURE_TOKEN.toLowerCase()]: { symbol: 'TOKEN', decimals: 6 }
 const STUB_KEY = { currency0: zeroAddress, currency1: FIXTURE_TOKEN.toLowerCase(), fee: 3000, tickSpacing: 60, hooks: zeroAddress };
 const onChain = (tokenId) => ({ tokenId, holder: OWNER, key: STUB_KEY, tickLower: -60, tickUpper: 60, liquidity: 2n ** 100n, unclaimed: [633825300114n, 0n] });
 const LIVE = { originOpen: true, backendOn: true, contracts: { 4663: contractsFor(4663), 8453: contractsFor(8453), 42161: contractsFor(42161) } };
-const CONTRACT = '1.0.0-rc.1';
+// Changed on purpose 2026-10-06: read-v6 1.1.0-rc.1 (#363, qualified USD); the route answers its version.
+const CONTRACT = '1.1.0-rc.1';
 /** The read Worker's capabilities while its reads are on (bridge/src/worker.mjs; src/v2/routes.ts reads it). */
 const CAPABILITIES = { contractVersion: CONTRACT, dataMode: 'live_read_only', chainIds: [4663, 8453, 42161], enabledReads: ['portfolio', 'activity'], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false };
 

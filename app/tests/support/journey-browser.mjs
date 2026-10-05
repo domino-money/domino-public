@@ -7,7 +7,9 @@
  *   - `contracts` + `backendOn` make a chain `live` on the fake chain's own contracts (else the chain is `preview`, on the
  *     fixture manifests, and runs to the review only);
  *   - `s1.plan`: the plan answered by a node planner through an exposed function (src/v2in/journey/source.ts reads it in
- *     test builds, standing in for the plan route).
+ *     test builds, standing in for the plan route);
+ *   - `read6` (2026-10-06): read-v6's chain reads (`chainReads`, ./chain-reads.mjs) answered the same way, for the routes
+ *     it serves (src/v2in/dataSource.ts: a script serves the chain reads it scripts, and only those).
  *
  * Every request to any host but the page's own is refused and recorded (`foreign`), every CSP violation recorded (`csp`),
  * every page error recorded (`errors`); `close()` asserts all three are empty. No network.
@@ -25,7 +27,7 @@ export const WALLET_NAME = 'Journey Wallet';
  * `{ status, body }`, or undefined). `intercept(method, params)`: a reply that replaces the chain's for one request.
  * `originOpen` false leaves the gate closed (today's journey exactly).
  */
-export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false } = {}) {
+export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null } = {}) {
   const fake = createFakeSession();
   const server = createWalletServer({ fake, dist, routes });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
@@ -46,11 +48,15 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
     return planner(request);
   });
   await context.exposeFunction('__dominoJourneyCsp', (text) => csp.push(text));
+  // read-v6's chain reads (2026-10-06): `chainReads.answer(route, request)`, for the three routes, when a suite hands one in.
+  const chainRoutes = chainReads ? ['chain-pools', 'chain-balances', 'chain-tokens'] : [];
+  if (chainReads) await context.exposeFunction('__dominoChainRead', (route, request) => chainReads.answer(route, request) ?? null);
   const sets = Object.fromEntries(live.map((id) => [id, contracts[id]]));
   // `zapOnRobinhood` (2026-10-05): the zap path's screens on Robinhood Chain, which the owner's journey keeps out of every
   // deployable build (src/v2in/journey/NewPositionV2.tsx).
-  await context.addInitScript(({ sets, liveOn, originOpen, name, zapOnRobinhood }) => {
-    window.__dominoV2Test = { originOpen, ...(liveOn ? { contracts: sets, backendOn: true } : {}), s1: { plan: (request) => window.__dominoJourneyPlan(request) }, journey: { zapOnRobinhood } };
+  await context.addInitScript(({ sets, liveOn, originOpen, name, zapOnRobinhood, chainRoutes }) => {
+    const read6 = chainRoutes.length ? { read6: Object.fromEntries(chainRoutes.map((route) => [route, (request) => window.__dominoChainRead(route, request).then((said) => said ?? undefined)])) } : {};
+    window.__dominoV2Test = { originOpen, ...(liveOn ? { contracts: sets, backendOn: true } : {}), s1: { plan: (request) => window.__dominoJourneyPlan(request) }, journey: { zapOnRobinhood }, ...read6 };
     document.addEventListener('securitypolicyviolation', (event) => window.__dominoJourneyCsp(`${event.violatedDirective} ${event.blockedURI}`));
     const provider = {
       async request({ method, params }) {
@@ -65,7 +71,7 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
     const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail }));
     window.addEventListener('eip6963:requestProvider', announce);
     announce();
-  }, { sets, liveOn: live.length > 0, originOpen, name: WALLET_NAME, zapOnRobinhood });
+  }, { sets, liveOn: live.length > 0, originOpen, name: WALLET_NAME, zapOnRobinhood, chainRoutes });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   const s = {

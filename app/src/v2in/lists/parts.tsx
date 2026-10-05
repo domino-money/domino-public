@@ -1,3 +1,4 @@
+import { formatUsdFloor } from '../../lib/format/usd'
 import type { ReactNode } from 'react'
 import { Figure } from '../../components/positions/Figure'
 import { QuietMarkPair } from '../../components/positions/visual/QuietMarks'
@@ -112,12 +113,26 @@ function RowStatus({ row }: { row: PositionRowView }) {
   )
 }
 
-/** Value or Fees ready to collect: the two token amounts (there is no USD), or a dash saying why. */
-function Amounts({ amounts, which, label, unread }: { amounts: readonly [AmountShown, AmountShown] | null; which: 'principal' | 'fees'; label: string; unread: string | null }) {
+/**
+ * Value or Fees ready to collect: the two token amounts, or a dash saying why. Changed on purpose 2026-10-06 (read-v6
+ * 1.1.0-rc.1's qualified USD): with a USD figure, V1's row (components/positions/PositionRow.tsx Money): the figure, its
+ * two amounts under it.
+ */
+function Amounts({ amounts, which, label, unread, usd }: { amounts: readonly [AmountShown, AmountShown] | null; which: 'principal' | 'fees'; label: string; unread: string | null; usd: string | null }) {
   return (
     <span className="dm-own-cell" data-cell={which}>
       <span className="dm-own-label">{label}</span>
-      {amounts ? (
+      {amounts && usd !== null ? (
+        <>
+          <span className="dm-own-fig dm-arrive" data-usd={which}>
+            {formatUsdFloor(usd)}
+          </span>
+          <span className="dm-own-split">
+            <AmountText amount={amounts[0]} />
+            <AmountText amount={amounts[1]} />
+          </span>
+        </>
+      ) : amounts ? (
         <span className="dm-own-amounts">
           <AmountText amount={amounts[0]} />
           <AmountText amount={amounts[1]} />
@@ -192,8 +207,8 @@ export function V2PositionRow({ row }: { row: PositionRowView }) {
           </span>
         </span>
         <span className="dm-own-figs">
-          <Amounts amounts={row.value} which="principal" label="Value" unread={row.unread} />
-          <Amounts amounts={row.fees} which="fees" label="Fees ready to collect" unread={row.unread} />
+          <Amounts amounts={row.value} which="principal" label="Value" unread={row.unread} usd={row.valueUsd} />
+          <Amounts amounts={row.fees} which="fees" label="Fees ready to collect" unread={row.unread} usd={row.feesUsd} />
         </span>
         <span className="dm-own-chev">
           <IconChevronRight size={16} />

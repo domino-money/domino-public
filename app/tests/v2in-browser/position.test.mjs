@@ -21,7 +21,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -449,4 +449,26 @@ test('V2 protection uses the same read-v6 snapshot on Base, preserves stale pric
       assert.ok(!walletCalls.includes('eth_signTypedData_v4'), 'no signature without a live gate and explicit consent');
     } finally { await s.close(); }
   }
+});
+
+// Added 2026-10-06 (rugged97's delta of 5 Oct, item 4: read-v6 1.1.0-rc.1's qualified USD): with its tokens priced, the
+// page shows what the position holds and its fees in dollars, as V1's page does, the token amounts under each figure;
+// still no APR. Base's ETH at the fixtures' Chainlink round, its USDC at 1.
+test('(b3) live on Base with qualified prices: what it holds and its fees in dollars, the token amounts under them, still no APR', async () => {
+  const pools = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/valid/chain-pools.json', import.meta.url), 'utf8'));
+  const priced = (token, symbol) => ({ ...token, price: pools.tokens.find((one) => one.symbol === symbol).price, priceReason: null });
+  const portfolio = portfolioOf({ wallet: OWNER, tokens: [priced(TOKENS[0], 'ETH'), priced(TOKENS[1], 'USDC')], positions: [live(5_100_001, { approved: ZAP_V4 })] });
+  const s = await openPositionPage(browser, chainOf(), { hash: '#/positions/base-v4-5100001', read6: { ...READ6, portfolio } });
+  try {
+    const detail = s.page.locator('[data-position-detail][data-position-v2="base-v4"][data-position-id="5100001"]');
+    await detail.waitFor({ timeout: 30_000 });
+    const holds = detail.locator('[data-cell="principal"]');
+    await holds.locator('[data-usd="principal"]').waitFor({ timeout: 30_000 });
+    assert.match(await text(holds.locator('[data-usd="principal"]')), /^\$[\d,]+(\.\d{2})?$/, 'what it holds, in dollars');
+    assert.match(await text(holds.locator('[data-stat="principal"]')), /ETH.*USDC/, 'its token amounts under the figure');
+    // 0.001 ETH at $4,000.12 and 2.5 USDC at $1: $6.50.
+    assert.equal(await text(detail.locator('[data-cell="fees"] [data-usd="fees"]')), '$6.50');
+    assert.match(await text(detail.locator('[data-cell="fees"] [data-stat="fees"]')), /0\.001\s+ETH.*2\.5\s+USDC/);
+    assert.equal(await detail.locator('[data-cell="apr"] [data-figure="none"]').count(), 1, 'still no APR');
+  } finally { await s.close(); }
 });

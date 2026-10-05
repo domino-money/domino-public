@@ -9,12 +9,19 @@
 import { v2Chain } from '../../v2/chains'
 import { formatUnitsText, shortAddress } from '../../v2/plan/present'
 import { ZERO_ADDRESS, type Address, type V2ChainId } from '../../v2/types'
+import { usdOfRaw } from '../usd'
 import { COPY } from './copy'
 
 export interface PositionToken {
   address: Address
   symbol: string | null
   decimals: number | null
+  /**
+   * Added 2026-10-06 (rugged97's delta of 5 Oct, item 4: read-v6 1.1.0-rc.1's qualified USD): its USD price per whole
+   * token as read-v6 gave it (18 decimals; the stable at 1, ETH and WETH at Chainlink's ETH/USD, any other token at its
+   * deepest qualified pool), while the page shows USD (./constants.ts USD_SHOWN); null or absent: none.
+   */
+  usd?: string | null
 }
 
 export type TokenBook = ReadonlyMap<string, PositionToken>
@@ -36,12 +43,27 @@ export function tokenBook(chainId: V2ChainId, extra: readonly PositionToken[] = 
   for (const token of extra) {
     const address = token.address.toLowerCase() as Address
     const known = book.get(address)
-    if (!known || (known.decimals === null && token.decimals !== null)) book.set(address, { address, symbol: cleanSymbol(token.symbol), decimals: token.decimals })
+    if (!known || (known.decimals === null && token.decimals !== null)) book.set(address, { address, symbol: cleanSymbol(token.symbol), decimals: token.decimals, usd: token.usd ?? known?.usd ?? null })
   }
-  book.set(ZERO_ADDRESS, { address: ZERO_ADDRESS, symbol: 'ETH', decimals: 18 })
-  book.set(chain.wrappedNative.address, { address: chain.wrappedNative.address, symbol: 'WETH', decimals: 18 })
-  for (const currency of chain.chargeCurrencies) book.set(currency.address, { address: currency.address, symbol: currency.symbol, decimals: currency.decimals })
+  // The profile's names win; a price read for them is kept (2026-10-06).
+  const priced = (address: string) => book.get(address)?.usd ?? null
+  book.set(ZERO_ADDRESS, { address: ZERO_ADDRESS, symbol: 'ETH', decimals: 18, usd: priced(ZERO_ADDRESS) })
+  book.set(chain.wrappedNative.address, { address: chain.wrappedNative.address, symbol: 'WETH', decimals: 18, usd: priced(chain.wrappedNative.address) })
+  for (const currency of chain.chargeCurrencies) book.set(currency.address, { address: currency.address, symbol: currency.symbol, decimals: currency.decimals, usd: priced(currency.address) })
   return book
+}
+
+/**
+ * Added 2026-10-06 (rugged97's delta of 5 Oct, item 4): what raw amounts of a pool's two tokens are worth at the prices
+ * read-v6 gave, each term rounded down, as a decimal string; null when an amount above zero has no price or no decimals
+ * (then no figure at all, never a zero), or when there are no amounts.
+ */
+export function usdOfAmounts(book: TokenBook, tokens: readonly [Address, Address], amounts: readonly [bigint, bigint] | null): string | null {
+  if (!amounts) return null
+  return usdOfRaw(tokens.map((token, index) => {
+    const known = book.get(token.toLowerCase())
+    return { raw: amounts[index], decimals: known?.decimals ?? null, usd: known?.usd ?? null }
+  }))
 }
 
 /** A token's label: its symbol, else its short address. */

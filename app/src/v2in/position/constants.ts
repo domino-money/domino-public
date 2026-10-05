@@ -37,8 +37,13 @@ export const HOOKED_COPY = "Pools with hooks aren't supported yet."
 /** [#9] No public RPC: lists and history from read-v6; the wallet's own provider only right before a signature or a send. */
 export const PUBLIC_RPC = false
 
-/** [#22] No USD, APR or TVL on a V2 position: no qualified source is wired for these reads. */
-export const USD_SHOWN = false
+/**
+ * [#22] No USD, APR or TVL on a V2 position: no qualified source is wired for these reads.
+ * Changed on purpose 2026-10-06 (rugged97's delta of 5 Oct, item 4: read-v6 1.1.0-rc.1's qualified USD, by the owner's
+ * rules of decision #22): what a position holds and its fees are valued at the prices read-v6 gives its tokens, when every
+ * token held above zero has one and the position's read is fresh; otherwise no figure, never a zero. Still no APR or TVL.
+ */
+export const USD_SHOWN = true
 
 /**
  * App choice: an exit through the zap that takes everything out keeps the NFT (burn = false), as V1's Close position

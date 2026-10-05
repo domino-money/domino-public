@@ -216,6 +216,7 @@ export function StageToken({
               onPoint={warmPoolHints}
               home={others?.home}
               others={others?.tokens}
+              othersSearch={others?.search}
               onOther={others ? fromNetwork : undefined}
             />
           ) : (

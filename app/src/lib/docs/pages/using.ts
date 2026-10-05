@@ -192,7 +192,8 @@ export const BRING_FUNDS: DocPage = {
       blocks: [
         p('When your wallet can’t fund the Amount step, even with a swap, an offer to bring funds appears automatically.'),
         // Changed on purpose 2026-10-05 (the owner: "it has to happen behind the scenes"): one choice, the rest done for you.
-        p('Pick the network to bring it from: Robinhood Chain, Base or Arbitrum One. Domino does the rest: you sign in once, your wallet moves there, and Domino reads your balance and picks the token and the amount. Nothing is sent until you confirm.'),
+        // 2026-10-06: balances read by Domino; the wallet moves only to send.
+        p('Each network shows what you hold there. Pick the one to bring it from: Robinhood Chain, Base or Arbitrum One. Domino does the rest: you sign in once, and Domino picks the token and the amount. Nothing is sent until you confirm.'),
       ],
     },
     {
@@ -249,7 +250,8 @@ export const POSITIONS: DocPage = {
         // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the positions read from Domino's new contracts
         // on the three networks are listed too (src/v2in/lists), each with its network.
         p('Connect your wallet and Positions lists the positions it created with Domino, on any of its networks, read from the chain: there is no ID to type. ', b('Open'), ' positions hold liquidity; ', b('Closed'), ' ones hold none. Position NFTs made elsewhere are not listed.'),
-        p('Each row shows the pair, its network, whether the price is in range, what it holds and its fees ready to collect, in tokens. A Domino V1 position shows dollars instead, and ', b('Your APR'), ' since it opened, or “on its page”.'),
+        // 2026-10-06: dollars on V2 rows too (read-v6's qualified USD).
+        p('Each row shows the pair, its network, whether the price is in range, what it holds and its fees ready to collect, in dollars when priced, else in tokens. Domino V1 rows add ', b('Your APR'), ' since opening, or “on its page”.'),
         p('Open rows also say how their fees are used, or offer Automate. Select a row to open its page. A Domino V1 deposit that never became a position is listed too, with its refund.'),
       ],
     },

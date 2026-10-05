@@ -33,6 +33,11 @@ export const JOURNEY = {
     connectFor: (chain: string) => `Connect your wallet to see the pools on ${chain}.`,
     /** Its S1 gate closed while the page was open. */
     networkClosed: (chain: string) => `New positions on ${chain} aren’t open right now.`,
+    /**
+     * Added 2026-10-06: a search hit on Base or Arbitrum One whose symbol is one of the network's own currencies' but whose
+     * address is not (./model/chainReads.ts lookalikeOf): listed with this line, never chosen. Today's search says the same.
+     */
+    lookalike: (main: string) => `Not the ${main} Domino uses`,
     connectFirst: 'Connect a wallet to read a pool on this network.',
     change: 'Change pool',
     readAt: (block: string) => `Read at block ${block}`,

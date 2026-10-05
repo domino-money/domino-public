@@ -7,7 +7,9 @@ import { isV2ChainId, v2Chain } from '../../v2/chains'
 import { formatUnitsText, groupDigits, shortAddress } from '../../v2/plan/present'
 import { coverageNote } from '../../v2/read/v6'
 import { ZERO_ADDRESS, type Address, type V2ChainId } from '../../v2/types'
+import { USD_SHOWN } from '../position/constants'
 import { v2PositionHref } from '../route'
+import { rawAmounts, usdOfRaw } from '../usd'
 
 /**
  * What the Positions screen's two lists take from read-v6 (spec F7 rev4 §6.2, §6.3, §2.11; the integration brief's data
@@ -54,6 +56,8 @@ export interface TokenName {
   /** True when `label` is a symbol, false when it is the short address. */
   symbol: boolean
   decimals: number | null
+  /** Added 2026-10-06: its USD price per whole token as read-v6 gave it (18 decimals), while V2 shows USD; null: none. */
+  usd: string | null
 }
 
 /**
@@ -65,13 +69,15 @@ export function tokenNamer(tokens: readonly IndexedToken[]): (chainId: V2ChainId
   return (chainId, address) => {
     const token = address.toLowerCase() as Address
     const chain = v2Chain(chainId)
-    if (token === ZERO_ADDRESS) return { chainId, address: token, label: chain.nativeSymbol, symbol: true, decimals: 18 }
-    const charge = chain.chargeCurrencies.find((c) => c.address === token)
-    if (charge) return { chainId, address: token, label: charge.symbol, symbol: true, decimals: charge.decimals }
-    if (chain.wrappedNative.address === token) return { chainId, address: token, label: chain.wrappedNative.symbol, symbol: true, decimals: chain.wrappedNative.decimals }
     const read = tokens.find((t) => t.chainId === chainId && t.address.toLowerCase() === token)
+    // Changed on purpose 2026-10-06 (read-v6 1.1.0-rc.1's qualified USD): its price, whichever names it.
+    const usd = USD_SHOWN && read?.price ? read.price.usd : null
+    if (token === ZERO_ADDRESS) return { chainId, address: token, label: chain.nativeSymbol, symbol: true, decimals: 18, usd }
+    const charge = chain.chargeCurrencies.find((c) => c.address === token)
+    if (charge) return { chainId, address: token, label: charge.symbol, symbol: true, decimals: charge.decimals, usd }
+    if (chain.wrappedNative.address === token) return { chainId, address: token, label: chain.wrappedNative.symbol, symbol: true, decimals: chain.wrappedNative.decimals, usd }
     const symbol = read ? cleanSymbol(read.symbol) : null
-    return { chainId, address: token, label: symbol ?? shortAddress(token), symbol: symbol !== null, decimals: read ? read.decimals : null }
+    return { chainId, address: token, label: symbol ?? shortAddress(token), symbol: symbol !== null, decimals: read ? read.decimals : null, usd }
   }
 }
 
@@ -201,6 +207,12 @@ export interface PositionRowView {
   unread: string | null
   value: readonly [AmountShown, AmountShown] | null
   fees: readonly [AmountShown, AmountShown] | null
+  /**
+   * Added 2026-10-06 (read-v6 1.1.0-rc.1's qualified USD): the value and the fees in USD (decimal strings), from a fresh
+   * read whose every token held above zero has a price; null otherwise (the amounts alone, as before; never a zero).
+   */
+  valueUsd: string | null
+  feesUsd: string | null
   /** The stale badge's age ("updated 6 min ago"): the chain's when it is behind, else the position's own read's. */
   stale: string | null
   vault: VaultBadge | null
@@ -254,6 +266,8 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
       unread: state.status === 'unavailable' ? UNREADABLE : NOT_READ,
       value: null,
       fees: null,
+      valueUsd: null,
+      feesUsd: null,
       stale: chainStale ?? own,
       hooked: false,
     }
@@ -261,6 +275,11 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
   const tokens = [name(chainId, state.pool.currency0), name(chainId, state.pool.currency1)] as const
   const liquidity = BigInt(state.liquidity)
   const pair = (values: readonly string[]) => (values.length === 2 ? ([amountShown(values[0], tokens[0]), amountShown(values[1], tokens[1])] as const) : null)
+  const fresh = state.freshness.status === 'fresh' && chainStale === null
+  const usdOf = (values: readonly string[]) => {
+    const raws = fresh && values.length === 2 ? rawAmounts(values) : null
+    return raws ? usdOfRaw(raws.map((raw, index) => ({ raw, decimals: tokens[index].decimals, usd: tokens[index].usd }))) : null
+  }
   return {
     ...base,
     status: 'live',
@@ -271,6 +290,8 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
     unread: null,
     value: pair(state.principalAtSpot),
     fees: pair(state.feesOwed),
+    valueUsd: usdOf(state.principalAtSpot),
+    feesUsd: usdOf(state.feesOwed),
     stale: chainStale ?? (state.freshness.status === 'stale' ? `updated ${agoWords(state.freshness.ageSeconds)}` : null),
     hooked: state.pool.dex === 4 && state.pool.hooks.toLowerCase() !== ZERO_ADDRESS,
   }

@@ -9,8 +9,9 @@
  * The request helpers are copied on purpose from the rejected #/v2 section (src/v2ui/s2/model.ts, reference only),
  * unchanged in what they decide.
  */
+import type { ChainBalancesResponse } from 'api-contracts/read-v6/types'
 import type { DepositPlan } from '../../lib/create/depositPlan'
-import type { Holding } from '../../finance/v2/holdings'
+import { CANDIDATE_ORIGINS, type Holding, type HoldingsReport, type OriginCandidate } from '../../finance/v2/holdings'
 import { maxSpend } from '../../lib/create/reviewPlan'
 import { amountText, formatUnitsExact, knownDecimals } from '../../v2/crosschain/amounts'
 import type { CrosschainFailure } from '../../v2/crosschain/client'
@@ -363,3 +364,43 @@ export function convertUnits(raw: bigint, from: number, to: number): bigint {
 
 /** A need with 1% more for the bridge's own fees (0.35% Domino's, the provider's), rounded up (pure). */
 export const withMargin = (raw: bigint): bigint => (raw * 101n + 99n) / 100n
+
+/**
+ * Added 2026-10-06 (rugged97's delta of 5 Oct, item 3: read-v6's chain-balances): the tokens to ask Domino's service about
+ * for the offer, every source network's ETH, WETH and stable (finance/v2/holdings.ts CANDIDATE_ORIGINS), never the
+ * destination's, in that order.
+ */
+export function balancesRequest(destination: number, sources: readonly number[]): { chainId: number; address: string }[] {
+  return CANDIDATE_ORIGINS.filter((candidate) => sources.includes(candidate.chainId) && candidate.chainId !== destination).flatMap((candidate) =>
+    candidate.tokens.map((token) => ({ chainId: candidate.chainId, address: token.address.toLowerCase() })),
+  )
+}
+
+/**
+ * One network's holdings from a chain-balances answer, as the wallet's own read gives them (finance/v2/holdings.ts
+ * readHoldingsReport): the candidate's own symbols and decimals, never the answer's text; only what is above zero; the
+ * symbols whose balance could not be read in `unread`, never as a zero. Null when the answer did not read that network
+ * (the wallet's own read is the way then).
+ */
+export function holdingsFromChainBalances(answer: ChainBalancesResponse, candidate: OriginCandidate): HoldingsReport | null {
+  const chain = answer.chains.find((entry) => entry.chainId === candidate.chainId)
+  if (!chain || chain.status !== 'current') return null
+  const holdings: Holding[] = []
+  const unread: string[] = []
+  for (const token of candidate.tokens) {
+    const read = chain.balances.find((entry) => entry.address.toLowerCase() === token.address.toLowerCase())
+    if (!read || read.status !== 'read' || read.balanceRaw === null || !/^\d+$/.test(read.balanceRaw)) {
+      unread.push(token.symbol)
+      continue
+    }
+    const raw = BigInt(read.balanceRaw)
+    if (raw > 0n) holdings.push({ chainId: candidate.chainId, chainName: candidate.name, token: token.address.toLowerCase(), symbol: token.symbol, decimals: token.decimals, raw })
+  }
+  return { holdings, unread }
+}
+
+/** A network's total in USD from a chain-balances answer, when the service could value every balance there; else null. */
+export function totalUsdOn(answer: ChainBalancesResponse, chainId: number): string | null {
+  const chain = answer.chains.find((entry) => entry.chainId === chainId)
+  return chain && chain.status === 'current' ? chain.totalUsd : null
+}
