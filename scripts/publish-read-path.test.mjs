@@ -49,10 +49,29 @@ test('V4 snapshot publication requires its separate explicit opt-in', () => {
 
 test('reviewed V4 rollback disables the Worker before removing the tunnel path', () => {
   const workflow=readFileSync(new URL('../.github/workflows/read-path-release.yml',import.meta.url),'utf8')
-  assert.match(workflow,/options: \[inspect, app, bridge, publish, disable-sequence-snapshot\]/)
+  assert.match(workflow,/options: \[inspect, app, bridge, publish, disable-sequence-snapshot, tunnels-v6, worker-v6, disable-v6\]/)
   const worker=workflow.indexOf('run: node scripts/publish-read-path.mjs worker-disable-v4')
   const tunnel=workflow.indexOf('run: node scripts/publish-read-path.mjs tunnels-disable-v4')
   assert.ok(worker>0 && tunnel>worker)
+})
+
+// 2026-10-05: read-v6 through the reviewed workflow too, with the repository's stored token: each operation runs its
+// own script operation and nothing else, and its rollback disables the Worker before removing the tunnel path.
+test('the workflow opens and closes read-v6 by its own operations only, the Worker before the tunnel on rollback', () => {
+  const workflow=readFileSync(new URL('../.github/workflows/read-path-release.yml',import.meta.url),'utf8')
+  for (const [operation, scripts] of [['tunnels-v6', ['tunnels-v6']], ['worker-v6', ['worker-v6']],
+    ['disable-v6', ['worker-disable-v6', 'tunnels-disable-v6']]]) {
+    const steps=workflow.split('      - ').filter(step => step.includes(`if: inputs.operation == '${operation}'`))
+    assert.deepEqual(steps.map(step => step.match(/run: node scripts\/publish-read-path\.mjs (\S+)/)[1]), scripts, operation)
+    for (const step of steps) assert.match(step, /CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/)
+  }
+  const worker=workflow.indexOf('run: node scripts/publish-read-path.mjs worker-disable-v6')
+  const tunnel=workflow.indexOf('run: node scripts/publish-read-path.mjs tunnels-disable-v6')
+  assert.ok(worker>0 && tunnel>worker)
+  // No other operation runs a read-v6 step.
+  for (const step of workflow.split('      - ').filter(step => /publish-read-path\.mjs \S*v6/.test(step))) {
+    assert.match(step, /if: inputs\.operation == '(tunnels-v6|worker-v6|disable-v6)'/)
+  }
 })
 
 // 2026-09-26, featured-pools v1 §10.3-§10.5: read-v5 is opened by its own

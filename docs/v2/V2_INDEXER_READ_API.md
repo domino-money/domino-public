@@ -110,6 +110,10 @@ Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Co
   - **The file:** the operator copies `/etc/domino/v2/chain-rpc.json` into `/etc/domino/read`, owned by `domino-read`, directory 0700 and file 0600. The unit binds that directory read-only at `/run/domino-read-config`, because the file's loader refuses one inside a release tree, where the reader's runtime directory is, and `/etc/domino` is root's alone.
   - **Order:** the activation refuses `--chain-reads` until the file is there. A missing directory leaves the reader up, with its chain reads unavailable.
   - The reader reaches the hosted endpoints once the egress is collected with `--v2-chains` (`read` is one of the `CHAIN_ROLES`).
+  - **Publishing:** the tunnel path and the read Worker go through the reviewed workflow (*Publish read path*, `operation`
+    `tunnels-v6`, `worker-v6`, rollback `disable-v6`, dispatched on a `main` commit), with the repository's stored
+    Cloudflare token. `worker-v6` deploys the Worker with that commit's read-v6 package, so dispatch it from the commit
+    whose contract the reader serves.
   - A fault in that configuration leaves the three routes answering `upstream_unavailable` and the read path up.
 
 ### What the app consumes (F7 spec)
