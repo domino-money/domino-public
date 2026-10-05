@@ -177,11 +177,13 @@ class VaultReader:
         v = record.vault
         names = ('owner', 'pool', 'root', 'positions', 'policy', 'limits', 'paused', 'rootArmed', 'stateNonce')
         items = [(v, function(VAULT, name), ()) for name in names]
-        items += [(v, function(LEDGER, 'lastExecutionAt'), ()),
+        items += [(v, function(LEDGER, 'lastExecutionAt'), ()), (v, function(LEDGER, 'quoteCurrency'), ()),
                   (self.deployment.registry, function(REGISTRY, 'automationHalted'), ())]
         (owner,), (pool,), (root,), (members,), (policy,), (limits,), (paused,), (armed,), (nonce,), (last,), \
-            (halted,) = calls(self.rpc, block, items)
+            (quote,), (halted,) = calls(self.rpc, block, items)
         pool = pool_ref(pool)
+        if address(quote) not in (pool.currency0, pool.currency1):
+            raise DataError('v2_vault_state_invalid')
         if root[0] != record.dex or pool.dex != record.dex or len(members) > MAX_MEMBERS:
             raise DataError('v2_vault_state_invalid')
         ledger = []
@@ -222,7 +224,7 @@ class VaultReader:
             chain_id=self.chain.chainId, vault=v, owner=address(owner), root_token_id=root[2], members=tuple(states),
             policy=Policy(*policy), limits=Limits(*limits), pool=planner_pool, state_nonce=nonce,
             last_execution_at=last, paused=paused, root_armed=armed, halted=halted, swap_available=True,
-            block_number=block.number, block_timestamp=block.timestamp)
+            block_number=block.number, block_timestamp=block.timestamp, inverse=address(quote) == pool.currency0)
 
     def reserves(self, vault, block):
         """reserves(token) of both pool tokens (IDominoVault): idle plus every

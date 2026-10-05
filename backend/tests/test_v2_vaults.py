@@ -342,7 +342,7 @@ class ClosedRootTests(unittest.TestCase):
             return type('State', (), {'pool': self.ref, 'sqrt_price_x96': 2**96, 'liquidity': 10**18,
                                       'swap_fee_pips': lambda self, zero_for_one: 3000})()
 
-    def reader(self, dex, error, *, members=(7,), gone=(7,)):
+    def reader(self, dex, error, *, members=(7,), gone=(7,), quote=USDC):
         deployment = checked_deployment(manifest_document(), BASE)
         fake = FakeChain(8453)
         manager = BASE.uniswap.v3.positionManager if dex == 3 else BASE.uniswap.v4.positionManager
@@ -355,6 +355,7 @@ class ClosedRootTests(unittest.TestCase):
         fake.on(self.VAULT, function('IDominoVault', 'reserves'),
                 lambda token: (1000 if token == pool[1] else 3,))
         fake.on(self.VAULT, function('IDominoVaultLedger', 'lastExecutionAt'), lambda: (0,))
+        fake.on(self.VAULT, function('IDominoVaultLedger', 'quoteCurrency'), lambda: (quote,))
         fake.on(self.VAULT, function('IDominoVaultLedger', 'member'),
                 lambda token_id: ((True, 0, 0, -600, 600) if token_id == self.ROOT_ID
                                   else (True, self.ROOT_ID, 0, 600, 4200),))
@@ -363,6 +364,16 @@ class ClosedRootTests(unittest.TestCase):
         reader = VaultReader(BASE, deployment, client(fake), self.Positions(error, pool, gone=gone),
                              proven={(self.VAULT, dex)})
         return reader, VaultRecord(self.VAULT, self.OWNER, self.ROOT_ID, dex, 1)
+
+    def test_the_quote_currency_sets_the_orientation_and_must_be_the_pools(self):
+        # USDC sorts above WETH and native ETH: the quote is currency1, prices read upright.
+        reader, record = self.reader(4, 'v2_position_not_found')
+        self.assertFalse(reader.read(record, BLOCK).inverse)
+        reader, record = self.reader(4, 'v2_position_not_found', quote=ZERO)
+        self.assertTrue(reader.read(record, BLOCK).inverse)
+        reader, record = self.reader(4, 'v2_position_not_found', quote='0x' + 'cd' * 20)
+        with self.assertRaisesRegex(DataError, '^v2_vault_state_invalid$'):
+            reader.read(record, BLOCK)
 
     def test_a_burned_root_reads_as_closed_on_both_dexes(self):
         for dex, error in ((4, 'v2_position_not_found'), (3, 'rpc_call_reverted')):

@@ -27,7 +27,9 @@ from v2_observation import PublisherPolicy
 from v2_plan import return_reserves_calldata, return_subject
 from v2_planner import PlannerConfig
 from test_v2_manifest import manifest_document
-from test_v2_planner import member, vault_state
+from test_v2_planner import RICH, member, vault_state
+from test_v2_planner_domino import domino_vault
+from v2_domino import full_range
 
 OPERATOR, PUBLISHER = '0x' + '04' * 20, '0x' + '05' * 20
 
@@ -319,6 +321,42 @@ class ReturnTests(unittest.TestCase):
         entry, _ = self.returned(self.Executor(self.PAID), vault_gas_ceiling_wei=4 * 10**13,
                                  vault_gas_ceilings_wei={'0x' + 'aa' * 20: 5 * 10**13})
         self.assertEqual((entry['act'], entry['reason']), (True, 'reserves_returnable'))
+
+
+class MintPassTests(unittest.TestCase):
+    """The pass's MINT of a Domino vault's successor (ChainAutomation._compound): the owner gate's evidence is the
+    pool's fee growth over the whole price range, read once, and the report names the action and the range."""
+
+    def test_a_domino_vault_near_its_ceiling_asks_the_whole_range_and_reports_its_mint(self):
+        vault = domino_vault()  # root [-6000, 6000), the anchor at tick 5800 (spacing 60)
+        base = profile('base-8453')
+        service = ChainAutomation(chain=base, deployment=checked_deployment(manifest_document(), base),
+                                  endpoints=None, follower=None, planner=PlannerConfig(),
+                                  observations=PublisherPolicy(), price_references=(), earnings_window_seconds=600,
+                                  twap_seconds=600, exit_twap_seconds=600, deadline_seconds=120, executor=None)
+        service._pass = {'references': None, 'growth': {}, 'min_twap': None}
+        asked = []
+
+        def range_growth(state, rpc, history, block, lower, upper):
+            asked.append((lower, upper))
+            return RICH
+
+        class Reader:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def read(self, record, block):
+                return vault
+        block = parse_block({'number': '0x64', 'hash': '0x' + 'ab' * 32, 'timestamp': hex(vault.block_timestamp)})
+        head = type('Head', (), {'block': block, 'base_fee_per_gas': 1})()
+        record = type('Record', (), {'vault': vault.vault, 'dex': 4})()
+        with patch.object(automation, 'VaultReader', Reader), \
+                patch.object(service, '_range_growth', side_effect=range_growth):
+            result = service._compound(record, head, None, None, None, None)
+        self.assertEqual(asked, [full_range(60)])
+        self.assertEqual((result['act'], result['reason'], result['action'], result['successor']),
+                         (True, 'eligible_keyless', 'mint', [5760, 10080]))
+        self.assertEqual(result['considered'][f'{vault.root_token_id}:all'], 'awaiting_successor')
 
 
 if __name__ == '__main__':

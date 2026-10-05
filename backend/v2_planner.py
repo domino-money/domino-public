@@ -38,12 +38,28 @@ Among the candidates that pass both (direct, or a balancing swap of the whole
 or half of the excess), the one with the greatest net owner outcome wins
 ("Prefer the greatest net productive reinvestment"); there is no fixed idle
 reserve.
+
+Domino-compound (mode 2) vaults also MINT successors, with the vault's own
+geometry and routing (v2_domino) and the owner's decisions of 5 Oct 2026:
+- the newest member (no successor, the greatest token id) mints its successor
+  once the anchor is within the trigger distance of its ceiling, or past it;
+  older members left without one do not;
+- the successor's floor is the anchor's aligned tick cell, so it holds the
+  price when minted; without overlap reaching that cell there is none;
+- near its ceiling a member's fees serve its successor only, as in V1: a MINT,
+  or a compound of the existing successor (rule 2). When the MINT does not
+  pass the gates, or the vault holds maxPositions members, they wait; the
+  member never compounds itself there.
+A MINT's owner gate values the new liquidity at the pool's fee rate over the
+whole price range (the successor holds the price), against the vault's own
+in-range liquidity.
 """
 from dataclasses import dataclass, replace
 from fractions import Fraction
 
 from discovery import DataError
-from v2_plan import ACTION_COMPOUND, U128, Budget, PlanV1, Swap, pool_leg
+import v2_domino as domino
+from v2_plan import ACTION_COMPOUND, ACTION_MINT, U128, Budget, PlanV1, Swap, pool_leg
 from v2_uniswap import PoolRef
 from v4_math import MAX_SQRT, MIN_SQRT, Q96, Q128, amount_delta, sqrt_at_tick, swap_step
 
@@ -54,6 +70,8 @@ MODE_SIMPLE, MODE_DOMINO = 1, 2
 TARIFF_BPS = {MODE_SIMPLE: 200, MODE_DOMINO: 400}
 # DominoV2VaultExecutor.SWAP_LEFTOVER_DIVISOR.
 SWAP_LEFTOVER_DIVISOR = 100
+# v2_vaults.MAX_MEMBERS: the reader refuses a vault with more members, so no MINT grows one past it.
+MAX_SEQUENCE = 64
 
 
 def mul_div(a, b, d):
@@ -277,6 +295,8 @@ class VaultState:
     swap_available: bool  # the implementation has a swap module
     block_number: int
     block_timestamp: int
+    # IDominoVaultLedger.quoteCurrency() is currency0: prices are read upside down (v2_domino).
+    inverse: bool = False
 
     def member(self, token_id):
         return next(m for m in self.members if m.token_id == token_id)
@@ -363,6 +383,9 @@ class PlannerConfig:
     # Nitro chains (Robinhood, Arbitrum) add the L1 component in gas units: tune per chain.
     gas_units_compound: int = 450_000
     gas_units_swap: int = 170_000
+    # A MINT before presimulation: F3's cold mint/compound ratio (689,918 / 501,099,
+    # F3_VAULT.md) applied to the measured compound, plus 15%. Presimulation measures it.
+    gas_units_mint: int = 650_000
     # The platform's margin (owner decision, 2 Oct: "we must earn fees too"): the
     # tariff covers the gas by this much (the approved 15%), and by at least this
     # much in absolute native wei, so no execution loses money for the platform.
@@ -379,7 +402,7 @@ class PlannerConfig:
         if (not 1 <= self.deadline_seconds <= 3600 or self.liquidity_slack_bps >= BPS
                 or self.swap_quote_slippage_bps >= BPS or self.swap_margin_bps >= BPS
                 or self.forecast_haircut_bps >= BPS or self.owner_horizon_seconds > 30 * 86400
-                or self.gas_units_compound == 0 or self.twap_drift_bps >= BPS):
+                or self.gas_units_compound == 0 or self.gas_units_mint == 0 or self.twap_drift_bps >= BPS):
             raise DataError('v2_invalid_planner_config')
 
 
@@ -404,7 +427,8 @@ class Economics:
 
 @dataclass(frozen=True)
 class Candidate:
-    """One way to compound now: what it spends, adds and costs."""
+    """One way to execute now, a COMPOUND of `target` or a MINT of its successor at (tick_lower, tick_upper): what it
+    spends, adds and costs."""
     target: int
     sources: tuple
     budgets: tuple
@@ -417,6 +441,9 @@ class Candidate:
     leftover: tuple  # net capacity left in the budgets, per token
     anchor_sqrt_price: int
     label: str
+    action: int = ACTION_COMPOUND
+    tick_lower: int = 0
+    tick_upper: int = 0
 
     @property
     def has_swap(self):
@@ -436,10 +463,10 @@ class Decision:
         if not self.act:
             raise DataError('v2_nothing_to_execute')
         c = self.candidate
-        return PlanV1(action=ACTION_COMPOUND, state_nonce=vault.state_nonce, deadline=deadline, target=c.target,
+        return PlanV1(action=c.action, state_nonce=vault.state_nonce, deadline=deadline, target=c.target,
                       amount0_max=U128, amount1_max=U128, min_liquidity=c.min_liquidity,
                       collect=tuple(sorted(c.sources)), budgets=c.budgets, anchor_evidence=anchor_evidence,
-                      swap=c.swap)
+                      swap=c.swap, tick_lower=c.tick_lower, tick_upper=c.tick_upper)
 
 
 # ---------------------------------------------------------------- rules
@@ -473,17 +500,29 @@ def preconditions(vault, now):
 
 
 def funding(vault, target, anchor):
-    """The sources the vault's routing admits for a COMPOUND of `target`: its
-    own fees (rule 1) and, in Domino mode, members the anchor has left when
-    the target is in range (rule 3). A member the price is in funds nothing
-    else here; a successor's funding from a parent near its ceiling and the
-    MINT of successors are left to a later slice."""
+    """The sources the vault's routing admits for a COMPOUND of `target`
+    (v2_domino.routable): its own fees (rule 1) and, in Domino mode, its parent
+    once the anchor is near the parent's ceiling (rule 2) and members the
+    anchor has left when the target is in range (rule 3)."""
     sources = [target.token_id]
-    if vault.policy.mode == MODE_DOMINO and in_range(target, anchor):
-        # Collecting the root needs it armed; a disarmed root funds nothing.
-        sources += [m.token_id for m in vault.members if m.token_id != target.token_id and not in_range(m, anchor)
-                    and (m.token_id != vault.root_token_id or vault.root_armed)]
+    if vault.policy.mode == MODE_DOMINO:
+        sources += [m.token_id for m in vault.members if m.token_id != target.token_id and _collectable(vault, m)
+                    and domino.routable(m, target, mint=False, target=target.token_id, anchor=anchor,
+                                        trigger_bps=vault.policy.trigger_distance_bps, inverse=vault.inverse)]
     return tuple(sorted(sources))
+
+
+def mint_funding(vault, parent, successor, anchor):
+    """The sources of a MINT of `parent`'s successor: the parent near its
+    ceiling, and members the anchor has left (the successor holds the anchor)."""
+    return tuple(sorted(m.token_id for m in vault.members if _collectable(vault, m)
+                        and domino.routable(m, successor, mint=True, target=parent.token_id, anchor=anchor,
+                                            trigger_bps=vault.policy.trigger_distance_bps, inverse=vault.inverse)))
+
+
+def _collectable(vault, member):
+    """Collecting the root needs it armed; a disarmed root funds nothing."""
+    return member.token_id != vault.root_token_id or vault.root_armed
 
 
 def _ledger(vault, sources, bps):
@@ -586,23 +625,29 @@ def _swap_source(ledger, sources, index, amount):
     return best if ledger[(best, index)].capacity() >= amount else None
 
 
-def build_candidate(vault, target, anchor, config, *, swap_fraction_bps=0, quoter=None):
-    """A COMPOUND of `target` with a balancing swap of swap_fraction_bps of the
-    excess (0: direct), simulated with the vault's own spending rules. The
-    swap's size comes from the vault pool's own curve (the add's ratio depends
-    on that pool's price); its output and leg come from the quoter (the seam)."""
+def build_candidate(vault, target, anchor, config, *, swap_fraction_bps=0, quoter=None, mint=None):
+    """A COMPOUND of `target`, or with `mint` (tick_lower, tick_upper, sources)
+    a MINT of its successor at that range funded by those members, with a
+    balancing swap of swap_fraction_bps of the excess (0: direct), simulated
+    with the vault's own spending rules. The swap's size comes from the vault
+    pool's own curve (the add's ratio depends on that pool's price); its output
+    and leg come from the quoter (the seam)."""
     bps = TARIFF_BPS[vault.policy.mode]
-    sources = funding(vault, target, anchor)
+    if mint is None:
+        destination, sources, action, prefix = target, funding(vault, target, anchor), ACTION_COMPOUND, ''
+    else:
+        destination = MemberState(0, mint[0], mint[1], 0, (0, 0), ((0, 0), (0, 0)), parent=target.token_id)
+        sources, action, prefix = tuple(sorted(mint[2])), ACTION_MINT, 'mint_'
     ledger = _ledger(vault, sources, bps)
     caps = {key: entry.cap for key, entry in ledger.items()}
     cap0, cap1 = _capacity(ledger, sources, 0), _capacity(ledger, sources, 1)
     pool = vault.pool
     price, swap, out_expected = pool.sqrt_price_x96, Swap(), 0
-    label = 'direct'
+    label = 'mint' if mint is not None else 'direct'
     if swap_fraction_bps:
         if not vault.swap_available:
             return None, 'swap_unavailable'
-        balancing = _balancing_swap(vault, target, cap0, cap1, config)
+        balancing = _balancing_swap(vault, destination, cap0, cap1, config)
         if balancing is None:
             return None, 'nothing_to_balance'
         zero_for_one, amount = balancing[0], balancing[1] * swap_fraction_bps // BPS
@@ -640,15 +685,15 @@ def build_candidate(vault, target, anchor, config, *, swap_fraction_bps=0, quote
                                              else (pool.pool.currency1, pool.pool.currency0)):
             return None, 'quote_leg_mismatch'
         swap = Swap(source, zero_for_one, amount, minimum, (leg,))
-        label = f'swap_{swap_fraction_bps}'
+        label = f'{prefix}swap_{swap_fraction_bps}'
     if any(cap > U128 for cap in caps.values()):
         return None, 'budget_overflow'
     budgets = tuple(Budget(s, caps[(s, 0)], caps[(s, 1)]) for s in sources)
     cap0, cap1 = _capacity(ledger, sources, 0), _capacity(ledger, sources, 1)
-    liquidity = _liquidity_at(price, target, cap0, cap1)
+    liquidity = _liquidity_at(price, destination, cap0, cap1)
     if liquidity == 0:
         return None, 'nothing_to_add'
-    need0, need1 = amounts_for_liquidity(price, target.tick_lower, target.tick_upper, liquidity, True)
+    need0, need1 = amounts_for_liquidity(price, destination.tick_lower, destination.tick_upper, liquidity, True)
     for index, need in ((0, need0), (1, need1)):
         for s in sources:
             need -= ledger[(s, index)].spend(need)
@@ -662,7 +707,8 @@ def build_candidate(vault, target, anchor, config, *, swap_fraction_bps=0, quote
     leftover = (_capacity(ledger, sources, 0), _capacity(ledger, sources, 1))
     min_liquidity = max(1, liquidity * (BPS - config.liquidity_slack_bps) // BPS)
     return Candidate(target.token_id, sources, budgets, swap, out_expected, liquidity, min_liquidity,
-                     (need0, need1), tariff, leftover, anchor, label), None
+                     (need0, need1), tariff, leftover, anchor, label, action, destination.tick_lower if mint else 0,
+                     destination.tick_upper if mint else 0), None
 
 
 def incremental_earnings(candidate, target, pool_liquidity, growth, horizon_seconds):
@@ -682,10 +728,30 @@ def incremental_earnings(candidate, target, pool_liquidity, growth, horizon_seco
     return (rate0 * share * horizon_seconds / Q128, rate1 * share * horizon_seconds / Q128)
 
 
+def mint_earnings(candidate, vault, growth, horizon_seconds):
+    """Fees a new successor's liquidity earns over the horizon, per token, at
+    the pool's per-unit rate r over the whole price range (the successor holds
+    the anchor): r × ΔL × (A − O) / (A + ΔL), where A is the pool's active
+    liquidity and O the vault's own liquidity the anchor is in, both at the
+    planning block: what the vault gains, its own share of the flow included.
+    A successor is never read on its own ticks: uninitialized, they say nothing."""
+    added = candidate.liquidity
+    own = sum(m.liquidity for m in vault.members if in_range(m, candidate.anchor_sqrt_price))
+    active = max(vault.pool.liquidity, own)
+    if added == 0 or active == own:
+        return Fraction(0), Fraction(0)
+    share = Fraction(added * (active - own), active + added)
+    rate0, rate1 = growth.rate()
+    return (rate0 * share * horizon_seconds / Q128, rate1 * share * horizon_seconds / Q128)
+
+
 def economics(vault, candidate, prices, gas, config, *, growth=None, gas_units=None):
-    """Both gates for one candidate. gas_units: measured by presimulation, else the prior."""
+    """Both gates for one candidate. gas_units: measured by presimulation, else the prior.
+    `growth`: the target's range for a COMPOUND, the whole price range for a MINT."""
+    mint = candidate.action == ACTION_MINT
     units = gas_units if gas_units is not None else (
-        config.gas_units_compound + (config.gas_units_swap if candidate.has_swap else 0))
+        (config.gas_units_mint if mint else config.gas_units_compound)
+        + (config.gas_units_swap if candidate.has_swap else 0))
     gas_wei = gas.cost(units)
     tariff_wei = prices.value(*candidate.tariff)
     swap_cost = Fraction(0)
@@ -700,8 +766,12 @@ def economics(vault, candidate, prices, gas, config, *, growth=None, gas_units=N
     earnings = None
     owner_ok = False
     if growth is not None:
-        target = vault.member(candidate.target)
-        e0, e1 = incremental_earnings(candidate, target, vault.pool.liquidity, growth, config.owner_horizon_seconds)
+        if mint:
+            e0, e1 = mint_earnings(candidate, vault, growth, config.owner_horizon_seconds)
+        else:
+            target = vault.member(candidate.target)
+            e0, e1 = incremental_earnings(candidate, target, vault.pool.liquidity, growth,
+                                          config.owner_horizon_seconds)
         earnings = prices.wei_per_unit0 * e0 + prices.wei_per_unit1 * e1
         owner_ok = (earnings * (BPS - config.forecast_haircut_bps) * BPS
                     >= (tariff_wei + swap_cost) * BPS * (BPS + config.owner_margin_bps))
@@ -709,26 +779,30 @@ def economics(vault, candidate, prices, gas, config, *, growth=None, gas_units=N
                      owner_ok and candidate.liquidity > 0)
 
 
-def decide(vault, anchor, prices, gas, config, *, growth_by_target=None, now=None, quoter=None,
+def decide(vault, anchor, prices, gas, config, *, growth_by_target=None, mint_growth=None, now=None, quoter=None,
            max_gas_cost_wei=None):
-    """Whether to compound now, and how. `anchor` is the sqrt price the vault's
+    """Whether to execute now, and how. `anchor` is the sqrt price the vault's
     anchor call will return (the signed spot on v4, the TWAP on v3);
-    growth_by_target maps a member's token id to its FeeGrowth evidence."""
+    growth_by_target maps a member's token id to its FeeGrowth evidence, and
+    mint_growth is the pool's over the whole price range, for a MINT."""
     now = vault.block_timestamp if now is None else now
     blocked = preconditions(vault, now)
     if blocked is not None:
         return Decision(False, blocked)
     growth_by_target = growth_by_target or {}
     considered, passing = [], []
-    for target in sorted(vault.members, key=lambda m: m.token_id):
-        if target.token_id == vault.root_token_id and not vault.root_armed:
-            considered.append((f'{target.token_id}:all', 'root_disarmed'))
-            continue
+    domino_mode = vault.policy.mode == MODE_DOMINO
+    trigger = vault.policy.trigger_distance_bps
+
+    def evaluate(target, mint=None, growth=None):
         direct = None
         for fraction in (0, BPS, BPS // 2):
             candidate, refusal = build_candidate(vault, target, anchor, config, swap_fraction_bps=fraction,
-                                                 quoter=quoter)
-            label = f'{target.token_id}:{"direct" if fraction == 0 else f"swap_{fraction}"}'
+                                                 quoter=quoter, mint=mint)
+            name = f'swap_{fraction}' if fraction else 'direct'
+            if mint is not None:
+                name = f'mint_swap_{fraction}' if fraction else 'mint'
+            label = f'{target.token_id}:{name}'
             if candidate is None:
                 considered.append((label, refusal))
                 continue
@@ -737,7 +811,7 @@ def decide(vault, anchor, prices, gas, config, *, growth_by_target=None, now=Non
             elif direct is not None and not _swap_worth_it(candidate, direct, prices, config):
                 considered.append((label, 'swap_too_small'))
                 continue
-            result = economics(vault, candidate, prices, gas, config, growth=growth_by_target.get(target.token_id))
+            result = economics(vault, candidate, prices, gas, config, growth=growth)
             if max_gas_cost_wei is not None and result.gas_wei > max_gas_cost_wei:
                 considered.append((label, 'vault_gas_ceiling'))
             elif not result.operator_ok:
@@ -749,15 +823,73 @@ def decide(vault, anchor, prices, gas, config, *, growth_by_target=None, now=Non
             else:
                 considered.append((label, 'eligible'))
                 passing.append((candidate, result))
+
+    for target in sorted(vault.members, key=lambda m: m.token_id):
+        if target.token_id == vault.root_token_id and not vault.root_armed:
+            considered.append((f'{target.token_id}:all', 'root_disarmed'))
+            continue
+        if domino_mode and domino.near_ceiling(target, anchor, trigger, vault.inverse):
+            # The owner's rule (5 Oct 2026, as V1): near its ceiling a member's
+            # fees serve its successor only, through a MINT or rule 2.
+            considered.append((f'{target.token_id}:all', 'awaiting_successor'))
+            continue
+        evaluate(target, growth=growth_by_target.get(target.token_id))
+    if domino_mode:
+        _mint(vault, anchor, config, considered, evaluate, mint_growth)
     if not passing:
         reasons = [reason for _, reason in considered]
-        order = ('owner_benefit_insufficient', 'gas_not_covered', 'vault_gas_ceiling', 'earnings_evidence_missing',
-                 'root_disarmed', 'nothing_to_add')
+        # A successor's own reason first: a sequence's other members are out of range by design, and their
+        # compounds' refusals would hide why its fees wait.
+        order = ('max_positions_reached', 'successor_range_unavailable', 'successor_anchor_unstable',
+                 'owner_benefit_insufficient', 'gas_not_covered', 'vault_gas_ceiling',
+                 'earnings_evidence_missing', 'awaiting_successor', 'root_disarmed', 'nothing_to_add')
         reason = next((r for r in order if r in reasons), reasons[0] if reasons else 'no_members')
         return Decision(False, reason, considered=tuple(considered))
     candidate, result = max(passing, key=lambda pair: (pair[1].net_owner_wei, pair[0].liquidity,
                                                        -pair[0].target, pair[0].label == 'direct'))
     return Decision(True, 'eligible', candidate, result, tuple(considered))
+
+
+def newest_member(vault):
+    """The member a sequence grows from: no successor, the greatest token id (managers number mints upward)."""
+    return max((m for m in vault.members if m.successor == 0), key=lambda m: m.token_id, default=None)
+
+
+def _mint(vault, anchor, config, considered, evaluate, growth):
+    """The MINT candidates of the newest member's successor, once the anchor is near its ceiling."""
+    parent = newest_member(vault)
+    policy = vault.policy
+    if parent is None or not domino.near_ceiling(parent, anchor, policy.trigger_distance_bps, vault.inverse):
+        return
+    label = f'{parent.token_id}:mint'
+    if len(vault.members) >= min(policy.max_positions, MAX_SEQUENCE):
+        considered.append((label, 'max_positions_reached'))
+        return
+    if parent.token_id == vault.root_token_id and not vault.root_armed:
+        return  # already recorded as root_disarmed
+    geometry = {'trigger_bps': policy.trigger_distance_bps, 'overlap_bps': policy.max_overlap_bps,
+                'upside_bps': vault.limits.upside_bps, 'spacing': vault.pool.pool.tick_spacing,
+                'inverse': vault.inverse}
+    found, reason = domino.successor_range(parent, anchor, **geometry)
+    if found is None:
+        considered.append((label, reason))
+        return
+    successor = MemberState(0, found[0], found[1], 0, (0, 0), ((0, 0), (0, 0)), parent=parent.token_id)
+    sources = set(mint_funding(vault, parent, successor, anchor))
+    if vault.pool.pool.dex == 3:
+        # A v3 TWAP keeps moving until inclusion, and the vault checks the geometry and each budget's route at the
+        # anchor it reads then: the geometry must hold for an anchor moved either way, and only the members still
+        # routable at both fund the MINT (the parent near its ceiling, typically; a member the price left only
+        # while the successor holds the moved anchor too).
+        moved = (anchor * (BPS + config.twap_drift_bps) // BPS, anchor * BPS // (BPS + config.twap_drift_bps))
+        if not all(domino.check_successor(parent, *found, a, **geometry) for a in moved):
+            sources = set()
+        for a in moved:
+            sources &= set(mint_funding(vault, parent, successor, a))
+        if not sources:
+            considered.append((label, 'successor_anchor_unstable'))
+            return
+    evaluate(parent, mint=(*found, tuple(sorted(sources))), growth=growth)
 
 
 def _swap_worth_it(candidate, direct, prices, config):

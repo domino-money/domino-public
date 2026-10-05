@@ -343,7 +343,8 @@ jobs:
       # test_v2_indexer_evm.py) deploy every V2 component from contracts/out.
       # Cold, these 10 contracts (53 sources) compiled in 83 s on a Mac on
       # 2 Oct 2026; a warm cache rebuilds nothing. Uniswap's runtimes come from
-      # the fixture source, OfficialV4SwapDriver and SetupToken from the builds above.
+      # the fixture source, OfficialV4SwapDriver and SetupToken from the builds above;
+      # OfficialV3SwapDriver (one source) drives the v3 pools of the Domino test.
       - name: Build the V2 contracts the backend EVM tests deploy
         working-directory: contracts
         run: >-
@@ -352,6 +353,7 @@ jobs:
           src/v2/autoexit/DominoAutoExit.sol src/v2/vault/DominoV2VaultSwapModule.sol
           src/v2/vault/DominoV2VaultV3.sol src/v2/vault/DominoV2VaultV4.sol src/v2/vault/DominoV2VaultFactory.sol
           src/v2/zap/DominoZapV3.sol src/v2/zap/DominoZapV4.sol src/v2/zap/DominoZapV4Steps.sol
+          test/reference/OfficialV3Fixture.sol
       - run: python scripts/export-read-contract.py --check
       - run: python scripts/export-read-v2-contract.py --check
       - run: python scripts/export-read-v3-contract.py --check

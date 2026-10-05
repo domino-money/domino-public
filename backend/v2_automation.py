@@ -50,8 +50,9 @@ from v2_manifest import load_deployment
 from v2_executor import CallReverted, ChainExecutor, GasPolicy, Journal, OperatorKey, OperatorRpc
 from v2_head import HeadFollower
 from v2_observation import HistoricalPrices, ObservationSigner, Publisher, PublisherPolicy
-from v2_plan import (execute_calldata, plan_hash, return_reserves_calldata, return_subject, returned_amounts,
-                     twap_evidence)
+from v2_plan import (ACTION_MINT, execute_calldata, plan_hash, return_reserves_calldata, return_subject,
+                     returned_amounts, twap_evidence)
+from v2_domino import full_range
 from v2_planner import (FeeGrowth, GasQuote, PlannerConfig, decide, preconditions, price_book, remeasured,
                         returnable)
 from v2_rpc import ChainIndexRpc, configured_endpoints, load_chain_rpc_config
@@ -401,21 +402,27 @@ class ChainAutomation:
         ceiling = self.gas_ceilings.get(record.vault, self.gas_ceiling)
         quoter = self.quoter_factory(vault, rpc, block) if self.quoter_factory else None
 
-        def plan(growth):
-            return decide(vault, anchor, prices, gas, self.planner, growth_by_target=growth, quoter=quoter,
-                          max_gas_cost_wei=ceiling)
+        def plan(growth, mint_growth=None):
+            return decide(vault, anchor, prices, gas, self.planner, growth_by_target=growth, mint_growth=mint_growth,
+                          quoter=quoter, max_gas_cost_wei=ceiling)
         # The owner gate's evidence costs history reads: only for members whose
-        # candidates already clear everything else.
+        # candidates already clear everything else, and the whole price range
+        # once for a successor's MINT.
         decision = plan({})
-        waiting = {int(label.split(':')[0]) for label, reason in decision.considered
-                   if reason == 'earnings_evidence_missing'}
+        missing = [label for label, reason in decision.considered if reason == 'earnings_evidence_missing']
+        waiting = {int(label.split(':')[0]) for label in missing if not label.split(':')[1].startswith('mint')}
         growth = self._growth(vault, rpc, history, block, waiting) if waiting else {}
-        if growth:
-            decision = plan(growth)
+        mint_growth = None
+        if any(label.split(':')[1].startswith('mint') for label in missing):
+            mint_growth = self._range_growth(vault, rpc, history, block, *full_range(vault.pool.pool.tick_spacing))
+        if growth or mint_growth is not None:
+            decision = plan(growth, mint_growth)
         result = {'act': decision.act, 'reason': decision.reason, 'considered': dict(decision.considered),
                   'stateNonce': vault.state_nonce}
         if not decision.act:
             return result
+        if decision.candidate.action == ACTION_MINT:
+            result.update(action='mint', successor=[decision.candidate.tick_lower, decision.candidate.tick_upper])
         if self.executor is None:
             return {**result, 'reason': 'eligible_keyless', 'target': decision.candidate.target,
                     'label': decision.candidate.label}
@@ -433,7 +440,8 @@ class ChainAutomation:
         gas_limit, estimate = self.executor.presimulate(record.vault, calldata, block)
         gas = GasQuote(gas.fee_per_gas, l1_fee(self.chain, rpc, len(calldata) // 2 - 1, block))
         checked = remeasured(decision, vault, prices, gas, self.planner, estimate,
-                             growth=growth.get(decision.candidate.target), max_gas_cost_wei=ceiling)
+                             growth=(mint_growth if decision.candidate.action == ACTION_MINT
+                                     else growth.get(decision.candidate.target)), max_gas_cost_wei=ceiling)
         economics = checked.economics
         result.update(act=checked.act, reason=checked.reason, target=checked.candidate.target,
                       label=checked.candidate.label, gasEstimate=estimate, simulation='passed',
@@ -482,7 +490,17 @@ class ChainAutomation:
     def _growth(self, vault, rpc, history, block, targets):
         """Fee growth evidence for `targets` (member token ids) over the
         configured window; one reading per pool and range per pass."""
-        evidence, cache = {}, self._pass['growth']
+        evidence = {}
+        for member in vault.members:
+            if member.token_id in targets:
+                found = self._range_growth(vault, rpc, history, block, member.tick_lower, member.tick_upper)
+                if found is not None:
+                    evidence[member.token_id] = found
+        return evidence
+
+    def _range_growth(self, vault, rpc, history, block, tick_lower, tick_upper):
+        """The pool's fee growth inside one range over the window, or None."""
+        cache = self._pass['growth']
         if 'start' not in cache:
             try:
                 cache['start'] = earlier_block(history, block, self.window, self.chain.block_time)
@@ -490,23 +508,16 @@ class ChainAutomation:
                 cache['start'] = None
         start = cache['start']
         if start is None:
-            return evidence
-        for member in vault.members:
-            if member.token_id not in targets:
-                continue
-            key = (vault.pool.pool, member.tick_lower, member.tick_upper)
-            if key not in cache:
-                try:
-                    begin = fee_growth_inside(self.chain, history, vault.pool.pool, member.tick_lower,
-                                              member.tick_upper, start)
-                    end = fee_growth_inside(self.chain, rpc, vault.pool.pool, member.tick_lower, member.tick_upper,
-                                            block)
-                    cache[key] = FeeGrowth(begin[0], begin[1], start.timestamp, end[0], end[1], block.timestamp)
-                except DataError:
-                    cache[key] = None
-            if cache[key] is not None:
-                evidence[member.token_id] = cache[key]
-        return evidence
+            return None
+        key = (vault.pool.pool, tick_lower, tick_upper)
+        if key not in cache:
+            try:
+                begin = fee_growth_inside(self.chain, history, vault.pool.pool, tick_lower, tick_upper, start)
+                end = fee_growth_inside(self.chain, rpc, vault.pool.pool, tick_lower, tick_upper, block)
+                cache[key] = FeeGrowth(begin[0], begin[1], start.timestamp, end[0], end[1], block.timestamp)
+            except DataError:
+                cache[key] = None
+        return cache[key]
 
     # --------------------------------------------------------------- exits
     def _exits(self, head, rpc, uniswap, publisher):

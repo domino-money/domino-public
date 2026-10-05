@@ -603,6 +603,8 @@ class RevertCodeTests(unittest.TestCase):
         self.assertEqual(revert_code(selector('TooSoon()')), 'reverted_too_soon')
         self.assertEqual(revert_code(selector('RootOpen()')), 'reverted_root_open')
         self.assertEqual(revert_code(selector('SuccessorActive()')), 'reverted_successor_active')
+        # A successor's range beyond the tick range (TickMath.InvalidTick), at the MINT.
+        self.assertEqual(revert_code(selector('InvalidTick(int24)') + '00' * 32), 'reverted_invalid_tick')
         self.assertEqual(revert_code(selector('InsufficientLiquidity(uint128,uint128)') + '00' * 64),
                          'reverted_insufficient_liquidity')
         self.assertEqual(revert_code('0x08c379a0' + '00' * 96), 'reverted_error_string')

@@ -38,7 +38,7 @@ from v2_observation import ObservationSigner, PriceObservation, PublisherPolicy,
 from v2_planner import PlannerConfig
 from v2_rpc import ChainEndpoints, Endpoint
 from v2_uniswap import PoolRef
-from v4_math import sqrt_at_tick
+from v4_math import sqrt_at_tick, tick_at_sqrt
 from v2_local_chain import LocalChain, calldata, deploy_v2
 
 KEY_TYPE = '(address,address,uint24,int24,address)'
@@ -93,47 +93,67 @@ class AutomationEvmTests(unittest.TestCase):
 
     # ------------------------------------------------------------ helpers
     @classmethod
-    def fund_tokens(cls, holder, amount):
+    def fund_tokens(cls, holder, amount, token=None):
         local = cls.local
-        local.send(cls.deployer, cls.token, calldata('mint(address,uint256)', ['address', 'uint256'], [holder, amount]))
+        local.send(cls.deployer, token or cls.token,
+                   calldata('mint(address,uint256)', ['address', 'uint256'], [holder, amount]))
         local.send(cls.deployer, cls.weth, calldata('deposit()'), value=amount)
         local.send(cls.deployer, cls.weth, calldata('transfer(address,uint256)', ['address', 'uint256'], [holder, amount]))
 
     @classmethod
-    def position(cls, owner, liquidity):
+    def position(cls, owner, liquidity, key=None, token=None):
         """A [-600, 600) position minted to `owner` by a controller it deploys; returns the token id."""
         local = cls.local
         impersonate = owner == cls.owner
         controller = local.deploy(owner, 'OfficialV4Fixture.sol', 'OfficialV4Controller', ['address', 'address'],
                                   [cls.v4.poolManager, cls.v4.positionManager], impersonate=impersonate)
-        cls.fund_tokens(controller, 10**21)
+        cls.fund_tokens(controller, 10**21, token)
         token_id, = local.call(cls.v4.positionManager, 'nextTokenId()', ['uint256'])
         local.send(owner, controller, calldata('seed(' + KEY_TYPE + ',uint128)', [KEY_TYPE, 'uint128'],
-                                               [cls.key, liquidity]), impersonate=impersonate)
+                                               [key or cls.key, liquidity]), impersonate=impersonate)
         owner_of, = local.call(cls.v4.positionManager, 'ownerOf(uint256)', ['address'], ['uint256'], [token_id])
         assert owner_of.lower() == owner
         return token_id
 
-    def vault(self, token_id, *, interval=600, paused=False):
-        """The owner's vault on `token_id`, approved first as F3 prescribes."""
-        local, factory = self.local, self.deployment.factory(4)
+    def vault(self, token_id, *, interval=600, paused=False, policy=None, limits=(100, 100, 300, 1000), dex=4):
+        """The owner's vault on `token_id`, approved first as F3 prescribes (Auto-compound unless `policy`)."""
+        local, factory = self.local, self.deployment.factory(dex)
+        manager = self.v4.positionManager if dex == 4 else self.chain.uniswap.v3.positionManager
         nonce, = local.call(factory, 'nextNonce(address)', ['uint256'], ['address'], [self.owner])
         predicted, = local.call(factory, 'predictVault(address,uint256)', ['address'], ['address', 'uint256'],
                                 [self.owner, nonce])
-        local.send(self.owner, self.v4.positionManager, calldata('approve(address,uint256)', ['address', 'uint256'],
-                                                                  [predicted, token_id]), impersonate=True)
-        init = ((4, self.v4.positionManager, token_id), (1, 500, 2000, interval, 1), (100, 100, 300, 1000), paused, True)
+        local.send(self.owner, manager, calldata('approve(address,uint256)', ['address', 'uint256'],
+                                                 [predicted, token_id]), impersonate=True)
+        init = ((dex, manager, token_id), policy or (1, 500, 2000, interval, 1), limits, paused, True)
         local.send(self.owner, factory, calldata('createVault(' + INIT_TYPE + ',uint256)', [INIT_TYPE, 'uint256'],
                                                  [init, nonce]), impersonate=True)
         return predicted.lower()
 
-    def swaps(self, rounds, amount=5 * 10**17, seconds=3):
+    def swaps(self, rounds, amount=5 * 10**17, seconds=3, key=None):
         for _ in range(rounds):
             for direction in (True, False):
                 self.local.send(self.deployer, self.driver, calldata('swap(' + KEY_TYPE + ',bool,uint256)',
                                                                      [KEY_TYPE, 'bool', 'uint256'],
-                                                                     [self.key, direction, amount]))
+                                                                     [key or self.key, direction, amount]))
             self.local.mine(1, seconds)
+
+    def slot0(self, pool):
+        return self.local.call(self.v4.stateView, 'getSlot0(bytes32)', ['uint160', 'int24', 'uint24', 'uint24'],
+                               ['bytes32'], [bytes.fromhex(pool.pool_id[2:])])
+
+    def move_to(self, key, pool, tick):
+        """One swap that brings the pool to about `tick`, every position staying in range (constant liquidity)."""
+        price = self.slot0(pool)[0]
+        active, = self.local.call(self.v4.stateView, 'getLiquidity(bytes32)', ['uint128'], ['bytes32'],
+                                  [bytes.fromhex(pool.pool_id[2:])])
+        target = sqrt_at_tick(tick)
+        up = target > price
+        # token1 in raises the sqrt price by amount / L; token0 in lowers it to L / (L / price + amount).
+        amount = active * (target - price) // 2**96 if up else active * 2**96 // target - active * 2**96 // price
+        amount = amount * 10_010 // 10_000  # the pool's fee comes out of the input
+        self.local.send(self.deployer, self.driver, calldata('swap(' + KEY_TYPE + ',bool,uint256)',
+                                                             [KEY_TYPE, 'bool', 'uint256'], [key, not up, amount]))
+        return self.slot0(pool)[1]
 
     def chain_time(self):
         return int(self.local.head()['timestamp'], 16)
@@ -260,6 +280,250 @@ class AutomationEvmTests(unittest.TestCase):
         again = next(v for v in self.service().run_once(act=False)['vaults'] if v['vault'] == vault)
         self.assertEqual((again['act'], again['reason']), (False, 'too_soon'))
         self.local.send(self.owner, vault, calldata('pause()'), impersonate=True)
+
+    def test_a_domino_vault_mints_its_successor_near_the_ceiling_then_its_parent_feeds_it(self):
+        # The quote is WETH, the fixture's charge currency. The class token sorts above WETH, so the quote is
+        # currency0 and prices read upside down; the same token's code below WETH makes it currency1.
+        low = '0x1000000000000000000000000000000000000001'
+        self.local.request('anvil_setCode', [low, self.local.request('eth_getCode', [self.token, 'latest'])])
+        for token, inverse in ((self.token, True), (low, False)):
+            with self.subTest(inverse=inverse):
+                self.domino_sequence(token, inverse)
+
+    def domino_sequence(self, token, expected_inverse):
+        # A pool no other test moves (fee 0.05%, spacing 10), with someone else's liquidity.
+        currencies = sorted([self.weth, token])
+        key = (currencies[0], currencies[1], 500, 10, ZERO)
+        pool = PoolRef(4, *key)
+        self.local.send(self.deployer, self.v4.poolManager,
+                        calldata('initialize(' + KEY_TYPE + ',uint160)', [KEY_TYPE, 'uint160'], [key, 2**96]))
+        self.fund_tokens(self.driver, 10**21, token)
+        self.position(self.lp, 4 * 10**20, key, token)
+        root = self.position(self.owner, 10**20, key, token)
+        # Domino-compound: trigger 5%, overlap 20%, interval 600 s, at most 3 positions; upside 10%.
+        vault = self.vault(root, policy=(2, 500, 2000, 600, 3), limits=(100, 100, 300, 1000))
+        quote, = self.local.call(vault, 'quoteCurrency()', ['address'])
+        inverse = quote.lower() == pool.currency0
+        self.assertEqual(inverse, expected_inverse)
+        self.swaps(30, key=key)
+        # Near the root's ceiling: its upper tick, or its lower one when the quote is currency0.
+        tick = self.move_to(key, pool, -450 if inverse else 450)
+        self.assertTrue((-600 < tick <= -88) if inverse else (88 <= tick < 600), tick)
+        self.local.mine(35, 2)  # the publisher's look-back sees the price held
+
+        service = self.service()
+        report = service.run_once()
+        entry = next(v for v in report['vaults'] if v['vault'] == vault)
+        self.assertTrue(entry['act'], entry)
+        self.assertEqual(entry['action'], 'mint', entry)
+        self.assertEqual(entry['considered'][f'{root}:all'], 'awaiting_successor')
+        lower, upper = entry['successor']
+        anchor = sqrt_at_tick(tick)
+        cell = (tick // 10) * 10
+        self.assertEqual((upper, lower < upper) if inverse else (lower, lower < upper),
+                         (cell + 10, True) if inverse else (cell, True))
+        self.assertTrue(sqrt_at_tick(lower) <= self.slot0(pool)[0] < sqrt_at_tick(upper))
+        self.assertEqual(report['submitted']['kind'], 'compound', report)
+        self.local.mine(1, 1)
+        service.run_once()
+        intent = service.executor.journal.intent(report['submitted']['intent'])
+        self.assertEqual(intent['state'], 'confirmed', intent)
+        effect = json.loads(intent['effect'])
+        created, = self.logs(effect, 'IDominoVault', 'SuccessorCreated', vault)
+        child = created['tokenId']
+        self.assertEqual(created['parentTokenId'], root)
+        compounded, = self.logs(effect, 'IDominoVault', 'Compounded', vault)
+        self.assertEqual(compounded['tokenId'], child)
+        self.assertGreater(compounded['liquidityAdded'], 0)
+        self.assertEqual(self.liquidity(child), compounded['liquidityAdded'])
+        members, = self.local.call(vault, 'positions()', ['uint256[]'])
+        self.assertEqual(list(members), [root, child])
+        member, = self.local.call(vault, 'member(uint256)', ['(bool,uint96,uint96,int24,int24)'], ['uint256'], [child])
+        self.assertEqual(tuple(member), (True, root, 0, lower, upper))
+        parent, = self.local.call(vault, 'member(uint256)', ['(bool,uint96,uint96,int24,int24)'], ['uint256'], [root])
+        self.assertEqual(parent[2], child)
+        owner_of, = self.local.call(self.v4.positionManager, 'ownerOf(uint256)', ['address'], ['uint256'], [child])
+        self.assertEqual(owner_of.lower(), vault)
+        # Domino-compound's 4% of what the parent's fees paid in, to the registry's recipient.
+        fees = self.logs(effect, 'IDominoFeeEvents', 'FeeCharged', vault)
+        self.assertTrue(fees and all(f['kind'] == 2 for f in fees), fees)  # FEE_KIND_AUTOMATION
+        print(f'\nMINT on Base v4 bytecode: {effect["gasUsed"]} gas used, estimate {entry.get("gasEstimate")}',
+              file=sys.stderr)
+
+        # Rule 2: past the interval, the root, still near its ceiling, feeds its successor, never itself. The
+        # fees are made well inside both ranges: equal swaps each way still drift the tick about one per round.
+        inside = cell - 40 if inverse else cell + 50
+        self.local.mine(1, 600)
+        self.move_to(key, pool, inside)
+        self.swaps(30, key=key)
+        self.move_to(key, pool, inside)
+        self.local.mine(35, 2)
+        report = service.run_once()
+        entry = next(v for v in report['vaults'] if v['vault'] == vault)
+        self.assertTrue(entry['act'], entry)
+        self.assertNotEqual(entry.get('action'), 'mint', entry)
+        self.assertEqual(entry['target'], child, entry)
+        self.assertEqual(entry['considered'][f'{root}:all'], 'awaiting_successor')
+        self.local.mine(1, 1)
+        service.run_once()
+        intent = service.executor.journal.intent(report['submitted']['intent'])
+        self.assertEqual(intent['state'], 'confirmed', intent)
+        effect = json.loads(intent['effect'])
+        compounded, = self.logs(effect, 'IDominoVault', 'Compounded', vault)
+        self.assertEqual(compounded['tokenId'], child)
+        collected = {log['tokenId'] for log in self.logs(effect, 'IDominoVaultLedger', 'FeesCollected', vault)}
+        self.assertEqual(collected, {root, child})
+        self.local.send(self.owner, vault, calldata('pause()'), impersonate=True)
+
+    def test_on_v3_a_domino_vault_mints_its_successor_on_the_twap_then_its_parent_feeds_it(self):
+        # v3: the anchor is the pool's TWAP over the vault's window (300 s here), read through the price anchor,
+        # and the vault mints and holds the successor as a v3 position manager NFT. SetupToken has the
+        # transferFrom v3's manager pulls with; its code on each side of WETH (the quote) gives both orientations.
+        token = self.local.deploy(self.deployer, 'DominoSetup.t.sol', 'SetupToken')
+        code = self.local.request('eth_getCode', [token, 'latest'])
+        driver = self.local.deploy(self.deployer, 'OfficialV3Fixture.sol', 'OfficialV3SwapDriver')
+        for address in ('0x1000000000000000000000000000000000000002', '0xf000000000000000000000000000000000000002'):
+            self.local.request('anvil_setCode', [address, code])
+            with self.subTest(inverse=self.weth < address):
+                self.domino_sequence_v3(address, driver)
+
+    def domino_sequence_v3(self, token, driver):
+        local, v3 = self.local, self.chain.uniswap.v3
+        # A fresh 0.05% pool (spacing 10) at price 1, its oracle long enough for the window, with someone else's
+        # liquidity.
+        c0, c1 = sorted([self.weth, token])
+        local.send(self.deployer, v3.positionManager, calldata(
+            'createAndInitializePoolIfNecessary(address,address,uint24,uint160)',
+            ['address', 'address', 'uint24', 'uint160'], [c0, c1, 500, 2**96]))
+        address, = local.call(v3.factory, 'getPool(address,address,uint24)', ['address'],
+                              ['address', 'address', 'uint24'], [c0, c1, 500])
+        address = address.lower()
+        local.send(self.deployer, address, calldata('increaseObservationCardinalityNext(uint16)', ['uint16'], [250]))
+        pool = PoolRef(3, c0, c1, 500, 10)
+        for holder in (self.deployer, driver):
+            self.fund_tokens(holder, 10**21, token)
+        for currency in (c0, c1):
+            local.send(self.deployer, currency, calldata('approve(address,uint256)', ['address', 'uint256'],
+                                                         [v3.positionManager, 2**256 - 1]))
+        self.v3_position(self.lp, pool, 12 * 10**18)
+        root = self.v3_position(self.owner, pool, 3 * 10**18)
+        # Domino-compound: trigger 5%, overlap 20%, interval 600 s, at most 3 positions; upside 10%.
+        vault = self.vault(root, policy=(2, 500, 2000, 600, 3), limits=(100, 100, 300, 1000), dex=3)
+        quote, = local.call(vault, 'quoteCurrency()', ['address'])
+        inverse = quote.lower() == c0
+        self.assertEqual(inverse, self.weth == c0)
+        # Near the root's ceiling, long enough for the window to read it, trading both ways (the fees).
+        self.hold_v3(driver, address, -450 if inverse else 450)
+        anchor = self.twap_sqrt(pool)
+        tick = tick_at_sqrt(anchor)
+        self.assertTrue((-600 < tick <= -88) if inverse else (88 <= tick < 600), tick)
+
+        service = self.service()
+        report = service.run_once()
+        entry = next(v for v in report['vaults'] if v['vault'] == vault)
+        self.assertTrue(entry['act'], entry)
+        self.assertEqual(entry['action'], 'mint', entry)
+        self.assertEqual(entry['considered'][f'{root}:all'], 'awaiting_successor')
+        lower, upper = entry['successor']
+        # The owner's floor is the TWAP's cell, not the spot's.
+        cell = (tick // 10) * 10
+        self.assertEqual(upper if inverse else lower, cell + 10 if inverse else cell)
+        self.assertTrue(sqrt_at_tick(lower) <= anchor < sqrt_at_tick(upper))
+        self.assertEqual(report['submitted']['kind'], 'compound', report)
+        self.local.mine(1, 1)
+        service.run_once()
+        intent = service.executor.journal.intent(report['submitted']['intent'])
+        self.assertEqual(intent['state'], 'confirmed', intent)
+        effect = json.loads(intent['effect'])
+        created, = self.logs(effect, 'IDominoVault', 'SuccessorCreated', vault)
+        child = created['tokenId']
+        self.assertEqual(created['parentTokenId'], root)
+        compounded, = self.logs(effect, 'IDominoVault', 'Compounded', vault)
+        self.assertEqual(compounded['tokenId'], child)
+        self.assertGreater(compounded['liquidityAdded'], 0)
+        self.assertEqual(self.v3_liquidity(child), compounded['liquidityAdded'])
+        members, = local.call(vault, 'positions()', ['uint256[]'])
+        self.assertEqual(list(members), [root, child])
+        member, = local.call(vault, 'member(uint256)', ['(bool,uint96,uint96,int24,int24)'], ['uint256'], [child])
+        self.assertEqual(tuple(member), (True, root, 0, lower, upper))
+        parent, = local.call(vault, 'member(uint256)', ['(bool,uint96,uint96,int24,int24)'], ['uint256'], [root])
+        self.assertEqual(parent[2], child)
+        owner_of, = local.call(v3.positionManager, 'ownerOf(uint256)', ['address'], ['uint256'], [child])
+        self.assertEqual(owner_of.lower(), vault)
+        fees = self.logs(effect, 'IDominoFeeEvents', 'FeeCharged', vault)
+        self.assertTrue(fees and all(f['kind'] == 2 for f in fees), fees)  # FEE_KIND_AUTOMATION
+        print(f'\nMINT on Base v3 bytecode: {effect["gasUsed"]} gas used, estimate {entry.get("gasEstimate")}',
+              file=sys.stderr)
+
+        # Rule 2: past the interval, the root, still near its ceiling, feeds its successor, never itself; the
+        # window reads a price well inside both ranges.
+        inside = cell - 40 if inverse else cell + 50
+        self.local.mine(1, 600)
+        self.hold_v3(driver, address, inside)
+        report = service.run_once()
+        entry = next(v for v in report['vaults'] if v['vault'] == vault)
+        self.assertTrue(entry['act'], entry)
+        self.assertNotEqual(entry.get('action'), 'mint', entry)
+        self.assertEqual(entry['target'], child, entry)
+        self.assertEqual(entry['considered'][f'{root}:all'], 'awaiting_successor')
+        self.local.mine(1, 1)
+        service.run_once()
+        intent = service.executor.journal.intent(report['submitted']['intent'])
+        self.assertEqual(intent['state'], 'confirmed', intent)
+        effect = json.loads(intent['effect'])
+        compounded, = self.logs(effect, 'IDominoVault', 'Compounded', vault)
+        self.assertEqual(compounded['tokenId'], child)
+        collected = {log['tokenId'] for log in self.logs(effect, 'IDominoVaultLedger', 'FeesCollected', vault)}
+        self.assertEqual(collected, {root, child})
+        self.local.send(self.owner, vault, calldata('pause()'), impersonate=True)
+
+    def v3_position(self, recipient, pool, amount):
+        """A [-600, 600) position from `amount` of each token, minted to `recipient` by Base's v3 manager."""
+        manager = self.chain.uniswap.v3.positionManager
+        params = '(address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)'
+        receipt = self.local.send(self.deployer, manager, calldata('mint(' + params + ')', [params], [
+            (pool.currency0, pool.currency1, pool.fee, -600, 600, amount, amount, 0, 0, recipient,
+             self.chain_time() + 600)]))
+        transfer = '0x' + keccak(b'Transfer(address,address,uint256)').hex()
+        token_id, = [int(log['topics'][3], 16) for log in receipt['logs']
+                     if log['address'].lower() == manager.lower() and log['topics'][0] == transfer]
+        return token_id
+
+    def v3_liquidity(self, token_id):
+        return self.local.call(self.chain.uniswap.v3.positionManager, 'positions(uint256)',
+                               ['uint96', 'address', 'address', 'address', 'uint24', 'int24', 'int24', 'uint128',
+                                'uint256', 'uint256', 'uint128', 'uint128'], ['uint256'], [token_id])[7]
+
+    def v3_swap(self, driver, pool_address, zero_for_one, amount):
+        self.local.send(self.deployer, driver, calldata('swap(address,bool,uint256)', ['address', 'bool', 'uint256'],
+                                                        [pool_address, zero_for_one, amount]))
+
+    def move_to_v3(self, driver, pool_address, tick):
+        """One swap that brings the v3 pool to about `tick` (move_to's arithmetic on the pool's own state)."""
+        price, = self.local.call(pool_address, 'slot0()', ['uint160'])
+        active, = self.local.call(pool_address, 'liquidity()', ['uint128'])
+        target = sqrt_at_tick(tick)
+        up = target > price
+        amount = active * (target - price) // 2**96 if up else active * 2**96 // target - active * 2**96 // price
+        if amount:
+            self.v3_swap(driver, pool_address, not up, amount * 10_010 // 10_000)
+
+    def hold_v3(self, driver, pool_address, tick, seconds=360):
+        """The price kept about `tick` for `seconds` while it trades both ways, so the 300 s TWAP reads it."""
+        for _ in range(seconds // 30):
+            self.move_to_v3(driver, pool_address, tick)
+            for _ in range(5):
+                for direction in (True, False):
+                    self.v3_swap(driver, pool_address, direction, 5 * 10**17)
+                self.local.mine(1, 6)
+        self.move_to_v3(driver, pool_address, tick)
+
+    def twap_sqrt(self, pool):
+        """The anchor's own TWAP reading at the head, over the vault's 300 s window."""
+        ref = '(uint8,address,address,uint24,int24,address)'
+        return self.local.call(self.deployment.price_anchor, f'twapSqrtPrice({ref},uint32)', ['uint160'],
+                               [ref, 'uint32'], [(3, pool.currency0, pool.currency1, pool.fee, pool.tick_spacing,
+                                                  ZERO), 300])[0]
 
     def test_a_dropped_execution_is_resent_as_the_same_bytes_and_spends_its_own_nonce(self):
         token_id = self.position(self.owner, 10**20)
