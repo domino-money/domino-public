@@ -70,6 +70,67 @@ class SourceGuardTests(unittest.TestCase):
         self.assertEqual((code, json.loads(out.getvalue())['reason']), (2, 'report_exists'))
 
 
+class ChainTableTests(unittest.TestCase):
+    def test_each_chains_pools_belong_to_its_profile_and_manifest(self):
+        from v2_chains import default_registry
+        self.assertEqual(set(q.CHAINS), {'robinhood-4663', 'base-8453', 'arbitrum-42161'})
+        for key, pools in q.CHAINS.items():
+            with self.subTest(chain=key):
+                profile = default_registry().chain(key)
+                self.assertTrue(pools.manifest.is_file())
+                self.assertIn(key, pools.manifest.parent.name)
+                self.assertEqual(pools.wrapped, profile.wrappedNative.address.lower())
+                self.assertIn(pools.stable, [c.address.lower() for c in profile.chargeCurrencies])
+                for pool in (pools.weth_pool, pools.eth_pool, pools.outside_pool):
+                    self.assertLess(int(pool['currency0'], 16), int(pool['currency1'], 16))
+                    self.assertEqual((pool['dex'], pool['hooks']), (4, q.ZERO))
+                self.assertEqual(pools.eth_pool['currency0'], q.ZERO)
+                self.assertEqual({pools.weth_pool['currency0'], pools.weth_pool['currency1']}, {pools.wrapped, pools.stable})
+                self.assertEqual({pools.outside_pool['currency0'], pools.outside_pool['currency1']},
+                                 {pools.outside, pools.stable})
+        # The ids read on each chain: PONS/USDG, Base's USDC/cbBTC and ETH/USDC, Arbitrum's ARB/USDC and WETH/USDC.
+        self.assertEqual(q.pool_id(q.CHAINS['robinhood-4663'].outside_pool),
+                         '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a')
+        self.assertEqual(q.pool_id(q.CHAINS['base-8453'].outside_pool),
+                         '0x12d76c5c8ec8edffd3c143995b0aa43fe44a6d71eb9113796272909e54b8e078')
+        self.assertEqual(q.pool_id(q.CHAINS['base-8453'].eth_pool),
+                         '0xe070797535b13431808f8fc81fdbe7b41362960ed0b55bc2b6117c49c51b7eb9')
+        self.assertEqual(q.pool_id(q.CHAINS['arbitrum-42161'].outside_pool),
+                         '0xb2aec80e582cec4ffceacfcd01eef7dc31d4d0f3d8241843ffafbc4623d2d517')
+        self.assertEqual(q.pool_id(q.CHAINS['arbitrum-42161'].weth_pool),
+                         '0xfc7b3ad139daaf1e9c3637ed921c154d1b04286f8a82b805a6c352da57028653')
+
+
+class WarmRetryTests(unittest.TestCase):
+    class Planner:
+        def __init__(self, *answers):
+            self.answers, self.asked = list(answers), 0
+
+        def plan(self, request, owner):
+            self.asked += 1
+            answer = self.answers.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+    def test_an_expired_first_plan_is_asked_once_more_and_recorded(self):
+        planner, entry = self.Planner(q.PlanError('preview_expired'), {'plan': 2}), {}
+        self.assertEqual(q.warm_plan(planner, {}, OWNER, entry), {'plan': 2})
+        self.assertEqual((planner.asked, set(entry['warmRetry'])), (2, {'firstAttemptSeconds'}))
+
+    def test_any_other_refusal_or_a_second_expiry_stands(self):
+        for answers in ((q.PlanError('position_plan_no_route'),),
+                        (q.PlanError('preview_expired'), q.PlanError('preview_expired'))):
+            with self.subTest(answers=answers):
+                planner = self.Planner(*answers)
+                with self.assertRaises(q.PlanError):
+                    q.warm_plan(planner, {}, OWNER, {})
+                self.assertEqual(planner.asked, len(answers))
+        planner, entry = self.Planner({'plan': 1}), {}
+        q.warm_plan(planner, {}, OWNER, entry)
+        self.assertEqual((planner.asked, entry), (1, {}))
+
+
 class RangeTests(unittest.TestCase):
     def test_a_range_is_on_the_spacing_and_holds_the_tick(self):
         for tick, spacing, width in ((-197304, 4, 2000), (0, 1, 10), (75001, 60, 1800), (-5, 200, 1)):

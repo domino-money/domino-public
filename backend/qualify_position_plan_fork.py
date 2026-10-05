@@ -1,7 +1,8 @@
 """Qualify the S1 plan API on a fork of a chain where V2 is deployed (docs/v2/V2_S1_PLAN_API.md).
 
-Forks the chain from a loopback JSON-RPC port (for Robinhood, the own node's SSH-forwarded port) and loads the
-chain's verified production manifest. The production planner (`v2_position_plan.PositionPlanner`) then makes one
+Forks the chain from a loopback JSON-RPC port and loads the chain's verified production manifest. For Robinhood
+the port is the own node's, SSH-forwarded. For Base and Arbitrum it is qualify_rpc_forwarder.py, run on the VM
+beside the chain's sealed provider URL, SSH-forwarded. The production planner (`v2_position_plan.PositionPlanner`) then makes one
 plan of each kind on real pools, with the deployed zaps, registry and fee rule:
 
   v4: create with a swap (direct, and through a Permit2 signature sent by someone else), create with native ETH,
@@ -10,7 +11,7 @@ plan of each kind on real pools, with the deployed zaps, registry and fee rule:
   v3: create with a swap, increase, change range and exit converted, when the chain has a v3 pool for the pair.
 
 Each plan must pass the closed response contract. A synthetic owner then executes it on the fork: Anvil
-impersonation, with ETH from Anvil and USDG from the v4 pool manager. The receipt must be the plan:
+impersonation, with ETH from Anvil and the chain's stable from the v4 pool manager. The receipt must be the plan:
 - the action and the owner's intent hash;
 - every swap leg's input, and its output exactly as planned;
 - the 0.65% fee by the zap's own rule;
@@ -24,14 +25,16 @@ holds ETH there (the deployer by default), so its quotes and its eth_simulateV1 
 is never sent.
 
 With `--uniswap-key-file` (the owner's Trading API key, read from that file and never printed), the planner also
-asks the Trading API for router legs, exactly as the listener does with its `uniswap-api-key` credential, and one more
-journey pays a WETH/USDG position with PONS, a token outside the pool. Not covered: the Worker, session and Access
+asks the Trading API for router legs, exactly as the listener does with its `uniswap-api-key` credential. One
+more journey pays a WETH/stable position with a token outside it (PONS, cbBTC, ARB; CHAINS). Not covered: the Worker, session and Access
 checks in front of the listener (the bridge's side). Nothing is signed by a real key. No provider credential
 enters this process, which accepts only a loopback upstream, and the fork is discarded.
 
     python -B backend/qualify_position_plan_fork.py --upstream http://127.0.0.1:18547 --out <report.json>
+    python -B backend/qualify_position_plan_fork.py --chain base-8453 --upstream http://127.0.0.1:18650 --out <...>
 """
 import argparse
+from dataclasses import dataclass
 import hashlib
 import json
 import random
@@ -62,16 +65,52 @@ from v2_rpc import ChainEndpoints, ChainReadRpc, Endpoint  # noqa: E402
 from v2_uniswap_api import SOURCE as ROUTER_SOURCE, TradingApiLegs  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFESTS = {'robinhood-4663': ROOT / 'docs/deployments/v2-robinhood-4663-2026-10-04/deployment.json'}
 ZERO = '0x' + '00' * 20
-USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168'
-WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73'
-# PONS/USDG v4 (0.30%), one of the owner's featured pools: a token outside WETH/USDG with its own depth.
-PONS = '0x39dbed3a2bd333467115de45665cc57f813c4571'
-PONS_USDG_ID = '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a'
-# The chain's two deepest v4 pools for the pair (qualify_deposit_fork.POOLS): WETH/USDG and native ETH/USDG.
-V4_POOLS = {'weth-usdg': {'dex': 4, 'currency0': WETH, 'currency1': USDG, 'fee': 200, 'tickSpacing': 4, 'hooks': ZERO},
-            'eth-usdg': {'dex': 4, 'currency0': ZERO, 'currency1': USDG, 'fee': 87, 'tickSpacing': 1, 'hooks': ZERO}}
+
+
+def v4_key(a, b, fee, spacing):
+    c0, c1 = sorted((a, b))
+    return {'dex': 4, 'currency0': c0, 'currency1': c1, 'fee': fee, 'tickSpacing': spacing, 'hooks': ZERO}
+
+
+@dataclass(frozen=True)
+class ChainPools:
+    """What the journeys use on one chain: its manifest; its stable (6 decimals) and wrapped native (18); the
+    deepest hookless v4 pools of WETH and of native ETH against the stable; and a token outside them, priced
+    by its own v4 pool against the stable and paid into the WETH pool."""
+    manifest: Path
+    stable: str
+    stable_name: str
+    wrapped: str
+    weth_pool: dict
+    eth_pool: dict
+    outside: str
+    outside_name: str
+    outside_pool: dict
+
+
+def chain_pools(manifest, stable, stable_name, wrapped, weth_tier, eth_tier, outside, outside_name, outside_tier):
+    return ChainPools(ROOT / 'docs/deployments' / manifest / 'deployment.json', stable, stable_name, wrapped,
+                      v4_key(wrapped, stable, *weth_tier), v4_key(ZERO, stable, *eth_tier), outside, outside_name,
+                      v4_key(outside, stable, *outside_tier))
+
+
+# Robinhood: WETH/USDG and ETH/USDG, the deepest for the pair (qualify_deposit_fork.POOLS), and PONS, one of the
+# owner's featured pools (PONS/USDG 0.30%). Base and Arbitrum, read on 5 Oct 2026 through StateView over the
+# standard keys and a wider grid: the deepest hookless pools of each pair, and cbBTC on Base (USDC/cbBTC 0.05%),
+# ARB on Arbitrum (ARB/USDC 0.30%) as the token outside.
+CHAINS = {
+    'robinhood-4663': chain_pools('v2-robinhood-4663-2026-10-04', '0x5fc5360d0400a0fd4f2af552add042d716f1d168',
+                                  'USDG', '0x0bd7d308f8e1639fab988df18a8011f41eacad73', (200, 4), (87, 1),
+                                  '0x39dbed3a2bd333467115de45665cc57f813c4571', 'PONS', (3000, 60)),
+    'base-8453': chain_pools('v2-base-8453-2026-10-04', '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 'USDC',
+                             '0x4200000000000000000000000000000000000006', (3000, 60), (3000, 60),
+                             '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', 'cbBTC', (500, 10)),
+    'arbitrum-42161': chain_pools('v2-arbitrum-42161-2026-10-04', '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
+                                  'USDC', '0x82af49447d8a07e3bd95bd0d56f35241523fbab1', (500, 10), (500, 10),
+                                  '0x912ce59144191c1204e64559fe8253a0e49e6548', 'ARB', (3000, 60)),
+}
+MANIFESTS = {key: pools.manifest for key, pools in CHAINS.items()}
 V3_SPACING = {100: 1, 500: 10, 3000: 60, 10000: 200}
 NEW_POOL_TIERS = ((10000, 200), (5000, 100), (2500, 50), (7000, 140))
 TOPICS = {name: '0x' + keccak(signature.encode()).hex() for name, signature in {
@@ -80,6 +119,10 @@ TOPICS = {name: '0x' + keccak(signature.encode()).hex() for name, signature in {
     'SwapLegExecuted': 'SwapLegExecuted(uint8,address,address,address,uint256,uint256)',
     'Refunded': 'Refunded(address,address,uint256)'}.items()}
 LOOPBACK = re.compile(r'^http://127\.0\.0\.1:([1-9][0-9]{0,4})/?$')
+# One call to the fork may load thousands of cold storage slots from the upstream, one round trip each: through the
+# VM's forwarder to a hosted provider about 150 ms apiece. On Base, the first plan's quote round (one Multicall3 of
+# the candidate pools' quotes) took 547 s cold and 0.1 s warm (5 Oct 2026).
+FORK_CALL_TIMEOUT_SECONDS = 1800
 
 
 class QualificationError(Exception):
@@ -99,6 +142,12 @@ def around(tick, spacing, width):
     return (tick - width) // spacing * spacing, -((-(tick + width)) // spacing) * spacing
 
 
+def pool_id(pool):
+    return '0x' + keccak(encode(['address', 'address', 'uint24', 'int24', 'address'],
+                                [pool['currency0'], pool['currency1'], pool['fee'], pool['tickSpacing'],
+                                 pool['hooks']])).hex()
+
+
 def topic_address(topic):
     return '0x' + topic[-40:]
 
@@ -115,6 +164,19 @@ def refunds(receipt):
             token = topic_address(log['topics'][2])
             total[token] = total.get(token, 0) + amount
     return total
+
+
+def warm_plan(planner, request, owner, entry):
+    """The plan, asked once more when it outlived its quote while the fork loaded cold state from a far upstream
+    (the planner's own 180 s lifetime stands; nothing is relaxed). The journey records the first attempt."""
+    started = time.time()
+    try:
+        return planner.plan(request, owner)
+    except PlanError as error:
+        if error.code != 'preview_expired':
+            raise
+        entry['warmRetry'] = {'firstAttemptSeconds': round(time.time() - started, 1)}
+        return planner.plan(request, owner)
 
 
 def check_receipt(body, receipt):
@@ -209,7 +271,7 @@ class Fork:
 
     def post(self, body, url=None):
         request = urllib.request.Request(url or self.url, json.dumps(body).encode(), {'Content-Type': 'application/json'})
-        with urllib.request.urlopen(request, timeout=120) as response:
+        with urllib.request.urlopen(request, timeout=FORK_CALL_TIMEOUT_SECONDS) as response:
             return json.load(response)
 
     def request(self, method, params=(), url=None):
@@ -249,7 +311,8 @@ class ForkHead:
 class Qualification:
     def __init__(self, fork, profile_key, router_legs=None):
         self.fork, self.profile = fork, default_registry().chain(profile_key)
-        manifest = MANIFESTS[profile_key]
+        self.pools = CHAINS[profile_key]
+        manifest = self.pools.manifest
         self.manifest_sha256 = hashlib.sha256(manifest.read_bytes()).hexdigest()
         self.dependencies = json.loads(manifest.read_text())['dependencies']
         self.deployment = load_deployment(manifest, self.profile, admission='production')
@@ -265,9 +328,7 @@ class Qualification:
 
     # ------------------------------------------------------------ chain reads
     def v4_slot0(self, pool):
-        pool_id = keccak(encode(['address', 'address', 'uint24', 'int24', 'address'],
-                                [pool['currency0'], pool['currency1'], pool['fee'], pool['tickSpacing'], pool['hooks']]))
-        raw = self.fork.call(self.dependencies['v4StateView'], '0xc815641c' + pool_id.hex())
+        raw = self.fork.call(self.dependencies['v4StateView'], '0xc815641c' + pool_id(pool)[2:])
         return decode(['uint160', 'int24', 'uint24', 'uint24'], bytes.fromhex(raw[2:]))[:2]
 
     def v3_pool(self, a, b):
@@ -288,35 +349,45 @@ class Qualification:
         return best
 
     # ----------------------------------------------------------------- owner
-    def owner(self, usdg, token=USDG):
+    def owner(self, amount, token=None):
+        """A fresh owner with ETH, and `amount` of `token` (the stable by default) from the v4 pool manager."""
         account = Account.create()
         address = account.address.lower()
         self.fork.request('anvil_setBalance', [address, hex(10**20)])
-        if usdg:
+        if amount:
             manager = self.dependencies['v4PoolManager']
-            self.fork.request('anvil_setBalance', [manager, hex(10**18)])
-            receipt = self.fork.send(manager, token, '0xa9059cbb' + encode(['address', 'uint256'], [address, usdg]).hex())
+            # Gas for the impersonated transfer. Never less than it holds: its ETH backs the native ETH pools.
+            if int(self.fork.request('eth_getBalance', [manager, 'latest']), 16) < 10**18:
+                self.fork.request('anvil_setBalance', [manager, hex(10**18)])
+            receipt = self.fork.send(manager, token or self.pools.stable,
+                                     '0xa9059cbb' + encode(['address', 'uint256'], [address, amount]).hex())
             if receipt.get('status') != '0x1':
                 raise QualificationError('owner_funding_failed')
         return account, address
 
     def outside_token(self):
-        """A WETH/USDG v4 position paid in PONS, about 20 USDG of it at the PONS/USDG pool's price."""
-        raw = self.fork.call(self.dependencies['v4StateView'], '0xc815641c' + PONS_USDG_ID[2:])
-        sqrt_price, _ = decode(['uint160', 'int24', 'uint24', 'uint24'], bytes.fromhex(raw[2:]))[:2]
-        usdg_per_pons = sqrt_price * sqrt_price  # Q192: PONS is currency0, USDG currency1
-        amount = 20 * 10**6 * 2**192 // usdg_per_pons if usdg_per_pons else 0
+        """A WETH/stable v4 position paid in the token outside it, about 20 of the stable of it at the price of
+        the token's own pool against the stable."""
+        pools = self.pools
+        sqrt_price, _ = self.v4_slot0(pools.outside_pool)
+        ratio = sqrt_price * sqrt_price  # Q192: currency1 per currency0
+        if not ratio:
+            amount = 0
+        elif pools.outside_pool['currency1'] == pools.stable:
+            amount = 20 * 10**6 * 2**192 // ratio
+        else:
+            amount = 20 * 10**6 * ratio // 2**192
+        name = f'v4 create paid with a token outside the pool ({pools.outside_name} into WETH/{pools.stable_name})'
         if amount <= 0:
-            self.journeys.append({'name': 'v4 create paid with a token outside the pool', 'ok': False,
-                                  'failed': ['outside_token_unpriced']})
+            self.journeys.append({'name': name, 'ok': False, 'failed': ['outside_token_unpriced']})
             return
-        account, _ = self.owner(2 * amount, token=PONS)
-        pool = V4_POOLS['weth-usdg']
+        account, _ = self.owner(2 * amount, token=pools.outside)
+        pool = pools.weth_pool
         _, tick = self.v4_slot0(pool)
-        self.run('v4 create paid with a token outside the pool (PONS into WETH/USDG)', {
-            'chainId': self.profile.chainId, 'action': 'create', 'consent': 'direct', 'pool': pool,
-            'tickLower': around(tick, 4, 2000)[0], 'tickUpper': around(tick, 4, 2000)[1],
-            'inputs': [{'token': PONS, 'amountRaw': str(amount)}]}, account)
+        lower, upper = around(tick, pool['tickSpacing'], 2000)
+        self.run(name, {'chainId': self.profile.chainId, 'action': 'create', 'consent': 'direct', 'pool': pool,
+                        'tickLower': lower, 'tickUpper': upper,
+                        'inputs': [{'token': pools.outside, 'amountRaw': str(amount)}]}, account)
 
     # ------------------------------------------------------------- one plan
     def run(self, name, request, account, *, sender=None):
@@ -325,7 +396,7 @@ class Qualification:
         started = time.time()
         calls_before = sum(self.endpoints.calls().values())
         try:
-            body = self.planner.plan(PlanRequest.model_validate(request).model_dump(), owner)
+            body = warm_plan(self.planner, PlanRequest.model_validate(request).model_dump(), owner, entry)
             PlanResponse.model_validate({'contractVersion': CONTRACT_VERSION, 'plan': body})
         except PlanError as error:
             entry.update(ok=False, failed=[f'plan_refused:{error.code}'])
@@ -388,43 +459,46 @@ class Qualification:
 
     # -------------------------------------------------------------- journeys
     def journeys_v4(self):
-        weth_usdg, eth_usdg = V4_POOLS['weth-usdg'], V4_POOLS['eth-usdg']
+        pools = self.pools
+        stable, weth_usdg, eth_usdg = pools.stable, pools.weth_pool, pools.eth_pool
+        spacing, eth_spacing = weth_usdg['tickSpacing'], eth_usdg['tickSpacing']
         _, tick = self.v4_slot0(weth_usdg)
-        lower, upper = around(tick, 4, 2000)
+        lower, upper = around(tick, spacing, 2000)
         account, owner = self.owner(1_000 * 10**6)
         created = self.run('v4 create with a swap (direct)', {
             'chainId': self.profile.chainId, 'action': 'create', 'consent': 'direct', 'pool': weth_usdg,
-            'tickLower': lower, 'tickUpper': upper, 'inputs': [{'token': USDG, 'amountRaw': str(100 * 10**6)}]}, account)
+            'tickLower': lower, 'tickUpper': upper, 'inputs': [{'token': stable, 'amountRaw': str(100 * 10**6)}]},
+            account)
         signer, _ = self.owner(1_000 * 10**6)
         permitted = self.run('v4 create through Permit2, sent by another account', {
             'chainId': self.profile.chainId, 'action': 'create', 'consent': 'permit2', 'pool': weth_usdg,
-            'tickLower': lower, 'tickUpper': upper, 'inputs': [{'token': USDG, 'amountRaw': str(100 * 10**6)}]},
+            'tickLower': lower, 'tickUpper': upper, 'inputs': [{'token': stable, 'amountRaw': str(100 * 10**6)}]},
             signer, sender=self.submitter)
         _, eth_tick = self.v4_slot0(eth_usdg)
         native_account, _ = self.owner(0)
         native = self.run('v4 create with native ETH', {
             'chainId': self.profile.chainId, 'action': 'create', 'consent': 'direct', 'pool': eth_usdg,
-            'tickLower': around(eth_tick, 1, 2000)[0], 'tickUpper': around(eth_tick, 1, 2000)[1],
+            'tickLower': around(eth_tick, eth_spacing, 2000)[0], 'tickUpper': around(eth_tick, eth_spacing, 2000)[1],
             'inputs': [{'token': ZERO, 'amountRaw': str(5 * 10**16)}]}, native_account)
         if created:
             self.run('v4 increase with a swap', {
                 'chainId': self.profile.chainId, 'action': 'increase', 'consent': 'direct',
                 'position': {'dex': 4, 'tokenId': str(created)},
-                'inputs': [{'token': USDG, 'amountRaw': str(50 * 10**6)}]}, account)
+                'inputs': [{'token': stable, 'amountRaw': str(50 * 10**6)}]}, account)
             moved = self.run('v4 change range', {
                 'chainId': self.profile.chainId, 'action': 'changeRange', 'consent': 'direct',
-                'position': {'dex': 4, 'tokenId': str(created)}, 'tickLower': around(tick, 4, 1000)[0],
-                'tickUpper': around(tick, 4, 3000)[1], 'liquidityToRemove': 'all', 'burn': True}, account)
+                'position': {'dex': 4, 'tokenId': str(created)}, 'tickLower': around(tick, spacing, 1000)[0],
+                'tickUpper': around(tick, spacing, 3000)[1], 'liquidityToRemove': 'all', 'burn': True}, account)
             if moved:
                 self.run('v4 relayed exit, converted to WETH', {
                     'chainId': self.profile.chainId, 'action': 'exit', 'consent': 'relayed',
                     'position': {'dex': 4, 'tokenId': str(moved)}, 'liquidityToRemove': 'all', 'burn': True,
-                    'receive': {'mode': 'converted', 'token': WETH}}, account, sender=self.submitter)
+                    'receive': {'mode': 'converted', 'token': pools.wrapped}}, account, sender=self.submitter)
         if permitted:
-            self.run('v4 exit converted to USDG', {
+            self.run(f'v4 exit converted to {pools.stable_name}', {
                 'chainId': self.profile.chainId, 'action': 'exit', 'consent': 'direct',
                 'position': {'dex': 4, 'tokenId': str(permitted)}, 'liquidityToRemove': 'all', 'burn': True,
-                'receive': {'mode': 'converted', 'token': USDG}}, signer)
+                'receive': {'mode': 'converted', 'token': stable}}, signer)
         if native:
             self.run('v4 exit to both tokens', {
                 'chainId': self.profile.chainId, 'action': 'exit', 'consent': 'direct',
@@ -434,7 +508,7 @@ class Qualification:
         self.outside_token()
 
     def new_pool(self, existing):
-        """A WETH/USDG v4 pool at a tier nobody initialized, at the existing pool's price (USDG per WETH)."""
+        """A WETH/stable v4 pool at a tier nobody initialized, at the existing pool's price (stable per WETH)."""
         sqrt_price, tick = self.v4_slot0(existing)
         price = (sqrt_price / 2**96) ** 2 * 10 ** (18 - 6)
         for fee, spacing in NEW_POOL_TIERS:
@@ -449,8 +523,9 @@ class Qualification:
         self.run("v4 new pool at the owner's price", {
             'chainId': self.profile.chainId, 'action': 'create', 'consent': 'direct', 'pool': pool,
             'tickLower': around(tick, spacing, 4000)[0], 'tickUpper': around(tick, spacing, 4000)[1],
-            'inputs': [{'token': USDG, 'amountRaw': str(100 * 10**6)}],
-            'initialPrice': {'price': f'{price:.6f}', 'baseToken': WETH, 'decimals0': 18, 'decimals1': 6}}, account)
+            'inputs': [{'token': self.pools.stable, 'amountRaw': str(100 * 10**6)}],
+            'initialPrice': {'price': f'{price:.6f}', 'baseToken': self.pools.wrapped, 'decimals0': 18,
+                             'decimals1': 6}}, account)
 
     def live_plan(self, owner):
         """A native ETH create planned on the live node itself (quotes and eth_simulateV1 there); never sent."""
@@ -464,10 +539,11 @@ class Qualification:
                 return Head(self.fork.chain_id, parse_block(raw), None, time.time())
         planner = PositionPlanner(self.profile, live, LiveHead(), self.deployment, router_legs=self.router_legs,
                                   clock=time.time, nonce_word=lambda: random.SystemRandom().getrandbits(248))
-        pool = V4_POOLS['eth-usdg']
+        pool = self.pools.eth_pool
         _, tick = self.v4_slot0(pool)
         request = {'chainId': self.profile.chainId, 'action': 'create', 'consent': 'direct', 'pool': pool,
-                   'tickLower': around(tick, 1, 2000)[0], 'tickUpper': around(tick, 1, 2000)[1],
+                   'tickLower': around(tick, pool['tickSpacing'], 2000)[0],
+                   'tickUpper': around(tick, pool['tickSpacing'], 2000)[1],
                    'inputs': [{'token': ZERO, 'amountRaw': str(10**15)}]}
         entry = {'name': 'live node: plan only (quotes and eth_simulateV1 on the node), never sent',
                  'request': {k: v for k, v in request.items() if k != 'chainId'}, 'owner': owner}
@@ -488,9 +564,10 @@ class Qualification:
         self.journeys.append(entry)
 
     def journeys_v3(self):
-        found = self.v3_pool(WETH, USDG)
+        stable, name = self.pools.stable, self.pools.stable_name
+        found = self.v3_pool(self.pools.wrapped, stable)
         if found is None:
-            self.journeys.append({'name': 'v3 journeys', 'ok': True, 'skipped': 'no initialized v3 WETH/USDG pool'})
+            self.journeys.append({'name': 'v3 journeys', 'ok': True, 'skipped': f'no initialized v3 WETH/{name} pool'})
             return
         _, pool, tick = found
         account, _ = self.owner(1_000 * 10**6)
@@ -498,22 +575,22 @@ class Qualification:
         created = self.run('v3 create with a swap', {
             'chainId': self.profile.chainId, 'action': 'create', 'consent': 'direct', 'pool': pool,
             'tickLower': around(tick, spacing, 3000)[0], 'tickUpper': around(tick, spacing, 3000)[1],
-            'inputs': [{'token': USDG, 'amountRaw': str(100 * 10**6)}]}, account)
+            'inputs': [{'token': stable, 'amountRaw': str(100 * 10**6)}]}, account)
         if not created:
             return
         self.run('v3 increase', {
             'chainId': self.profile.chainId, 'action': 'increase', 'consent': 'direct',
-            'position': {'dex': 3, 'tokenId': str(created)}, 'inputs': [{'token': USDG, 'amountRaw': str(50 * 10**6)}]},
-            account)
+            'position': {'dex': 3, 'tokenId': str(created)},
+            'inputs': [{'token': stable, 'amountRaw': str(50 * 10**6)}]}, account)
         moved = self.run('v3 change range', {
             'chainId': self.profile.chainId, 'action': 'changeRange', 'consent': 'direct',
             'position': {'dex': 3, 'tokenId': str(created)}, 'tickLower': around(tick, spacing, 1500)[0],
             'tickUpper': around(tick, spacing, 4500)[1], 'liquidityToRemove': 'all', 'burn': True}, account)
         if moved:
-            self.run('v3 exit converted to USDG', {
+            self.run(f'v3 exit converted to {name}', {
                 'chainId': self.profile.chainId, 'action': 'exit', 'consent': 'direct',
                 'position': {'dex': 3, 'tokenId': str(moved)}, 'liquidityToRemove': 'all', 'burn': True,
-                'receive': {'mode': 'converted', 'token': USDG}}, account)
+                'receive': {'mode': 'converted', 'token': stable}}, account)
 
 
 def source_commit():

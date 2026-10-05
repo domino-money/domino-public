@@ -1,0 +1,980 @@
+{
+ "schemaVersion": 1,
+ "kind": "domino-v2-position-plan-fork-qualification",
+ "chain": "base-8453",
+ "contractVersion": "1.0.0-rc.2",
+ "sourceCommit": "5b4ea6c504d612c62b85d511376aad149e41489f",
+ "manifestSha256": "48c409dfd5b0c25a85ce71f61b795a716fbe9e0615aa24e50f4fe3ef99f07b56",
+ "forkBlock": 52186616,
+ "upstream": "loopback",
+ "checkedAt": "2026-10-05T01:26:39Z",
+ "tradingApi": "configured",
+ "routerLegs": 5,
+ "liveL1DataFee": {
+  "status": "not_nitro"
+ },
+ "journeys": [
+  {
+   "name": "v4 create with a swap (direct)",
+   "request": {
+    "action": "create",
+    "consent": "direct",
+    "pool": {
+     "dex": 4,
+     "currency0": "0x4200000000000000000000000000000000000006",
+     "currency1": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "fee": 3000,
+     "tickSpacing": 60,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -199260,
+    "tickUpper": -195180,
+    "inputs": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "amountRaw": "100000000"
+     }
+    ]
+   },
+   "warmRetry": {
+    "firstAttemptSeconds": 558.8
+   },
+   "planSeconds": 560.43,
+   "planCalls": 24,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "tokenOut": "0x4200000000000000000000000000000000000006",
+     "amountInRaw": "49764698",
+     "expectedOutRaw": "18253195745255746"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "input",
+    "basisRaw": "49764698",
+    "amountRaw": "323470",
+    "ranks": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     },
+     {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "approve_token",
+    "send_action"
+   ],
+   "router": {
+    "status": "not_better",
+    "reason": "within_advantage_threshold"
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 579679,
+   "tokenId": "3112742",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 create through Permit2, sent by another account",
+   "request": {
+    "action": "create",
+    "consent": "permit2",
+    "pool": {
+     "dex": 4,
+     "currency0": "0x4200000000000000000000000000000000000006",
+     "currency1": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "fee": 3000,
+     "tickSpacing": 60,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -199260,
+    "tickUpper": -195180,
+    "inputs": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "amountRaw": "100000000"
+     }
+    ]
+   },
+   "planSeconds": 3.23,
+   "planCalls": 9,
+   "consent": "permit2",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "tokenOut": "0x4200000000000000000000000000000000000006",
+     "amountInRaw": "49764934",
+     "expectedOutRaw": "18253108626176688"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "input",
+    "basisRaw": "49764934",
+    "amountRaw": "323472",
+    "ranks": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     },
+     {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "approve_token",
+    "sign_permit2",
+    "send_action"
+   ],
+   "router": {
+    "status": "not_better",
+    "reason": "within_advantage_threshold"
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 549323,
+   "tokenId": "3112743",
+   "sentBy": "submitter"
+  },
+  {
+   "name": "v4 create with native ETH",
+   "request": {
+    "action": "create",
+    "consent": "direct",
+    "pool": {
+     "dex": 4,
+     "currency0": "0x0000000000000000000000000000000000000000",
+     "currency1": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "fee": 3000,
+     "tickSpacing": 60,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -199260,
+    "tickUpper": -195180,
+    "inputs": [
+     {
+      "token": "0x0000000000000000000000000000000000000000",
+      "amountRaw": "50000000000000000"
+     }
+    ]
+   },
+   "planSeconds": 8.16,
+   "planCalls": 10,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "uniswap_trading_api",
+     "tokenIn": "0x0000000000000000000000000000000000000000",
+     "tokenOut": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "amountInRaw": "25183431975986499",
+     "expectedOutRaw": "68645782"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "output",
+    "basisRaw": "68645782",
+    "amountRaw": "446197",
+    "ranks": [
+     {
+      "token": "0x0000000000000000000000000000000000000000",
+      "rank": 2
+     },
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "send_action"
+   ],
+   "router": {
+    "status": "chosen",
+    "reason": null
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 483632,
+   "tokenId": "3112744",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 increase with a swap",
+   "request": {
+    "action": "increase",
+    "consent": "direct",
+    "position": {
+     "dex": 4,
+     "tokenId": "3112742"
+    },
+    "inputs": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "amountRaw": "50000000"
+     }
+    ]
+   },
+   "planSeconds": 1.84,
+   "planCalls": 16,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "tokenOut": "0x4200000000000000000000000000000000000006",
+     "amountInRaw": "24882393",
+     "expectedOutRaw": "9126581656944510"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "input",
+    "basisRaw": "24882393",
+    "amountRaw": "161735",
+    "ranks": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     },
+     {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "approve_token",
+    "approve_position",
+    "send_action"
+   ],
+   "router": {
+    "status": "not_better",
+    "reason": "within_advantage_threshold"
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 368011,
+   "tokenId": "3112742",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 change range",
+   "request": {
+    "action": "changeRange",
+    "consent": "direct",
+    "position": {
+     "dex": 4,
+     "tokenId": "3112742"
+    },
+    "tickLower": -198240,
+    "tickUpper": -194160,
+    "liquidityToRemove": "all",
+    "burn": true
+   },
+   "planSeconds": 3.64,
+   "planCalls": 16,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "tokenOut": "0x4200000000000000000000000000000000000006",
+     "amountInRaw": "35776037",
+     "expectedOutRaw": "13122171805230042"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "input",
+    "basisRaw": "35776037",
+    "amountRaw": "232544",
+    "ranks": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     },
+     {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "send_action"
+   ],
+   "router": {
+    "status": "not_better",
+    "reason": "within_advantage_threshold"
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 592484,
+   "tokenId": "3112745",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 relayed exit, converted to WETH",
+   "request": {
+    "action": "exit",
+    "consent": "relayed",
+    "position": {
+     "dex": 4,
+     "tokenId": "3112745"
+    },
+    "liquidityToRemove": "all",
+    "burn": true,
+    "receive": {
+     "mode": "converted",
+     "token": "0x4200000000000000000000000000000000000006"
+    }
+   },
+   "planSeconds": 1.72,
+   "planCalls": 16,
+   "consent": "relayed",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "tokenOut": "0x4200000000000000000000000000000000000006",
+     "amountInRaw": "36670994",
+     "expectedOutRaw": "13450336718164360"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "input",
+    "basisRaw": "36670994",
+    "amountRaw": "238361",
+    "ranks": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     },
+     {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "approve_position",
+    "sign_relayed",
+    "send_action"
+   ],
+   "router": {
+    "status": "not_better",
+    "reason": "within_advantage_threshold"
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 378192,
+   "tokenId": "3112745",
+   "sentBy": "submitter"
+  },
+  {
+   "name": "v4 exit converted to USDC",
+   "request": {
+    "action": "exit",
+    "consent": "direct",
+    "position": {
+     "dex": 4,
+     "tokenId": "3112743"
+    },
+    "liquidityToRemove": "all",
+    "burn": true,
+    "receive": {
+     "mode": "converted",
+     "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+    }
+   },
+   "warmRetry": {
+    "firstAttemptSeconds": 348.3
+   },
+   "planSeconds": 350.44,
+   "planCalls": 34,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "uniswap_trading_api",
+     "tokenIn": "0x4200000000000000000000000000000000000006",
+     "tokenOut": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "amountInRaw": "17783481657171561",
+     "expectedOutRaw": "48475126"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "output",
+    "basisRaw": "48475126",
+    "amountRaw": "315088",
+    "ranks": [
+     {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+     },
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "approve_position",
+    "send_action"
+   ],
+   "router": {
+    "status": "chosen",
+    "reason": null
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 398387,
+   "tokenId": "3112743",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 exit to both tokens",
+   "request": {
+    "action": "exit",
+    "consent": "direct",
+    "position": {
+     "dex": 4,
+     "tokenId": "3112744"
+    },
+    "liquidityToRemove": "all",
+    "burn": false,
+    "receive": {
+     "mode": "both"
+    }
+   },
+   "planSeconds": 0.67,
+   "planCalls": 13,
+   "consent": "direct",
+   "legs": [],
+   "fee": {
+    "bps": 0,
+    "token": "0x0000000000000000000000000000000000000000",
+    "place": "none",
+    "basisRaw": "0",
+    "amountRaw": "0",
+    "ranks": []
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "approve_position",
+    "send_action"
+   ],
+   "router": {
+    "status": "not_needed",
+    "reason": null
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 206576,
+   "tokenId": "3112744",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 new pool at the owner's price",
+   "request": {
+    "action": "create",
+    "consent": "direct",
+    "pool": {
+     "dex": 4,
+     "currency0": "0x4200000000000000000000000000000000000006",
+     "currency1": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "fee": 5000,
+     "tickSpacing": 100,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -201300,
+    "tickUpper": -193200,
+    "inputs": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "amountRaw": "100000000"
+     }
+    ],
+    "initialPrice": {
+     "price": "2725.378600",
+     "baseToken": "0x4200000000000000000000000000000000000006",
+     "decimals0": 18,
+     "decimals1": 6
+    }
+   },
+   "planSeconds": 4.47,
+   "planCalls": 9,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "tokenOut": "0x4200000000000000000000000000000000000006",
+     "amountInRaw": "49475979",
+     "expectedOutRaw": "18147020391510200"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "input",
+    "basisRaw": "49475979",
+    "amountRaw": "321593",
+    "ranks": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     },
+     {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "approve_token",
+    "send_action"
+   ],
+   "router": {
+    "status": "not_better",
+    "reason": "within_advantage_threshold"
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 610711,
+   "tokenId": "3112746",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 create paid with a token outside the pool (cbBTC into WETH/USDC)",
+   "request": {
+    "action": "create",
+    "consent": "direct",
+    "pool": {
+     "dex": 4,
+     "currency0": "0x4200000000000000000000000000000000000006",
+     "currency1": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "fee": 3000,
+     "tickSpacing": 60,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -199260,
+    "tickUpper": -195180,
+    "inputs": [
+     {
+      "token": "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf",
+      "amountRaw": "23113"
+     }
+    ]
+   },
+   "planSeconds": 42.57,
+   "planCalls": 10,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "uniswap_trading_api",
+     "tokenIn": "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf",
+     "tokenOut": "0x4200000000000000000000000000000000000006",
+     "amountInRaw": "11514",
+     "expectedOutRaw": "3653602312679598"
+    },
+    {
+     "source": "uniswap_trading_api",
+     "tokenIn": "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf",
+     "tokenOut": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "amountInRaw": "11599",
+     "expectedOutRaw": "10032774"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "output",
+    "basisRaw": "10032774",
+    "amountRaw": "65213",
+    "ranks": [
+     {
+      "token": "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf",
+      "rank": 0
+     },
+     {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+     },
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "approve_token",
+    "send_action"
+   ],
+   "router": {
+    "status": "chosen",
+    "reason": null
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 795211,
+   "tokenId": "3112747",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v3 create with a swap",
+   "request": {
+    "action": "create",
+    "consent": "direct",
+    "pool": {
+     "dex": 3,
+     "currency0": "0x4200000000000000000000000000000000000006",
+     "currency1": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "fee": 3000,
+     "tickSpacing": 60,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -200220,
+    "tickUpper": -194160,
+    "inputs": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "amountRaw": "100000000"
+     }
+    ]
+   },
+   "planSeconds": 7.13,
+   "planCalls": 15,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "tokenOut": "0x4200000000000000000000000000000000000006",
+     "amountInRaw": "50226855",
+     "expectedOutRaw": "18422289817070405"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "input",
+    "basisRaw": "50226855",
+    "amountRaw": "326474",
+    "ranks": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     },
+     {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "approve_token",
+    "send_action"
+   ],
+   "router": {
+    "status": "not_better",
+    "reason": "within_advantage_threshold"
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 642690,
+   "tokenId": "6148021",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v3 increase",
+   "request": {
+    "action": "increase",
+    "consent": "direct",
+    "position": {
+     "dex": 3,
+     "tokenId": "6148021"
+    },
+    "inputs": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "amountRaw": "50000000"
+     }
+    ]
+   },
+   "planSeconds": 1.77,
+   "planCalls": 15,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "tokenOut": "0x4200000000000000000000000000000000000006",
+     "amountInRaw": "25113517",
+     "expectedOutRaw": "9211111208430903"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "input",
+    "basisRaw": "25113517",
+    "amountRaw": "163237",
+    "ranks": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     },
+     {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "approve_token",
+    "send_action"
+   ],
+   "router": {
+    "status": "not_better",
+    "reason": "within_advantage_threshold"
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 405202,
+   "tokenId": "6148021",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v3 change range",
+   "request": {
+    "action": "changeRange",
+    "consent": "direct",
+    "position": {
+     "dex": 3,
+     "tokenId": "6148021"
+    },
+    "tickLower": -198720,
+    "tickUpper": -192660,
+    "liquidityToRemove": "all",
+    "burn": true
+   },
+   "planSeconds": 4.18,
+   "planCalls": 15,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "tokenOut": "0x4200000000000000000000000000000000000006",
+     "amountInRaw": "34771669",
+     "expectedOutRaw": "12753445761267690"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "input",
+    "basisRaw": "34771669",
+    "amountRaw": "226015",
+    "ranks": [
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     },
+     {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "approve_position",
+    "send_action"
+   ],
+   "router": {
+    "status": "not_better",
+    "reason": "within_advantage_threshold"
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 683894,
+   "tokenId": "6148022",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v3 exit converted to USDC",
+   "request": {
+    "action": "exit",
+    "consent": "direct",
+    "position": {
+     "dex": 3,
+     "tokenId": "6148022"
+    },
+    "liquidityToRemove": "all",
+    "burn": true,
+    "receive": {
+     "mode": "converted",
+     "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+    }
+   },
+   "planSeconds": 2.19,
+   "planCalls": 16,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "uniswap_trading_api",
+     "tokenIn": "0x4200000000000000000000000000000000000006",
+     "tokenOut": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "amountInRaw": "39892971198370556",
+     "expectedOutRaw": "108743782"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "output",
+    "basisRaw": "108743782",
+    "amountRaw": "706834",
+    "ranks": [
+     {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+     },
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "ok",
+   "steps": [
+    "approve_position",
+    "send_action"
+   ],
+   "router": {
+    "status": "chosen",
+    "reason": null
+   },
+   "ok": true,
+   "failed": [],
+   "gasUsed": 461875,
+   "tokenId": "6148022",
+   "sentBy": "owner"
+  },
+  {
+   "name": "live node: plan only (quotes and eth_simulateV1 on the node), never sent",
+   "request": {
+    "action": "create",
+    "consent": "direct",
+    "pool": {
+     "dex": 4,
+     "currency0": "0x0000000000000000000000000000000000000000",
+     "currency1": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "fee": 3000,
+     "tickSpacing": 60,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -199260,
+    "tickUpper": -195180,
+    "inputs": [
+     {
+      "token": "0x0000000000000000000000000000000000000000",
+      "amountRaw": "1000000000000000"
+     }
+    ]
+   },
+   "owner": "0x706627e3e75b0603c4b6f9a1ebbfc635da712747",
+   "ok": true,
+   "planSeconds": 6.44,
+   "planCalls": 15,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "v4_quoter",
+     "amountInRaw": "503734179921791",
+     "expectedOutRaw": "1374790"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "place": "output",
+    "basisRaw": "1374790",
+    "amountRaw": "8936",
+    "ranks": [
+     {
+      "token": "0x0000000000000000000000000000000000000000",
+      "rank": 2
+     },
+     {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": {
+    "status": "ok",
+    "source": "op_gas_price_oracle",
+    "block": "52187123",
+    "weiRaw": "2668701498",
+    "upperBoundWeiRaw": "10581618887",
+    "l1GasUnits": null,
+    "l2BaseFeeWei": null,
+    "transactionBytes": 1468
+   },
+   "router": {
+    "status": "not_better",
+    "reason": "within_advantage_threshold"
+   },
+   "failed": []
+  }
+ ],
+ "passed": 15,
+ "failed": []
+}
