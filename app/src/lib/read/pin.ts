@@ -122,7 +122,10 @@ export const PRODUCER_PIN = {
       // Changed on purpose (data) 2026-10-06: historical_read.py, which the manifest hashes, projects a ledger's refusal
       // of a source activity chunk over 2,000 events as `*_ledger_not_caught_up` instead of a 502; no read-v1 route,
       // schema, reason code or version moved.
-      manifestSha256: '383406998bb19cd6ef6c811d2123ca0a503935d34ff5bf675e59b29b34ca174c',
+      // Changed on purpose (data) 2026-10-06: read_service.py, which the manifest hashes, answers pool-activity for a
+      // registered pool whose stored walk is 24 h or more behind with the existing live-window answer; no read-v1
+      // route, schema or version moved.
+      manifestSha256: '562898faafcb01ff86a5df930f5f9f3f54be4bcb8e113163d82aea22058ff11b',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -148,7 +151,9 @@ export const READ_V2_PIN = {
   // Changed on purpose (data) 2026-10-06: read_gateway.py, which the manifest hashes, gives each reader lane its own visitor budget; no route, schema or version moved.
   // Changed on purpose (data) 2026-10-06: read_api.py names read-v6 chain-balances' balance chain RPC file; no read-v2
   // route, schema or version moved.
-  manifestSha256: '121ea06a7336f59bb17092181837985ae37ba4ad29514c78f8ee50105310d69b',
+  // Changed on purpose (data) 2026-10-06: read_service.py, which the manifest hashes, serves a pool walked 24 h or
+  // more behind from its live window; no read-v2 route, schema or version moved.
+  manifestSha256: 'c7bd9c59ed6d0309f31e9c5481ff6c04f1a68de2d007d4c34bcf5176c404a9b9',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

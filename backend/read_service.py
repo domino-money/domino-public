@@ -266,6 +266,13 @@ class ReadService:
         head=reader.snapshot()
         snap=report['snapshot']
         stored=Block(snap['number'],snap['hash'],snap['timestamp'])
+        # A stored window ending before the head's 24 h describes another day:
+        # serve the pool live until its walk reaches the head's 24 h. Positions
+        # are the stored ledger's alone, so pool-positions keeps it.
+        if not include_positions and head.timestamp-stored.timestamp>=self.STORED_WINDOW_SECONDS:
+            live=self.live_while_behind(pool_id,report)
+            if live is not None:
+                return live
         actual=parse_block(rpc.request('eth_getBlockByNumber',[stored.tag,False]))
         if actual!=stored or stored.number>head.number or stored.timestamp>head.timestamp:
             raise DataError('activity_snapshot_reorganized')
@@ -276,6 +283,27 @@ class ReadService:
                              'checkedAgainstHead':head.number}
         report['window24h']['usableAsCurrent24h']=age<=120 and report['window24h']['completeWindow']
         return report
+
+    # A stored window covers the 24 h before its own tail, so a tail this far
+    # behind the head ends before the head's 24 h begin: it shares no second
+    # with the window a reader asks about.
+    STORED_WINDOW_SECONDS = 86400
+
+    def live_while_behind(self,pool_id,report):
+        """The live window for a registered pool whose stored walk is a day or more behind.
+
+        Its stored window describes a past day only (on 6 Oct 2026, 0x24107d15's
+        ended 78 days before the head). The live window is the answer a
+        registered pool with no stored history already gets, with the same
+        labels. The queue is asked to walk the pool; the stored window answers
+        again once the walk reaches the head's 24 h. When the live window
+        cannot be built, the stored answer stands, labelled stale as before.
+        """
+        self.request_pool(pool_id)
+        try:
+            return self.live_window_activity(pool_id,{'startBlock':report['coverage']['startBlock']})
+        except DataError:
+            return None
 
     LIVE_WINDOW_SECONDS = 86400
     # Read as a block count, not a duration: the chain's own recorded heads move

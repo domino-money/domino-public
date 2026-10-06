@@ -1,12 +1,18 @@
-"""A pool that is anchored but not walked still serves its exact 24h window."""
+"""A pool that is anchored but not walked, or walked a day or more behind, still serves its exact 24h window."""
+from copy import deepcopy
+import json
 import os
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import psycopg
+from eth_abi import encode
+from fastapi.testclient import TestClient
 
+import activity_store
 from activity_indexer import ActivityIndexer
 from activity_store import PgActivity
 from catalogue import PgCatalogue
@@ -14,15 +20,22 @@ from dev_postgres import ADMIN
 from discovery import CHAIN_ID, POOL_MANAGER, STATE_VIEW, Block, DataError
 from pool_activity import SWAP, window_metrics
 from pool_requests import PgRequests
+from read_api import ReadGate, create_app
 from read_contract import validate_response
 from read_service import ReadService
 from test_catalogue import block_hash, stored_candidate
 from test_discovery import KEY, OTHER, POOL
 from discovery import ZERO
-from test_pool_activity import ActivityRpc, PACKED, event_log, initial_logs
+from test_pool_activity import SENDER, ActivityRpc, PACKED, event_log, initial_logs
 
 HEAD=200_000
 ANCHOR=10
+FIXTURES=Path(__file__).resolve().parent/'fixtures'
+# PgActivity.read on production, 6 Oct 2026, read-only as domino_catalogue_reader:
+# ETH/USDG 0x24107d15, walked from 1,146,712 and 78 days behind the head, and
+# USDG/ORBIO 0xea9f200e, followed at the head.
+BEHIND=FIXTURES/'pool-activity-eth-usdg-behind-2026-10-06.json'
+CURRENT=FIXTURES/'pool-activity-usdg-orbio-2026-10-06.json'
 
 
 class LiveWindowRpc(ActivityRpc):
@@ -146,14 +159,38 @@ class LiveWindowServeTests(unittest.TestCase):
         self.assertEqual(report['mode'],'live_window_only')
         self.assertEqual(report['poolKey']['fee_pips'],KEY[2])
 
+    def walk(self,worker,through):
+        while worker.step(POOL,through=through,span=100_000)['status']!='caught_up_to_target':
+            pass
+
     def test_a_walked_pool_still_serves_the_stored_ledger(self):
         self.register()
         worker=ActivityIndexer(PgActivity(self.catalogue),self.rpc)
-        worker.step(POOL,through=11)
+        # Within the head's 24 h: block timestamps here are block numbers.
+        self.walk(worker,HEAD-86_399)
         report=self.service().pool_activity(POOL)
         self.assertEqual(report['mode'],'core_pool_activity_read_only')
         self.assertEqual(report['coverage']['scope'],'since_verified_initialize')
         self.assertGreater(report['storedEventCount'],0)
+        self.assertEqual(report['freshness']['status'],'stale')
+
+    def test_a_walk_a_day_behind_is_served_live_until_it_reaches_the_heads_day(self):
+        self.register()
+        worker=ActivityIndexer(PgActivity(self.catalogue),self.rpc)
+        self.walk(worker,11)
+        behind=self.service().pool_activity(POOL)
+        validate_response('pool-activity',behind)
+        self.assertEqual((behind['mode'],behind['revision'],behind['storedEventCount']),('live_window_only',None,0))
+        self.assertEqual((behind['coverage']['startBlock'],behind['window24h']['swapEventCount']),(ANCHOR,1))
+        # The read asked the queue to walk the pool.
+        self.assertEqual(self.requests.status(POOL)['reason'],'read')
+        self.walk(worker,HEAD-86_400)
+        self.assertEqual(self.service().pool_activity(POOL)['mode'],'live_window_only')
+        self.walk(worker,HEAD-86_399)
+        current=self.service().pool_activity(POOL)
+        validate_response('pool-activity',current)
+        self.assertEqual(current['mode'],'core_pool_activity_read_only')
+        self.assertEqual(current['coverage']['indexedThrough'],HEAD-86_399)
 
 
 if __name__=='__main__':unittest.main()
@@ -190,3 +227,127 @@ class LiveWindowHonestyTests(unittest.TestCase):
                 'windowStartBlock': 20, 'windowStartTimestamp': 1_800_000_100}
         with self.assertRaises(Exception):
             ActivityCoverage.model_validate(live)
+
+
+def swap_log(pool_id, number, fee):
+    data = encode(['int128', 'int128', 'uint160', 'uint128', 'int24', 'uint24'], [-1000, 995, 2**96, 100, 0, fee])
+    return {'address': POOL_MANAGER, 'removed': False, 'topics': [SWAP, pool_id, SENDER],
+            'data': '0x' + data.hex(), 'blockNumber': hex(number), 'blockHash': block_hash(number),
+            'transactionHash': block_hash(number + 100_000), 'logIndex': '0x0'}
+
+
+class ChainAfterRpc:
+    """The chain after a stored report: its own tail block, then ten blocks a second to a later head."""
+    batch_reads = False
+
+    def __init__(self, report, *, seconds_behind, lp_fee=None):
+        snap, key = report['snapshot'], report['poolKey']
+        self.pool_id = report['poolId']
+        self.key = (key['currency0'], key['currency1'], key['fee_pips'], key['tick_spacing'], key['hooks'])
+        self.lp_fee = key['fee_pips'] if lp_fee is None else lp_fee
+        self.tail = (snap['number'], snap['hash'], snap['timestamp'])
+        self.head = snap['number'] + 10 * seconds_behind
+        # One swap inside the head's window, none in the stored day.
+        self.logs = [swap_log(self.pool_id, self.head - 50, key['fee_pips'])]
+
+    def timestamp(self, number):
+        return self.tail[2] + (number - self.tail[0]) // 10
+
+    def request(self, method, params=()):
+        if method == 'eth_chainId': return hex(CHAIN_ID)
+        if method == 'eth_getCode': return '0x6000'
+        if method == 'eth_getBlockByNumber':
+            number = self.head if params[0] == 'latest' else int(params[0], 16)
+            return {'number': hex(number), 'hash': self.tail[1] if number == self.tail[0] else block_hash(number),
+                    'timestamp': hex(self.timestamp(number))}
+        if method == 'eth_getLogs':
+            query = params[0]
+            assert query['address'] == POOL_MANAGER and query['topics'][1] == self.pool_id
+            low, high = int(query['fromBlock'], 16), int(query['toBlock'], 16)
+            return [item for item in self.logs if low <= int(item['blockNumber'], 16) <= high]
+        raise AssertionError((method, params))
+
+    def call(self, target, signature, inputs=(), values=(), outputs=(), *, block):
+        if signature == 'poolManager()': return (POOL_MANAGER,)
+        if signature == 'poolKeys(bytes25)': return self.key
+        if signature == 'getSlot0(bytes32)': return (2**96, 0, 0, self.lp_fee)
+        if signature == 'getLiquidity(bytes32)': return (100,)
+        if signature == 'getFeeGrowthGlobals(bytes32)': return (7, 9)
+        raise AssertionError(signature)
+
+
+class Asks:
+    def __init__(self): self.asked = []
+    def enqueue(self, pool_id, *, reason='read'): self.asked.append((pool_id, reason)); return True
+
+
+class LiveWhileBehindTests(unittest.TestCase):
+    """Production's real stored reports: a walk 78 days behind the head, and one at the head.
+
+    A stored window covers the 24 h before its own tail. While that tail has
+    not reached the head's 24 h, the window describes another day: 0x24107d15's
+    held no swap at all, the featured pools registered by #381 would hold their
+    first 100,000 blocks for days. Such a pool answers with the live window an
+    unwalked registered pool gets, and the queue is asked to walk it.
+    """
+    def read(self, fixture, *, seconds_behind, route='pool-activity', lp_fee=None):
+        stored = json.loads(fixture.read_text())
+        rpc, asks = ChainAfterRpc(stored, seconds_behind=seconds_behind, lp_fee=lp_fee), Asks()
+        service = ReadService(catalogue=object(), market_cache=object(), snapshot=object(), requests=asks,
+                              rpc_factory=lambda: rpc, transport_factory=lambda: None,
+                              clock=lambda: rpc.timestamp(rpc.head) + 5)
+        def read(store, pool_id, *, include_positions=False):
+            self.assertEqual(pool_id, stored['poolId'])
+            return deepcopy(stored)
+        app = create_app(service, gate=ReadGate(interval=0), snapshot_refresh_seconds=0)
+        with patch.object(activity_store.PgActivity, 'read', read), \
+                TestClient(app, base_url='http://127.0.0.1:8876') as client:
+            response = client.post('/v1/read/' + route, json={'poolId': stored['poolId']})
+        self.assertEqual(response.status_code, 200, response.text)
+        validate_response(route, response.json())
+        return response.json(), asks.asked, stored
+
+    def test_a_walk_78_days_behind_answers_with_the_live_window(self):
+        stored = json.loads(BEHIND.read_text())
+        behind = 1_791_249_318 - stored['snapshot']['timestamp']  # the head on 6 Oct, ten blocks a second
+        result, asked, stored = self.read(BEHIND, seconds_behind=behind)
+        self.assertEqual((result['mode'], result['revision'], result['storedEventCount']), ('live_window_only', None, 0))
+        self.assertEqual(result['coverage']['scope'], 'live_window_only')
+        # The registration's own anchor, not anything the stored walk reached.
+        self.assertEqual((result['coverage']['startBlock'], result['coverage']['initializedBlock']), (1_146_712, 1_146_712))
+        self.assertEqual((result['window24h']['swapEventCount'], stored['window24h']['swapEventCount']), (1, 0))
+        self.assertEqual(result['freshness']['status'], 'fresh')
+        self.assertEqual(result['liquidity']['status'], 'live_state_only')
+        self.assertEqual(asked, [(stored['poolId'], 'read')])
+
+    def test_the_stored_window_answers_once_its_walk_reaches_the_heads_day(self):
+        for seconds, mode in ((86_401, 'live_window_only'), (86_400, 'live_window_only'),
+                              (86_399, 'core_pool_activity_read_only'), (120, 'core_pool_activity_read_only')):
+            with self.subTest(seconds=seconds):
+                result, asked, _ = self.read(BEHIND, seconds_behind=seconds)
+                self.assertEqual(result['mode'], mode)
+                self.assertEqual(len(asked), mode == 'live_window_only')
+                if mode == 'core_pool_activity_read_only':
+                    self.assertEqual(result['revision'], 5039)
+                    self.assertEqual(result['freshness']['status'], 'stale')
+
+    def test_a_pool_at_the_head_keeps_its_stored_window(self):
+        result, asked, stored = self.read(CURRENT, seconds_behind=30)
+        self.assertEqual((result['mode'], result['revision']), ('core_pool_activity_read_only', stored['revision']))
+        self.assertEqual((result['freshness']['status'], result['window24h']['swapEventCount']), ('fresh', 2951))
+        self.assertTrue(result['window24h']['usableAsCurrent24h'])
+        self.assertEqual(asked, [])
+
+    def test_pool_positions_keeps_the_stored_ledger_however_far_behind(self):
+        result, asked, stored = self.read(BEHIND, seconds_behind=6_000_000, route='pool-positions')
+        self.assertEqual(result['mode'], 'core_pool_positions_read_only')
+        self.assertEqual(result['coverage']['indexedThrough'], stored['coverage']['indexedThrough'])
+        self.assertEqual(asked, [])
+
+    def test_a_live_window_that_cannot_be_built_leaves_the_stale_stored_answer(self):
+        # The core's fee disagrees with the key: the live identity is refused.
+        result, asked, stored = self.read(BEHIND, seconds_behind=6_000_000, lp_fee=3000)
+        self.assertEqual((result['mode'], result['revision']), ('core_pool_activity_read_only', stored['revision']))
+        self.assertEqual(result['freshness']['status'], 'stale')
+        self.assertFalse(result['window24h']['usableAsCurrent24h'])
+        self.assertEqual(asked, [(stored['poolId'], 'read')])
