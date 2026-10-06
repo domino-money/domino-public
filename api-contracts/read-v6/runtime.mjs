@@ -58,7 +58,8 @@ function tokenPrice(p) {
   return !(fromPool && (p.pool.hooks !== ZERO || fixed(p.depthUsd) < fixed(CONSTANTS.priceFloorUsd)));
 }
 
-// A token's price or its reason, as its chain's profile allows (v2_read_contract.priced).
+// A token's price or its reason, as its chain's profile allows (v2_read_contract.priced): a Domino chain's, or for
+// chain-balances a balance chain's (Ethereum, OP Mainnet), each with its own stable, wrapped token, feed and heartbeat.
 function priced(chainId, token, price, reason) {
   if ((price === null) === (reason === null)) return false;
   if (price === null) return true;
@@ -324,7 +325,8 @@ const validators = createContractValidators(SCHEMAS, ERROR_STATUS_BY_CODE, seman
 export const { validateRequest, validateResponse, validateError } = validators;
 
 /** The answer is about what was asked: the wallet, the chain, the token, the query; a page or a search no longer
- * than its limit; balances for exactly the chains and tokens asked (every chain's base currencies by default). */
+ * than its limit; balances for exactly the chains and tokens asked: by default every Domino chain's base currencies
+ * (CONSTANTS.chainIds), never a balance chain's; Ethereum and OP Mainnet (CONSTANTS.balanceChainIds) only when named. */
 export function validateExchange(route, request, response) {
   if (!validateRequest(route, request) || !validateResponse(route, response)) return false;
   if (['portfolio', 'activity', 'chain-balances'].includes(route) && response.wallet !== request.wallet) return false;

@@ -345,6 +345,45 @@ class ReadActivationTests(unittest.TestCase):
                          activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=True, chain_reads=False))
         self.assertNotIn('chain', activation.drop_in('gateway', COMMIT, Path('/runtime/gateway'), read_v6=True))
 
+    def test_the_balance_chains_are_opt_in_on_top_of_the_chain_reads(self):
+        with self.assertRaisesRegex(ValueError, 'balance_chains_need_chain_reads'):
+            activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=True, balance_chains=True)
+        read = activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=True, chain_reads=True,
+                                  balance_chains=True)
+        # Ethereum's and OP Mainnet's file beside the chain RPC file, in the same bound directory; their sealed URLs
+        # are v2-rpc-* credentials the reader already imports.
+        self.assertIn('Environment=DOMINO_V2_CHAIN_RPC_FILE=/run/domino-read-config/chain-rpc.json\n'
+                      'Environment=DOMINO_V2_BALANCE_CHAIN_RPC_FILE=/run/domino-read-config/balance-chain-rpc.json\n'
+                      'ImportCredential=v2-rpc-*\nDeviceAllow=char-tpm rw\n'
+                      'BindReadOnlyPaths=-/etc/domino/read:/run/domino-read-config\n', read)
+        self.assertEqual(read.count('ImportCredential='), 1)
+        # The gateway already serves chain-balances; without the option, the chain reads' drop-ins are what they were.
+        for component in activation.DROP_INS:
+            runtime = Path(f'/runtime/{component}')
+            chain_reads = activation.drop_in(component, COMMIT, runtime, read_v6=True, chain_reads=True)
+            self.assertEqual(chain_reads, activation.drop_in(component, COMMIT, runtime, read_v6=True, chain_reads=True,
+                                                             balance_chains=False))
+            self.assertNotIn('BALANCE', chain_reads)
+        self.assertEqual(activation.drop_in('gateway', COMMIT, Path('/runtime/gateway'), read_v6=True, chain_reads=True),
+                         activation.drop_in('gateway', COMMIT, Path('/runtime/gateway'), read_v6=True, chain_reads=True,
+                                            balance_chains=True))
+
+    def test_the_balance_chains_wait_for_their_private_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            private = Path(folder)
+            (private / 'chain-rpc.json').write_text('{}')
+            arguments = ['--commit', COMMIT, '--read-v6', '--chain-reads', '--balance-chains', '--inspect']
+            with patch.object(activation, 'CHAIN_RPC_DIRECTORY', private):
+                with self.assertRaisesRegex(ValueError, 'balance_chain_rpc_file_missing'):
+                    activation.plan(COMMIT, read_v6=True, chain_reads=True, balance_chains=True)
+                with patch('sys.stdout', new_callable=io.StringIO) as printed:
+                    self.assertEqual(activation.main(arguments), 1)
+                self.assertEqual(json.loads(printed.getvalue())['reason'], 'balance_chain_rpc_file_missing')
+                (private / 'balance-chain-rpc.json').write_text('{}')
+                # Past that check, the plan goes on to the release (none here).
+                with self.assertRaisesRegex(ValueError, 'read_release_not_installed'):
+                    activation.plan(COMMIT, read_v6=True, chain_reads=True, balance_chains=True)
+
     def test_the_chain_reads_wait_for_the_private_file(self):
         with tempfile.TemporaryDirectory() as folder:
             private = Path(folder)
@@ -452,6 +491,47 @@ class ContinuousEgressTests(unittest.TestCase):
         self.assertFalse(set(without) & set(policy.CHAIN_HOSTS))
         granted = install_continuous_egress.needed_hosts(live, 'team.cloudflareaccess.com', True, chains=True)
         self.assertEqual(set(granted), set(without) | set(policy.CHAIN_HOSTS))
+
+    def test_the_balance_chains_hosts_are_collected_only_when_asked(self):
+        live = ['read', 'gateway', 'tunnel', 'write']
+        without = install_continuous_egress.needed_hosts(live, 'team.cloudflareaccess.com', True, chains=True)
+        self.assertFalse(set(without) & set(policy.BALANCE_CHAIN_HOSTS))
+        granted = install_continuous_egress.needed_hosts(live, 'team.cloudflareaccess.com', True, chains=True,
+                                                         balance_chains=True)
+        self.assertEqual(set(granted), set(without) | set(policy.BALANCE_CHAIN_HOSTS))
+
+    def test_collect_names_the_balance_chains_only_when_asked_and_for_the_reader(self):
+        def identity(role):
+            unit = policy.unit_of(role)
+            uid = 2000 + policy.ROLES.index(role)
+            return {'user': 'domino-' + role, 'realUid': uid, 'effectiveUid': uid, 'gid': uid,
+                    'supplementaryGids': [], 'unit': unit, 'cgroup': unit and '/system.slice/' + unit}
+        known = sorted(policy.RPC_HOSTS | policy.ANALYTICS_HOSTS | policy.CHAIN_HOSTS | policy.BALANCE_CHAIN_HOSTS)
+
+        def resolve(hostname):
+            if hostname in egress_policy.EDGE_ADDRESSES:
+                return sorted(egress_policy.EDGE_ADDRESSES[hostname])[:1]
+            return ['16.0.0.%d' % (1 + known.index(hostname)) if hostname != 'team.cloudflareaccess.com' else '16.0.0.99']
+        with patch.object(install_continuous_egress, 'identity', identity), \
+             patch.object(install_continuous_egress, 'resolve', resolve):
+            arguments = ['--collect', '--access-issuer', 'team.cloudflareaccess.com', '--public-data-collectors',
+                         '--v2-chains']
+            for extra, expected in (([], None), (['--balance-chains'], True)):
+                with self.subTest(extra=extra), patch('sys.stdout', new_callable=io.StringIO) as printed:
+                    self.assertEqual(install_continuous_egress.main(
+                        [*arguments, '--enabled', 'read,gateway,tunnel,write', *extra]), 0)
+                    snapshot = json.loads(printed.getvalue())
+                    self.assertEqual(snapshot.get('balanceChains'), expected)
+                    pinned = {item['hostname'] for item in snapshot['hosts']}
+                    self.assertEqual(pinned & policy.BALANCE_CHAIN_HOSTS, policy.BALANCE_CHAIN_HOSTS if expected else set())
+                    rendered = policy.render(snapshot)['artifacts']
+                    self.assertEqual('ethereum-mainnet.core.chainstack.com' in rendered[policy.ROOT + '/read.hosts'],
+                                     bool(expected))
+                    self.assertNotIn('ethereum-mainnet.core.chainstack.com', rendered[policy.ROOT + '/write.hosts'])
+            with patch('sys.stdout', new_callable=io.StringIO) as printed:
+                self.assertEqual(install_continuous_egress.main(
+                    [*arguments, '--enabled', 'gateway,tunnel,write', '--balance-chains']), 1)
+            self.assertEqual(json.loads(printed.getvalue())['reason'], 'balance_chains_require_the_reader')
 
     def test_the_bridge_hosts_are_collected_for_the_crosschain_listener_alone(self):
         live = ['read', 'gateway', 'tunnel', 'write']

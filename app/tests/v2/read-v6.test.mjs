@@ -30,7 +30,11 @@ async function readAs(route, transport, body, file) {
   if (route === 'chain-pools') return readChainPools(transport, runtime, body.chainId, body.token, body.pairedToken ?? undefined);
   if (route === 'chain-tokens') return readChainTokens(transport, runtime, body.chainId, body.query);
   if (route === 'chain-balances') {
-    const asked = file.startsWith('chain-balances-asked') ? fixture('requests/chain-balances.json').tokens : undefined;
+    // Changed on purpose (data) 2026-10-06: Ethereum's and OP Mainnet's asked answers (read-v6's balance chains, read
+    // only when named) answer the tokens they list, in their order; the first asked answer, the request fixture's.
+    const listed = (answer) => answer.chains.flatMap((chain) => chain.balances.map((balance) => ({ chainId: chain.chainId, address: balance.address })));
+    const asked = file === 'chain-balances-asked.json' ? fixture('requests/chain-balances.json').tokens
+      : file.startsWith('chain-balances-asked') ? listed(body) : undefined;
     return readChainBalances(transport, runtime, body.wallet, asked);
   }
   const request = fixture(`requests/${route}.json`);

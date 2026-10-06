@@ -15,10 +15,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from discovery import DataError
 import v2_chains
-from v2_chains import DEX_V3, DEX_V4, ZERO, default_registry, load_registry
-from v2_fixtures import ROOT, documents, write_registry
+from v2_chains import (DEX_V3, DEX_V4, ZERO, default_balance_registry, default_registry, load_balance_registry,
+                       load_registry)
+from v2_fixtures import ROOT, balance_documents, documents, write_balance_registry, write_registry
 
 ROBINHOOD, BASE, ARBITRUM = 'robinhood-4663.json', 'base-8453.json', 'arbitrum-42161.json'
+ETHEREUM, OPTIMISM = 'ethereum-1.json', 'optimism-10.json'
 
 
 class RegistryTests(unittest.TestCase):
@@ -241,6 +243,138 @@ class RefusalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(DataError, '^v2_chain_profile_missing$'):
                 load_registry(directory)
+
+
+class BalanceRegistryTests(unittest.TestCase):
+    """The balance chains (api-contracts/v2/balance-chains): read-v6's chain-balances reads them when asked."""
+
+    def test_ethereum_and_op_mainnet_load_in_chain_id_order_apart_from_the_domino_chains(self):
+        registry = load_balance_registry()
+        self.assertEqual([(p.chainId, p.key, p.name) for p in registry.chains],
+                         [(1, 'ethereum-1', 'Ethereum'), (10, 'optimism-10', 'OP Mainnet')])
+        self.assertEqual(registry.pending, ())
+        self.assertIs(default_balance_registry(), default_balance_registry())
+        self.assertEqual(registry.chain('optimism-10').chainId, 10)
+        self.assertEqual(registry.chain(1).key, 'ethereum-1')
+        # Each registry names its own chains only.
+        for name in (8453, 'base-8453', 4663, 'ethereum', '1', 137):
+            with self.subTest(name=name), self.assertRaisesRegex(DataError, '^v2_chain_unknown$'):
+                registry.chain(name)
+        for name in (1, 'ethereum-1', 10, 'optimism-10'):
+            with self.subTest(name=name), self.assertRaisesRegex(DataError, '^v2_chain_unknown$'):
+                default_registry().chain(name)
+
+    def test_a_balance_profile_names_what_a_balance_and_its_price_read_lower_case(self):
+        ethereum, optimism = load_balance_registry().chains
+        self.assertEqual(ethereum.uniswap.v4.stateView, '0x7ffe42c4a5deea5b0fec41c94c136cf115597227')
+        self.assertEqual(optimism.wrappedNative.address, '0x4200000000000000000000000000000000000006')
+        self.assertIsNone(ethereum.gasPrice.chainlinkEthUsd.sequencerUptimeFeed)
+        self.assertEqual(optimism.gasPrice.chainlinkEthUsd.sequencerUptimeFeed, '0x371ead81c9102c9bf4874a9075ffff170f2ee389')
+        self.assertEqual(ethereum.verified_codehash(ethereum.uniswap.v4.poolManager),
+                         '0x785f1014552b7ce7d5fb7d0c970ca60edee94fd00425d7ca21609acac7ce1293')
+        with self.assertRaisesRegex(DataError, '^v2_contract_not_in_profile$'):
+            ethereum.verified_codehash(BASE_USDC)
+
+
+BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+DAI = '0x6B175474E89094C44Da98b954EedeAC495271d0F'
+
+
+class BalanceRefusalTests(unittest.TestCase):
+    """Each refusal changes one fact of a real balance profile, refused by the rule it names alone."""
+
+    def load(self, mutate, name=ETHEREUM, rename=None, extra=None):
+        docs = balance_documents()
+        mutate(docs[name])
+        if rename:
+            docs[rename] = docs.pop(name)
+        docs.update(extra or {})
+        with tempfile.TemporaryDirectory() as directory:
+            return write_balance_registry(directory, docs, domino=load_registry())
+
+    def refused(self, mutate, code='v2_chain_profile_invalid', rule=None, **kwargs):
+        with self.assertRaisesRegex(DataError, f'^{code}$') as caught:
+            self.load(mutate, **kwargs)
+        if rule is not None:
+            self.assertIn(rule, str(caught.exception.__cause__))
+
+    def test_the_unchanged_copies_load(self):
+        self.assertEqual([p.chainId for p in self.load(lambda d: None).chains], [1, 10])
+
+    def test_keys_and_types_are_exact(self):
+        cases = {
+            'a domino profile kind': lambda d: d.update(kind='domino-v2-chain'),
+            'a domino profile field': lambda d: d.update(permit2='0x000000000022D473030F116dDEE9F6B43aC78BA3'),
+            'missing multicall3': lambda d: d.pop('multicall3'),
+            'string chain id': lambda d: d.update(chainId='1'),
+            'zero state view': lambda d: d['uniswap']['v4'].update(stateView=ZERO),
+            'no fee tiers': lambda d: d['uniswap']['v3'].update(tickSpacingByFee={}),
+            'unchecksummed': lambda d: d.update(multicall3=d['multicall3'].lower()),
+            'heartbeat zero': lambda d: d['gasPrice']['chainlinkEthUsd'].update(heartbeatSeconds=0),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(case=name):
+                self.refused(mutate)
+
+    def test_one_stable_at_rank_one_beside_eth_and_weth(self):
+        def two_stables(d):
+            d['chargeCurrencies'].insert(1, {'rank': 1, 'symbol': 'DAI', 'address': DAI, 'decimals': 18})
+            d['verification']['contracts'].append({'name': 'DAI', 'address': DAI, 'codehash': '0x' + '11' * 32})
+
+        def no_eth(d):
+            d['chargeCurrencies'] = [c for c in d['chargeCurrencies'] if not c.get('native')]
+
+        def no_weth(d):
+            d['chargeCurrencies'] = [c for c in d['chargeCurrencies'] if c['address'] != d['wrappedNative']['address']]
+        for mutate in (two_stables, no_eth, no_weth):
+            with self.subTest(case=mutate.__name__):
+                self.refused(mutate, rule='balance_currencies_invalid')
+        # The currency rules the Domino profiles keep hold here too.
+        self.refused(lambda d: d['chargeCurrencies'].reverse(), rule='charge_currency_ranks_out_of_order')
+        self.refused(lambda d: d['chargeCurrencies'][2].update(rank=3), rule='native_and_wrapped_ranks_differ')
+
+    def test_every_consumed_contract_is_in_the_verification_record(self):
+        def drop(address_of):
+            def mutate(d):
+                target = address_of(d)
+                d['verification']['contracts'] = [c for c in d['verification']['contracts'] if c['address'] != target]
+            return mutate
+        for name, address_of in (('multicall3', lambda d: d['multicall3']), ('weth', lambda d: d['wrappedNative']['address']),
+                                 ('usdc', lambda d: d['chargeCurrencies'][0]['address']),
+                                 ('feed', lambda d: d['gasPrice']['chainlinkEthUsd']['proxy']),
+                                 ('factory', lambda d: d['uniswap']['v3']['factory']),
+                                 ('poolManager', lambda d: d['uniswap']['v4']['poolManager']),
+                                 ('stateView', lambda d: d['uniswap']['v4']['stateView'])):
+            with self.subTest(contract=name):
+                self.refused(drop(address_of), rule='consumed_contract_not_verified')
+        with self.subTest(contract='sequencer feed on OP Mainnet'):
+            self.refused(drop(lambda d: d['gasPrice']['chainlinkEthUsd']['sequencerUptimeFeed']), name=OPTIMISM,
+                         rule='consumed_contract_not_verified')
+
+        def recorded_absent(d):
+            record = next(c for c in d['verification']['contracts'] if c['address'] == d['multicall3'])
+            record.update(codehash=None, absent=True)
+        self.refused(recorded_absent, rule='consumed_contract_not_verified')
+        # One address for two of Uniswap's contracts, each recorded: refused all the same.
+        self.refused(lambda d: d['uniswap']['v4'].update(stateView=d['uniswap']['v4']['poolManager']),
+                     rule='uniswap_contracts_not_distinct')
+
+    def test_the_file_name_and_document_must_agree(self):
+        self.refused(lambda d: None, code='v2_chain_profile_file_name', rename='ethereum-2.json')
+
+    def test_no_balance_chain_takes_a_domino_chain_or_another_balance_chains_id_or_name(self):
+        for case, change, file in (('a domino chain id', {'chainId': 8453, 'slug': 'mainnet'}, 'mainnet-8453.json'),
+                                   ('a domino chain name', {'chainId': 5, 'slug': 'arbitrum'}, 'arbitrum-5.json'),
+                                   ('a pending chain name', {'chainId': 5, 'slug': 'elysium'}, 'elysium-5.json'),
+                                   ('a balance chain id', {'slug': 'mainnet', 'chainId': 10}, 'mainnet-10.json'),
+                                   ('a balance chain name', {'slug': 'optimism', 'chainId': 5}, 'optimism-5.json')):
+            with self.subTest(case=case):
+                self.refused(lambda d: d.update(change), code='v2_chain_profile_duplicate', rename=file)
+
+    def test_an_empty_directory_is_no_registry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(DataError, '^v2_chain_profile_missing$'):
+                load_balance_registry(directory, domino=load_registry())
 
 
 if __name__ == '__main__':

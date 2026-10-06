@@ -16,10 +16,11 @@ from eth_abi import decode, encode
 from eth_hash.auto import keccak
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from v2_chains import load_registry  # noqa: E402
+from v2_chains import load_balance_registry, load_registry  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 CHAINS = ROOT / 'api-contracts/v2/chains'
+BALANCE_CHAINS = ROOT / 'api-contracts/v2/balance-chains'
 HEAD = {'number': '0x64', 'hash': '0x' + 'ab' * 32, 'timestamp': '0x6500'}
 
 
@@ -27,11 +28,22 @@ def documents():
     return {path.name: json.loads(path.read_text()) for path in sorted(CHAINS.glob('*.json'))}
 
 
+def balance_documents():
+    return {path.name: json.loads(path.read_text()) for path in sorted(BALANCE_CHAINS.glob('*.json'))}
+
+
 def write_registry(directory, docs):
     directory = Path(directory)
     for name, document in docs.items():
         (directory / name).write_text(json.dumps(document, indent=2))
     return load_registry(directory)
+
+
+def write_balance_registry(directory, docs, domino=None):
+    directory = Path(directory)
+    for name, document in docs.items():
+        (directory / name).write_text(json.dumps(document, indent=2))
+    return load_balance_registry(directory, domino=domino)
 
 
 def synthetic_code(contract):
@@ -53,9 +65,10 @@ def with_synthetic_code(document, *, replace=None):
     for record in document['verification']['contracts']:
         if not record.get('absent'):
             record['codehash'] = code_hash(synthetic_code(record['address']))
-    deployer = document['deployer']
-    deployer['codehash'] = next(record['codehash'] for record in document['verification']['contracts']
-                                if record['address'] == deployer['address'])
+    deployer = document.get('deployer')  # a balance chain's profile has none
+    if deployer is not None:
+        deployer['codehash'] = next(record['codehash'] for record in document['verification']['contracts']
+                                    if record['address'] == deployer['address'])
     return document
 
 

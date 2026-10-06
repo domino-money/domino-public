@@ -93,7 +93,7 @@ The automation (3a, docs/v2/V2_AUTOMATION_BACKEND.md, "Why a vault or a mandate 
 | `POST /v6/read/portfolio` `{wallet}` | Per chain status; vaults (≤ 50), positions (≤ 100), mandates (≤ 100), credits, tokens, `truncated` |
 | `POST /v6/read/activity` `{wallet, limit?, cursor?}` | Receipts newest first, `limit` 1–50 (20); `nextCursor` = `timestamp.chain.block.logIndex` of the last item, exclusive |
 | `POST /v6/read/chain-pools` `{chainId, token, pairedToken?}` | The token's standard hookless pools on a chain, read at its head (≤ 32) |
-| `POST /v6/read/chain-balances` `{wallet, tokens?}` | A wallet's balances per chain, each chain's base currencies by default |
+| `POST /v6/read/chain-balances` `{wallet, tokens?}` | A wallet's balances per chain, each Domino chain's base currencies by default; Ethereum and OP Mainnet when asked |
 | `POST /v6/read/chain-tokens` `{chainId, query, limit?}` | Known tokens on Base or Arbitrum One that match (≤ 24) |
 
 Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Contract: 1.1.0-rc.1`) when `DOMINO_V2_READ=1`, and through the gateway (`read_gateway.py`, `--enable-v6`, `DOMINO_BRIDGE_V6_READS=portfolio,activity`; it re-validates every answer and that it is about the wallet asked); `bridge_http.py`'s client knows the routes. Field by field, the package's [README](../../api-contracts/read-v6/README.md) is the reference; the generated schemas and `types.ts` are the contract.
@@ -103,6 +103,11 @@ Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Co
 `chain-pools`, `chain-balances` and `chain-tokens` are not index reads (`backend/v2_chain_reads.py`):
 
 - **Where they read:** at request time, one Multicall3 call per chain at the chain's head (`v2_head`); `chain-pools` at most three more, for the depths. A read sends at most 8 requests, an endpoint failover's included (`CHAIN_READ_REQUESTS`). Robinhood goes through the reader's provider file (the own node); Base and Arbitrum go through the V2 chain RPC file's hosted endpoints (F6), billed per call.
+- **Ethereum and OP Mainnet (the owner's decision of 6 Oct 2026):** `chain-balances` also reads them when `tokens` names them (`BALANCE_CHAIN_IDS` 1 and 10 in `v2_read_contract.py`); without `tokens` it answers Domino's three chains, as before. No other route reads them.
+  - **Profiles:** `api-contracts/v2/balance-chains/{ethereum-1,optimism-10}.json`, a lighter `BalanceChainProfile` (`backend/v2_chains.py`) apart from `api-contracts/v2/chains`, which feeds S2's destinations, the plan export and the Domino chain list. Each names Multicall3, USDC (rank 1, Circle's native), ETH and WETH, the Chainlink ETH/USD feed (Ethereum 3,600 s heartbeat; OP Mainnet 1,200 s behind its sequencer feed), the Uniswap v3 factory and the v4 PoolManager and StateView, each in a verification record with its code hash (Ethereum block 26,133,290, OP Mainnet 157,845,086, 6 Oct 2026). No balance chain may take a Domino chain's id or name.
+  - **Prices:** the same rules with each chain's own stable, feed and pools: USDC at US$ 1, ETH and WETH from the chain's feed within its heartbeat (and OP Mainnet's sequencer past its hour), any other token from its deepest pool there (US$ 10,000 within 10%).
+  - **Endpoints:** the reader's balance chain RPC file (`DOMINO_V2_BALANCE_CHAIN_RPC_FILE`; the chain RPC file's schema, read against the balance registry, credentials `v2-rpc-ethereum-1-<name>` and `v2-rpc-optimism-10-<name>`). Without it, or with a fault in it, both answer `chain_not_configured` and the reader logs `balance_chains_unavailable` with the fault's fixed code; every other chain reads as before.
+  - **Rollout:** an additive change inside `1.1.0-rc.1`, reader first, then the Worker (`worker-v6`, whose package refuses chains 1 and 10 until then), then the app, with no outage: an older app or Worker never asks for them.
 - **Connections and chains:** calls go over kept HTTPS connections (`kept_rpc`: the V1 reader's `KEEPALIVE_OPENER`, at most 16 idle a host for 20 s), and the own node's loopback hop as before. `chain-balances` and the pricer read the chains of one answer at once (`each_chain`), each within the read's deadline, so the slowest chain sets the time, not their sum.
 - **Cache:** pools for 15 s, balances for 10 s, the index's known tokens for 60 s, prices for 30 s.
 - **Prices** (item 4):
@@ -240,6 +245,52 @@ On 6 Oct 2026, ten samples each, every survey 3 calls (median, ms; a new connect
 | Robinhood | own node (loopback) | 3 → 3 | 46 → 48 |
 
 The public endpoints were throttled at their 2 requests per second.
+
+### Ethereum and OP Mainnet (`chain-balances` only)
+
+The owner's steps, in this order. Nothing here touches Base's, Arbitrum's or Robinhood's reads.
+
+1. **Endpoints.** Create an Ethereum and an OP Mainnet endpoint at Chainstack and at Alchemy, as for Base and Arbitrum (Chainstack primary, Alchemy fallback only).
+2. **Seal the URLs** on `domino-prod`, one credential per endpoint, each typed at the prompt (never on a command line):
+
+   ```sh
+   sudo systemd-ask-password -n "URL:" | sudo systemd-creds encrypt --with-key=host+tpm2 --name=v2-rpc-ethereum-1-chainstack - /etc/credstore.encrypted/v2-rpc-ethereum-1-chainstack
+   sudo systemd-ask-password -n "URL:" | sudo systemd-creds encrypt --with-key=host+tpm2 --name=v2-rpc-ethereum-1-alchemy - /etc/credstore.encrypted/v2-rpc-ethereum-1-alchemy
+   sudo systemd-ask-password -n "URL:" | sudo systemd-creds encrypt --with-key=host+tpm2 --name=v2-rpc-optimism-10-chainstack - /etc/credstore.encrypted/v2-rpc-optimism-10-chainstack
+   sudo systemd-ask-password -n "URL:" | sudo systemd-creds encrypt --with-key=host+tpm2 --name=v2-rpc-optimism-10-alchemy - /etc/credstore.encrypted/v2-rpc-optimism-10-alchemy
+   ```
+
+   The reader already imports every `v2-rpc-*` credential.
+3. **The file:** `/etc/domino/read/balance-chain-rpc.json`, beside `chain-rpc.json` (owned by `domino-read`, mode 0600). Copy `chain-rpc.json`'s Chainstack and Alchemy entries as they are (`name`, `archive` and the three limits), change each `host`, and put them under the two chains, in that order:
+
+   ```text
+   {"schemaVersion": 1, "kind": "domino-v2-chain-rpc", "chains": {
+     "ethereum-1":  {"endpoints": [<chainstack entry, "host": "ethereum-mainnet.core.chainstack.com">,
+                                   <alchemy entry, "host": "eth-mainnet.g.alchemy.com">]},
+     "optimism-10": {"endpoints": [<chainstack entry, "host": "optimism-mainnet.core.chainstack.com">,
+                                   <alchemy entry, "host": "opt-mainnet.g.alchemy.com">,
+                                   {"name": "public", "host": "mainnet.optimism.io", "url": "https://mainnet.optimism.io",
+                                    "archive": false, "maxBatchItems": 10, "maxLogBlocks": 2000, "requestsPerSecond": 2}]}}}
+   ```
+
+   The public endpoint is optional, a last resort as on Base and Arbitrum. The file may name `ethereum-1` and `optimism-10` only: it is read against the balance registry, and the Domino chains stay in `chain-rpc.json`. `v2_rpc.py validate --chain ethereum-1 --chain-rpc-file <the file>` checks it without a call, as in step 5.
+4. **Egress:** collect with the live flags plus `--v2-chains --balance-chains` (`balance_chains` in CONTINUOUS_EGRESS.md, the reader's alone), render, `--update --inspect`, `--update --apply --backup …`, then `nft -f`.
+5. **Check each endpoint as the reader,** from the new read release installed beside the running one (`install_read_release.py`):
+
+   ```sh
+   sudo systemd-run --pipe --wait --collect -p User=domino-read -p 'ImportCredential=v2-rpc-*' -p PrivateDevices=yes \
+     -p 'DeviceAllow=char-tpm rw' -p BindReadOnlyPaths=/etc/domino/continuous-reads/read.hosts:/etc/hosts \
+     -p BindReadOnlyPaths=-/etc/domino/read:/run/domino-read-config -p WorkingDirectory=<the release>/read \
+     <the release>/read/backend/.venv/bin/python3.14 -B backend/v2_rpc.py check --chain ethereum-1 \
+     --chain-rpc-file /run/domino-read-config/balance-chain-rpc.json
+   ```
+
+   The same with `--chain optimism-10`. Each endpoint must prove its chain id, a fresh head and the profile's code hashes (eight on Ethereum, nine on OP Mainnet), and an archive endpoint the PoolManager's code at the verification block. A public endpoint may be refused locally at its 2 requests per second.
+6. **The read release:** move the two 70 drop-ins aside, then `install_read_activation.py --commit <sha> --read-v6 --chain-reads --balance-chains`, first with `--inspect`, then with `--apply`. It adds `DOMINO_V2_BALANCE_CHAIN_RPC_FILE=/run/domino-read-config/balance-chain-rpc.json` to the reader, and refuses until the file is there. Restart `domino-continuous-reads.target`.
+   - **Check:** `POST 127.0.0.1:8876/v6/read/chain-balances` with `{"wallet": "0x…", "tokens": [{"chainId": 1, "address": "0x0000000000000000000000000000000000000000"}, {"chainId": 10, "address": "0x0b2c639c533813f4aa9d7837caf62653d097ff85"}]}` answers both chains `current`, ETH priced from Ethereum's feed and USDC at 1. `{"wallet": "0x…"}` answers Robinhood, Base and Arbitrum as before. The journal has no `balance_chains_unavailable`.
+   - **Rollback:** the previous release's 70 drop-ins, then restart the target. Removing the file instead, then restarting, leaves Ethereum and OP Mainnet `chain_not_configured` and everything else as it was.
+7. **The Worker:** *Publish read path* `worker-v6` on the merge commit, once the reader answers. Until then the Worker's package refuses chains 1 and 10 (`invalid_request`).
+8. **The app:** its owner adds 1 and 10 to `SERVED_BALANCE_CHAINS` (`app/src/v2in/funds/model.ts`, or reads `CONSTANTS.balanceChainIds`) after the Worker.
 
 ## What 3a, #301 and F7 must align with
 

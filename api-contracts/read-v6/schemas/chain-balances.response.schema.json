@@ -47,6 +47,8 @@
         },
         "chainId": {
           "enum": [
+            1,
+            10,
             4663,
             8453,
             42161
@@ -411,7 +413,7 @@
       "items": {
         "$ref": "#/$defs/ChainBalances"
       },
-      "maxItems": 3,
+      "maxItems": 5,
       "minItems": 1,
       "title": "Chains",
       "type": "array"

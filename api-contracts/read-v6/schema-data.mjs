@@ -2792,6 +2792,8 @@ export const SCHEMAS = {
             },
             "chainId": {
               "enum": [
+                1,
+                10,
                 4663,
                 8453,
                 42161
@@ -2811,7 +2813,7 @@ export const SCHEMAS = {
       "$id": "https://domino.invalid/contracts/read-v6/chain-balances.request.schema.json",
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
-      "description": "Without tokens: every chain's base currencies (its charge currencies).",
+      "description": "Without tokens: every Domino chain's base currencies (its charge currencies).",
       "properties": {
         "tokens": {
           "anyOf": [
@@ -2894,6 +2896,8 @@ export const SCHEMAS = {
             },
             "chainId": {
               "enum": [
+                1,
+                10,
                 4663,
                 8453,
                 42161
@@ -3258,7 +3262,7 @@ export const SCHEMAS = {
           "items": {
             "$ref": "#/$defs/ChainBalances"
           },
-          "maxItems": 3,
+          "maxItems": 5,
           "minItems": 1,
           "title": "Chains",
           "type": "array"
@@ -6763,6 +6767,13 @@ export const ERRORS = {
   "wrong_chain": 503
 };
 export const CONSTANTS = {
+  "balanceChainIds": [
+    1,
+    10,
+    4663,
+    8453,
+    42161
+  ],
   "blockers": [
     "expired",
     "vault_not_domino",
@@ -6810,6 +6821,18 @@ export const CONSTANTS = {
   "maxLagSeconds": 120,
   "priceFloorUsd": "10000.000000",
   "priceProfiles": {
+    "1": {
+      "feed": "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419",
+      "heartbeatSeconds": 3600,
+      "stable": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      "wrapped": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+    },
+    "10": {
+      "feed": "0x13e3ee699d1909e989722e753853ae30b17e08c5",
+      "heartbeatSeconds": 1200,
+      "stable": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+      "wrapped": "0x4200000000000000000000000000000000000006"
+    },
     "42161": {
       "feed": "0x639fe6ab55c921f74e7fac1ee960c0b6293ba612",
       "heartbeatSeconds": 1755,

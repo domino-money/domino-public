@@ -51,6 +51,12 @@ STORED_ROUTES = ('portfolio', 'activity', 'chain-tokens')
 # reader never loads the profiles to start. tests/test_read_v6_contract.py
 # holds it to the registry.
 CHAIN_IDS = (4663, 8453, 42161)
+# The chains chain-balances reads, ascending: Domino's, and the balance chains
+# (api-contracts/v2/balance-chains: Ethereum and OP Mainnet, the owner's decision
+# of 6 Oct 2026), read only when a request names them in `tokens`. Every other
+# route, and chain-balances without `tokens`, is CHAIN_IDS'. The test holds it
+# to both registries.
+BALANCE_CHAIN_IDS = (1, 10, 4663, 8453, 42161)
 MAX_VAULTS, MAX_POSITIONS, MAX_MANDATES, MAX_CREDITS, MAX_TOKENS = 50, 100, 100, 50, 300
 MAX_ITEMS, DEFAULT_ITEMS = 50, 20
 MAX_LEGS, MAX_STEPS, MAX_LINES, MAX_EVENTS, MAX_MEMBERS = 8, 8, 16, 32, 256
@@ -78,9 +84,13 @@ PRICE_REASONS = ('no_qualified_price_source', 'price_read_failed', 'pricing_limi
 MARKET_REASONS = ('no_qualified_reference', 'price_read_failed', 'eth_usd_stale', 'sequencer_down',
                   'pool_depth_unmeasurable')
 PRICE_FLOOR_USD, PRICE_BAND_PERCENT = '10000.000000', 10
-# Each chain's stable, wrapped native token and Chainlink ETH/USD feed, from its profile (api-contracts/v2/chains;
-# test_read_v6_contract holds them equal).
+# Each chain's stable, wrapped native token and Chainlink ETH/USD feed, from its profile (api-contracts/v2/chains, and
+# api-contracts/v2/balance-chains for Ethereum and OP Mainnet; test_read_v6_contract holds them equal).
 PRICE_PROFILES = {
+    1: {'stable': '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 'wrapped': '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+        'feed': '0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419', 'heartbeatSeconds': 3600},
+    10: {'stable': '0x0b2c639c533813f4aa9d7837caf62653d097ff85', 'wrapped': '0x4200000000000000000000000000000000000006',
+         'feed': '0x13e3ee699d1909e989722e753853ae30b17e08c5', 'heartbeatSeconds': 1200},
     4663: {'stable': '0x5fc5360d0400a0fd4f2af552add042d716f1d168', 'wrapped': '0x0bd7d308f8e1639fab988df18a8011f41eacad73',
            'feed': '0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9', 'heartbeatSeconds': 86400},
     8453: {'stable': '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 'wrapped': '0x4200000000000000000000000000000000000006',
@@ -134,6 +144,7 @@ Address = Annotated[str, Field(pattern=r'^0x[0-9a-f]{40}$', min_length=42, max_l
 Hash = Annotated[str, Field(pattern=r'^0x[0-9a-f]{64}$', min_length=66, max_length=66)]
 UInt = Annotated[StrictInt, Field(ge=0, le=2**53 - 1)]
 ChainId = Literal[CHAIN_IDS]
+BalanceChainId = Literal[BALANCE_CHAIN_IDS]
 Dex = Literal[3, 4]
 Bps = Annotated[StrictInt, Field(ge=0, le=10_000)]
 Code = Annotated[str, Field(pattern=r'^[a-z0-9_]{1,80}$')]
@@ -1261,7 +1272,7 @@ class TokenBalance(WireModel):
 
 class ChainBalances(WireModel):
     """One chain's balances; `totalUsd` once every balance above zero has a value."""
-    chainId: ChainId
+    chainId: BalanceChainId  # a Domino chain, or a balance chain (Ethereum, OP Mainnet) when asked
     status: Literal['current', 'unavailable']
     reason: Literal['chain_not_configured', 'chain_read_failed'] | None
     snapshot: BlockRef | None
@@ -1295,7 +1306,7 @@ class ChainBalancesResponse(WireModel):
     wallet: Address
     servedAt: UInt
     coverage: Literal['complete', 'partial']
-    chains: Annotated[list[ChainBalances], Field(min_length=1, max_length=len(CHAIN_IDS))]
+    chains: Annotated[list[ChainBalances], Field(min_length=1, max_length=len(BALANCE_CHAIN_IDS))]
     totalUsd: Usd | None
     limitations: Annotated[list[Literal[LIVE_LIMITATIONS]], Field(min_length=len(LIVE_LIMITATIONS),
                                                                  max_length=len(LIVE_LIMITATIONS))]
@@ -1392,12 +1403,12 @@ class ChainPoolsRequest(WireModel):
 
 
 class BalanceTokenRef(WireModel):
-    chainId: ChainId
+    chainId: BalanceChainId  # a Domino chain, or a balance chain (Ethereum, OP Mainnet)
     address: WalletAddress
 
 
 class ChainBalancesRequest(WireModel):
-    """Without tokens: every chain's base currencies (its charge currencies)."""
+    """Without tokens: every Domino chain's base currencies (its charge currencies)."""
     wallet: WalletAddress
     tokens: Annotated[list[BalanceTokenRef], Field(min_length=1, max_length=MAX_BALANCE_TOKENS)] | None = None
 
@@ -1439,7 +1450,8 @@ def validate_v6_response(route, body):
 
 def validate_v6_request_response(route, request, body):
     """The answer is about what was asked (the gateway's consistency check): the wallet, the chain, the token, the
-    query; an answer never longer than the limit asked; balances for exactly the chains and tokens asked."""
+    query; an answer never longer than the limit asked; balances for exactly the chains and tokens asked (without
+    `tokens`, exactly Domino's chains: a balance chain answers only when named)."""
     validate_v6_response(route, body)
     if route in ('portfolio', 'activity', 'chain-balances') and body['wallet'] != request['wallet']:
         raise ValueError('v6_wallet_mismatch')

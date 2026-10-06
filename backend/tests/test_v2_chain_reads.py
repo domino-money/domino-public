@@ -21,13 +21,14 @@ import v2_chain_reads as reads  # noqa: E402
 import discovery  # noqa: E402
 from discovery import SNAPSHOT_LOOPBACK_RPC, ZERO, Block, DataError  # noqa: E402
 from read_deadline import check_read_deadline, current_read_deadline, read_deadline  # noqa: E402
-from v2_chains import default_registry  # noqa: E402
+from v2_chains import default_balance_registry, default_registry  # noqa: E402
 from v2_read_contract import validate_v6_request_response  # noqa: E402
 from v2_uniswap import PoolRef, PoolState, v3_pool_address  # noqa: E402
 from v4_math import sqrt_at_tick, tick_at_sqrt  # noqa: E402
 
 REGISTRY = default_registry()
 BASE, ARBITRUM, ROBINHOOD = REGISTRY.chain(8453), REGISTRY.chain(42161), REGISTRY.chain(4663)
+ETHEREUM, OPTIMISM = default_balance_registry().chain(1), default_balance_registry().chain(10)
 TOKEN = '0x' + '11' * 20
 USDC, WETH = BASE.chargeCurrencies[0].address, BASE.wrappedNative.address
 WALLET = '0x' + 'aa' * 20
@@ -110,9 +111,9 @@ class Clock:
         return self.now
 
 
-def v4_answers(ref, sqrt, tick, liquidity, *, protocol=0, lp=None):
+def v4_answers(ref, sqrt, tick, liquidity, *, protocol=0, lp=None, chain=BASE):
     pool_id = bytes.fromhex(ref.pool_id[2:])
-    view = BASE.uniswap.v4.stateView
+    view = chain.uniswap.v4.stateView
     return {(view, selector('getSlot0(bytes32)'), pool_id):
             (True, encode(['uint160', 'int24', 'uint24', 'uint24'], [sqrt, tick, protocol, ref.fee if lp is None else lp])),
             (view, selector('getLiquidity(bytes32)'), pool_id): (True, encode(['uint128'], [liquidity]))}
@@ -542,6 +543,56 @@ class BuildTests(unittest.TestCase):
         with self.assertRaises(DataError):
             reads.build_chain_reads(provider_config=None, chain_rpc_file=str(self.directory / 'absent.json'),
                                     learned_path=None, registry=REGISTRY)
+
+    def balance_file(self, chains, *, text=None, mode=0o600, url=True):
+        entry = {'name': 'stack', 'host': 'stack.example.invalid', 'archive': True, 'maxBatchItems': 50,
+                 'maxLogBlocks': 10000, 'requestsPerSecond': None, **({'url': 'https://stack.example.invalid/k'} if url else {})}
+        path = self.directory / 'balance-chain-rpc.json'
+        path.write_text(text if text is not None else json.dumps({
+            'schemaVersion': 1, 'kind': 'domino-v2-chain-rpc', 'chains': {key: {'endpoints': [entry]} for key in chains}}))
+        path.chmod(mode)
+        return str(path)
+
+    def build(self, balance_file):
+        import contextlib
+        import io
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            built = reads.build_chain_reads(provider_config=None, chain_rpc_file=self.chain_rpc_file(('base-8453',)),
+                                            balance_chain_rpc_file=balance_file, learned_path=None, registry=REGISTRY)
+        return built, [json.loads(line) for line in stderr.getvalue().splitlines() if line.strip()]
+
+    def test_the_balance_chains_come_from_their_own_file(self):
+        built, logged = self.build(self.balance_file(('ethereum-1', 'optimism-10')))
+        self.assertEqual((sorted(built.sources), logged), ([1, 10, 8453], []))
+        self.assertEqual([built.sources[chain_id].endpoints.chain.key for chain_id in (1, 10)], ['ethereum-1', 'optimism-10'])
+        self.assertEqual(built.sources[10].follower.max_age, reads.HEAD_MAX_AGE_SECONDS)
+        self.assertEqual(sorted(self.build(self.balance_file(('optimism-10',)))[0].sources), [10, 8453])
+        self.assertEqual(sorted(self.build(None)[0].sources), [8453])
+
+    def test_a_fault_in_the_balance_file_costs_only_the_balance_chains(self):
+        for case, path, code in (
+                ('absent', lambda: str(self.directory / 'absent.json'), 'v2_chain_rpc_config_unreadable'),
+                ('readable by others', lambda: self.balance_file(('ethereum-1',), mode=0o644),
+                 'v2_chain_rpc_config_unreadable'),
+                ('not JSON', lambda: self.balance_file((), text='{'), 'invalid_v2_chain_rpc_config'),
+                ('a sealed URL missing', lambda: self.balance_file(('ethereum-1', 'optimism-10'), url=False),
+                 'v2_rpc_url_missing'),
+                ("a Domino chain's endpoints", lambda: self.balance_file(('ethereum-1', 'base-8453')), 'v2_chain_unknown')):
+            with self.subTest(case=case):
+                built, logged = self.build(path())
+                self.assertEqual(sorted(built.sources), [8453])
+                self.assertEqual([(entry['mode'], entry['reason']) for entry in logged],
+                                 [('balance_chains_unavailable', code)])
+                self.assertNotIn(str(self.directory), json.dumps(logged))
+                answer = built.balances(WALLET, [(1, ZERO), (10, ZERO)])
+                self.assertEqual([(c['chainId'], c['reason']) for c in answer['chains']],
+                                 [(1, 'chain_not_configured'), (10, 'chain_not_configured')])
+        # Any other fault is named by a fixed code: its text may carry a path.
+        with mock.patch.object(reads, 'default_balance_registry', side_effect=OSError(f'{self.directory}: denied')):
+            built, logged = self.build(self.balance_file(('ethereum-1',)))
+        self.assertEqual((sorted(built.sources), [entry['reason'] for entry in logged]), ([8453], ['balance_chains_unconfigured']))
+        self.assertNotIn(str(self.directory), json.dumps(logged))
 
 
 
@@ -1037,6 +1088,113 @@ class ValueTests(unittest.TestCase):
                          ('unavailable', None))
 
 
+def wallet_balances(chain, holdings):
+    """The wallet's balances on `chain` as Multicall3 answers them: {token: raw}, ETH as the zero address."""
+    out = {}
+    for token, amount in holdings.items():
+        target = chain.multicall3 if token == ZERO else token
+        call = 'getEthBalance(address)' if token == ZERO else 'balanceOf(address)'
+        out[(target, selector(call), encode(['address'], [WALLET]))] = (True, encode(['uint256'], [amount]))
+    return out
+
+
+# Ethereum's and OP Mainnet's own, as Circle and Chainlink publish them (the profiles are held to them in
+# test_v2_chain_profiles): each chain's USDC and its Chainlink ETH / USD proxy with its heartbeat.
+ETHEREUM_USDC, OPTIMISM_USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x0b2c639c533813f4aa9d7837caf62653d097ff85'
+FEEDS = {1: ('0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419', 3600), 10: ('0x13e3ee699d1909e989722e753853ae30b17e08c5', 1200)}
+
+
+class BalanceChainTests(unittest.TestCase):
+    """chain-balances on the balance chains (Ethereum, OP Mainnet; the owner's decision of 6 Oct 2026): read only when
+    named, each priced by its own stable, feed and pools, by the rules Domino's chains keep."""
+
+    def test_they_answer_only_when_named_each_with_its_own_stable_and_feed(self):
+        ethereum = FakeChain({**wallet_balances(ETHEREUM, {ETHEREUM_USDC: 2_500_000, ZERO: 10**17}),
+                              **feed_answers(ETHEREUM, usd=3000)})
+        optimism = FakeChain({**wallet_balances(OPTIMISM, {OPTIMISM_USDC: 7_000_000, ZERO: 2 * 10**17}),
+                              **feed_answers(OPTIMISM, usd=3100)})
+        base = FakeChain({**wallet_balances(BASE, {USDC: 5_000_000}), **feed_answers()})
+        reader = chain_reads({1: source(ETHEREUM, ethereum), 10: source(OPTIMISM, optimism), 8453: source(BASE, base)})
+        default = reader.balances(WALLET)
+        validate_v6_request_response('chain-balances', {'wallet': WALLET, 'tokens': None}, default)
+        self.assertEqual([c['chainId'] for c in default['chains']], [4663, 8453, 42161])
+        self.assertEqual((ethereum.requests, optimism.requests), ([], []))
+        asked = [(10, OPTIMISM_USDC), (10, ZERO), (1, ETHEREUM_USDC), (1, ZERO), (8453, USDC)]
+        answer = reader.balances(WALLET, asked)
+        validate_v6_request_response('chain-balances', {'wallet': WALLET, 'tokens': [
+            {'chainId': chain_id, 'address': token} for chain_id, token in asked]}, answer)
+        self.assertEqual([(c['chainId'], c['status'], c['totalUsd']) for c in answer['chains']],
+                         [(1, 'current', '302.500000'), (10, 'current', '627.000000'), (8453, 'current', '5.000000')])
+        self.assertEqual(answer['totalUsd'], '934.500000')
+        on = {c['chainId']: {b['address']: b for b in c['balances']} for c in answer['chains']}
+        for chain_id, stable, eth_value, usd in ((1, ETHEREUM_USDC, '300.000000', '3000.000000000000000000'),
+                                                (10, OPTIMISM_USDC, '620.000000', '3100.000000000000000000')):
+            with self.subTest(chain=chain_id):
+                self.assertEqual((on[chain_id][stable]['symbol'], on[chain_id][stable]['price']['source']),
+                                 ('USDC', 'chain_stable'))
+                eth = on[chain_id][ZERO]
+                self.assertEqual((eth['symbol'], eth['valueUsd'], eth['price']['usd'], eth['price']['ethUsd']['feed']),
+                                 ('ETH', eth_value, usd, FEEDS[chain_id][0]))
+        # Another chain's stable is no stable here: Base's USDC on Ethereum is a token like any other.
+        stranger = chain_reads({1: source(ETHEREUM, FakeChain({**wallet_balances(ETHEREUM, {USDC: 1}), **metadata(USDC, 6, 'USDC'),
+                                                                **feed_answers(ETHEREUM)}))}).balances(WALLET, [(1, USDC)])
+        self.assertEqual(stranger['chains'][0]['balances'][0]['priceReason'], 'no_pool')
+
+    def test_eth_counts_within_its_own_chains_heartbeat(self):
+        for chain in (ETHEREUM, OPTIMISM):
+            proxy, heartbeat = FEEDS[chain.chainId]
+            for age, reason in ((heartbeat, None), (heartbeat + 1, 'eth_usd_stale')):
+                fake = FakeChain(feed_answers(chain, age=age))
+                pricer = reads.Pricer({chain.chainId: source(chain, fake)}, monotonic=Clock(0.0))
+                with self.subTest(chain=chain.chainId, age=age):
+                    price, got = pricer.prices([(chain.chainId, ZERO, None)])[(chain.chainId, ZERO)]
+                    self.assertEqual(got, reason)
+                    self.assertEqual(price and price['ethUsd']['feed'], None if reason else proxy)
+                    # The feed's round, and on OP Mainnet its sequencer's: Ethereum has none.
+                    self.assertEqual(fake.batches, [1 if chain.chainId == 1 else 2])
+
+    def test_op_mainnets_sequencer_gates_its_prices_as_base_and_arbitrums_do(self):
+        grace = reads.SEQUENCER_GRACE_SECONDS
+        self.assertEqual(grace, 3600)
+        for case, answers, reason in (('up past its grace', feed_answers(OPTIMISM, up_for=3601), None),
+                                      ('up for its grace only', feed_answers(OPTIMISM, up_for=3600), 'sequencer_down'),
+                                      ('down', feed_answers(OPTIMISM, up=1), 'sequencer_down')):
+            pricer = reads.Pricer({10: source(OPTIMISM, FakeChain(answers))}, monotonic=Clock(0.0))
+            with self.subTest(case=case):
+                got = pricer.prices([(10, ZERO, None), (10, OPTIMISM_USDC, None)])
+                self.assertEqual(got[(10, ZERO)][1], reason)
+                self.assertEqual(got[(10, OPTIMISM_USDC)][0]['usd'], '1.000000000000000000')  # the stable keeps US$ 1
+
+    def test_a_token_there_is_priced_by_its_deepest_pool_there(self):
+        # CREATE2 on each chain's own factory: the WETH/USDC 0.05% pools its getPool named on 6 Oct 2026.
+        self.assertEqual(v3_pool_address(ETHEREUM, *sorted((ETHEREUM.wrappedNative.address, ETHEREUM_USDC)), 500),
+                         '0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640')
+        self.assertEqual(v3_pool_address(OPTIMISM, *sorted((OPTIMISM.wrappedNative.address, OPTIMISM_USDC)), 500),
+                         '0x1fb3cf6e48f1e7b10213e7b6d87d4c073c7fdb7b')
+        weth = ETHEREUM.wrappedNative.address
+        deep, shallow = PoolRef(3, *sorted((TOKEN, weth)), 500, 10), PoolRef(4, *sorted((TOKEN, ETHEREUM_USDC)), 500, 10)
+        weth_tick, usdc_tick = -76_010, -269_390
+        answers = {**v3_answers(ETHEREUM, deep, sqrt_at_tick(weth_tick), weth_tick, 6_500 * 10**18),
+                   **v4_answers(shallow, sqrt_at_tick(usdc_tick), usdc_tick, 10**15, chain=ETHEREUM),
+                   **band_answers(ETHEREUM, deep, sqrt_at_tick(weth_tick), weth_tick, TOKEN),
+                   **band_answers(ETHEREUM, shallow, sqrt_at_tick(usdc_tick), usdc_tick, TOKEN),
+                   **feed_answers(ETHEREUM)}
+        price, reason = reads.Pricer({1: source(ETHEREUM, FakeChain(answers))}, monotonic=Clock(0.0)).prices(
+            [(1, TOKEN, 18)])[(1, TOKEN)]
+        self.assertIsNone(reason)
+        depth = Fraction(featured_depth(deep, sqrt_at_tick(weth_tick), weth_tick, 6_500 * 10**18, TOKEN), 10**18) * 4000
+        usd = spot(deep, sqrt_at_tick(weth_tick), TOKEN, 18, 18) * 4000
+        self.assertEqual((price['pool'], price['usd'], price['depthUsd'], price['ethUsd']['feed']),
+                         (reads.pool_wire(deep), reads.decimal_text(usd, reads.PRICE_SCALE),
+                          reads.decimal_text(depth, reads.USD_SCALE), FEEDS[1][0]))
+        self.assertTrue(depth >= 10_000 and Fraction(199, 100) < usd < Fraction(201, 100))
+
+    def test_a_balance_chain_has_no_chain_pools(self):
+        reader = chain_reads({1: source(ETHEREUM, FakeChain(metadata(TOKEN)))})
+        with self.assertRaisesRegex(DataError, '^upstream_unavailable$'):
+            reader.pools(1, TOKEN)
+
+
 class PoolMarketTests(unittest.TestCase):
     def test_a_token_priced_by_its_own_read_is_kept_for_the_other_routes(self):
         tick = -76_010
@@ -1161,10 +1319,15 @@ class KeptConnectionTests(unittest.TestCase):
         path.write_text(json.dumps({'schemaVersion': 1, 'kind': 'domino-v2-chain-rpc',
                                     'chains': {'base-8453': {'endpoints': [endpoint]}}}))
         path.chmod(0o600)
+        balances = directory / 'balance-chain-rpc.json'
+        balances.write_text(json.dumps({'schemaVersion': 1, 'kind': 'domino-v2-chain-rpc', 'chains': {
+            'ethereum-1': {'endpoints': [endpoint]}, 'optimism-10': {'endpoints': [endpoint]}}}))
+        balances.chmod(0o600)
         with mock.patch('v2_rpc.configured_endpoints', side_effect=recording):
             reads.build_chain_reads(provider_config={'any': 'provider file'}, chain_rpc_file=str(path),
-                                    learned_path=None, registry=REGISTRY)
-        self.assertEqual(built, [(4663, reads.kept_rpc), (8453, reads.kept_rpc)])
+                                    balance_chain_rpc_file=str(balances), learned_path=None, registry=REGISTRY)
+        self.assertEqual(built, [(4663, reads.kept_rpc), (8453, reads.kept_rpc), (1, reads.kept_rpc),
+                                 (10, reads.kept_rpc)])
 
     def test_kept_rpc_is_rpc_http_on_the_kept_opener_within_the_reads_budget(self):
         with mock.patch.object(reads, 'rpc_http', return_value={'result': '0x1'}) as sent:

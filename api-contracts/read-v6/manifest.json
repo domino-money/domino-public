@@ -127,6 +127,10 @@
       "sha256": "e36d0ababdc606c9f2ec12ab140835e8931ebea4f8d490fe78fdcbcc4ec379b6"
     },
     {
+      "path": "fixtures/invalid/chain-balances.chain-not-read.json",
+      "sha256": "de36611ae30a4485c642e268383264064ae734f2aa7b6ff77e30f1f6a208817a"
+    },
+    {
       "path": "fixtures/invalid/chain-balances.chain-total-off.json",
       "sha256": "9e97975f33896315d36fed844715c08639c7c7b899f9746ecaab6f477999eb51"
     },
@@ -147,8 +151,20 @@
       "sha256": "f1c4bcb74a9f81bf5638cdd87f562d5e2166342ea8561db5a245a1f1b0676166"
     },
     {
+      "path": "fixtures/invalid/chain-balances.ethereum-eth-at-another-chains-feed.json",
+      "sha256": "943541d53d0abb278b8ac6d5f008ba597da9aeaaecd661fe107351fdb759468d"
+    },
+    {
+      "path": "fixtures/invalid/chain-balances.ethereum-stable-of-optimism.json",
+      "sha256": "1bb78de335f449d99a7a6ca15fb8a9b8ed8dfd6dca1d32209323821362b21d1f"
+    },
+    {
       "path": "fixtures/invalid/chain-balances.negative-amount.json",
       "sha256": "c17007691c220542dde5a0cd1ae137b62e5a709f128238dad23e21a33be9cbb7"
+    },
+    {
+      "path": "fixtures/invalid/chain-balances.optimism-eth-past-its-heartbeat.json",
+      "sha256": "c1f84cec4e0a6c534713584b917bc079e4644a97aeef7ade0af95f1d0c52007c"
     },
     {
       "path": "fixtures/invalid/chain-balances.price-and-a-reason.json",
@@ -719,6 +735,14 @@
       "sha256": "4dc3b875c5ee3e73b2a3fbbf163f90b3d648c07fbb0dc7745ee1f3d87bf77540"
     },
     {
+      "path": "fixtures/valid/chain-balances-asked-balance-chain-unconfigured.json",
+      "sha256": "aee50849e0738d4e1451cd390f44c4f84dbdd49c8a93c66b1d43e61b322276fd"
+    },
+    {
+      "path": "fixtures/valid/chain-balances-asked-balance-chains.json",
+      "sha256": "7facf571f4cdb73d91b42ec14676e634f29ecb3c1a62c5572f3f89d01a09cc29"
+    },
+    {
       "path": "fixtures/valid/chain-balances-asked.json",
       "sha256": "7c7e18edde20d02355d31436b8b0db319c58ef153db20e5293e76f262f3d921d"
     },
@@ -784,7 +808,7 @@
     },
     {
       "path": "schema-data.mjs",
-      "sha256": "a43a7aac5a813ab55d4565a0e9c1543984c9d36405b0e4fca44a21e12af77d03"
+      "sha256": "a1bdf4726e96f8fe5fb4dc8145dd014d91545d7a88e8270938114303474250af"
     },
     {
       "path": "schemas/activity.request.schema.json",
@@ -796,11 +820,11 @@
     },
     {
       "path": "schemas/chain-balances.request.schema.json",
-      "sha256": "48120a6c1804fa876ec771de17f72cee0a590a2bb4ff5070dfa3f19ca442cf08"
+      "sha256": "60c512ffed0ae689bbadba750dd2fbecd2743f8f9c864a5c5c9122c30d51258b"
     },
     {
       "path": "schemas/chain-balances.response.schema.json",
-      "sha256": "078bddf6be4f302a9d869b65949baf085053e63e957f785d836c7c809ae5df6e"
+      "sha256": "2e6ad3a3308bbb658500b6dc6b8f1971c74ac0b1680bc9967cc634f36af9f081"
     },
     {
       "path": "schemas/chain-pools.request.schema.json",
@@ -832,11 +856,11 @@
     },
     {
       "path": "types.ts",
-      "sha256": "44770f9d2e35a046c966bd8b83aececf08ad55757a575e663fca2158ce06f913"
+      "sha256": "5b21c6bd68c954a9a4f6809ca623bc90f2436706b3fa262fa8786cf23d86ba48"
     },
     {
       "path": "runtime.mjs",
-      "sha256": "99dd3778b8de9e3b7b1c25786fcb5d1916a4d7e60bfccf6702ee6d7af03b2365"
+      "sha256": "8a795e496e0c9e1b90e4d1aef6c96ae861bbe2aae7bbcdd393ebaf51843e45c9"
     },
     {
       "path": "../shared/closed-schema.mjs",
@@ -844,18 +868,18 @@
     },
     {
       "path": "README.md",
-      "sha256": "d0b5c274b7d47065655cdecb5bd82a89a98add753f711998ea1da904124b4088"
+      "sha256": "db82629e5a9a60abea43a681f1c0565a1cdb26ffd3de3744da7ed7e369ddbea1"
     },
     {
       "path": "consumer.test.mjs",
-      "sha256": "86628d4558b1fe88880d2673e361401abdb5c743d0b6d23dd6373f2744bd6017"
+      "sha256": "d401d9488f0609a76ffd81fc33d125e5359e77b05bd92c060bd980f74abc2cec"
     }
   ],
   "generator": "scripts/export-read-v6-contract.py",
   "sources": [
     {
       "path": "backend/v2_read_contract.py",
-      "sha256": "ee03a1b06281e1a61a34945b899656e84dc6906772166d8c92c45dbaa81066a2"
+      "sha256": "e887c6db72687892a1444af17dd3fd6f377b12924fca545758aaaef2056b4e53"
     },
     {
       "path": "backend/v2_read_service.py",
@@ -867,7 +891,7 @@
     },
     {
       "path": "backend/v2_chain_reads.py",
-      "sha256": "096b893c42b9ac5871b537c599b70c45ecc4397fc48ac135adbd0a7c5d74f7b7"
+      "sha256": "1f369f38732c50e089a2184fa9360007f4a87213c1a0e6c2324beb936343741b"
     },
     {
       "path": "backend/data/token-lists/uniswap-default.json",
@@ -891,7 +915,7 @@
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "48a625d57e9d43d7dec7ba0fb795d74295b5df179b1099bd11cf53ef53108436"
+      "sha256": "4b9b562f81ffadb49a4120a456a1604c0b7526a37760e085e7cc8719298dbd16"
     },
     {
       "path": "backend/read_gateway.py",
@@ -907,7 +931,7 @@
     },
     {
       "path": "backend/tests/read_v6_contract_fixtures.py",
-      "sha256": "377c7785fe71c863683ad6395c48d51d2f81615ace0cbada56d3e3b99f711dfe"
+      "sha256": "2e058c75adc3f5109a06aae7651551cf7148388e4bf6d6a2d6315377c3f68445"
     },
     {
       "path": "backend/tests/v2_index_fixtures.py",
@@ -915,7 +939,7 @@
     },
     {
       "path": "scripts/export-read-v6-contract.py",
-      "sha256": "95f6372eb1b2e7ed67e663169657d30a8db2c20a961f1c450eec1ab23cee98ef"
+      "sha256": "e80d5b8f29c69ada1fcd9eec33f2c040bd80c6a82522918e3678381cfc5df935"
     }
   ],
   "status": "candidate_disabled_pending_bridge_and_deployment"

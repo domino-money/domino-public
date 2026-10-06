@@ -56,7 +56,7 @@ export type AutomationResumed = {
 };
 
 export type BalanceTokenRef = {
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 1 | 10 | 4663 | 8453 | 42161;
   "address": string;
 };
 
@@ -67,7 +67,7 @@ export type BlockRef = {
 };
 
 export type ChainBalances = {
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 1 | 10 | 4663 | 8453 | 42161;
   "status": "current" | "unavailable";
   "reason": "chain_not_configured" | "chain_read_failed" | null;
   "snapshot": BlockRef | null;

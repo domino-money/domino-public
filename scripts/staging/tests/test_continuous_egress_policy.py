@@ -603,9 +603,57 @@ class ContinuousEgressTests(unittest.TestCase):
         self.assertLessEqual(set(chains), set(result['roleHosts']['write']))
         self.assertNotIn('position-plan', result['roleHosts'])
 
+    def test_the_balance_chains_grant_is_explicit_and_reaches_the_reader_alone(self):
+        # Ethereum and OP Mainnet (the reader's balance chain RPC file): read-v6's chain-balances, when asked.
+        balances = {host: [f'21.0.0.{index}'] for index, host in enumerate(sorted(policy.BALANCE_CHAIN_HOSTS), 1)}
+        chains = {host: [f'17.0.0.{index}'] for index, host in enumerate(sorted(policy.CHAIN_HOSTS), 1)}
+        enabled = (*LIVE_ENABLED, 'auth', 'position-plan', 'v2-automation', 'monitor', 'crosschain')
+        everyone = identities(plan_listener=True, automation=True, bridge=True, monitor=True)
+        pins = {**PINS, **UNISWAP, **TELEGRAM, **BRIDGES, **chains}
+        before = policy.render({**snapshot(enabled, pins), 'identities': everyone, 'v2Chains': True})
+        granted = {**snapshot(enabled, {**pins, **balances}), 'identities': everyone, 'v2Chains': True,
+                   'balanceChains': True}
+        after = policy.render(granted)
+        self.assertEqual(sorted(after['roleHosts']['read']), sorted({*before['roleHosts']['read'], *balances}))
+        for role, hosts in after['roleHosts'].items():
+            if role != 'read':
+                self.assertEqual(hosts, before['roleHosts'][role], role)
+        hosts = after['artifacts'][f'{policy.ROOT}/read.hosts']
+        listener = after['artifacts'][policy.UNIT_DIR + 'domino-read.service.d/' + policy.DROPIN]
+        for host, (address,) in balances.items():
+            self.assertIn(f'{address} {host}\n', hosts)
+            self.assertIn(f'IPAddressAllow={address}/32\n', listener)
+        sets_before, sets_after = parse(nft(before))[1], parse(nft(after))[1]
+        self.assertEqual(sets_after['read_ipv4'], sets_before['read_ipv4'] + len(balances))
+        self.assertEqual({name: count for name, count in sets_after.items() if name != 'read_ipv4'},
+                         {name: count for name, count in sets_before.items() if name != 'read_ipv4'})
+        self.assertNotEqual(before['pinSetSha256'], after['pinSetSha256'])
+        # Pinned without the grant, they are no role's; the V2 chains' grant is not theirs.
+        self.reject({**granted, 'balanceChains': False}, 'unapproved_hostname')
+        self.reject({key: value for key, value in granted.items() if key != 'balanceChains'}, 'unapproved_hostname')
+        # Granted alone, beside the live roles and without the V2 chains.
+        alone = policy.render({**snapshot(pins={**PINS, **balances}), 'balanceChains': True})
+        self.assertLessEqual(set(balances), set(alone['roleHosts']['read']))
+        self.assertFalse(set(balances) & set(alone['roleHosts']['write']))
+
+    def test_the_balance_chains_class_is_every_host_their_file_names(self):
+        # Ethereum's and OP Mainnet's: Chainstack, then Alchemy, and OP Mainnet's public endpoint as a last resort.
+        self.assertEqual(policy.BALANCE_CHAIN_HOSTS, frozenset((
+            'ethereum-mainnet.core.chainstack.com', 'eth-mainnet.g.alchemy.com',
+            'optimism-mainnet.core.chainstack.com', 'opt-mainnet.g.alchemy.com', 'mainnet.optimism.io')))
+        self.assertFalse(policy.BALANCE_CHAIN_HOSTS & policy.CHAIN_HOSTS)
+
+    def test_the_balance_chains_grant_needs_a_boolean_and_the_reader(self):
+        self.reject({**snapshot(), 'balanceChains': 'true'}, 'invalid_balance_chains')
+        self.reject({**snapshot(('gateway', 'tunnel', 'write')), 'balanceChains': True}, 'balance_chains_require_the_reader')
+        # The grant is part of the pin digest, even before a host is pinned for it.
+        self.assertNotEqual(policy.render(snapshot())['pinSetSha256'],
+                            policy.render({**snapshot(), 'balanceChains': True})['pinSetSha256'])
+
     def test_every_class_fits_the_host_inventory_and_one_more_host_is_refused(self):
         every = {*policy.RPC_HOSTS, *policy.ANALYTICS_HOSTS, *policy.UNISWAP_HOSTS, *policy.EDGE_HOSTS,
-                 *policy.CHAIN_HOSTS, *policy.BRIDGE_HOSTS, *policy.TELEGRAM_HOSTS, ISSUER}
+                 *policy.CHAIN_HOSTS, *policy.BALANCE_CHAIN_HOSTS, *policy.BRIDGE_HOSTS, *policy.TELEGRAM_HOSTS,
+                 ISSUER}
         self.assertLess(len(every), policy.MAX_HOSTS)
         data = snapshot()
         data['hosts'] = [{'hostname': f'h{index}.example.com', 'addresses': ['16.0.0.1']}

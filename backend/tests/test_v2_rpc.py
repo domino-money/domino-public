@@ -19,17 +19,20 @@ from discovery import DataError, parse_block
 from read_deadline import read_deadline
 from rpc_config import LOCAL_STATE_BLOCKS
 import v2_rpc
-from v2_chains import load_registry
+from v2_chains import load_balance_registry, load_registry
 from v2_rpc import (RECENT_STATE_BLOCKS, ChainEndpoints, ChainIndexRpc, ChainReadRpc, CodeCache, Endpoint,
                     check_endpoint, checked_chain_rpc_config, configured_endpoints, credential_name, env_name,
                     load_chain_rpc_config, provider_file_endpoints)
-from v2_fixtures import HEAD, FakeChain, documents, synthetic_code, with_synthetic_code, write_registry
+from v2_fixtures import (HEAD, FakeChain, balance_documents, documents, synthetic_code, with_synthetic_code,
+                         write_balance_registry, write_registry)
 
 ALCHEMY = 'https://robinhood-mainnet.g.alchemy.com/v2/SYNTHETIC'
 LOCAL = 'https://rpc.domino.money/SYNTHETIC_LOCAL_TOKEN_123/'
 URLS = {name: f'https://{name}.example.invalid/SYNTHETIC_{name.upper()}' for name in ('stack', 'drpc', 'alchemy', 'public')}
 REGISTRY = load_registry()
 ROBINHOOD, BASE, ARBITRUM = REGISTRY.chains
+BALANCES = load_balance_registry()
+ETHEREUM, OPTIMISM = BALANCES.chains
 ANCHOR = parse_block(HEAD)
 
 
@@ -45,6 +48,14 @@ def chain_rpc_document(**chains):
     default = {'base-8453': {'endpoints': [entry('stack'), entry('drpc'), entry('alchemy', maxLogBlocks=None),
                                            entry('public', maxBatchItems=10, maxLogBlocks=2000)]},
                'arbitrum-42161': {'endpoints': [entry('stack')]}}
+    default.update(chains)
+    return {'schemaVersion': 1, 'kind': 'domino-v2-chain-rpc', 'chains': default}
+
+
+def balance_rpc_document(**chains):
+    """The balance chain RPC file (Ethereum, OP Mainnet; chain-balances only): the same schema, its own chains."""
+    default = {'ethereum-1': {'endpoints': [entry('stack'), entry('alchemy', maxLogBlocks=None)]},
+               'optimism-10': {'endpoints': [entry('stack'), entry('public', maxBatchItems=10, maxLogBlocks=2000)]}}
     default.update(chains)
     return {'schemaVersion': 1, 'kind': 'domino-v2-chain-rpc', 'chains': default}
 
@@ -733,6 +744,116 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(run('check', '--chain', 'elysium'), (1, {'error': 'v2_chain_not_enabled'}))
         self.assertEqual(run('validate', '--chain', 'robinhood-4663', '--provider-file', str(private / 'absent.json')),
                          (1, {'error': 'v2_local_first_provider_file_required'}))
+
+
+class BalanceChainTests(unittest.TestCase):
+    """Ethereum and OP Mainnet (read-v6's chain-balances only): their own file, read against the balance registry,
+    their URLs sealed as v2-rpc-<chain>-<name> like every other chain's."""
+
+    def test_the_balance_file_names_the_balance_chains_with_their_own_credentials(self):
+        config = checked_chain_rpc_config(balance_rpc_document(), registry=BALANCES, environ={})
+        self.assertEqual(sorted(config.chains), ['ethereum-1', 'optimism-10'])
+        endpoints = configured_endpoints(OPTIMISM, chain_rpc_config=config, send=FakeChain(10))
+        self.assertEqual((endpoints.chain.chainId, [e.name for e in endpoints.endpoints], endpoints.source),
+                         (10, ['stack', 'public'], 'v2_chain_rpc_file'))
+        self.assertEqual(endpoints.endpoints[1].state_blocks, RECENT_STATE_BLOCKS)
+        self.assertNotIn('SYNTHETIC', repr(config) + repr(endpoints))
+        self.assertEqual((credential_name(ETHEREUM, 'chainstack'), credential_name(OPTIMISM, 'alchemy')),
+                         ('v2-rpc-ethereum-1-chainstack', 'v2-rpc-optimism-10-alchemy'))
+        self.assertEqual(env_name(OPTIMISM, 'chainstack'), 'DOMINO_V2_RPC_OPTIMISM_10_CHAINSTACK')
+        directory = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, directory)
+        (directory / 'v2-rpc-ethereum-1-stack').write_text(URLS['stack'] + '\n')
+        document = balance_rpc_document(**{'ethereum-1': {'endpoints': [entry('stack', url=False)]}})
+        sealed = checked_chain_rpc_config(document, registry=BALANCES, environ={'CREDENTIALS_DIRECTORY': str(directory)})
+        self.assertEqual(sealed.chains['ethereum-1'][0].url, URLS['stack'])
+        # Base's credential is not Ethereum's.
+        (directory / 'v2-rpc-ethereum-1-stack').rename(directory / 'v2-rpc-base-8453-stack')
+        with self.assertRaisesRegex(DataError, '^v2_rpc_url_missing$'):
+            checked_chain_rpc_config(document, registry=BALANCES, environ={'CREDENTIALS_DIRECTORY': str(directory)})
+
+    def test_each_file_names_its_own_registrys_chains_only(self):
+        for document, registry in ((balance_rpc_document(**{'base-8453': {'endpoints': [entry('stack')]}}), BALANCES),
+                                   (balance_rpc_document(**{'ethereum': {'endpoints': [entry('stack')]}}), BALANCES),
+                                   (chain_rpc_document(**{'ethereum-1': {'endpoints': [entry('stack')]}}), REGISTRY),
+                                   (balance_rpc_document(), REGISTRY)):
+            with self.subTest(chains=sorted(document['chains'])), self.assertRaisesRegex(DataError, '^v2_chain_unknown$'):
+                checked_chain_rpc_config(document, registry=registry, environ={})
+
+    def test_a_balance_chains_endpoints_are_a_chains_like_any_other(self):
+        one = Endpoint('a', 'a.example.invalid', 'https://a.example.invalid/', None, 1, None, None)
+        self.assertEqual(ChainEndpoints(ETHEREUM, (one,), 'test').chain.key, 'ethereum-1')
+        config = checked_chain_rpc_config(balance_rpc_document(), registry=BALANCES, environ={})
+        self.assertEqual(configured_endpoints(ETHEREUM, chain_rpc_config=config).endpoints[0].host, 'stack.example.invalid')
+        for chain in ('ethereum-1', BALANCES):
+            with self.subTest(chain=type(chain).__name__), self.assertRaisesRegex(DataError, '^v2_chain_profile_required$'):
+                configured_endpoints(chain, chain_rpc_config=config)
+
+
+class BalanceCheckTests(unittest.TestCase):
+    """`v2_rpc.py check --chain optimism-10 --chain-rpc-file <the balance chain file>`, as the owner runs it after
+    provisioning: the chain id, a fresh head, the profile's code hashes and the archive probe."""
+
+    def setUp(self):
+        self.directory = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.directory)
+        docs = balance_documents()
+        docs['optimism-10.json'] = self.document = with_synthetic_code(docs['optimism-10.json'])
+        (self.directory / 'balances').mkdir()
+        self.balances = write_balance_registry(self.directory / 'balances', docs, domino=REGISTRY)
+        self.chain = self.balances.chain('optimism-10')
+        self.fake = FakeChain(10)
+        self.fake.serve_code(self.document)
+        old = self.chain.verification.block
+        self.fake.blocks[hex(old)] = {'number': hex(old), 'hash': '0x' + 'ee' * 32, 'timestamp': '0x1'}
+        self.now = int(HEAD['timestamp'], 16) + 5
+        private = self.directory / 'private'
+        private.mkdir(mode=0o700)
+        self.files = {}
+        for name, document in (('balance-chain-rpc.json', balance_rpc_document()), ('chain-rpc.json', chain_rpc_document())):
+            path = private / name
+            path.write_text(json.dumps(document))
+            path.chmod(0o600)
+            self.files[name] = str(path)
+
+    def run_cli(self, *argv):
+        out = io.StringIO()
+        with patch.object(v2_rpc, 'default_registry', return_value=REGISTRY), \
+                patch.object(v2_rpc, 'default_balance_registry', return_value=self.balances), \
+                patch.object(v2_rpc.time, 'time', return_value=self.now), contextlib.redirect_stdout(out):
+            code = v2_rpc.main(list(argv), send=self.fake)
+        text = out.getvalue()
+        self.assertNotIn('SYNTHETIC', text)
+        return code, json.loads(text)
+
+    def test_the_balance_file_validates_and_checks_on_its_chain(self):
+        code, report = self.run_cli('validate', '--chain', 'ethereum-1', '--chain-rpc-file', self.files['balance-chain-rpc.json'])
+        self.assertEqual((code, report['chain'], [e['name'] for e in report['endpoints']]), (0, 'ethereum-1', ['stack', 'alchemy']))
+        code, report = self.run_cli('check', '--chain', 'optimism-10', '--chain-rpc-file', self.files['balance-chain-rpc.json'])
+        self.assertEqual((code, report['ok'], [e['endpoint'] for e in report['endpoints']]), (0, True, ['stack', 'public']))
+        stack = report['endpoints'][0]
+        self.assertEqual((stack['archiveProbe'], stack['headAgeSeconds']), ('match', 5))
+        self.assertEqual(set(stack['contracts']), {record.name for record in self.chain.verification.contracts})
+        self.assertEqual(set(stack['contracts'].values()), {'match'})
+        self.assertIn('Chainlink L2 Sequencer Uptime Status Feed', stack['contracts'])
+        # Code that is not the profile's, or another chain behind the endpoint, fails the check.
+        self.fake.codes[self.chain.uniswap.v4.stateView] = '0x00'
+        code, report = self.run_cli('check', '--chain', 'optimism-10', '--chain-rpc-file', self.files['balance-chain-rpc.json'],
+                                    '--endpoint', 'stack')
+        self.assertEqual((code, report['endpoints'][0]['contracts']['StateView']), (1, 'mismatch'))
+        self.fake.chain_ids[URLS['stack']] = 8453
+        code, report = self.run_cli('check', '--chain', 'optimism-10', '--chain-rpc-file', self.files['balance-chain-rpc.json'],
+                                    '--endpoint', 'stack')
+        self.assertEqual((code, report['endpoints'][0]), (1, {'endpoint': 'stack', 'error': 'wrong_chain', 'ok': False}))
+
+    def test_each_file_is_read_against_its_chains_registry(self):
+        self.assertEqual(self.run_cli('check', '--chain', 'optimism-10', '--chain-rpc-file', self.files['chain-rpc.json']),
+                         (1, {'error': 'v2_chain_unknown'}))
+        self.assertEqual(self.run_cli('check', '--chain', 'base-8453', '--chain-rpc-file', self.files['balance-chain-rpc.json']),
+                         (1, {'error': 'v2_chain_unknown'}))
+        self.assertEqual(self.run_cli('check', '--chain', 'ethereum-1'), (1, {'error': 'v2_chain_rpc_not_configured'}))
+        self.assertEqual(self.run_cli('check', '--chain', 'polygon-137'), (1, {'error': 'v2_chain_unknown'}))
+        self.assertEqual(self.run_cli('check', '--chain', 'elysium'), (1, {'error': 'v2_chain_not_enabled'}))
 
 
 if __name__ == '__main__':

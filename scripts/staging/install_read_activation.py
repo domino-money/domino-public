@@ -29,6 +29,16 @@ device policy: systemd 255 adds it only for LoadCredentialEncrypted=); on the
 gateway the three routes in DOMINO_BRIDGE_V6_READS. The reader reaches Base's
 and Arbitrum's hosted RPC once the egress is collected with `--v2-chains`.
 
+`--balance-chains` (with `--chain-reads`) lets chain-balances read Ethereum and
+OP Mainnet when a request names them (the owner's decision of 6 Oct 2026): the
+reader's DOMINO_V2_BALANCE_CHAIN_RPC_FILE names the balance chain RPC file, the
+operator's balance-chain-rpc.json in the same /etc/domino/read, bound the same
+way; its sealed URLs are v2-rpc-ethereum-1-<name> and v2-rpc-optimism-10-<name>,
+which ImportCredential=v2-rpc-* already imports. The gateway is unchanged: it
+already serves chain-balances. A fault in that file leaves only those two
+chains `chain_not_configured`. The reader reaches their hosted RPC once the
+egress is collected with `--balance-chains`.
+
 The interpreter is the release's own `backend/.venv`, a link to the shared
 environment, and each identity's runtime directory is the one the release links
 to. The scoped egress drop-ins (60) come from the continuous egress policy.
@@ -64,19 +74,24 @@ READ_V6 = {
 # read-v6's live chain reads, opt-in on top of READ_V6.
 CHAIN_READS_V6 = 'DOMINO_BRIDGE_V6_READS=portfolio,activity,chain-pools,chain-balances,chain-tokens'
 CHAIN_RPC_FILE = 'chain-rpc.json'
+# chain-balances' Ethereum and OP Mainnet, opt-in on top of the chain reads.
+BALANCE_CHAIN_RPC_FILE = 'balance-chain-rpc.json'
 # Crosschain's pattern: a private directory outside every release, bound where the reader can reach it. A missing
 # directory (`-`) leaves the reader up and its chain reads unavailable.
 CHAIN_RPC_DIRECTORY, CHAIN_RPC_MOUNT = Path('/etc/domino/read'), '/run/domino-read-config'
 
 
-def drop_in(component, commit, runtime, read_v6=False, chain_reads=False):
+def drop_in(component, commit, runtime, read_v6=False, chain_reads=False, balance_chains=False):
     require(read_v6 or not chain_reads, 'chain_reads_need_read_v6')
+    require(chain_reads or not balance_chains, 'balance_chains_need_chain_reads')
     root = RELEASES / commit / component
     flags, environment = READ_V6[component] if read_v6 else ('', ())
     credentials = ()
     if chain_reads and component == 'read':
         environment = (*environment, 'DOMINO_V2_CHAIN_READS=1',
-                       f'DOMINO_V2_CHAIN_RPC_FILE={CHAIN_RPC_MOUNT}/{CHAIN_RPC_FILE}')
+                       f'DOMINO_V2_CHAIN_RPC_FILE={CHAIN_RPC_MOUNT}/{CHAIN_RPC_FILE}',
+                       *((f'DOMINO_V2_BALANCE_CHAIN_RPC_FILE={CHAIN_RPC_MOUNT}/{BALANCE_CHAIN_RPC_FILE}',)
+                         if balance_chains else ()))
         credentials = ('ImportCredential=v2-rpc-*', 'DeviceAllow=char-tpm rw',
                        f'BindReadOnlyPaths=-{CHAIN_RPC_DIRECTORY}:{CHAIN_RPC_MOUNT}')
     elif chain_reads:
@@ -90,9 +105,11 @@ def drop_in(component, commit, runtime, read_v6=False, chain_reads=False):
     return '\n'.join(lines) + '\n'
 
 
-def plan(commit, read_v6=False, chain_reads=False):
+def plan(commit, read_v6=False, chain_reads=False, balance_chains=False):
     require(re.fullmatch('[0-9a-f]{40}', commit), 'commit must be a full lowercase Git SHA')
     require(not chain_reads or (CHAIN_RPC_DIRECTORY / CHAIN_RPC_FILE).is_file(), 'chain_rpc_file_missing')
+    require(not balance_chains or (CHAIN_RPC_DIRECTORY / BALANCE_CHAIN_RPC_FILE).is_file(),
+            'balance_chain_rpc_file_missing')
     files = {}
     for component, name in DROP_INS.items():
         root = RELEASES / commit / component
@@ -104,8 +121,9 @@ def plan(commit, read_v6=False, chain_reads=False):
         path = install.UNIT_DIR / f'domino-{component}.service.d' / name
         require(not os.path.lexists(path), 'read_activation_exists')
         require((install.UNIT_DIR / f'domino-{component}.service').is_file(), 'base_unit_missing')
-        files[str(path)] = drop_in(component, commit, runtime, read_v6, chain_reads)
-    return {'mode': 'read-activation', 'commit': commit, 'readV6': read_v6, 'chainReads': chain_reads, 'dropIns': files,
+        files[str(path)] = drop_in(component, commit, runtime, read_v6, chain_reads, balance_chains)
+    return {'mode': 'read-activation', 'commit': commit, 'readV6': read_v6, 'chainReads': chain_reads,
+            'balanceChains': balance_chains, 'dropIns': files,
             'notPerformed': ['service start, enable or restart', 'egress drop-ins (60)', 'runtime configuration']}
 
 
@@ -133,12 +151,15 @@ def main(argv=None):
                         help='also enable the V2 reads (read-v6), after 052 and with the V2 indexer following')
     parser.add_argument('--chain-reads', action='store_true',
                         help="with --read-v6: also read-v6's live chain reads, after chain-rpc.json is in the reader's runtime")
+    parser.add_argument('--balance-chains', action='store_true',
+                        help="with --chain-reads: chain-balances also reads Ethereum and OP Mainnet when asked, after "
+                             "balance-chain-rpc.json is in /etc/domino/read")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--inspect', action='store_true')
     mode.add_argument('--apply', action='store_true')
     args = parser.parse_args(argv)
     try:
-        planned = plan(args.commit, args.read_v6, args.chain_reads)
+        planned = plan(args.commit, args.read_v6, args.chain_reads, args.balance_chains)
         result = apply(planned) if args.apply else {**planned, 'ok': True, 'applied': False}
         print(json.dumps(result, indent=2))
         return 0

@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "kind": "domino-v2-balance-chain",
+  "chainId": 10,
+  "slug": "optimism",
+  "name": "OP Mainnet",
+  "nativeSymbol": "ETH",
+  "uniswap": {
+    "v3": {
+      "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+      "poolInitCodeHash": "0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54",
+      "tickSpacingByFee": {
+        "100": 1,
+        "500": 10,
+        "3000": 60,
+        "10000": 200
+      }
+    },
+    "v4": {
+      "poolManager": "0x9a13F98Cb987694C9F086b1F5eB990EeA8264Ec3",
+      "stateView": "0xc18a3169788F4F75A170290584ECA6395C75Ecdb"
+    }
+  },
+  "multicall3": "0xcA11bde05977b3631167028862bE2a173976CA11",
+  "wrappedNative": {
+    "symbol": "WETH",
+    "address": "0x4200000000000000000000000000000000000006",
+    "decimals": 18
+  },
+  "chargeCurrencies": [
+    {
+      "rank": 1,
+      "symbol": "USDC",
+      "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+      "decimals": 6
+    },
+    {
+      "rank": 2,
+      "symbol": "ETH",
+      "address": "0x0000000000000000000000000000000000000000",
+      "decimals": 18,
+      "native": true
+    },
+    {
+      "rank": 2,
+      "symbol": "WETH",
+      "address": "0x4200000000000000000000000000000000000006",
+      "decimals": 18
+    }
+  ],
+  "gasPrice": {
+    "chainlinkEthUsd": {
+      "proxy": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
+      "decimals": 8,
+      "heartbeatSeconds": 1200,
+      "sequencerUptimeFeed": "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389"
+    }
+  },
+  "verification": {
+    "block": 157845086,
+    "checkedAt": "2026-10-06",
+    "contracts": [
+      {
+        "name": "UniswapV3Factory",
+        "address": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        "codehash": "0x4d7b8525cd5d14343fa67a732fba5b24cddba11620ca88392f4ec6c52f91fd69"
+      },
+      {
+        "name": "PoolManager",
+        "address": "0x9a13F98Cb987694C9F086b1F5eB990EeA8264Ec3",
+        "codehash": "0xa17a06da5d39984d2a3ef2704e090496d7f3658a65fda0b81c5cd6e809e5c5e4"
+      },
+      {
+        "name": "StateView",
+        "address": "0xc18a3169788F4F75A170290584ECA6395C75Ecdb",
+        "codehash": "0xc31866232a94a497dbed6e1938ec3ab3f7fb6f0124a26d5ee0f31cf50b32b303"
+      },
+      {
+        "name": "Multicall3",
+        "address": "0xcA11bde05977b3631167028862bE2a173976CA11",
+        "codehash": "0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891"
+      },
+      {
+        "name": "WETH9 (predeploy)",
+        "address": "0x4200000000000000000000000000000000000006",
+        "codehash": "0x779bbf2a738ef09d961c945116197e2ac764c1b39304b2b4418cd4e42668b173"
+      },
+      {
+        "name": "USDC (FiatTokenProxy, native)",
+        "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+        "codehash": "0xaad43333d28e146557f1c682e8a4226743fb231fdd00a577512233bd9e920008"
+      },
+      {
+        "name": "Chainlink ETH / USD proxy (eth-usd)",
+        "address": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
+        "codehash": "0xbd6f524cdc4268b6bd1bb6f77a8821faeea9c52ee9e0afa0b6d948ce82c966c2"
+      },
+      {
+        "name": "Chainlink L2 Sequencer Uptime Status Feed",
+        "address": "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389",
+        "codehash": "0xbd6f524cdc4268b6bd1bb6f77a8821faeea9c52ee9e0afa0b6d948ce82c966c2"
+      },
+      {
+        "name": "v3 pool WETH/USDC fee 500 (getPool == CREATE2(initCodeHash): True)",
+        "address": "0x1fb3cf6e48F1E7B10213E7b6d87D4c073C7Fdb7b",
+        "codehash": "0xd20e8366dace090b2b758dd366810eae25224ad5d9d562a683fbbe78f566e4d4"
+      }
+    ]
+  },
+  "notes": [
+    "A balance chain (the owner's decision of 6 Oct 2026): read-v6's chain-balances reads it only when a request asks for it (`tokens`). No Domino V2 deployment, index, plan or automation runs here, so it is not a Domino chain profile (api-contracts/v2/chains) and names only what a balance and its qualified USD read.",
+    "USDC is Circle's native USDC (0x0b2C639c...), not the bridged USDC.e (0x7F5c764c...), which is priced like any other token, by its pools. Its code hash is the FiatTokenProxy's; decimals() 6 and symbol() USDC at the verification block.",
+    "ETH and WETH are priced from Chainlink's ETH / USD feed (path eth-usd: 8 decimals, heartbeat 1,200 s, deviation 0.15%, aggregator 0x16C04812... at the verification block), gated by the L2 sequencer uptime feed with the read path's 3,600 s grace. At the verification block the sequencer answered up (0) since 1783448495.",
+    "Pools created before the 11 Nov 2021 regenesis keep CREATE2 addresses of the same init code hash: getPool(WETH, USDC.e, 500) == CREATE2 (0x85149247...) at the verification block, as do the native USDC's WETH pools at 500 and 3000.",
+    "The v3 factory enables the four standard tiers only: feeAmountTickSpacing(200), (300) and (400) answered 0 at the verification block (Base alone adds them).",
+    "StateView.poolManager() is the PoolManager above at the verification block."
+  ],
+  "sources": [
+    "https://developers.uniswap.org/llms.mdx/docs/protocols/v4/deployments (Optimism: 10)",
+    "https://developers.uniswap.org/llms.mdx/docs/protocols/v3/deployments/v3-optimism-deployments (UniswapV3Factory; Wrapped Native Token Addresses)",
+    "https://github.com/Uniswap/sdks/blob/main/sdks/v3-sdk/src/constants.ts (POOL_INIT_CODE_HASH)",
+    "https://developers.circle.com/stablecoins/usdc-contract-addresses.md",
+    "https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-optimism-1.json (paths eth-usd and l2-sequencer-uptime-status-feed)",
+    "https://docs.chain.link/data-feeds/l2-sequencer-feeds",
+    "https://github.com/mds1/multicall3 (README, deployments.json)"
+  ]
+}

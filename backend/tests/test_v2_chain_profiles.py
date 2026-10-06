@@ -108,5 +108,76 @@ class V2ChainProfileTests(unittest.TestCase):
                         self.assertRegex(contract['codehash'], r'^0x[0-9a-f]{64}$')
 
 
+BALANCE_CHAINS = ROOT / 'api-contracts/v2/balance-chains'
+# The balance chains' facts from the providers' own documents on 6 Oct 2026, typed here so that an edit of a profile
+# cannot move one silently: Circle's USDC (usdc-contract-addresses), Chainlink's ETH / USD proxy (path eth-usd), its
+# decimals and heartbeat and OP Mainnet's sequencer uptime feed (reference data directory), Uniswap's v3 factory and v4
+# PoolManager and StateView (deployments pages), WETH9 and Multicall3.
+PUBLISHED = {
+    1: {'name': 'ethereum-1.json', 'usdc': '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        'weth': '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        'feed': ('0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419', 8, 3600, None),
+        'poolManager': '0x000000000004444c5dc75cB358380D2e3dE08A90', 'stateView': '0x7fFE42C4a5DEeA5b0feC41C94C136Cf115597227'},
+    10: {'name': 'optimism-10.json', 'usdc': '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+         'weth': '0x4200000000000000000000000000000000000006',
+         'feed': ('0x13e3Ee699D1909E989722E753853AE30b17e08c5', 8, 1200, '0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389'),
+         'poolManager': '0x9a13F98Cb987694C9F086b1F5eB990EeA8264Ec3', 'stateView': '0xc18a3169788F4F75A170290584ECA6395C75Ecdb'},
+}
+V3_FACTORY = '0x1F98431c8aD98523631AE4a59f267346ea31F984'
+POOL_INIT_CODE_HASH = '0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54'  # Uniswap's v3-sdk
+
+
+class BalanceChainProfileTests(unittest.TestCase):
+    """chain-balances' Ethereum and OP Mainnet: each profile is the providers' published contracts, verified on chain."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.profiles = {path.name: json.loads(path.read_text()) for path in sorted(BALANCE_CHAINS.glob('*.json'))}
+
+    def test_the_owner_balance_chains_are_ethereum_and_op_mainnet(self):
+        self.assertEqual({p['chainId']: name for name, p in self.profiles.items()},
+                         {chain_id: facts['name'] for chain_id, facts in PUBLISHED.items()})
+
+    def test_each_is_the_providers_published_contracts(self):
+        for chain_id, facts in PUBLISHED.items():
+            profile = self.profiles[facts['name']]
+            feed = profile['gasPrice']['chainlinkEthUsd']
+            with self.subTest(chain=chain_id):
+                self.assertEqual([(c['rank'], c['symbol'], c['address'], c['decimals']) for c in profile['chargeCurrencies']],
+                                 [(1, 'USDC', facts['usdc'], 6), (2, 'ETH', ZERO, 18), (2, 'WETH', facts['weth'], 18)])
+                self.assertEqual(profile['wrappedNative'], {'symbol': 'WETH', 'address': facts['weth'], 'decimals': 18})
+                self.assertEqual((feed['proxy'], feed['decimals'], feed['heartbeatSeconds'], feed['sequencerUptimeFeed']),
+                                 facts['feed'])
+                self.assertEqual(profile['uniswap']['v4'], {'poolManager': facts['poolManager'],
+                                                            'stateView': facts['stateView']})
+                self.assertEqual(profile['uniswap']['v3'], {'factory': V3_FACTORY, 'poolInitCodeHash': POOL_INIT_CODE_HASH,
+                                                            'tickSpacingByFee': {'100': 1, '500': 10, '3000': 60, '10000': 200}})
+                self.assertEqual(profile['multicall3'], '0xcA11bde05977b3631167028862bE2a173976CA11')
+
+    def test_the_init_code_hash_is_the_one_the_factory_deployed_its_pools_with(self):
+        # The WETH/USDC 0.05% pool the factory's getPool named at the verification block is that pair's CREATE2 address.
+        from eth_abi import encode
+        from eth_hash.auto import keccak
+        for chain_id, facts in PUBLISHED.items():
+            profile = self.profiles[facts['name']]
+            pool, = [c for c in profile['verification']['contracts'] if c['name'].startswith('v3 pool WETH/USDC fee 500')]
+            low, high = sorted((facts['weth'].lower(), facts['usdc'].lower()))
+            salt = keccak(encode(['address', 'address', 'uint24'], [low, high, 500]))
+            digest = keccak(bytes([0xff]) + bytes.fromhex(V3_FACTORY[2:]) + salt + bytes.fromhex(POOL_INIT_CODE_HASH[2:]))
+            with self.subTest(chain=chain_id):
+                self.assertEqual(pool['address'].lower(), '0x' + digest[12:].hex())
+
+    def test_every_address_is_checksummed_and_every_record_has_its_code_hash(self):
+        for name, profile in self.profiles.items():
+            self.assertEqual(name, f"{profile['slug']}-{profile['chainId']}.json")
+            for path, value in addresses(profile):
+                if value != ZERO:
+                    with self.subTest(file=name, field=path):
+                        self.assertTrue(is_checksum_address(value), value)
+            self.assertGreater(profile['verification']['block'], 0)
+            for contract in profile['verification']['contracts']:
+                self.assertRegex(contract['codehash'], r'^0x[0-9a-f]{64}$')
+
+
 if __name__ == '__main__':
     unittest.main()

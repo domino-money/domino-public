@@ -24,7 +24,11 @@ export const READ_V6_PIN = {
   // Changed on purpose (data) 2026-10-06: the producer's v2_chain_reads.py reads over kept connections and the chains
   // of one answer at once; same version, same schemas and fixtures.
   // Changed on purpose (data) 2026-10-06: read_gateway.py, which the manifest hashes, gives each reader lane its own visitor budget; no route, schema or version moved.
-  manifestSha256: 'd16eb5101ad8dd0a8138cd1add3e61db28b88a524ad01a2ae24fb0f9c8d242ea',
+  // Changed on purpose (data) 2026-10-06: chain-balances also reads Ethereum (1) and OP Mainnet (10) when a request
+  // names them (the owner's decision); same version, new schemas and fixtures for balance chain ids (BalanceTokenRef and
+  // ChainBalances take them, PRICE_PROFILES and CONSTANTS.balanceChainIds carry them). Every other route and the default
+  // answer are Domino's three chains, as before.
+  manifestSha256: '77fcbd9f680e9f5c682162ebf8348c6bc257f7f169a917427bb8671c01da0afe',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {

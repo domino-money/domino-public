@@ -75,6 +75,13 @@ UNISWAP_HOSTS = frozenset(('trade-api.gateway.uniswap.org', 'liquidity.api.unisw
 # credential (v2-rpc-<chain>-<name>); only the host is pinned here.
 CHAIN_HOSTS = frozenset(('base-mainnet.core.chainstack.com', 'base-mainnet.g.alchemy.com', 'mainnet.base.org',
                          'arbitrum-mainnet.core.chainstack.com', 'arb-mainnet.g.alchemy.com', 'arb1.arbitrum.io'))
+# The balance chains (backend/v2_chains.py BalanceChainProfile: Ethereum and OP Mainnet), which the reader's read-v6
+# chain-balances alone reads, when a request names them: the hosted providers of its balance chain RPC file
+# (Chainstack, Alchemy) and OP Mainnet's public endpoint as a last resort. Each URL's key is a sealed credential
+# (v2-rpc-ethereum-1-<name>, v2-rpc-optimism-10-<name>); only the host is pinned here.
+BALANCE_CHAIN_HOSTS = frozenset(('ethereum-mainnet.core.chainstack.com', 'eth-mainnet.g.alchemy.com',
+                                 'optimism-mainnet.core.chainstack.com', 'opt-mainnet.g.alchemy.com',
+                                 'mainnet.optimism.io'))
 # The two bridge providers the S2 crosschain listener quotes and tracks through
 # (backend/crosschain_relay.py, crosschain_across.py). Relay's API sits behind
 # CloudFront, whose edge addresses differ by resolver and move over time: the
@@ -119,6 +126,8 @@ CLASSES = {'read': ('rpc', 'analytics'), 'gateway': ('jwks',),
 # Across fee proofs, and the reader's read-v6 chain reads (chain-pools and
 # chain-balances, v2_chain_reads). A host that serves Robinhood alone pins none of it.
 CHAIN_ROLES = ('read', 'write', 'position-plan', 'v2-automation', 'monitor', 'crosschain')
+# Who reads the balance chains' hosted RPC (`balance_chains`), and only with `balanceChains`: the reader alone.
+BALANCE_CHAIN_ROLES = ('read',)
 # A class an enabled role cannot run without. Analytics is optional for the
 # reader: the market provider is a fallback, not the read path.
 REQUIRED = {'rpc', 'jwks', 'uniswap', 'edges', 'bridges', 'telegram'}
@@ -157,8 +166,8 @@ UNSET = ('UnsetEnvironment=HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy 
          'all_proxy no_proxy SSL_CERT_FILE SSL_CERT_DIR REQUESTS_CA_BUNDLE CURL_CA_BUNDLE '
          'PYTHONPATH PYTHONHOME')
 FIELDS = ('version', 'resolver', 'accessIssuer', 'enabled', 'identities', 'hosts')
-# Every class's hosts and the issuer fit, with room for one more provider.
-MAX_HOSTS = 24
+# Every class's hosts and the issuer fit, with room for more providers.
+MAX_HOSTS = 32
 
 InvalidSnapshot = shared.InvalidSnapshot
 require = shared.require
@@ -186,6 +195,7 @@ def classes_of(hostname, issuer):
     if hostname in ANALYTICS_HOSTS: result.add('analytics')
     if hostname in UNISWAP_HOSTS: result.add('uniswap')
     if hostname in CHAIN_HOSTS: result.add('chains')
+    if hostname in BALANCE_CHAIN_HOSTS: result.add('balance_chains')
     if hostname in BRIDGE_HOSTS: result.add('bridges')
     if hostname in TELEGRAM_HOSTS: result.add('telegram')
     if hostname in EDGE_HOSTS: result.add('edges')
@@ -195,7 +205,7 @@ def classes_of(hostname, issuer):
 
 def validate(snapshot):
     optional = tuple(name for name in ('publicDataCollectors', 'sequenceSnapshotLoopback', 'nodeLoopbackReads',
-                                       'v2Chains') if name in snapshot)
+                                       'v2Chains', 'balanceChains') if name in snapshot)
     fields = (*FIELDS, *optional)
     exact(snapshot, fields, 'invalid_snapshot_fields')
     require(type(snapshot.get('publicDataCollectors',False)) is bool,'invalid_public_data_collectors')
@@ -203,6 +213,7 @@ def validate(snapshot):
             'invalid_sequence_snapshot_loopback')
     require(type(snapshot.get('nodeLoopbackReads', False)) is bool, 'invalid_node_loopback_reads')
     require(type(snapshot.get('v2Chains', False)) is bool, 'invalid_v2_chains')
+    require(type(snapshot.get('balanceChains', False)) is bool, 'invalid_balance_chains')
     require(type(snapshot['version']) is int and snapshot['version'] == 1, 'invalid_snapshot_version')
     require(snapshot['resolver'] == '127.0.0.53', 'invalid_resolver')
     issuer = snapshot['accessIssuer']
@@ -219,6 +230,8 @@ def validate(snapshot):
             'node_loopback_requires_reader_or_writer')
     require(not snapshot.get('v2Chains') or any(role in enabled for role in CHAIN_ROLES),
             'v2_chains_require_a_chain_role')
+    require(not snapshot.get('balanceChains') or any(role in enabled for role in BALANCE_CHAIN_ROLES),
+            'balance_chains_require_the_reader')
     enabled = tuple(role for role in ROLES if role in enabled)
     exact(snapshot['identities'], ROLES, 'invalid_identity_roles')
     seen_uids = set()
@@ -265,6 +278,8 @@ def validate(snapshot):
             wanted.add('analytics')
         if role in CHAIN_ROLES and role in enabled and snapshot.get('v2Chains'):
             wanted.add('chains')
+        if role in BALANCE_CHAIN_ROLES and role in enabled and snapshot.get('balanceChains'):
+            wanted.add('balance_chains')
         role_hosts[role] = sorted(host for host in pins if classes_of(host, issuer) & wanted)
         for kind in wanted & REQUIRED:
             present = {host for host in pins if kind in classes_of(host, issuer)}
@@ -429,6 +444,8 @@ def render(snapshot):
         pin_scope += ':node-loopback-reads'
     if snapshot.get('v2Chains'):
         pin_scope += ':v2-chains'
+    if snapshot.get('balanceChains'):
+        pin_scope += ':balance-chains'
     return {'version': 1, 'kind': 'domino-continuous-egress-v1', 'applied': False,
             'policyQualified': False, 'enabled': list(enabled),
             'roleHosts': {role: hosts for role, hosts in role_hosts.items() if hosts},

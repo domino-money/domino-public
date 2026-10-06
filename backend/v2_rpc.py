@@ -30,6 +30,11 @@ Where a chain's endpoints come from. A V2 service serves one chain (v2_chains):
   example DOMINO_V2_RPC_BASE_8453_CHAINSTACK. It must be HTTPS on exactly the
   entry's host. A chain the file does not name has no endpoint, and its
   services refuse to start instead of falling back to anything.
+- The balance chains (v2_chains.BalanceChainProfile: Ethereum, OP Mainnet),
+  which read-v6's chain-balances alone reads: a file of the same schema, read
+  against the balance registry (`ethereum-1`, `optimism-10`), with credentials
+  v2-rpc-ethereum-1-<name> and v2-rpc-optimism-10-<name>. Each file names only
+  its own registry's chains, so a fault in one never reaches the other's.
 
 Limits, enforced per endpoint by the chain's shared transport:
 - maxBatchItems: a JSON-RPC batch goes out in envelopes of at most this many calls;
@@ -81,7 +86,7 @@ from local_config import CONFIG_PATH, checked_config, load_config
 from read_deadline import current_read_deadline, read_deadline
 from rpc_config import LOCAL_STATE_BLOCKS, MAX_RPC_ENDPOINTS, configured_rpc_urls, own_node, rpc_hosts
 from rpc_failover import RETRYABLE, FailoverReadRpc, HistoricalReadRpc
-from v2_chains import ChainProfile, default_registry
+from v2_chains import BalanceChainProfile, ChainProfile, default_balance_registry, default_registry
 
 KIND = 'domino-v2-chain-rpc'
 ENV_PREFIX = 'DOMINO_V2_RPC_'
@@ -102,6 +107,8 @@ MAX_LOG_WINDOWS = 1000
 CHECK_DEADLINE_SECONDS = 120
 CHECK_MAX_HEAD_AGE_SECONDS = 180
 ENDPOINT_KEYS = {'name', 'host', 'archive', 'maxBatchItems', 'maxLogBlocks', 'requestsPerSecond'}
+# The profiles a chain's endpoints may serve: a Domino chain's, or a balance chain's (chain-balances only).
+PROFILES = (ChainProfile, BalanceChainProfile)
 _LOG = logging.getLogger(__name__)
 
 
@@ -236,7 +243,8 @@ def checked_chain_rpc_config(document, registry=None, environ=None):
 
 
 def load_chain_rpc_config(path, registry=None, environ=None):
-    """The operator's private V2 chain RPC file; never a default path."""
+    """The operator's private V2 chain RPC file, or with the balance registry (v2_chains.default_balance_registry) the
+    balance chain RPC file; never a default path."""
     try:
         raw = private_file(path, MAX_CHAIN_RPC_BYTES)
     except (OSError, ValueError):
@@ -304,7 +312,7 @@ class ChainEndpoints:
     endpoint's batch size, log range and pace, and counts as billed calls.
     """
     def __init__(self, chain, endpoints, source, *, send=rpc_http, clock=time.monotonic, sleep=time.sleep):
-        if (not isinstance(chain, ChainProfile) or not endpoints or len(endpoints) > MAX_ENDPOINTS
+        if (not isinstance(chain, PROFILES) or not endpoints or len(endpoints) > MAX_ENDPOINTS
                 or any(not isinstance(e, Endpoint) for e in endpoints)
                 or len({e.url for e in endpoints}) != len(endpoints)):
             raise DataError('invalid_v2_chain_endpoints')
@@ -457,8 +465,9 @@ class ChainEndpoints:
 
 
 def configured_endpoints(chain, *, provider_config=None, chain_rpc_config=None, **kwargs):
-    """The endpoints a service on `chain` reads through, in order."""
-    if not isinstance(chain, ChainProfile):
+    """The endpoints a service on `chain` reads through, in order: a balance chain's come from the balance chain RPC
+    file, loaded against the balance registry."""
+    if not isinstance(chain, PROFILES):
         raise DataError('v2_chain_profile_required')
     if chain.chainId == CHAIN_ID:
         return ChainEndpoints(chain, provider_file_endpoints(chain, provider_config), 'provider_file', **kwargs)
@@ -614,24 +623,38 @@ def check_endpoint(endpoints, endpoint, *, clock=None):
     return report
 
 
+def named_chain(name):
+    """The profile `name` names, and the registry its RPC file is read against: a Domino chain's, else a balance
+    chain's (`ethereum-1`, `optimism-10`)."""
+    registry = default_registry()
+    try:
+        return registry.chain(name), registry
+    except DataError as error:
+        if str(error) != 'v2_chain_unknown':
+            raise
+    balances = default_balance_registry()
+    return balances.chain(name), balances
+
+
 def main(argv=None, *, send=None):
     parser = argparse.ArgumentParser(description='Validate or check Domino V2 chain RPC endpoints.')
     parser.add_argument('command', choices=('validate', 'check'))
-    parser.add_argument('--chain', required=True, help='profile name, e.g. base-8453')
-    parser.add_argument('--chain-rpc-file', help='the private V2 chain RPC file (chains other than Robinhood)')
+    parser.add_argument('--chain', required=True, help='profile name, e.g. base-8453, or a balance chain: ethereum-1')
+    parser.add_argument('--chain-rpc-file', help='the private V2 chain RPC file (chains other than Robinhood), or the '
+                                                 'balance chain RPC file for ethereum-1 and optimism-10')
     parser.add_argument('--provider-file', default=str(CONFIG_PATH), help='the read path provider file (Robinhood)')
     parser.add_argument('--endpoint', help='check only this endpoint')
     args = parser.parse_args(argv)
     options = {} if send is None else {'send': send}
     try:
-        chain = default_registry().chain(args.chain)
+        chain, registry = named_chain(args.chain)
         if chain.chainId == CHAIN_ID:
             endpoints = configured_endpoints(chain, provider_config=load_config(args.provider_file), **options)
         else:
             if not args.chain_rpc_file:
                 raise DataError('v2_chain_rpc_not_configured')
-            endpoints = configured_endpoints(chain, chain_rpc_config=load_chain_rpc_config(args.chain_rpc_file),
-                                             **options)
+            endpoints = configured_endpoints(
+                chain, chain_rpc_config=load_chain_rpc_config(args.chain_rpc_file, registry), **options)
         selected = [e for e in endpoints.endpoints if args.endpoint in (None, e.name)]
         if not selected:
             raise DataError('v2_rpc_endpoint_unknown')

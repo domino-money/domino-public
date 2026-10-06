@@ -1,0 +1,130 @@
+{
+  "chains": [
+    {
+      "balances": [
+        {
+          "address": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+          "balanceRaw": "1250500000",
+          "decimals": 6,
+          "price": {
+            "depthUsd": null,
+            "ethUsd": null,
+            "pool": null,
+            "snapshot": null,
+            "source": "chain_stable",
+            "usd": "1.000000000000000000"
+          },
+          "priceReason": null,
+          "status": "read",
+          "symbol": "USDC",
+          "valueUsd": "1250.500000"
+        },
+        {
+          "address": "0x0000000000000000000000000000000000000000",
+          "balanceRaw": "500000000000000000",
+          "decimals": 18,
+          "price": {
+            "depthUsd": null,
+            "ethUsd": {
+              "feed": "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419",
+              "roundId": "129127208515966895672",
+              "updatedAt": 1790430234,
+              "usd": "2714.286500000000000000"
+            },
+            "pool": null,
+            "snapshot": {
+              "hash": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+              "number": 26133290,
+              "timestamp": 1790431227
+            },
+            "source": "chainlink_eth_usd",
+            "usd": "2714.286500000000000000"
+          },
+          "priceReason": null,
+          "status": "read",
+          "symbol": "ETH",
+          "valueUsd": "1357.143250"
+        }
+      ],
+      "chainId": 1,
+      "reason": null,
+      "snapshot": {
+        "hash": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+        "number": 26133290,
+        "timestamp": 1790431227
+      },
+      "status": "current",
+      "totalUsd": "2607.643250"
+    },
+    {
+      "balances": [
+        {
+          "address": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+          "balanceRaw": "40000000",
+          "decimals": 6,
+          "price": {
+            "depthUsd": null,
+            "ethUsd": null,
+            "pool": null,
+            "snapshot": null,
+            "source": "chain_stable",
+            "usd": "1.000000000000000000"
+          },
+          "priceReason": null,
+          "status": "read",
+          "symbol": "USDC",
+          "valueUsd": "40.000000"
+        },
+        {
+          "address": "0x0000000000000000000000000000000000000000",
+          "balanceRaw": "20000000000000000",
+          "decimals": 18,
+          "price": {
+            "depthUsd": null,
+            "ethUsd": {
+              "feed": "0x13e3ee699d1909e989722e753853ae30b17e08c5",
+              "roundId": "36893488147419119081",
+              "updatedAt": 1790430934,
+              "usd": "2714.794991360000000000"
+            },
+            "pool": null,
+            "snapshot": {
+              "hash": "0xe2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2",
+              "number": 157845086,
+              "timestamp": 1790431233
+            },
+            "source": "chainlink_eth_usd",
+            "usd": "2714.794991360000000000"
+          },
+          "priceReason": null,
+          "status": "read",
+          "symbol": "ETH",
+          "valueUsd": "54.295899"
+        }
+      ],
+      "chainId": 10,
+      "reason": null,
+      "snapshot": {
+        "hash": "0xe2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2",
+        "number": 157845086,
+        "timestamp": 1790431233
+      },
+      "status": "current",
+      "totalUsd": "94.295899"
+    }
+  ],
+  "contractVersion": "1.1.0-rc.1",
+  "coverage": "complete",
+  "executionAvailable": false,
+  "limitations": [
+    "usd_from_qualified_sources_only",
+    "token_metadata_untrusted",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "live_chain_balances",
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "totalUsd": "2701.939149",
+  "wallet": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+}

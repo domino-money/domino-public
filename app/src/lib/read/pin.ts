@@ -117,7 +117,9 @@ export const PRODUCER_PIN = {
       // Changed on purpose (data) 2026-10-05: read_api.py, which the manifest hashes, gained read-v6's chain reads; no
       // read-v1 route, schema or version moved.
       // Changed on purpose (data) 2026-10-06: read_gateway.py, which the manifest hashes, gives each reader lane its own visitor budget; no route, schema or version moved.
-      manifestSha256: '38c6cfb7293db79483914f1a31bbb2e6d6055d7c8f6cc96106e446bc9f61b15d',
+      // Changed on purpose (data) 2026-10-06: read_api.py names read-v6 chain-balances' balance chain RPC file
+      // (Ethereum, OP Mainnet); no read-v1 route, schema or version moved.
+      manifestSha256: 'fd5283acc2f2826401141579f5868dec03f977d1476b1cb6f5eab451b233a49f',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -141,7 +143,9 @@ export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
   // Changed on purpose (data) 2026-10-05: read_api.py gained read-v6's chain reads; no read-v2 route, schema or version moved.
   // Changed on purpose (data) 2026-10-06: read_gateway.py, which the manifest hashes, gives each reader lane its own visitor budget; no route, schema or version moved.
-  manifestSha256: 'aa41aa591a9d14a97b1002a8133ef7376d5dff9a28865b1406d20bd037d5a0cd',
+  // Changed on purpose (data) 2026-10-06: read_api.py names read-v6 chain-balances' balance chain RPC file; no read-v2
+  // route, schema or version moved.
+  manifestSha256: '121ea06a7336f59bb17092181837985ae37ba4ad29514c78f8ee50105310d69b',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
@@ -185,7 +189,9 @@ export const BACKEND_OPENAPI_PIN = {
   // Changed on purpose (data) 2026-10-05: three read-v6 paths (chain-pools, chain-balances, chain-tokens).
   // Changed on purpose (data) 2026-10-05: read-v6 activity's reserves_returned item.
   // Changed on purpose (data) 2026-10-05: read-v6 1.1.0-rc.1's qualified USD (prices, depth, values and totals).
-  sha256: '32c8416f859fa9eea495107a1915e2e9ab73c6b956a27db71901b9b37e89f88e',
+  // Changed on purpose (data) 2026-10-06: read-v6 chain-balances' BalanceTokenRef and ChainBalances also take Ethereum
+  // (1) and OP Mainnet (10); no other route, schema or version moved.
+  sha256: '2e048dfcbebfc4ea40f7324fb4f5bfffafa3d891f829168bf87d2b123eca654e',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']

@@ -15,7 +15,11 @@ moving the wallet to another network (it still does, to sign: §1.3).
   300 and 400). A v3 pool's address is the factory's CREATE2 address, so its state is read in the same call. A
   pool is listed once it exists, is priced and holds liquidity, partners ETH and WETH first, then the stable,
   then by active liquidity.
-- chain-balances reads native and ERC-20 balances, by default each chain's base currencies.
+- chain-balances reads native and ERC-20 balances, by default each Domino chain's base currencies. Asked by `tokens`, it
+  also reads the balance chains (BALANCE_CHAINS: Ethereum and OP Mainnet, the owner's decision of 6 Oct 2026; their
+  profiles are v2_chains.BalanceChainProfile) through the reader's balance chain RPC file, priced by the same rules on
+  their own stable, feed and pools. Without that file, or with a fault in it, those two answer `chain_not_configured`
+  and every other chain reads as before.
 - chain-tokens searches the tokens Domino knows on Base and Arbitrum (the owner's decision of 5 Oct 2026): the
   chain profile's, the Uniswap Labs Default token list's (backend/data/token-lists, GPL-3.0, pinned), those the
   V2 index read, and those a chain-pools read found priced pools for, as Robinhood's catalogue learns from
@@ -40,8 +44,9 @@ import time
 from eth_abi import decode
 
 from discovery import KEEPALIVE_OPENER, ZERO, DataError, address, rpc_http
+import hop_log
 from v2_abi import function
-from v2_chains import DEX_V3, DEX_V4, default_registry
+from v2_chains import DEX_V3, DEX_V4, default_balance_registry, default_registry
 from v2_quotes import (AGGREGATE3, ERC20_BALANCE_OF, GET_ETH_BALANCE, MULTICALL_GAS, V4_STANDARD_KEYS, Abi, QuoteError,
                        multicall)
 from read_deadline import read_deadline, read_timeout
@@ -51,6 +56,8 @@ from v4_math import MAX_SQRT, MIN_SQRT, amount_delta, sqrt_at_tick, tick_at_sqrt
 
 POOL_CHAINS = (4663, 8453, 42161)
 SEARCH_CHAINS = (8453, 42161)
+# chain-balances' other chains, read only when asked (v2_read_contract.BALANCE_CHAIN_IDS has both kinds).
+BALANCE_CHAINS = (1, 10)
 # The v3 fee tiers Uniswap governance enabled on Base beyond the profile's standard four (the app's
 # BASE_EXTRA_V3_TIERS); each is listed only while the factory still returns this tick spacing for it.
 EXTRA_V3_TIERS = {8453: {200: 4, 300: 6, 400: 8}}
@@ -249,11 +256,11 @@ class TimedCache:
 # ------------------------------------------------------------ qualified USD
 # read-v6's USD (0xdecimal's item 4): the owner's decision #22 of 2 Oct 2026 (F7 §6.3) and the owner's answers
 # of 5 Oct 2026. A token has a USD price from one of three sources and from nothing else:
-# - the chain's stable, its rank-1 charge currency (USDG on Robinhood Chain, USDC on Base and Arbitrum One):
-#   US$ 1, fixed;
+# - the chain's stable, its rank-1 charge currency (USDG on Robinhood Chain, USDC on Base and Arbitrum One, and on the
+#   balance chains Ethereum and OP Mainnet): US$ 1, fixed;
 # - ETH and its wrapped token: the profile's Chainlink ETH/USD (gasPrice.chainlinkEthUsd) while its round is no
 #   older than the feed's heartbeat at the block read and, where the profile names a sequencer uptime feed (Base,
-#   Arbitrum), the sequencer has been up for longer than SEQUENCER_GRACE_SECONDS;
+#   Arbitrum, OP Mainnet), the sequencer has been up for longer than SEQUENCER_GRACE_SECONDS;
 # - any other token: its deepest pool against one of those, among the app's candidates (pool_candidates), once that
 #   pool releases at least FLOOR_USD of the partner as the token is sold into it until its price falls by BAND:
 #   the featured pools' reference depth (featured_pools.reference_depth with featured_policy.json's floor, band
@@ -804,6 +811,8 @@ class ChainReads:
         return self.stamped(cached, cached['snapshot'])
 
     def _pools(self, chain_id, token, paired):
+        if chain_id not in POOL_CHAINS:
+            raise DataError('upstream_unavailable')  # a balance chain's pools are read to price, never listed
         source = self.source(chain_id)
         chain = source.chain
         refs = pool_candidates(chain, token, paired)
@@ -861,8 +870,8 @@ class ChainReads:
 
     # ------------------------------------------------------- chain-balances
     def balances(self, wallet, tokens=None):
-        """{chain id: [token]} asked, or every chain's base currencies; one Multicall3 call per chain, the chains at
-        once."""
+        """[(chain id, token)] asked, on any chain chain-balances reads, or every Domino chain's base currencies (never
+        a balance chain's); one Multicall3 call per chain, the chains at once."""
         asked = {}
         for chain_id, token in (tokens if tokens is not None else
                                 [(chain_id, entry[0]) for chain_id in POOL_CHAINS
@@ -1009,15 +1018,23 @@ class ChainReads:
                 'executionAvailable': False}
 
 
-def build_chain_reads(*, provider_config, chain_rpc_file, learned_path, index_tokens=None, registry=None):
-    """The reader's chain reads: Robinhood through its provider file, Base and Arbitrum through the V2 chain RPC file
-    (both optional: a chain without endpoints answers chain-pools with upstream_unavailable and chain-balances with
-    `chain_not_configured`)."""
+def build_chain_reads(*, provider_config, chain_rpc_file, learned_path, index_tokens=None, registry=None,
+                      balance_chain_rpc_file=None, balance_registry=None):
+    """The reader's chain reads: Robinhood through its provider file, Base and Arbitrum through the V2 chain RPC file,
+    Ethereum and OP Mainnet (chain-balances only) through the balance chain RPC file. Each is optional: a chain
+    without endpoints answers chain-pools with upstream_unavailable and chain-balances with `chain_not_configured`.
+    A fault in the balance chain file (unreadable, malformed, a sealed URL missing) costs only those two chains: it is
+    logged by its fixed code, never a path or a URL, and every other chain reads as before."""
     from v2_head import HeadFollower
     from v2_rpc import configured_endpoints, load_chain_rpc_config
     registry = registry or default_registry()
     config = load_chain_rpc_config(chain_rpc_file, registry) if chain_rpc_file else None
     sources = {}
+
+    def source(chain, endpoints):
+        follower = HeadFollower(endpoints, max_age_seconds=HEAD_MAX_AGE_SECONDS,
+                                max_block_age_seconds=HEAD_MAX_BLOCK_AGE_SECONDS)
+        return ChainSource(chain, endpoints, follower)
     for chain_id in POOL_CHAINS:
         chain = registry.chain(chain_id)
         if chain_id == 4663:
@@ -1028,9 +1045,22 @@ def build_chain_reads(*, provider_config, chain_rpc_file, learned_path, index_to
             if config is None or chain.key not in config.chains:
                 continue
             endpoints = configured_endpoints(chain, chain_rpc_config=config, send=kept_rpc)
-        follower = HeadFollower(endpoints, max_age_seconds=HEAD_MAX_AGE_SECONDS,
-                                max_block_age_seconds=HEAD_MAX_BLOCK_AGE_SECONDS)
-        sources[chain_id] = ChainSource(chain, endpoints, follower)
+        sources[chain_id] = source(chain, endpoints)
+    if balance_chain_rpc_file:
+        try:
+            balances = balance_registry or default_balance_registry()
+            balance_config = load_chain_rpc_config(balance_chain_rpc_file, balances)
+            built = {}
+            for chain_id in BALANCE_CHAINS:
+                chain = balances.chain(chain_id)
+                if chain.key in balance_config.chains:
+                    built[chain_id] = source(chain, configured_endpoints(chain, chain_rpc_config=balance_config,
+                                                                         send=kept_rpc))
+        except (OSError, ValueError) as error:
+            code = str(error) if isinstance(error, DataError) else 'balance_chains_unconfigured'  # never a path
+            hop_log.emit(service='read-api', mode='balance_chains_unavailable', reason=code[:96])
+        else:
+            sources.update(built)
     return ChainReads(sources, learned=LearnedTokens(learned_path), index_tokens=index_tokens, registry=registry)
 
 

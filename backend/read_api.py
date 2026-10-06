@@ -337,7 +337,9 @@ def checked_refresh_interval(value):
 
 def configured_chain_reads(provider_config, catalogue):
     """read-v6's live chain reads (v2_chain_reads), or None: a fault in their configuration (the V2 chain RPC file, a
-    sealed URL, the token list) leaves those three routes answering upstream_unavailable and the read path up."""
+    sealed URL, the token list) leaves those three routes answering upstream_unavailable and the read path up. A fault
+    in the balance chain RPC file (DOMINO_V2_BALANCE_CHAIN_RPC_FILE: Ethereum and OP Mainnet, chain-balances only)
+    leaves only those two chains `chain_not_configured`."""
     from v2_chain_reads import build_chain_reads
     index_tokens = None
     if catalogue is not None:
@@ -350,6 +352,7 @@ def configured_chain_reads(provider_config, catalogue):
     try:
         return build_chain_reads(provider_config=provider_config, learned_path=LEARNED_TOKENS_STORE,
                                  chain_rpc_file=os.environ.get('DOMINO_V2_CHAIN_RPC_FILE') or None,
+                                 balance_chain_rpc_file=os.environ.get('DOMINO_V2_BALANCE_CHAIN_RPC_FILE') or None,
                                  index_tokens=index_tokens)
     except (OSError, ValueError) as error:
         code = str(error) if isinstance(error, DataError) else 'chain_reads_unconfigured'  # never a path

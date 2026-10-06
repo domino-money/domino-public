@@ -48,6 +48,12 @@ test('requests name a lower-case wallet, a bounded page and a well-formed cursor
   assert(!runtime.validateRequest('chain-pools', { chainId: 1, token }), 'a chain V2 does not serve');
   assert(runtime.validateRequest('chain-balances', { wallet }));
   assert(!runtime.validateRequest('chain-balances', { wallet, tokens: [] }));
+  assert(runtime.validateRequest('chain-balances', { wallet, tokens: [{ chainId: 1, address: token },
+    { chainId: 10, address: token }] }), 'Ethereum and OP Mainnet, when named');
+  assert(!runtime.validateRequest('chain-balances', { wallet, tokens: [{ chainId: 137, address: token }] }),
+    'a chain chain-balances does not read');
+  assert(!runtime.validateRequest('chain-pools', { chainId: 10, token }), 'a balance chain has no chain-pools');
+  assert(!runtime.validateRequest('chain-tokens', { chainId: 1, query: 'usd' }), 'nor a search');
   assert(!runtime.validateRequest('chain-balances', { wallet, tokens: [{ chainId: 8453, address: token },
     { chainId: 8453, address: token }] }), 'a token twice');
   assert(runtime.validateRequest('chain-tokens', { chainId: 42161, query: 'usd' }));
@@ -81,6 +87,20 @@ test('a chain read is about the chain, token, query, wallet and tokens asked', (
   assert(runtime.validateExchange('chain-balances', { wallet: balances.wallet },
     read('./fixtures/valid/chain-balances.json')), 'every chain by default');
   assert(!runtime.validateExchange('chain-balances', { wallet: balances.wallet }, balances));
+  // Ethereum and OP Mainnet answer only when named, never by default (CONSTANTS.chainIds, Domino's three).
+  const zero = '0x' + '0'.repeat(40);
+  const usdc = { 1: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 10: '0x0b2c639c533813f4aa9d7837caf62653d097ff85' };
+  const elsewhere = read('./fixtures/valid/chain-balances-asked-balance-chains.json');
+  const named = { wallet: elsewhere.wallet, tokens: [{ chainId: 1, address: usdc[1] }, { chainId: 1, address: zero },
+    { chainId: 10, address: usdc[10] }, { chainId: 10, address: zero }] };
+  assert(runtime.validateExchange('chain-balances', named, elsewhere));
+  assert(!runtime.validateExchange('chain-balances', { wallet: elsewhere.wallet }, elsewhere), 'never by default');
+  assert(!runtime.validateExchange('chain-balances', { ...named, tokens: named.tokens.slice(0, 2) }, elsewhere));
+  const every = read('./fixtures/valid/chain-balances.json');
+  const withEthereum = clone(every);
+  withEthereum.chains.unshift(clone(elsewhere.chains[0]));
+  assert(runtime.validateResponse('chain-balances', withEthereum), 'an answer may carry Ethereum beside them');
+  assert(!runtime.validateExchange('chain-balances', { wallet: every.wallet }, withEthereum), 'but not as the default');
   const tokens = read('./fixtures/valid/chain-tokens.json');
   const query = read('./fixtures/requests/chain-tokens.json');
   assert(runtime.validateExchange('chain-tokens', query, tokens));

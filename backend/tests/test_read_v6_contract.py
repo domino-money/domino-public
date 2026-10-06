@@ -27,8 +27,9 @@ from discovery import DataError  # noqa: E402
 from read_api import ReadGate, create_app  # noqa: E402
 from read_gateway import Gateway, create_gateway  # noqa: E402
 from v2_chains import default_registry  # noqa: E402
-from v2_read_contract import (CHAIN_IDS, CONTRACT_VERSION, REQUEST_MODELS, ROUTES, STORED_ROUTES, V2_ERRORS,  # noqa: E402
-                              cursor_key, error_of, validate_v6_request_response, validate_v6_response)
+from v2_read_contract import (BALANCE_CHAIN_IDS, CHAIN_IDS, CONTRACT_VERSION, REQUEST_MODELS, ROUTES,  # noqa: E402
+                              STORED_ROUTES, V2_ERRORS, cursor_key, error_of, validate_v6_request_response,
+                              validate_v6_response)
 import read_v6_contract_fixtures as fixtures  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -106,12 +107,14 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(on_disk, {name for name in expected if name.startswith('fixtures/')})
 
     def test_the_price_profiles_are_the_chain_profiles(self):
-        # Qualified USD checks each chain's stable, wrapped token and feed from this table: it is the profiles'.
-        from v2_chains import default_registry
+        # Qualified USD checks each chain's stable, wrapped token and feed from this table: it is the profiles', the
+        # balance chains' (chain-balances' Ethereum and OP Mainnet) included, and every chain chain-balances reads has one.
+        from v2_chains import default_balance_registry, default_registry
         from v2_read_contract import PRICE_PROFILES
-        registry = default_registry()
+        registry, balances = default_registry(), default_balance_registry()
+        self.assertEqual(sorted(PRICE_PROFILES), list(BALANCE_CHAIN_IDS))
         for chain_id, profile in PRICE_PROFILES.items():
-            chain = registry.chain(chain_id)
+            chain = (registry if chain_id in CHAIN_IDS else balances).chain(chain_id)
             feed = chain.gasPrice.chainlinkEthUsd
             stable = min(chain.chargeCurrencies, key=lambda currency: (currency.rank, currency.address))
             with self.subTest(chain=chain_id):
@@ -120,6 +123,13 @@ class PackageTests(unittest.TestCase):
 
     def test_the_chains_are_the_enabled_profiles(self):
         self.assertEqual(CHAIN_IDS, tuple(profile.chainId for profile in default_registry().chains))
+
+    def test_chain_balances_reads_the_domino_chains_and_the_balance_chains(self):
+        import v2_chain_reads
+        from v2_chains import default_balance_registry
+        balances = tuple(profile.chainId for profile in default_balance_registry().chains)
+        self.assertEqual((balances, v2_chain_reads.BALANCE_CHAINS), ((1, 10), (1, 10)))
+        self.assertEqual(BALANCE_CHAIN_IDS, tuple(sorted(CHAIN_IDS + balances)))
 
     def test_the_error_names_are_those_the_v2_sources_declare(self):
         # A waiting reason names a contract error only when V2 declares it; the
@@ -184,12 +194,19 @@ class ChainReadContractTests(unittest.TestCase):
         REQUEST_MODELS['chain-pools'].model_validate({'chainId': 8453, 'token': self.TOKEN})
         REQUEST_MODELS['chain-balances'].model_validate({'wallet': WALLET})
         REQUEST_MODELS['chain-tokens'].model_validate({'chainId': 42161, 'query': ' usd '})
+        # Ethereum and OP Mainnet are chain-balances' alone, and only when named.
+        REQUEST_MODELS['chain-balances'].model_validate({'wallet': WALLET, 'tokens': [
+            {'chainId': chain_id, 'address': self.TOKEN} for chain_id in BALANCE_CHAIN_IDS]})
         many = [{'chainId': 8453, 'address': '0x' + f'{index:040x}'} for index in range(25)]
         for route, body in (('chain-pools', {'chainId': 8453, 'token': self.TOKEN, 'pairedToken': self.TOKEN}),
                             ('chain-pools', {'chainId': 8453, 'token': self.TOKEN.upper().replace('0X', '0x')}),
                             ('chain-balances', {'wallet': WALLET, 'tokens': []}),
                             ('chain-balances', {'wallet': WALLET, 'tokens': many}),
                             ('chain-balances', {'wallet': WALLET, 'tokens': [{'chainId': 8453, 'address': self.TOKEN}] * 2}),
+                            ('chain-balances', {'wallet': WALLET, 'tokens': [{'chainId': 137, 'address': self.TOKEN}]}),
+                            ('chain-pools', {'chainId': 1, 'token': self.TOKEN}),
+                            ('chain-pools', {'chainId': 10, 'token': self.TOKEN}),
+                            ('chain-tokens', {'chainId': 10, 'query': 'usd'}),
                             ('chain-tokens', {'chainId': 4663, 'query': 'usd'}),
                             ('chain-tokens', {'chainId': 8453, 'query': '   '}),
                             ('chain-tokens', {'chainId': 8453, 'query': 'a\u0000b'}),
@@ -224,6 +241,20 @@ class ChainReadContractTests(unittest.TestCase):
                                  asked)):
             with self.subTest(case=name), self.assertRaises(ValueError):
                 validate_v6_request_response('chain-balances', ask, body)
+        # The balance chains answer when named, and never as the default answer, beside Domino's or alone.
+        elsewhere = valid['chain-balances-asked-balance-chains']
+        named = {'wallet': WALLET, 'tokens': [
+            {'chainId': 1, 'address': fixtures.ETHEREUM_USDC}, {'chainId': 1, 'address': fixtures.ZERO},
+            {'chainId': 10, 'address': fixtures.OPTIMISM_USDC}, {'chainId': 10, 'address': fixtures.ZERO}]}
+        validate_v6_request_response('chain-balances', named, elsewhere)
+        with_ethereum = copy.deepcopy(every)
+        with_ethereum['chains'].insert(0, copy.deepcopy(elsewhere['chains'][0]))
+        validate_v6_response('chain-balances', with_ethereum)
+        for name, ask, body in (('default', {'wallet': WALLET, 'tokens': None}, elsewhere),
+                                ('default beside the three', {'wallet': WALLET, 'tokens': None}, with_ethereum),
+                                ('one chain less', {**named, 'tokens': named['tokens'][:2]}, elsewhere)):
+            with self.subTest(case=name), self.assertRaises(ValueError):
+                validate_v6_request_response('chain-balances', ask, body)
 
     def test_the_stored_routes_price_with_the_chain_reads_pricer_when_they_are_on(self):
         import read_api
@@ -232,6 +263,22 @@ class ChainReadContractTests(unittest.TestCase):
         reads = type('ChainReads', (), {'pricer': pricer})()
         self.assertEqual(read_api.configured_v2_reader(catalogue, reads).prices, pricer.prices)
         self.assertIsNone(read_api.configured_v2_reader(catalogue, None).prices)
+
+    def test_the_reader_names_the_balance_chain_file_from_its_own_variable(self):
+        import os
+        from unittest.mock import patch
+        import read_api
+        files = {'DOMINO_V2_CHAIN_RPC_FILE': '/run/domino-read-config/chain-rpc.json',
+                 'DOMINO_V2_BALANCE_CHAIN_RPC_FILE': '/run/domino-read-config/balance-chain-rpc.json'}
+        for environ, expected in ((files, files['DOMINO_V2_BALANCE_CHAIN_RPC_FILE']),
+                                  ({**files, 'DOMINO_V2_BALANCE_CHAIN_RPC_FILE': ''}, None),
+                                  ({'DOMINO_V2_CHAIN_RPC_FILE': files['DOMINO_V2_CHAIN_RPC_FILE']}, None)):
+            with self.subTest(environ=sorted(environ)), patch.dict(os.environ, environ, clear=True), \
+                    patch('v2_chain_reads.build_chain_reads', return_value='built') as built:
+                self.assertEqual(read_api.configured_chain_reads(None, None), 'built')
+            options = built.call_args.kwargs
+            self.assertEqual((options['chain_rpc_file'], options['balance_chain_rpc_file']),
+                             (files['DOMINO_V2_CHAIN_RPC_FILE'], expected))
 
     def test_a_fault_in_the_chain_reads_configuration_leaves_the_read_path_up(self):
         import io
@@ -342,6 +389,26 @@ class RouteTests(unittest.TestCase):
         self.assertEqual((cooling.status_code, cooling.json()), (503, {'error': 'upstream_unavailable'}))
         drifted = reader_client(Reader(), ChainReads()).post(
             '/v6/read/chain-pools', json={**fixtures.REQUESTS['chain-pools'], 'chainId': 42161})
+        self.assertEqual((drifted.status_code, drifted.json()), (502, {'error': 'upstream_contract_mismatch'}))
+
+    def test_the_balance_chains_are_served_when_named_through_the_reader_and_the_gateway(self):
+        class Reads(ChainReads):
+            def balances(self, wallet, tokens):
+                self.calls.append(('balances', wallet, tokens))
+                return self._answer('chain-balances-asked-balance-chains')
+        asked = [(1, fixtures.ETHEREUM_USDC), (1, fixtures.ZERO), (10, fixtures.OPTIMISM_USDC), (10, fixtures.ZERO)]
+        request = {'wallet': WALLET, 'tokens': [{'chainId': chain_id, 'address': token} for chain_id, token in asked]}
+        reads = Reads()
+        reader = reader_client(Reader(), reads)
+        response = reader.post('/v6/read/chain-balances', json=request)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), fixtures.valid()['chain-balances-asked-balance-chains'])
+        self.assertEqual(reads.calls, [('balances', WALLET, asked)])
+        gateway = gateway_client(reader, enabled_v6=True, enabled_v6_reads=('chain-balances',))
+        through = gateway.post('/internal/read/v6/chain-balances', json=request, headers=HEADER)
+        self.assertEqual((through.status_code, through.json()['chains'][1]['chainId']), (200, 10), through.text)
+        # Without tokens, an answer about them is about chains nobody asked: refused, never relayed.
+        drifted = reader.post('/v6/read/chain-balances', json={'wallet': WALLET})
         self.assertEqual((drifted.status_code, drifted.json()), (502, {'error': 'upstream_contract_mismatch'}))
 
     def test_the_gateway_serves_chain_reads_only_when_named(self):

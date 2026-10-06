@@ -16,10 +16,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'backend'), str(ROOT / 'backend/tests')]
 from read_contract import ERROR_STATUS_BY_CODE  # noqa: E402
-from v2_read_contract import (BLOCKERS, CHAIN_IDS, CHAIN_REASONS, CONTRACT_VERSION, DISARM_REASONS,  # noqa: E402
-                              HEAD_MAX_AGE_SECONDS, LIMITATIONS, MAX_LAG_SECONDS, REQUEST_MODELS, RESPONSE_MODELS,
-                              ROUTES, STALE_SECONDS, V2_ERRORS, WAITING_STALE_SECONDS, WAITING_STATUSES,
-                              LIVE_FRESH_SECONDS, LIVE_LIMITATIONS, TOKEN_SOURCES, PRICE_FLOOR_USD,
+from v2_read_contract import (BALANCE_CHAIN_IDS, BLOCKERS, CHAIN_IDS, CHAIN_REASONS,  # noqa: E402
+                              CONTRACT_VERSION, DISARM_REASONS, HEAD_MAX_AGE_SECONDS, LIMITATIONS, MAX_LAG_SECONDS,
+                              REQUEST_MODELS, RESPONSE_MODELS, ROUTES, STALE_SECONDS, V2_ERRORS, WAITING_STALE_SECONDS,
+                              WAITING_STATUSES, LIVE_FRESH_SECONDS, LIVE_LIMITATIONS, TOKEN_SOURCES, PRICE_FLOOR_USD,
                               PRICE_PROFILES)
 import read_v6_contract_fixtures as fixtures  # noqa: E402
 
@@ -84,8 +84,10 @@ def types(schemas):
 
 
 def constants():
-    """What runtime.mjs needs to re-check an answer: the chains, the limitations and the thresholds."""
-    return {'chainIds': list(CHAIN_IDS), 'limitations': list(LIMITATIONS), 'chainReasons': list(CHAIN_REASONS),
+    """What runtime.mjs needs to re-check an answer: the chains (and the ones chain-balances reads when asked), the
+    limitations and the thresholds."""
+    return {'chainIds': list(CHAIN_IDS), 'balanceChainIds': list(BALANCE_CHAIN_IDS),
+            'limitations': list(LIMITATIONS), 'chainReasons': list(CHAIN_REASONS),
             'disarmReasons': [DISARM_REASONS[key] for key in sorted(DISARM_REASONS)], 'blockers': list(BLOCKERS),
             'headMaxAgeSeconds': HEAD_MAX_AGE_SECONDS, 'maxLagSeconds': MAX_LAG_SECONDS,
             'staleSeconds': STALE_SECONDS, 'tariffRates': {'assisted_swap': [65], 'automation': [200, 400],

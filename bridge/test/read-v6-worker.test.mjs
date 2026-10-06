@@ -22,14 +22,19 @@ const REQUESTS = Object.fromEntries(['portfolio', 'activity', 'chain-pools', 'ch
 const ALL_READS = 'portfolio,activity,chain-pools,chain-balances,chain-tokens';
 const WALLET = JSON.parse(REQUESTS.portfolio).wallet;
 /** The request each valid answer answers: the page fixture its own request (limit 3, a cursor), the others a first page. */
-// A chain read's request is read off its answer; the asked balances answer their request fixture.
+// A chain read's request is read off its answer; the asked balances answer their request fixture, and the other asked
+// answers (Ethereum's and OP Mainnet's, 2026-10-06) the tokens they list, in their order.
 function requestFor(name) {
   const route = routeOf(name);
   if (route === 'chain-pools' || route === 'chain-tokens' || route === 'chain-balances') {
     const body = JSON.parse(text(`valid/${name}`));
     if (route === 'chain-pools') return JSON.stringify({ chainId: body.chainId, token: body.token, ...(body.pairedToken ? { pairedToken: body.pairedToken } : {}) });
     if (route === 'chain-tokens') return JSON.stringify({ chainId: body.chainId, query: body.query });
-    return name.startsWith('chain-balances-asked') ? REQUESTS['chain-balances'] : JSON.stringify({ wallet: body.wallet });
+    if (name === 'chain-balances-asked.json') return REQUESTS['chain-balances'];
+    if (name.startsWith('chain-balances-asked')) {
+      return JSON.stringify({ wallet: body.wallet, tokens: body.chains.flatMap((chain) => chain.balances.map((balance) => ({ chainId: chain.chainId, address: balance.address }))) });
+    }
+    return JSON.stringify({ wallet: body.wallet });
   }
   return name === 'activity-page.json' ? REQUESTS.activity : JSON.stringify({ wallet: WALLET });
 }
@@ -152,7 +157,7 @@ for (const patch of [{ GATEWAY_ORIGIN: origin }, { GATEWAY_ORIGIN: 'http://gatew
 
 test('on, each route goes to its one upstream path with the service identity, and every valid answer is relayed byte for byte', async () => {
   assert.deepEqual([...ROUTES].sort(), ['activity', 'chain-balances', 'chain-pools', 'chain-tokens', 'portfolio']);
-  assert.equal(VALID.length, 18);
+  assert.equal(VALID.length, 20);
   const every = { ...env, ENABLED_V6_READS: ALL_READS };
   for (const [name, body] of VALID) {
     const route = routeOf(name);
@@ -191,7 +196,7 @@ test('the capabilities name the three chains every stored answer carries, in the
 });
 
 test('every invalid answer the producer could serve is refused as upstream_contract_mismatch, never relayed', async () => {
-  assert.equal(INVALID.length, 170);
+  assert.equal(INVALID.length, 174);
   const every = { ...env, ENABLED_V6_READS: ALL_READS };
   for (const [name, body] of INVALID) {
     const route = routeOf(name);

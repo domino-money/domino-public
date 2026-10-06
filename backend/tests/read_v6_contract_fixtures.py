@@ -442,22 +442,31 @@ class LiveChain:
         return '0x' + encode(['(bool,bytes)[]'], [rows]).hex()
 
 
+class LiveFollower:
+    def __init__(self, block):
+        self.block = block
+
+    def head(self):
+        return type('Head', (), {'block': self.block})()
+
+
+class LiveEndpoints:
+    endpoints = ()
+
+    def __init__(self, answers):
+        self.answers = answers
+
+    def read_rpc(self, *, anchor, max_requests):
+        return LiveChain(self.answers)
+
+
 def live_reads(answers, *, chains=(8453,)):
     from discovery import Block
     import v2_chain_reads as reads
     from v2_chains import default_registry
     registry = default_registry()
-
-    class Follower:
-        def head(self):
-            return type('Head', (), {'block': Block(*LIVE_BLOCK)})()
-
-    class Endpoints:
-        endpoints = ()
-
-        def read_rpc(self, *, anchor, max_requests):
-            return LiveChain(answers)
-    sources = {chain: reads.ChainSource(registry.chain(chain), Endpoints(), Follower()) for chain in chains}
+    sources = {chain: reads.ChainSource(registry.chain(chain), LiveEndpoints(answers), LiveFollower(Block(*LIVE_BLOCK)))
+               for chain in chains}
     listed = ({'name': 'Uniswap Labs Default', 'version': '22.24.0', 'sha256': '5b' * 32},
               {8453: [('0x' + '22' * 20, 'AERO', 'Aerodrome Finance', 18), (BASE_USDC, 'USDC', 'USD Coin', 6),
                       ('0x' + '33' * 20, 'cbBTC', 'Coinbase Wrapped BTC', 8)], 42161: []})
@@ -465,6 +474,65 @@ def live_reads(answers, *, chains=(8453,)):
     learned.learn(8453, '0x' + '44' * 20, 'AEROX', None, 18)
     return reads.ChainReads(sources, token_list=listed, learned=learned, registry=registry,
                             clock=lambda: NOW, monotonic=lambda: 0.0)
+
+
+# The balance chains (Ethereum and OP Mainnet): chain-balances reads them when asked, each at its own block, its stable
+# at US$ 1 and ETH at its own Chainlink feed (OP Mainnet's behind its sequencer, up a day). Ethereum's round is older
+# than OP Mainnet's heartbeat (1,200 s) and within its own (3,600 s).
+ETHEREUM_USDC, OPTIMISM_USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x0b2c639c533813f4aa9d7837caf62653d097ff85'
+OPTIMISM_FEED = '0x13e3ee699d1909e989722e753853ae30b17e08c5'
+BALANCE_BLOCKS = {1: (26_133_290, '0x' + 'e1' * 32, NOW - 7), 10: (157_845_086, '0x' + 'e2' * 32, NOW - 1)}
+# Per chain: the feed's (round, answer at 8 decimals, updated seconds before NOW), and the wallet's ETH and USDC.
+BALANCE_ROUNDS = {1: (129_127_208_515_966_895_672, 271_428_650_000, 1000), 10: (36_893_488_147_419_119_081, 271_479_499_136, 300)}
+BALANCE_HOLDINGS = {1: (5 * 10**17, 1_250_500_000), 10: (2 * 10**16, 40_000_000)}
+
+
+def balance_chain_answers(chain_id):
+    from eth_abi import encode
+    from eth_hash.auto import keccak
+    from v2_chains import default_balance_registry
+    chain = default_balance_registry().chain(chain_id)
+
+    def selector(signature):
+        return keccak(signature.encode())[:4].hex()
+    wallet = encode(['address'], [WALLET])
+    eth, usdc = BALANCE_HOLDINGS[chain_id]
+    round_id, answer, age = BALANCE_ROUNDS[chain_id]
+    rounds = ['uint80', 'int256', 'uint256', 'uint256', 'uint80']
+    feed = chain.gasPrice.chainlinkEthUsd
+    answers = {(chain.multicall3, selector('getEthBalance(address)'), wallet): (True, encode(['uint256'], [eth])),
+               (chain.chargeCurrencies[0].address, selector('balanceOf(address)'), wallet):
+                   (True, encode(['uint256'], [usdc])),
+               (feed.proxy, selector('latestRoundData()'), b''):
+                   (True, encode(rounds, [round_id, answer, NOW - age, NOW - age, round_id]))}
+    if feed.sequencerUptimeFeed is not None:
+        answers[(feed.sequencerUptimeFeed, selector('latestRoundData()'), b'')] = (
+            True, encode(rounds, [7, 0, NOW - 86_400, NOW - 86_400, 7]))
+    return answers
+
+
+def balance_chain_reads(configured=(1, 10)):
+    """ChainReads with the balance chains `configured`, each over its own scripted Multicall3 and block."""
+    from discovery import Block
+    import v2_chain_reads as reads
+    from v2_chains import default_balance_registry, default_registry
+    balances = default_balance_registry()
+    sources = {chain_id: reads.ChainSource(balances.chain(chain_id), LiveEndpoints(balance_chain_answers(chain_id)),
+                                           LiveFollower(Block(*BALANCE_BLOCKS[chain_id]))) for chain_id in configured}
+    return reads.ChainReads(sources, token_list=({'name': 'Uniswap Labs Default', 'version': '22.24.0',
+                                                  'sha256': '5b' * 32}, {8453: [], 42161: []}),
+                            learned=reads.LearnedTokens(), registry=default_registry(), clock=lambda: NOW,
+                            monotonic=lambda: 0.0)
+
+
+def balance_chain_fixtures():
+    return {
+        'chain-balances-asked-balance-chains': balance_chain_reads().balances(
+            WALLET, [(1, ETHEREUM_USDC), (1, ZERO), (10, OPTIMISM_USDC), (10, ZERO)]),
+        # OP Mainnet without endpoints (no balance chain file, or a fault in it): it alone is chain_not_configured.
+        'chain-balances-asked-balance-chain-unconfigured': balance_chain_reads(configured=(1,)).balances(
+            WALLET, [(1, ZERO), (10, ZERO)]),
+    }
 
 
 def live_answers():
@@ -592,6 +660,7 @@ def valid():
         'activity-page': activity(limit=3, rows=rows, book=book),
         'activity-empty': activity(rows=[]),
         **live_fixtures(),
+        **balance_chain_fixtures(),
     }
 
 
@@ -621,6 +690,12 @@ def invalid():
     def asked(change):
         """A defect of chain-balances' answer for the tokens asked: Base alone, every balance valued, both totals."""
         body = copy.deepcopy(answers['chain-balances-asked'])
+        change(body)
+        return 'chain-balances', body
+
+    def balance_chains(change):
+        """A defect of chain-balances' answer on the balance chains: Ethereum's then OP Mainnet's USDC and ETH, valued."""
+        body = copy.deepcopy(balance_chain_fixtures()['chain-balances-asked-balance-chains'])
         change(body)
         return 'chain-balances', body
 
@@ -905,6 +980,14 @@ def invalid():
             'totalUsd': None, 'balances': [{'address': ZERO, 'symbol': None, 'decimals': None, 'balanceRaw': None,
                                             'status': 'unavailable', 'price': None,
                                             'priceReason': 'no_qualified_price_source', 'valueUsd': None}]}))),
+        # The balance chains: each prices from its own profile (PRICE_PROFILES), and only they join Domino's.
+        'chain-balances.ethereum-eth-at-another-chains-feed': balance_chains(lambda b: b['chains'][0]['balances'][1][
+            'price']['ethUsd'].update(feed=OPTIMISM_FEED)),
+        'chain-balances.optimism-eth-past-its-heartbeat': balance_chains(lambda b: b['chains'][1]['balances'][1][
+            'price']['ethUsd'].update(updatedAt=b['chains'][1]['snapshot']['timestamp'] - 1201)),
+        'chain-balances.ethereum-stable-of-optimism': balance_chains(lambda b: b['chains'][0]['balances'][0].update(
+            address=OPTIMISM_USDC)),
+        'chain-balances.chain-not-read': balance_chains(lambda b: b['chains'][1].update(chainId=137)),
         # chain-tokens: AERO from the list, AEROX looked up.
         'chain-tokens.sources-unordered': defect('chain-tokens', lambda b: b['tokens'][0].update(
             sources=['looked_up', 'uniswap_default_list'])),

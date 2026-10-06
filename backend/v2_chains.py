@@ -19,6 +19,19 @@ mainnet is live) is listed as pending and never served.
 
 The charge-currency selection rule itself belongs to the contracts (F2); this
 module exposes the ranks it reads, not a second implementation of the rule.
+
+Balance chains (api-contracts/v2/balance-chains: Ethereum and OP Mainnet, the
+owner's decision of 6 Oct 2026) are not Domino chains: no V2 deployment, index,
+plan or automation runs there, and only read-v6's chain-balances reads them,
+when a request asks (v2_chain_reads). Their lighter profile names only what a
+balance and its qualified USD read: Multicall3, the base currencies (the
+stable at rank 1, ETH and its wrapped token; `chargeCurrencies`, named as in
+the Domino profiles because the chain reads read both alike, though nothing is
+charged there), the Chainlink ETH/USD feed and its sequencer's, and the Uniswap
+v3 factory and v4 StateView the pools are read through. It is loaded whole or
+refused whole by the same rules, every contract it consumes is in its own
+verification record, and no balance chain may take a Domino chain's id or
+name.
 """
 from dataclasses import dataclass
 from datetime import date
@@ -36,6 +49,7 @@ from discovery import DataError
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE_DIRECTORY = ROOT / 'api-contracts/v2/chains'
+BALANCE_PROFILE_DIRECTORY = ROOT / 'api-contracts/v2/balance-chains'
 MAX_PROFILE_BYTES = 65536
 ZERO = '0x' + '00' * 20
 # DominoV2Types.DEX_V3 and DEX_V4: the `dex` of every PoolRef and PositionRef
@@ -186,6 +200,28 @@ class Verification(Frozen):
         return self
 
 
+def _checked_currencies(profile):
+    """The rules a profile's currencies keep, a Domino chain's and a balance chain's alike."""
+    currencies = profile.chargeCurrencies
+    ranks = [currency.rank for currency in currencies]
+    # The fee rule reads the list in rank order: rank 1 first, then the
+    # same or the next rank, so a reordered file cannot change a charge.
+    if ranks[0] != 1 or any(b not in (a, a + 1) for a, b in zip(ranks, ranks[1:])):
+        raise ValueError('charge_currency_ranks_out_of_order')
+    if len({currency.address for currency in currencies}) != len(currencies):
+        raise ValueError('duplicate_charge_currency')
+    native = [currency for currency in currencies if currency.native]
+    wrapped = [currency for currency in currencies if currency.address == profile.wrappedNative.address]
+    if any(c.symbol != profile.nativeSymbol or c.decimals != 18 for c in native):
+        raise ValueError('native_charge_currency_invalid')
+    if profile.wrappedNative.decimals != 18 or any(c.decimals != 18 for c in wrapped):
+        raise ValueError('wrapped_native_decimals_invalid')
+    # Native and wrapped native are one currency to the fee rule.
+    if native and wrapped and native[0].rank != wrapped[0].rank:
+        raise ValueError('native_and_wrapped_ranks_differ')
+    return native, wrapped
+
+
 class ChainProfile(Frozen):
     """One enabled chain. Every address is checksummed in the file, lower case here."""
     schemaVersion: Literal[1]
@@ -216,22 +252,7 @@ class ChainProfile(Frozen):
     @model_validator(mode='after')
     def checked(self):
         currencies = self.chargeCurrencies
-        ranks = [currency.rank for currency in currencies]
-        # The fee rule reads the list in rank order: rank 1 first, then the
-        # same or the next rank, so a reordered file cannot change a charge.
-        if ranks[0] != 1 or any(b not in (a, a + 1) for a, b in zip(ranks, ranks[1:])):
-            raise ValueError('charge_currency_ranks_out_of_order')
-        if len({currency.address for currency in currencies}) != len(currencies):
-            raise ValueError('duplicate_charge_currency')
-        native = [currency for currency in currencies if currency.native]
-        wrapped = [currency for currency in currencies if currency.address == self.wrappedNative.address]
-        if any(c.symbol != self.nativeSymbol or c.decimals != 18 for c in native):
-            raise ValueError('native_charge_currency_invalid')
-        if self.wrappedNative.decimals != 18 or any(c.decimals != 18 for c in wrapped):
-            raise ValueError('wrapped_native_decimals_invalid')
-        # Native and wrapped native are one currency to the fee rule.
-        if native and wrapped and native[0].rank != wrapped[0].rank:
-            raise ValueError('native_and_wrapped_ranks_differ')
+        _checked_currencies(self)
         records = {contract.address: contract for contract in self.verification.contracts}
         uniswap = self.uniswap
         contracts = [uniswap.v3.factory, uniswap.v3.positionManager, uniswap.v3.quoterV2,
@@ -266,15 +287,19 @@ class ChainProfile(Frozen):
 
     def verified_codehash(self, contract):
         """The code hash the profile recorded on chain; None for a checked absence."""
-        contract = contract.lower()
-        for record in self.verification.contracts:
-            if record.address == contract:
-                return record.codehash
-        raise DataError('v2_contract_not_in_profile')
+        return _verified_codehash(self.verification, contract)
 
     def v3_tick_spacing(self, fee):
         """The standard tiers the profile lists; None means ask the factory (F0)."""
         return self.uniswap.v3.tickSpacingByFee.get(str(fee))
+
+
+def _verified_codehash(verification, contract):
+    contract = contract.lower()
+    for record in verification.contracts:
+        if record.address == contract:
+            return record.codehash
+    raise DataError('v2_contract_not_in_profile')
 
 
 class PendingChain(Frozen):
@@ -291,9 +316,96 @@ class PendingChain(Frozen):
     notes: tuple[Text, ...] = ()
 
 
+# --------------------------------------------------------------- balance chains
+class BalanceV3(Frozen):
+    """The v3 factory whose CREATE2 addresses the pools are read at (v2_uniswap.v3_pool_address), and its tiers."""
+    factory: Contract
+    poolInitCodeHash: CodeHash
+    tickSpacingByFee: dict[FeeKey, Annotated[StrictInt, Field(ge=1, lt=16384)]]
+
+    @model_validator(mode='after')
+    def checked(self):
+        if not self.tickSpacingByFee:
+            raise ValueError('v3_fee_tiers_missing')
+        return self
+
+
+class BalanceV4(Frozen):
+    """The v4 PoolManager, and the StateView its pools' state is read through."""
+    poolManager: Contract
+    stateView: Contract
+
+
+class BalanceUniswap(Frozen):
+    v3: BalanceV3
+    v4: BalanceV4
+
+
+class EthUsdFeed(Frozen):
+    """The Chainlink ETH/USD proxy that prices ETH and WETH, and on an L2 the sequencer uptime feed that gates it."""
+    proxy: Contract
+    decimals: Annotated[StrictInt, Field(ge=0, le=36)]
+    heartbeatSeconds: Annotated[StrictInt, Field(ge=1, le=7 * 86400)]
+    sequencerUptimeFeed: Contract | None
+
+
+class BalanceFeeds(Frozen):
+    chainlinkEthUsd: EthUsdFeed
+
+
+class BalanceChainProfile(Frozen):
+    """A chain read-v6's chain-balances reads beside Domino's own, when asked; nothing else reads it. Every address is
+    checksummed in the file, lower case here."""
+    schemaVersion: Literal[1]
+    kind: Literal['domino-v2-balance-chain']
+    chainId: Annotated[StrictInt, Field(ge=1, lt=2**63)]
+    slug: Slug
+    name: Annotated[str, Field(min_length=1, max_length=64)]
+    nativeSymbol: Symbol
+    uniswap: BalanceUniswap
+    multicall3: Contract
+    wrappedNative: Token
+    # The stable at rank 1, priced at US$ 1, then ETH and its wrapped token: the pools' partners when a token is priced.
+    chargeCurrencies: Annotated[tuple[ChargeCurrency, ...], Field(min_length=1, max_length=16)]
+    gasPrice: BalanceFeeds
+    verification: Verification
+    notes: tuple[Text, ...]
+    sources: tuple[Text, ...]
+
+    @model_validator(mode='after')
+    def checked(self):
+        native, wrapped = _checked_currencies(self)
+        # One currency at rank 1, the stable the chain reads price at US$ 1, and ETH and WETH beside it. ETH and WETH
+        # share a rank, so neither can be that one.
+        if len([c for c in self.chargeCurrencies if c.rank == 1]) != 1 or not native or not wrapped:
+            raise ValueError('balance_currencies_invalid')
+        uniswap = self.uniswap
+        contracts = [uniswap.v3.factory, uniswap.v4.poolManager, uniswap.v4.stateView]
+        if len(set(contracts)) != len(contracts):
+            raise ValueError('uniswap_contracts_not_distinct')
+        feed = self.gasPrice.chainlinkEthUsd
+        # The wrapped token is one of the currencies, as above.
+        consumed = [*contracts, self.multicall3, feed.proxy,
+                    *([feed.sequencerUptimeFeed] if feed.sequencerUptimeFeed else []),
+                    *(currency.address for currency in self.chargeCurrencies if not currency.native)]
+        records = {contract.address: contract for contract in self.verification.contracts}
+        if any(address not in records or records[address].absent for address in consumed):
+            raise ValueError('consumed_contract_not_verified')
+        return self
+
+    @property
+    def key(self):
+        """The profile's file stem, and the chain's name in the balance chain RPC file and its credentials."""
+        return f'{self.slug}-{self.chainId}'
+
+    def verified_codehash(self, contract):
+        """The code hash the profile recorded on chain; None for a checked absence."""
+        return _verified_codehash(self.verification, contract)
+
+
 @dataclass(frozen=True)
 class ChainRegistry:
-    chains: tuple  # ChainProfile, by chain id
+    chains: tuple  # ChainProfile (BalanceChainProfile in the balance registry), by chain id
     pending: tuple  # PendingChain
 
     def chain(self, name):
@@ -306,7 +418,7 @@ class ChainRegistry:
         raise DataError('v2_chain_unknown')
 
 
-def _profile_document(path):
+def _json_document(path):
     raw = path.read_bytes()
     if len(raw) > MAX_PROFILE_BYTES:
         raise DataError('v2_chain_profile_invalid')
@@ -327,7 +439,14 @@ def _profile_document(path):
         document = json.loads(raw, object_pairs_hook=unique, parse_constant=constant)
     except (ValueError, UnicodeError, RecursionError) as error:
         raise DataError('v2_chain_profile_invalid') from error
-    if type(document) is not dict or type(document.get('enabled')) is not bool:
+    if type(document) is not dict:
+        raise DataError('v2_chain_profile_invalid')
+    return raw, document
+
+
+def _profile_document(path):
+    raw, document = _json_document(path)
+    if type(document.get('enabled')) is not bool:
         raise DataError('v2_chain_profile_invalid')
     return raw, document
 
@@ -363,3 +482,34 @@ def default_registry():
 
 def chain(name):
     return default_registry().chain(name)
+
+
+def load_balance_registry(directory=BALANCE_PROFILE_DIRECTORY, domino=None):
+    """The balance chains (BalanceChainProfile), by chain id, loaded whole or refused whole. None may be one of
+    `domino`'s chains, by id or by name, so each chain is named in exactly one RPC file and one set of credentials."""
+    domino = default_registry() if domino is None else domino
+    chains = []
+    for path in sorted(Path(directory).glob('*.json')):
+        raw, _ = _json_document(path)
+        try:
+            profile = BalanceChainProfile.model_validate_json(raw)
+        except ValidationError as error:
+            raise DataError('v2_chain_profile_invalid') from error
+        if path.name != profile.key + '.json':
+            raise DataError('v2_chain_profile_file_name')
+        chains.append(profile)
+    if not chains:
+        raise DataError('v2_chain_profile_missing')
+    ids = [profile.chainId for profile in chains]
+    slugs = [profile.slug for profile in chains]
+    taken = {profile.chainId for profile in domino.chains}, {profile.slug for profile in (*domino.chains, *domino.pending)}
+    if (len(set(ids)) != len(ids) or len(set(slugs)) != len(slugs) or set(ids) & taken[0]
+            or set(slugs) & taken[1]):
+        raise DataError('v2_chain_profile_duplicate')
+    return ChainRegistry(tuple(sorted(chains, key=lambda profile: profile.chainId)), ())
+
+
+@lru_cache(maxsize=1)
+def default_balance_registry():
+    """The repository's balance chain profiles, loaded and checked once per process."""
+    return load_balance_registry()

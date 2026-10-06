@@ -65,7 +65,8 @@ RestrictAddressFamilies=AF_NETLINK
 """
 CLASS_HOSTS = {'rpc': policy.RPC_HOSTS, 'analytics': policy.ANALYTICS_HOSTS,
                'uniswap': policy.UNISWAP_HOSTS, 'edges': policy.EDGE_HOSTS, 'chains': policy.CHAIN_HOSTS,
-               'bridges': policy.BRIDGE_HOSTS, 'telegram': policy.TELEGRAM_HOSTS}
+               'balance_chains': policy.BALANCE_CHAIN_HOSTS, 'bridges': policy.BRIDGE_HOSTS,
+               'telegram': policy.TELEGRAM_HOSTS}
 
 
 def identity(role):
@@ -84,12 +85,14 @@ def identity(role):
             'cgroup': None if unit is None else '/system.slice/' + unit}
 
 
-def needed_hosts(enabled, issuer, collectors, chains=False):
+def needed_hosts(enabled, issuer, collectors, chains=False, balance_chains=False):
     classes = {kind for role in enabled for kind in policy.CLASSES[role]}
     if collectors:
         classes.add('analytics')
     if chains:
         classes.add('chains')
+    if balance_chains:
+        classes.add('balance_chains')
     hosts = {host for kind in classes if kind in CLASS_HOSTS for host in CLASS_HOSTS[kind]}
     if 'jwks' in classes:
         hosts.add(issuer)
@@ -104,10 +107,10 @@ def resolve(hostname):
     return sorted(found)
 
 
-def collect(issuer, enabled, loopback, collectors, node_loopback=False, chains=False):
+def collect(issuer, enabled, loopback, collectors, node_loopback=False, chains=False, balance_chains=False):
     identities = {role: identity(role) for role in policy.ROLES}
     hosts = [{'hostname': host, 'addresses': resolve(host)}
-             for host in needed_hosts(enabled, issuer, collectors, chains)]
+             for host in needed_hosts(enabled, issuer, collectors, chains, balance_chains)]
     snapshot = {'version': 1, 'resolver': '127.0.0.53', 'accessIssuer': issuer, 'enabled': enabled,
                 'identities': identities, 'hosts': hosts}
     if loopback:
@@ -118,6 +121,8 @@ def collect(issuer, enabled, loopback, collectors, node_loopback=False, chains=F
         snapshot['nodeLoopbackReads'] = True
     if chains:
         snapshot['v2Chains'] = True
+    if balance_chains:
+        snapshot['balanceChains'] = True
     policy.validate(snapshot)
     return snapshot
 
@@ -277,6 +282,8 @@ def main(argv=None):
                         help="the reader and the writer lead with the node's proxy on 127.0.0.1:18547")
     parser.add_argument('--v2-chains', action='store_true',
                         help="the writer's V2 indexer and the plan listener read Base's and Arbitrum's hosted RPC")
+    parser.add_argument('--balance-chains', action='store_true',
+                        help="the reader's read-v6 chain-balances reads Ethereum's and OP Mainnet's hosted RPC")
     parser.add_argument('--candidate', type=Path)
     parser.add_argument('--update', action='store_true', help='the host already runs the policy')
     parser.add_argument('--backup', type=Path, help='with --update --apply: a new directory for what it replaces')
@@ -285,7 +292,8 @@ def main(argv=None):
         if args.collect:
             require(args.access_issuer and args.enabled, 'issuer_and_enabled_required')
             result = collect(args.access_issuer, args.enabled.split(','), args.sequence_snapshot_loopback,
-                             args.public_data_collectors, args.node_loopback_reads, args.v2_chains)
+                             args.public_data_collectors, args.node_loopback_reads, args.v2_chains,
+                             args.balance_chains)
         elif args.restore:
             result = restore(args.restore)
         else:

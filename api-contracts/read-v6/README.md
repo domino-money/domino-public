@@ -1,6 +1,6 @@
 # read-v6: Domino V2 wallet reads
 
-Contract `1.1.0-rc.1` for the app (F7) of [#283](https://github.com/domino-money/domino/issues/283): one wallet's Domino V2 state and receipts on Robinhood (4663), Base (8453) and Arbitrum One (42161), read from the V2 index. How the index is built, what each table holds and what remains are in [docs/v2/V2_INDEXER_READ_API.md](../../docs/v2/V2_INDEXER_READ_API.md).
+Contract `1.1.0-rc.1` for the app (F7) of [#283](https://github.com/domino-money/domino/issues/283): one wallet's Domino V2 state and receipts on Robinhood (4663), Base (8453) and Arbitrum One (42161), read from the V2 index. `chain-balances` also reads Ethereum (1) and OP Mainnet (10), the balance chains, when a request names them ([below](#chain-reads-chain-pools-chain-balances-chain-tokens)). How the index is built, what each table holds and what remains are in [docs/v2/V2_INDEXER_READ_API.md](../../docs/v2/V2_INDEXER_READ_API.md).
 
 Two stored routes of the local reader (`backend/read_api.py`), separate from read-v1 to read-v5, and three live chain reads (below):
 
@@ -9,7 +9,7 @@ Two stored routes of the local reader (`backend/read_api.py`), separate from rea
 | `POST /v6/read/portfolio` | `{wallet}` | Per chain, the index's freshness and the automation's reporting; the wallet's vaults with their last read state, custody and history totals; the positions it holds or its vaults manage, as last read; its auto-exit mandates with what blocks them; undelivered auto-exit credit; why each vault and mandate waits; the tokens named, with their metadata |
 | `POST /v6/read/activity` | `{wallet, limit?, cursor?}` | The wallet's receipts, newest first, `limit` (1–50, default 20) at a time; `nextCursor` continues |
 | `POST /v6/read/chain-pools` | `{chainId, token, pairedToken?}` | The token's pools on a chain, read at its head (below) |
-| `POST /v6/read/chain-balances` | `{wallet, tokens?}` | A wallet's balances on each chain asked, every chain's base currencies by default |
+| `POST /v6/read/chain-balances` | `{wallet, tokens?}` | A wallet's balances on each chain asked, every Domino chain's base currencies by default; Ethereum and OP Mainnet only when asked |
 | `POST /v6/read/chain-tokens` | `{chainId, query, limit?}` | The tokens Domino knows on Base or Arbitrum One that match a query |
 
 Header `X-Domino-Read-Contract: 1.1.0-rc.1`. Through the gateway the paths are `/internal/read/v6/<route>`, with `--enable-v6` and each route named in `DOMINO_BRIDGE_V6_READS`, both off by default. The reader serves the stored routes only with `DOMINO_V2_READ=1` and the chain reads only with `DOMINO_V2_CHAIN_READS=1` (otherwise `upstream_unavailable`). The Worker forwards `/api/read/v6/<route>` for the routes its `ENABLED_V6_READS` names.
@@ -39,8 +39,8 @@ Header `X-Domino-Read-Contract: 1.1.0-rc.1`. Through the gateway the paths are `
 
 | `price.source` | Token | Price |
 | --- | --- | --- |
-| `chain_stable` | The chain's stable, its rank-1 charge currency (USDG on Robinhood, USDC on Base and Arbitrum One) | US$ 1, fixed (`"1.000000000000000000"`) |
-| `chainlink_eth_usd` | ETH (the zero address) and its wrapped token | The profile's Chainlink ETH/USD. It counts while its round is no older than the feed's heartbeat at the block read (24 h on Robinhood, 1,200 s on Base, 1,755 s on Arbitrum). On Base and Arbitrum the sequencer must also have been up for more than an hour. The round is `ethUsd`: `{feed, usd, roundId, updatedAt}` |
+| `chain_stable` | The chain's stable, its rank-1 charge currency (USDG on Robinhood, USDC on Base and Arbitrum One, and on the balance chains Ethereum and OP Mainnet: Circle's native USDC, never a bridged one) | US$ 1, fixed (`"1.000000000000000000"`) |
+| `chainlink_eth_usd` | ETH (the zero address) and its wrapped token | The profile's Chainlink ETH/USD. It counts while its round is no older than the feed's heartbeat at the block read (24 h on Robinhood, 1,200 s on Base, 1,755 s on Arbitrum, 3,600 s on Ethereum, 1,200 s on OP Mainnet). On Base, Arbitrum and OP Mainnet the sequencer must also have been up for more than an hour; Ethereum has none. The round is `ethUsd`: `{feed, usd, roundId, updatedAt}` |
 | `pool` | Any other token | Its deepest pool against one of those, among the app's candidates (Uniswap's standard hookless v4 keys and the v3 tiers the factory enables), at that pool's price. It counts only when the pool releases at least US$ 10,000 of the partner as the token is sold into it until its price falls 10%. This is the featured pools' reference depth, walked tick by tick and read in the same block as the price. `pool` is that pool, `depthUsd` that depth. A pool against ETH or WETH carries its `ethUsd` |
 
 - **Format.** `usd` has 18 decimal places and amounts in USD have 6, all rounded down. Every non-stable price has the `snapshot` it was read at.
@@ -61,7 +61,7 @@ Header `X-Domino-Read-Contract: 1.1.0-rc.1`. Through the gateway the paths are `
 
 - **Caching.** Prices are kept 30 s per chain and token.
 - **Checks.** The contract checks:
-  - each price against its chain's profile (`PRICE_PROFILES`): the stable is 1; ETH and WETH come from that feed within its heartbeat; a pool contains the token and a base currency, has no hooks and is at or above the floor;
+  - each price against its chain's profile (`PRICE_PROFILES`, the balance chains' included): the stable is 1; ETH and WETH come from that feed within its heartbeat; a pool contains the token and a base currency, has no hooks and is at or above the floor;
   - each balance's value and each total to the micro-dollar.
 
 ## portfolio
@@ -112,7 +112,7 @@ node --test api-contracts/read-v6/consumer.test.mjs
 
 ## Chain reads: chain-pools, chain-balances, chain-tokens
 
-The app spec's §6.2 reads that need the chain itself (0xdecimal's list of 5 Oct 2026), so the app lists pools and balances without moving the wallet to another network; it still does, to sign. They read the chains when asked (`backend/v2_chain_reads.py`): Robinhood through Domino's own node, Base and Arbitrum through the hosted endpoints of the V2 chain RPC file, one Multicall3 call per chain at its head (`chain-pools` at most three more, for the depths), cached for a few seconds. They take the reader's provider lane; `chain-tokens` reads no chain and takes the stored lane. Their `limitations` are `usd_from_qualified_sources_only`, `token_metadata_untrusted`, `state_as_of_last_read` and `no_execution_or_signing`, in that order.
+The app spec's §6.2 reads that need the chain itself (0xdecimal's list of 5 Oct 2026), so the app lists pools and balances without moving the wallet to another network; it still does, to sign. They read the chains when asked (`backend/v2_chain_reads.py`): Robinhood through Domino's own node, Base and Arbitrum through the hosted endpoints of the V2 chain RPC file, Ethereum and OP Mainnet (`chain-balances` only) through those of the balance chain RPC file, one Multicall3 call per chain at its head (`chain-pools` at most three more, for the depths), cached for a few seconds. They take the reader's provider lane; `chain-tokens` reads no chain and takes the stored lane. Their `limitations` are `usd_from_qualified_sources_only`, `token_metadata_untrusted`, `state_as_of_last_read` and `no_execution_or_signing`, in that order.
 
 - **`chain-pools`** reads the pools the app reads today through the wallet: `token` against the chain's base currencies (its charge currencies: the stable, the native currency and its wrapped token) or against `pairedToken` alone, in Uniswap's standard hookless v4 keys (fee 100, 500, 3000 or 10000 with spacing 1, 10, 60 or 200) and the v3 fee tiers the factory enables (Base adds 200, 300 and 400). Native ETH has no v3 pool; in v3 it pairs as WETH. A pool is listed when it exists, is priced and holds liquidity: partners ETH and WETH first, then the stable, then by active liquidity, at most 32 (`truncated`).
   - Each pool: `pool` (its `PoolRef`), `id` (v4's pool id) or `address` (v3's pool), `sqrtPriceX96`, `tick`, active `liquidity`, `lpFeePips` (the tier's), `protocolFee` as the pool reports it, and `swapFeePips` per direction (v4's protocol fee taken before the LP fee; v3's protocol fee is a share of the LP fee, not on top of it).
@@ -127,7 +127,9 @@ The app spec's §6.2 reads that need the chain itself (0xdecimal's list of 5 Oct
     - The token is priced in this read when no `pairedToken` was asked, because its pools against the base currencies are all here.
     - Every other token is priced from its own pools.
   - `snapshot` is the block read; `freshness` is its age at `servedAt`, `fresh` up to 60 s.
-- **`chain-balances`**: per chain asked (ascending), `current` with the `snapshot` read and each token's `balanceRaw` (`read`, or `unavailable` when the call failed), or `unavailable` with `chain_not_configured` or `chain_read_failed` and every balance unavailable. `coverage` is `complete` when every chain is `current`. Without `tokens`, every chain's base currencies; with them (at most 24, no repeats), exactly those, in the order asked. The native currency is the zero address.
+- **`chain-balances`**: per chain asked (ascending), `current` with the `snapshot` read and each token's `balanceRaw` (`read`, or `unavailable` when the call failed), or `unavailable` with `chain_not_configured` or `chain_read_failed` and every balance unavailable. `coverage` is `complete` when every chain is `current`. Without `tokens`, every Domino chain's base currencies (Robinhood, Base, Arbitrum One); with them (at most 24, no repeats), exactly those, in the order asked. The native currency is the zero address.
+  - **Chains:** Domino's three, and the balance chains, Ethereum (`1`) and OP Mainnet (`10`), only when `tokens` names them (`BalanceTokenRef.chainId`; `CONSTANTS.balanceChainIds`). No other route reads a balance chain. Their profiles are `api-contracts/v2/balance-chains`: Multicall3, USDC, ETH and WETH, the Chainlink ETH/USD feed (and OP Mainnet's sequencer feed) and Uniswap v3 and v4, each verified on chain. Their prices follow the same rules ([Qualified USD](#qualified-usd)) with their own stable, feed and pools.
+  - A balance chain is `unavailable` with `chain_not_configured` while the reader has no endpoints for it: its balance chain RPC file is not installed, does not name that chain, or has a fault (unreadable, malformed, a sealed URL missing). That fault never reaches the other chains, which answer as before.
   - Each balance has its token's `price` or `priceReason`, and `valueUsd`: the balance at that price, rounded down to the micro-dollar, when the balance, its decimals and the price are known.
   - A chain's `totalUsd` sums its balances. It exists only when the chain is `current` and every balance above zero has a value (a zero balance needs no price).
   - The answer's `totalUsd` sums the chains, only when every chain has its total (the owner, 2 Oct: no sum across chains without all of them).
