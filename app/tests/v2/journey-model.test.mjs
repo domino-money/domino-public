@@ -212,3 +212,86 @@ test('the owner\'s journey on V2: its pool, range and slippage as chosen; what t
   assert.equal(fromV1.requestFromV1(zap, { kind: 'wait' }, 'direct'), null);
   assert.equal(fromV1.requestFromV1({ ...zap, range: { lower: -199201, upper: -198840 } }, both, 'direct'), null, 'off the pool\'s spacing');
 });
+
+// Added 2026-10-06 (the final check's F5): a read of the wallet's two balances that finished with nothing usable leaves the
+// owner's journey waiting for good (inputsFromV1's wait: the plan funds the deposit from both balances), and nothing reads
+// them again by itself; Review then offers to read them again. Never while the read is under way, with no wallet, or once
+// both are known (a zero is known).
+test('balancesUnread: a finished read with no figure for either side is unread; one under way, no wallet, or zero balances are not', () => {
+  const fromV1 = require(`${BUILD}v2in/journey/model/fromV1.js`);
+  const { rawBalances } = require(`${BUILD}components/create/valuation.js`);
+  const side = (raw) => ({ raw, token: {}, fact: null });
+  const cases = [
+    [{ status: 'ready', balances: null }, true, 'the read could not answer at all'],
+    [{ status: 'ready', balances: [side(null), side('5000000')] }, true, 'one side unread'],
+    [{ status: 'ready', balances: [side('5000000'), side(null)] }, true, 'the other side unread'],
+    [{ status: 'ready', balances: [side('0'), side('0')] }, false, 'a zero is a balance'],
+    [{ status: 'ready', balances: [side('1'), side('2')] }, false, 'both read'],
+    [{ status: 'loading', balances: null }, false, 'still reading'],
+    [{ status: 'waiting', balances: null }, false, 'not asked yet'],
+    [{ status: 'disconnected', balances: null }, false, 'no wallet'],
+  ];
+  for (const [read, unread, why] of cases) {
+    assert.equal(fromV1.balancesUnread(read), unread, why);
+    // Exactly where Review's plan finds no balance to fund the deposit from once the read is over (lib/create/reviewPlan.ts).
+    const raw = rawBalances({ ...read, budgets: {} });
+    assert.equal(read.status === 'ready' && (raw === null || raw[0] === null || raw[1] === null), unread, `${why}: as the plan reads it`);
+  }
+});
+
+// Added 2026-10-06 (the final check's F4, a second look): before a quote has figures, Review on Domino V2 writes what the
+// position holds as his amount step's row does (components/create/valuation.ts heldRaw, the one reading both use): the
+// typed amount and the one it pairs with, or, when the wallet funds the deposit from one token, the amounts after its
+// swap. It wrote the paired need for that plan too, about twice what is deposited, under a row that said otherwise.
+test('heldRaw: what the position holds by Review\'s plan, the need or the amounts after the swap, exactly as the amount step\'s row writes them', () => {
+  const journey = require(`${BUILD}lib/create/journey.js`);
+  const { reviewPlan } = require(`${BUILD}lib/create/reviewPlan.js`);
+  const { heldAmounts, heldRaw } = require(`${BUILD}components/create/valuation.js`);
+  const { formatUnits } = require(`${BUILD}lib/read/decimal.js`);
+  const addr = (letter) => `0x${letter.repeat(40)}`;
+  const token = (address, decimals, symbol) => ({ origin: 'read', chainId: 4663, address, symbol, decimals, readStatus: 'available', artwork: null });
+  const candidate = (address, decimals, symbol) => ({ key: address, wire: address, token: token(address, decimals, symbol), kind: 'erc20_candidate', why: null, reasonCode: null, decimalsUnavailable: false, source: 'pasted', wallet: null, balance: null, page: null, old: false, block: 1 });
+  const figure = { state: 'unavailable', provider: 'dexscreener', reason: 'no_provider_figures' };
+  // ONE (18 decimals) and TWO (6) at tick 0, a range around the price: both tokens, neither native (no gas kept back).
+  const option = {
+    key: '0x' + 'a'.repeat(64), kind: 'discovery', currencies: [token(addr('1'), 18, 'ONE'), token(addr('2'), 6, 'TWO')], fee: '0.30%', feePips: 3000,
+    tickSpacing: 60, tick: 0, sqrtPriceX96: '79228162514264337593543950336', readAt: 0, hooks: ZERO, integration: 'hookless_fixed_fee', block: 700,
+    catalogue: null, requestedById: false, liquidity: figure, volume: figure, providerNote: null, aprReason: 'reconciled_fee_history_unavailable',
+    tokenMetadata: 'available', providerConflict: false,
+  };
+  const typed = (who, budget) => journey.withRange(journey.withBudget(journey.withPool(journey.next(journey.withToken(journey.initialState(), who), 0), option, 0), budget), { lower: -600, upper: 600 });
+  const read = (raw0, raw1) => ({ status: 'ready', balances: [{ raw: raw0 }, { raw: raw1 }] });
+  const rowOf = (held) => held.sides.map((side) => side.text);
+  const textOf = (raws) => raws.map((raw, i) => formatUnits(raw.toString(), option.currencies[i].decimals).text);
+  const ONE = candidate(addr('1'), 18, 'ONE');
+  const TWO = candidate(addr('2'), 6, 'TWO');
+  // 100 TWO typed; the wallet holds TWO alone: deposited alone, part of it swapped for ONE.
+  const hundred = typed(TWO, '100');
+  const funded = reviewPlan(hundred, ['0', '1000000000']);
+  const swap = funded.plan;
+  assert.equal(swap.kind, 'swap');
+  assert.equal(swap.from, 1);
+  assert.equal(swap.deposit, 100_000_000n);
+  assert.ok(swap.swap > 0n && swap.swap < swap.deposit && swap.receive > 0n);
+  assert.deepEqual(heldRaw(funded), [swap.receive, swap.deposit - swap.swap], 'what the swap buys, and the deposit less what is swapped');
+  assert.notDeepEqual(heldRaw(funded), funded.need, 'never the paired need');
+  assert.ok(heldRaw(funded)[1] < funded.need[1] && heldRaw(funded)[0] < funded.need[0], 'less of each than the need: about half');
+  const row = heldAmounts(hundred, read('0', '1000000000'));
+  assert.equal(row.estimate, true);
+  assert.deepEqual(rowOf(row), textOf(heldRaw(funded)), 'the amount step\'s row writes exactly these');
+  // 0.5 ONE typed, the wallet holds ONE alone: the other way round.
+  const half = typed(ONE, '0.5');
+  const fromOne = reviewPlan(half, ['1000000000000000000', '0']);
+  assert.equal(fromOne.plan.kind, 'swap');
+  assert.equal(fromOne.plan.from, 0);
+  assert.deepEqual(heldRaw(fromOne), [fromOne.plan.deposit - fromOne.plan.swap, fromOne.plan.receive]);
+  assert.deepEqual(rowOf(heldAmounts(half, read('1000000000000000000', '0'))), textOf(heldRaw(fromOne)));
+  // Both at hand, a short wallet, or no balances read (no wallet, a read that failed): the need, as typed.
+  for (const [raws, kind] of [[['10000000000000000000000', '10000000000000'], 'both'], [['0', '1'], 'short'], [null, null]]) {
+    const planned = reviewPlan(hundred, raws);
+    assert.equal(planned.plan?.kind ?? null, kind);
+    assert.deepEqual(heldRaw(planned), planned.need, `${kind ?? 'unread'}: the need`);
+    const held = heldAmounts(hundred, raws ? read(...raws) : { status: 'disconnected', balances: null });
+    assert.deepEqual(rowOf(held), textOf(planned.need), `${kind ?? 'unread'}: as the row writes it`);
+  }
+});

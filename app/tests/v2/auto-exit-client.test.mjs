@@ -383,7 +383,10 @@ test('status (§4.5): the module off pauses, the vault\'s owner changed, the roo
   assert.equal(paused.status, 'active');
   assert.deepEqual(paused.failing, ['mandate_module_off']);
   // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation"); 2026-10-06, Auto-exit by its name.
-  assert.equal(auto.AUTO_EXIT_TEXT.mandate_module_off, 'Paused: Auto-exit is turned off for this position.');
+  // Changed on purpose 2026-10-06 (the final check, F8): by its cause, never "turned off" beside the card's "Turn off";
+  // true here too, where the module was turned off without Leave automation.
+  assert.equal(auto.AUTO_EXIT_TEXT.mandate_module_off, "Paused: your automation doesn't allow Auto-exit right now.");
+  assert.doesNotMatch(auto.AUTO_EXIT_TEXT.mandate_module_off, /turned off/i);
   chain.setExitModule(vault, FAKE.autoExit);
   assert.deepEqual((await client.status(review.id)).failing, [], 'turned on again: the order is back');
 

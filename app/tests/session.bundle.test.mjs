@@ -1180,7 +1180,10 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // next kB and one more.
     // 2026-10-06 (the integration review's fixes merged together: the funds, Review, Auto-exit and misc rounds): this Windows
     // build measured Domino V2's own family at 637,459 B: 636,000 -> 639,000, the next kB and one more.
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 189_000], ['session/public reads', base, 165_000], ['financial', financial, 346_000], ['all lazy', allLazy, 383_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 6_000], ['domino v2', v2, 639_000]]) {
+    // 2026-10-06 (the final check's fixes: Back after any create, Review's amounts before a quote, Read again, Auto-exit's
+    // card after a module change, its ends by price move, one name per network): this Windows build measured Domino V2's own
+    // family at 638,877 B, 123 B under 639,000, closer than Linux builds measure apart: 639,000 -> 640,000.
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 189_000], ['session/public reads', base, 165_000], ['financial', financial, 346_000], ['all lazy', allLazy, 383_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 6_000], ['domino v2', v2, 640_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir === WALLET && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

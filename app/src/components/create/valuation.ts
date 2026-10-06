@@ -3,7 +3,7 @@ import { parseScaled, scaledText } from '../../lib/format/decimal'
 import { PRICE_SCALE, priceFromSqrtIn } from '../../lib/format/price'
 import { usdgValue } from '../../lib/format/usd'
 import type { JourneyState, TickRange } from '../../lib/create/journey'
-import { reviewPlan } from '../../lib/create/reviewPlan'
+import { reviewPlan, type ReviewPlan } from '../../lib/create/reviewPlan'
 import { formatUnits } from '../../lib/read/decimal'
 import { boundPrice, rangePosition, shownPrice, shownRange, usableTicks, type PoolPrice } from '../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
@@ -152,6 +152,20 @@ const textOf = (raw: bigint, decimals: number | null) => {
 }
 
 /**
+ * What the position holds of each token, raw, in pool order, by Review's plan: the typed amount and the one the range
+ * pairs with it; when the wallet funds it from one token, the amounts after the swap (the deposit less what is swapped,
+ * and what that buys). Added 2026-10-06 (the final check's F4, a second look; no change of behaviour here): the one
+ * reading heldAmounts below and Domino V2's Review before its quote has figures (src/v2in/journey/JourneyCreateV2.tsx)
+ * both write, so Review's headline never says more than the amount step's row above it.
+ */
+export function heldRaw(planned: Pick<ReviewPlan, 'need' | 'plan'>): readonly [bigint, bigint] {
+  const plan = planned.plan
+  if (!plan || plan.kind !== 'swap') return planned.need
+  const kept = plan.deposit - plan.swap
+  return plan.from === 0 ? [kept, plan.receive] : [plan.receive, kept]
+}
+
+/**
  * What the position holds, in pool order: the typed amount and the one the
  * range pairs with it, exactly the amount step's two figures. When the wallet
  * funds it from one token, the amounts after the swap instead, on every step,
@@ -164,12 +178,10 @@ export function heldAmounts(state: JourneyState, balances: PairBalancesState): H
   const planned = reviewPlan(state, rawBalances(balances))
   if (!planned) return null
   const plan = planned.plan
-  let amounts: readonly [bigint, bigint] = planned.need
+  const amounts = heldRaw(planned)
   let estimate = false
   let wallet: Held['wallet'] = null
   if (plan && plan.kind === 'swap') {
-    const kept = plan.deposit - plan.swap
-    amounts = plan.from === 0 ? [kept, plan.receive] : [plan.receive, kept]
     estimate = true
     wallet = { side: plan.from, text: textOf(plan.deposit, pool.currencies[plan.from].decimals) }
   }

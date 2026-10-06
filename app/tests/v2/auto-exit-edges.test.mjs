@@ -193,6 +193,115 @@ test('the card\'s state: on, paused with its first reason, closed with what it d
   assert.equal(card.exitCardState([order({ status: 'executed' })], mine).kind, 'on', 'a newer one turned on here wins over an old exit');
 });
 
+// Added 2026-10-06 (the final check, F2): Leave automation (exitAll) turns the vault's module off and "Turn back on"
+// (setExitModule) turns it on, while read-v6's index runs behind the chain. The receipt's ExitModuleSet is recorded and
+// applied while the listing of that vault is older than it: the card says the new standing at once, as after a Turn off
+// made here, and never offers a step that would stop at "This step is already done.".
+test('a module change made on this page: recorded from its receipt, applied to the listed orders while the index has not reached it', () => {
+  const store = require(`${BUILD}/v2in/automate/store.js`);
+  const ZERO_MODULE = `0x${'0'.repeat(40)}`;
+  const setOf = (chainId, vault, listed) => store.exitModuleSet(store.automationState(), chainId, vault, listed);
+  const body = (nonce, mandates) => ({ vaults: [{ chainId: 4663, address: '0xV', state: { status: 'read', stateNonce: nonce } }], mandates });
+  store.forgetAutomationSession();
+  const listed = body('4', [order()]);
+  assert.equal(card.withExitModules(listed, setOf), listed, 'nothing done here: the index\'s answer as it is');
+  // Leave automation's receipt (exitAll: its events share the one stateNonce it moved the vault to).
+  store.recordVaultEvents(4663, '0xv', [
+    { address: '0xV', eventName: 'ExitModuleSet', args: { module: ZERO_MODULE, stateNonce: 5n } },
+    { address: '0xV', eventName: 'RootDisarmed', args: { reason: 7, stateNonce: 5n } },
+    { address: '0xw', eventName: 'ExitModuleSet', args: { module: '0xm', stateNonce: 9n } },
+  ]);
+  assert.deepEqual(store.exitModuleSet(store.automationState(), 4663, '0xv', 4n), { stateNonce: 5n, module: null });
+  assert.deepEqual(store.exitModuleSet(store.automationState(), 4663, '0xv', null), { stateNonce: 5n, module: null }, 'the listing\'s state unread');
+  assert.equal(store.exitModuleSet(store.automationState(), 4663, '0xv', 5n), null, 'the index reached it: the listing says it');
+  assert.equal(store.exitModuleSet(store.automationState(), 8453, '0xv', 4n), null, 'another chain');
+  assert.equal(store.exitModuleSet(store.automationState(), 4663, '0xw', 4n), null, 'another vault\'s log in the receipt is not this vault\'s');
+  assert.deepEqual(store.currentEvent(store.automationState(), 4663, '0xv', 5n), { stateNonce: 5n, kind: 'disarmed', reason: 7 }, 'the custody event is still kept apart');
+  const left = card.withExitModules(listed, setOf);
+  assert.deepEqual([left.mandates[0].blockedBy, left.mandates[0].moduleEnabled], [['module_disabled'], false]);
+  const paused = card.exitCardState(left.mandates, []);
+  assert.deepEqual([paused.kind, paused.reasons, paused.moduleOff], ['paused', ['mandate_module_off'], true], 'paused, with "Turn back on" beside it');
+  assert.deepEqual(card.withExitModules(body('4', [order({ blockedBy: ['expired'] })]), setOf).mandates[0].blockedBy, ['expired', 'module_disabled'], 'in the backend\'s order');
+  for (const untouched of [order({ status: 'revoked' }), order({ moduleEnabled: null, vaultIsDomino: false, blockedBy: ['vault_not_domino'] })]) {
+    const same = body('4', [untouched]);
+    assert.equal(card.withExitModules(same, setOf), same, `${untouched.status}, ${untouched.moduleEnabled}: nothing to apply`);
+  }
+  const caughtUp = body('5', [order()]);
+  assert.equal(card.withExitModules(caughtUp, setOf), caughtUp, 'the index reached it: its own answer');
+  // A module-off record stays while the module is off: the card is paused, and says why itself.
+  const offRecord = { since: NOW - 840, reason: 'exit_module_not_enabled', error: null };
+  assert.equal(card.withExitModules(body('4', [order({ waiting: offRecord })]), setOf).mandates[0].waiting, offRecord);
+  // "Turn back on": its receipt replaces the record; the index still lists the pause, and the automation's last record of
+  // it. Changed on purpose 2026-10-06 (the final check F2's review): as the automation writes that record, its own check
+  // before any try (`exit_module_not_enabled`, no contract error: backend/v2_autoexit.py eligible), or a try the contract
+  // refused (`reverted_exit_module_not_enabled`, ExitModuleNotEnabled); either is gone once the module is on again.
+  store.recordVaultEvents(4663, '0xv', [{ address: '0xv', eventName: 'ExitModuleSet', args: { module: '0xM', stateNonce: 6n } }]);
+  for (const record of [offRecord, { since: NOW - 120, reason: 'reverted_exit_module_not_enabled', error: 'ExitModuleNotEnabled' }]) {
+    const stale = body('5', [order({ blockedBy: ['module_disabled'], moduleEnabled: false, waiting: record })]);
+    const back = card.withExitModules(stale, setOf);
+    assert.deepEqual([back.mandates[0].blockedBy, back.mandates[0].moduleEnabled, back.mandates[0].waiting], [[], true, null], record.reason);
+    assert.equal(card.exitCardState(back.mandates, []).kind, 'on', 'on at once: no "Turn back on" left to stop at "already done"');
+  }
+  const waits = { since: NOW - 120, reason: 'trigger_not_reached', error: null };
+  assert.equal(card.withExitModules(body('5', [order({ blockedBy: ['module_disabled'], moduleEnabled: false, waiting: waits })]), setOf).mandates[0].waiting, waits, 'any other record stays');
+  const lost = card.withExitModules(body('5', [order({ blockedBy: ['module_disabled', 'custody_lost'], moduleEnabled: false })]), setOf);
+  const still = card.exitCardState(lost.mandates, []);
+  assert.deepEqual([still.kind, still.reasons, still.moduleOff], ['paused', ['mandate_root_custody_lost'], false], 'the other reason stays, said by itself');
+  assert.equal(card.withExitModules(body('5', [order({ module: '0xn' })]), setOf).mandates[0].blockedBy[0], 'module_disabled', 'another module on: not this order\'s (the backend\'s rule)');
+  store.forgetAutomationSession();
+  assert.equal(store.exitModuleSet(store.automationState(), 4663, '0xv', null), null, 'a fresh start forgets it');
+});
+
+// Added 2026-10-06 (the final check F2's review): Leave automation made on an earlier visit and indexed, then "Turn back
+// on" and "Turn off" made here while the index still lists the pause and the order active. The automation's own word on
+// its Auto-exit (its vault's `exit`, which decides its rearm: the card's "Turn on") must say off as the card does, or
+// nothing turns Auto-exit on again until a reload; and the automation's record of the module off goes with "Turn back on".
+test('an Auto-exit turned off here is listed as turned off until the index says it, for its automation too: "Turn on" is offered again', async () => {
+  const store = require(`${BUILD}/v2in/automate/store.js`);
+  const vaultView = require(`${BUILD}/v2in/automate/vaultView.js`);
+  const { read6Answer, READ6 } = await import('../support/v2-auto-page.mjs');
+  // read-v6's own fixture after exitAll: the vault paused, its module off, its root disarmed (exit_all) with the approval
+  // still the vault's; the order active, blocked by the module, with the record the automation writes for it.
+  const { body: listed } = read6Answer('portfolio', 'portfolio-custody-lost', [], (body) => {
+    const v = body.vaults[0];
+    v.members = [{ ...v.members[0], status: 'disarmed', disarmReason: 'exit_all' }];
+    v.custody = { armed: false, reason: 'exit_all', since: body.mandates[0].registered, source: 'event' };
+    Object.assign(v, { autoExitEnabled: false, pausedBy: 'owner', waiting: null });
+    Object.assign(v.state, { exitModule: null, paused: true, rootArmed: false, members: v.state.members.slice(0, 1), reserves: v.state.reserves.map((r) => ({ ...r, idle: '0', total: '0' })) });
+    body.positions[0].state.custody.approved = v.address;
+    body.mandates = [{ ...body.mandates[0], blockedBy: ['module_disabled'], moduleEnabled: false, waiting: { ...body.mandates[0].waiting, reason: 'exit_module_not_enabled', error: null, lastRevert: null } }];
+  });
+  const id = listed.mandates[0].mandateHash;
+  const nonce = BigInt(listed.vaults[0].state.stateNonce);
+  const shown = () => card.withExitModules(card.withRevoked(listed, 4663, store.sessionRevoked(store.automationState(), 4663)), (chainId, vault, at) => store.exitModuleSet(store.automationState(), chainId, vault, at));
+  const automation = (body) => vaultView.vaultViewFromListing(body.vaults[0], body, READ6.wallet, NOW);
+  const ADVANCED = ['recover-token', 'recover-position'];
+  store.forgetAutomationSession();
+  assert.equal(shown(), listed, 'nothing done here: the index\'s answer as it is');
+  assert.equal(card.exitCardState(listed.mandates, []).kind, 'paused');
+  assert.equal(automation(listed).exit, 'paused');
+  // "Turn back on" (setExitModule(autoExit)): on at once, with nothing left of the module off.
+  store.recordVaultEvents(4663, READ6.vault, [{ address: READ6.vault, eventName: 'ExitModuleSet', args: { module: READ6.module, stateNonce: nonce + 1n } }]);
+  const back = shown();
+  assert.equal(card.exitCardState(back.mandates, []).kind, 'on');
+  assert.equal(back.mandates[0].waiting, null, 'no "Waiting" line left from the module off');
+  assert.equal(automation(back).exit, 'on');
+  assert.deepEqual(vaultView.vaultActions(automation(back)), ADVANCED, 'on: nothing to rearm for, nothing that cuts the position from it');
+  // "Turn off" (revokeMandate): the index still lists the order active, and the module as this page set it.
+  store.rememberRevoked(4663, id);
+  const off = shown();
+  assert.deepEqual(card.exitCardState(off.mandates, [], store.sessionRevoked(store.automationState(), 4663)), { kind: 'off' });
+  assert.deepEqual([off.mandates[0].status, off.mandates[0].expired, off.mandates[0].blockedBy, off.mandates[0].waiting], ['revoked', false, [], null]);
+  assert.equal(automation(off).exit, 'off', 'the automation says what the card says');
+  assert.deepEqual(vaultView.vaultActions(automation(off)), ['rearm', 'unsubscribe', 'revoke', ...ADVANCED], 'its rearm (the card\'s "Turn on", Auto-exit\'s dialog next), as once the index lists it');
+  // Only an active order turned off here, on this chain: the same answer otherwise.
+  assert.equal(card.withRevoked(listed, 8453, new Set([id])), listed, 'another chain');
+  assert.equal(card.withRevoked(listed, 4663, new Set()), listed, 'none turned off here');
+  const indexed = { ...listed, mandates: [{ ...listed.mandates[0], status: 'revoked', blockedBy: [], waiting: null }] };
+  assert.equal(card.withRevoked(indexed, 4663, new Set([id])), indexed, 'the index lists it: its own answer');
+  store.forgetAutomationSession();
+});
+
 // The plan: "do not offer compounding on an auto-exit position" (rugged97: "auto-exit has no fee compounding").
 test('where a position stands with Auto-exit: on while one is active, its vault while only its protection-only vault stays, else none', () => {
   const vault = (fields = {}) => ({ chainId: 4663, address: '0xv', dex: 4, rootTokenId: '7', members: [], autoExitEnabled: true, pausedBy: 'owner', state: { status: 'read', paused: true }, ...fields });
@@ -363,10 +472,11 @@ test('the waiting lines an Auto-exit can show speak Auto-exit\'s words; the rest
   const { waitingWords } = require(`${BUILD}/v2in/automate/portfolio.js`);
   const { AUTO_EXIT_WAITING_TEXT } = require(`${BUILD}/v2in/automate/copy.js`);
   const waiting = (fields) => ({ since: NOW - 120, reason: 'blocked', error: null, ...fields });
-  assert.equal(waitingWords(waiting({ error: 'ExitModuleNotEnabled' }), 4663, NOW, null, AUTO_EXIT_WAITING_TEXT).text, 'Paused: Auto-exit is turned off for this position · since 2 min ago');
+  // Changed on purpose 2026-10-06 (the final check, F8): the pause by its cause, never "turned off" beside "Turn off".
+  assert.equal(waitingWords(waiting({ error: 'ExitModuleNotEnabled' }), 4663, NOW, null, AUTO_EXIT_WAITING_TEXT).text, "Paused: your automation doesn't allow Auto-exit right now · since 2 min ago");
   assert.equal(waitingWords(waiting({ reason: 'trigger_not_reached' }), 4663, NOW, null, AUTO_EXIT_WAITING_TEXT).text, 'Waiting for the price to reach the end of your range · since 2 min ago');
   assert.equal(waitingWords(waiting({ error: 'TriggerNotReached' }), 4663, NOW, null, AUTO_EXIT_WAITING_TEXT).code, 'TriggerNotReached');
   assert.match(waitingWords(waiting({ error: 'ExitModuleNotEnabled' }), 4663, NOW).text, /^Paused: auto-exit is turned off for your automation/, 'elsewhere, the table\'s words');
   assert.match(waitingWords(waiting({ error: 'SpotOutsideBand' }), 4663, NOW, null, AUTO_EXIT_WAITING_TEXT).text, /^Waiting: the pool price is too far from the reference price · since/);
-  for (const text of Object.values(AUTO_EXIT_WAITING_TEXT)) assert.doesNotMatch(text, /order|trigger/i);
+  for (const text of Object.values(AUTO_EXIT_WAITING_TEXT)) assert.doesNotMatch(text, /order|trigger|turned off/i);
 });

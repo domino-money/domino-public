@@ -155,5 +155,7 @@ test('a position screen’s dollars: under a cent reads "<$0.01", never "$0.0000
 
 test('a wallet’s network by its name, and any other as "another network", never its number', () => {
   assert.deepEqual([1, 8453, 42161, 10, 4663].map(networkName), ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain']);
+  // Added 2026-10-06 (the final check, F3): the bring card names it the same way (tests/v2/crosschain-copy.test.mjs).
+  assert.equal(networkName(56), 'BNB Chain');
   for (const other of [999_999, null, undefined, Number.NaN]) assert.equal(networkName(other), 'another network', String(other));
 });

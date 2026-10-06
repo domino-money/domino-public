@@ -39,7 +39,7 @@ import { poolWarning } from '../../lib/read/screens/lookalike'
 import { optionUsableForDomino, type PoolOption } from '../../lib/read/screens/poolsList'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import { usePairBalances, type PairBalancesState } from './usePairBalances'
-import { useCreated } from '../../lib/create/createProgress'
+import { useCreated, useFlowMade } from '../../lib/create/createProgress'
 import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
 import { useNow } from '../../lib/read/useNow'
 import { recovering } from '../../lib/staleRelease'
@@ -72,7 +72,13 @@ const V2PoolAdvanced = __DOMINO_V2__ ? lazy(recovering(() => import('../../v2in/
  * everywhere else. Asked once a pool is chosen, as Create position's own code is; one that cannot load leaves today's own.
  */
 type V2ReviewProps = { state: JourneyState; now: number; balances: PairBalancesState; v1: ReactElement }
-type V2CreateProps = { state: JourneyState; balances: PairBalancesState; onBusy?: (busy: boolean) => void; v1: ReactElement }
+type V2CreateProps = {
+  state: JourneyState
+  balances: PairBalancesState
+  onBusy?: (busy: boolean) => void
+  onReadAgain?: () => void
+  v1: ReactElement
+}
 const V2Review = __DOMINO_V2__ ? deferred<V2ReviewProps>(recovering(() => import('../../v2in/journey/JourneyCreateV2').then((module) => ({ default: module.ReviewV2 })), () => ({ default: ({ v1 }: V2ReviewProps) => v1 }))) : null
 const V2Create = __DOMINO_V2__ ? deferred<V2CreateProps>(recovering(() => import('../../v2in/journey/JourneyCreateV2').then((module) => ({ default: module.default })), () => ({ default: ({ v1 }: V2CreateProps) => v1 }))) : null
 
@@ -134,6 +140,12 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   // still reopens (review of 2026-09-24): that leaves Review, which ends the offer, so a second position can be made from
   // the same choices; New position's own link starts a fresh flow (screens/NewPosition.tsx).
   const created = useCreated() !== null
+  // Changed on purpose 2026-10-06 (the final check's F1/F6): Domino V2's Create position says when its position exists, on
+  // every network (lib/create/createProgress.ts publishFlowMade, from src/v2in/journey/JourneyCreateV2.tsx), and Back
+  // rests under that success too: on Base and Arbitrum One, whose positions are never published above (its lists are
+  // Robinhood Chain's), Back threw away the receipt, View position and Auto-exit's offer. New position's own link reads
+  // the same marker (screens/NewPosition.tsx).
+  const createdV2 = useFlowMade()
   // Whether the budget half of the amount stage has been reached on this visit.
   const [amountReached, setAmountReached] = useState(false)
   const [candidates, setCandidates] = useState<TokenCandidate[]>([])
@@ -389,7 +401,8 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   // as soon as a pool is chosen and is settled by the time Review reads it:
   // the amount step names the second token with it, and Review and Create
   // position plan the deposit from it.
-  // Read again when funds brought from another network arrive (2026-10-05): the offer under the amounts says so.
+  // Read again when funds brought from another network arrive (2026-10-05): the offer under the amounts says so. And on
+  // Review's Read again, when the read finished with nothing usable (2026-10-06, the final check's F5).
   const [balanceRevision, setBalanceRevision] = useState(0)
   const pair = usePairBalances(source, state.pool, others, balanceRevision)
 
@@ -411,13 +424,19 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
     >
       {/* On Review, Back steps down under Create position (flow.css), so it is the smaller button there. */}
       {!first && (
-        <Button type="button" variant="outline" size={current === 'review' ? 'md' : 'lg'} disabled={creating} hidden={created} onClick={backward}>
+        <Button type="button" variant="outline" size={current === 'review' ? 'md' : 'lg'} disabled={creating} hidden={created || createdV2} onClick={backward}>
           {CREATE.page.back}
         </Button>
       )}
       {current === 'review' ? (
         V2Create ? (
-          <V2Create state={state} balances={pair} onBusy={setCreating} v1={<FinalControl state={state} balances={pair} onBusy={setCreating} />} />
+          <V2Create
+            state={state}
+            balances={pair}
+            onBusy={setCreating}
+            onReadAgain={() => setBalanceRevision((n) => n + 1)}
+            v1={<FinalControl state={state} balances={pair} onBusy={setCreating} />}
+          />
         ) : (
           <FinalControl state={state} balances={pair} onBusy={setCreating} />
         )

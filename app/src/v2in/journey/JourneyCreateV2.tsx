@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
 import { CreatedNext } from '../../components/create/CreatedNext'
 import type { PairBalancesState } from '../../components/create/usePairBalances'
-import { rawBalances } from '../../components/create/valuation'
+import { heldRaw, rawBalances } from '../../components/create/valuation'
 import { Button } from '../../components/ui'
 import { openWalletDialog } from '../../finance/signedOut'
 import { crosschainSessionAccess } from '../../finance/v2/http'
-import { publishCreated } from '../../lib/create/createProgress'
+import { CREATE } from '../../lib/create/copy'
+import { publishCreated, publishFlowMade } from '../../lib/create/createProgress'
 import type { JourneyState as V1JourneyState } from '../../lib/create/journey'
 import { reviewPlan } from '../../lib/create/reviewPlan'
 import { useWalletIdentity } from '../../lib/walletIdentity'
@@ -15,7 +16,7 @@ import type { Address, V2ChainId } from '../../v2/types'
 import { v2PageProbe } from '../transports'
 import { useJourneyNetwork } from './context'
 import { JOURNEY } from './copy'
-import { inputsFromV1, requestFromV1, zapStateFromV1 } from './model/fromV1'
+import { balancesUnread, inputsFromV1, requestFromV1, zapStateFromV1 } from './model/fromV1'
 import { journeyPrice } from './model/state'
 import { FinalControl, ReviewStage } from './ReviewStage'
 import { testPlannerOn } from './source'
@@ -71,10 +72,17 @@ function useLiveGate(chainId: V2ChainId): Gate | 'outside' | 'reading' | 'not-li
   return gate.mode === 'live' ? gate : 'not-live'
 }
 
-type CreateProps = { state: V1JourneyState; balances: PairBalancesState; onBusy?: (busy: boolean) => void; v1: ReactElement }
+type CreateProps = {
+  state: V1JourneyState
+  balances: PairBalancesState
+  onBusy?: (busy: boolean) => void
+  /** Added 2026-10-06 (the final check's F5): reads the wallet's balances of the pool's two tokens again. */
+  onReadAgain?: () => void
+  v1: ReactElement
+}
 
 /** Review's footer: Create position on the new contracts once the gate is live, else today's own control (`v1`). */
-export default function JourneyCreateV2({ state, balances, onBusy, v1 }: CreateProps) {
+export default function JourneyCreateV2({ state, balances, onBusy, onReadAgain, v1 }: CreateProps) {
   const chainId = chainOf(state)
   const gate = useLiveGate(chainId)
   // Another network's pool is never today's control's (2026-10-05): closed there, it says so.
@@ -99,10 +107,10 @@ export default function JourneyCreateV2({ state, balances, onBusy, v1 }: CreateP
       </Button>
     )
   }
-  return <LiveCreate state={state} balances={balances} onBusy={onBusy} gate={gate} chainId={chainId} />
+  return <LiveCreate state={state} balances={balances} onBusy={onBusy} onReadAgain={onReadAgain} gate={gate} chainId={chainId} />
 }
 
-function LiveCreate({ state, balances, onBusy, gate, chainId }: Omit<CreateProps, 'v1'> & { gate: Gate; chainId: V2ChainId }) {
+function LiveCreate({ state, balances, onBusy, onReadAgain, gate, chainId }: Omit<CreateProps, 'v1'> & { gate: Gate; chainId: V2ChainId }) {
   const identity = useWalletIdentity()
   const connected = identity.kind === 'connected'
   const owner = identity.kind === 'connected' ? identity.address : null
@@ -153,18 +161,51 @@ function LiveCreate({ state, balances, onBusy, gate, chainId }: Omit<CreateProps
   useEffect(() => {
     onBusy?.(busy)
   }, [busy, onBusy])
+  // Changed on purpose 2026-10-06 (the final check's F1/F6): the position exists once the run has its receipt, on every
+  // network (Base and Arbitrum One too, and a receipt that could not be read exactly): Journey rests Back on it, as it does
+  // on Robinhood Chain, so the success (the receipt, View position, Auto-exit's offer) is never dropped by Back; and nothing
+  // drawn before a quote (Connect wallet, Sign in, a short wallet, unread balances) ever takes its place. Marked for the
+  // flow (lib/create/createProgress.ts publishFlowMade), never for the lists: New position's own link then starts a fresh
+  // flow, as on Robinhood Chain (screens/NewPosition.tsx). Taken back when this control goes (Review left, a new flow).
+  const made = view.receipt !== null
+  useEffect(() => {
+    if (!made) return
+    publishFlowMade(true)
+    return () => publishFlowMade(false)
+  }, [made])
   const tokenId = view.receipt?.read?.summary.tokenId ?? null
   // Today's created view and its lists are Robinhood Chain's: another network's position is shown by FinalControl's own.
   const home = chainId === 4663
   useEffect(() => {
-    if (home && tokenId !== null) publishCreated(tokenId.toString(), owner)
+    if (!home || tokenId === null) return
+    publishCreated(tokenId.toString(), owner)
+    // Changed on purpose 2026-10-06 (the final check's F1/F6): taken back when this control goes (Review left, or a new
+    // flow), as today's Create position does (components/create/CreatePosition.tsx): Back then shows again on the step
+    // reopened and in the next flow, where it stayed hidden. The lists keep the position (publishCreated never forgets it).
+    return () => publishCreated(null)
   }, [home, tokenId, owner])
 
   if (home && tokenId !== null) return <CreatedNext tokenId={tokenId.toString()} state={state} />
-  if (connected && !signedIn) {
+  if (!made && !connected) {
+    // Changed on purpose 2026-10-06 (the final check's F4): with no wallet, Create position's place asks for one, as today's
+    // control does: the header's wallet dialog, as Sign in below opens it.
     return (
       <>
-        <Button type="button" variant="primary" size="xl" className="w-full" onClick={openWalletDialog} data-create-signin="" aria-describedby="create-reason">
+        <Button type="button" variant="primary" size="xl" className="w-full" onClick={openWalletDialog} data-create-position="connect" aria-describedby="create-reason">
+          {JOURNEY.final.connect}
+        </Button>
+        <p id="create-reason" className="dm-flow-reason" data-align="start" data-zap-reason="no-wallet">
+          {JOURNEY.final.reasonNoWallet}
+        </p>
+      </>
+    )
+  }
+  if (!made && connected && !signedIn) {
+    // Changed on purpose 2026-10-06 (the final check's F4): in Create position's place, full width as Connect wallet above
+    // (styles/flow.css places the footer's [data-create-position]); without it the grid drew Sign in as a small button.
+    return (
+      <>
+        <Button type="button" variant="primary" size="xl" className="w-full" onClick={openWalletDialog} data-create-position="signin" data-create-signin="" aria-describedby="create-reason">
           {JOURNEY.review.signIn}
         </Button>
         <p id="create-reason" className="dm-flow-reason" data-align="start" data-zap-reason="signed-out">
@@ -173,7 +214,7 @@ function LiveCreate({ state, balances, onBusy, gate, chainId }: Omit<CreateProps
       </>
     )
   }
-  if (funding.kind === 'short') {
+  if (!made && funding.kind === 'short') {
     // Changed on purpose 2026-10-06 (the review of the owner's point 4): what the wallet has and needs is said once, in
     // Review's view (ReviewV2 below); this line only says why Create position waits.
     return (
@@ -187,6 +228,32 @@ function LiveCreate({ state, balances, onBusy, gate, chainId }: Omit<CreateProps
       </>
     )
   }
+  if (!made && funding.kind === 'wait' && balancesUnread(balances)) {
+    // Changed on purpose 2026-10-06 (the final check's F5): the read of the pair's balances finished with nothing usable, and
+    // nothing asks it again by itself, so no quote could ever come. Said in one line, with the way on: read them again
+    // (Journey's balance revision, as funds arriving from another network do).
+    return (
+      <>
+        <Button type="button" variant="primary" size="xl" className="w-full" disabled data-create-position="unread" aria-describedby="create-reason">
+          {JOURNEY.final.create}
+        </Button>
+        <p id="create-reason" className="dm-flow-reason" data-align="start" data-zap-reason="unread">
+          {JOURNEY.final.reasonUnread}
+        </p>
+        {onReadAgain && (
+          <Button type="button" variant="outline" size="md" className="w-full col-span-full" onClick={onReadAgain} data-create-read-again="">
+            {JOURNEY.final.readAgain}
+          </Button>
+        )}
+      </>
+    )
+  }
+  // Changed on purpose 2026-10-06 (the final check's F5): nothing to quote yet says why, never "Your wallet will ask you to
+  // confirm each step." under a disabled button: the balances still being read, else a choice Review cannot plan.
+  const waiting = funding.kind !== 'wait' ? null : balances.status === 'ready' ? CREATE.review.notReady : CREATE.amount.pairReading
+  // Changed on purpose 2026-10-06 (the final check's F5, a second look): a quote that failed before any review is asked
+  // again from Review itself (FinalControl's Review again), for these same choices: nothing else asks it again (a wallet
+  // switched to the pool's network by hand changes none of them), so only Back then Continue did.
   return (
     <FinalControl
       gate={gate}
@@ -197,6 +264,8 @@ function LiveCreate({ state, balances, onBusy, gate, chainId }: Omit<CreateProps
       onCancelSignature={run.cancelSignature}
       onKeepSignature={run.keepSignature}
       onRejected={run.forgetUnsettled}
+      onQuote={ask !== null ? run.start : undefined}
+      waiting={waiting}
     />
   )
 }
@@ -236,6 +305,11 @@ export function ReviewV2({ state, now, balances, v1 }: ReviewProps) {
   // line only says why it waits.
   const short = funding.kind === 'short' && planned ? { amounts: planned.need, token: funding.token, have: funding.have, need: funding.need, bring } : null
   const view: RunView = short ? IDLE : (run?.view ?? IDLE)
+  // Changed on purpose 2026-10-06 (the final check's F4): what the position holds as typed, for the headline whenever no
+  // quote has figures and none is under way: no wallet, a wallet not signed in, balances not read, a quote that failed. A
+  // lone dash only when it cannot be worked out. Changed on purpose 2026-10-06 (the final check's F4, a second look): the
+  // amounts his amount step's row writes (components/create/valuation.ts heldRaw): reviewPlan's need, or, when the wallet
+  // funds the deposit from one token, the amounts after its swap; the need then said about twice the position.
   return (
     <ReviewStage
       state={zap}
@@ -248,6 +322,7 @@ export function ReviewV2({ state, now, balances, v1 }: ReviewProps) {
       onNewPool={() => undefined}
       onPoolRace={() => undefined}
       short={short}
+      estimate={planned ? heldRaw(planned) : null}
     />
   )
 }

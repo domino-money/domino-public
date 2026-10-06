@@ -8,7 +8,7 @@ import { useWalletIdentity } from '../../lib/walletIdentity'
 import { v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
 import { ZERO_ADDRESS, type Address, type Dex, type V2ChainId } from '../../v2/types'
-import { exitCardState } from '../autoexit/card'
+import { exitCardState, withExitModules, withRevoked } from '../autoexit/card'
 import { exitOrderKey, offerExitOrder, onExitOrderAsked } from '../autoexit/entry'
 import { fullRange } from '../autoexit/form'
 import { MandateDialog, type ExitTarget } from '../autoexit/MandateDialog'
@@ -20,7 +20,7 @@ import { onVaultOffered, takeVault } from './handoff'
 import { IndexStatus } from './IndexStatus'
 import { chainView, creditsOn, mandatesOf, mergeCredits, tokenMetaOf, vaultsOfPosition } from './portfolio'
 import { routeQuiet, usePortfolio } from './read6'
-import { automationState, sessionMandates, sessionRevoked, subscribeAutomation } from './store'
+import { automationState, exitModuleSet, sessionMandates, sessionRevoked, subscribeAutomation } from './store'
 import { poolTokens, walletTokenMeta } from './tokens'
 import { VaultCard } from './VaultCard'
 import { VaultDialog, type VaultDialogKind, type VaultDialogSubject } from './VaultDialog'
@@ -105,7 +105,17 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   const v1 = useAutomation(!indexed && position ? tokenId : null)
   const chain = v2Chain(chainId)
 
-  const body = indexed?.portfolio ?? (answer && answer.reply.kind === 'ok' ? answer.reply.body : null)
+  const store = useSyncExternalStore(subscribeAutomation, automationState, automationState)
+  // Changed on purpose 2026-10-06 (the final check, F2): with the auto-exit module this page itself set (Leave automation
+  // turns it off, "Turn back on" on), from that step's receipt, while the index has not reached it: the card and the
+  // automation's actions say the new standing at once (../autoexit/card.ts withExitModules). Changed on purpose 2026-10-06
+  // (the final check F2's review): and with the Auto-exits this page turned off (withRevoked), so its automation's word
+  // agrees with the card's: after "Turn back on" then "Turn off", "Turn on" (its rearm first) is offered again at once.
+  const listed = indexed?.portfolio ?? (answer && answer.reply.kind === 'ok' ? answer.reply.body : null)
+  const body = useMemo(
+    () => (listed ? withExitModules(withRevoked(listed, chainId, sessionRevoked(store, chainId)), (id, vault, nonce) => exitModuleSet(store, id, vault, nonce)) : null),
+    [listed, store, chainId],
+  )
   const views = useMemo(
     () => (body && connected ? vaultsOfPosition(body, chainId, tokenId, dex).map((entry) => ({ role: entry.role, view: shownVaultView(entry.vault, body, connected, now, fresh.get(entry.vault.address.toLowerCase()) ?? null) })) : []),
     [body, connected, chainId, tokenId, dex, now, fresh],
@@ -151,7 +161,6 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   // the index does not list yet.
   const ordersVault = rootView ?? memberView
   const orders = body && ordersVault ? mandatesOf(body, chainId, ordersVault.vault).filter((order) => order.tokenId === tokenId) : []
-  const store = useSyncExternalStore(subscribeAutomation, automationState, automationState)
   const mine = connected ? sessionExits(sessionMandates(store, chainId, connected), orders, idOf(tokenId)) : []
   const exitState = exitCardState(orders, mine, sessionRevoked(store, chainId))
   // Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "auto-exit has no fee compounding"; one Auto-exit per

@@ -2,7 +2,7 @@ import type { Mandate, PortfolioResponse } from 'api-contracts/read-v6/types'
 import type { AutoExitTextKey } from '../../finance/v2/autoExit'
 import type { Hex, V2ChainId } from '../../v2/types'
 import { BLOCKED_TEXT_KEY, vaultsOfPosition } from '../automate/portfolio'
-import type { SessionMandate } from '../automate/store'
+import type { ExitModuleSet, SessionMandate } from '../automate/store'
 
 /**
  * What a position's Auto-exit card says (Added 2026-10-06, the owner's point 5: "the position shows 'Auto-exit on ·
@@ -34,6 +34,61 @@ const raw = (text: string | null | undefined): bigint => (typeof text === 'strin
 export function listedTriggers(order: Pick<Mandate, 'terms'>): ExitTriggers | null {
   if (!order.terms) return null
   return { below: raw(order.terms.triggerBelowSqrtPriceX96), above: raw(order.terms.triggerAboveSqrtPriceX96) }
+}
+
+/**
+ * Whether the automation's record of an order says its last pass found the auto-exit module off (Added 2026-10-06, the
+ * final check F2's review), as the automation writes it: its own check before any try, `exit_module_not_enabled` with no
+ * contract `error`, or a try the contract refused, `reverted_exit_module_not_enabled` (ExitModuleNotEnabled).
+ */
+const moduleOffWaiting = (waiting: Mandate['waiting']): boolean =>
+  waiting !== null && (waiting.reason === 'exit_module_not_enabled' || waiting.reason === 'reverted_exit_module_not_enabled' || waiting.error === 'ExitModuleNotEnabled')
+
+/**
+ * read-v6's answer with the auto-exit module a step of this page set on a vault (Added 2026-10-06, the final check F2:
+ * Leave automation turns it off, "Turn back on" turns it on; ../automate/store.ts exitModuleSet, which answers only while
+ * the listing of that vault is older than that step), by the backend's own rule: an active order of a Domino vault is
+ * blocked by `module_disabled` while its vault's module is not the order's. So the card says the new standing at once, as
+ * it does after a Turn off made here, and never offers a step already done. Pure; the same answer when nothing applies.
+ */
+export function withExitModules(body: PortfolioResponse, setOf: (chainId: V2ChainId, vault: string, listed: bigint | null) => ExitModuleSet | null): PortfolioResponse {
+  let changed = false
+  const mandates = body.mandates.map((order) => {
+    if (order.status !== 'active' || order.moduleEnabled === null) return order
+    const at = order.vault.toLowerCase()
+    const vault = body.vaults.find((v) => v.chainId === order.chainId && v.address.toLowerCase() === at)
+    const set = setOf(order.chainId, at, vault?.state.status === 'read' ? raw(vault.state.stateNonce) : null)
+    if (!set) return order
+    changed = true
+    const on = set.module === order.module.toLowerCase()
+    const rest = order.blockedBy.filter((code) => code !== 'module_disabled')
+    return {
+      ...order,
+      moduleEnabled: on,
+      blockedBy: on ? rest : [...rest.filter((code) => code === 'expired'), 'module_disabled' as const, ...rest.filter((code) => code !== 'expired')],
+      // The automation's last pass found the module off: no longer once it is on again. Changed on purpose 2026-10-06 (the
+      // final check F2's review): by the record the automation writes for it (moduleOffWaiting), whose `error` is null.
+      waiting: on && moduleOffWaiting(order.waiting) ? null : order.waiting,
+    }
+  })
+  return changed ? { ...body, mandates } : body
+}
+
+/**
+ * read-v6's answer with the Auto-exits this page turned off on `chainId` (`off`, by id: ../automate/store.ts
+ * sessionRevoked) listed as turned off while the index still lists them active (Added 2026-10-06, the final check F2's
+ * review). So the automation's own word on its Auto-exit (./standing.ts exitStandingOf, its rearm) says what the card
+ * says, as it will once the index lists the revocation: never "on" after a Turn off made here, with no way to turn it on
+ * again until a reload. Pure; the same answer when nothing applies.
+ */
+export function withRevoked(body: PortfolioResponse, chainId: V2ChainId, off: ReadonlySet<string>): PortfolioResponse {
+  let changed = false
+  const mandates = body.mandates.map((order) => {
+    if (order.status !== 'active' || order.chainId !== chainId || !off.has(order.mandateHash.toLowerCase())) return order
+    changed = true
+    return { ...order, status: 'revoked' as const, expired: false, blockedBy: [], waiting: null }
+  })
+  return changed ? { ...body, mandates } : body
 }
 
 /** `off`: the ids this page turned off (revoked) while the index may still list them active. */

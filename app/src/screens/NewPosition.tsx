@@ -3,7 +3,7 @@ import '../styles/screens.css'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { CREATE } from '../lib/create/copy'
 import { useRouteTitle } from '../lib/routeTitle'
-import { useCreated } from '../lib/create/createProgress'
+import { useCreated, useFlowMade } from '../lib/create/createProgress'
 import { SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
 import { PageHeader, PageShell } from '../components/ui'
 import { Journey } from '../components/create/Journey'
@@ -29,9 +29,15 @@ const V2NewPosition = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/jour
  * the first step: on a route change (#/new/<pool> to #/new, both the same page) and on a link to the very hash already
  * open, which changes nothing the browser reports. While no position has been created, following such a link keeps
  * the flow as it is, as before.
+ *
+ * Changed on purpose 2026-10-06 (the final check's F1/F6, a second look): a position Domino V2 made on this flow counts
+ * too, on every network (lib/create/createProgress.ts useFlowMade): on Base and Arbitrum One, whose positions are never
+ * `created` (that marker is Robinhood Chain's lists'), the flow rested on its success and New position's link did nothing.
  */
 function useFlowKey(): number {
-  const created = useCreated() !== null
+  const listed = useCreated() !== null
+  const madeV2 = useFlowMade()
+  const created = listed || madeV2
   const [flow, setFlow] = useState(0)
   useEffect(() => {
     if (!created) return

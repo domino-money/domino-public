@@ -25,6 +25,16 @@ export interface VaultEvent {
   reason?: number
 }
 
+/**
+ * Added 2026-10-06 (the final check, F2): the auto-exit module a step of this page set on a vault, from its receipt's
+ * `ExitModuleSet` (Leave automation's exitAll turns it off, "Turn back on" turns it on), with the `stateNonce` it moved
+ * the vault to. `module` null: off (address(0)).
+ */
+export interface ExitModuleSet {
+  stateNonce: bigint
+  module: Address | null
+}
+
 export interface SessionMandate {
   chainId: V2ChainId
   owner: Address
@@ -47,9 +57,11 @@ interface State {
   mandates: readonly SessionMandate[]
   /** Added 2026-10-06 (the owner's point 5): the Auto-exits this page turned off (revoked), by `${chainId}|${id}`. */
   revoked: ReadonlySet<string>
+  /** Added 2026-10-06 (the final check, F2): the last ExitModuleSet a step of this page emitted, by vault. */
+  modules: ReadonlyMap<string, ExitModuleSet>
 }
 
-let state: State = { vaults: new Map(), events: new Map(), mandates: [], revoked: new Set() }
+let state: State = { vaults: new Map(), events: new Map(), mandates: [], revoked: new Set(), modules: new Map() }
 const listeners = new Set<() => void>()
 const emit = (next: State) => {
   state = next
@@ -82,10 +94,12 @@ export const sessionVaults = (s: State, chainId: V2ChainId, owner: Address): rea
 
 /**
  * The vault events of one receipt, in log order (their names and arguments as finance/v2/vault.ts decodes them). The
- * last one that says something about pause or custody is kept, with the stateNonce it carries.
+ * last one that says something about pause or custody is kept, with the stateNonce it carries; and, apart from it
+ * (Changed on purpose 2026-10-06, the final check F2), the last ExitModuleSet.
  */
 export function recordVaultEvents(chainId: V2ChainId, vault: Address, events: readonly { address: string; eventName: string; args: Readonly<Record<string, unknown>> }[]): void {
   let last: VaultEvent | null = null
+  let module: ExitModuleSet | null = null
   for (const event of events) {
     if (event.address.toLowerCase() !== vault.toLowerCase()) continue
     const nonce = event.args.stateNonce
@@ -94,17 +108,29 @@ export function recordVaultEvents(chainId: V2ChainId, vault: Address, events: re
     else if (event.eventName === 'AutomationResumed') last = { stateNonce: nonce, kind: 'resumed' }
     else if (event.eventName === 'RootDisarmed' && typeof event.args.reason === 'number') last = { stateNonce: nonce, kind: 'disarmed', reason: event.args.reason }
     else if (event.eventName === 'RootRearmed') last = { stateNonce: nonce, kind: 'rearmed' }
+    else if (event.eventName === 'ExitModuleSet' && typeof event.args.module === 'string') module = { stateNonce: nonce, module: /^0x0{40}$/i.test(event.args.module) ? null : (event.args.module.toLowerCase() as Address) }
   }
-  if (!last) return
-  const events2 = new Map(state.events)
-  events2.set(vaultKey(chainId, vault), Object.freeze(last))
-  emit({ ...state, events: events2 })
+  const key = vaultKey(chainId, vault)
+  const next = { ...state }
+  if (last) next.events = new Map(state.events).set(key, Object.freeze(last))
+  if (module) next.modules = new Map(state.modules).set(key, Object.freeze(module))
+  if (last || module) emit(next)
 }
 
 /** The event this page saw last for a vault, only while the vault's live stateNonce is still the one it left. */
 export function currentEvent(s: State, chainId: V2ChainId, vault: Address, liveStateNonce: bigint): VaultEvent | null {
   const event = s.events.get(vaultKey(chainId, vault))
   return event && event.stateNonce === liveStateNonce ? event : null
+}
+
+/**
+ * Added 2026-10-06 (the final check, F2): the module a step of this page set on a vault, only while read-v6's listing
+ * of that vault is older than that step (`listed`: the listing's stateNonce, null when its state was not read): the
+ * index runs behind the chain. Null otherwise, and then the listing says it.
+ */
+export function exitModuleSet(s: State, chainId: V2ChainId, vault: string, listed: bigint | null): ExitModuleSet | null {
+  const set = s.modules.get(`${chainId}|${vault.toLowerCase()}`)
+  return set && (listed === null || listed < set.stateNonce) ? set : null
 }
 
 /** An order this page signed (and, once its registration is in a block, registered). */
@@ -132,5 +158,5 @@ export const sessionRevoked = (s: State, chainId: V2ChainId): ReadonlySet<string
 
 /** Forgets everything (a test's fresh start). */
 export function forgetAutomationSession(): void {
-  emit({ vaults: new Map(), events: new Map(), mandates: [], revoked: new Set() })
+  emit({ vaults: new Map(), events: new Map(), mandates: [], revoked: new Set(), modules: new Map() })
 }

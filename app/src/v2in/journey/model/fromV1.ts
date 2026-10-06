@@ -17,6 +17,7 @@ import { rangeCheckOn, type JourneyState } from './state'
  *     reading its Review draws from): both of the pool's tokens at the amounts the amount step showed, or the one token the
  *     wallet holds, all of it, for the planner to swap in; short says which token lacks and by how much; wait while the
  *     wallet's balances are not read;
+ *   - balancesUnread (2026-10-06): that wait is for good, the read having finished with nothing usable;
  *   - requestFromV1: the create request (position-plan-v1) for one consent.
  */
 export function zapStateFromV1(state: Pick<V1JourneyState, 'pool' | 'range' | 'slippageBps'>): JourneyState | null {
@@ -42,6 +43,21 @@ export function inputsFromV1(zap: JourneyState | null, planned: { need: readonly
   const inputs = pairs.filter(([, amount]) => amount > 0n).map(([token, amount]) => ({ token, amount }))
   return inputs.length > 0 ? { kind: 'inputs', inputs } : { kind: 'wait' }
 }
+
+/** The wallet's read of the pool's two balances, as Review gets it (components/create/usePairBalances.ts PairBalancesState). */
+export interface PairRead {
+  status: 'disconnected' | 'waiting' | 'loading' | 'ready'
+  balances: readonly [{ raw: string | null }, { raw: string | null }] | null
+}
+
+/**
+ * Added 2026-10-06 (the final check's F5): the read of the wallet's two balances finished with nothing the plan can use (a
+ * read that failed settles as `ready` with no figure, or a side with none, and is never asked again by itself:
+ * components/create/usePairBalances.ts), so inputsFromV1 waits for good until they are read again. False while the read is
+ * under way, with no wallet, and once both sides are known (a zero is known).
+ */
+export const balancesUnread = (read: PairRead): boolean =>
+  read.status === 'ready' && (read.balances === null || read.balances[0].raw === null || read.balances[1].raw === null)
 
 export function requestFromV1(zap: JourneyState | null, funding: V1Funding, consent: S1PlanConsent): S1PlanRequest | null {
   if (!zap?.pool || !zap.range || funding.kind !== 'inputs' || !rangeCheckOn(zap.range, zap.pool.pool.tickSpacing).ok) return null

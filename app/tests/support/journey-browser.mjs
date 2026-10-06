@@ -26,7 +26,9 @@ export const WALLET_NAME = 'Journey Wallet';
  * is `live` on `contracts`; every other open chain is `preview`. `planner(request)`: the plan answer (a body,
  * `{ status, body }`, or undefined). `intercept(method, params)`: a reply that replaces the chain's for one request.
  * `originOpen` false leaves the gate closed (today's journey exactly). `read6` (2026-10-06): more of read-v6's routes,
- * `{ route: (request) => answer }`, for the position's own page a test opens from New position's success.
+ * `{ route: (request) => answer }`, for the position's own page a test opens from New position's success. `planner` null
+ * (2026-10-06): no planner stands in for the plan route, so the owner's journey asks the plan for a signed-in session only,
+ * as the site does (src/v2in/journey/source.ts testPlannerOn); the wallet a suite connects stays signed out.
  */
 export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null, read6 = null, dex = null } = {}) {
   const fake = createFakeSession();
@@ -57,7 +59,7 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
   await context.exposeFunction('__dominoJourneyWallet', async (method, params) => (await intercept(method, params)) ?? chain.request(method, params));
   await context.exposeFunction('__dominoJourneyPlan', async (request) => {
     planned.push(request);
-    return planner(request);
+    return planner?.(request);
   });
   await context.exposeFunction('__dominoJourneyCsp', (text) => csp.push(text));
   // read-v6's chain reads (2026-10-06): `chainReads.answer(route, request)`, for the three routes, when a suite hands one in;
@@ -68,9 +70,10 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
   const sets = Object.fromEntries(live.map((id) => [id, contracts[id]]));
   // `zapOnRobinhood` (2026-10-05): the zap path's screens on Robinhood Chain, which the owner's journey keeps out of every
   // deployable build (src/v2in/journey/NewPositionV2.tsx).
-  await context.addInitScript(({ sets, liveOn, originOpen, name, zapOnRobinhood, chainRoutes }) => {
+  await context.addInitScript(({ sets, liveOn, originOpen, name, zapOnRobinhood, chainRoutes, planning }) => {
     const read6 = chainRoutes.length ? { read6: Object.fromEntries(chainRoutes.map((route) => [route, (request) => window.__dominoChainRead(route, request).then((said) => said ?? undefined)])) } : {};
-    window.__dominoV2Test = { originOpen, ...(liveOn ? { contracts: sets, backendOn: true } : {}), s1: { plan: (request) => window.__dominoJourneyPlan(request) }, journey: { zapOnRobinhood }, ...read6 };
+    const s1 = planning ? { s1: { plan: (request) => window.__dominoJourneyPlan(request) } } : {};
+    window.__dominoV2Test = { originOpen, ...(liveOn ? { contracts: sets, backendOn: true } : {}), ...s1, journey: { zapOnRobinhood }, ...read6 };
     document.addEventListener('securitypolicyviolation', (event) => window.__dominoJourneyCsp(`${event.violatedDirective} ${event.blockedURI}`));
     const provider = {
       async request({ method, params }) {
@@ -85,7 +88,7 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
     const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail }));
     window.addEventListener('eip6963:requestProvider', announce);
     announce();
-  }, { sets, liveOn: live.length > 0, originOpen, name: WALLET_NAME, zapOnRobinhood, chainRoutes });
+  }, { sets, liveOn: live.length > 0, originOpen, name: WALLET_NAME, zapOnRobinhood, chainRoutes, planning: planner !== null });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   const s = {

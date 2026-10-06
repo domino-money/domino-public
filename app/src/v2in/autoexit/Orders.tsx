@@ -13,12 +13,12 @@ import { ZERO_ADDRESS, type Address, type Hex } from '../../v2/types'
 import { AUTO_EXIT_WAITING_TEXT, errorLabels } from '../automate/copy'
 import { OneStepDialog } from '../automate/OneStepDialog'
 import { waitingWords } from '../automate/portfolio'
-import { automationState, rememberRevoked, sessionMandates, sessionRevoked, subscribeAutomation, type SessionMandate } from '../automate/store'
+import { automationState, recordVaultEvents, rememberRevoked, sessionMandates, sessionRevoked, subscribeAutomation, type SessionMandate } from '../automate/store'
 import { amountWords, dateWords, shortAddress, type TokenView } from '../automate/tokens'
 import { Details, Fact } from '../automate/ui'
 import { VAULT_ACTION_LABEL } from '../automate/VaultCard'
 import { vaultActions, type VaultActionKind, type VaultView } from '../automate/vaultView'
-import { exitCardState, listedTriggers, type ExitTriggers } from './card'
+import { exitCardState, type ExitTriggers } from './card'
 import type { ExitTarget } from './MandateDialog'
 import { PastEdge } from './PastEdge'
 import { EDGE_PASSED, edgePassed } from './turnBackOn'
@@ -156,6 +156,10 @@ function ModuleOnDialog({ target, vault, order, gate, labels, onTurnOff, onDone,
         if (error.code !== EDGE_PASSED) return false
         setPast(true)
         return true
+      }}
+      // The module on, from the receipt (the final check, F2): the card says it at once, whatever the index still lists.
+      onStepDone={(outcome) => {
+        if (outcome.receipt) recordVaultEvents(target.chainId, vault, outcome.receipt.events)
       }}
       onDone={onDone}
       onClose={onClose}
@@ -369,8 +373,14 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
           <div className="grid gap-3">
             {active?.terms && (
               <KeyValueList data-order={active.mandateHash.toLowerCase()} data-order-status="active">
-                {listedTriggers(active)?.below ? <KeyValue label="Lower end">{triggerWords('triggerBelowSqrtPriceX96', listedTriggers(active)?.below ?? 0n, target.tokens, orientation)}</KeyValue> : null}
-                {listedTriggers(active)?.above ? <KeyValue label="Upper end">{triggerWords('triggerAboveSqrtPriceX96', listedTriggers(active)?.above ?? 0n, target.tokens, orientation)}</KeyValue> : null}
+                {/* Changed on purpose 2026-10-06 (the final check, F7): each end by the way the price moves to reach it, the
+                    falling one first, as the card's line and the dialog say them; never by the pool's field, which on a pool
+                    written the other way round (ETH per TOKEN) makes the lower trigger the highest price shown. */}
+                {edges.map((edge) => (
+                  <KeyValue key={edge.field} label={edge.move === 'falls' ? 'Lower end' : 'Upper end'} data-exit-end={edge.move}>
+                    {triggerWords(edge.field, edge.sqrtPriceX96, target.tokens, orientation)}
+                  </KeyValue>
+                ))}
                 <KeyValue label="You receive">{receiveWords(active.terms.receive === 'both' ? 0 : 1, active.terms.convertTo ?? ZERO_ADDRESS, target.tokens)}</KeyValue>
                 <KeyValue label="Slippage limit">{`${active.terms.maxSlippageBps / 100}% on top of the pool fee`}</KeyValue>
                 <KeyValue label="Valid until">{dateWords(active.validUntil)}</KeyValue>

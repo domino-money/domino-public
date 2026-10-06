@@ -144,7 +144,10 @@ export const AUTO_EXIT_TEXT = Object.freeze({
   mandate_status_expired: 'Expired',
   mandate_status_revoked: 'Cancelled',
   mandate_status_executed: 'Executed',
-  mandate_module_off: 'Paused: Auto-exit is turned off for this position.',
+  // Changed on purpose 2026-10-06 (the final check, F8): said by its cause, never "turned off" beside the card's "Turn off",
+  // which ends it for good. True on every path to it: Leave automation (exitAll), the module turned off (setExitModule(0)),
+  // or never turned on for that automation (an order registered without it).
+  mandate_module_off: "Paused: your automation doesn't allow Auto-exit right now.",
   mandate_owner_changed: 'Not valid: the owner of this automation changed.',
   mandate_root_custody_lost: 'Paused: Domino no longer has approval on this position.',
   mandate_successor_inactive: 'This position is no longer in your automation.',

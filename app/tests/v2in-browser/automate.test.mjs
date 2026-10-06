@@ -234,17 +234,19 @@ const waitingOf = (reason) => ({ checkedAt: 1790431194, checkedBlock: 73400090, 
  * read-v6's portfolio for the fake chain's owner with its one vault on ROOT (the package's `portfolio-custody-lost`
  * fixture, adapted): the vault's custody as the index read it (`armed`, the disarm `reason`), paused or not, its
  * reserves (`[[token, raw]]`, all idle), why it waits, and the root's live read (`root`: { owner, liquidity }, or
- * null for a burned NFT, which read-v6 no longer lists). The stateNonce is the chain's now.
+ * null for a burned NFT, which read-v6 no longer lists). The stateNonce is the chain's now. `other` (added 2026-10-06,
+ * the final check F7: { address, symbol, decimals }): the fixture's own pool, USDG and that token, in place of ETH / USDG.
  */
-function listing(chain, vault, { armed, reason = null, paused = false, pausedBy = null, reserves, root, waiting = null, orders = null, autoExit = false }) {
-  const swaps = [[READ6.wallet, OWNER], [READ6.vault, vault], [READ6.module, AUTO_EXIT], [READ6.usdg, ZERO], [READ6.many, USDG]];
+function listing(chain, vault, { armed, reason = null, paused = false, pausedBy = null, reserves, root, waiting = null, orders = null, autoExit = false, other = null }) {
+  const swaps = other
+    ? [[READ6.wallet, OWNER], [READ6.vault, vault], [READ6.module, AUTO_EXIT], [READ6.many, other.address]]
+    : [[READ6.wallet, OWNER], [READ6.vault, vault], [READ6.module, AUTO_EXIT], [READ6.usdg, ZERO], [READ6.many, USDG]];
+  const token = (address, symbol, decimals) => ({ address, chainId: 4663, decimals, price: null, priceReason: 'no_qualified_price_source', status: 'available', symbol });
+  const pair = other ? [USDG, other.address] : [ZERO, USDG];
   return read6Answer('portfolio', 'portfolio-custody-lost', swaps, (body) => {
     // `orders` (added 2026-10-04): the fixture's own active order, adapted, in place of none.
     body.mandates = orders ? orders(body.mandates) : [];
-    body.tokens = [
-      { address: ZERO, chainId: 4663, decimals: 18, price: null, priceReason: 'no_qualified_price_source', status: 'available', symbol: 'ETH' },
-      { address: USDG, chainId: 4663, decimals: 6, price: null, priceReason: 'no_qualified_price_source', status: 'available', symbol: 'USDG' },
-    ];
+    body.tokens = other ? [token(USDG, 'USDG', 6), token(other.address, other.symbol, other.decimals)] : [token(ZERO, 'ETH', 18), token(USDG, 'USDG', 6)];
     const v = body.vaults[0];
     v.rootTokenId = String(ROOT);
     v.members = [{ disarmReason: armed ? null : reason, parentTokenId: null, role: 'root', status: armed ? 'armed' : 'disarmed', tokenId: String(ROOT) }];
@@ -258,7 +260,7 @@ function listing(chain, vault, { armed, reason = null, paused = false, pausedBy 
       quoteCurrency: USDG,
       policy: { maxOverlapBps: 500, maxPositions: 1, minimumIntervalSeconds: 3600, mode: 'simple', triggerDistanceBps: 500 },
       limits: { maxObservationAgeSeconds: 600, maxPriceImpactBps: 200, maxSlippageBps: 100, upsideBps: 1000 },
-      members: [{ active: true, lots: [{ charged: '0', token: ZERO, uncharged: '0' }, { charged: '0', token: USDG, uncharged: '0' }], parentTokenId: null, successorTokenId: null, tickLower: -600, tickUpper: 600, tokenId: String(ROOT) }],
+      members: [{ active: true, lots: pair.map((address) => ({ charged: '0', token: address, uncharged: '0' })), parentTokenId: null, successorTokenId: null, tickLower: -600, tickUpper: 600, tokenId: String(ROOT) }],
       reserves: reserves.map(([token, amount]) => ({ idle: String(amount), token, total: String(amount) })),
     });
     if (!root) {
@@ -676,7 +678,10 @@ test('live: an Auto-exit paused because auto-exit is off offers "Turn back on": 
     const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="paused"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.equal(await card.locator('[data-exit-pill]').innerText(), 'Paused');
-    assert.equal(await card.locator('[data-v2in-exit-line="paused"]').innerText(), 'Paused: Auto-exit is turned off for this position.');
+    // Changed on purpose 2026-10-06 (the final check, F8): the pause by its cause, never "turned off" beside "Turn off".
+    assert.equal(await card.locator('[data-v2in-exit-line="paused"]').innerText(), "Paused: your automation doesn't allow Auto-exit right now.");
+    assert.equal(await card.locator('[data-exit-off]').innerText(), 'Turn off');
+    assert.doesNotMatch(await card.innerText(), /turned off/i);
     // Changed on purpose 2026-10-06 (the integration review, rugged-literal #2): Leave automation's pause (the module off)
     // keeps the automation Auto-exit's: this one card, never a second "Automation" card in compounding's words.
     assert.equal(await page.locator(`[data-v2in-position="${ROOT}"] [data-vault-card]`).count(), 0, 'one card for one product');
@@ -698,6 +703,87 @@ test('live: an Auto-exit paused because auto-exit is off offers "Turn back on": 
     assert.deepEqual([sent.to.toLowerCase(), selectorOf(sent.data)], [vault, SELECTOR.setExitModule]);
     assert.equal(chain.vault(vault).exitModule, AUTO_EXIT, 'auto-exit on again: the paused orders can fire');
     await dialog.screenshot({ path: join(shots(), 'v2in-auto-exit-back-on.png'), animations: 'disabled' });
+    // Added 2026-10-06 (the final check, F2): on at once, from the step's own receipt, while the index still lists the pause;
+    // no "Turn back on" left that would stop at "This step is already done.".
+    await dialog.locator('[data-v2in-close]').click();
+    await dialog.waitFor({ state: 'detached' });
+    const on = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`);
+    await on.waitFor({ timeout: 30_000 });
+    assert.equal(await on.locator('[data-exit-pill]').innerText(), 'On');
+    assert.match(await on.locator('[data-v2in-exit-line="on"]').innerText(), /^Closes at /);
+    assert.equal(await on.locator('[data-order-module-on]').count(), 0, 'nothing left to turn back on');
+    assert.equal(await on.locator('[data-exit-off]').innerText(), 'Turn off');
+    assert.equal(chain.sends.length, 1, 'one step, nothing more sent');
+  } finally {
+    await s.close();
+  }
+});
+
+// Added 2026-10-06 (the final check F2's review): Leave automation made on an earlier visit and indexed (the vault paused,
+// its module off, its root disarmed: exit_all), the order waiting with the record the automation writes for it
+// (`exit_module_not_enabled`, no contract error). "Turn back on" made here: on at once, nothing left of that record. Then
+// "Turn off": off at once, and Auto-exit can be turned on again ("Turn on", its automation's rearm first), as once the
+// index lists both, while it still lists the pause and the order active.
+test('live: after Leave automation, "Turn back on" then "Turn off" made here: on without the module\'s old waiting line, then off with "Turn on" offered again', async () => {
+  const chain = createVaultChain({ chainId: 4663, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -600, tickUpper: 600 }] });
+  const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, startPaused: true });
+  chain.disarm(vault, 7);
+  const liquidity = chain.nft(4, ROOT).liquidity;
+  assert.equal(chain.vault(vault).exitModule, ZERO, 'auto-exit off, as Leave automation leaves it');
+  const portfolio = listing(chain, vault, {
+    armed: false, reason: 'exit_all', paused: true, pausedBy: 'owner', reserves: [[ZERO, 0n], [USDG, 0n]], root: { owner: OWNER, liquidity },
+    orders: (fixture) => fixture.map((order) => ({ ...order, tokenId: String(ROOT), blockedBy: ['module_disabled'], moduleEnabled: false, waiting: waitingOf('exit_module_not_enabled') })),
+  });
+  // That order on the chain's module, registered on that earlier visit (the fixture's own id and terms), active.
+  const [order] = portfolio.body.mandates;
+  const id = order.mandateHash.toLowerCase();
+  chain.module().status.set(id, 1);
+  chain.module().records.set(id, {
+    signer: OWNER.toLowerCase(), signature: '0x',
+    view: { owner: OWNER.toLowerCase(), validUntil: BigInt(order.validUntil), maxSlippageBps: order.terms.maxSlippageBps, receiveMode: 1, vault: vault.toLowerCase(), convertTo: order.terms.convertTo, triggerBelowSqrtPriceX96: BigInt(order.terms.triggerBelowSqrtPriceX96), triggerAboveSqrtPriceX96: 0n, tokenId: ROOT },
+  });
+  const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }) });
+  const { page } = s;
+  const card = (state) => page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="${state}"]`);
+  try {
+    await card('paused').waitFor({ timeout: 30_000 });
+    await card('paused').locator('[data-order-module-on]').click();
+    const back = page.locator('[role="dialog"][data-v2in-dialog="module-on"]');
+    await back.waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-v2in-send="module-on"]')?.disabled === false, null, { timeout: 30_000 });
+    await back.locator('[data-v2in-send="module-on"]').click();
+    await back.locator('[data-v2in-close]').waitFor({ timeout: 30_000 });
+    await back.locator('[data-v2in-close]').click();
+    await back.waitFor({ state: 'detached' });
+    const on = card('on');
+    await on.waitFor({ timeout: 30_000 });
+    assert.match(await on.locator('[data-v2in-exit-line="on"]').innerText(), /^Closes at /);
+    assert.equal(await on.locator('[data-order-waiting]').count(), 0, 'the automation\'s record of the module off is gone with it: no bare "Waiting" line');
+
+    await on.locator('[data-exit-off]').click();
+    const off = page.locator('[role="dialog"][data-v2in-dialog="cancel-order"]');
+    await off.waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-v2in-send="cancel-order"]')?.disabled === false, null, { timeout: 30_000 });
+    await off.locator('[data-v2in-send="cancel-order"]').click();
+    await off.locator('[data-v2in-close]').waitFor({ timeout: 30_000 });
+    assert.equal(chain.module().status.get(id), 2, 'revoked');
+    await off.locator('[data-v2in-close]').click();
+    await off.waitFor({ state: 'detached' });
+    const none = card('off');
+    await none.waitFor({ timeout: 30_000 });
+    assert.equal(await none.locator('[data-exit-pill]').innerText(), 'Off');
+    assert.equal(await none.locator('[data-v2in-exit-line="open"]').innerText(), 'Auto-exit is off. Turn it on to close this position at the end of its range.');
+    const turnOn = none.locator('[data-vault-open="rearm"]');
+    assert.equal(await turnOn.innerText(), 'Turn on');
+    await none.locator('[data-exit-details] > summary').click();
+    assert.equal(await none.locator(`[data-exit-history] [data-order="${id}"]`).getAttribute('data-order-status'), 'revoked', 'the earlier list says it turned off, never "On"');
+    await none.screenshot({ path: join(shots(), 'v2in-autoexit-back-on-then-off.png'), animations: 'disabled' });
+    await turnOn.click();
+    const rearm = page.locator('[role="dialog"][data-v2in-dialog="vault-rearm"]');
+    await rearm.waitFor();
+    assert.equal(await rearm.locator('h2').innerText(), 'Turn on Auto-exit');
+    assert.equal(await rearm.locator('[data-vault-lede]').getAttribute('data-vault-exit-rearm'), 'turn-on');
+    assert.deepEqual(chain.sends.map((tx) => [tx.to.toLowerCase(), selectorOf(tx.data)]), [[vault.toLowerCase(), SELECTOR.setExitModule], [AUTO_EXIT, SELECTOR.revokeMandate]], 'nothing more sent');
   } finally {
     await s.close();
   }
@@ -851,6 +937,44 @@ test('Auto-exit on USDG / ERC-20 writes the edges in the app\'s own units (USDG 
   } finally { await s.close(); }
 });
 
+// Added 2026-10-06 (the final check, F7): on a pool written the other way round (USDG per ORB: the pool's lower tick is
+// the highest price shown), the card's Details name each end by the way the price moves to reach it, as its line does.
+test('live: Auto-exit on, its pool written the other way round (USDG per ORB): Details say "Lower end" for the falling end and "Upper end" for the rising one', async () => {
+  const ORB = '0x8888888888888888888888888888888888888888';
+  const pool = { currency0: USDG, currency1: ORB, fee: 8000, tickSpacing: 80 };
+  const key = { ...pool, hooks: ZERO };
+  const liquidity = 10n ** 18n;
+  const chain = createVaultChain({ chainId: 4663, positions: [{ dex: 4, tokenId: ROOT, pool, tickLower: 300000, tickUpper: 320000, liquidity }] });
+  const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, startPaused: true });
+  chain.setExitModule(vault, AUTO_EXIT);
+  const [below, above] = [sqrtPriceAtTick(300000), sqrtPriceAtTick(320000)];
+  const portfolio = listing(chain, vault, {
+    armed: true, paused: true, pausedBy: 'owner', autoExit: true, reserves: [[USDG, 0n], [ORB, 0n]], root: { owner: OWNER, liquidity }, other: { address: ORB, symbol: 'ORB', decimals: 18 },
+    orders: (fixture) => fixture.slice(0, 1).map((order) => ({ ...order, tokenId: String(ROOT), status: 'active', expired: false, blockedBy: [], moduleEnabled: true, waiting: waitingOf('trigger_not_reached'), executed: null, revoked: null, terms: { triggerBelowSqrtPriceX96: String(below), triggerAboveSqrtPriceX96: String(above), receive: 'both', convertTo: null, maxSlippageBps: 100 } })),
+  });
+  // 1 ORB = 0.0625 USDG (16e12 raw ORB per raw USDG), inside the range: 0.0126… to 0.0936… USDG per ORB.
+  const v1 = browserChain({ positions: [{ tokenId: String(ROOT), holder: OWNER, key, tickLower: 300000, tickUpper: 320000, liquidity, unclaimed: [0n, 0n] }], pools: { [poolIdOf(key)]: { sqrtPriceX96: (2n ** 96n) * 4_000_000n, tick: Math.floor(Math.log(16e12) / Math.log(1.0001)) } }, tokens: { ...TOKENS, [ORB]: { symbol: 'ORB', decimals: 18 } } });
+  const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1 });
+  const { page } = s;
+  try {
+    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`);
+    await card.waitFor({ timeout: 30_000 });
+    assert.match(await card.locator('[data-v2in-exit-line="on"]').innerText(), /^Closes at 0\.01\d+ – 0\.09\d+ USDG per ORB$/, 'the line: the lower price first');
+    await card.locator('[data-exit-details] > summary').click();
+    const ends = await card.locator('[data-order-status="active"] > div').evaluateAll((rows) => rows.slice(0, 2).map((row) => [row.querySelector('dt').textContent, row.querySelector('dd').textContent, row.getAttribute('data-exit-end')]));
+    assert.deepEqual(ends.map(([label, text]) => [label, text.replace(/[\d,.]+ USDG/, '… USDG')]), [
+      ['Lower end', 'Closes if the price falls to … USDG per ORB'],
+      ['Upper end', 'Closes if the price rises to … USDG per ORB'],
+    ]);
+    assert.match(ends[0][1], /^Closes if the price falls to 0\.01\d+ USDG per ORB$/, 'the lower end is the pool\'s upper tick here');
+    assert.match(ends[1][1], /^Closes if the price rises to 0\.09\d+ USDG per ORB$/);
+    assert.deepEqual(ends.map(([, , move]) => move), ['falls', 'rises']);
+    await card.screenshot({ path: join(shots(), 'v2in-autoexit-details-inverted.png'), animations: 'disabled' });
+    assert.deepEqual(chain.sends, []);
+  } finally {
+    await s.close();
+  }
+});
 
 // Added 2026-10-06 (the owner's point 5; rugged97: "it must be automatic"): one signature, then ONE confirmation.
 test('live: Auto-exit on a plain position is ONE signature and ONE wallet_sendCalls (approve, createVault, setExitModule, registerMandate); its card then says where it closes, and "Turn off" revokes it', async () => {
@@ -1153,6 +1277,18 @@ test('live: Leave automation with Auto-exit on sends exitAll() and pauses it, in
     assert.equal(chain.nft(4, ROOT).approved, vault, 'the approval an exit needs, untouched');
     assert.equal(await leave.locator('[data-leave-follow-ups], [data-v2in-follow]').count(), 0, 'no follow-up that would cut the position from it');
     await leave.screenshot({ path: join(shots(), 'v2in-autoexit-leave-done.png'), animations: 'disabled' });
+    // Added 2026-10-06 (the final check, F2): paused at once, from exitAll's own receipt, while the index still lists it on,
+    // as the dialog just said; its way back on beside the line that says why.
+    await leave.locator('[data-v2in-close]').click();
+    await leave.waitFor({ state: 'detached' });
+    const paused = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="paused"]`);
+    await paused.waitFor({ timeout: 30_000 });
+    assert.equal(await paused.locator('[data-exit-pill]').innerText(), 'Paused');
+    assert.equal(await paused.locator('[data-v2in-exit-line="paused"]').innerText(), "Paused: your automation doesn't allow Auto-exit right now.");
+    assert.equal(await paused.locator('[data-order-module-on]').innerText(), 'Turn back on');
+    assert.equal(await paused.locator('[data-exit-off]').innerText(), 'Turn off');
+    assert.doesNotMatch(await paused.innerText(), /turned off/i, 'a pause is never said as "turned off" beside "Turn off"');
+    await paused.screenshot({ path: join(shots(), 'v2in-autoexit-left-paused.png'), animations: 'disabled' });
   } finally {
     await s.close();
   }

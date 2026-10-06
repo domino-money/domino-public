@@ -8,8 +8,10 @@
  */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 import { test } from 'node:test';
-import { build, fixture, fixtureText, lab, OWNER, runtime, VARIANTS } from './support/crosschain.mjs';
+import { pathToFileURL } from 'node:url';
+import { build, fixture, fixtureText, lab, OWNER, PACKAGE, runtime, VARIANTS } from './support/crosschain.mjs';
 
 const { presentQuote, presentOrigins, presentStatus, naming, originGasDetail, destinationChoices, roundedUnits, shortAmountText, networkName, OWN_NETWORK_NAMES, providersDown } = build('present');
 const { formatUnitsExact, amountText, tokenLabel, cleanSymbol, durationText, createTokenBook, createChainNames } = build('amounts');
@@ -199,10 +201,36 @@ test('origins: providers’ availability, chains in order, untrusted symbols, de
   // Changed on purpose 2026-10-06 (the owner: one name for one network): what the screens say, through naming().
   assert.deepEqual([42161, 10, 1, 8453, 4663, 137, 999999].map((id) => NAME.origin(id)), ['Arbitrum One', 'OP Mainnet', 'Ethereum', 'Base', 'Robinhood Chain', 'Polygon', null]);
   assert.equal(networkName(10, 'Optimism'), 'OP Mainnet');
-  assert.equal(networkName(56, 'BNB'), 'BNB');
-  assert.equal(networkName(56, null), null);
+  // Changed on purpose 2026-10-06 (the final check, F3): BNB Chain, as the wallet dialog names it, with or without a
+  // listing; a network the app does not name keeps the listing's name, and none without one.
+  assert.equal(networkName(56, 'BNB'), 'BNB Chain');
+  assert.equal(networkName(56, null), 'BNB Chain');
+  assert.equal(networkName(25, 'Cronos'), 'Cronos');
+  assert.equal(networkName(999999, null), null);
   const { CANDIDATE_ORIGINS } = require('../../.test-build/app/src/finance/v2/holdings.js');
   for (const candidate of CANDIDATE_ORIGINS) assert.equal(OWN_NETWORK_NAMES[candidate.chainId], candidate.name, `${candidate.chainId}: the name the app's other screens write`);
+});
+
+// Added 2026-10-06 (the final check, F3: the wallet dialog said "BNB Chain" over a bring card that said "BNB"): the app's
+// one table of network names (lib/networkName.ts) is the bring card's, whatever the origins listing pins.
+test('one name for one network: every network the wallet dialog names, the bring card names the same way', async () => {
+  const wallet = require('../../.test-build/app/src/lib/networkName.js');
+  const { CONSTANTS } = await import(pathToFileURL(resolve(PACKAGE, 'schema-data.mjs')).href);
+  const named = Object.keys(wallet.NETWORK_NAMES).map(Number);
+  assert.ok(named.includes(56) && named.includes(10) && named.includes(42161), 'BNB Chain, OP Mainnet and Arbitrum One among them');
+  for (const id of named) {
+    const listed = CONSTANTS.chains[String(id)]?.name ?? null;
+    assert.equal(networkName(id, listed), wallet.networkName(id), `${id}: over the listing's "${listed}"`);
+    assert.equal(networkName(id, null), wallet.networkName(id), `${id}: with no listing`);
+    assert.equal(OWN_NETWORK_NAMES[id], wallet.NETWORK_NAMES[id], `${id}: one table`);
+  }
+  // The listing pins "BNB": the bring card's list and its sentences (naming) say BNB Chain all the same.
+  assert.equal(CONSTANTS.chains['56'].name, 'BNB');
+  const list = fixture('responses/origins.json').origins;
+  const withBnb = { ...list, chains: [...list.chains, { chainId: 56, name: 'BNB', tokens: [] }] };
+  assert.equal(naming(withBnb).origin(56), 'BNB Chain');
+  assert.equal(presentOrigins(withBnb).chains.find((chain) => chain.chainId === 56).name, 'BNB Chain');
+  assert.equal(presentOrigins(withBnb).chains.find((chain) => chain.chainId === 25).name, 'Cronos', 'a network the app does not name: the listing\'s');
 });
 
 test('amounts are exact from raw strings; unknown decimals show the raw amount; symbols are cleaned or replaced', () => {

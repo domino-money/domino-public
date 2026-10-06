@@ -184,7 +184,9 @@ const autoExitWords = (dataCode: string, copy: string): string =>
 export const AUTO_EXIT_WAITING_TEXT: Readonly<Record<string, string>> = Object.freeze({
   TriggerNotReached: 'Waiting for the price to reach the end of your range',
   trigger_not_reached: 'Waiting for the price to reach the end of your range',
-  ExitModuleNotEnabled: 'Paused: Auto-exit is turned off for this position',
+  // Changed on purpose 2026-10-06 (the final check, F8): by its cause, as the card's line says it (finance/v2/autoExit.ts
+  // mandate_module_off), never "turned off" beside a "Turn off" that ends it for good.
+  ExitModuleNotEnabled: "Paused: your automation doesn't allow Auto-exit right now",
 })
 
 /**

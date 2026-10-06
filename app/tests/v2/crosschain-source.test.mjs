@@ -85,10 +85,16 @@ test('imports stay inside the module, the V2 foundation and the package’s type
       if (spec === '../chains' || spec === '../types') continue;
       if (spec === 'api-contracts/crosschain-v1/types') continue;
       if (spec === 'api-contracts/crosschain-v1/runtime.mjs' && path === 'v2/crosschain/contract.ts') continue;
+      // Changed on purpose 2026-10-06 (the final check, F3: one name for one network): the app's one table of network
+      // names, for present.ts alone; literals whose one import is the chain registry's literals (held just below).
+      if (spec === '../../lib/networkName' && path === 'v2/crosschain/present.ts') continue;
       offenders.push(`${path}: ${spec}`);
     }
   }
   assert.deepEqual(offenders, [], 'no session, wallet, finance, lib/http, lib/clock, onboarding, deposit, viem, wagmi or React');
+  const imports = (path) => specifiers(ALL.find((file) => file.path === path).code);
+  assert.deepEqual(imports('lib/networkName.ts'), ['../config/chainIdentity'], 'the names table takes only the chain registry\'s literals');
+  assert.deepEqual(imports('config/chainIdentity.ts'), [], 'which import nothing');
   // Type-only, except the runtime in contract.ts.
   const valueImports = MINE.filter(({ code }) => /^import\s+(?!type\b)[^;\n]*from\s+'api-contracts\//m.test(code)).map(({ path }) => path);
   assert.deepEqual(valueImports, ['v2/crosschain/contract.ts']);

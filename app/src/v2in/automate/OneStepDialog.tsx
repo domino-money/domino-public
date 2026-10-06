@@ -4,7 +4,7 @@ import type { ErrorLabels } from '../../v2/errors'
 import type { V2ChainId, V2Contracts } from '../../v2/types'
 import { describeError, type ErrorView } from './copy'
 import { openAutomation, type AutomationSession } from './session'
-import { useStepsRun, WalletSteps, type WalletStep } from './steps'
+import { useStepsRun, WalletSteps, type StepOutcome, type WalletStep } from './steps'
 import { ErrorLine, FlowDialog, LockedNote } from './ui'
 
 /**
@@ -16,8 +16,10 @@ import { ErrorLine, FlowDialog, LockedNote } from './ui'
  *
  * Changed on purpose 2026-10-06 (the integration review, money #4): `held` keeps the press back while the caller's own
  * condition is not met (a tick it asks for), and `onError` lets the caller say a failure itself (true: no error line).
+ * Changed on purpose 2026-10-06 (the final check, F2): `onStepDone` hears the step once it is in a block, with its
+ * receipt's events, for the caller to record what it changed.
  */
-export function OneStepDialog({ name, title, primary, children, chainId, contracts, locked, lockedCopy, context, labels, prepare, held = false, onError, onDone, onClose }: {
+export function OneStepDialog({ name, title, primary, children, chainId, contracts, locked, lockedCopy, context, labels, prepare, held = false, onError, onStepDone, onDone, onClose }: {
   name: string
   title: string
   primary: string
@@ -32,6 +34,7 @@ export function OneStepDialog({ name, title, primary, children, chainId, contrac
   prepare: (session: AutomationSession) => Promise<WalletStep> | WalletStep
   held?: boolean
   onError?: (error: ErrorView) => boolean
+  onStepDone?: (outcome: StepOutcome) => void
   onDone: () => void
   onClose: () => void
 }) {
@@ -67,7 +70,7 @@ export function OneStepDialog({ name, title, primary, children, chainId, contrac
     }
   }, [locked, chainId, contracts, context])
   const steps = useMemo(() => (step ? [step] : []), [step])
-  const run = useStepsRun({ session, steps, context, labels, onError: onError ? (view) => onError(view) : undefined, onAllDone: () => { setFinished(true); onDone() } })
+  const run = useStepsRun({ session, steps, context, labels, onStepDone, onError: onError ? (view) => onError(view) : undefined, onAllDone: () => { setFinished(true); onDone() } })
   const footer = finished ? (
     <Button type="button" variant="outline" size="lg" className="w-full" onClick={onClose} data-v2in-close="">
       Back to position

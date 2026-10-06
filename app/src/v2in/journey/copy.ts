@@ -179,12 +179,30 @@ export const JOURNEY = {
     reasonSteps: 'Your wallet will ask you to confirm each step.',
     reasonBatch: 'Your wallet asks you to confirm once: every step together, or none of them.',
     reasonBusy: 'Confirm in your wallet.',
+    /** A step that failed on a reviewed plan, said only while Create position can be pressed again (ReviewStage.tsx reasonOf). */
     reasonAgain: 'Press Create position to try again.',
+    /**
+     * Added 2026-10-06 (the final check's F5, a second look): a quote that failed before any review leaves nothing to press;
+     * the failure itself is said above, in Review's body, and Review again (review.reviewAgain), an outline button under
+     * this line, asks the quote again.
+     */
+    reasonNoQuote: 'No quote yet.',
     reasonQuote: 'Getting a quote…',
     /** A wallet short of the amount: why Create position waits (Review says what it has and needs, above). */
     reasonShort: 'Your wallet doesn’t have enough for this amount.',
     reasonTick: 'Tick the box above first.',
     reasonNoWallet: 'Connect a wallet to create this position.',
+    /**
+     * Added 2026-10-06 (the final check's F4): with no wallet, Create position's place asks for one, as today's control does
+     * (components/create/CreatePosition.tsx), opening the header's wallet dialog; reasonNoWallet is the line under it.
+     */
+    connect: 'Connect wallet',
+    /**
+     * Added 2026-10-06 (the final check's F5): the wallet's balances of the pool's two tokens could not be read, so no quote
+     * can be asked; `readAgain`, an outline button under the line, reads them again.
+     */
+    reasonUnread: 'Your balance couldn’t be read.',
+    readAgain: 'Read again',
     permitReverted: 'The transaction failed on the network, so nothing moved. The signature you gave for it can still be used until it expires: cancel it before a new quote.',
     cancelSignature: 'Cancel the signature',
     keepSignature: 'Keep it and get a new quote',

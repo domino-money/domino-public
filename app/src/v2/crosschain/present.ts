@@ -8,6 +8,7 @@
  * its exact amounts (./amounts.ts) for a title or the Details. The fee's measurement after `filled` stays exact.
  * Changed on purpose 2026-10-06 (the integration review): a fee is rounded up (`Rounding`), as the Review rounds its own.
  */
+import { NETWORK_NAMES } from '../../lib/networkName'
 import { V2_CHAINS } from '../chains'
 import { amountText, createChainNames, createTokenBook, durationText, knownDecimals, tokenLabel, unnamedChain } from './amounts'
 import { bpsPercent, CANDIDATE_COPY, CREATE_ON_DESTINATION, FEE_STATUS_WORDS, feeLines, fill, NO_ROUTE, PROVIDER_NAME, STATE_COPY } from './copy'
@@ -24,11 +25,13 @@ export interface Naming {
  * own three as their profiles write them, and Ethereum and OP Mainnet as the app's other screens write them
  * (finance/v2/holdings.ts CANDIDATE_ORIGINS). Added 2026-10-06 (the owner: one name for one network, never two on one
  * screen); every other network is named as the listing names it.
+ * Changed on purpose 2026-10-06 (the final check, F3: "BNB" here, "BNB Chain" in the wallet dialog): every network the
+ * app's one table names (lib/networkName.ts NETWORK_NAMES: literals and the chain registry's), so the two can never
+ * disagree; the listing's name only for a network that table does not name.
  */
 export const OWN_NETWORK_NAMES: Readonly<Record<number, string>> = Object.freeze({
   ...Object.fromEntries(V2_CHAINS.map((chain) => [chain.chainId, chain.name])),
-  1: 'Ethereum',
-  10: 'OP Mainnet',
+  ...NETWORK_NAMES,
 })
 
 /** A network as the page names it: its own name above, else the listing's (`listed`), else null. */

@@ -1,7 +1,8 @@
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { StepList, VISUAL_STEPS, type StepView, type VisualStep } from '../../components/create/StepList'
 import { Button, PageHeader, PageShell } from '../../components/ui'
 import { CREATE } from '../../lib/create/copy'
+import { publishFlowMade } from '../../lib/create/createProgress'
 import type { Stage } from '../../lib/create/journey'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import { useNow } from '../../lib/read/useNow'
@@ -78,6 +79,16 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
   const price = journeyPrice(state, now)
   const current = state.step
   const locked = view.busy || view.receipt !== null
+  // Changed on purpose 2026-10-06 (the final check's F1/F6, a second look): once the position exists the flow is marked
+  // made (lib/create/createProgress.ts publishFlowMade), as the owner's journey marks it, so New position's own link starts
+  // a fresh flow here too (screens/NewPosition.tsx; from the pool finder, ./NewPositionV2.tsx then opens today's journey);
+  // taken back when this goes.
+  const made = view.receipt !== null
+  useEffect(() => {
+    if (!made) return
+    publishFlowMade(true)
+    return () => publishFlowMade(false)
+  }, [made])
 
   /** Makes `updated` the state; leaving Review drops its quote. */
   const open = (updated: JourneyState) => {
@@ -156,6 +167,7 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
           onCancelSignature={run.cancelSignature}
           onKeepSignature={run.keepSignature}
           onRejected={run.forgetUnsettled}
+          onQuote={run.start}
         />
       ) : (
         <>

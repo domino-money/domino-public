@@ -128,10 +128,16 @@ function useKept(view: RunView): { reviewed: Reviewed | null; steps: readonly Ru
  * position needs, and says once, in view, what the wallet has and the two ways on (bringing the token from another
  * network only where the offer can bring it, else adding it to the wallet, as today's Review says).
  *
+ * Changed on purpose 2026-10-06 (the final check's F4: a lone dash in view on the path every new visitor takes): while no
+ * quote has figures and none is under way (no wallet, a wallet not signed in, balances not read, a quote that failed), the
+ * amounts are what the position holds as typed (`estimate`, from the owner's journey's own reading, as his Review and his
+ * amount step write them: the typed amount and the one it pairs with, or after the swap when the wallet funds the deposit
+ * from one token), "About" as the quoted figures are; the dash only when nothing can be worked out.
+ *
  * Under a `preview` gate no plan is asked (real data only: nothing stands in): the review shows what was chosen (`asked`),
  * and the wallet's steps are not drawn: the gate's sentence stands in their place, once, under Create position too.
  */
-export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, onRejected, onNewPool, onPoolRace, short = null }: {
+export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, onRejected, onNewPool, onPoolRace, short = null, estimate = null }: {
   state: JourneyState
   gate: Gate
   view: RunView
@@ -146,6 +152,11 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
    * `bring` when a deposit from another network can bring that token here now (else it is added to the wallet).
    */
   short?: { amounts: readonly [bigint, bigint]; token: Address; have: bigint; need: bigint; bring: boolean } | null
+  /**
+   * What the position holds of each token as typed, in pool order (no quote needed; after the swap when the wallet funds it
+   * from one token), for the headline until a quote has figures.
+   */
+  estimate?: readonly [bigint, bigint] | null
 }) {
   const kept = useKept(view)
   const pool = state.pool
@@ -193,9 +204,10 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
   const intent = figures?.reply.plan.plan.intent ?? null
   const next = kept.steps.findIndex((step) => step.status === 'waiting')
   // What the position holds (the plan's estimate), or while the wallet is short what it needs: each token it takes, never
-  // "0" of the other (today's Review's rule for a range beside the price).
+  // "0" of the other (today's Review's rule for a range beside the price). With no quote's figures and none under way, what
+  // it holds as typed (`estimate`); while a first quote is under way, the resting bubble below.
   const currencies = [pool.pool.currency0, pool.pool.currency1] as const
-  const held = facts?.expected.amounts ?? short?.amounts ?? null
+  const held = facts?.expected.amounts ?? short?.amounts ?? (quoting ? null : estimate)
   const sides = held === null ? [] : held[0] > 0n || held[1] > 0n ? ([0, 1] as const).filter((i) => held[i] > 0n) : ([0, 1] as const)
   const heldText = (write: (token: Address, raw: bigint) => string) => (held === null ? '' : sides.map((i) => write(currencies[i], held[i])).join(' + '))
 
@@ -457,25 +469,49 @@ function Fact({ label, data, children, attrs }: { label: ReactNode; data: string
  * a quote is asked it is the one place that says so (Changed on purpose 2026-10-06, the owner's point 4: once, not three
  * times), "Getting a fresh quote…" when the same choices are quoted again, whatever the reason (a price that moved, a
  * quote that ran out, a cancelled signature).
+ *
+ * Changed on purpose 2026-10-06 (the final check's F5): with nothing reviewed and no quote under way, never "Your wallet
+ * will ask you to confirm each step." under a button that cannot be pressed: why nothing is quoted yet (`waiting`, the
+ * owner's journey's reason: his wallet's balances still being read, say), else that a quote is asked next.
+ *
+ * Changed on purpose 2026-10-06 (the final check's F5, a second look): it never asks for a press of a Create position that
+ * cannot be pressed (`ready`). A quote that failed before any review says there is no quote yet (Review again under it
+ * asks one, FinalControl); "Press Create position to try again." only for a step that failed on a reviewed plan, where
+ * Create position can be pressed again. A step the wallet may have sent, or a signature to cancel first, adds nothing
+ * here: the line under it says what happened and the way on.
  */
-function reasonOf(gate: Gate, view: RunView, blockedForPrice: boolean, connected: boolean): string {
+function reasonOf(gate: Gate, view: RunView, blockedForPrice: boolean, connected: boolean, waiting: string | null, ready: boolean): string {
   if (gate.mode === 'preview') return gate.lockedCopy
   if (!connected) return JOURNEY.final.reasonNoWallet
   if (view.stage === 'quoting') return view.requoting ? JOURNEY.review.requoting : JOURNEY.final.reasonQuote
   if (view.busy) return JOURNEY.final.reasonBusy
   if (blockedForPrice) return JOURNEY.final.reasonTick
-  if (view.error) return JOURNEY.final.reasonAgain
-  if (view.reviewed?.path === 'batch') return JOURNEY.final.reasonBatch
+  if (view.reviewed === null) return waiting ?? (view.error ? JOURNEY.final.reasonNoQuote : JOURNEY.final.reasonQuote)
+  if (view.error) return ready ? JOURNEY.final.reasonAgain : ''
+  if (view.reviewed.path === 'batch') return JOURNEY.final.reasonBatch
   return JOURNEY.final.reasonSteps
 }
+
+/**
+ * A failure whose own way on is drawn with it (Added 2026-10-06, the final check's F5, a second look): a pool to give a
+ * starting price, a pool someone priced first (Review's body), "I rejected it in my wallet" (its ErrorLine). Review again
+ * is not offered beside these.
+ */
+const ownWayOn = (error: RunView['error']): boolean =>
+  error !== null && (error.recovery === 'offer-new-pool' || error.recovery === 'pool-race' || error.code === 'zap_action_unsettled')
 
 /**
  * Review's last control on Domino's new contracts, in today's place and look (components/create/StageReview.tsx
  * FinalControl): Create position, which runs the wallet's steps in order; the line under it; a failure said with its way
  * out ("I rejected it in my wallet", cancelling a public signature first); once the position exists, the created view with
  * its receipt. Under a `preview` gate the button stays disabled and the gate's sentence is its line.
+ *
+ * Changed on purpose 2026-10-06 (the final check's F5, a second look): a quote that failed before any review left a
+ * disabled Create position under "Press Create position to try again." and nothing on Review asked the quote again (only
+ * Back then Continue did). Its line now says there is no quote yet, and an outline Review again under it asks one
+ * (`onQuote`, the run's start()), unless the failure brings its own way on (ownWayOn).
  */
-export function FinalControl({ gate, view, blockedForPrice, connected, onRun, onCancelSignature, onKeepSignature, onRejected }: {
+export function FinalControl({ gate, view, blockedForPrice, connected, onRun, onCancelSignature, onKeepSignature, onRejected, onQuote, waiting = null }: {
   gate: Gate
   view: RunView
   blockedForPrice: boolean
@@ -484,6 +520,10 @@ export function FinalControl({ gate, view, blockedForPrice, connected, onRun, on
   onCancelSignature: () => void
   onKeepSignature: () => void
   onRejected: () => void
+  /** Asks the quote again for the same choices (the run's start()); absent where none can be asked now. */
+  onQuote?: () => void
+  /** Why no quote is under way while nothing is reviewed (the line under the button then); null: one is asked next. */
+  waiting?: string | null
 }) {
   const done = view.receipt !== null
   // Not while the current step is still being checked (2026-10-06: the review now also reads the later approvals' fees,
@@ -491,6 +531,8 @@ export function FinalControl({ gate, view, blockedForPrice, connected, onRun, on
   const ready = gate.mode === 'live' && view.stage === 'reviewed' && view.reviewed !== null && view.steps.length > 0 && !view.busy && !blockedForPrice && !done && !view.cancel
     && view.steps[view.current]?.status !== 'preparing'
     && view.steps.some((step) => step.status === 'ready' || step.status === 'waiting') && !view.steps.some((step) => step.status === 'unknown' || (step.status === 'sent' && view.error !== null))
+  // The quote failed before any review: nothing to press, so a new quote is the way on.
+  const again = onQuote !== undefined && gate.mode === 'live' && view.stage === 'failed' && view.reviewed === null && !view.busy && !ownWayOn(view.error)
   return (
     <>
       <Button
@@ -508,8 +550,13 @@ export function FinalControl({ gate, view, blockedForPrice, connected, onRun, on
       </Button>
       {!done && (
         <p id="create-reason" className="dm-flow-reason" data-align="start" data-zap-reason={gate.mode} data-zap-quoting={view.stage === 'quoting' ? '' : undefined} aria-live="polite">
-          {reasonOf(gate, view, blockedForPrice, connected)}
+          {reasonOf(gate, view, blockedForPrice, connected, waiting, ready)}
         </p>
+      )}
+      {again && (
+        <Button type="button" variant="outline" size="md" className="w-full col-span-full" onClick={onQuote} data-create-review-again="">
+          {JOURNEY.review.reviewAgain}
+        </Button>
       )}
       {view.steps.length > 0 && view.error && <ErrorLine error={view.error} onRejected={onRejected} busy={view.busy} />}
       {view.cancel && (

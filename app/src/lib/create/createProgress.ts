@@ -117,3 +117,32 @@ function subscribeCreated(listener: () => void): () => void {
 export function useCreated(): string | null {
   return useSyncExternalStore(subscribeCreated, () => created, () => null)
 }
+
+/*
+ * Added 2026-10-06 (the final check's F1/F6, a second look): whether the flow open now made its position on Domino V2, on
+ * any network (src/v2in/journey/JourneyCreateV2.tsx; the zap path's ZapJourney.tsx too): Review's Back rests on it
+ * (components/create/Journey.tsx), and New position's own link then starts a fresh flow (screens/NewPosition.tsx), as
+ * `created` above does for Robinhood Chain. Set by the control that made it, false again when that control goes. Never
+ * a list's marker: `created` and madeHere stay Robinhood Chain's (Base's and Arbitrum One's positions are not theirs).
+ */
+let flowMade = false
+const flowMadeListeners = new Set<() => void>()
+
+/** Whether the flow open now made its position (true), or no longer shows it (false). */
+export function publishFlowMade(made: boolean) {
+  if (made === flowMade) return
+  flowMade = made
+  for (const listener of flowMadeListeners) listener()
+}
+
+function subscribeFlowMade(listener: () => void): () => void {
+  flowMadeListeners.add(listener)
+  return () => {
+    flowMadeListeners.delete(listener)
+  }
+}
+
+/** Whether the flow open now made its position on Domino V2, live. */
+export function useFlowMade(): boolean {
+  return useSyncExternalStore(subscribeFlowMade, () => flowMade, () => false)
+}

@@ -6,13 +6,13 @@ import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { decodeFunctionData, parseAbi } from 'viem';
 import { closeBrowser } from '../support/close-browser.mjs';
-import { openJourney } from '../support/journey-browser.mjs';
+import { openJourney, WALLET_NAME } from '../support/journey-browser.mjs';
 import { planAnswer, v4Path, ZERO } from '../support/s1-plans.mjs';
 import { launchBrowser } from '../support/s1-browser.mjs';
 import { WALLET_V2_DIST } from '../support/wallet-dist.mjs';
 import { contractsFor, createV2Chain, poolIdOf } from '../support/v2-chain.mjs';
 import { footerButton, press, pressContinue } from '../support/new-position.mjs';
-import { createReadStub, FIXTURE_POOL, FIXTURE_TOKEN } from '../support/read-stub.mjs';
+import { createReadStub, FIXTURE_POOL, FIXTURE_TOKEN, gatewayError } from '../support/read-stub.mjs';
 import { createChainReads } from '../support/chain-reads.mjs';
 import { activityOf, indexedToken, livePosition, portfolioOf } from '../support/s1-read6.mjs';
 
@@ -39,6 +39,10 @@ const watchEmpty = (page) => page.evaluate(() => {
   window.__positionEmpty = false;
   new MutationObserver(() => { if (document.querySelector('[data-empty="position-v2"]')) window.__positionEmpty = true; }).observe(document.body, { childList: true, subtree: true });
 });
+/** His footer's Back, drawn first in it (components/create/Journey.tsx): shown, or resting (`hidden`). */
+const backOf = (page) => page.locator('[data-journey-footer] > button').first();
+/** His Review footer's box: Create position's place is its whole width (styles/flow.css). */
+const footerBox = (page) => page.locator('[data-stage-card="review"] [data-journey-footer]').boundingBox();
 /**
  * The crosschain route's capabilities, live (src/v2/gate.ts s2Gate: S2's word is that route's own, which a suite's server
  * answers): Amount's bring-funds offer is open. Nothing else of that route is answered.
@@ -264,6 +268,13 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
     assert.equal(createTx.data, answers[0].plan.call.data, 'the call data the plan carried, checked and sent as reviewed');
     assert.deepEqual(chain.offChain.filter((m) => m !== 'wallet_getCapabilities'), [], 'nothing of Robinhood Chain asked while the wallet was elsewhere');
     await page.screenshot({ path: join(shots(), 'journey-robinhood-live-created.png'), fullPage: true });
+    // Added 2026-10-06 (the final check's F1/F6, a second look): the zap path's success marks the flow made, as his journey's
+    // does: the footer's New position (the hash already open) starts a fresh flow at step 1 instead of doing nothing.
+    await page.locator('footer').getByRole('link', { name: 'New position', exact: true }).click();
+    await created.waitFor({ state: 'detached', timeout: 10_000 });
+    await zap.locator('li[data-step="pool"][data-state="current"]').waitFor({ timeout: 10_000 });
+    assert.equal(await page.locator('[data-created-position], li[data-step-done]').count(), 0, 'no success, no step done');
+    assert.equal(chain.sends.length, 2, 'nothing more was sent');
   } finally { await s.close(); }
 });
 
@@ -350,6 +361,14 @@ test('(d) the owner’s journey on V2: his steps, his preview and balances, the 
     assert.ok(createTx, 'the create went to the zap');
     assert.equal(createTx.data, answers.at(-1).plan.call.data, 'the call data the plan carried');
     assert.equal(await page.locator('a[href^="#/sequence/compound/"]').count() >= 1, true, 'his created view, with what comes next');
+    // Added 2026-10-06 (the final check's F1/F6): Back rests under his created view. A done step reopened leaves it (a second
+    // position from the same choices), and Back is there again, as with today's Create position: it stayed hidden there,
+    // and in every flow after it, for the rest of the visit.
+    assert.equal(await backOf(page).isHidden(), true, 'Back rests once the position exists');
+    await press(page.locator('li[data-step="amount"] button.dm-flow-row'));
+    await current('amount').waitFor();
+    assert.equal(await backOf(page).isVisible(), true, 'Back again on the step reopened');
+    assert.equal(await page.locator('[data-created-position]').count(), 0);
   } finally { await s.close(); }
 });
 
@@ -559,6 +578,8 @@ test('(e) his journey on Base: Base\'s USDC in his search with its tag, the wall
     // The created view is the zap path's (its receipt, its link on Base), never today's Robinhood Chain lists.
     assert.match(await page.locator('a[data-created-next="position"]').getAttribute('href'), /^#\/positions\/base-v4-\d+$/);
     assert.equal(await page.locator('a[href^="#/sequence/compound/"]').count(), 0);
+    // Added 2026-10-06 (the final check's F1/F6): Back rests under it, as on Robinhood Chain (test (t) follows it further).
+    assert.equal(await backOf(page).isHidden(), true, 'Back rests once the position exists');
     // Added 2026-10-06 (the review of point 5): Auto-exit offered there too, on Base (a range around the price: not
     // "Recommended"); test (e2) follows its link.
     const exit = page.locator('a[data-created-next="autoexit"]');
@@ -744,6 +765,8 @@ test('(f) his journey on Arbitrum One: both networks in his search, each with it
     // Two tokens to pull: the client takes one Permit2 signature for both (createWithPermit), else the direct create.
     assert.ok(['0x0e97b041', '0xec627dfe'].includes(txs.at(-1).data.slice(0, 10)), 'create, or create with its Permit2 signature');
     assert.match(await page.locator('a[data-created-next="position"]').getAttribute('href'), /^#\/positions\/arbitrum-v3-\d+$/);
+    // Added 2026-10-06 (the final check's F1/F6): Back rests under it, as on Robinhood Chain.
+    assert.equal(await backOf(page).isHidden(), true, 'Back rests once the position exists');
     // Changed on purpose 2026-10-06 (the review, money #3, a second look): the receipt's "Paid in", right under that review,
     // is the very figure its "You put in" says (both rounded up), never a second figure for one amount.
     const paid = await page.locator('[data-created-position] [data-fact="receipt-paid-in"] dd').allInnerTexts();
@@ -1184,6 +1207,412 @@ test('(q) a wallet that batches: one step, the network fee up to the batch’s c
     await reviewed.locator('[data-review-network-fee="upTo"]').waitFor({ timeout: 30_000 });
     assert.equal(await page.locator('[data-review-stale]').count(), 0, 'the new review replaced it');
     assert.deepEqual([chain.sends.length, chain.batches.length], [0, 0], 'nothing was sent: the quote ran out first');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the final check's F1/F6): on Base and Arbitrum One his Back stayed shown and enabled under the success;
+// pressing it threw away the receipt, View position and Auto-exit's offer, and Continue quoted the same choices again. It
+// now rests there as on Robinhood Chain, and the success stays when the wallet disconnects (nothing drawn before a quote
+// takes its place). A done step reopened still leaves the success (a second position from the same choices, by design),
+// and Back is there again.
+test('(t) his journey on Base: once the position exists Back rests under its success, as on Robinhood Chain; a disconnect keeps the success; a done step reopened brings Back again', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner([]),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
+    await page.locator(`[data-token-network-option="8453:${USDC_BASE}"]`).click({ timeout: 30_000 });
+    await page.locator('[data-picker="pool"][data-picker-network="8453"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.locator('[data-chosen-pool]').waitFor();
+    const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+    await pressContinue(current('pool'));
+    await current('range').waitFor();
+    await pressContinue(current('range'));
+    await current('amount').waitFor();
+    await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    await page.locator('li[data-step="amount"][aria-current="step"] [data-pair-side="1"] input[inputmode="decimal"]').fill('1000');
+    await pressContinue(current('amount'));
+    await page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]').waitFor({ timeout: 30_000 });
+    assert.equal(await backOf(page).isVisible(), true, 'Back, before Create position');
+    await page.locator('[data-create-position="live"]:not([disabled])').click({ timeout: 30_000 });
+    const success = page.locator('[data-created-position][data-zap-receipt]');
+    await success.waitFor({ timeout: 60_000 });
+    await success.locator('a[data-created-next="autoexit"]').waitFor({ timeout: 30_000 });
+    assert.equal(await backOf(page).textContent(), 'Back');
+    assert.equal(await backOf(page).isHidden(), true, 'Back rests once the position exists');
+    await page.locator('[data-stage-card="review"] [data-journey-footer]').screenshot({ path: join(shots(), 'journey-base-created-back-rests.png'), animations: 'disabled' });
+    // The wallet disconnected: the success stays, never Connect wallet in its place.
+    await page.locator('header [aria-haspopup="dialog"]').click();
+    await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Disconnect wallet', exact: true }).click();
+    await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await page.keyboard.press('Escape');
+    assert.equal(await success.isVisible(), true, 'the success stays');
+    assert.equal(await success.locator('a[data-created-next="position"]').count(), 1);
+    assert.equal(await page.locator('[data-create-position="connect"]').count(), 0, 'never Connect wallet in its place');
+    assert.equal(await backOf(page).isHidden(), true);
+    // A done step reopened leaves the success, as on Robinhood Chain: Back is there again.
+    await press(page.locator('li[data-step="amount"] button.dm-flow-row'));
+    await current('amount').waitFor();
+    assert.equal(await backOf(page).isVisible(), true, 'Back again on the step reopened');
+    assert.equal(await page.locator('[data-created-position]').count(), 0);
+    assert.equal(chain.sends.length, 2, 'the approval and the create, once');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the final check's F1/F6): on Robinhood Chain Back rested only once the receipt named the new position,
+// so a receipt that can't be read exactly left Back shown under the success.
+test('(t2) his journey on Robinhood Chain: a receipt that can’t be read exactly still rests Back under the success', async () => {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  // The create's receipt without its events: included, but nothing in it names the new position.
+  const intercept = async (method, params) => {
+    if (method !== 'eth_getTransactionReceipt') return undefined;
+    const reply = await chain.request(method, params);
+    return reply?.result?.to?.toLowerCase() === ZAP_V4 ? { result: { ...reply.result, logs: [] } } : undefined;
+  };
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]), intercept,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await toReview(page);
+    await page.locator('[data-create-position="live"]:not([disabled])').click({ timeout: 30_000 });
+    const success = page.locator('[data-created-position][data-zap-receipt]');
+    await success.locator('[data-fact="receipt-unreadable"]').waitFor({ timeout: 60_000 });
+    assert.equal(await success.getAttribute('data-created-position'), '', 'the receipt names no position');
+    assert.equal(await backOf(page).isHidden(), true, 'Back rests once the position exists, its receipt read or not');
+    assert.equal(chain.sends.length, 2);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the final check's F4): with no wallet, his Review showed a lone dash where the amounts go, and nothing
+// to connect with under a disabled Create position. It shows what the position takes as typed ("About", as the quoted
+// figures are), and Create position's place is Connect wallet, which opens the wallet dialog, as his own control offers.
+test('(u) no wallet: his Review shows the amounts as typed, never a lone dash; Connect wallet opens the wallet dialog, and once connected the plan is asked', async () => {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  // No wallet until the person connects one: the wallet names no account before it is asked for one.
+  let asked = false;
+  const intercept = (method) => {
+    if (method === 'eth_requestAccounts' || method === 'wallet_requestPermissions') asked = true;
+    return method === 'eth_accounts' && !asked ? { result: [] } : undefined;
+  };
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]), connect: false, intercept,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await page.getByRole('combobox', { name: 'Search a token' }).fill(USDG_RH);
+    await page.locator(`[data-token-option="${USDG_RH}"]`).click();
+    await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.locator('[data-chosen-pool]').waitFor();
+    const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+    await pressContinue(current('pool'));
+    await current('range').waitFor();
+    await pressContinue(current('range'));
+    await current('amount').waitFor();
+    await page.locator('li[data-step="amount"] [data-pair-balance="disconnected"]').waitFor({ timeout: 30_000 });
+    await page.locator('li[data-step="amount"][aria-current="step"] [data-pair-side="1"] input[inputmode="decimal"]').fill('1000');
+    await pressContinue(current('amount'));
+    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"]');
+    await review.waitFor({ timeout: 30_000 });
+    assert.equal(await review.getAttribute('data-zap-review-stage'), 'idle', 'no quote without a wallet');
+    assert.match(await review.locator('[data-review-amounts]').innerText(), /^About [\d.,]+ ETH \+ 1,000 USDG$/, 'the amounts as typed, never a lone dash');
+    const connect = page.locator('[data-journey-footer] [data-create-position="connect"]');
+    assert.equal(await connect.innerText(), 'Connect wallet');
+    assert.equal(await connect.isDisabled(), false);
+    assert.equal(Math.round((await connect.boundingBox()).width), Math.round((await footerBox(page)).width), 'in Create position’s place');
+    assert.equal(await page.locator('#create-reason').innerText(), 'Connect a wallet to create this position.');
+    assert.equal(await page.getByText('Your wallet will ask you to confirm each step.').count(), 0);
+    await page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'journey-owner-no-wallet.png'), animations: 'disabled' });
+    assert.equal(s.planned.length, 0);
+    await press(connect);
+    const dialog = page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+    await dialog.getByRole('button', { name: `Connect ${WALLET_NAME}`, exact: true }).click();
+    await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await page.keyboard.press('Escape');
+    // Connected (the suite's planner asks no session): his balances read, the plan asked, Create position offered.
+    await page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]').waitFor({ timeout: 30_000 });
+    await page.locator('[data-create-position="live"]:not([disabled])').waitFor({ timeout: 30_000 });
+    assert.equal(s.planned.length, 1);
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the final check's F4): a wallet connected but not signed in asks no quote (the plan is the signed-in
+// wallet's, as on the site: no planner stands in here); his Review showed a lone dash until a quote came after sign-in.
+test('(u2) a wallet not signed in: his Review shows the amounts as typed under Sign in, and no plan is asked', async () => {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: null,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await toReview(page);
+    const signIn = page.locator('[data-journey-footer] [data-create-signin]');
+    await signIn.waitFor({ timeout: 30_000 });
+    assert.equal(await signIn.innerText(), 'Sign in');
+    // In Create position's place: the footer's whole width, never a small button beside Back.
+    assert.equal(Math.round((await signIn.boundingBox()).width), Math.round((await footerBox(page)).width), 'Sign in takes Create position’s place');
+    assert.equal(await page.locator('#create-reason').innerText(), 'Sign in with your wallet to get the quote. Signing in moves nothing.');
+    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"]');
+    assert.equal(await review.getAttribute('data-zap-review-stage'), 'idle', 'no quote while signed out');
+    assert.match(await review.locator('[data-review-amounts]').innerText(), /^About [\d.,]+ ETH \+ 1,000 USDG$/, 'the amounts as typed, never a lone dash');
+    await page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'journey-owner-signed-out.png'), animations: 'disabled' });
+    assert.equal(s.planned.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the final check's F5): when the wallet's balances of the pool's two tokens could not be read, his Review
+// sat on a disabled Create position under "Your wallet will ask you to confirm each step.", and nothing read them again. It
+// says so in one line and offers Read again; while they are read, it says that, never that the wallet will ask.
+test('(v) balances that could not be read: one line and Read again, which reads them again; then the plan', async () => {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  // The wallet's read fails until the test lets it answer; from then on each answer is held until let go.
+  let failing = true;
+  const held = [];
+  const read = createReadStub({
+    answer: (route, body) => {
+      if (route !== 'wallet-assets') return robinhoodRead(route, body);
+      if (failing) return gatewayError('upstream_unavailable', 503);
+      return new Promise((done) => held.push(() => done(robinhoodRead(route, body))));
+    },
+  });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await toReview(page);
+    const reason = page.locator('#create-reason[data-zap-reason="unread"]');
+    await reason.waitFor({ timeout: 30_000 });
+    assert.equal(await reason.innerText(), 'Your balance couldn’t be read.');
+    assert.equal(await page.locator('[data-create-position="unread"]').isDisabled(), true);
+    const again = page.locator('[data-journey-footer] [data-create-read-again]');
+    assert.equal(await again.innerText(), 'Read again');
+    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"]');
+    assert.match(await review.locator('[data-review-amounts]').innerText(), /^About [\d.,]+ ETH \+ 1,000 USDG$/, 'the amounts as typed');
+    assert.equal(await page.getByText('Your wallet will ask you to confirm each step.').count(), 0);
+    await page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'journey-owner-balances-unread.png'), animations: 'disabled' });
+    assert.equal(s.planned.length, 0, 'no plan without the balances');
+    // Read again: the balances asked once more; while that read is under way the line says so.
+    failing = false;
+    await press(again);
+    await until(() => held.length > 0, 'the balances read again');
+    await page.locator('#create-reason').filter({ hasText: 'Checking your balance…' }).waitFor({ timeout: 10_000 });
+    assert.equal(await again.count(), 0, 'no Read again while it reads');
+    assert.equal(await page.getByText('Your wallet will ask you to confirm each step.').count(), 0, 'never while nothing is reviewed');
+    while (held.length > 0) held.shift()();
+    await page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]').waitFor({ timeout: 30_000 });
+    await page.locator('[data-create-position="live"]:not([disabled])').waitFor({ timeout: 30_000 });
+    assert.equal(s.planned.length, 1, 'the plan, once the balances are read');
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the final check's F1/F6, a second look): on Base and Arbitrum One the flow rests on its success, and New
+// position's own link (the menu's or the footer's: the very hash already open) did nothing there, where on Robinhood Chain
+// it starts a fresh flow; only reopening a done row or leaving the page went on. It now starts one on every network.
+test('(t3) his journey on Base: once the position exists, New position from the menu starts a fresh flow at step 1, as on Robinhood Chain', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner([]),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
+    await page.locator(`[data-token-network-option="8453:${USDC_BASE}"]`).click({ timeout: 30_000 });
+    await page.locator('[data-picker="pool"][data-picker-network="8453"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.locator('[data-chosen-pool]').waitFor();
+    const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+    await pressContinue(current('pool'));
+    await current('range').waitFor();
+    await pressContinue(current('range'));
+    await current('amount').waitFor();
+    await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    await page.locator('li[data-step="amount"][aria-current="step"] [data-pair-side="1"] input[inputmode="decimal"]').fill('1000');
+    await pressContinue(current('amount'));
+    await page.locator('[data-create-position="live"]:not([disabled])').click({ timeout: 30_000 });
+    const success = page.locator('[data-created-position][data-zap-receipt]');
+    await success.waitFor({ timeout: 60_000 });
+    assert.equal(await backOf(page).isHidden(), true, 'the flow rests on its success');
+    assert.equal(await page.evaluate(() => location.hash), '#/new');
+    // The menu's New position is the hash already open: it starts again at the first step, with nothing chosen.
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.locator('#site-menu [role="menuitem"]', { hasText: 'New position' }).click();
+    await success.waitFor({ state: 'detached', timeout: 10_000 });
+    await page.locator('li[data-step="pool"][data-state="current"]').waitFor({ timeout: 10_000 });
+    assert.equal(await page.evaluate(() => location.hash), '#/new', 'the same page');
+    assert.equal(await page.locator('li[data-step-done], [data-create-position], [data-created-position]').count(), 0, 'no step done, no Create position, no success');
+    assert.equal(await page.locator('[data-chosen-pool]').count(), 0, 'nothing chosen');
+    assert.equal(chain.sends.length, 2, 'the approval and the create, once: nothing more was sent');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the final check's F4, a second look): before a quote has figures, his Review wrote the typed amount and
+// its whole paired amount even when the wallet funds the deposit from one token (a USDG-only wallet holds ETH for gas
+// alone): about twice the position, under his amount step's row, which writes the amounts after the swap. Both now say the
+// same, as his own Review does.
+test('(x) a wallet that funds the deposit from one token, not signed in: his Review writes the amounts after the swap, exactly as his amount step\'s row', async () => {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), eth: 2_000_000_000_000_000n, balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  // The wallet's balances as the read service reports them: 0.002 ETH, for gas, and 5,000 USDG.
+  const usdgOnly = (route, body) => {
+    const text = robinhoodRead(route, body);
+    if (route !== 'wallet-assets') return text;
+    const answer = JSON.parse(text);
+    for (const item of answer.items) item.amountRaw = item.address === ZERO ? '2000000000000000' : '5000000000';
+    return JSON.stringify(answer);
+  };
+  const read = createReadStub({ answer: usdgOnly });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: null,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await toReview(page);
+    await page.locator('[data-journey-footer] [data-create-signin]').waitFor({ timeout: 30_000 });
+    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"]');
+    assert.equal(await review.getAttribute('data-zap-review-stage'), 'idle', 'no quote while signed out');
+    const amounts = review.locator('[data-review-amounts]');
+    const shown = await amounts.innerText();
+    assert.match(shown, /^About [\d.,]+ ETH \+ [\d.,]+ USDG$/);
+    assert.doesNotMatch(shown, /\b1,000 USDG/, 'never the 1,000 USDG typed: part of it is swapped for the ETH');
+    // Every digit of each side, as his amount step's row holds them (each figure's title, where it cut digits).
+    const headline = (await amounts.getAttribute('title')).split(' + ').map((side) => side.split(' ')[0]);
+    const row = page.locator('li[data-step="amount"] .dm-flow-row-summary');
+    assert.match(await row.innerText(), /^About [\d.,]+ ETH \+ [\d.,]+ USDG$/, 'his row: the amounts after the swap');
+    const figures = await row.evaluate((node) => [...node.querySelectorAll(':scope > span')].map((span) => span.title || span.textContent));
+    assert.deepEqual(headline, figures, 'Review’s headline is his amount step’s row');
+    assert.ok(Number(headline[1].replaceAll(',', '')) < 1000, 'less USDG than typed');
+    await page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'journey-owner-signed-out-swap.png'), animations: 'disabled' });
+    assert.equal(s.planned.length, 0);
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the final check's F5, a second look): a quote that failed before any review (here the wallet declined
+// the switch to Base) left a disabled Create position under "Press Create position to try again.", and nothing on Review
+// asked the quote again: only Back then Continue did. The line now says there is no quote yet, and Review again asks one.
+// The headline meanwhile writes the amounts as his amount step's row does (the wallet funds the deposit from USDC alone).
+test('(w) a quote that failed before any review: never "Press Create position" under a disabled button; Review again asks the quote again', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
+  chain.switchTo(4663);
+  const reads = createChainReads({
+    chainId: 8453,
+    tokens: [{ address: ZERO, symbol: 'ETH', name: 'Ether', decimals: 18, sources: ['profile'] }, { address: USDC_BASE, symbol: 'USDC', name: 'USD Coin', decimals: 6, sources: ['profile', 'uniswap_default_list'] }],
+    pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }],
+    balances: { [USDC_BASE]: 5_000_000_000n },
+  });
+  const read = createReadStub({ answer: robinhoodRead });
+  // The wallet declines the first switch to Base (the quote's), then switches.
+  let declined = 0;
+  const intercept = (method) => {
+    if (method !== 'wallet_switchEthereumChain' || declined > 0) return undefined;
+    declined += 1;
+    return { error: { code: 4001, message: 'User rejected the request.' } };
+  };
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner([]), intercept,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true, chainReads: reads,
+  });
+  try {
+    const page = s.page;
+    /** Whether his footer's line asks for a press of a Create position that cannot be pressed. */
+    const asksDisabledPress = async () => /Press Create position/.test(await page.locator('#create-reason').innerText()) && (await page.locator('[data-journey-footer] [data-create-position]').isDisabled());
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('coin');
+    await page.locator(`[data-token-network-option="8453:${USDC_BASE}"]`).click({ timeout: 30_000 });
+    await page.locator('[data-picker="pool"][data-picker-network="8453"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.locator('[data-chosen-pool]').waitFor();
+    const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+    await pressContinue(current('pool'));
+    await current('range').waitFor();
+    await pressContinue(current('range'));
+    await current('amount').waitFor();
+    await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    await page.locator('li[data-step="amount"][aria-current="step"] [data-pair-side="1"] input[inputmode="decimal"]').fill('1000');
+    await pressContinue(current('amount'));
+    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"]');
+    await page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="failed"]').waitFor({ timeout: 30_000 });
+    assert.equal(declined, 1, 'the switch to Base declined');
+    assert.equal(await review.locator('[role="alert"][data-error-code="user_rejected"]').innerText(), 'Your wallet declined the network switch.', 'said once, in Review’s body');
+    const create = page.locator('[data-journey-footer] [data-create-position]');
+    assert.equal(await create.isDisabled(), true, 'nothing to press without a quote');
+    assert.equal(await page.locator('#create-reason').innerText(), 'No quote yet.');
+    assert.equal(await asksDisabledPress(), false, 'never "Press Create position" under a disabled button');
+    // The amounts the position would hold, as his amount step's row has them (the deposit from USDC alone, part swapped).
+    const headline = (await review.locator('[data-review-amounts]').getAttribute('title')).split(' + ').map((side) => side.split(' ')[0]);
+    const row = page.locator('li[data-step="amount"] .dm-flow-row-summary');
+    assert.deepEqual(headline, await row.evaluate((node) => [...node.querySelectorAll(':scope > span')].map((span) => span.title || span.textContent)), 'Review’s headline is his amount step’s row');
+    const again = page.locator('[data-journey-footer] [data-create-review-again]');
+    assert.equal(await again.innerText(), 'Review again');
+    assert.equal(Math.round((await again.boundingBox()).width), Math.round((await footerBox(page)).width), 'the footer’s whole width, under the line');
+    await page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'journey-base-quote-failed.png'), animations: 'disabled' });
+    assert.equal(s.planned.length, 0, 'no plan asked: the wallet stayed on Robinhood Chain');
+    // Review again: the same choices quoted again; the wallet switches this time, and Create position can be pressed.
+    await press(again);
+    await page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]').waitFor({ timeout: 30_000 });
+    await page.locator('[data-create-position="live"]:not([disabled])').waitFor({ timeout: 30_000 });
+    assert.equal(await again.count(), 0, 'gone with the failure');
+    assert.equal(await review.locator('[role="alert"]').count(), 0, 'the failure is gone');
+    assert.equal(await asksDisabledPress(), false);
+    assert.equal(chain.chainNow(), 8453, 'the wallet on Base for the review');
+    assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 1, 'the switch the wallet took');
+    assert.deepEqual([s.planned.length, s.planned[0].chainId], [1, 8453]);
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the final check's F5, a second look): a step the wallet sent whose outcome this page can't read is
+// locked (never offered again from this review: rev2 review F2), so Create position can't be pressed, and the line under it
+// said "Press Create position to try again.". It adds nothing there now: the line under it says what happened and the way on.
+test('(w2) a step sent whose receipt can’t be read: Create position stays locked, and the line never asks for a press of it', async () => {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  // The approval's receipt comes back in a form nothing can read.
+  const intercept = (method) => (method === 'eth_getTransactionReceipt' && chain.sends.length === 1 ? { result: {} } : undefined);
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]), intercept,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await toReview(page);
+    const reviewed = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]');
+    await reviewed.locator('[data-wallet-step="approve"][data-step-status="ready"]').waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('#create-reason').innerText(), 'Your wallet will ask you to confirm each step.');
+    await page.locator('[data-create-position="live"]:not([disabled])').click();
+    const said = page.locator('[data-journey-footer] [role="alert"]');
+    await said.waitFor({ timeout: 30_000 });
+    assert.equal(await said.innerText(), 'Sent to your wallet. Check your wallet’s activity to see how it went: nothing more is sent from here.');
+    assert.equal(await page.locator('[data-journey-footer] [data-create-position]').isDisabled(), true, 'never offered again from this review');
+    assert.equal(await page.locator('#create-reason').innerText(), '', 'never "Press Create position to try again." under it');
+    assert.equal(await page.locator('[data-create-review-again]').count(), 0, 'nothing to quote again: the step may run');
+    assert.equal(chain.sends.length, 1, 'the approval alone');
   } finally { await s.close(); }
 });
 
