@@ -12,6 +12,12 @@ from pool_activity import (TOPICS, active_liquidity, activity_range_limit,
 # The read's window is 24 h; on this chain a block is one second, so the window
 # is that many blocks of a chunk. Only events inside it need a provider header.
 RETENTION_BLOCKS = 86_400
+# Events one activity chunk may hold: the most the fee, position and capital
+# ledgers replay per chunk (`LIMIT 2001` there; docs/HISTORICAL_CAPACITY.md).
+# MAX_CHUNK_EVENTS (20,000) bounds a log response, not a chunk: a chunk over
+# 2,000 is refused here so the span shrinks, because a stored one blocks every
+# ledger of its pool at it (USDG/ORBIO's 100,000-block chunk at 68,147,815).
+MAX_SOURCE_CHUNK_EVENTS = 2_000
 
 
 def derived_timestamp(before,end,number):
@@ -162,6 +168,8 @@ class ActivityIndexer:
                 if not start<=number<=end:
                     raise DataError('activity_event_outside_chunk')
                 decoded.append(event)
+            if len({(event['blockNumber'],event['logIndex']) for event in decoded})>MAX_SOURCE_CHUNK_EVENTS:
+                raise DataError('activity_log_budget_exhausted')
             # Only events inside the retention window pay for a header; older
             # ones are interpolated between the chunk boundaries and labelled.
             # Exact headers are for the window the reads actually serve: the last

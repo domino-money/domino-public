@@ -74,7 +74,11 @@ class PgRequests:
     def claim(self, *, limit=1, stale_seconds=STALE_CLAIM_SECONDS, exclude=(), priority='auto'):
         """Reserve up to `limit` requests without waiting on busy pool rows.
 
-        Recent user interest takes precedence over the old background backlog.
+        A requested pool the ledger has not registered comes first in every
+        lane: registering it is cheap, and it is what lets a read serve the pool
+        at all (its live window), while walking a registered pool only makes an
+        answer fresher. Then recent user interest takes precedence over the old
+        background backlog.
         Auto reserves every fourth claim for background requests, using persisted
         generations so a short run or restart cannot reset the quota. Either
         priority falls back to the other when its due lane is empty. Within a
@@ -99,22 +103,25 @@ class PgRequests:
               FROM domino_activity.pool_requests''').fetchone()['phase'] if priority=='auto' else 0
             def pick(lane,count):
                 return conn.execute("""WITH picked AS (
-              SELECT pool_id,updated_at AS previous_updated_at,
-                CASE WHEN (last_requested_at>=statement_timestamp()-(%s*interval '1 second'))=%s
+              SELECT r.pool_id,r.updated_at AS previous_updated_at,
+                CASE WHEN EXISTS(SELECT 1 FROM domino_activity.pools p WHERE p.pool_id=r.pool_id)
+                  THEN 1 ELSE 0 END AS registration_rank,
+                CASE WHEN (r.last_requested_at>=statement_timestamp()-(%s*interval '1 second'))=%s
                   THEN 0 ELSE 1 END AS priority_rank
-              FROM domino_activity.pool_requests
-              WHERE status=ANY(%s) AND due_at<=clock_timestamp()
-                AND NOT(pool_id=ANY(%s))
-                AND (lease_until IS NULL OR lease_until<=clock_timestamp())
-                AND (status<>'registering' OR lease_until IS NOT NULL OR
-                  updated_at<clock_timestamp()-(%s*interval '1 second'))
-              ORDER BY priority_rank,due_at,updated_at,pool_id FOR UPDATE SKIP LOCKED LIMIT %s)
+              FROM domino_activity.pool_requests r
+              WHERE r.status=ANY(%s) AND r.due_at<=clock_timestamp()
+                AND NOT(r.pool_id=ANY(%s))
+                AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp())
+                AND (r.status<>'registering' OR r.lease_until IS NOT NULL OR
+                  r.updated_at<clock_timestamp()-(%s*interval '1 second'))
+              ORDER BY registration_rank,priority_rank,r.due_at,r.updated_at,r.pool_id
+              FOR UPDATE OF r SKIP LOCKED LIMIT %s)
               UPDATE domino_activity.pool_requests q SET status='registering',
                 attempts=attempts+1,updated_at=clock_timestamp(),claim_token=%s,
                 claim_generation=claim_generation+1,
                 lease_until=clock_timestamp()+(%s*interval '1 second')
               FROM picked WHERE q.pool_id=picked.pool_id
-              RETURNING q.*,picked.priority_rank,picked.previous_updated_at""",
+              RETURNING q.*,picked.registration_rank,picked.priority_rank,picked.previous_updated_at""",
                   (RECENT_REQUEST_SECONDS,lane=='recent',list(CLAIMABLE),excluded,
                    stale_seconds,count,secrets.token_hex(32),stale_seconds)).fetchall()
             if priority=='auto':
@@ -125,10 +132,29 @@ class PgRequests:
                     rows.extend(picked)
             else:
                 rows=pick(priority,limit)
-                rows.sort(key=lambda row:(row['priority_rank'],row['due_at'],row['previous_updated_at'],row['pool_id']))
+                rows.sort(key=lambda row:(row['registration_rank'],row['priority_rank'],row['due_at'],
+                                          row['previous_updated_at'],row['pool_id']))
             for row in rows:
-                row.pop('priority_rank');row.pop('previous_updated_at')
+                row.pop('registration_rank');row.pop('priority_rank');row.pop('previous_updated_at')
             return [dict(row) for row in rows]
+
+    def reopen_unfinished_anchor_searches(self):
+        """Requeue requests a partial Initialize search blocked.
+
+        Until 6 Oct 2026 the worker searched only the last 400,000 blocks, a
+        window that cannot hold the Initialize of a pool older than the
+        catalogue, and blocked the request when it missed. Only a search that
+        covered the whole history it was given (`anchorSearch.complete`) is a
+        verdict; any other `initialize_anchor_not_found` is put back, once.
+        """
+        with self._connection(WRITER_ROLE) as conn:
+            rows=conn.execute('''UPDATE domino_activity.pool_requests SET status='queued',
+              last_error=NULL,error_class=NULL,consecutive_failures=0,due_at=clock_timestamp(),
+              claim_token=NULL,lease_until=NULL,updated_at=clock_timestamp()
+              WHERE status='blocked' AND last_error='initialize_anchor_not_found'
+                AND COALESCE(detail->'anchorSearch'->>'complete','false')<>'true'
+              RETURNING pool_id''').fetchall()
+            return sorted(row['pool_id'] for row in rows)
 
     @staticmethod
     def guard(claim, conn):
@@ -207,13 +233,15 @@ def error_class(reason):
         return 'range_capacity'
     if reason in ('http_401','http_403'):return 'authorization'
     if reason=='http_429':return 'provider_rate_limit'
-    if reason in ('header_budget_exhausted','indexer_rpc_budget_exhausted','read_deadline_exceeded'):
+    if reason in ('header_budget_exhausted','indexer_rpc_budget_exhausted','read_deadline_exceeded',
+                  'run_deadline_exceeded'):
         return 'run_budget'
-    # A pool the catalogue has not seen may still be seeded, so it stays
-    # retryable. An Initialize the bounded search missed stays missed: the
-    # window moves with the head, so an older pool would be scanned for ever.
-    # It is an identity failure (blocked); registering its anchor reopens it.
-    if reason=='pool_not_in_catalogue':return 'discovery_incomplete'
+    # A pool the catalogue has not seen may still be seeded, and a pool id not
+    # initialized yet may still be, so both stay retryable. An Initialize the
+    # search missed after covering all the history no stored source answers
+    # stays missed: an identity failure (blocked); registering its anchor
+    # reopens it.
+    if reason in ('pool_not_in_catalogue','pool_not_initialized'):return 'discovery_incomplete'
     if reason in PERMANENT:return 'identity'
     if 'reorg' in reason or 'reconciliation' in reason:return 'canonicality'
     return 'source_unavailable'

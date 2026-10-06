@@ -58,6 +58,11 @@ class ErrorClassTests(unittest.TestCase):
         self.assertEqual(error_class('initialize_anchor_not_found'),'identity')
         self.assertEqual(error_class('pool_not_in_catalogue'),'discovery_incomplete')
 
+    def test_an_uncreated_pool_waits_and_the_runs_own_deadline_is_a_budget(self):
+        """An id the core does not hold yet may be created later; a run ending is no pool's fault."""
+        self.assertEqual(error_class('pool_not_initialized'),'discovery_incomplete')
+        self.assertEqual(error_class('run_deadline_exceeded'),'run_budget')
+
 
 @unittest.skipUnless(os.environ.get('DOMINO_TEST_POSTGRES')=='1',
                      'set DOMINO_TEST_POSTGRES=1 after dev_postgres.py prepare-tests')

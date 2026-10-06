@@ -253,6 +253,31 @@ class ActivityPostgresTests(unittest.TestCase):
             sources=conn.execute('SELECT DISTINCT timestamp_source AS s FROM domino_activity.events').fetchall()
         self.assertEqual([row['s'] for row in sources],['block_range_derived'])
 
+    def pokes(self,count):
+        """Unit liquidity added and taken back in block 12: an even count ends where it began."""
+        return [event_log(MODIFY,[-60,60,1 if index%2==0 else -1,b'\x01'*32],number=12,index=index)
+                for index in range(count)]
+
+    def test_a_chunk_of_exactly_2000_events_is_walked(self):
+        from activity_indexer import MAX_SOURCE_CHUNK_EVENTS
+        self.assertEqual(MAX_SOURCE_CHUNK_EVENTS,2000)
+        self.register()
+        pokes=self.pokes(1996)
+        # A provider repeating a log does not make the chunk bigger.
+        self.rpc.logs+=pokes+[dict(pokes[-1])]
+        result=self.worker.step(POOL,through=12,span=3)
+        self.assertEqual((result['status'],result['events']),('indexed',2000))
+
+    def test_a_chunk_over_2000_events_is_refused_so_the_span_shrinks(self):
+        """No ledger replays more per chunk: USDG/ORBIO's 100,000-block chunk at 68,147,815
+        held more, and its fee, position and capital ledgers all stopped there for good."""
+        self.register()
+        self.rpc.logs+=self.pokes(1997)
+        with self.assertRaisesRegex(DataError,'^activity_log_budget_exhausted$'):
+            self.worker.step(POOL,through=12,span=3)
+        self.assertEqual(self.counts(),(0,0));self.assertEqual(self.row()['next_block'],10)
+        self.assertEqual(self.worker.step(POOL,through=12,span=2)['events'],4)
+
     def test_derived_timestamps_interpolate_between_the_chunk_boundaries(self):
         before=Block(100,block_hash(100),1_100);end=Block(200,block_hash(200),1_300)
         self.assertEqual(derived_timestamp(before,end,100),1_100)

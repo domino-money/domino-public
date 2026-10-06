@@ -180,8 +180,11 @@ class PublicInstallTests(unittest.TestCase):
     def test_queue_cadence_and_wall_rpc_budgets_are_explicit(self):
         units=self.plan()['units']
         queue=units['domino-queue-worker.service.d/90-public-data.conf']
-        for setting in ('--max-pools 64','--max-steps 1','--max-seconds 50','--max-rpc-calls 2048','--max-header-calls 1000'):
+        for setting in ('--max-pools 64','--max-steps 1','--max-seconds 50','--max-rpc-calls 2048','--max-header-calls 1000',
+                        '--search-seconds 20','--claim-reserve-seconds 10','--search-span 1000000'):
             self.assertIn(setting,queue)
+        # A head-relative window cannot reach a pool older than the catalogue.
+        self.assertNotIn('--search-back-blocks',queue)
         self.assertIn('TimeoutStartSec=65',queue)
         for timer in ('domino-queue-worker','domino-catalogue-follower'):
             with self.subTest(timer=timer):
