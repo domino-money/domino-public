@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -17,8 +18,9 @@ from eth_hash.auto import keccak
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import v2_chain_reads as reads  # noqa: E402
-from discovery import ZERO, Block, DataError  # noqa: E402
-from read_deadline import check_read_deadline  # noqa: E402
+import discovery  # noqa: E402
+from discovery import SNAPSHOT_LOOPBACK_RPC, ZERO, Block, DataError  # noqa: E402
+from read_deadline import check_read_deadline, current_read_deadline, read_deadline  # noqa: E402
 from v2_chains import default_registry  # noqa: E402
 from v2_read_contract import validate_v6_request_response  # noqa: E402
 from v2_uniswap import PoolRef, PoolState, v3_pool_address  # noqa: E402
@@ -38,13 +40,18 @@ def selector(signature):
 
 class FakeChain:
     """Multicall3 over scripted answers: {(target, selector hex, argument bytes): (ok, return bytes)}. Anything else
-    answers as an address without code: success with no data. `fail_from`: the requests from that many on fail."""
+    answers as an address without code: success with no data. `fail_from`: the requests from that many on fail.
+    `barrier`: the first request waits there for the other chains' (threading.Barrier), so chains read in turn fail."""
 
-    def __init__(self, answers=None, fail=False, delay=0, fail_from=None):
+    def __init__(self, answers=None, fail=False, delay=0, fail_from=None, barrier=None):
         self.answers, self.fail, self.delay, self.fail_from = dict(answers or {}), fail, delay, fail_from
+        self.barrier = barrier
         self.requests, self.subcalls, self.batches = [], [], []
 
     def request(self, method, params):
+        if self.barrier is not None:
+            barrier, self.barrier = self.barrier, None
+            barrier.wait(timeout=5)
         if self.fail or (self.fail_from is not None and len(self.requests) >= self.fail_from):
             raise DataError('http_503')
         if self.delay:
@@ -1077,6 +1084,108 @@ class PoolMarketTests(unittest.TestCase):
                 validate_v6_request_response('chain-pools', {'chainId': 8453, 'token': TOKEN, 'pairedToken': ZERO},
                                              answer)
                 self.assertEqual(answer['pools'][0]['market']['reason'], reason)
+
+class AtOnceTests(unittest.TestCase):
+    """The chains of one answer are read at once, each within the read's deadline (5 Oct 2026: chain-balances read
+    Robinhood, Base and Arbitrum in turn, 2.8 s at the flip)."""
+
+    def sources(self, **options):
+        return {chain_id: source(REGISTRY.chain(chain_id), FakeChain(feed_answers(REGISTRY.chain(chain_id)), **options))
+                for chain_id in (4663, 8453, 42161)}
+
+    def test_balances_read_every_chain_at_once(self):
+        sources = self.sources(barrier=threading.Barrier(3))
+        answer = chain_reads(sources).balances(WALLET)
+        validate_v6_request_response('chain-balances', {'wallet': WALLET, 'tokens': None}, answer)
+        self.assertEqual([(c['chainId'], c['status']) for c in answer['chains']],
+                         [(4663, 'current'), (8453, 'current'), (42161, 'current')])
+
+    def test_a_pass_prices_its_chains_at_once(self):
+        pricer = reads.Pricer(self.sources(barrier=threading.Barrier(3)), monotonic=Clock(0.0))
+        got = pricer.prices([(chain_id, ZERO, None) for chain_id in (42161, 4663, 8453)])
+        self.assertEqual({key: (price['source'], reason) for key, (price, reason) in got.items()},
+                         {(chain_id, ZERO): ('chainlink_eth_usd', None) for chain_id in (4663, 8453, 42161)})
+
+    def test_the_reads_deadline_bounds_every_chain(self):
+        reader = chain_reads(self.sources(delay=0.2))
+        with self.assertRaisesRegex(DataError, '^read_deadline_exceeded$'):  # the budget, spent, says so on the way out
+            with read_deadline(0.05):
+                answer = reader.balances(WALLET)
+        self.assertEqual([c['reason'] for c in answer['chains']], ['chain_read_failed'] * 3)
+
+    def test_each_chain_in_order_with_the_callers_deadline_and_failures_after_all(self):
+        seen = {}
+
+        def work(chain_id):
+            seen[chain_id] = (current_read_deadline(), threading.current_thread())
+            return chain_id * 2
+        with read_deadline(5):
+            outer = current_read_deadline()
+            self.assertEqual(reads.each_chain(work, [8453, 4663, 42161]), [16906, 9326, 84322])
+        self.assertTrue(all(deadline is outer for deadline, _ in seen.values()))
+        self.assertEqual(len({thread for _, thread in seen.values()} - {threading.current_thread()}), 3)
+        # One chain alone needs no thread.
+        self.assertEqual(reads.each_chain(work, [4663]), [9326])
+        self.assertIs(seen[4663][1], threading.current_thread())
+        ran = []
+
+        def failing(chain_id):
+            ran.append(chain_id)
+            if chain_id != 4663:
+                raise ValueError(chain_id)
+            return chain_id
+        with self.assertRaises(ValueError) as caught:
+            reads.each_chain(failing, [4663, 8453, 42161])
+        self.assertEqual((caught.exception.args, sorted(ran)), ((8453,), [4663, 8453, 42161]))
+
+
+class KeptConnectionTests(unittest.TestCase):
+    """Chain reads over kept HTTPS connections (5 Oct 2026, from the VM: Chainstack 360 ms a call on a new one, 118 ms
+    on a kept one); the own node's loopback hop as it was."""
+
+    def test_every_chain_reads_through_kept_rpc(self):
+        import v2_rpc
+        built = []
+
+        def recording(chain, **kwargs):
+            built.append((chain.chainId, kwargs['send']))
+            endpoint = v2_rpc.Endpoint('stack', 'stack.example.invalid', 'https://stack.example.invalid/k', None, 50,
+                                       None, None)
+            return v2_rpc.ChainEndpoints(chain, (endpoint,), 'test', send=kwargs['send'])
+        directory = Path(tempfile.mkdtemp(prefix='domino-kept-')).resolve()
+        self.addCleanup(shutil.rmtree, directory)
+        os.chmod(directory, 0o700)
+        path = directory / 'chain-rpc.json'
+        endpoint = {'name': 'stack', 'host': 'stack.example.invalid', 'url': 'https://stack.example.invalid/k',
+                    'archive': True, 'maxBatchItems': 50, 'maxLogBlocks': 10000, 'requestsPerSecond': None}
+        path.write_text(json.dumps({'schemaVersion': 1, 'kind': 'domino-v2-chain-rpc',
+                                    'chains': {'base-8453': {'endpoints': [endpoint]}}}))
+        path.chmod(0o600)
+        with mock.patch('v2_rpc.configured_endpoints', side_effect=recording):
+            reads.build_chain_reads(provider_config={'any': 'provider file'}, chain_rpc_file=str(path),
+                                    learned_path=None, registry=REGISTRY)
+        self.assertEqual(built, [(4663, reads.kept_rpc), (8453, reads.kept_rpc)])
+
+    def test_kept_rpc_is_rpc_http_on_the_kept_opener_within_the_reads_budget(self):
+        with mock.patch.object(reads, 'rpc_http', return_value={'result': '0x1'}) as sent:
+            with read_deadline(5):
+                self.assertEqual(reads.kept_rpc('https://node.example.invalid/k', {'id': 1}), {'result': '0x1'})
+            reads.kept_rpc('https://node.example.invalid/k', {'id': 2})
+        (first, second) = sent.call_args_list
+        self.assertEqual(first.args, ('https://node.example.invalid/k', {'id': 1}))
+        self.assertIs(first.kwargs['opener'], discovery.KEEPALIVE_OPENER)
+        self.assertLessEqual(first.kwargs['timeout'], 5)
+        self.assertEqual((second.kwargs['timeout'], second.kwargs['opener']), (12, discovery.KEEPALIVE_OPENER))
+
+    def test_the_own_nodes_loopback_hop_never_takes_a_kept_connection(self):
+        answer = {'jsonrpc': '2.0', 'id': 1, 'result': '0x1'}
+        with mock.patch('discovery.snapshot_loopback_http', return_value=answer) as loopback, \
+                mock.patch.object(reads, 'KEEPALIVE_OPENER', side_effect=AssertionError('kept opener')) as kept:
+            with read_deadline(5):
+                self.assertEqual(reads.kept_rpc(SNAPSHOT_LOOPBACK_RPC, {'id': 1}), answer)
+        loopback.assert_called_once()
+        kept.assert_not_called()
+
 
 class HelperTests(unittest.TestCase):
     def test_a_survey_call_answers_every_read_or_is_refused(self):

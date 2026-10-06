@@ -7,7 +7,8 @@ moving the wallet to another network (it still does, to sign: §1.3).
 - Robinhood reads Domino's own node through the reader's provider file; Base and Arbitrum read the V2 chain RPC
   file's hosted endpoints (F6, v2_rpc), billed per call. Each answer is one Multicall3 call per chain at the
   chain's head (v2_head), chain-pools' a few more for the depths (CHAIN_READ_REQUESTS bounds them all), and answers
-  are cached for a few seconds, so a busy page costs little more than a quiet one.
+  are cached for a few seconds, so a busy page costs little more than a quiet one. Calls go over kept HTTPS
+  connections (kept_rpc), and the chains of one answer are read at once (each_chain).
 - chain-pools reads the pools the app reads today through the wallet: the token against the chain's base
   currencies (its charge currencies: the stable, the native currency and its wrapped token) or one paired token,
   in Uniswap's standard hookless v4 keys and the v3 fee tiers the profile and the factory enable (Base adds 200,
@@ -24,6 +25,7 @@ Symbols and names are untrusted text: they come back as read, printable and boun
 (a token is its chain and address). USD comes only from qualified sources (read-v6 1.1.0-rc.1, below).
 """
 from collections import OrderedDict
+import contextvars
 from dataclasses import dataclass, field
 from fractions import Fraction
 import json
@@ -37,12 +39,12 @@ import time
 
 from eth_abi import decode
 
-from discovery import ZERO, DataError, address
+from discovery import KEEPALIVE_OPENER, ZERO, DataError, address, rpc_http
 from v2_abi import function
 from v2_chains import DEX_V3, DEX_V4, default_registry
 from v2_quotes import (AGGREGATE3, ERC20_BALANCE_OF, GET_ETH_BALANCE, MULTICALL_GAS, V4_STANDARD_KEYS, Abi, QuoteError,
                        multicall)
-from read_deadline import read_deadline
+from read_deadline import read_deadline, read_timeout
 from v2_read_contract import CONTRACT_VERSION, LIVE_LIMITATIONS, MAX_CHAIN_POOLS
 from v2_uniswap import PIPS, PoolRef, v3_pool_address
 from v4_math import MAX_SQRT, MIN_SQRT, amount_delta, sqrt_at_tick, tick_at_sqrt
@@ -670,8 +672,9 @@ class Pricer:
                 out[(chain_id, token)] = hit
             else:
                 missing.setdefault(chain_id, {})[token] = decimals
-        for chain_id, asked in sorted(missing.items()):
-            for token, result in self._chain(chain_id, asked).items():
+        chains = sorted(missing)
+        for chain_id, priced in zip(chains, each_chain(lambda chain_id: self._chain(chain_id, missing[chain_id]), chains)):
+            for token, result in priced.items():
                 out[(chain_id, token)] = result
                 self.offer(chain_id, token, result)
         return out
@@ -717,6 +720,44 @@ class Pricer:
 
 
 # ------------------------------------------------------------------ reads
+# A call's own ceiling within the read's budget: rpc_http's.
+RPC_TIMEOUT_SECONDS = 12
+
+
+def kept_rpc(url, body):
+    """rpc_http over kept HTTPS connections (discovery.KEEPALIVE_OPENER, the V1 reader's since 3 Oct 2026): a new TLS
+    handshake each call tripled Chainstack's round trip from the VM (5 Oct 2026: 360 ms against 118 ms). Chain reads
+    run under a read deadline, which the pool requires; the own node's loopback hop keeps its own (rpc_http)."""
+    return rpc_http(url, body, timeout=read_timeout(RPC_TIMEOUT_SECONDS), opener=KEEPALIVE_OPENER)
+
+
+def each_chain(work, chain_ids):
+    """[work(chain id)] for every chain at once, in `chain_ids`' order: the slowest chain sets the time, not their sum.
+    Each runs in its own thread with a copy of the caller's context, so the read's deadline bounds it too; a failure is
+    raised once all are done, the first chain's first, as reading them in turn would have."""
+    chain_ids = list(chain_ids)
+    if len(chain_ids) < 2:
+        return [work(chain_id) for chain_id in chain_ids]
+    results, failures = [None] * len(chain_ids), [None] * len(chain_ids)
+
+    def run(index, context, chain_id):
+        try:
+            results[index] = context.run(work, chain_id)
+        except BaseException as error:  # noqa: B036 - raised again in the caller's thread
+            failures[index] = error
+    threads = [threading.Thread(target=run, args=(index, contextvars.copy_context(), chain_id),
+                                name=f'chain-read-{chain_id}', daemon=True)
+               for index, chain_id in enumerate(chain_ids)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    for failure in failures:
+        if failure is not None:
+            raise failure
+    return results
+
+
 @dataclass
 class ChainSource:
     """One chain's profile, its endpoints and its head follower."""
@@ -820,7 +861,8 @@ class ChainReads:
 
     # ------------------------------------------------------- chain-balances
     def balances(self, wallet, tokens=None):
-        """{chain id: [token]} asked, or every chain's base currencies; one Multicall3 call per chain."""
+        """{chain id: [token]} asked, or every chain's base currencies; one Multicall3 call per chain, the chains at
+        once."""
         asked = {}
         for chain_id, token in (tokens if tokens is not None else
                                 [(chain_id, entry[0]) for chain_id in POOL_CHAINS
@@ -828,15 +870,15 @@ class ChainReads:
             asked.setdefault(chain_id, [])
             if token not in asked[chain_id]:
                 asked[chain_id].append(token)
-        chains = []
-        for chain_id in sorted(asked):
-            key = (wallet, chain_id, tuple(asked[chain_id]))
-            entry = self.balance_cache.get(key)
-            if entry is None:
-                entry = self._balances(chain_id, wallet, asked[chain_id])
-                if entry['status'] == 'current':
-                    self.balance_cache.put(key, entry)
-            chains.append(entry)
+        keys = {chain_id: (wallet, chain_id, tuple(asked[chain_id])) for chain_id in sorted(asked)}
+        entries = {chain_id: self.balance_cache.get(key) for chain_id, key in keys.items()}
+        unread = [chain_id for chain_id, entry in entries.items() if entry is None]
+        for chain_id, entry in zip(unread, each_chain(lambda chain_id: self._balances(chain_id, wallet, asked[chain_id]),
+                                                      unread)):
+            if entry['status'] == 'current':
+                self.balance_cache.put(keys[chain_id], entry)
+            entries[chain_id] = entry
+        chains = list(entries.values())
         now = int(self.clock())
         totals = [c['totalUsd'] for c in chains]
         return {'schemaVersion': 1, 'contractVersion': CONTRACT_VERSION, 'mode': 'live_chain_balances',
@@ -981,11 +1023,11 @@ def build_chain_reads(*, provider_config, chain_rpc_file, learned_path, index_to
         if chain_id == 4663:
             if provider_config is None:
                 continue
-            endpoints = configured_endpoints(chain, provider_config=provider_config)
+            endpoints = configured_endpoints(chain, provider_config=provider_config, send=kept_rpc)
         else:
             if config is None or chain.key not in config.chains:
                 continue
-            endpoints = configured_endpoints(chain, chain_rpc_config=config)
+            endpoints = configured_endpoints(chain, chain_rpc_config=config, send=kept_rpc)
         follower = HeadFollower(endpoints, max_age_seconds=HEAD_MAX_AGE_SECONDS,
                                 max_block_age_seconds=HEAD_MAX_BLOCK_AGE_SECONDS)
         sources[chain_id] = ChainSource(chain, endpoints, follower)

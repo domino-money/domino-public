@@ -867,7 +867,7 @@
     },
     {
       "path": "backend/v2_chain_reads.py",
-      "sha256": "05f12c657e68e981fc4c2c7a402e214f7c057fe8cfb7afb3511ab49330bf723c"
+      "sha256": "096b893c42b9ac5871b537c599b70c45ecc4397fc48ac135adbd0a7c5d74f7b7"
     },
     {
       "path": "backend/data/token-lists/uniswap-default.json",

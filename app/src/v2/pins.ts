@@ -21,7 +21,9 @@ export const READ_V6_PIN = {
   // Changed on purpose (data) 2026-10-05: activity's reserves_returned kind (0xdecimal's item 8); same version.
   // Changed on purpose (data) 2026-10-06: chain-pools' depth reads bounded (the producer's v2_chain_reads.py, its
   // fixture builder and the README's reasons); same version, same schemas and fixtures.
-  manifestSha256: '9526b12244eb795f19f9ecbc0cc23f364eddc0422f9612379953a966d6bfeaf5',
+  // Changed on purpose (data) 2026-10-06: the producer's v2_chain_reads.py reads over kept connections and the chains
+  // of one answer at once; same version, same schemas and fixtures.
+  manifestSha256: '973b5a8220690202100554953c3f057b98f0851e13d60c6956168b472c0ecbab',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {

@@ -103,6 +103,7 @@ Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Co
 `chain-pools`, `chain-balances` and `chain-tokens` are not index reads (`backend/v2_chain_reads.py`):
 
 - **Where they read:** at request time, one Multicall3 call per chain at the chain's head (`v2_head`); `chain-pools` at most three more, for the depths. A read sends at most 8 requests, an endpoint failover's included (`CHAIN_READ_REQUESTS`). Robinhood goes through the reader's provider file (the own node); Base and Arbitrum go through the V2 chain RPC file's hosted endpoints (F6), billed per call.
+- **Connections and chains:** calls go over kept HTTPS connections (`kept_rpc`: the V1 reader's `KEEPALIVE_OPENER`, at most 16 idle a host for 20 s), and the own node's loopback hop as before. `chain-balances` and the pricer read the chains of one answer at once (`each_chain`), each within the read's deadline, so the slowest chain sets the time, not their sum.
 - **Cache:** pools for 15 s, balances for 10 s, the index's known tokens for 60 s, prices for 30 s.
 - **Prices** (item 4):
   - The pricer prices a chain's tokens in one survey of three Multicall3 rounds at its head: the pools' state, the feed and its sequencer, in one call of at most 512 reads; the bitmap words the walks read, in one call of at most 512; the initialized ticks they cross, at most 1,024 in two calls. A walk reads only the ticks between the price and the band's bound (5 Oct 2026: with a word of margin each side, Base's deepest USDC pools came out unmeasurable and a `chain-pools` read needed 11 calls of 64 reads).
@@ -198,6 +199,25 @@ The writer reads their hosted providers from its private V2 chain RPC file (`bac
 4. **Start:** `systemctl enable --now domino-v2-indexer@base-8453.service domino-v2-indexer@arbitrum-42161.service`. read-v6 then shows both chains as `current`.
 
 `status` connects as the catalogue reader, which the writer's identity is not mapped to. Read `domino_v2.deployments` with psql as the operator instead, or run `status` from the reader's release.
+
+**Measuring the endpoints.** `backend/v2_rpc_latency.py` times each endpoint as read-v6's chain reads use it:
+- what it times: an `eth_chainId` round trip and `chain-pools`' survey of the chain's stable;
+- how: on a new connection each call and on kept ones;
+- what it reports: each survey's calls, the ETH/USD feed's state, and failures by code. It names no URL.
+
+Run it as the reader: `systemd-run --pipe --wait --collect -p User=domino-read -p 'ImportCredential=v2-rpc-*' -p PrivateDevices=yes -p 'DeviceAllow=char-tpm rw' -p BindReadOnlyPaths=/etc/domino/continuous-reads/read.hosts:/etc/hosts -p BindReadOnlyPaths=-/etc/domino/read:/run/domino-read-config -p WorkingDirectory=<a checkout> <the read release>/backend/.venv/bin/python3.14 -B backend/v2_rpc_latency.py --chain base-8453 --chain-rpc-file /run/domino-read-config/chain-rpc.json`. For Robinhood, pass `--provider-file` with the reader's provider file.
+
+On 6 Oct 2026, ten samples each, every survey 3 calls (median, ms; a new connection → a kept one):
+
+| Chain | Endpoint | `eth_chainId` | Survey |
+| --- | --- | --- | --- |
+| Base | Chainstack | 591 → 196 | 4,116 → 1,062 |
+| Base | Alchemy | 346 → 118 | 2,506 → 441 |
+| Arbitrum | Chainstack | 341 → 114 | 1,992 → 422 |
+| Arbitrum | Alchemy | 365 → 130 | 2,192 → 463 |
+| Robinhood | own node (loopback) | 3 → 3 | 46 → 48 |
+
+The public endpoints were throttled at their 2 requests per second.
 
 ## What 3a, #301 and F7 must align with
 
