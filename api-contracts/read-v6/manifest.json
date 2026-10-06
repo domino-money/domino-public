@@ -844,7 +844,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "5b66bd26392d302c6d0ca1220d2c2a7f53d56027553a3a2b491b472128964581"
+      "sha256": "d0b5c274b7d47065655cdecb5bd82a89a98add753f711998ea1da904124b4088"
     },
     {
       "path": "consumer.test.mjs",
@@ -867,7 +867,7 @@
     },
     {
       "path": "backend/v2_chain_reads.py",
-      "sha256": "2592b56b4e42481ce2f92533883078c5b47e77757c5469ff90ca0b8045412143"
+      "sha256": "05f12c657e68e981fc4c2c7a402e214f7c057fe8cfb7afb3511ab49330bf723c"
     },
     {
       "path": "backend/data/token-lists/uniswap-default.json",
@@ -907,7 +907,7 @@
     },
     {
       "path": "backend/tests/read_v6_contract_fixtures.py",
-      "sha256": "c05e3e2757f0e7563587e0ead1a2085246859048856c010a8ad864e99d722036"
+      "sha256": "377c7785fe71c863683ad6395c48d51d2f81615ace0cbada56d3e3b99f711dfe"
     },
     {
       "path": "backend/tests/v2_index_fixtures.py",

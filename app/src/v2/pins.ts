@@ -19,7 +19,9 @@ export const READ_V6_PIN = {
   // Changed on purpose (data) 2026-10-05: the live chain reads chain-pools, chain-balances and chain-tokens joined
   // read-v6 (0xdecimal's items 1-3); same version, new manifest.
   // Changed on purpose (data) 2026-10-05: activity's reserves_returned kind (0xdecimal's item 8); same version.
-  manifestSha256: '58e7af0757b8caa92d25b0aa3310388d2053a7b94ea6066d4c0da2b19c17a793',
+  // Changed on purpose (data) 2026-10-06: chain-pools' depth reads bounded (the producer's v2_chain_reads.py, its
+  // fixture builder and the README's reasons); same version, same schemas and fixtures.
+  manifestSha256: '9526b12244eb795f19f9ecbc0cc23f364eddc0422f9612379953a966d6bfeaf5',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {

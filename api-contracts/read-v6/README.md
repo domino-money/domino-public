@@ -49,8 +49,8 @@ Header `X-Domino-Read-Contract: 1.1.0-rc.1`. Through the gateway the paths are `
   | `priceReason` | Why |
   | --- | --- |
   | `no_qualified_price_source` | The reader has no endpoints for that chain, or the chain reads are off |
-  | `price_read_failed` | The read failed or ran past its 3 s budget; it is not kept |
-  | `pricing_limit_reached` | Beyond 32 tokens a chain in one answer |
+  | `price_read_failed` | The read failed or ran past its 3 s budget, or the depth of one of the token's pools could not be read; it is not kept |
+  | `pricing_limit_reached` | Beyond what one read prices: 32 tokens a chain, as many tokens' pools as one call of 512 reads holds, and the depths of 1,024 ticks. A pool of the token left unmeasured might have qualified; it is not kept |
   | `decimals_unknown` | The token's decimals could not be read |
   | `eth_usd_stale` | The feed's round is past its heartbeat |
   | `sequencer_down` | The sequencer is down or within its grace hour; only the stable keeps its price |
@@ -112,14 +112,14 @@ node --test api-contracts/read-v6/consumer.test.mjs
 
 ## Chain reads: chain-pools, chain-balances, chain-tokens
 
-The app spec's §6.2 reads that need the chain itself (0xdecimal's list of 5 Oct 2026), so the app lists pools and balances without moving the wallet to another network; it still does, to sign. They read the chains when asked (`backend/v2_chain_reads.py`): Robinhood through Domino's own node, Base and Arbitrum through the hosted endpoints of the V2 chain RPC file, one Multicall3 call per chain at its head, cached for a few seconds. They take the reader's provider lane; `chain-tokens` reads no chain and takes the stored lane. Their `limitations` are `usd_from_qualified_sources_only`, `token_metadata_untrusted`, `state_as_of_last_read` and `no_execution_or_signing`, in that order.
+The app spec's §6.2 reads that need the chain itself (0xdecimal's list of 5 Oct 2026), so the app lists pools and balances without moving the wallet to another network; it still does, to sign. They read the chains when asked (`backend/v2_chain_reads.py`): Robinhood through Domino's own node, Base and Arbitrum through the hosted endpoints of the V2 chain RPC file, one Multicall3 call per chain at its head (`chain-pools` at most three more, for the depths), cached for a few seconds. They take the reader's provider lane; `chain-tokens` reads no chain and takes the stored lane. Their `limitations` are `usd_from_qualified_sources_only`, `token_metadata_untrusted`, `state_as_of_last_read` and `no_execution_or_signing`, in that order.
 
 - **`chain-pools`** reads the pools the app reads today through the wallet: `token` against the chain's base currencies (its charge currencies: the stable, the native currency and its wrapped token) or against `pairedToken` alone, in Uniswap's standard hookless v4 keys (fee 100, 500, 3000 or 10000 with spacing 1, 10, 60 or 200) and the v3 fee tiers the factory enables (Base adds 200, 300 and 400). Native ETH has no v3 pool; in v3 it pairs as WETH. A pool is listed when it exists, is priced and holds liquidity: partners ETH and WETH first, then the stable, then by active liquidity, at most 32 (`truncated`).
   - Each pool: `pool` (its `PoolRef`), `id` (v4's pool id) or `address` (v3's pool), `sqrtPriceX96`, `tick`, active `liquidity`, `lpFeePips` (the tier's), `protocolFee` as the pool reports it, and `swapFeePips` per direction (v4's protocol fee taken before the LP fee; v3's protocol fee is a share of the LP fee, not on top of it).
   - `market` is the pool's depth within the band ([Qualified USD](#qualified-usd)), measured in the same block as the pool's price: `{status: "measured", reference, depthUsd}`. `reference` is the token's partner, the stable or ETH/WETH. Otherwise it is `{status: "unavailable", reason}`, with `reason`:
     - `no_qualified_reference`: a pair without a base currency;
-    - `eth_usd_stale`, `sequencer_down` or `price_read_failed`: an ETH or WETH partner without a feed price;
-    - `pool_depth_unmeasurable`.
+    - `eth_usd_stale`, `sequencer_down` or `price_read_failed`: an ETH or WETH partner without a feed price; `price_read_failed` also when the read of the pool's depth failed;
+    - `pool_depth_unmeasurable`: the walk would take more than 300 steps, a word of the pool's map could not be read, or the pool did not fit the read's depth reads (512 bitmap words and 1,024 ticks; the pools deepest by active liquidity are measured first).
 
     There is no TVL, volume or APR: they need history.
   - `tokens`: every currency the answer names (`token`, `pairedToken` and each pool's pair), sorted, with its metadata as read (`available`, `partial`, `unavailable`) and its `price` or `priceReason`.

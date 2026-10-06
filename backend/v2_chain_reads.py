@@ -6,7 +6,8 @@ moving the wallet to another network (it still does, to sign: §1.3).
 
 - Robinhood reads Domino's own node through the reader's provider file; Base and Arbitrum read the V2 chain RPC
   file's hosted endpoints (F6, v2_rpc), billed per call. Each answer is one Multicall3 call per chain at the
-  chain's head (v2_head), and answers are cached for a few seconds, so a busy page costs little more than a quiet one.
+  chain's head (v2_head), chain-pools' a few more for the depths (CHAIN_READ_REQUESTS bounds them all), and answers
+  are cached for a few seconds, so a busy page costs little more than a quiet one.
 - chain-pools reads the pools the app reads today through the wallet: the token against the chain's base
   currencies (its charge currencies: the stable, the native currency and its wrapped token) or one paired token,
   in Uniswap's standard hookless v4 keys and the v3 fee tiers the profile and the factory enable (Base adds 200,
@@ -20,11 +21,10 @@ moving the wallet to another network (it still does, to sign: §1.3).
   visitors. Like read-v3's search it covers known tokens only.
 
 Symbols and names are untrusted text: they come back as read, printable and bounded, never as a claim of identity
-(a token is its chain and address). No USD here: a pool's market metrics are null with their reason until a
-qualified price source exists (§6.3).
+(a token is its chain and address). USD comes only from qualified sources (read-v6 1.1.0-rc.1, below).
 """
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from fractions import Fraction
 import json
 from math import isqrt
@@ -40,7 +40,8 @@ from eth_abi import decode
 from discovery import ZERO, DataError, address
 from v2_abi import function
 from v2_chains import DEX_V3, DEX_V4, default_registry
-from v2_quotes import ERC20_BALANCE_OF, GET_ETH_BALANCE, V4_STANDARD_KEYS, Abi, multicall
+from v2_quotes import (AGGREGATE3, ERC20_BALANCE_OF, GET_ETH_BALANCE, MULTICALL_GAS, V4_STANDARD_KEYS, Abi, QuoteError,
+                       multicall)
 from read_deadline import read_deadline
 from v2_read_contract import CONTRACT_VERSION, LIVE_LIMITATIONS, MAX_CHAIN_POOLS
 from v2_uniswap import PIPS, PoolRef, v3_pool_address
@@ -269,6 +270,12 @@ PRICES_CACHE_SECONDS, MAX_PRICED = 30, 32  # a pass prices at most MAX_PRICED to
 PRICING_BUDGET_SECONDS = 3
 PRICE_SCALE, USD_SCALE = 10 ** 18, 10 ** 6
 U256_MASK = (1 << 256) - 1
+# What one read at a chain's head may send (5 Oct 2026: 13 pools of USDC on Base needed 11 calls of 64 reads, and the
+# read was refused at its 9th). A survey sends at most 4 Multicall3 calls of SURVEY_CALLS reads: its pools, then
+# DEPTH_WORDS of their bitmap words, then DEPTH_TICKS of their initialized ticks in two. v3's ticks() is the heaviest
+# read, about 10k gas, so a call stays far below MULTICALL_GAS and its answer (~200 KB) below the transport's 2 MB.
+# The other requests are for an endpoint failover: its proof of the head and the call again.
+CHAIN_READ_REQUESTS, SURVEY_CALLS, DEPTH_WORDS, DEPTH_TICKS = 8, 512, 512, 1024
 
 
 def decimal_text(value, scale):
@@ -360,10 +367,17 @@ def reference_depth(bitmap, tick_net, *, sqrt_price, tick, liquidity, spacing, z
 
 
 def band_ticks(sqrt_price, tick, spacing, zero_for_one):
-    """The compressed ticks a walk from `tick` to the band's bound can touch, one word of margin each side."""
+    """The compressed ticks between `tick` and the band's bound, both included: the only ones a walk can cross, as it
+    stops at the bound and never turns back. Their liquidity is all a depth reads, however many more are initialized
+    around them (5 Oct 2026: a word of margin each side had Base's deepest USDC pools past MAX_STEPS)."""
     bound = tick_at_sqrt(band_bound(sqrt_price, zero_for_one)) // spacing
-    low, high = sorted((tick // spacing, bound))
-    return low - 256, high + 256
+    return tuple(sorted((tick // spacing, bound)))
+
+
+def band_words(low, high):
+    """The bitmap words a walk over the compressed ticks `low`..`high` may read: theirs, and the next one up, which a
+    rising walk reads when its last word ends below the bound."""
+    return range(low >> 8, (high >> 8) + 2)
 
 
 @dataclass
@@ -387,6 +401,8 @@ class Survey:
     metadata: dict  # token -> (decimals, symbol, name) as read
     eth: tuple  # eth_usd's
     depths: dict  # PoolRef -> (USD, None) or (None, reason), for each listed pool
+    unread: set = field(default_factory=set)  # PoolRefs whose depth reads failed
+    skipped: set = field(default_factory=set)  # PoolRefs left unmeasured: past the survey's depth reads
 
     def partner(self, pool):
         subject = self.subjects[pool.ref]
@@ -422,6 +438,11 @@ class Survey:
         measured = [(self.depths[pool.ref][0], pool) for pool in own if self.depths[pool.ref][0] is not None]
         qualified = [(depth, pool) for depth, pool in measured if depth >= FLOOR_USD]
         if not qualified:
+            # A pool not read or not measured here may be the one that qualifies: say so, and let a later pass try.
+            if any(pool.ref in self.unread for pool in own):
+                return None, 'price_read_failed'
+            if any(pool.ref in self.skipped for pool in own):
+                return None, 'pricing_limit_reached'
             reasons = {self.depths[pool.ref][1] for pool in own}
             return None, ('pool_depth_below_floor' if measured else 'pool_depth_unmeasurable'
                           if 'pool_depth_unmeasurable' in reasons else reason
@@ -446,10 +467,30 @@ def pool_wire(ref):
             'tickSpacing': ref.tick_spacing, 'hooks': ref.hooks}
 
 
+def aggregate(rpc, chain, block, calls):
+    """v2_quotes.multicall in calls of SURVEY_CALLS: one request a round, not one per 64 reads."""
+    results = []
+    for start in range(0, len(calls), SURVEY_CALLS):
+        chunk = calls[start:start + SURVEY_CALLS]
+        data = AGGREGATE3.calldata([(address(target), True, bytes.fromhex(payload[2:])) for target, payload in chunk])
+        raw = rpc.request('eth_call', [{'to': chain.multicall3, 'data': data, 'gas': hex(MULTICALL_GAS)}, block.tag])
+        if not isinstance(raw, str) or not raw.startswith('0x'):
+            raise QuoteError('quote_multicall_invalid')
+        try:
+            rows, = AGGREGATE3.decode(bytes.fromhex(raw[2:]))
+        except Exception:
+            raise QuoteError('quote_multicall_invalid') from None
+        if len(rows) != len(chunk):
+            raise QuoteError('quote_multicall_invalid')
+        results.extend((bool(ok), bytes(payload)) for ok, payload in rows)
+    return results
+
+
 def survey(chain, rpc, block, refs, subjects, metadata=()):
     """The pools `refs` at `block` with what qualified USD needs, in three Multicall3 rounds: each pool's state, the
     Chainlink feed (and its sequencer's) and the tokens' metadata; the listed pools' bitmap words within the band;
-    the initialized ticks there. `subjects`: PoolRef -> the token it is read for (its partner is the reference)."""
+    the initialized ticks there. `subjects`: PoolRef -> the token it is read for (its partner is the reference).
+    Only the first round can fail the survey: the depth rounds' failure leaves the depths unread."""
     calls = []
 
     def add(target, abi, *args):
@@ -471,7 +512,7 @@ def survey(chain, rpc, block, refs, subjects, metadata=()):
     spacing_of = {fee: add(factory, function(V3_FACTORY, 'feeAmountTickSpacing'), fee)
                   for fee in sorted({ref.fee for ref in refs if ref.dex == DEX_V3})}
     meta_at = {token: (add(token, DECIMALS), add(token, SYMBOL), add(token, NAME)) for token in metadata}
-    rows = multicall(rpc, chain, block, calls)
+    rows = aggregate(rpc, chain, block, calls)
 
     spacings = {fee: (word(*rows[index], ('int24',)) or (None,))[0] for fee, index in spacing_of.items()}
     pools = []
@@ -502,16 +543,15 @@ def survey(chain, rpc, block, refs, subjects, metadata=()):
 
 
 def measure_depths(found, rpc):
-    """Each listed pool's depth within the band, in USD, or why not, in two more rounds."""
+    """Each listed pool's depth within the band, in USD, or why not, in at most three more calls: DEPTH_WORDS of the
+    pools' bitmap words, then DEPTH_TICKS of their initialized ticks. The pools are taken deepest first by their
+    active liquidity across the band, an estimate that only orders them: one past either bound is left unmeasured
+    (`found.skipped`), as is every pool of a round whose call fails (`found.unread`)."""
     chain, block = found.chain, found.block
     base, references = {entry[0] for entry in base_currencies(chain)}, found.reference_prices()
     state = chain.uniswap.v4.stateView
-    depths, walks, calls = {}, [], []
-
-    def add(target, abi, *args):
-        calls.append((target, abi.calldata(*args)))
-        return len(calls) - 1
-    for pool in found.pools:
+    depths, ordered = {}, []
+    for index, pool in enumerate(found.pools):
         partner = found.partner(pool)
         if partner not in base:
             depths[pool.ref] = (None, 'no_qualified_reference')
@@ -521,13 +561,41 @@ def measure_depths(found, rpc):
             depths[pool.ref] = (None, found.eth[2])
         else:
             zero_for_one = partner == pool.ref.currency1  # the token, currency0, sold into the pool
-            low, high = band_ticks(pool.sqrt, pool.tick, pool.ref.tick_spacing, zero_for_one)
-            words = {}
-            for position in range(low >> 8, (high >> 8) + 1):
-                words[position] = (add(state, V4_TICK_BITMAP, bytes.fromhex(pool.ref.pool_id[2:]), position)
-                                   if pool.ref.dex == DEX_V4 else add(pool.address, V3_TICK_BITMAP, position))
-            walks.append((pool, partner, zero_for_one, low, high, words))
-    rows = multicall(rpc, chain, block, calls) if calls else []
+            usd, decimals = references[partner]
+            active = amount_delta(pool.sqrt, band_bound(pool.sqrt, zero_for_one), pool.liquidity,
+                                  1 if zero_for_one else 0, False)
+            ordered.append((-Fraction(active, 10 ** decimals) * usd, index, pool, partner, zero_for_one))
+    ordered.sort(key=lambda item: item[:2])
+
+    def leave(pool, noted, reason):
+        noted.add(pool.ref)
+        depths[pool.ref] = (None, reason)
+
+    def read(calls, pools):
+        """The round's rows, or None: its pools unread."""
+        try:
+            return aggregate(rpc, chain, block, calls) if calls else []
+        except DataError:
+            for pool in pools:
+                leave(pool, found.unread, 'price_read_failed')
+            return None
+
+    calls, walks = [], []
+    for _, _, pool, partner, zero_for_one in ordered:
+        low, high = band_ticks(pool.sqrt, pool.tick, pool.ref.tick_spacing, zero_for_one)
+        positions = band_words(low, high)
+        if len(calls) + len(positions) > DEPTH_WORDS:
+            leave(pool, found.skipped, 'pool_depth_unmeasurable')
+            continue
+        words = {}
+        for position in positions:
+            words[position] = len(calls)
+            calls.append((state, V4_TICK_BITMAP.calldata(bytes.fromhex(pool.ref.pool_id[2:]), position))
+                         if pool.ref.dex == DEX_V4 else (pool.address, V3_TICK_BITMAP.calldata(position)))
+        walks.append((pool, partner, zero_for_one, low, high, words))
+    rows = read(calls, [walk[0] for walk in walks])
+    if rows is None:
+        return depths
     calls, scheduled = [], []
     for pool, partner, zero_for_one, low, high, words in walks:
         bitmap = {position: word(*rows[index], ('uint256',)) for position, index in words.items()}
@@ -540,17 +608,25 @@ def measure_depths(found, rpc):
         if len(ticks) > MAX_STEPS:
             depths[pool.ref] = (None, 'pool_depth_unmeasurable')
             continue
-        nets = {tick: (add(state, V4_TICK_LIQUIDITY, bytes.fromhex(pool.ref.pool_id[2:]), tick)
-                       if pool.ref.dex == DEX_V4 else add(pool.address, V3_TICK, tick)) for tick in ticks}
+        if len(calls) + len(ticks) > DEPTH_TICKS:
+            leave(pool, found.skipped, 'pool_depth_unmeasurable')
+            continue
+        nets = {}
+        for tick in ticks:
+            nets[tick] = len(calls)
+            calls.append((state, V4_TICK_LIQUIDITY.calldata(bytes.fromhex(pool.ref.pool_id[2:]), tick))
+                         if pool.ref.dex == DEX_V4 else (pool.address, V3_TICK.calldata(tick)))
         scheduled.append((pool, partner, zero_for_one, {position: value[0] for position, value in bitmap.items()}, nets))
-    rows = multicall(rpc, chain, block, calls) if calls else []
+    rows = read(calls, [item[0] for item in scheduled if item[4]])
     for pool, partner, zero_for_one, bitmap, nets in scheduled:
-        read = {tick: word(*rows[index], V4_TICK_LIQUIDITY.outputs if pool.ref.dex == DEX_V4 else V3_TICK.outputs)
-                for tick, index in nets.items()}
+        if rows is None and nets:
+            continue  # unread; a pool with no tick to cross needs none of them
+        read_nets = {tick: word(*rows[index], V4_TICK_LIQUIDITY.outputs if pool.ref.dex == DEX_V4 else V3_TICK.outputs)
+                     for tick, index in nets.items()}
         try:
-            if any(value is None for value in read.values()):
+            if any(value is None for value in read_nets.values()):
                 raise KeyError(pool.ref)
-            raw = reference_depth(lambda position: bitmap[position], lambda tick: read[tick][1],
+            raw = reference_depth(lambda position: bitmap[position], lambda tick: read_nets[tick][1],
                                   sqrt_price=pool.sqrt, tick=pool.tick, liquidity=pool.liquidity,
                                   spacing=pool.ref.tick_spacing, zero_for_one=zero_for_one)
         except KeyError:
@@ -611,14 +687,22 @@ class Pricer:
             return {token: (None, 'no_qualified_price_source') for token in asked}
         chain = source.chain
         base = {entry[0] for entry in base_currencies(chain)}
-        priced = sorted(asked)[:MAX_PRICED]
-        refs, subjects = [], {}
-        for token in priced:
-            if token not in base:
-                for ref in pool_candidates(chain, token):
-                    refs.append(ref)
-                    subjects[ref] = token
-        unknown = [token for token in priced if token not in base and asked[token] is None]
+        # A pass reads its pools in one call: the feed, its sequencer's and the v3 tiers' spacings, then each token's
+        # pools (two reads each) and, decimals unknown, its metadata (three), while they fit.
+        priced, refs, subjects, unknown, size = [], [], {}, [], 2 + len(v3_tiers(chain))
+        for token in sorted(asked)[:MAX_PRICED]:
+            own = [] if token in base else pool_candidates(chain, token)
+            described = token in base or asked[token] is not None
+            cost = 2 * len(own) + (0 if described else 3)
+            if size + cost > SURVEY_CALLS:
+                break
+            size += cost
+            priced.append(token)
+            for ref in own:
+                refs.append(ref)
+                subjects[ref] = token
+            if not described:
+                unknown.append(token)
         try:
             with read_deadline(PRICING_BUDGET_SECONDS):
                 block, rpc = source.at_head()
@@ -642,7 +726,7 @@ class ChainSource:
 
     def at_head(self):
         head = self.follower.head()
-        return head.block, self.endpoints.read_rpc(anchor=head.block, max_requests=8)
+        return head.block, self.endpoints.read_rpc(anchor=head.block, max_requests=CHAIN_READ_REQUESTS)
 
 
 class ChainReads:

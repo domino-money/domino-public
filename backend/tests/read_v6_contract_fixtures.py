@@ -519,7 +519,7 @@ def price_answers(base, selector):
     for ref, sqrt, tick in ((v4, 2**96 * 3, 21_972), (v3, 2**96 * 2, 13_863)):
         # LIVE is currency1 in both: sold into the pool, the price rises.
         low, high = reads.band_ticks(sqrt, tick, ref.tick_spacing, False)
-        for position in range(low >> 8, (high >> 8) + 1):
+        for position in reads.band_words(low, high):
             if ref.dex == 4:
                 key = (base.uniswap.v4.stateView, selector('getTickBitmap(bytes32,int16)'),
                        encode(['bytes32', 'int16'], [bytes.fromhex(ref.pool_id[2:]), position]))

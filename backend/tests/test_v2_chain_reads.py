@@ -22,7 +22,7 @@ from read_deadline import check_read_deadline  # noqa: E402
 from v2_chains import default_registry  # noqa: E402
 from v2_read_contract import validate_v6_request_response  # noqa: E402
 from v2_uniswap import PoolRef, PoolState, v3_pool_address  # noqa: E402
-from v4_math import sqrt_at_tick  # noqa: E402
+from v4_math import sqrt_at_tick, tick_at_sqrt  # noqa: E402
 
 REGISTRY = default_registry()
 BASE, ARBITRUM, ROBINHOOD = REGISTRY.chain(8453), REGISTRY.chain(42161), REGISTRY.chain(4663)
@@ -38,14 +38,14 @@ def selector(signature):
 
 class FakeChain:
     """Multicall3 over scripted answers: {(target, selector hex, argument bytes): (ok, return bytes)}. Anything else
-    answers as an address without code: success with no data."""
+    answers as an address without code: success with no data. `fail_from`: the requests from that many on fail."""
 
-    def __init__(self, answers=None, fail=False, delay=0):
-        self.answers, self.fail, self.delay = dict(answers or {}), fail, delay
+    def __init__(self, answers=None, fail=False, delay=0, fail_from=None):
+        self.answers, self.fail, self.delay, self.fail_from = dict(answers or {}), fail, delay, fail_from
         self.requests, self.subcalls, self.batches = [], [], []
 
     def request(self, method, params):
-        if self.fail:
+        if self.fail or (self.fail_from is not None and len(self.requests) >= self.fail_from):
             raise DataError('http_503')
         if self.delay:
             time.sleep(self.delay)
@@ -69,13 +69,26 @@ class Follower:
         return self.Head()
 
 
+class Budgeted:
+    """A read client's request budget as discovery.ReadRpc keeps it: its own for each read, refused past it."""
+
+    def __init__(self, rpc, max_requests):
+        self.rpc, self.max_requests, self.count = rpc, max_requests, 0
+
+    def request(self, method, params):
+        if self.count >= self.max_requests:
+            raise DataError('request_budget_exhausted')
+        self.count += 1
+        return self.rpc.request(method, params)
+
+
 class Endpoints:
     def __init__(self, rpc, urls=()):
         self.rpc, self.endpoints = rpc, tuple(type('E', (), {'url': url})() for url in urls)
 
     def read_rpc(self, *, anchor, max_requests):
-        assert anchor == BLOCK and max_requests == 8
-        return self.rpc
+        assert anchor == BLOCK and max_requests == reads.CHAIN_READ_REQUESTS == 8
+        return Budgeted(self.rpc, max_requests)
 
 
 def source(chain, rpc, urls=()):
@@ -131,12 +144,24 @@ def eth_entry(chain=BASE, usd='4000.000000000000000000', age=60):
             'updatedAt': BLOCK.timestamp - age}
 
 
+def walk_ticks(sqrt, tick, spacing, zero_for_one):
+    """The compressed ticks a walk from `tick` can cross, both ends included, from featured_pools' own bound."""
+    from featured_pools import band_bound
+    bound = tick_at_sqrt(band_bound(sqrt, Fraction(1, 10), zero_for_one=zero_for_one)) // spacing
+    return tuple(sorted((tick // spacing, bound)))
+
+
+def walk_words(low, high):
+    """The bitmap words such a walk reads: its own, and the next one up for a rising walk that ends a word early."""
+    return range(low >> 8, (high >> 8) + 2)
+
+
 def band_answers(chain, ref, sqrt, tick, subject, nets=None):
     """The pool's bitmap words within the band as `subject` is sold into it, `nets` ({tick: liquidityNet}) set in them,
     and those ticks' liquidity."""
     nets = nets or {}
     partner = ref.currency1 if ref.currency0 == subject else ref.currency0
-    low, high = reads.band_ticks(sqrt, tick, ref.tick_spacing, partner == ref.currency1)
+    low, high = walk_ticks(sqrt, tick, ref.tick_spacing, partner == ref.currency1)
     bits = {}
     for initialized in nets:
         compressed = initialized // ref.tick_spacing
@@ -144,7 +169,7 @@ def band_answers(chain, ref, sqrt, tick, subject, nets=None):
     v3 = None if ref.dex == 4 else v3_pool_address(chain, ref.currency0, ref.currency1, ref.fee)
     pool_id = bytes.fromhex(ref.pool_id[2:]) if v3 is None else None
     out = {}
-    for position in range(low >> 8, (high >> 8) + 1):
+    for position in walk_words(low, high):
         key = ((chain.uniswap.v4.stateView, selector('getTickBitmap(bytes32,int16)'),
                 encode(['bytes32', 'int16'], [pool_id, position])) if v3 is None else
                (v3, selector('tickBitmap(int16)'), encode(['int16'], [position])))
@@ -728,11 +753,14 @@ class PriceTests(unittest.TestCase):
     def test_only_the_ticks_the_walk_can_cross_are_read_and_an_unreadable_one_unmeasures(self):
         tick = -76_010
         sqrt = sqrt_at_tick(tick)
-        low, high = reads.band_ticks(sqrt, tick, 10, True)
-        outside = (low - 1) * 10 if (low - 1) >> 8 == low >> 8 else (high + 1) * 10  # in a word read, out of range
+        low, high = walk_ticks(sqrt, tick, 10, True)
+        self.assertEqual(reads.band_ticks(sqrt, tick, 10, True), (low, high))
+        # Initialized just past either end, in words the walk reads: past the bound, and on the price's other side.
+        outside = {(low - 1) * 10: 10**18, (high + 1) * 10: 10**18}
+        self.assertTrue(all(at // 10 >> 8 in walk_words(low - 256, high) for at in outside))
         inside = tick - 300
         answers = {**self.token_answers(),
-                   **band_answers(BASE, self.WETH_POOL, sqrt, tick, TOKEN, {inside: 10**18, outside: 10**18})}
+                   **band_answers(BASE, self.WETH_POOL, sqrt, tick, TOKEN, {inside: 10**18, **outside})}
         answers.update(v4_answers(self.USDC_POOL, sqrt_at_tick(-269_390), -269_390, 0))
         pricer, fake = self.pricer(answers)
         self.assertIsNone(pricer.prices([(8453, TOKEN, 18)])[(8453, TOKEN)][1])
@@ -742,12 +770,32 @@ class PriceTests(unittest.TestCase):
         self.assertEqual(self.pricer(broken)[0].prices([(8453, TOKEN, 18)])[(8453, TOKEN)],
                          (None, 'pool_depth_unmeasurable'))
 
+    def test_ticks_initialized_around_the_band_never_count_against_the_walk(self):
+        # 5 Oct 2026: Base's deepest USDC pools, initialized at almost every spacing around their price, came out
+        # unmeasurable: the ticks of a word of margin each side counted against MAX_STEPS. Only the walk's count.
+        tick = -76_010
+        sqrt = sqrt_at_tick(tick)
+        low, high = walk_ticks(sqrt, tick, 10, True)
+        around = {**{(high + step) * 10: -10**15 for step in range(1, 201)},
+                  **{(low - step) * 10: 10**15 for step in range(1, 151)}}
+        self.assertGreater(len(around), reads.MAX_STEPS)
+        answers = {**self.token_answers(), **band_answers(BASE, self.WETH_POOL, sqrt, tick, TOKEN, around)}
+        answers.update(v4_answers(self.USDC_POOL, sqrt_at_tick(-269_390), -269_390, 0))
+        pricer, fake = self.pricer(answers)
+        price, reason = pricer.prices([(8453, TOKEN, 18)])[(8453, TOKEN)]
+        self.assertIsNone(reason)
+        depth = Fraction(featured_depth(self.WETH_POOL, sqrt, tick, 6_500 * 10**18, TOKEN, around), 10**18) * 4000
+        self.assertEqual(price['depthUsd'], reads.decimal_text(depth, reads.USD_SCALE))
+        self.assertEqual(len(fake.requests), 2)  # no tick to read: none is crossed
+
     def test_a_walk_too_long_or_an_unreadable_word_is_unmeasured(self):
         tick = -76_010
         sqrt = sqrt_at_tick(tick)
-        nets = {tick + 10 * step: -10**18 for step in range(1, 4)}
+        # Three ticks below the price, which the token sold into the pool crosses on its way down.
+        nets = {tick - 10 * step: 10**17 for step in range(1, 4)}
         answers = {**self.token_answers(), **band_answers(BASE, self.WETH_POOL, sqrt, tick, TOKEN, nets)}
         answers.update(v4_answers(self.USDC_POOL, sqrt_at_tick(-269_390), -269_390, 0))
+        self.assertIsNone(self.pricer(answers)[0].prices([(8453, TOKEN, 18)])[(8453, TOKEN)][1])
         with mock.patch.object(reads, 'MAX_STEPS', 2):
             self.assertEqual(self.pricer(answers)[0].prices([(8453, TOKEN, 18)])[(8453, TOKEN)],
                              (None, 'pool_depth_unmeasurable'))
@@ -788,6 +836,160 @@ class PriceTests(unittest.TestCase):
         # A chain without endpoints prices nothing.
         self.assertEqual(reads.Pricer({}).prices([(42161, ZERO, None)])[(42161, ZERO)],
                          (None, 'no_qualified_price_source'))
+
+
+class ReadBudgetTests(unittest.TestCase):
+    """A read at a chain's head stays within CHAIN_READ_REQUESTS whatever the chain holds (5 Oct 2026: Base's 13 USDC
+    pools needed 11 calls of 64 reads, and the reader refused chain-pools at the 9th, a 503)."""
+
+    # TOKEN at about US$ 2: 2,000 a ETH (ETH sorts below it), a two-thousandth of a WETH and 2 USDC (both above it).
+    TICKS = {ZERO: 76_010, WETH: -76_010, USDC: -269_390}
+
+    def crowded(self, ticks_each=120):
+        """All 26 of TOKEN's candidate pools on Base, each with up to `ticks_each` initialized ticks (net 0) the walk
+        crosses, active liquidity growing with the pool's place: {PoolRef: (sqrt, tick, liquidity, nets)}."""
+        pools = {}
+        for place, ref in enumerate(reads.pool_candidates(BASE, TOKEN), 1):
+            partner = ref.currency1 if ref.currency0 == TOKEN else ref.currency0
+            tick = self.TICKS[partner]
+            sqrt = sqrt_at_tick(tick)
+            low, high = walk_ticks(sqrt, tick, ref.tick_spacing, partner == ref.currency1)
+            nets = {position * ref.tick_spacing: 0 for position in range(low + 1, high)[:ticks_each]}
+            # The deepest, by far: v3's WETH tier of 200, late among the candidates and with many ticks to cross.
+            scale = 1_000 if (ref.dex, ref.fee, partner) == (3, 200, WETH) else place
+            pools[ref] = (sqrt, tick, scale * (10**18 if partner == USDC else 2_000 * 10**18), nets)
+        return pools
+
+    def answers(self, pools):
+        out = {**metadata(TOKEN), **feed_answers()}
+        for ref, (sqrt, tick, liquidity, nets) in pools.items():
+            out.update(v4_answers(ref, sqrt, tick, liquidity) if ref.dex == 4 else
+                       v3_answers(BASE, ref, sqrt, tick, liquidity))
+            out.update(band_answers(BASE, ref, sqrt, tick, TOKEN, nets))
+        return out
+
+    @staticmethod
+    def depth_usd(ref, pool):
+        sqrt, tick, liquidity, nets = pool
+        partner = ref.currency1 if ref.currency0 == TOKEN else ref.currency0
+        raw = featured_depth(ref, sqrt, tick, liquidity, TOKEN, nets)
+        return Fraction(raw, 10**6) if partner == USDC else Fraction(raw, 10**18) * 4000
+
+    def test_a_crowded_chain_is_read_in_four_calls_its_deepest_pools_measured_first(self):
+        pools = self.crowded()
+        self.assertEqual(len(pools), 26)
+        self.assertGreater(sum(len(pool[3]) for pool in pools.values()), reads.DEPTH_TICKS)
+        chain = FakeChain(self.answers(pools))
+        answer = chain_reads({8453: source(BASE, chain)}).pools(8453, TOKEN)
+        validate_v6_request_response('chain-pools', {'chainId': 8453, 'token': TOKEN, 'pairedToken': None}, answer)
+        # The pools, their words, their ticks in two: within the budget, a failover's room to spare.
+        self.assertEqual(len(chain.requests), 4)
+        self.assertEqual(chain.batches[0], 26 * 2 + 7 + 3 + 2)
+        self.assertLessEqual(chain.batches[1], reads.DEPTH_WORDS)
+        self.assertLessEqual(chain.batches[2] + chain.batches[3], reads.DEPTH_TICKS)
+        self.assertLessEqual(len(chain.requests) + 2 * 2, reads.CHAIN_READ_REQUESTS)
+        markets = {(p['pool']['dex'], p['pool']['currency0'], p['pool']['currency1'], p['pool']['fee']): p['market']
+                   for p in answer['pools']}
+        self.assertEqual(len(markets), 26)
+        depths = {ref: self.depth_usd(ref, pool) for ref, pool in pools.items()}
+        measured = {ref for ref in pools if markets[(ref.dex, ref.currency0, ref.currency1, ref.fee)]['status'] == 'measured'}
+        skipped = set(pools) - measured
+        self.assertTrue(measured and skipped)
+        self.assertEqual({markets[(ref.dex, ref.currency0, ref.currency1, ref.fee)]['reason'] for ref in skipped},
+                         {'pool_depth_unmeasurable'})
+        for ref in measured:
+            self.assertEqual(markets[(ref.dex, ref.currency0, ref.currency1, ref.fee)]['depthUsd'],
+                             reads.decimal_text(depths[ref], reads.USD_SCALE))
+        # Deepest first: a skipped pool is shallower than every pool measured before the reads ran out.
+        deepest = max(depths, key=depths.get)
+        self.assertEqual((deepest.dex, deepest.fee), (3, 200))
+        self.assertIn(deepest, measured)
+        first_skipped = max(depths[ref] for ref in skipped)
+        self.assertEqual(sum(depths[ref] > first_skipped for ref in measured),
+                         sum(depths[ref] > first_skipped for ref in pools))
+        token = next(t for t in answer['tokens'] if t['address'] == TOKEN)
+        self.assertEqual((token['price']['pool'], token['price']['depthUsd']),
+                         (reads.pool_wire(deepest), reads.decimal_text(depths[deepest], reads.USD_SCALE)))
+
+    def two_pools(self, deep_ticks):
+        """TOKEN's deeper pool (WETH, spacing 1: many words) with `deep_ticks` ticks to cross, and a shallow one against
+        USDC (spacing 60) below the floor."""
+        deep, shallow = PoolRef(3, *sorted((TOKEN, WETH)), 100, 1), PoolRef(4, *sorted((TOKEN, USDC)), 3000, 60)
+        pools = self.crowded()
+        deep_pool = (*pools[deep][:2], 6_500 * 10**18, dict(list(pools[deep][3].items())[:deep_ticks]))
+        shallow_pool = (*pools[shallow][:2], 10**15, {})
+        return deep, shallow, {deep: deep_pool, shallow: shallow_pool}
+
+    def test_a_pool_past_the_reads_left_is_unmeasured_and_the_token_waits_for_another_pass(self):
+        deep, shallow, pools = self.two_pools(deep_ticks=5)
+        deep_words = len(walk_words(*walk_ticks(*pools[deep][:2], 1, True)))
+        shallow_words = len(walk_words(*walk_ticks(*pools[shallow][:2], 60, True)))
+        self.assertLess(shallow_words, deep_words)
+        for case, constant, value in (('ticks', 'DEPTH_TICKS', 4), ('words', 'DEPTH_WORDS', deep_words - 1)):
+            with self.subTest(case=case), mock.patch.object(reads, constant, value):
+                chain = FakeChain(self.answers(pools))
+                reader = chain_reads({8453: source(BASE, chain)})
+                answer = reader.pools(8453, TOKEN)
+                validate_v6_request_response('chain-pools', {'chainId': 8453, 'token': TOKEN, 'pairedToken': None},
+                                             answer)
+                markets = {p['pool']['fee']: p['market'] for p in answer['pools']}
+                self.assertEqual((markets[100]['reason'], markets[3000]['status']),
+                                 ('pool_depth_unmeasurable', 'measured'))
+                self.assertLess(Fraction(markets[3000]['depthUsd']), reads.FLOOR_USD)
+                # The unmeasured pool might qualify: not "below the floor", and not kept.
+                token = next(t for t in answer['tokens'] if t['address'] == TOKEN)
+                self.assertEqual((token['price'], token['priceReason']), (None, 'pricing_limit_reached'))
+                self.assertIsNone(reader.pricer.cache.get((8453, TOKEN)))
+        # With the reads to measure it, the deep pool prices the token.
+        chain = FakeChain(self.answers(pools))
+        token = next(t for t in chain_reads({8453: source(BASE, chain)}).pools(8453, TOKEN)['tokens']
+                     if t['address'] == TOKEN)
+        self.assertEqual(token['price']['pool'], reads.pool_wire(deep))
+
+    def test_a_failed_depth_call_leaves_the_pools_listed_and_their_depths_unread(self):
+        deep, shallow, pools = self.two_pools(deep_ticks=5)
+        for case, fail_from, shallow_status in (('words', 1, 'unavailable'), ('ticks', 2, 'measured')):
+            with self.subTest(case=case):
+                chain = FakeChain(self.answers(pools), fail_from=fail_from)
+                reader = chain_reads({8453: source(BASE, chain)})
+                answer = reader.pools(8453, TOKEN)
+                validate_v6_request_response('chain-pools', {'chainId': 8453, 'token': TOKEN, 'pairedToken': None},
+                                             answer)
+                markets = {p['pool']['fee']: p['market'] for p in answer['pools']}
+                self.assertEqual(markets[100]['reason'], 'price_read_failed')
+                # A pool with no tick to cross needs no tick call.
+                self.assertEqual(markets[3000]['status'], shallow_status)
+                prices = {t['address']: t['priceReason'] for t in answer['tokens']}
+                self.assertEqual(prices, {TOKEN: 'price_read_failed', ZERO: None, WETH: None, USDC: None})
+                self.assertIsNone(reader.pricer.cache.get((8453, TOKEN)))
+        # The pools' own call failing still fails the read: there is nothing to list.
+        with self.assertRaisesRegex(DataError, '^http_503$'):
+            chain_reads({8453: source(BASE, FakeChain(self.answers(pools), fail_from=0))}).pools(8453, TOKEN)
+        # A pass pricing two tokens: the tick call failing leaves unread only the token whose pool had ticks to cross.
+        other = '0x' + '12' * 20
+        other_pool = PoolRef(4, *sorted((other, USDC)), 3000, 60)
+        tick = -269_390
+        answers = {**self.answers({deep: pools[deep]}), **v4_answers(other_pool, sqrt_at_tick(tick), tick, 10**15),
+                   **band_answers(BASE, other_pool, sqrt_at_tick(tick), tick, other)}
+        pricer = reads.Pricer({8453: source(BASE, FakeChain(answers, fail_from=2))}, monotonic=Clock(0.0))
+        got = pricer.prices([(8453, TOKEN, 18), (8453, other, 18)])
+        self.assertEqual((got[(8453, TOKEN)], got[(8453, other)]),
+                         ((None, 'price_read_failed'), (None, 'pool_depth_below_floor')))
+
+    def test_a_pass_prices_the_tokens_whose_pools_fit_one_call_and_says_so_for_the_rest(self):
+        tokens = sorted('0x' + f'{n:02x}' * 20 for n in range(0x20, 0x2c))
+        # The feed, its sequencer's and the 7 tiers' spacings, then 26 pools (two reads each) a token: 9 tokens.
+        self.assertEqual((reads.SURVEY_CALLS - 2 - 7) // (26 * 2), 9)
+        # A call of 529 reads fits 10 tokens whose decimals are known, 9 whose metadata it reads too (three more).
+        for calls, decimals, fits in ((reads.SURVEY_CALLS, 18, 9), (529, 18, 10), (529, None, 9)):
+            with self.subTest(calls=calls, decimals=decimals), mock.patch.object(reads, 'SURVEY_CALLS', calls):
+                fake = FakeChain(feed_answers())
+                pricer = reads.Pricer({8453: source(BASE, fake)}, monotonic=Clock(0.0))
+                got = pricer.prices([(8453, token, decimals) for token in tokens])
+                self.assertEqual([got[(8453, token)][1] for token in tokens],
+                                 ['decimals_unknown' if decimals is None else 'no_pool'] * fits
+                                 + ['pricing_limit_reached'] * (len(tokens) - fits))
+                self.assertEqual(fake.batches, [2 + 7 + fits * (26 * 2 + (3 if decimals is None else 0))])
 
 
 class ValueTests(unittest.TestCase):
@@ -877,6 +1079,25 @@ class PoolMarketTests(unittest.TestCase):
                 self.assertEqual(answer['pools'][0]['market']['reason'], reason)
 
 class HelperTests(unittest.TestCase):
+    def test_a_survey_call_answers_every_read_or_is_refused(self):
+        class Rpc:
+            def __init__(self, raw):
+                self.raw, self.sent = raw, []
+
+            def request(self, method, params):
+                self.sent.append(params)
+                return self.raw
+        calls = [(USDC, '0x313ce567')] * 3
+        good = '0x' + encode(['(bool,bytes)[]'], [[(True, b'')] * 3]).hex()
+        rpc = Rpc(good)
+        self.assertEqual(reads.aggregate(rpc, BASE, BLOCK, calls), [(True, b'')] * 3)
+        self.assertEqual([(params[0]['to'], params[0]['gas'], params[1]) for params in rpc.sent],
+                         [(BASE.multicall3, hex(30_000_000), BLOCK.tag)])
+        for case, raw in (('not text', None), ('no 0x', '00' + good[2:]), ('not hex', '0xzz'),
+                          ('a read short', '0x' + encode(['(bool,bytes)[]'], [[(True, b'')] * 2]).hex())):
+            with self.subTest(case=case), self.assertRaisesRegex(DataError, '^quote_multicall_invalid$'):
+                reads.aggregate(Rpc(raw), BASE, BLOCK, calls)
+
     def test_symbols_are_strings_or_legacy_bytes32_and_never_unsafe(self):
         self.assertEqual(reads.raw_text(True, encode(['string'], ['DAI']), 40), 'DAI')
         self.assertEqual(reads.raw_text(True, b'MKR'.ljust(32, b'\x00'), 40), 'MKR')

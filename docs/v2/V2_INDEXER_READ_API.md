@@ -102,11 +102,12 @@ Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Co
 
 `chain-pools`, `chain-balances` and `chain-tokens` are not index reads (`backend/v2_chain_reads.py`):
 
-- **Where they read:** at request time, one Multicall3 call per chain at the chain's head (`v2_head`). Robinhood goes through the reader's provider file (the own node); Base and Arbitrum go through the V2 chain RPC file's hosted endpoints (F6), billed per call.
+- **Where they read:** at request time, one Multicall3 call per chain at the chain's head (`v2_head`); `chain-pools` at most three more, for the depths. A read sends at most 8 requests, an endpoint failover's included (`CHAIN_READ_REQUESTS`). Robinhood goes through the reader's provider file (the own node); Base and Arbitrum go through the V2 chain RPC file's hosted endpoints (F6), billed per call.
 - **Cache:** pools for 15 s, balances for 10 s, the index's known tokens for 60 s, prices for 30 s.
 - **Prices** (item 4):
-  - The pricer prices a chain's tokens in one survey of three Multicall3 rounds at its head: the pools' state, the feed and its sequencer; the band's bitmap words; the initialized ticks in them.
-  - A pass is bounded: 32 tokens a chain, 300 steps a walk, 3 s a chain. A failure costs the answer its prices, never the answer.
+  - The pricer prices a chain's tokens in one survey of three Multicall3 rounds at its head: the pools' state, the feed and its sequencer, in one call of at most 512 reads; the bitmap words the walks read, in one call of at most 512; the initialized ticks they cross, at most 1,024 in two calls. A walk reads only the ticks between the price and the band's bound (5 Oct 2026: with a word of margin each side, Base's deepest USDC pools came out unmeasurable and a `chain-pools` read needed 11 calls of 64 reads).
+  - The pools deepest by active liquidity are walked first; a pool past those bounds is left unmeasured, and a token none of whose measured pools qualifies says `pricing_limit_reached`.
+  - A pass is bounded: 32 tokens a chain and as many as one call holds, 300 steps a walk, 3 s a chain. A failure costs the answer its prices, never the answer; a failed depth round leaves its pools unmeasured (`price_read_failed`), never the pools unlisted.
   - portfolio and activity price their tokens through it when the chain reads are on, with the decimals the index read; otherwise each says `no_qualified_price_source`.
 - **Lanes:** `chain-pools` and `chain-balances` take the reader's provider lane; `chain-tokens` reads no chain and takes the stored lane.
 - **Search sources:** the profile's currencies; the Uniswap Labs Default token list, pinned in `backend/data/token-lists` with its version, SHA-256 and GPL-3.0 license (`scripts/update-uniswap-token-list.py` refreshes it; the owner's decision of 5 Oct 2026); tokens the index read in full; tokens a `chain-pools` read found priced pools for. The last are kept in the reader's runtime (`v2-learned-tokens.json`), at most 5,000 per chain.
