@@ -125,7 +125,9 @@ export const PRODUCER_PIN = {
       // Changed on purpose (data) 2026-10-06: read_service.py, which the manifest hashes, answers pool-activity for a
       // registered pool whose stored walk is 24 h or more behind with the existing live-window answer; no read-v1
       // route, schema or version moved.
-      manifestSha256: '562898faafcb01ff86a5df930f5f9f3f54be4bcb8e113163d82aea22058ff11b',
+      // Changed on purpose (data) 2026-10-06: read_service.py reads a live window's logs on their own client and
+      // retries a refused range on a fresh one; no read-v1 route, schema or version moved.
+      manifestSha256: '846e5ca71b47139080b05b400491331bcb15237252645458e952e714a5b10fe7',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -153,7 +155,9 @@ export const READ_V2_PIN = {
   // route, schema or version moved.
   // Changed on purpose (data) 2026-10-06: read_service.py, which the manifest hashes, serves a pool walked 24 h or
   // more behind from its live window; no read-v2 route, schema or version moved.
-  manifestSha256: 'c7bd9c59ed6d0309f31e9c5481ff6c04f1a68de2d007d4c34bcf5176c404a9b9',
+  // Changed on purpose (data) 2026-10-06: read_service.py retries a live window's refused log range on a fresh
+  // client; no read-v2 route, schema or version moved.
+  manifestSha256: '1a496f9218fd2c28e8c406cbafe39bd0dfae1ef3c59ffa87523aeca0fa75e4a3',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

@@ -10,6 +10,7 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import psycopg
 from eth_abi import encode
+from eth_hash.auto import keccak
 from fastapi.testclient import TestClient
 
 import activity_store
@@ -17,7 +18,7 @@ from activity_indexer import ActivityIndexer
 from activity_store import PgActivity
 from catalogue import PgCatalogue
 from dev_postgres import ADMIN
-from discovery import CHAIN_ID, POOL_MANAGER, STATE_VIEW, Block, DataError
+from discovery import CHAIN_ID, KEY_TYPES, POOL_MANAGER, STATE_VIEW, Block, DataError
 from pool_activity import SWAP, window_metrics
 from pool_requests import PgRequests
 from read_api import ReadGate, create_app
@@ -351,3 +352,71 @@ class LiveWhileBehindTests(unittest.TestCase):
         self.assertEqual(result['freshness']['status'], 'stale')
         self.assertFalse(result['window24h']['usableAsCurrent24h'])
         self.assertEqual(asked, [(stored['poolId'], 'read')])
+
+
+class JsonRpcChain:
+    """A ChainAfterRpc's chain behind real JSON-RPC envelopes, for the reader's own clients.
+
+    The fakes above forgive a refusal; production's failover client does not:
+    once it refuses a range it fails every later request of that read. A log
+    answer over `max_logs` is refused here as rpc_http refuses one over the
+    reader's 2 MB ceiling: on 6 Oct 2026 ETH/USDG's 3,423 logs were 3,264,580
+    bytes, about 953 a log, so 2 MB holds about 2,098.
+    """
+    OUTPUTS = {'poolManager()': ['address'], 'poolKeys(bytes25)': list(KEY_TYPES),
+               'getSlot0(bytes32)': ['uint160', 'int24', 'uint24', 'uint24'],
+               'getLiquidity(bytes32)': ['uint128'], 'getFeeGrowthGlobals(bytes32)': ['uint256', 'uint256']}
+
+    def __init__(self, chain, *, max_logs):
+        self.chain, self.max_logs, self.windows = chain, max_logs, []
+        self.selectors = {'0x' + keccak(name.encode())[:4].hex(): name for name in self.OUTPUTS}
+
+    def __call__(self, url, body=None):
+        return [self.answer(item) for item in body] if isinstance(body, list) else self.answer(body)
+
+    def answer(self, body):
+        method, params = body['method'], body['params']
+        if method == 'eth_getLogs':
+            query = params[0]
+            self.windows.append((int(query['fromBlock'], 16), int(query['toBlock'], 16)))
+            result = self.chain.request(method, params)
+            if len(result) > self.max_logs:
+                raise DataError('response_too_large')
+        elif method == 'eth_call':
+            name = self.selectors[params[0]['data'][:10]]
+            result = '0x' + encode(self.OUTPUTS[name], list(self.chain.call(params[0]['to'], name, block=params[1]))).hex()
+        else:
+            result = self.chain.request(method, params)
+        return {'jsonrpc': '2.0', 'id': body['id'], 'result': result}
+
+
+class RefusedRangeTests(unittest.TestCase):
+    """ETH/USDG on 6 Oct 2026: its live window over 3.3 MB of logs, through the reader's real clients."""
+    def test_a_window_over_the_byte_ceiling_is_read_in_narrower_ranges_on_fresh_clients(self):
+        stored = json.loads(BEHIND.read_text())
+        chain = ChainAfterRpc(stored, seconds_behind=6_000_000)
+        first = chain.head - ReadService.LIVE_WINDOW_SECONDS - ReadService.LIVE_WINDOW_BLOCK_MARGIN
+        chain.logs = [swap_log(stored['poolId'], first + 25 * index, 100) for index in range(3423)]
+        transport = JsonRpcChain(chain, max_logs=2098)
+        service = ReadService(rpc_urls=('https://rpc.invalid',), catalogue=object(), market_cache=object(),
+                              snapshot=object(), requests=Asks(), transport_factory=lambda: transport,
+                              clock=lambda: chain.timestamp(chain.head) + 5)
+
+        def read(store, pool_id, *, include_positions=False):
+            return deepcopy(stored)
+        app = create_app(service, gate=ReadGate(interval=0), snapshot_refresh_seconds=0)
+        with patch.object(activity_store.PgActivity, 'read', read), \
+                TestClient(app, base_url='http://127.0.0.1:8876') as client:
+            response = client.post('/v1/read/pool-activity', json={'poolId': stored['poolId']})
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        validate_response('pool-activity', result)
+        self.assertEqual(result['mode'], 'live_window_only')
+        self.assertEqual(result['window24h']['swapEventCount'], 3423)
+        # The state reads that follow the logs still answer.
+        self.assertEqual(result['liquidity']['activeLiquidityRaw'], '100')
+        # The whole range once, refused; then quarter ranges covering the same blocks.
+        self.assertEqual(transport.windows[0], (first, chain.head - 1))
+        self.assertEqual(transport.windows[1], (first, first + 21_629))
+        self.assertTrue(all(high - low + 1 <= 21_630 for low, high in transport.windows[1:]))
+        self.assertEqual((transport.windows[-1][1], len(transport.windows)), (chain.head - 1, 5))

@@ -343,9 +343,11 @@ class ReadService:
 
         # The window needs `eth_getLogs`, which the browser-facing read clients
         # deliberately lack; an injected factory (tests, alternate lanes) wins.
-        rpc=self.rpc_factory() if self.rpc_factory else IndexRpc(
-            self._endpoints(),
-            transport=self.transport_factory(),max_requests=4096)
+        def client():
+            return self.rpc_factory() if self.rpc_factory else IndexRpc(
+                self._endpoints(),
+                transport=self.transport_factory(),max_requests=4096)
+        rpc=client()
         reader=DiscoveryReader(rpc,clock=self.clock)
         block=reader.snapshot()
         pool=self._pool_identity(rpc,reader,pool_id,block,anchor)
@@ -356,7 +358,7 @@ class ReadService:
         if lower.timestamp>block.timestamp:
             raise DataError('activity_window_start_after_snapshot')
         anchor_at=self._header(rpc,anchor['startBlock']).timestamp
-        events=self._window_events(rpc,pool_id,lower.number,block)
+        events=self._window_events(client,pool_id,lower.number,block)
         state={'number':block.number,'hash':block.hash,'timestamp':block.timestamp,
                'sqrtPriceX96':str(pool['sqrtPriceX96']),'tick':pool['tick'],
                'activeLiquidityRaw':str(self._active_liquidity(rpc,pool_id,block)),
@@ -454,12 +456,21 @@ class ReadService:
         return rpc.call(STATE_VIEW,'getFeeGrowthGlobals(bytes32)',['bytes32'],
                         [bytes.fromhex(bytes32(pool_id)[2:])],['uint256','uint256'],block=block.tag)
 
-    def _window_events(self,rpc,pool_id,from_block,block):
-        """The pool's logs in the proved window, narrowed when a range is too big."""
+    def _window_events(self,client,pool_id,from_block,block):
+        """The pool's logs in the proved window, narrowed when a range is too big.
+
+        A failover client fails closed for the rest of its read once it refuses
+        a log range (rpc_failover.py), so the logs never share the client the
+        state reads still need, and a narrower range starts on a fresh one. On
+        6 Oct 2026 ETH/USDG's 86,521 blocks held 3,423 logs, 3.3 MB against the
+        reader's 2 MB ceiling: every narrower range re-raised the first refusal
+        and the pool kept its stored window, 78 days old.
+        """
         from discovery import POOL_MANAGER
         from pool_activity import TOPICS, decode_activity
 
         events,start,span=[],from_block,max(1,block.number-from_block)
+        rpc=client()
         while start<block.number:
             end=min(start+span-1,block.number)
             try:
@@ -470,6 +481,7 @@ class ReadService:
                                       'read_deadline_exceeded') or span<=1000:
                     raise
                 span=max(1000,span//4)
+                rpc=client()
                 continue
             if not isinstance(logs,list) or len(logs)>2000:
                 if span>1000:
