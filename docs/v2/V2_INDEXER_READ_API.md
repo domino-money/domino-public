@@ -211,6 +211,28 @@ The indexer runs as the catalogue writer, `domino-write`, from the public-data r
      - `chain-balances`: the first after a restart 2.8 s → 1.2 s, one with prices kept 0.96 s → 0.21 s.
    - **The endpoints:** Chainstack stays primary on Base and Arbitrum, Alchemy fallback only (the owner, 6 Oct 2026), even though Alchemy answered Base's survey faster ("Measuring the endpoints", below).
 
+10. **6 Oct 2026, afternoon: the app developer's priorities (the owner gave full autonomy).**
+    - **#376 (`449751a1`), 12:39:17 UTC:** each reader lane gets its own visitor budget at the gateway.
+      - Stored reads: 30 at once, then 240 a minute. Provider reads: 12 at once, then 60 a minute.
+      - All of the day's 47 `read_capacity_busy` came from the old single budget (5 at once, then 30 a minute, shared by every route). There have been none since.
+    - **Reader `edb4b9a6`, 14:08:05 UTC:**
+      - #377: a mandate's waiting reason from before its vault's latest `ExitModuleSet` is not shown.
+      - #378: USDG/ORBIO's `pool-activity` answers 200 instead of 502.
+      - #379: chain-balances for chains 1 and 10, answering `chain_not_configured` until the owner's endpoints exist.
+    - **Worker:** *Publish read path* `worker-v6` on `edb4b9a6` (run 37476949578, version `a0a0b1c4`). read-v6 accepts chains 1 and 10 on chain-balances.
+    - **Reader `0472802b`, 14:45:32 UTC:** #382. A pool whose walk is a day or more behind answers with its live window.
+    - **Reader `99d8f12e`, 15:17:17 UTC:** #383. A live window's refused log range is retried on a fresh client. ETH/USDG `0x24107d15…`, 78 days behind, now answers live in 1.75 s.
+    - **Public-data `99d8f12e`, 15:18:49 UTC:** #381. The queue worker registers requested pools first and makes progress within each run; it had failed every run since 3 Oct.
+      - Only the queue worker's drop-in changed, and the three lanes restarted.
+      - Its first run exited 0 and reopened the five requested pools.
+    - **Incident, 12:20:26 UTC:** a delegated diagnostic ran an unbounded `journalctl -o json` on the VM, and the kernel OOM-killed that shell alone.
+      - Because the cache was cold after it, two accounting lane steps passed the catalogue's 5 s statement timeout: the fee step for `0x4be9…f38a` at 12:36 and the position step for `0x84bd…cad0b6` at 12:40.
+      - Both were recorded as `catalogue_database_unavailable`. `pool-activity`, `pool-positions` and `pool-metrics` answered 503 until the lane's next step; `0x4be9…` was 200 again by 15:17.
+      - An index on `domino_activity.events(pool_id, chunk_start)` would keep that per-chunk read off a sequential scan of 2.87M rows.
+    - **Rollbacks:**
+      - Each read release keeps the previous 70 drop-ins in `/root/deploy-v2-<commit>/read-dropins/`.
+      - Public-data: `install_public_data.py --rollback 99d8f12e…` (files only), then reload and restart the lanes.
+
 ### Base and Arbitrum
 
 The writer reads their hosted providers from its private V2 chain RPC file (`backend/v2_rpc.py`). A provider's URL carries its key, so each URL is a sealed credential, never a file in clear.

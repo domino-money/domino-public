@@ -426,6 +426,13 @@ All three: `twapSeconds` 300 (the anchor's minimum is 60), `exitTwapSeconds` 600
 
 The first start failed: the install ran from a shell with `umask 077`, which left the release's files `0400`, and the instances could not read their entry script (`EACCES`). The files were set back to `0444`/`0555` in place. #346 sets every installer's modes explicitly.
 
+
+On 6 Oct 2026 at 14:09:59 UTC, release `edb4b9a6` (#380) replaced `e778b964` (#358).
+- **TWAP:** an exit's TWAP never reaches back before its mandate's registration.
+- **Paused vaults:** each costs its pause check, about 5,800 calls a day instead of 69,000.
+- **First passes:** no errors on any of the three chains. The waiting files were rewritten.
+- **Rollback:** `install_v2_automation.py --rollback edb4b9a6…`, `daemon-reload`, then restart the three instances.
+
 Still open:
 - **Funding and admission:** the operator needs ETH on each chain (about 0.0065 ETH on Robinhood and 0.005 ETH on Base and Arbitrum on 5 Oct). The registry admitted both roles at deployment.
 - **Monitoring:** the production monitor ([OPS_MONITOR.md](../OPS_MONITOR.md)) watches the passes, the signer and the operator's balance on each chain since 5 Oct 15:26 UTC, and alerts on Telegram since 15:41 UTC. Still to add:
