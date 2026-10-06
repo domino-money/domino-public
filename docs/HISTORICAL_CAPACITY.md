@@ -16,7 +16,7 @@ This documentation was originally examined against [PR #54](https://github.com/d
 | 160 total RPC requests / 90 seconds | One position or capital CLI worker instance | Fix provider availability, then resume; partial failed batches roll back |
 | 60 total RPC requests / 90 seconds | One fee CLI worker instance | Fix provider availability, then resume |
 | 8 MiB serialized progress | One unpublished pool/ledger checkpoint | Capacity review; no partial values published |
-| 2,000 events | One source activity chunk | Reduce future activity spans; a single over-capacity block needs separate design |
+| 2,000 events | One source activity chunk | Reduce future activity spans; a single over-capacity block needs separate design. A ledger that meets a stored chunk above it records `fee_event_budget_exhausted`, `position_event_budget_exhausted` or `capital_event_budget_exhausted` with `repair_source_then_resume`; reads keep that ledger null as `*_ledger_not_caught_up` |
 | 5,000 live aggregate ranges | `standard` activity profile, independent of core identities | Explicitly select the `extended` activity profile and repeat the uncommitted interval |
 | 10,000 live aggregate ranges | `extended` activity profile | Capacity review; no larger shipped profile, no truncation or unlimited mode |
 | 50 batches | One explicit CLI invocation | Run another bounded invocation with a new report filename |

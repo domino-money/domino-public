@@ -1,0 +1,163 @@
+{
+  "accountingScope": "core_pool_events_only",
+  "chainId": 4663,
+  "coverage": {
+    "canonicality": "requires_rpc_recheck",
+    "indexedThrough": 81642683,
+    "initializedAt": 1789888014,
+    "initializedBlock": 67747815,
+    "rpcCompleteness": "single_provider_assumption",
+    "scope": "since_verified_initialize",
+    "startBlock": 67747815
+  },
+  "executionAvailable": false,
+  "fees": {
+    "accounting": {
+      "basis": "core_trading_fee_before_Q128_distribution_rounding",
+      "donationsRaw": null,
+      "historicalWork": {
+        "action": "repair_source_then_resume",
+        "capacityProfile": "standard",
+        "completedChecks": 0,
+        "fromBlock": 68147815,
+        "limits": {
+          "checksPerBatch": 128,
+          "eventsPerBatch": 32,
+          "positions": 128,
+          "progressBytes": 8388608,
+          "ticks": 256
+        },
+        "phase": "replay",
+        "processedEvents": 0,
+        "reason": "fee_event_budget_exhausted",
+        "requiredChecks": null,
+        "status": "blocked",
+        "throughBlock": 68247814,
+        "totalEvents": null
+      },
+      "isCollectedAmount": false,
+      "isDominoServiceFee": false,
+      "lpFeesRaw": null,
+      "methodologyVersion": 1,
+      "protocolFeesRaw": null,
+      "reason": "fee_event_budget_exhausted",
+      "status": "unavailable"
+    },
+    "feeGrowthGlobalX128": [
+      "10557414541023829782592120884740",
+      "136426663092811342032938015048898370460501301"
+    ],
+    "growthIncludesDonations": true,
+    "growthIsTokenAmount": false,
+    "lpFeePipsAtSnapshot": 8000,
+    "protocolDirectionalPips": [
+      1000,
+      1000
+    ]
+  },
+  "liquidity": {
+    "activeLiquidityRaw": "6735840253067753385",
+    "isTvl": false,
+    "positionAccounting": {
+      "historicalWork": {
+        "action": "repair_source_then_resume",
+        "capacityProfile": "standard",
+        "completedChecks": 0,
+        "fromBlock": 68147815,
+        "limits": {
+          "checksPerBatch": 128,
+          "eventsPerBatch": 32,
+          "positions": 128,
+          "progressBytes": 8388608,
+          "ticks": 256
+        },
+        "phase": "replay",
+        "processedEvents": 0,
+        "reason": "reconciled_fee_chunk_required",
+        "requiredChecks": null,
+        "status": "blocked",
+        "throughBlock": 68247814,
+        "totalEvents": null
+      },
+      "lpAssetsRaw": null,
+      "methodologyVersion": 1,
+      "principalRaw": null,
+      "reason": "reconciled_fee_chunk_required",
+      "status": "unavailable",
+      "unsettledFeesRaw": null
+    },
+    "rangeCount": 474,
+    "status": "core_active_liquidity_reconciled",
+    "tvlReason": "pool_assets_and_uncollected_fees_not_reconciled",
+    "tvlUsd": null
+  },
+  "methodologyVersion": 1,
+  "mode": "core_pool_activity_read_only",
+  "poolId": "0xea9f200e13055b82f175f44f592c4c13dd8c9d9320a66487d3c5cd90d68550ef",
+  "poolKey": {
+    "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "currency1": "0xaa07a0e9209e16ac99708c3ec70159c6ef3128a3",
+    "fee_pips": 8000,
+    "hooks": "0x0000000000000000000000000000000000000000",
+    "tick_spacing": 80
+  },
+  "revision": 16317,
+  "schemaVersion": 1,
+  "snapshot": {
+    "activeLiquidityRaw": "6735840253067753385",
+    "feeGrowthGlobalX128": [
+      "10557414541023829782592120884740",
+      "136426663092811342032938015048898370460501301"
+    ],
+    "hash": "0x6d463be2aba4d1935a02c93ebb16795da9fb4b644786d3545a07d1b05ad83ac9",
+    "lpFeePips": 8000,
+    "number": 81642683,
+    "protocolFeeRaw": 4097000,
+    "sqrtPriceX96": "318746581621957275817200648879043134",
+    "tick": 304166,
+    "timestamp": 1791290976
+  },
+  "storedEventCount": 204090,
+  "suggested": false,
+  "window24h": {
+    "completeWindow": true,
+    "donations": {
+      "amountsRaw": [
+        "0",
+        "0"
+      ],
+      "count": 0
+    },
+    "feeApr": null,
+    "feeAprReason": "lp_fee_and_time_weighted_tvl_not_reconciled",
+    "fromTimestampExclusive": 1791204576,
+    "lpFeesRaw": null,
+    "lpFeesReason": "fee_event_budget_exhausted",
+    "nonzeroSwapCount": 2951,
+    "observedSeconds": 86400,
+    "observedSinceTimestamp": 1791204576,
+    "observedTotalSwapFeePips": [
+      8992
+    ],
+    "requestedSeconds": 86400,
+    "status": "covered_as_of",
+    "swapEventCount": 2951,
+    "swapLegsRaw": [
+      {
+        "absoluteTurnover": "2341666231586",
+        "currencyIndex": 0,
+        "grossInput": "1018796363817",
+        "output": "1322869867769"
+      },
+      {
+        "absoluteTurnover": "35325735177954831332579808",
+        "currencyIndex": 1,
+        "grossInput": "19914197548798120536012137",
+        "output": "15411537629156710796567671"
+      }
+    ],
+    "throughTimestamp": 1791290976,
+    "volumeUsd": null,
+    "volumeUsdReason": "timestamp_aligned_valuation_unavailable"
+  }
+}

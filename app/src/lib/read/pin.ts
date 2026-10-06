@@ -119,7 +119,10 @@ export const PRODUCER_PIN = {
       // Changed on purpose (data) 2026-10-06: read_gateway.py, which the manifest hashes, gives each reader lane its own visitor budget; no route, schema or version moved.
       // Changed on purpose (data) 2026-10-06: read_api.py names read-v6 chain-balances' balance chain RPC file
       // (Ethereum, OP Mainnet); no read-v1 route, schema or version moved.
-      manifestSha256: 'fd5283acc2f2826401141579f5868dec03f977d1476b1cb6f5eab451b233a49f',
+      // Changed on purpose (data) 2026-10-06: historical_read.py, which the manifest hashes, projects a ledger's refusal
+      // of a source activity chunk over 2,000 events as `*_ledger_not_caught_up` instead of a 502; no read-v1 route,
+      // schema, reason code or version moved.
+      manifestSha256: '383406998bb19cd6ef6c811d2123ca0a503935d34ff5bf675e59b29b34ca174c',
     },
     'session-v1': {
       version: '3.0.0-rc.4',

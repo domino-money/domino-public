@@ -17,6 +17,14 @@ _TRANSIENT_REASONS.update({f'http_{code}': 'upstream_unavailable'
 _DEPENDENCY_REASONS = {'position': frozenset({'reconciled_fee_chunk_required'}), 'fee': frozenset(),
                        'capital': frozenset({'reconciled_position_tail_required',
                                              'reconciled_position_chunk_required'})}
+# A source activity chunk holding more events than one ledger chunk replays
+# (2,000, docs/HISTORICAL_CAPACITY.md). Each ledger names its own refusal,
+# before any replay, and recovers when the source is re-split into smaller
+# chunks: finite capacity, never corruption. Featured USDG/ORBIO (0xea9f…50ef)
+# holds one, and every read of it answered 502 until it was known (6 Oct 2026).
+_SOURCE_CAPACITY_REASONS = {'fee': frozenset({'fee_event_budget_exhausted'}),
+                            'position': frozenset({'position_event_budget_exhausted'}),
+                            'capital': frozenset({'capital_event_budget_exhausted'})}
 _FIELDS = frozenset({'status', 'reason', 'capacityProfile', 'fromBlock', 'throughBlock',
                      'processedEvents', 'totalEvents', 'phase', 'completedChecks',
                      'requiredChecks', 'limits', 'action'})
@@ -68,7 +76,8 @@ def _incomplete(work, snapshot, ledger):
             action = ('select_extended_profile_and_resume' if profile == 'standard' and
                       reason in {'core_position_budget_exhausted', 'core_tick_budget_exhausted'}
                       else 'capacity_review_required')
-        elif reason in _TRANSIENT_REASONS or reason in _DEPENDENCY_REASONS[ledger]:
+        elif (reason in _TRANSIENT_REASONS or reason in _DEPENDENCY_REASONS[ledger] or
+              reason in _SOURCE_CAPACITY_REASONS[ledger]):
             action = 'repair_source_then_resume'
         elif reason == 'activity_range_budget_exhausted':
             action = 'review_activity_capacity_profile_then_resume'
