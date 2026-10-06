@@ -84,7 +84,7 @@ The automation (3a, docs/v2/V2_AUTOMATION_BACKEND.md, "Why a vault or a mandate 
 - the chain's indexer reads the file once a pass (`--waiting-file`), whole or not at all: a file missing, too large or malformed in any part leaves the chain `unavailable`, never half read; it never reads the automation's journal;
 - the rows go into the V2 index (`domino_v2.waiting`, `waiting_reports`), so the read API needs no access to the automation's files and answers from one database snapshot;
 - `since` and `sinceBlock` come from the automation as recorded; the indexer computes nothing;
-- read-v6 shows it as `waiting: {reason, since, sinceBlock, error, checkedAt, checkedBlock, lastRevert}`: `error` is the contract error's name when the reason is `reverted_<snake case>` of an error contracts/src/v2 declares (`V2_ERRORS`, pinned to the sources); a file whose pass is more than 600 s old is `stale`, its reasons shown with their age; an ended mandate's last row is not shown.
+- read-v6 shows it as `waiting: {reason, since, sinceBlock, error, checkedAt, checkedBlock, lastRevert}`: `error` is the contract error's name when the reason is `reverted_<snake case>` of an error contracts/src/v2 declares (`V2_ERRORS`, pinned to the sources); a file whose pass is more than 600 s old is `stale`, its reasons shown with their age; an ended mandate's last row is not shown, nor a mandate's row decided before its vault's latest `ExitModuleSet` (6 Oct 2026: after "Turn back on", `exit_module_not_enabled` held until the automation's next pass and the card said "Waiting").
 
 ## The read API (read-v6)
 

@@ -305,6 +305,11 @@ def mandate_entry(row, now, *, halted, vaults, positions, waiting=None):
         member = next((m for m in vault['members'] if m['tokenId'] == a['tokenId']), None)
         position = member['role'] if member is not None else 'unknown'
     module_enabled = (row['exit_module'] == row['address']) if known else None
+    # The automation decided its row at a block before the vault's latest ExitModuleSet: the module it saw is not the
+    # module now (a "Turn back on", or a turn-off, since), so its reason no longer holds until its next pass.
+    changed = row.get('exit_module_block')
+    if waiting is not None and changed is not None and int(changed) > int(waiting['block']):
+        waiting = None
     blocked = []
     if status == 'active':
         if valid_until < now:

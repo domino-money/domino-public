@@ -883,11 +883,11 @@
     },
     {
       "path": "backend/v2_read_service.py",
-      "sha256": "ca2548025f50897d59d93b6305de6569f350b4d0001b0e52f80db40a54aa7596"
+      "sha256": "66cb5f3431e24eef5c12680dc6c1bd2ccff8f8e393f5a7fd3704dd3ca89b01a7"
     },
     {
       "path": "backend/v2_index_store.py",
-      "sha256": "2b1c9256124514a7f8f06d2ed6dab11e4da25be773000dd7eff43428765b1a64"
+      "sha256": "0cdd5c8c0e03e9f344959a2faedb8344498a883658fb40413fb55d976c378bad"
     },
     {
       "path": "backend/v2_chain_reads.py",

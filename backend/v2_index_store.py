@@ -459,6 +459,8 @@ class V2Reader:
              ORDER BY x.block_number,x.log_index LIMIT 1) AS ended,
           (SELECT e.args->>'module' FROM domino_v2.logs e WHERE e.chain_id=l.chain_id AND e.address=l.vault
              AND e.event='ExitModuleSet' ORDER BY e.block_number DESC,e.log_index DESC LIMIT 1) AS exit_module,
+          (SELECT e.block_number FROM domino_v2.logs e WHERE e.chain_id=l.chain_id AND e.address=l.vault
+             AND e.event='ExitModuleSet' ORDER BY e.block_number DESC,e.log_index DESC LIMIT 1) AS exit_module_block,
           EXISTS(SELECT 1 FROM domino_v2.vaults v WHERE v.chain_id=l.chain_id AND v.vault=l.vault) AS vault_known
           FROM domino_v2.logs l LEFT JOIN domino_v2.mandates m ON m.chain_id=l.chain_id AND m.mandate_hash=l.ref
           WHERE l.event='MandateRegistered' AND l.owner=%s

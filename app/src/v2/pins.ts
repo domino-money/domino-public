@@ -28,7 +28,9 @@ export const READ_V6_PIN = {
   // names them (the owner's decision); same version, new schemas and fixtures for balance chain ids (BalanceTokenRef and
   // ChainBalances take them, PRICE_PROFILES and CONSTANTS.balanceChainIds carry them). Every other route and the default
   // answer are Domino's three chains, as before.
-  manifestSha256: '77fcbd9f680e9f5c682162ebf8348c6bc257f7f169a917427bb8671c01da0afe',
+  // Changed on purpose (data) 2026-10-06: a mandate's waiting reason from before its vault's latest ExitModuleSet is
+  // not shown (v2_read_service.py, v2_index_store.py); same version, same schemas and fixtures.
+  manifestSha256: 'f494b31a43014fba7c6f73f7264d642af498517481e2a46785a3da49c4d5e2f1',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {

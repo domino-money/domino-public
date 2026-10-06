@@ -550,6 +550,46 @@ class IndexerTests(unittest.TestCase):
         self.assertEqual(portfolio['chains'][0]['waitingReasons']['status'], 'unavailable')
         self.assertIsNone(portfolio['vaults'][0]['waiting'])
 
+    def test_a_mandates_reason_from_before_its_vaults_module_change_waits_for_the_next_pass(self):
+        # 6 Oct 2026 (the app's Auto-exit item 10): after "Turn back on" the card said "Waiting" on the automation's
+        # exit_module_not_enabled until its next pass.
+        import json
+        import os
+        import shutil
+        import tempfile
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory)
+        path = directory / 'waiting-4663.json'
+        t0 = self.chain.timestamp0
+
+        def write(block, reason):
+            entry = {'reason': reason, 'since': t0 + block, 'sinceBlock': block, 'at': t0 + block, 'block': block,
+                     'lastRevert': None}
+            document = {'schemaVersion': 1, 'kind': 'domino-v2-automation-waiting', 'chainId': 4663, 'block': block,
+                        'timestamp': t0 + block, 'vaults': {}, 'mandates': {MANDATE: entry}}
+            (directory / '.next').write_text(json.dumps(document))
+            os.replace(directory / '.next', path)
+
+        def mandate():
+            self.clock[0] = t0 + 60
+            answer, = V2ReadService(self.store, clock=lambda: self.clock[0]).portfolio(OWNER)['mandates']
+            return answer['moduleEnabled'], answer['waiting'] and answer['waiting']['reason']
+        self.register()
+        self.create_vault(22)
+        self.mandate(26)
+        indexer = self.make_indexer(waiting_file=str(path))
+        write(30, 'exit_module_not_enabled')
+        indexer.step(enrich=False)
+        self.assertEqual(mandate(), (False, 'exit_module_not_enabled'))
+        self.chain.mine(10)
+        self.chain.emit('vault', 'ExitModuleSet', {'module': self.contracts['autoExit'], 'stateNonce': 2},
+                        address=VAULT, number=45, tx='turn-back-on')
+        indexer.step(enrich=False)
+        self.assertEqual(mandate(), (True, None))
+        write(50, 'trigger_not_reached')  # the next pass saw the module
+        indexer.step(enrich=False)
+        self.assertEqual(mandate(), (True, 'trigger_not_reached'))
+
     def test_a_snapshot_whose_checkpoint_was_rewound_is_not_written(self):
         self.register()
         self.create_vault(22)

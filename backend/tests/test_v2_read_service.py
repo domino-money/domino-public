@@ -72,3 +72,27 @@ class ReturnedTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MandateWaitingTests(unittest.TestCase):
+    """A mandate's waiting reason as the automation decided it, until its vault's exit module changes (6 Oct 2026, the
+    app's Auto-exit item 10: after "Turn back on", exit_module_not_enabled held until the automation's next pass)."""
+
+    def mandate(self, changed_block):
+        rows = fixtures.mandates()
+        rows[0] = dict(rows[0], exit_module_block=changed_block)
+        at = fixtures.NOW - 40
+        waiting = fixtures.waiting()
+        waiting[(CHAIN, 'mandate', fixtures.MANDATE)] = fixtures.waiting_row('exit_module_not_enabled', at=at,
+                                                                            since=at - 60)
+        body = fixtures.portfolio(mandates=rows, waiting=waiting)
+        return next(m for m in body['mandates'] if m['mandateHash'] == fixtures.MANDATE)
+
+    def test_a_reason_decided_before_the_vaults_latest_module_change_is_not_shown(self):
+        decided = 73_400_090  # the pass's block, waiting_row's
+        self.assertIsNone(self.mandate(decided + 1)['waiting'])
+        # A pass at the change's own block read the state after it; an older change, or none read, changes nothing.
+        for changed in (decided, decided - 90, None):
+            with self.subTest(changed=changed):
+                self.assertEqual(self.mandate(changed)['waiting']['reason'], 'exit_module_not_enabled')
+

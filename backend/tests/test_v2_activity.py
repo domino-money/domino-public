@@ -152,6 +152,25 @@ class DeriveTests(unittest.TestCase):
         with self.assertRaisesRegex(DataError, 'v2_mandate_unknown'):
             derive_transaction(revoked.logs, ctx())
 
+    def test_auto_exit_turned_on_in_one_batch_is_three_items_of_its_owner(self):
+        # 6 Oct 2026 (the app's Auto-exit item 2): one batch creates the paused protection vault, sets its exit module
+        # and registers the mandate, all in one transaction.
+        tx = (Tx('batch')
+              .add(VAULT, 'Initialized', owner=OWNER, dex=4, rootTokenId=7, mode=1)
+              .add(VAULT, 'PolicyChanged', policy=dict(POLICY, minimumIntervalSeconds=600), stateNonce=1)
+              .add(VAULT, 'LimitsChanged', limits=LIMITS, stateNonce=1)
+              .add(VAULT, 'RootRearmed', stateNonce=1)
+              .add(FACTORY, 'VaultCreated', owner=OWNER, vault=VAULT, rootTokenId=7, dex=4, ownerNonce=0)
+              .add(VAULT, 'ExitModuleSet', module=MODULE, stateNonce=2)
+              .add(MODULE, 'MandateRegistered', mandateHash=MANDATE, owner=OWNER, vault=VAULT, tokenId=7,
+                   validUntil=1822824952))
+        items = derive_transaction(tx.logs, ctx())
+        self.assertEqual([(i.kind, i.wallets, i.vault, [log.event for log in i.logs]) for i in items],
+                         [('vault_created', (OWNER,), VAULT,
+                           ['Initialized', 'PolicyChanged', 'LimitsChanged', 'RootRearmed', 'VaultCreated']),
+                          ('vault_event', (OWNER,), VAULT, ['ExitModuleSet']),
+                          ('auto_exit_event', (OWNER,), VAULT, ['MandateRegistered'])])
+
     def test_a_vault_the_index_does_not_know_is_refused(self):
         with self.assertRaisesRegex(DataError, 'v2_vault_unknown'):
             derive_transaction(Tx().add(VAULT, 'RootRearmed', stateNonce=2).logs,
