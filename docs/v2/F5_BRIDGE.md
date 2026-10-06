@@ -255,6 +255,14 @@ The owner chose a window (option A, 6 Oct 2026): the listener answers both versi
    - A tab opened before the switch stays locked until it is reloaded.
 3. **Drop 1.0.0-rc.1** once the listener's lines show no rc.1 request for a few days. The steps are in the contract's [README](../../api-contracts/crosschain-v1/README.md#versions-and-the-switch-window).
 
+**Step 1 live since 6 Oct 2026, 19:44:28 UTC**, release `db068b03` (#389, merged on main after the app's #390):
+- `install_crosschain.py --inspect`, then `--apply`, from the merge commit's archive. The unit changed only its release paths (from `1a212b92`), and the listener restarted with no restarts since.
+- The window, on the VM, without an Access assertion and with an empty body:
+  - `1.0.0-rc.1` and `1.1.0-rc.1` each passed the version check, answered 400 `invalid_request`, and echoed their own version in the header and the request line;
+  - `9.9.9` answered 502 `upstream_contract_mismatch`, in the listener's own `1.1.0-rc.1`.
+- The Worker and the site still speak `1.0.0-rc.1`; step 2 is the bridge's.
+- Rollback: `install_crosschain.py --rollback db068b03…`, then daemon-reload and restart.
+
 ## Operations
 
 - **Claiming the Relay app balance.**
