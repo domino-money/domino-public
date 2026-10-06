@@ -45,6 +45,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/047_provider_ceiling.sql',
     # The V2 index (read-v6): applied with the V2 indexer's installation, never by this upgrade.
     'backend/migrations/052_v2_index.sql',
+    # The ledgers' per-chunk index: applied by apply_migrations.py, never by this upgrade.
+    'backend/migrations/053_activity_chunk_index.sql',
 )
 
 

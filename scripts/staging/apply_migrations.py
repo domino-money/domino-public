@@ -10,7 +10,9 @@ owner, and the domino_public schema (024-026, 042-045, 047) to postgres; 027 and
 041 only alter existing tables and were run as postgres. 052, the V2 index
 (domino_v2, read-v6), has no installer of its own: postgres owns its schema like
 domino_public, and it is applied here before the V2 indexer is registered
-(docs/v2/V2_INDEXER_READ_API.md).
+(docs/v2/V2_INDEXER_READ_API.md). 053 indexes domino_activity.events for the
+ledgers' per-chunk read; it is a domino_activity change like 020-023, so it runs
+as the catalogue owner, who owns the table (docs/HISTORICAL_CAPACITY.md).
 
 Each migration is read from a verified release archive and applied in one
 transaction with ON_ERROR_STOP, in the order given, after its predecessors. A
@@ -49,6 +51,7 @@ HAND_APPLIED = {
     '045_featured_live': POSTGRES,
     '047_provider_ceiling': POSTGRES,
     '052_v2_index': POSTGRES,
+    '053_activity_chunk_index': ADMIN,
 }
 
 

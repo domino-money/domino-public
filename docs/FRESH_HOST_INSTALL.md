@@ -171,7 +171,10 @@ Below, `$A_<lane>` stands for
 
     An archive from #305 on also carries `052_v2_index`, the V2 index. Append it
     to the list, then install the indexer as `docs/v2/V2_INDEXER_READ_API.md`
-    ("In production") describes.
+    ("In production") describes. An archive that carries
+    `053_activity_chunk_index`, the ledgers' per-chunk index on
+    `domino_activity.events`, appends it after `052_v2_index`; it runs as the
+    catalogue owner ([historical capacity](HISTORICAL_CAPACITY.md#the-per-chunk-read-and-its-index)).
 
 12. **Queue-worker root.** The writer's lock and runtime, and the first host's
     four base units.

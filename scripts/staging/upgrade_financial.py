@@ -68,6 +68,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     # The V2 index (read-v6): apply_migrations.py applies it as postgres before the V2 indexer
     # is registered, never this tool.
     'backend/migrations/052_v2_index.sql',
+    # The ledgers' per-chunk index: apply_migrations.py applies it, never this upgrade.
+    'backend/migrations/053_activity_chunk_index.sql',
 )
 NEW_ROLES = ('domino_performance_collector', 'domino_performance_reader',
              'domino_execution_worker', 'domino_execution_ledger',

@@ -251,6 +251,8 @@ def create_database(name):
         conn.execute((ROOT/'migrations/047_provider_ceiling.sql').read_text())
         # 052 creates the V2 index's schema and tables if absent and re-grants, so it applies again safely.
         conn.execute((ROOT/'migrations/052_v2_index.sql').read_text())
+        # 053 only adds the ledgers' per-chunk index if absent, so it applies again safely.
+        conn.execute((ROOT/'migrations/053_activity_chunk_index.sql').read_text())
         # Development mirrors the production split: callable NOLOGIN privilege
         # roles, each inherited by exactly one unprivileged LOGIN bridge.
         for login, privilege in (

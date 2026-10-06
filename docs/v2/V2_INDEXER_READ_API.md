@@ -228,7 +228,7 @@ The indexer runs as the catalogue writer, `domino-write`, from the public-data r
     - **Incident, 12:20:26 UTC:** a delegated diagnostic ran an unbounded `journalctl -o json` on the VM, and the kernel OOM-killed that shell alone.
       - Because the cache was cold after it, two accounting lane steps passed the catalogue's 5 s statement timeout: the fee step for `0x4be9…f38a` at 12:36 and the position step for `0x84bd…cad0b6` at 12:40.
       - Both were recorded as `catalogue_database_unavailable`. `pool-activity`, `pool-positions` and `pool-metrics` answered 503 until the lane's next step; `0x4be9…` was 200 again by 15:17.
-      - An index on `domino_activity.events(pool_id, chunk_start)` would keep that per-chunk read off a sequential scan of 2.87M rows.
+      - An index on `domino_activity.events(pool_id, chunk_start)` would keep that per-chunk read off a sequential scan of 2.87M rows. Migration `053_activity_chunk_index` adds it; its measurements and apply steps are in [historical capacity](../HISTORICAL_CAPACITY.md#the-per-chunk-read-and-its-index).
     - **Rollbacks:**
       - Each read release keeps the previous 70 drop-ins in `/root/deploy-v2-<commit>/read-dropins/`.
       - Public-data: `install_public_data.py --rollback 99d8f12e…` (files only), then reload and restart the lanes.

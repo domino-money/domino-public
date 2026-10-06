@@ -67,6 +67,53 @@ An error rolls back the current batch, then saves its safe reason in a separate 
 
 Activity owns canonical reorg recovery. Deleting an orphaned source chunk cascades through its unpublished work and diagnostics as well as existing derived rows. Never manually alter a source model, delete closed positions, zero fee debt, advance an event offset, or mark proof checks complete to bypass a capacity failure. Backup/restore must include all of `domino_activity`, including the new table; the reader role remains SELECT-only.
 
+## The per-chunk read and its index
+
+The fee, position and capital steps each read one source chunk's events (`fee_store.py`, `position_store.py`, `capital_store.py`); the public-data accounting lane runs one step per turn:
+
+```sql
+SELECT ... FROM domino_activity.events WHERE pool_id=%s AND chunk_start=%s
+ORDER BY block_number,log_index LIMIT 2001
+```
+
+Migration `053_activity_chunk_index.sql` adds `domino_activity.activity_chunk`, a B-tree on `events(pool_id, chunk_start)`. Before it, no index began with those columns.
+
+- **The incident.** On 6 Oct 2026, production held about 2.87M events, 72% of them in two pools. To return the 30–40 events of one of their chunks, the planner read the whole table (1.75 GB) with a parallel sequential scan. With a cold cache, two steps passed the catalogue's 5 s statement timeout, at 12:36 and 12:40 UTC. Each was recorded as `catalogue_database_unavailable`, and its pool's accounting reads answered 503 until the lane's next turn.
+- **Measured** on a copy with production's shape: 2,856,317 events and 418,475 chunks, with the same pool shares, on PostgreSQL 18 with production's memory settings. The read is for a chunk of one of the two large pools.
+
+  | | Plan | Buffers | Time |
+  |---|---|---|---|
+  | Without the index | Parallel Seq Scan, then a sort | 239,473 (1.87 GB) | 677 ms, warm OS cache |
+  | With `activity_chunk` | Index Scan of the chunk's rows, then a sort of those | 14 | 0.8 ms |
+
+- **Why these two columns.** The query still sorts the chunk's rows itself, at most 2,000 since that limit, in well under a millisecond. Adding `block_number, log_index` would drop the sort but made the index 339 MB instead of 40 MB: a B-tree stores repeated keys once, and unique keys are never repeated.
+- **The rewind.** These columns are also the events' foreign key to `domino_activity.chunks`. When an activity rewind deletes chunks, `ON DELETE CASCADE` now finds each chunk's events through the index. Rewinding 3 chunks of the largest pool took 1.47 s without it and 0.15 s with it.
+- **Other reads keep their plans:** `activity_window` for the 24 h windows, and `events_pkey` for the capital count.
+- **The test.** `backend/tests/test_activity_chunk_index.py` reads the three queries from their stores. It plans each one on a table of the same shape, with the index and without it.
+
+**Applying it in production.** `scripts/staging/apply_migrations.py` applies it in one transaction as the catalogue owner (`domino-admin`, `domino_catalogue_admin`), who owns the table. Use an archive that carries it, from its own `scripts/staging`, as root:
+
+```sh
+python3 -B apply_migrations.py --archive <tar> --archive-sha256 <hex> --commit <sha> --migrations 053_activity_chunk_index --inspect
+python3 -B apply_migrations.py --archive <tar> --archive-sha256 <hex> --commit <sha> --migrations 053_activity_chunk_index --apply
+```
+
+- **Not `CONCURRENTLY`:** the runner applies every migration inside a transaction, where `CREATE INDEX CONCURRENTLY` is refused.
+- **The lock.** The build holds a SHARE lock on `events` until it commits. Reads go on, and so do the ledgers' inserts into their own tables. Inserts and deletes on `events` wait: the activity follower's, the queue worker's and a rewind's.
+- **How long.** The build took 1.9–2.5 s on the copy above (local NVMe, warm OS cache). On prod-02 it reads the 1.75 GB table once. That should take seconds with the table in the page cache; read from disk, about 20 s (an estimate).
+- **No writer needs pausing.** A writer that waits longer than its own 5 s statement timeout fails that step, and its next run retries it a minute later.
+- **Bounded.** The migration gives up after 5 s without the lock, or after 120 s of building. Either way it rolls back without a receipt, so it can run again.
+- **Nothing to restart.** The planner uses the index on the next read.
+- **Check:** `pg_relation_size('domino_activity.activity_chunk')` is about 40 MB. `EXPLAIN` of the read for one of the large pools shows `Index Scan using activity_chunk`.
+- **Rollback:** drop the index as the catalogue owner. `psql -c` runs it outside a transaction, as `CONCURRENTLY` requires, so reads are not blocked:
+
+  ```sh
+  runuser -u domino-admin -- psql -X -h /run/postgresql-domino -p 8877 -U domino_catalogue_admin -d domino_catalogue \
+    -c 'DROP INDEX CONCURRENTLY IF EXISTS domino_activity.activity_chunk'
+  ```
+
+  Then move the receipt `/var/backups/domino-migrations/053_activity_chunk_index.json` aside, so the tool can apply the migration again. The reads go back to scanning the table.
+
 ## Resume an already stored expensive chunk
 
 1. Apply the migration with the existing `backend/.venv/bin/python backend/dev_postgres.py start` command. Stop other explicit writers first. Existing qualified data is retained.

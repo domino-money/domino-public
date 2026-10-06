@@ -179,6 +179,9 @@ PACKAGED_ONLY_MIGRATIONS = (
     # The V2 index (read-v6): apply_migrations.py applies it as postgres before the V2 indexer
     # is registered, never this tool.
     'backend/migrations/052_v2_index.sql',
+    # The ledgers' per-chunk index on domino_activity.events: apply_migrations.py applies it
+    # as the catalogue owner, never this tool.
+    'backend/migrations/053_activity_chunk_index.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),
