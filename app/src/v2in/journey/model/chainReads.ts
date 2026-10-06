@@ -164,8 +164,10 @@ export function factsOfAnswer(answer: ChainPoolsResponse): Record<string, Networ
 /**
  * Each currency's USD price as the answer read it (read-v6 1.1.0-rc.1's qualified USD, rugged97's item 4), in pool order;
  * null for one without a price. None at all while the journey shows no USD (JOURNEY_USD_SHOWN).
+ * Exported 2026-10-06 (no change of behaviour): Robinhood Chain's pools without USDG take their prices the same way, from
+ * a chain-pools answer about their own pair (../poolPrices.ts).
  */
-function pricesOf(answer: ChainPoolsResponse, pool: { currency0: string; currency1: string }): readonly [string | null, string | null] | undefined {
+export function pricesOf(answer: ChainPoolsResponse, pool: { currency0: string; currency1: string }): readonly [string | null, string | null] | undefined {
   if (!JOURNEY_USD_SHOWN) return undefined
   const price = (address: string) => answer.tokens.find((token) => token.address.toLowerCase() === address.toLowerCase())?.price?.usd ?? null
   return [price(pool.currency0), price(pool.currency1)]

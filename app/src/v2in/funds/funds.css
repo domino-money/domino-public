@@ -20,7 +20,10 @@
   .dm-funds-line:focus-visible { outline-offset: var(--focus-offset-inset); }
   .dm-funds-line-mark { position: relative; display: inline-grid; flex-shrink: 0; }
   .dm-funds-line-arrow { position: absolute; right: -0.3125rem; bottom: -0.25rem; display: grid; place-items: center; width: 0.875rem; height: 0.875rem; border-radius: var(--radius-pill); background: var(--primary); color: var(--primary-fg); font-size: 0.5625rem; font-weight: 700; line-height: 1; box-shadow: 0 0 0 2px var(--card); }
-  .dm-funds-line-text { flex: 1 1 12rem; min-width: 0; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; text-wrap: pretty; }
+  /* Changed on purpose 2026-10-06 (the review: "Pay with … instead" names the pool's two symbols as read): nothing in the
+     line's words may push it past a phone's width; each symbol is cut at 24 characters (SymbolText), and anything longer
+     still breaks where it must. */
+  .dm-funds-line-text { flex: 1 1 12rem; min-width: 0; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; text-wrap: pretty; overflow-wrap: anywhere; }
   .dm-funds-line-usd { color: var(--fg-subtle); }
   .dm-funds-line-action { margin-left: auto; color: var(--primary-ink); font-weight: 500; white-space: nowrap; }
   .dm-funds-line-action::after { content: ' →'; }
@@ -31,6 +34,11 @@
   .dm-funds-network > .dm-hint { margin-top: 0; }
   .dm-funds-more { justify-self: start; padding: 0.125rem 0; background: none; color: var(--fg-muted); font-size: 0.75rem; line-height: 1rem; text-decoration: underline; text-decoration-color: var(--fg-faint); text-underline-offset: 0.1875rem; cursor: pointer; }
   .dm-funds-more:hover:not(:disabled) { color: var(--fg); text-decoration-color: currentColor; }
+  /* Added 2026-10-06: the amount step's way back to the pool's tokens ("Use AI and PONS instead", PairedAmounts.tsx), its
+     symbols as read: cut at 24 characters (SymbolText's inline blocks, which take the link's underline here), the words
+     breaking anywhere rather than past a phone's width; its lines start at the left like the step's. */
+  .dm-funds-more[data-pay-with-back] { max-width: 100%; text-align: left; overflow-wrap: anywhere; }
+  .dm-funds-more[data-pay-with-back] bdi { text-decoration: inherit; }
   .dm-funds-more:disabled { cursor: default; opacity: 0.6; }
 
   /* The quote card (Changed on purpose 2026-10-06, the owner's point 4): what arrives, when, one button, one live line,

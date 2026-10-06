@@ -74,6 +74,19 @@ export const LIMIT_BOUNDS = {
  */
 export const DEFAULT_UPSIDE_PERCENT = 50
 
+/**
+ * Added 2026-10-06 (the owner: "why isn't money looked for on other networks?", on Robinhood Chain pairs such as AI/PONS,
+ * where the wallet was short and nothing was offered): the deposit paid with ONE token outside the pool (the network's
+ * ETH or its stable), which Domino V2's zap swaps for the pool's two tokens (position-plan-v1: "the pool's tokens, or
+ * exactly one other token"). Only a build that carries V2 offers it, under the amounts, and only where Create position runs
+ * on V2 (src/v2in/funds/FundsAmounts.tsx); every other path keeps it null. `text` is the amount as typed, in `token`'s
+ * units; `token` is the network's own currency as its profile names it.
+ */
+export interface PayWith {
+  token: TokenDisplay
+  text: string
+}
+
 export interface JourneyState {
   stage: Stage
   /** The furthest stage the person has continued to; the rail may reopen any stage up to it. */
@@ -89,6 +102,8 @@ export interface JourneyState {
   /** Kept at their defaults by every stage of this journey; Automate's own state starts from `withAutomation` and `withLimits`. */
   automation: Automation
   limits: DominoLimits
+  /** Added 2026-10-06: the one other token the deposit is paid with (`PayWith`), or null: the pool's own tokens. */
+  payWith: PayWith | null
 }
 
 export function initialState(): JourneyState {
@@ -103,6 +118,7 @@ export function initialState(): JourneyState {
     range: null,
     automation: 'none',
     limits: { ...DEFAULT_LIMITS },
+    payWith: null,
   }
 }
 
@@ -312,13 +328,16 @@ export function canContinue(stage: Stage, state: JourneyState, now: number): Che
       if (!state.token || !state.pool) return fail(CREATE.pool.needPool)
       const price = priceOf(state.pool, now)
       if (!price || price.state !== 'usable') return fail(CREATE.amount.priceUnavailable)
-      const budget = validateBudget(state.budget, candidateDecimals(state.token))
+      // Added 2026-10-06: paid with one other token (`PayWith`), its amount is the step's amount; the range and the
+      // slippage as always. Which pool token an amount is typed in does not apply: the swap buys whatever the range takes.
+      const paid = state.payWith
+      const budget = paid ? validateBudget(paid.text, paid.token.decimals) : validateBudget(state.budget, candidateDecimals(state.token))
       if (!budget.ok) return fail(budget.reason)
       const range = validateRange(state.range, state.pool)
       if (!range.ok) return range
       // A range that takes one token alone takes its amount in that token (takesOnly; withRange moves the amount there).
       const only = takesOnly(state)
-      if (only !== null && tokenAddress(state.pool.currencies[only]) !== state.token.key) return fail(CREATE.amount.pairUnused(state.pool.currencies[only].symbol ?? ''))
+      if (!paid && only !== null && tokenAddress(state.pool.currencies[only]) !== state.token.key) return fail(CREATE.amount.pairUnused(state.pool.currencies[only].symbol ?? ''))
       const slippage = validateSlippage(state.slippageBps)
       return slippage.ok ? OK : fail(slippage.reason)
     }
@@ -357,7 +376,10 @@ export function goTo(state: JourneyState, stage: Stage, now: number): JourneySta
   return canOpen(stage, state, now) ? { ...state, stage } : state
 }
 
-/** A different token changes the units of the budget and may leave the chosen pool: both go. */
+/**
+ * A different token changes the units of the budget and may leave the chosen pool: both go. Changed on purpose 2026-10-06:
+ * and a token paid with (`PayWith`) goes with the pool.
+ */
 export function withToken(state: JourneyState, token: TokenCandidate | null): JourneyState {
   const same = token !== null && state.token !== null && token.key === state.token.key && token.token.chainId === state.token.token.chainId
   const pool = token && state.pool && poolHoldsToken(state.pool, token) ? state.pool : null
@@ -368,13 +390,14 @@ export function withToken(state: JourneyState, token: TokenCandidate | null): Jo
     pool,
     range: pool ? state.range : null,
     budget: same ? state.budget : '',
+    payWith: pool ? state.payWith : null,
   }
 }
 
-/** A second asset only narrows the pool list; a chosen pool that does not hold it goes. */
+/** A second asset only narrows the pool list; a chosen pool that does not hold it goes (and since 2026-10-06 its `payWith`). */
 export function withPaired(state: JourneyState, paired: TokenCandidate | null): JourneyState {
   const pool = state.pool && (!paired || poolHoldsToken(state.pool, paired)) ? state.pool : null
-  return { ...state, paired, pool, range: pool ? state.range : null }
+  return { ...state, paired, pool, range: pool ? state.range : null, payWith: pool ? state.payWith : null }
 }
 
 /**
@@ -408,13 +431,19 @@ function amountFollowsRange(state: JourneyState): JourneyState {
 export function withPool(state: JourneyState, pool: PoolOption | null, now: number): JourneyState {
   // The same pool read again: its range stays, and a price that moved past it may leave it taking one token alone.
   if (pool && state.pool && pool.key === state.pool.key) return amountFollowsRange({ ...state, pool })
-  if (!pool) return { ...state, pool: null, range: null }
+  // Another pool, or none: what it was paid with goes too (2026-10-06).
+  if (!pool) return { ...state, pool: null, range: null, payWith: null }
   const price = poolPrice(pool, now)
-  return { ...state, pool, range: price.state === 'usable' ? presetFor(price, 'standard') : null }
+  return { ...state, pool, range: price.state === 'usable' ? presetFor(price, 'standard') : null, payWith: null }
 }
 
 export const withRange = (state: JourneyState, range: TickRange | null): JourneyState => amountFollowsRange({ ...state, range })
 export const withBudget = (state: JourneyState, budget: string): JourneyState => ({ ...state, budget })
+/**
+ * Added 2026-10-06: the deposit paid with one other token (`PayWith`), or with the pool's own tokens again (null). The
+ * amount typed in the pool's tokens stays, for the way back.
+ */
+export const withPayWith = (state: JourneyState, payWith: PayWith | null): JourneyState => ({ ...state, payWith })
 export const withSlippage = (state: JourneyState, slippageBps: string): JourneyState => ({ ...state, slippageBps })
 export const withAutomation = (state: JourneyState, automation: Automation): JourneyState => ({ ...state, automation })
 export const withLimits = (state: JourneyState, limits: Partial<DominoLimits>): JourneyState => ({ ...state, limits: { ...state.limits, ...limits } })

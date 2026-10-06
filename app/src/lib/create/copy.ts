@@ -21,38 +21,41 @@ export const CREATE = {
     edit: 'Edit',
     notChosen: '—',
     sourceLoading: 'Loading…',
-    progress: 'Build your position',
     preview: 'Your position',
-    previewNote: 'Your choices appear here as you go.',
     previewExample: 'Illustration of how a price range works',
     previewTotal: 'Estimated total',
     stepState: { done: 'done', current: 'current', upcoming: 'not started' },
   },
   /**
    * The four visual steps of the flow, over the five stages of the state machine. Changed on purpose 2026-10-06 (the
-   * owner's point 4: little text, for someone who knows nothing about pools): each lead is one short line.
+   * owner's point 4: little text, for someone who knows nothing about pools): each lead is one short line. Removed on
+   * purpose 2026-10-06 (the V2 bundle budget): each step's caption, which no screen drew.
    */
   step: {
     // Changed on purpose 2026-10-01 (audit E25): the step asks for a token, then one of its pools, not two tokens.
-    pool: { title: 'Pool', lead: 'Search a token, then pick a pool.', caption: 'Choose your tokens' },
-    range: { title: 'Range', lead: 'You earn fees while the price is in your range.', caption: 'Set your price window' },
+    pool: { title: 'Pool', lead: 'Search a token, then pick a pool.' },
+    range: { title: 'Range', lead: 'You earn fees while the price is in your range.' },
     // Changed on purpose 2026-10-01 (audit E13, live note L11): a range above or below today's price takes one token
     // alone, so "either token" is said only of a range around the price, and the one-token range has its own lead.
     amount: {
       title: 'Amount',
       lead: 'Enter one amount; the other fills in.',
-      caption: 'Choose how much',
       leadOne: (symbol: string) => `This range takes only ${symbol}. Enter an amount.`,
+      /** Added 2026-10-06: the deposit paid with one other token (lib/create/journey.ts PayWith). */
+      leadPay: (symbol: string) => `Pay with ${symbol}. Domino swaps it for the pool’s tokens.`,
     },
-    review: { title: 'Review', lead: 'Check your position, then confirm in your wallet.', caption: 'Check and confirm' },
+    review: { title: 'Review', lead: 'Check your position, then confirm in your wallet.' },
   },
-  /** The state machine's stages: `short` labels the plain-text summary lines. */
+  /**
+   * The state machine's stages: `short` labels the plain-text summary lines. Removed on purpose 2026-10-06 (the V2 bundle
+   * budget, tests/session.bundle.test.mjs): each stage's title and lead, which no screen drew (the steps say theirs, `step`).
+   */
   stage: {
-    token: { title: 'Deposit token', short: 'Token', lead: 'The asset you deposit. Identity is the chain and the contract address, never a symbol.' },
-    pool: { title: 'Pool', short: 'Pool', lead: 'A position holds two assets. Pick an existing pool that trades your token against the other.' },
-    amount: { title: 'Amount and range', short: 'Amount', lead: 'How much of each token, and the price band the position earns fees in.' },
-    balance: { title: 'Deposit amounts', short: 'Balance', lead: 'How much of each token the deposit is expected to take, and the most it may take.' },
-    review: { title: 'Review', short: 'Review', lead: 'Every choice and the wallet steps. Create position opens it.' },
+    token: { short: 'Token' },
+    pool: { short: 'Pool' },
+    amount: { short: 'Amount' },
+    balance: { short: 'Balance' },
+    review: { short: 'Review' },
   },
   token: {
     needToken: 'Choose a token to continue.',
@@ -85,7 +88,6 @@ export const CREATE = {
   amount: {
     entered: 'You enter',
     paired: 'Paired automatically',
-    pairGuide: 'These two amounts make up your position. Change either one and the other follows your range.',
     total: 'Estimated total in this position',
     // Changed on purpose 2026-10-06 (the owner's point 4: little text): the total's note in a few words. Network fees are
     // paid in ETH on top, never taken from the position, so they are "extra", not something the total is "before".
@@ -93,7 +95,6 @@ export const CREATE = {
     totalOneNote: 'Network fees are extra.',
     totalSwapNote: 'After the swap; network fees are extra.',
     totalUnavailable: 'USD estimate unavailable',
-    budgetHint: (decimals: number | null) => (decimals === null ? 'Decimals for this token could not be read.' : `Up to ${decimals} decimal places.`),
     empty: 'Enter an amount to continue.',
     format: 'Enter a number, like 100 or 0.5.',
     zero: 'The amount must be more than zero.',
@@ -188,39 +189,19 @@ export const CREATE = {
     notEnabled: 'Exact amounts are calculated when you create the position, at the price when you sign.',
     /** Why no request can be formed, from previewRequest in journey.ts. */
     incomplete: 'the earlier steps are not complete.',
-    /**
-     * The line that says the wallet does not cover the deposit, by token. Shown
-     * only for a currency the estimate itself reported short in `previewChecks`;
-     * nothing here compares an amount to a balance.
-     */
-    short: (symbols: readonly string[]) =>
-      `A position holds both of this pool’s tokens, and your wallet does not cover the most this deposit may take of ${
-        symbols.length > 1 ? `${symbols.slice(0, -1).join(', ')} and ${symbols[symbols.length - 1]}` : symbols[0]
-      }. Lower the budget, or add ${symbols.length > 1 ? 'them' : 'it'} to your wallet first.`,
+    // Removed on purpose 2026-10-06 (the V2 bundle budget): the estimate's own "your wallet does not cover" line, which
+    // nothing drew any more (the amount step says it in its own words, amount.shortOf).
     hooks: 'this pool has hooks, and deposits support hookless pools only.',
     dynamicFee: 'this pool has a dynamic fee, and deposits support fixed fees only.',
   },
-  /** The automation choices and their limits. No step of New position shows them: Automate does, for a position that exists. */
+  /**
+   * The automation choices and their limits. No step of New position shows them: Automate does, for a position that exists.
+   * Removed on purpose 2026-10-06 (the V2 bundle budget, tests/session.bundle.test.mjs): the strings no screen drew any more
+   * (the rule lists and their headings, the choices' names, legend and details apart from the cards' own, the limits'
+   * labels, heading and hints, the successor's geometry and notes, "Not connected" and "Planned"), as the retired balance
+   * line's went (tests/create-journey.test.mjs). Automate says these things in its own words.
+   */
   automation: {
-    notEnabled: 'Not connected',
-    planned: 'Planned',
-    none: 'Plain position',
-    noneDetail: 'Earned fees stay in the position until you collect them. Nothing runs on your behalf.',
-    compound: 'Auto-compound',
-    compoundRules: [
-      'Earned fees go back into this same root position. The position cap is one; no successors are created.',
-      'The service fee is 2% of the earned fees it uses, taken once. Never on principal.',
-      'Only proven earned fees are used. No wallet asset is pulled and no principal is sold.',
-    ],
-    domino: 'Domino-compound',
-    dominoRules: [
-      'Fees normally return to their source position.',
-      'Within the trigger distance below the source’s upper price, fees can fund an existing successor or open a new one in the same pool.',
-      'A successor’s ceiling sits above the previous ceiling by the upside you set for the sequence, rounded up to the tick spacing; the next range below is drawn at 50%. Its floor may overlap downward by at most the configured share of that ceiling.',
-      'The sequence has a cap, counted including the root. At the cap, fees fund an existing position or wait.',
-      'Fees only, never principal. When an action is not justified, it waits with a reason.',
-      'The service fee is 4% of the earned fees it uses, once, for every automated step, including fees added back to the source position. No extra swap fee for the automation’s own balancing.',
-    ],
     /**
      * The three choices as cards: a title and one line each. Changed on purpose 2026-10-01 (audit E4): "of the fees it
      * uses", not "of earned fees consumed".
@@ -230,32 +211,11 @@ export const CREATE = {
       compound: { title: 'Auto-compound', line: 'Fees go back into the same position. 2% of the fees it uses.' },
       domino: { title: 'Domino-compound', line: 'Fees can fund the next range one step higher. 4% of the fees it uses.' },
     },
-    optionsLegend: 'What the earned fees do',
-    compoundRulesHeading: 'How Auto-compound works',
-    dominoRulesHeading: 'How Domino-compound works',
-    limitsHeading: 'Limits',
     /* The bounds below are the contract's (PolicyValidation.sol), as LIMIT_BOUNDS in journey.ts holds them. */
-    trigger: 'Trigger distance (%)',
-    triggerHint: '0 to 20. A 5% trigger means the price at 95% of the previous ceiling; 0 waits for the ceiling itself.',
-    overlap: 'Maximum overlap (%)',
-    overlapHint: '0 to 20. With a ceiling of 1 and 20% overlap, the successor’s floor cannot be below 0.80.',
-    cap: 'Positions in the sequence',
-    capHint: '1 to 255, including the first position. The default is 3.',
     triggerInvalid: 'Trigger distance is a percentage from 0 to 20, with up to two decimal places.',
     overlapInvalid: 'Maximum overlap is a percentage from 0 to 20, with up to two decimal places.',
     capInvalid: 'The number of positions is a whole number from 1 to 255.',
-    limitsInvalid: 'Fix the Domino-compound limits to continue.',
-    nextRange: 'Next proposed range, from your upper bound',
-    nextRangeNote: 'Geometry only, in the pool’s price orientation, drawn at a 50% upside, rounded outward to the tick spacing. Not a plan: a trigger is eligibility to evaluate, never an order to mint.',
     infeasible: 'The successor geometry is not feasible on this tick spacing.',
-    fundingNote: 'A successor is funded from earned fees inside the sequence only, after the service fee.',
-    geometry: {
-      trigger: 'Trigger at',
-      floor: 'Successor floor, no lower than',
-      ceiling: 'Successor ceiling',
-      tick: (tick: number) => `tick ${tick}`,
-      words: (price: string, tick: number, distance: string) => `${price} (tick ${tick}, ${distance} from your upper bound)`,
-    },
   },
   review: {
     choices: 'Your position',

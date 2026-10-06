@@ -53,15 +53,40 @@ test('New position\'s amount step keeps V1\'s amounts itself and opens only the 
   const mount = stage.slice(stage.indexOf('{__DOMINO_V2__ && FundsOffer ? ('), stage.indexOf('<details'));
   assert.ok(mount.startsWith('{__DOMINO_V2__ && FundsOffer ? ('), 'the mount is a ternary on the bare define');
   // Changed on purpose 2026-10-05: the offer also says when funds it brought arrived, so the step reads its balances again.
-  assert.ok(mount.includes(`<>\n          ${amounts}\n          <FundsOffer state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} onArrived={onFundsArrived} />\n        </>`), 'V1\'s amounts, mounted by the step itself, then the offer alone under them');
+  // Changed on purpose 2026-10-06 (the owner: AI/PONS short and nothing offered; the review of 2026-10-06): the offer may
+  // also pay with one other token (`onPayWith`, offered where Domino's service says it may, `pay`); once chosen, V1's
+  // amounts, still mounted by the step itself in both branches, draw that token's one panel and the way back.
+  const paying = '<PairedAmounts state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} pay={pay} onPayWith={onPayWith} />';
+  assert.ok(mount.includes(`<>\n          ${paying}\n          <FundsOffer state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} onArrived={onFundsArrived} onPayWith={onPayWith} pay={pay} />\n        </>`), 'V1\'s amounts, mounted by the step itself, then the offer alone under them');
   assert.ok(mount.trimEnd().endsWith(`) : (\n        ${amounts}\n      )}`), 'the alternate is V1\'s expression exactly');
   // The chunk is the offer alone: it never mounts the amounts (so nothing remounts when it lands).
   const chunk = ALL.find(({ path }) => path === 'v2in/funds/FundsAmounts.tsx').code;
   assert.doesNotMatch(chunk, /PairedAmounts/);
-  assert.match(chunk, /return null\s*\n\s*const raw = rawBalances\(balances\)/, 'nothing where the gate is off or no wallet is connected');
+  // Changed on purpose 2026-10-06 (the review): the pool and its network known, the line to pay with one other token is
+  // drawn whatever S2's gate says and whether a wallet is connected or not; the offer itself only where the gate opens S2
+  // and a wallet is connected, as before.
+  assert.match(chunk, /return null\s*\n\s*const raw = rawBalances\(balances\)/, 'nothing without a pool on one of Domino\'s networks');
+  assert.match(chunk, /\{gate && gate\.mode !== 'off' && wallet !== null && \(\s*<BringFunds/, 'the offer where the gate opens S2 and a wallet is connected');
   // Outside the offer's own directory, no module names it.
   const importers = ALL.filter(({ path, code }) => !path.startsWith('v2in/funds/') && /v2in\/funds/.test(code)).map(({ path }) => path);
   assert.deepEqual(importers, ['components/create/StageAmount.tsx']);
+});
+
+// Added 2026-10-06 (the review of 2026-10-06: the panel to pay with one other token was drawn inside the offer's chunk and
+// its card, so a wallet locked, a gate read again or a branch of the card left the step with no amount field and no way
+// back, or remounted the field mid-typing): paid that way, the panel and the way back are V1's own amounts', drawn by the
+// step itself; the chunk only offers the line, first, outside the offer's card.
+test('paying with one other token: the panel and its way back are the step\'s own; the chunk offers the line alone, outside the offer\'s card', () => {
+  const paired = ALL.find(({ path }) => path === 'components/create/PairedAmounts.tsx').code;
+  assert.match(paired, /if \(paid && onPayWith\) \{/);
+  assert.match(paired, /data-pay-with-amount=\{token\.address\}/);
+  assert.match(paired, /data-pay-with-back=""/);
+  const chunk = ALL.find(({ path }) => path === 'v2in/funds/FundsAmounts.tsx').code;
+  assert.doesNotMatch(chunk, /data-pay-with-amount|data-pay-with-back|PayPanel/);
+  // The line first, then the offer's card: never inside it, so no branch of the card remounts it.
+  assert.match(chunk, /return \(\s*<>\s*\{onPayWith && !paid && pay && planned\?\.plan\?\.kind === 'short' && <PayLine /);
+  const offer = ALL.find(({ path }) => path === 'v2in/funds/BringFunds.tsx').code;
+  assert.doesNotMatch(offer, /PayLine|payWith|\bpaid\b/, 'the offer\'s card knows nothing of it');
 });
 
 // Changed on purpose (data) 2026-10-02 (S2 holdings; the owner, 2026-10-02 night): no fixtures and no test data anywhere,
@@ -229,8 +254,10 @@ test('the offer appears automatically, while wallet network changes wait for the
   assert.equal([...quote.matchAll(/data-funds-deposit-button/g)].length, 1, 'ONE button');
   // The owner's own amount step: the line before an amount, the shortfall said once (PairedAmounts), Use keeping the amount.
   const amounts = ALL.find(({ path }) => path === 'v2in/funds/FundsAmounts.tsx').code;
-  assert.match(amounts, /discreet=\{planned === null\}/);
-  assert.match(amounts, /\n\s+shortSaid\n/);
+  // Changed on purpose 2026-10-06: paid with one other token, its own amount decides the line, and the box says the shortfall
+  // (that token's panel says nothing of it).
+  assert.match(amounts, /discreet=\{paid \? !amount : planned === null\}/);
+  assert.match(amounts, /shortSaid=\{!paid\}/);
   assert.match(amounts, /wholeFromOther\(terms, planned\.independent, planned\.need\[0\], planned\.need\[1\], terms\.slippageBps\)/, 'on Review\'s own terms');
   const zap = ALL.find(({ path }) => path === 'v2in/funds/ZapFunds.tsx').code;
   assert.doesNotMatch(zap, /discreet|shortSaid/, 'the zap path keeps its own sentence and no line');

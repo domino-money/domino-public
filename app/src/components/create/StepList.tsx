@@ -84,9 +84,11 @@ export function AmountSummary({ state, held }: { state: JourneyState; held: Held
   const pool = state.pool
   if (!state.token || !pool) return null
   if (!held) {
+    // Paid with one other token (2026-10-06): that amount, as typed.
+    const paid = state.payWith
     return (
       <>
-        {state.budget} <SymbolText token={state.token.token} />
+        {paid ? paid.text : state.budget} <SymbolText token={paid ? paid.token : state.token.token} />
       </>
     )
   }

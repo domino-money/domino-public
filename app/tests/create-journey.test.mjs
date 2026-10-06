@@ -213,8 +213,8 @@ test('a deposit budget is converted with the decimals the read returned, exactly
 });
 
 test('the amount step shows amounts, never the integers underneath them', () => {
-  assert.equal(CREATE.amount.budgetHint(6), 'Up to 6 decimal places.');
-  assert.equal(CREATE.amount.budgetHint(null), 'Decimals for this token could not be read.');
+  // Removed on purpose 2026-10-06 (the V2 bundle budget): the budget hint, which no screen drew (an error says the decimals).
+  assert.equal(CREATE.amount.budgetHint, undefined);
   // Raw units are what the request carries, not something to read on screen: the
   // line that printed them was debugging left in the product.
   const amount = readFileSync(new URL('../src/components/create/StageAmount.tsx', import.meta.url), 'utf8');
@@ -433,11 +433,10 @@ test('Domino limits are checked one by one, each with its own words, within the 
   for (const cap of ['0', '1.5', '', '-1', '03', '256', '1000']) assert.equal(v({ ...journey.DEFAULT_LIMITS, sequenceCap: cap }).problems.sequenceCap, CREATE.automation.capInvalid, cap);
   for (const trigger of ['', '5.123', '-5', '5%', '20.01', '50']) assert.equal(v({ ...journey.DEFAULT_LIMITS, triggerPercent: trigger }).problems.triggerPercent, CREATE.automation.triggerInvalid, trigger);
   for (const overlap of ['', '0.001', '-1', '20.5', '50']) assert.equal(v({ ...journey.DEFAULT_LIMITS, maxOverlapPercent: overlap }).problems.maxOverlapPercent, CREATE.automation.overlapInvalid, overlap);
-  // The hints and the invalid messages name the same bounds the validator enforces.
+  // The invalid messages name the same bounds the validator enforces. Changed on purpose 2026-10-06 (the V2 bundle budget):
+  // the hints went, no screen drew them.
   const { trigger, overlap, cap } = journey.LIMIT_BOUNDS;
-  assert.ok(CREATE.automation.triggerHint.startsWith(`${trigger.min} to ${trigger.max}.`));
-  assert.ok(CREATE.automation.overlapHint.startsWith(`${overlap.min} to ${overlap.max}.`));
-  assert.ok(CREATE.automation.capHint.startsWith(`${cap.min} to ${cap.max},`));
+  for (const key of ['triggerHint', 'overlapHint', 'capHint']) assert.equal(CREATE.automation[key], undefined, key);
   assert.match(CREATE.automation.triggerInvalid, new RegExp(`from ${trigger.min} to ${trigger.max},`));
   assert.match(CREATE.automation.overlapInvalid, new RegExp(`from ${overlap.min} to ${overlap.max},`));
   assert.match(CREATE.automation.capInvalid, new RegExp(`from ${cap.min} to ${cap.max}\\.$`));
@@ -669,11 +668,9 @@ test('the successor geometry follows the agreed rule on the pool’s spacing, or
   assert.deepEqual(journey.successorGeometry({ lower: -3600, upper: 0 }, { trigger: 0, overlap: 20, cap: 255 }, 60), { triggerTick: 0, floorMinTick: -2220, ceilingTick: 4080 });
   // The ceiling is drawn at the default upside; on chain the upside is the sequence's own setting, and the rule says so.
   assert.equal(journey.DEFAULT_UPSIDE_PERCENT, 50);
-  // Your sequences asks for the upside with no default; New position only draws its illustration at 50% (docs: automation, Upside).
-  assert.ok(CREATE.automation.dominoRules.some((rule) => /ceiling sits above the previous ceiling by the upside you set for the sequence, .*drawn at 50%/.test(rule)));
-  assert.ok(CREATE.automation.dominoRules.every((rule) => !/50% by default/.test(rule)), 'no default the sequence screen does not have');
-  assert.ok(CREATE.automation.dominoRules.every((rule) => !/ceiling is 50% above/.test(rule)), 'no fixed 50% ceiling');
-  assert.match(CREATE.automation.nextRangeNote, /drawn at a 50% upside/);
+  // Your sequences asks for the upside with no default. Changed on purpose 2026-10-06 (the V2 bundle budget): New position's
+  // rule list and successor note, which said so, went with the rest of the copy no screen drew.
+  for (const key of ['dominoRules', 'compoundRules', 'nextRange', 'nextRangeNote', 'fundingNote']) assert.equal(CREATE.automation[key], undefined, key);
 });
 
 test('the wallet steps are the ones Create position asks for, in order: an exact approval per ERC-20, the deposit, the position; native ETH needs no approval; nothing about automation', () => {
@@ -869,7 +866,8 @@ test('the copy never promises, never names a sample or a fixture, and never link
     assert.doesNotMatch(text, /guarantee|risk-free|will earn/i, text);
   }
   assert.match(CREATE.balance.notEnabled, /calculated when you create the position/);
-  assert.match(CREATE.automation.notEnabled, /^Not connected$/);
+  // Removed on purpose 2026-10-06 (the V2 bundle budget): the automation's "Not connected", which no screen drew.
+  assert.equal(CREATE.automation.notEnabled, undefined);
 });
 
 test('the automation choices carry the approved names, and the service fee keeps the company’s name', () => {
@@ -877,14 +875,12 @@ test('the automation choices carry the approved names, and the service fee keeps
   // Changed on purpose (review of 2026-09-24, the three features): the choice with no automation is named Plain position,
   // as New position's success, Positions, Automate and the docs name it; the app says 'Self-managing' nowhere any more.
   assert.deepEqual([options.none.title, options.compound.title, options.domino.title], ['Plain position', 'Auto-compound', 'Domino-compound']);
-  assert.equal(CREATE.automation.none, 'Plain position', 'the summary line says what the option says');
-  assert.equal(CREATE.automation.domino, 'Domino-compound');
-  assert.equal(CREATE.automation.dominoRulesHeading, 'How Domino-compound works');
+  // Changed on purpose 2026-10-06 (the V2 bundle budget): the choices' bare names, the rule lists' headings and the limits'
+  // labels went, no screen drew them; the cards above carry the names.
+  for (const key of ['none', 'compound', 'domino', 'dominoRulesHeading', 'compoundRulesHeading', 'cap', 'trigger', 'overlap']) assert.equal(CREATE.automation[key], undefined, key);
   // The docs' fees page draws its service row from these (lib/docs/pages/reference.ts).
   assert.match(CREATE.review.feeValues.service, /^Auto-compound 2%; Domino-compound 4% of the earned fees it uses$/);
   assert.equal(CREATE.review.feeLabels.service, 'Domino service fee', 'the fee label names the company, not the product');
-  // "sequence" stays where it names the vault or its cap.
-  assert.equal(CREATE.automation.cap, 'Positions in the sequence');
   for (const text of allCreateStrings()) assert.doesNotMatch(text, /Domino sequence|No automation|^None$/, text);
 });
 

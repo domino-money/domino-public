@@ -85,8 +85,9 @@ type CreateProps = {
 export default function JourneyCreateV2({ state, balances, onBusy, onReadAgain, v1 }: CreateProps) {
   const chainId = chainOf(state)
   const gate = useLiveGate(chainId)
-  // Another network's pool is never today's control's (2026-10-05): closed there, it says so.
-  if (chainId !== 4663 && (gate === 'outside' || gate === 'not-live')) {
+  // Another network's pool is never today's control's (2026-10-05): closed there, it says so. Nor a deposit paid with one
+  // other token (2026-10-06, lib/create/journey.ts PayWith), which only Domino V2's zap swaps in.
+  if ((chainId !== 4663 || state.payWith) && (gate === 'outside' || gate === 'not-live')) {
     return (
       <>
         <Button type="button" variant="primary" size="xl" className="w-full" disabled data-create-position="closed" aria-describedby="create-reason">
@@ -118,7 +119,7 @@ function LiveCreate({ state, balances, onBusy, onReadAgain, gate, chainId }: Omi
   // The plan is asked for the signed-in wallet only (position-plan-v1); a test build's planner needs no session.
   const signedIn = access.startsWith('ready:') || testPlannerOn()
   const zap = zapStateFromV1(state)
-  const funding = inputsFromV1(zap, reviewPlan(state, rawBalances(balances)))
+  const funding = inputsFromV1(zap, reviewPlan(state, rawBalances(balances)), state.payWith)
   const book = tokenBook(chainId, zap?.pool ? [...zap.pool.tokens] : [])
   const run = useJourneyRun({
     chainId,
@@ -294,8 +295,9 @@ export function ReviewV2({ state, now, balances, v1 }: ReviewProps) {
   const gate = useLiveGate(chainId)
   const run = useSyncExternalStore(subscribeShared, sharedNow, () => null)
   const zap = zapStateFromV1(state)
-  const planned = zap ? reviewPlan(state, rawBalances(balances)) : null
-  const funding = inputsFromV1(zap, planned)
+  // Paid with one other token (2026-10-06): no pool-token amounts before the plan's own; the review says what it swaps.
+  const planned = zap && !state.payWith ? reviewPlan(state, rawBalances(balances)) : null
+  const funding = inputsFromV1(zap, planned, state.payWith)
   const bring = useBringable(chainId, funding.kind === 'short' ? funding.token : null)
   if (gate === 'outside' || gate === 'not-live' || !zap) return v1
   if (gate === 'reading') return null

@@ -1,6 +1,7 @@
 /**
  * TEST-ONLY. read-v6's live chain reads (chain-pools, chain-balances, chain-tokens; api-contracts/read-v6 README "Chain
- * reads") answered for a fake chain (./v2-chain.mjs) on Base or Arbitrum One: answers the contract accepts, built from the
+ * reads") answered for a fake chain (./v2-chain.mjs) on Base or Arbitrum One (Robinhood Chain too since 2026-10-06, for its
+ * pairs' prices and the wallet's balances there): answers the contract accepts, built from the
  * package's own fixtures (their snapshot, their ETH/USD round, the stable at 1) with the test's pools, balances and tokens.
  * `answer(route, request)` is what a browser suite hands to `window.__dominoV2Test.read6` (src/v2in/dataSource.ts); every
  * answer is checked against the package's validators before it is served, so a suite never draws what the contract refuses.
@@ -16,15 +17,21 @@ const TOKENS = fixture('chain-tokens-usdc');
 const ZERO = '0x0000000000000000000000000000000000000000';
 const ETH_PRICE = POOLS.tokens.find((token) => token.symbol === 'ETH').price;
 const STABLE_PRICE = POOLS.tokens.find((token) => token.symbol === 'USDC').price;
-const STABLES = { 8453: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 42161: '0xaf88d065e77c8cc2239327c5edb3a432268e5831' };
-const WRAPPED = { 8453: '0x4200000000000000000000000000000000000006', 42161: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1' };
+const STABLES = { 4663: '0x5fc5360d0400a0fd4f2af552add042d716f1d168', 8453: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 42161: '0xaf88d065e77c8cc2239327c5edb3a432268e5831' };
+const WRAPPED = { 4663: '0x0bd7d308f8e1639fab988df18a8011f41eacad73', 8453: '0x4200000000000000000000000000000000000006', 42161: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1' };
+/**
+ * Added 2026-10-06 (Robinhood Chain's pairs valued in USD): the fixtures' round as Robinhood Chain's own feed reads it (the
+ * contract's PRICE_PROFILES: another feed, a heartbeat of 24 h), so its ETH and WETH are priced too.
+ */
+const ETH_PRICES = { 8453: ETH_PRICE, 4663: { ...ETH_PRICE, ethUsd: { ...ETH_PRICE.ethUsd, feed: '0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9' } } };
 
 /**
  * A token's price as the fixtures' read says it: the stable at 1; ETH and WETH at Base's feed round (the fixtures' chain;
  * on Arbitrum One its feed is another, so there they are unpriced, which a zero balance does not need); any other none.
+ * Changed on purpose 2026-10-06: Robinhood Chain too, USDG at 1 and its ETH and WETH at the same round from its own feed.
  */
 function priceOf(chainId, address) {
-  if (address === ZERO || address === WRAPPED[chainId]) return chainId === 8453 ? { price: ETH_PRICE, priceReason: null } : { price: null, priceReason: 'eth_usd_stale' };
+  if (address === ZERO || address === WRAPPED[chainId]) return ETH_PRICES[chainId] ? { price: ETH_PRICES[chainId], priceReason: null } : { price: null, priceReason: 'eth_usd_stale' };
   if (address === STABLES[chainId]) return { price: STABLE_PRICE, priceReason: null };
   return { price: null, priceReason: 'no_pool' };
 }

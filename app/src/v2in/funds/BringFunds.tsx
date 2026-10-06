@@ -69,6 +69,7 @@ import {
   type NetworkHolds,
   type RequestFailure,
 } from './model'
+import { FundsLine } from './PayWith'
 import { IDLE_STEPS, QuoteView, type StepsView } from './QuoteView'
 import type { FundsServices } from './services'
 import { v2Transports } from '../transports'
@@ -245,18 +246,23 @@ function HeldOffer({
 function DiscreetLine({ line, onBring }: { line: LineHolding; onBring: () => void }) {
   const amount = holdingText({ ...line.holding, raw: sendable(line.holding) })
   const { chainId, token, symbol, decimals } = line.holding
+  // Its markup is ./PayWith.tsx FundsLine since 2026-10-06 (the same line offers paying with one other token), unchanged.
   return (
-    <button type="button" className="dm-funds-line" onClick={onBring} data-funds-line={line.chainId} data-funds-line-token={line.holding.token} data-funds-line-target={line.target}>
-      <span className="dm-funds-line-mark" aria-hidden="true">
-        <TokenMark token={{ origin: 'read', chainId: line.chainId, address: token, symbol, decimals, readStatus: 'available', artwork: holdingArtwork(chainId, token) }} size={20} />
-        <span className="dm-funds-line-arrow">↗</span>
-      </span>
-      <span className="dm-funds-line-text">
-        {FUNDS_TEXT.youHave(amount, line.network)}
-        {line.valueUsd !== null && <span className="dm-funds-line-usd"> {FUNDS_TEXT.aboutUsd(formatUsd(line.valueUsd))}</span>}
-      </span>
-      <span className="dm-funds-line-action">{FUNDS_TEXT.bringItHere}</span>
-    </button>
+    <FundsLine
+      onClick={onBring}
+      data-funds-line={line.chainId}
+      data-funds-line-token={line.holding.token}
+      data-funds-line-target={line.target}
+      mark={
+        <>
+          <TokenMark token={{ origin: 'read', chainId: line.chainId, address: token, symbol, decimals, readStatus: 'available', artwork: holdingArtwork(chainId, token) }} size={20} />
+          <span className="dm-funds-line-arrow">↗</span>
+        </>
+      }
+      text={FUNDS_TEXT.youHave(amount, line.network)}
+      extra={line.valueUsd !== null && <> {FUNDS_TEXT.aboutUsd(formatUsd(line.valueUsd))}</>}
+      action={FUNDS_TEXT.bringItHere}
+    />
   )
 }
 

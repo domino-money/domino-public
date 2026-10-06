@@ -474,7 +474,8 @@ test('before an amount, ONE discreet line names what the service read on another
       const amounts = document.querySelector('li[data-step="amount"] [data-paired-amounts]');
       return !!(line && advanced && amounts && amounts.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING && line.compareDocumentPosition(advanced) & Node.DOCUMENT_POSITION_FOLLOWING);
     }), true);
-    assert.deepEqual(reads.calls[0].request.tokens.map((t) => t.chainId), [8453, 8453, 8453, 42161, 42161, 42161, 4663], 'the other networks\' ETH, WETH and USDC, then the destination\'s ETH');
+    // Changed on purpose 2026-10-06 (paying with one other token): the destination's WETH and USDG after its ETH.
+    assert.deepEqual(reads.calls[0].request.tokens.map((t) => t.chainId), [8453, 8453, 8453, 42161, 42161, 42161, 4663, 4663, 4663], 'the other networks\' ETH, WETH and USDC, then the destination\'s ETH, WETH and USDG');
     assert.equal(s.bridgeCalls.length, 0, 'no sign-in, no quote before the click');
     assert.deepEqual(switches(s), []);
     await capture(s, 'funds-discreet-line', '[data-funds-line]');

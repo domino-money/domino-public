@@ -12,7 +12,8 @@ export const JOURNEY = {
     poolLead: 'Choose the two tokens, then one of their pools.',
     amountLead: 'Enter an amount in either token, or both. Domino swaps for you when needed.',
     amountLeadOther: 'Pay with another token. Domino swaps it for the pool’s tokens.',
-    reviewLead: 'Check your position, then confirm in your wallet.',
+    // Removed on purpose 2026-10-06 (the V2 bundle budget, tests/session.bundle.test.mjs): Review's lead and custody line,
+    // the pool's "no price yet", "connect first", "from the list" and "read through your wallet", which no screen drew.
   },
   pool: {
     find: 'Find a pool',
@@ -25,7 +26,6 @@ export const JOURNEY = {
     tier: 'Fee tier',
     read: 'Check this pool',
     reading: 'Reading the pool through your wallet…',
-    noPrice: 'This pool has no price yet.',
     unsupported: 'This pool isn’t supported.',
     sameToken: 'Choose two different tokens.',
     decimalsUnknown: 'This token doesn’t say how many decimals it has, so it can’t be used here.',
@@ -38,10 +38,8 @@ export const JOURNEY = {
      * address is not (./model/chainReads.ts lookalikeOf): listed with this line, never chosen. Today's search says the same.
      */
     lookalike: (main: string) => `Not the ${main} Domino uses`,
-    connectFirst: 'Connect a wallet to read a pool on this network.',
     change: 'Change pool',
     readAt: (block: string) => `Read at block ${block}`,
-    fromList: 'From the list',
     /** Robinhood Chain, while its listed pools keep today's steps: a pool today's journey cannot open. */
     findOther: 'Find a pool by its tokens',
     backToList: 'Back to the pool list',
@@ -49,7 +47,6 @@ export const JOURNEY = {
     advancedLead: "A pool Domino doesn't list yet, or one that doesn't exist: pick its two tokens, the Uniswap version and the fee, and Domino reads it through your wallet. A pool with no price yet can be created here.",
     listed: 'This pool is in the list: it opens with today’s steps.',
     takeListed: 'Use this pool',
-    pickedWallet: 'Read through your wallet',
   },
   newPool: {
     lead: 'Nobody has set a price for this pool yet. You set its starting price with your first deposit.',
@@ -146,7 +143,6 @@ export const JOURNEY = {
     /** Today's journey on Domino V2 (./JourneyCreateV2.tsx): the plan is asked for the signed-in wallet only. */
     signInForQuote: 'Sign in with your wallet to get the quote. Signing in moves nothing.',
     signIn: 'Sign in',
-    custody: 'Your position stays in your wallet. Each action is a single transaction. Domino’s contract keeps nothing afterwards.',
     reviewAgain: 'Review again',
   },
   /**

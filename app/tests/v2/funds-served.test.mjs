@@ -23,12 +23,14 @@ const candidate = (chainId) => CANDIDATE_ORIGINS.find((c) => c.chainId === chain
 
 // Changed on purpose 2026-10-06 (the owner's point 1): with the destination's own ETH, for "Get gas on {destination}" (§3.9);
 // only the networks read-v6 reads (a request naming any other is refused whole: src/v2/read/v6.ts).
-test('what is asked: every other network\'s ETH, WETH and stable, then the destination\'s own ETH; only the networks the service reads', async () => {
+// Changed on purpose 2026-10-06 (the owner: AI/PONS short on Robinhood Chain and nothing offered): the destination's WETH
+// and stable too, for "Pay with … instead" (what the wallet holds there, and each kind's worth).
+test('what is asked: every other network\'s ETH, WETH and stable, then the destination\'s own; only the networks the service reads', async () => {
   const asked = model.balancesRequest(4663);
-  assert.deepEqual(asked.map((t) => t.chainId), [8453, 8453, 8453, 42161, 42161, 42161, 4663]);
+  assert.deepEqual(asked.map((t) => t.chainId), [8453, 8453, 8453, 42161, 42161, 42161, 4663, 4663, 4663]);
   assert.deepEqual(asked.slice(0, 3).map((t) => t.address), [ZERO, '0x4200000000000000000000000000000000000006', '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913']);
-  assert.deepEqual(asked.at(-1), { chainId: 4663, address: ZERO });
-  assert.deepEqual(model.balancesRequest(8453).map((t) => t.chainId), [4663, 4663, 4663, 42161, 42161, 42161, 8453]);
+  assert.deepEqual(asked.slice(-3), [{ chainId: 4663, address: ZERO }, { chainId: 4663, address: '0x0bd7d308f8e1639fab988df18a8011f41eacad73' }, { chainId: 4663, address: '0x5fc5360d0400a0fd4f2af552add042d716f1d168' }]);
+  assert.deepEqual(model.balancesRequest(8453).map((t) => t.chainId), [4663, 4663, 4663, 42161, 42161, 42161, 8453, 8453, 8453]);
   assert.deepEqual(model.balancesRequest(1).map((t) => t.chainId), [4663, 4663, 4663, 8453, 8453, 8453, 42161, 42161, 42161], 'never another network');
   const runtime = await import(new URL('../../../api-contracts/read-v6/runtime.mjs', import.meta.url).href);
   for (const destination of [4663, 8453, 42161]) {
@@ -58,7 +60,7 @@ test('an answer as the wallet\'s own read: the network\'s own symbols, what is a
   assert.equal(model.totalUsdOn(answer, 42161), null);
 });
 
-test('New position\'s USD for a pool on another network: its currencies at their qualified prices; a missing price is none, never zero', () => {
+test('New position\'s USD for a pool on another network: its currencies at their qualified prices; one unpriced at the pool\'s own price; none priced is none, never zero', () => {
   const token = (address, symbol, decimals) => ({ origin: 'read', chainId: 8453, address, symbol, decimals, readStatus: 'available', artwork: null });
   const pool = {
     currencies: [token(ZERO, 'ETH', 18), token('0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 'USDC', 6)],
@@ -68,7 +70,14 @@ test('New position\'s USD for a pool on another network: its currencies at their
   // 0.5 ETH and 1,000 USDC: 2,000.06172839 + 1,000.
   assert.equal(valuation.usdOf(pool, [500000000000000000n, 1000000000n]), '3000.061728390000000000');
   assert.equal(valuation.usdOfSide(pool, 1, '2500000'), '2.500000000000000000');
-  assert.equal(valuation.usdOf({ ...pool, usdPrices: ['4000.123456780000000000', null] }, [1n, 1n]), null, 'a side without a price: no figure at all');
+  // Changed on purpose 2026-10-06 (the owner: "USD estimate unavailable" whenever one token of the pair had no qualified
+  // price, src/components/create/valuation.ts): a side without a price is valued at this pool's own price in the priced
+  // one, then at its price, the rule a USDG pair is valued by. 2.5 USDC here: in ETH at the pool's price, then at ETH's.
+  const square = BigInt(pool.sqrtPriceX96) ** 2n;
+  const wei = (2_500_000n * (1n << 192n)) / square;
+  const usd = (wei * 4_000_123_456_780_000_000_000n) / 10n ** 18n;
+  assert.equal(valuation.usdOf({ ...pool, usdPrices: ['4000.123456780000000000', null] }, [0n, 2_500_000n]), `${usd / 10n ** 18n}.${String(usd % 10n ** 18n).padStart(18, '0')}`);
+  assert.equal(valuation.usdOf({ ...pool, usdPrices: [null, null] }, [1n, 1n]), null, 'no side priced: no figure at all');
   assert.equal(valuation.usdOf({ ...pool, usdPrices: ['4000.123456780000000000', null] }, [10n ** 18n, 0n]), '4000.123456780000000000', 'a side holding nothing needs no price');
   const { usdPrices, ...plain } = pool;
   assert.equal(usdPrices.length, 2);

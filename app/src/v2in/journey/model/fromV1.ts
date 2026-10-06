@@ -1,5 +1,5 @@
 import type { DepositPlan } from '../../../lib/create/depositPlan'
-import type { JourneyState as V1JourneyState } from '../../../lib/create/journey'
+import { validateBudget, type PayWith, type JourneyState as V1JourneyState } from '../../../lib/create/journey'
 import { slippageBpsFrom } from '../../../lib/create/slippage'
 import type { S1PlanConsent, S1PlanRequest } from '../../../v2/plan/types'
 import type { Address } from '../../../v2/types'
@@ -33,7 +33,17 @@ export type V1Funding =
   | { kind: 'short'; token: Address; have: bigint; need: bigint }
   | { kind: 'inputs'; inputs: readonly { token: Address; amount: bigint }[] }
 
-export function inputsFromV1(zap: JourneyState | null, planned: { need: readonly [bigint, bigint]; plan: DepositPlan | null } | null): V1Funding {
+/**
+ * Changed on purpose 2026-10-06 (the owner: AI/PONS short on Robinhood Chain and nothing offered): a deposit paid with one
+ * other token (`payWith`, lib/create/journey.ts PayWith) is that token alone, at the amount typed (position-plan-v1: "the
+ * pool's tokens, or exactly one other token"), as the zap path's "Another token" asks it: the plan swaps it for the pool's
+ * two, and its review and the wallet's own checks say whether the wallet holds it.
+ */
+export function inputsFromV1(zap: JourneyState | null, planned: { need: readonly [bigint, bigint]; plan: DepositPlan | null } | null, payWith: PayWith | null = null): V1Funding {
+  if (payWith) {
+    const paid = validateBudget(payWith.text, payWith.token.decimals)
+    return zap?.pool && paid.ok ? { kind: 'inputs', inputs: [{ token: payWith.token.address as Address, amount: BigInt(paid.raw) }] } : { kind: 'wait' }
+  }
   const plan = planned?.plan ?? null
   if (!zap?.pool || !planned || !plan) return { kind: 'wait' }
   const currencies: readonly [Address, Address] = [zap.pool.pool.currency0, zap.pool.pool.currency1]

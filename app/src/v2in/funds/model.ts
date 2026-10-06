@@ -756,21 +756,62 @@ export const SERVED_BALANCE_CHAINS: readonly number[] = Object.freeze([4663, 845
  * Added 2026-10-06 (rugged97's delta of 5 Oct, item 3: read-v6's chain-balances): the tokens to ask Domino's service about
  * for the offer: every other network's ETH, WETH and stable that the service reads (finance/v2/holdings.ts
  * CANDIDATE_ORIGINS within SERVED_BALANCE_CHAINS), in that order; then, Changed on purpose 2026-10-06 (the owner's point
- * 1), the destination's own ETH, for "Get gas on {destination}" (§3.9). Seven tokens, within the service's 24.
+ * 1), the destination's own ETH, for "Get gas on {destination}" (§3.9). Changed on purpose 2026-10-06 (the owner: AI/PONS
+ * short on Robinhood Chain, nothing offered): and its WETH and stable, so "Pay with … instead" knows what the wallet holds
+ * there and what each kind is worth (`payToken`, `balanceOn`). Nine tokens, within the service's 24.
  */
 export function balancesRequest(destination: number): { chainId: number; address: string }[] {
-  const others = CANDIDATE_ORIGINS.filter((candidate) => SERVED_BALANCE_CHAINS.includes(candidate.chainId) && candidate.chainId !== destination).flatMap((candidate) =>
+  const served = CANDIDATE_ORIGINS.filter((candidate) => SERVED_BALANCE_CHAINS.includes(candidate.chainId))
+  return [...served.filter((candidate) => candidate.chainId !== destination), ...served.filter((candidate) => candidate.chainId === destination)].flatMap((candidate) =>
     candidate.tokens.map((token) => ({ chainId: candidate.chainId, address: token.address.toLowerCase() })),
   )
-  return SERVED_BALANCE_CHAINS.includes(destination) ? [...others, { chainId: destination, address: ZERO }] : others
+}
+
+/**
+ * Added 2026-10-06: one balance as a chain-balances answer read it, raw, with its token's USD price per whole token
+ * (qualified, 18 decimals; null without one); null when that network or that balance was not read (pure).
+ */
+export function balanceOn(answer: ChainBalancesResponse, chainId: number, token: string): { raw: bigint; usd: string | null } | null {
+  const chain = answer.chains.find((entry) => entry.chainId === chainId)
+  const read = chain?.status === 'current' ? chain.balances.find((entry) => entry.address.toLowerCase() === lower(token)) : undefined
+  return read && read.status === 'read' && read.balanceRaw !== null && /^\d+$/.test(read.balanceRaw) ? { raw: BigInt(read.balanceRaw), usd: read.price?.usd ?? null } : null
+}
+
+/**
+ * Added 2026-10-06 (./FundsAmounts.tsx, the deposit paid with one other token): what paying `text` of it lacks on its
+ * network, against its balance there as Domino's service read it (`here`; null: unread, so nothing is said to lack), as the
+ * zap path's offer works it out for its inputs (lackingZapTokens) (pure).
+ */
+export function payLacks(chainId: number, token: string, text: string, decimals: number | null, here: bigint | null): Lack[] {
+  const raw = amountRawOf(text, decimals)
+  return lackingZapTokens({ chainId, inputs: raw === null ? null : [{ token, amount: BigInt(raw) }], balances: here === null ? null : new Map([[token, here]]) })
 }
 
 /** A network's ETH as a chain-balances answer read it, raw; null when that network or that balance was not read (pure). */
-export function nativeOn(answer: ChainBalancesResponse, chainId: number): bigint | null {
-  const chain = answer.chains.find((entry) => entry.chainId === chainId)
-  if (!chain || chain.status !== 'current') return null
-  const read = chain.balances.find((entry) => entry.address.toLowerCase() === ZERO)
-  return read && read.status === 'read' && read.balanceRaw !== null && /^\d+$/.test(read.balanceRaw) ? BigInt(read.balanceRaw) : null
+export const nativeOn = (answer: ChainBalancesResponse, chainId: number): bigint | null => balanceOn(answer, chainId, ZERO)?.raw ?? null
+
+/**
+ * Added 2026-10-06 (the owner, on production's New position: AI/PONS and CASHCAT/AI short on Robinhood Chain with no
+ * offer at all, since neither token is one a deposit delivers): the one token "Pay with … instead" names, which Domino V2's
+ * zap swaps for the pool's two (position-plan-v1: "exactly one other token"): the network's ETH, or its stable when the
+ * wallet holds more value in dollars than in ether, there and on the other networks, at the qualified prices Domino's
+ * service read (`answer`); ETH while either is not known. Null when a token of the pool is one a deposit delivers: the
+ * offer to bring it stands, as before (pure).
+ */
+export function payToken(chainId: number, poolTokens: readonly string[], answer: ChainBalancesResponse | null): { address: string; symbol: string; decimals: number } | null {
+  if (deliverableTokens(chainId, poolTokens).length > 0) return null
+  const worth: Record<Kind, bigint | null> = { ether: 0n, dollar: 0n }
+  for (const chain of answer?.chains ?? []) {
+    for (const read of chain.status === 'current' ? chain.balances : []) {
+      const kind = kindOf(chain.chainId, read.address)
+      const held = kind === null ? null : worth[kind]
+      if (kind === null || read.balanceRaw === null || read.balanceRaw === '0') continue
+      const micro = read.valueUsd === null ? null : microUsd(read.valueUsd)
+      worth[kind] = micro === null || held === null ? null : held + micro
+    }
+  }
+  const dollar = worth.dollar !== null && worth.ether !== null && worth.dollar > worth.ether
+  return destinationChoices().find((d) => d.chainId === chainId)?.tokens.find((t) => (dollar ? kindOf(chainId, t.address) === 'dollar' : t.address === ZERO)) ?? null
 }
 
 /** One balance's value in USD as the answer gives it (a qualified price only, read-v6 1.1.0-rc.1); null without one (pure). */

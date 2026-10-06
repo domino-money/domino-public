@@ -1,7 +1,8 @@
 import { Fragment } from 'react'
 import { CREATE } from '../../lib/create/copy'
-import { candidatesFromPool, candidateDecimals, takesOnly, validateBudget, type JourneyState } from '../../lib/create/journey'
+import { candidatesFromPool, candidateDecimals, takesOnly, validateBudget, type JourneyState, type PayWith } from '../../lib/create/journey'
 import { pairedAmount } from '../../lib/create/pairAmount'
+import type { PayFacts } from '../../lib/create/poolPrices'
 import { maxSpend, reviewPlan } from '../../lib/create/reviewPlan'
 import { shortAmount } from '../../lib/format/amount'
 import { formatUnits } from '../../lib/read/decimal'
@@ -14,7 +15,7 @@ import { TokenMark } from '../TokenIcon'
 import { Button } from '../ui'
 import { AmountField } from './fields'
 import type { PairBalancesState } from './usePairBalances'
-import { heldAmounts, rawBalances, usdOfSide } from './valuation'
+import { heldAmounts, rawBalances, usdAt, usdOfSide } from './valuation'
 
 /** A raw amount in whole tokens, grouped as the read writes it; the raw digits when the decimals are unknown. */
 const unitsOf = (raw: bigint | string, decimals: number | null) => {
@@ -59,14 +60,82 @@ export function PairedAmounts({
   balances,
   onBudget,
   onDeposit,
+  pay,
+  onPayWith,
 }: {
   state: JourneyState
   balances: PairBalancesState
   onBudget: (text: string) => void
   onDeposit: (candidate: TokenCandidate, text: string) => void
+  /** Added 2026-10-06: what paying with one other token would be (./usePricedPool.ts usePayFacts; undefined while read). */
+  pay?: PayFacts | null
+  /** Added 2026-10-06: pay with one other token, or with the pool's own again (null). */
+  onPayWith?: (payWith: PayWith | null) => void
 }) {
   const pool = state.pool
   if (!pool) return null
+  // No wallet: one line under both panels asks for one, instead of the same line in each (round 6, 2026-09-28: less on screen).
+  const disconnected = balances.status === 'disconnected'
+  // Added 2026-10-06 (the owner, on production: AI/PONS short on Robinhood Chain and nothing offered): paid with one other
+  // token (lib/create/journey.ts PayWith, offered by src/v2in/funds/PayWith.tsx), the step's one panel is that token's,
+  // this same panel, with its balance and price as Domino's service read them (`pay`), and a quiet way back to the pool's
+  // own tokens. Drawn by the step itself (the review of 2026-10-06), so it never waits on the offer, its network or the
+  // wallet staying connected.
+  const paid = state.payWith
+  if (paid && onPayWith) {
+    const { token, text } = paid
+    const typed = validateBudget(text, token.decimals)
+    const facts = pay?.token.address === token.address ? pay : null
+    // Max leaves native ETH's gas allowance in the wallet, as the pool's panels do.
+    const spend = facts?.raw ? maxSpend(facts.raw, token.address === NATIVE_CURRENCY) : 0n
+    const usdPaid = typed.ok ? usdAt(typed.raw, token.decimals, facts?.usd ?? null) : null
+    return (
+      <div className="dm-flow-stack" data-pay-with-amount={token.address}>
+        <div className="dm-flow-pair">
+          <div className="dm-flow-pair-row" data-pair-role="typed">
+            <span className="dm-flow-pair-caption" aria-hidden="true">
+              {CREATE.amount.entered}
+            </span>
+            <AmountField
+              id="create-amount-pay"
+              label={<SymbolText token={token} />}
+              labelHidden
+              unit={
+                <>
+                  <TokenMark token={token} size={20} />
+                  <SymbolText token={token} />
+                </>
+              }
+              inputMode="decimal"
+              placeholder="0"
+              value={text}
+              onChange={(event) => onPayWith({ token, text: event.target.value })}
+              error={text !== '' && !typed.ok ? typed.reason : null}
+              usd={usdPaid !== null ? <UsdText value={usdPaid} /> : undefined}
+              footer={
+                disconnected ? null : (
+                  <div className="dm-flow-balance" data-pair-balance={pay === undefined ? 'loading' : 'ready'}>
+                    <p className="dm-flow-balance-line">
+                      <span className="text-fg-subtle">{pay === undefined ? CREATE.amount.pairReading : facts?.raw == null ? CREATE.amount.pairNone : CREATE.amount.balanceAt(null)}</span>{' '}
+                      {facts?.raw != null && <bdi className="tnum text-fg">{unitsOf(facts.raw, token.decimals)}</bdi>}
+                    </p>
+                    {spend > 0n && (
+                      <Button type="button" variant="secondary" size="sm" data-pair-max="pay" onClick={() => onPayWith({ token, text: unitsOf(spend, token.decimals).replace(/,/g, '') })}>
+                        {CREATE.amount.maxLabel}
+                      </Button>
+                    )}
+                  </div>
+                )
+              }
+            />
+          </div>
+        </div>
+        <button type="button" className="dm-funds-more" onClick={() => onPayWith(null)} data-pay-with-back="">
+          Use <SymbolText token={pool.currencies[0]} /> and <SymbolText token={pool.currencies[1]} /> instead
+        </button>
+      </div>
+    )
+  }
   const choices = candidatesFromPool(pool)
   const independent = pool.currencies.findIndex((currency) => currency.address === state.token?.key)
   const decimals = state.token ? candidateDecimals(state.token) : null
@@ -116,8 +185,6 @@ export function PairedAmounts({
     return { value: fieldText(unitsOf(other.raw, currency.decimals)), note: other.only === null ? null : CREATE.amount.pairOneSided(pool.currencies[other.only].symbol ?? '') }
   }
 
-  // No wallet: one line under both panels asks for one, instead of the same line in each (round 6, 2026-09-28: less on screen).
-  const disconnected = balances.status === 'disconnected'
   // The wallet cannot fund the amounts either way (audit E9, 2026-10-01): said as a warning, announced, tied to the typed
   // field, and naming both tokens, since neither one alone nor both together cover it. Words only: Create position stays
   // open (it looks for an earlier deposit first), and Review says the same with the amounts.
@@ -248,3 +315,4 @@ export function PairedAmounts({
     </div>
   )
 }
+

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { CREATE } from '../../lib/create/copy'
-import type { JourneyState, TickRange } from '../../lib/create/journey'
+import type { JourneyState, PayWith, TickRange } from '../../lib/create/journey'
 import { poolOnOtherChain, type OtherChains } from '../../lib/create/otherChains'
+import type { PayFacts } from '../../lib/create/poolPrices'
 import { slippageValue, slippageWarns, slippageWritten } from '../../lib/create/slippage'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { ReadSource } from '../../lib/read/types'
@@ -21,7 +22,19 @@ import type { PairBalancesState } from './usePairBalances'
 // branches, and the chunk is only the offer under them, drawn as soon as it is in (components/Deferred.tsx, as
 // components/positions/OwnedPositions.tsx opens the lists' chunks: nothing while it loads, nothing should it fail), so
 // the inputs never remount and the caret is never lost when the chunk lands.
-type FundsOfferProps = { state: JourneyState; balances: PairBalancesState; onBudget: (text: string) => void; onDeposit: (candidate: TokenCandidate, text: string) => void; onArrived?: () => void }
+// Changed on purpose 2026-10-06 (the owner: AI/PONS short and nothing offered): the chunk also offers paying with one other
+// token where Domino's service says it may (`pay`, lib/create/poolPrices.ts PayFacts; `onPayWith`, lib/create/journey.ts
+// PayWith). Once chosen, V1's amounts, still mounted by this step, draw that token's one panel in place of the pair's
+// (PairedAmounts.tsx), so it never depends on the chunk (the review of 2026-10-06).
+type FundsOfferProps = {
+  state: JourneyState
+  balances: PairBalancesState
+  onBudget: (text: string) => void
+  onDeposit: (candidate: TokenCandidate, text: string) => void
+  onArrived?: () => void
+  onPayWith?: (payWith: PayWith | null) => void
+  pay?: PayFacts | null
+}
 const FundsOffer = __DOMINO_V2__ ? deferred<FundsOfferProps>(recovering(() => import('../../v2in/funds/FundsAmounts'), () => ({ default: NoOffer }))) : null
 if (__DOMINO_V2__ && FundsOffer) FundsOffer.preload()
 function NoOffer() {
@@ -84,6 +97,8 @@ export function StageAmount({
   onDeposit,
   onSlippage,
   onFundsArrived,
+  onPayWith,
+  pay,
 }: {
   state: JourneyState
   balances: PairBalancesState
@@ -93,6 +108,10 @@ export function StageAmount({
   onSlippage: (text: string) => void
   /** Added 2026-10-05: funds brought from another network arrived; the balances are read again. */
   onFundsArrived?: () => void
+  /** Added 2026-10-06: pay with one other token, or with the pool's own again (null). */
+  onPayWith?: (payWith: PayWith | null) => void
+  /** Added 2026-10-06: what paying with one other token would be (./usePricedPool.ts usePayFacts). */
+  pay?: PayFacts | null
 }) {
   const value = slippageValue(state.slippageBps)
   // Read once: a disclosure whose open state followed the value would shut under the slider being dragged.
@@ -103,8 +122,8 @@ export function StageAmount({
     <div className="dm-flow-stack" data-stage="amount">
       {__DOMINO_V2__ && FundsOffer ? (
         <>
-          <PairedAmounts state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} />
-          <FundsOffer state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} onArrived={onFundsArrived} />
+          <PairedAmounts state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} pay={pay} onPayWith={onPayWith} />
+          <FundsOffer state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} onArrived={onFundsArrived} onPayWith={onPayWith} pay={pay} />
         </>
       ) : (
         <PairedAmounts state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} />

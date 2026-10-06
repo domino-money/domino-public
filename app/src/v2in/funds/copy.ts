@@ -147,6 +147,14 @@ export const FUNDS_TEXT = {
   rejectedInWallet: 'I rejected it in my wallet',
   forgotten: 'Nothing was sent. You can deposit again.',
   depositHandedOver: 'This deposit was handed to your wallet. It is never sent twice.',
+  /**
+   * Added 2026-10-06 (the owner: AI/PONS short on Robinhood Chain and nothing offered): one line where the offer would be,
+   * "Pay with ETH instead · Domino swaps it for AI and PONS" (the pool's symbols drawn as read; ./PayWith.tsx). The way back,
+   * "Use AI and PONS instead", is the amount step's own (components/create/PairedAmounts.tsx).
+   */
+  payInstead: (token: string) => `Pay with ${token} instead`,
+  paySwaps: 'Domino swaps it for',
+  and: 'and',
 } as const
 
 /** The closed sender's stops (finance/v2/crosschain.ts OriginStepError codes), said. `{origin}` and `{native}` are filled here. */

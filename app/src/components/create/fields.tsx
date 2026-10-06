@@ -30,7 +30,7 @@ export function AmountField({
   unit: ReactNode
   /** The line inside the panel under the figure: the wallet balance. */
   footer?: ReactNode
-  /** The amount's USD value, under the figure on the left (USDG pairs only). */
+  /** The amount's USD value, under the figure on the left (where it can be worked out: ./valuation.ts usdOf). */
   usd?: ReactNode
   hint?: ReactNode
   error?: string | null

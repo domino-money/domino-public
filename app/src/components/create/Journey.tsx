@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import {
   back,
@@ -18,6 +18,7 @@ import {
   validateRange,
   verificationToken,
   withBudget,
+  withPayWith,
   withPool,
   withRange,
   withSlippage,
@@ -50,6 +51,7 @@ import { FinalControl, StageReview, preloadCreateControl } from './StageReview'
 import { StageToken, type PreselectStatus } from './StageToken'
 import { AmountSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type StepView, type VisualStep } from './StepList'
 import { PositionPreview } from './PositionPreview'
+import { usePayFacts, usePricedPool } from './usePricedPool'
 import { heldAmounts } from './valuation'
 
 /** The outcomes only the verification read, or the featured list before it, can produce. */
@@ -405,6 +407,14 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   // Review's Read again, when the read finished with nothing usable (2026-10-06, the final check's F5).
   const [balanceRevision, setBalanceRevision] = useState(0)
   const pair = usePairBalances(source, state.pool, others, balanceRevision)
+  // Added 2026-10-06 (the owner: "USD estimate unavailable" for Robinhood Chain pairs without USDG): the chosen pool with its
+  // currencies' qualified prices, once read (./usePricedPool.ts), for what the steps value: the amount step, its row, the
+  // preview and Review. Everything else keeps the state as it is.
+  const pricedPool = usePricedPool(state.pool)
+  const valued = useMemo<JourneyState>(() => (pricedPool === state.pool ? state : { ...state, pool: pricedPool }), [state, pricedPool])
+  // Added 2026-10-06 (the owner: AI/PONS short on Robinhood Chain and nothing offered): what paying with one other token
+  // would be for this pool and wallet, read once and again with the balances (./usePricedPool.ts usePayFacts).
+  const pay = usePayFacts(state.pool, balanceRevision)
 
   const checkFor: Record<VisualStep, Check> = { pool: poolCheck, range: rangeCheck, amount: amountCheck, review: canContinue('review', state, now) }
   const check = checkFor[current]
@@ -477,12 +487,23 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
       case 'range':
         return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} others={others} />
       case 'amount':
-        return <StageAmount state={state} balances={pair} onBudget={setBudget} onDeposit={setDeposit} onSlippage={setSlippage} onFundsArrived={() => setBalanceRevision((n) => n + 1)} />
+        return (
+          <StageAmount
+            state={valued}
+            balances={pair}
+            onBudget={setBudget}
+            onDeposit={setDeposit}
+            onSlippage={setSlippage}
+            onFundsArrived={() => setBalanceRevision((n) => n + 1)}
+            onPayWith={(payWith) => update(withPayWith(state, payWith))}
+            pay={pay}
+          />
+        )
       case 'review':
         return V2Review ? (
-          <V2Review state={state} now={now} balances={pair} v1={<StageReview state={state} now={now} balances={pair} />} />
+          <V2Review state={valued} now={now} balances={pair} v1={<StageReview state={valued} now={now} balances={pair} />} />
         ) : (
-          <StageReview state={state} now={now} balances={pair} />
+          <StageReview state={valued} now={now} balances={pair} />
         )
       default:
         return step satisfies never
@@ -496,7 +517,7 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
       case 'range':
         return state.range && usablePrice ? <RangeSummary range={state.range} price={usablePrice} /> : null
       case 'amount':
-        return <AmountSummary state={state} held={heldAmounts(state, pair)} />
+        return <AmountSummary state={valued} held={heldAmounts(valued, pair)} />
       case 'review':
         return null
       default:
@@ -508,7 +529,9 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   // says so, instead of "either token". Words only: the journey already moved the amount to that token (withRange).
   const one = takesOnly(state)
   const oneSymbol = one !== null && state.pool ? (state.pool.currencies[one].symbol ?? null) : null
-  const amountLead = oneSymbol ? CREATE.step.amount.leadOne(oneSymbol) : undefined
+  // Added 2026-10-06: paid with one other token, the step says so (lib/create/journey.ts PayWith).
+  const paid = state.payWith?.token.symbol
+  const amountLead = paid ? CREATE.step.amount.leadPay(paid) : oneSymbol ? CREATE.step.amount.leadOne(oneSymbol) : undefined
 
   // A step is done when it was reached, its inputs are complete, every step
   // before it is complete, and the machine would open it again.
@@ -538,7 +561,7 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
       <PositionPreview
         className="dm-card dm-flow-preview dm-flow-rise"
         style={{ '--delay': '80ms' } as CSSProperties}
-        state={state}
+        state={valued}
         preview={current === 'pool' && !state.pool ? preview : null}
         price={usablePrice}
         balances={pair}

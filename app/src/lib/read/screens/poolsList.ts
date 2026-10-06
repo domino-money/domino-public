@@ -59,6 +59,9 @@ export interface PoolOption {
    * One read by Domino's service carries each currency's USD price as that read gave it (18 decimals; the stable at 1, ETH
    * and WETH at Chainlink's ETH/USD, any other token at its deepest qualified pool), in pool order, null for a currency
    * without one. Absent everywhere else: Robinhood Chain's pools are valued through USDG (components/create/valuation.ts).
+   * Changed on purpose 2026-10-06 (the owner: "USD estimate unavailable" on Robinhood Chain pairs without USDG): New
+   * position's chosen Robinhood Chain pool without USDG carries them too, read by the same service for its pair
+   * (components/create/usePricedPool.ts), in pool order.
    */
   usdPrices?: readonly [string | null, string | null]
   /** The block the pool was verified at. */

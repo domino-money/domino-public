@@ -5,21 +5,20 @@ import { dexStore } from '../../lib/read/dexFigures'
 import { amountFact } from '../../lib/read/pagers'
 import { whenVisibleAfter } from '../../lib/read/screens/quietRead'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
-import { quietDelayMs, type TransientCandidate } from '../../lib/read/screens/transient'
+import { quietDelayMs } from '../../lib/read/screens/transient'
 import type { TokenDisplay } from '../../lib/read/types'
 import { browserOriginWallet } from '../../finance/v2/crosschain'
 import { readHoldingsReport } from '../../finance/v2/holdings'
 import { v2Chain } from '../../v2/chains'
-import type { V2Gate } from '../../v2/gate'
 import { readChainBalances, readChainPools, readChainTokens, type ReadV6Reply } from '../../v2/read/v6'
-import { routeServes } from '../../v2/routes'
 import type { Address, V2ChainId } from '../../v2/types'
-import { v2Transports, type V2Transports } from '../transports'
+import type { V2Transports } from '../transports'
 import { JOURNEY } from './copy'
 import { journeyError } from './errors'
-import { balanceTokens, balancesOfAnswer, factsOfAnswer, lookalikeOf, passingReply, pastedOf, poolsOfAnswer, rereadOf, resolvedOf, rowsOfTokens, symbolRank } from './model/chainReads'
+import { balanceTokens, balancesOfAnswer, factsOfAnswer, lookalikeOf, pastedOf, poolsOfAnswer, rereadOf, resolvedOf, rowsOfTokens, symbolRank } from './model/chainReads'
 import { createNetworkSearch, searchable, type SearchAnswer } from './model/networkSearch'
 import { displayOf, factsOfFound, listedPools, networkTokens, offeredNetworks, optionOf, poolsToRead, refOf } from './model/networks'
+import { PASSING, patiently, servedOn, type LiveGate, type Served } from './served'
 import type { JourneyGates } from './source'
 import { cleanSymbol, profileTokens } from './tokens'
 import { connectJourney, inTurn } from './wallet'
@@ -79,11 +78,7 @@ import { connectJourney, inTurn } from './wallet'
  *     apart (`facts`). The comment above about TVL and APR is history: the owner asked for them "like Robinhood Chain".
  */
 
-type Live = Extract<V2Gate, { mode: 'live' }>
-
-/** What one of the service's chain reads came to: its answer; the route off (the wallet's own way); or a failure. */
-type Served<T> = { kind: 'ok'; body: T; receivedAt: number } | { kind: 'off' } | { kind: 'failed'; passing: boolean }
-const OFF = { kind: 'off' } as const
+type Live = LiveGate
 
 /** A pool answer is reused this long (a pasted address resolved, then its pools listed). */
 const POOLS_REUSE_MS = 20_000
@@ -91,29 +86,8 @@ const POOLS_REUSE_MS = 20_000
 const SEARCH_LIMIT = 8
 /** Quiet re-asks of a failed name search, per network and text, while the list stays open (2026-10-06). */
 const SEARCH_REASKS = 3
-/** A failure that may pass, as the read screens' one rule waits for it (lib/read/screens/transient.ts): a dropped connection's. */
-const PASSING: TransientCandidate = { state: 'unavailable', cause: { kind: 'network' } }
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
-
-/** Resolves true once `ms` have passed with the page visible (quietRead's timer), false if `signal` aborts first. */
-function quietly(ms: number, signal: AbortSignal): Promise<boolean> {
-  return new Promise((done) => {
-    if (signal.aborted) {
-      done(false)
-      return
-    }
-    const stop = () => {
-      cancel()
-      done(false)
-    }
-    const cancel = whenVisibleAfter(ms, () => {
-      signal.removeEventListener('abort', stop)
-      done(true)
-    })
-    signal.addEventListener('abort', stop, { once: true })
-  })
-}
 
 /** Base and Arbitrum One for today's journey, on the gates read: null when neither is live. */
 export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
@@ -135,30 +109,14 @@ export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
   /**
    * One of the service's chain reads while its route serves. Changed on purpose 2026-10-06: a failure says whether it may
    * pass (a dropped connection, a busy reader, a capabilities read that failed for the moment), so it can be asked again
-   * before the wallet's own read; a route that is off goes to the wallet's own read at once, as before.
+   * before the wallet's own read; a route that is off goes to the wallet's own read at once, as before. The rule itself
+   * is ./served.ts's since 2026-10-06 (Robinhood Chain's pool prices ask the same way, ./poolPrices.ts).
    */
-  async function served<T>(chainId: OtherChainId, route: ReadV6Route, read: (transports: V2Transports) => Promise<ReadV6Reply<T>>): Promise<Served<T>> {
-    const gate = gateOf(chainId)
-    const transports = gate ? v2Transports(gate) : null
-    if (!transports) return OFF
-    try {
-      const state = await transports.routeState('readV6')
-      if (!state.on) return state.reason === 'unavailable' || state.reason === 'aborted' ? { kind: 'failed', passing: true } : OFF
-      if (!routeServes(state, route)) return OFF
-      const reply = await read(transports)
-      return reply.kind === 'ok' ? { kind: 'ok', body: reply.body, receivedAt: Date.now() } : { kind: 'failed', passing: passingReply(reply) }
-    } catch {
-      return { kind: 'failed', passing: true }
-    }
+  function served<T>(chainId: OtherChainId, route: ReadV6Route, read: (transports: V2Transports) => Promise<ReadV6Reply<T>>): Promise<Served<T>> {
+    return servedOn(gateOf(chainId), route, read)
   }
-  /** Asked once more after a quiet wait when it failed for the moment (2026-10-06): the wallet's own read comes only after. */
-  async function patiently<T>(ask: () => Promise<Served<T>>, signal: AbortSignal): Promise<Served<T>> {
-    const first = await ask()
-    if (first.kind !== 'failed' || !first.passing || signal.aborted) return first
-    const wait = quietDelayMs(PASSING, 0)
-    if (wait === null || !(await quietly(wait, signal))) return first
-    return ask()
-  }
+  // Asked once more after a quiet wait when it failed for the moment (2026-10-06): the wallet's own read comes only after
+  // (./served.ts patiently, moved there on purpose 2026-10-06 and asked the same way here).
 
   const poolAnswers = new Map<string, { at: number; answer: Promise<Served<ChainPoolsResponse>> }>()
   const poolsKey = (chainId: OtherChainId, token: string, paired?: string) => `${chainId}|${token.toLowerCase()}|${paired?.toLowerCase() ?? ''}`

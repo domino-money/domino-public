@@ -3,20 +3,23 @@ import { Journey } from '../../components/create/Journey'
 import { PageHeader, PageShell } from '../../components/ui'
 import { CREATE } from '../../lib/create/copy'
 import { OtherChainsContext } from '../../lib/create/otherChains'
+import { PoolPricesContext } from '../../lib/create/poolPrices'
 import { whenVisibleAfter } from '../../lib/read/screens/quietRead'
 import { SlotBoundary, SlotFailed } from '../../lib/read/screens/slots'
-import { quietDelayMs, type TransientCandidate } from '../../lib/read/screens/transient'
+import { quietDelayMs } from '../../lib/read/screens/transient'
 import type { V2ChainId } from '../../v2/types'
 import { JourneyNetworkContext, type JourneyNetwork } from './context'
 import { JOURNEY_STAYS_ON_ROBINHOOD, SETUP_STAYS_WHILE_PREVIEW } from './constants'
 import { mergeGates } from './model/networks'
 import { robinhoodFinderOpen, routeFor, ROBINHOOD, type GateMode } from './model/routing'
 import { otherChainsFor } from './otherChains'
+import { poolPricesFor } from './poolPrices'
+// A gate read that may pass, as the read screens' one rule waits for one (lib/read/screens/transient.ts): the chain
+// reads' own (./served.ts, the same object since 2026-10-06).
+import { PASSING } from './served'
 import { journeyGatesRead, type JourneyGates } from './source'
 import { ZapJourney } from './ZapJourney'
 
-/** A gate read that may pass, as the read screens' one rule waits for one (lib/read/screens/transient.ts). */
-const PASSING: TransientCandidate = { state: 'unavailable', cause: { kind: 'network' } }
 /** On the page's focus the gates are read again at most this often, while reading again could change them. */
 const FOCUS_EVERY_MS = 15_000
 
@@ -116,6 +119,10 @@ export default function NewPositionV2({ flow, poolId, linkToken }: { flow: numbe
   const route = routeFor(chainId, mode, SETUP_STAYS_WHILE_PREVIEW && !zapHook, JOURNEY_STAYS_ON_ROBINHOOD && !zapHook)
   const gate = gates?.[chainId]
   const others = useMemo(() => otherChainsFor(gates), [gates])
+  // Added 2026-10-06 (the owner: "USD estimate unavailable" for Robinhood Chain pairs without USDG): their qualified prices,
+  // read by Domino's service while Robinhood Chain's S1 gate is live; and (the owner: AI/PONS short and nothing offered)
+  // what paying with one other token would be, under the pool's network's live S1 gate (./poolPrices.ts).
+  const prices = useMemo(() => poolPricesFor(gates), [gates])
   const robinhoodFinder = route === 'setup' && robinhoodFinderOpen(mode)
   const zap = gate !== undefined && gate.mode !== 'off' && (route === 'zap' || (robinhoodFinder && finder)) ? gate : null
   const network: JourneyNetwork = {
@@ -134,7 +141,9 @@ export default function NewPositionV2({ flow, poolId, linkToken }: { flow: numbe
     <ZapJourney key={`${flow}:${chainId}:${finder ? 'finder' : 'zap'}`} chainId={chainId} gate={zap} finderOnly={robinhoodFinder} onListed={onListed} poolId={poolId} linkToken={linkToken} />
   ) : (
     <OtherChainsContext.Provider value={others}>
-      <Journey key={flow} poolId={poolId} linkToken={linkToken} />
+      <PoolPricesContext.Provider value={prices}>
+        <Journey key={flow} poolId={poolId} linkToken={linkToken} />
+      </PoolPricesContext.Provider>
     </OtherChainsContext.Provider>
   )
   return (

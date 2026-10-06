@@ -2133,3 +2133,275 @@ test('(r) a long symbol stays inside its pool’s pair, whole or ending in “�
     await page.screenshot({ path: join(shots(), 'journey-long-symbol-chosen-1280.png') });
   } finally { await s.close(); }
 });
+
+// Added 2026-10-06 (the owner, on production's New position, step 3: "USD estimate unavailable" for ETH/CASHCAT, AI/PONS and
+// CASHCAT/AI on Robinhood Chain): a pair without USDG is valued at the qualified prices Domino's service reads for its pair
+// (read-v6 chain-pools, asked once for the pool chosen, src/v2in/journey/poolPrices.ts): here ETH at Chainlink's ETH/USD, and
+// the token, which has none (no deep pool against ETH or the dollar), at the pool's own price in ETH.
+const TOKEN_TICK = -138180;
+const TOKEN_SQRT = position.sqrtPriceAtTick(TOKEN_TICK);
+const POOL_ETH_TOKEN = { dex: 4, currency0: ZERO, currency1: FIXTURE_TOKEN, fee: 3000, tickSpacing: 60, hooks: ZERO };
+const RH_TOKENS = [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: USDG_RH, symbol: 'USDG', decimals: 6 }, { address: FIXTURE_TOKEN, symbol: 'TOKEN', decimals: 6 }];
+/** The read service's own ETH / TOKEN pool (its fixture) at about 1 ETH = 1,000,000 TOKEN; the wallet holds 10 ETH and 5,000,000 TOKEN. */
+function ethTokenRead(route, body) {
+  const name = { 'pool-market': 'pool-market.not-requested', 'wallet-assets': 'wallet-assets.zero', token: body.token === ZERO ? 'token.native' : 'token.success' }[route] ?? `${route}.success`;
+  const answer = JSON.parse(readFileSync(join(READ_FIXTURES, `${name}.json`), 'utf8'));
+  if (route === 'pools') for (const pool of answer.pools) Object.assign(pool, { tick: TOKEN_TICK, sqrtPriceX96: TOKEN_SQRT.toString() });
+  if (route === 'wallet-assets') for (const item of answer.items) item.amountRaw = item.address === ZERO ? String(10n ** 19n) : String(5n * 10n ** 12n);
+  return JSON.stringify(answer);
+}
+const dollars = (text) => Number(text.replace(/[$,]/g, ''));
+
+test('(y) a Robinhood Chain pair without USDG shows a dollar estimate: ETH at its qualified price, the token at the pool’s own price', async () => {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), eth: 10n ** 19n, balances: { [FIXTURE_TOKEN]: 5n * 10n ** 12n }, pools: [{ pool: POOL_ETH_TOKEN, sqrtPriceX96: TOKEN_SQRT, tick: TOKEN_TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  const reads = createChainReads({ chainId: 4663, tokens: RH_TOKENS, pools: [{ pool: POOL_ETH_TOKEN, sqrtPriceX96: TOKEN_SQRT, tick: TOKEN_TICK, liquidity: 10n ** 16n }] });
+  const read = createReadStub({ answer: ethTokenRead });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], chainReads: reads, artwork: true,
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
+    await page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
+    await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.locator('[data-chosen-pool]').waitFor();
+    const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+    await pressContinue(current('pool'));
+    await current('range').waitFor();
+    await pressContinue(current('range'));
+    await current('amount').waitFor();
+    await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    await page.locator('li[data-step="amount"][aria-current="step"] [data-pair-side="1"] input[inputmode="decimal"]').fill('1000000');
+    // The amounts' total and each panel's USD, never "USD estimate unavailable".
+    const total = page.locator('li[data-step="amount"] [data-amount-total="valued"]');
+    await total.waitFor({ timeout: 30_000 });
+    const figure = await total.locator('strong').innerText();
+    assert.match(figure, /^\$[\d,]+\.\d{2}$/);
+    // 1,000,000 TOKEN is about 1 ETH at the pool's price, and the ETH it pairs with about as much again: about $8,000.
+    assert.ok(dollars(figure) > 4_000 && dollars(figure) < 20_000, figure);
+    for (const side of [0, 1]) assert.match(await page.locator(`li[data-step="amount"] [data-pair-side="${side}"] .dm-flow-amount-usd`).innerText(), /^\$[\d,]+\.\d{2}$/);
+    assert.equal(await page.getByText('USD estimate unavailable').count(), 0);
+    // One read for the pool chosen, about its own pair.
+    assert.deepEqual(reads.calls.filter((call) => call.route === 'chain-pools').map((call) => call.request), [{ chainId: 4663, token: ZERO, pairedToken: FIXTURE_TOKEN }]);
+    await page.screenshot({ path: join(shots(), 'journey-robinhood-usd-1280.png'), fullPage: true, animations: 'disabled' });
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the owner, on production's New position: AI/PONS and CASHCAT/AI short on Robinhood Chain, and no offer to
+// bring anything, since neither token is one a deposit from another network delivers): where the offer would be, ONE line
+// names the token to pay with instead (src/v2in/funds/PayWith.tsx); chosen, the step draws that token's one panel
+// (src/components/create/PairedAmounts.tsx), and the plan asks exactly that one other token (position-plan-v1: "the pool's
+// tokens, or exactly one other token").
+const OTHER = '0x2222222222222222222222222222222222222222';
+const POOL_PAIR = { dex: 4, currency0: FIXTURE_TOKEN, currency1: OTHER, fee: 3000, tickSpacing: 60, hooks: ZERO };
+// About 1 TOKEN (6 decimals) = 1 OTHER (18 decimals).
+const PAIR_TICK = 276300;
+const PAIR_SQRT = position.sqrtPriceAtTick(PAIR_TICK);
+const payTokens = (symbol) => [...RH_TOKENS, { address: '0x0bd7d308f8e1639fab988df18a8011f41eacad73', symbol: 'WETH', decimals: 18 }, { address: OTHER, symbol, decimals: 18 }];
+/**
+ * The read service's TOKEN in a TOKEN / OTHER pool (its own fixture, made this pool); the wallet holds 100 TOKEN and no OTHER.
+ * Changed on purpose 2026-10-06 (the review's long symbols): OTHER's symbol as the test names it.
+ */
+const pairRead = (symbol) => (route, body) => {
+  const name = { 'pool-market': 'pool-market.not-requested', 'wallet-assets': 'wallet-assets.zero', token: body.token === ZERO ? 'token.native' : 'token.success' }[route] ?? `${route}.success`;
+  const answer = JSON.parse(readFileSync(join(READ_FIXTURES, `${name}.json`), 'utf8').replaceAll(FIXTURE_POOL_ID, poolIdOf(POOL_PAIR)));
+  const other = (entry, extra = {}) => ({ ...entry, address: OTHER, symbol, decimals: 18, ...extra });
+  if (route === 'pools') {
+    const token = answer.tokens.find((entry) => entry.address === FIXTURE_TOKEN);
+    answer.tokens = [token, other(token)];
+    for (const pool of answer.pools) Object.assign(pool, { currencies: [FIXTURE_TOKEN, OTHER], tick: PAIR_TICK, sqrtPriceX96: PAIR_SQRT.toString(), poolKey: { ...pool.poolKey, currency0: FIXTURE_TOKEN, currency1: OTHER } });
+  }
+  if (route === 'wallet-assets') {
+    const token = { ...answer.items.find((item) => item.address === FIXTURE_TOKEN), amountRaw: '100000000' };
+    answer.items = [token, other(token, { amountRaw: '0' })];
+  }
+  return JSON.stringify(answer);
+};
+/** position-plan-v1 for a create paid in ETH alone: about half of it swapped for each of the pool's tokens. */
+function payPlanner(answers = []) {
+  return (wire) => {
+    if (wire.action !== 'create') return undefined;
+    // What is swapped leaves the 0.65% Domino fee on it in the zap (FeeNotBacked otherwise), as the service plans it.
+    const paid = (BigInt(wire.inputs[0].amountRaw) * 10_000n) / 10_065n;
+    const legs = [
+      { tokenIn: ZERO, tokenOut: FIXTURE_TOKEN, amountIn: paid / 2n, expectedOut: 500_000_000n, data: v4Path({ ...POOL_PAIR, currency0: ZERO, currency1: FIXTURE_TOKEN }) },
+      { tokenIn: ZERO, tokenOut: OTHER, amountIn: paid - paid / 2n, expectedOut: 500n * 10n ** 18n, data: v4Path({ ...POOL_PAIR, currency0: ZERO, currency1: OTHER }) },
+    ];
+    const body = planAnswer(wire, { owner: OWNER, zap: ZAP_V4, now: now(), pool: { sqrtPriceX96: PAIR_SQRT, tick: PAIR_TICK }, legs, nonce: { word: 9, bit: answers.length }, expected: { amounts: [495_000_000n, 495n * 10n ** 18n] } });
+    answers.push(body);
+    return body;
+  };
+}
+/**
+ * The owner's journey on TOKEN / OTHER, 1,000 TOKEN typed with 100 TOKEN and no OTHER in the wallet: short, nothing to bring.
+ * Changed on purpose 2026-10-06 (the review): `s2` false leaves the crosschain route unserved (S2's gate not live), and
+ * `symbol` names OTHER.
+ */
+async function shortOfPair(ethWei, planner, { s2 = true, symbol = 'OTHER' } = {}) {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), eth: ethWei, balances: { [FIXTURE_TOKEN]: 100_000_000n }, pools: [{ pool: POOL_PAIR, sqrtPriceX96: PAIR_SQRT, tick: PAIR_TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  const reads = createChainReads({ chainId: 4663, tokens: payTokens(symbol), balances: { [ZERO]: ethWei } });
+  const read = createReadStub({ answer: pairRead(symbol) });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner,
+    routes: [...(s2 ? [crosschainLive] : []), (request, url) => read.handle(request, url) ?? undefined], chainReads: reads, artwork: true,
+  });
+  const page = s.page;
+  try {
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
+    await page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
+    await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.locator('[data-chosen-pool]').waitFor();
+    await pressContinue(current(page, 'pool'));
+    await current(page, 'range').waitFor();
+    await pressContinue(current(page, 'range'));
+    await current(page, 'amount').waitFor();
+    await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    await page.locator('li[data-step="amount"][aria-current="step"] [data-pair-side="0"] input[inputmode="decimal"]').fill('1000');
+    await page.locator('[data-amount-short]').waitFor({ timeout: 30_000 });
+  } catch (error) {
+    await s.close().catch(() => {});
+    throw error;
+  }
+  return { s, chain, reads, page };
+}
+const current = (page, step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+/** At a phone's width too, with no sideways scroll; then back to the desktop's. */
+async function bothWidths(page, name) {
+  await page.screenshot({ path: join(shots(), `${name}-1280.png`), fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.waitForTimeout(150);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, `${name}: no horizontal scroll at 390`);
+  await page.screenshot({ path: join(shots(), `${name}-390.png`), fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.waitForTimeout(150);
+}
+const words = async (locator) => (await locator.innerText()).replace(/\s+/g, ' ').trim();
+
+test('(z) a pair nothing can bring, the wallet short and holding ETH: one line "Pay with ETH instead", its one panel, and Review plans exactly [ETH]', async () => {
+  const { s, chain, reads, page } = await shortOfPair(2n * 10n ** 18n, payPlanner([]));
+  try {
+    // Where the offer would be, one line: no box, no network to bring from (neither token is one a deposit delivers).
+    const line = page.locator(`button[data-pay-with="${ZERO}"]`);
+    await line.waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('[data-pay-with]').count(), 1, 'at most one line');
+    assert.equal(await page.locator('[data-funds-offer]').count(), 0, 'no offer to bring TOKEN or OTHER');
+    assert.equal(await words(line), 'Pay with ETH instead · Domino swaps it for TOKEN and OTHER');
+    assert.ok(reads.calls.some((call) => call.route === 'chain-balances'), 'what the wallet holds, as Domino’s service read it');
+    await bothWidths(page, 'journey-pay-with-line');
+    await line.click();
+    // The one panel: ETH's, with its balance, Max and its USD value; the pool's own panels rest; the way back.
+    const panel = page.locator(`[data-pay-with-amount="${ZERO}"]`);
+    await panel.waitFor();
+    assert.equal(await page.locator('[data-paired-amounts]').count(), 0, 'the pool’s two panels rest');
+    assert.equal(await page.locator('li[data-step="amount"] .dm-flow-lead').innerText(), 'Pay with ETH. Domino swaps it for the pool’s tokens.');
+    await panel.locator('[data-pair-balance="ready"]').waitFor({ timeout: 30_000 });
+    assert.equal(await words(panel.locator('.dm-flow-balance-line')), 'Balance: 2');
+    assert.equal(await panel.locator('[data-pair-max="pay"]').count(), 1);
+    assert.equal(await words(panel.locator('[data-pay-with-back]')), 'Use TOKEN and OTHER instead');
+    await panel.locator('#create-amount-pay').fill('0.5');
+    assert.match(await panel.locator('.dm-flow-amount-usd').innerText(), /^\$2,000\.\d{2}$/, 'its USD value at ETH’s qualified price');
+    assert.equal(await page.locator('[data-funds-offer]').count(), 0, 'covered: nothing to bring');
+    await bothWidths(page, 'journey-pay-with-panel');
+    // The way back keeps the pool's tokens as typed; and forth again.
+    await panel.locator('[data-pay-with-back]').click();
+    await page.locator('[data-paired-amounts]').waitFor();
+    assert.equal(await page.locator('li[data-step="amount"] [data-pair-side="0"] input[inputmode="decimal"]').inputValue(), '1000');
+    await page.locator(`button[data-pay-with="${ZERO}"]`).click({ timeout: 30_000 });
+    await panel.locator('#create-amount-pay').fill('0.5');
+    // Continue works as today; Review asks the plan for exactly the one other token, and shows it with its swaps.
+    await pressContinue(current(page, 'amount'));
+    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]');
+    await review.waitFor({ timeout: 30_000 });
+    assert.equal(s.planned.length, 1, 'one plan');
+    assert.deepEqual(s.planned[0].inputs, [{ token: ZERO, amountRaw: '500000000000000000' }], 'exactly [ETH]');
+    assert.equal(s.planned[0].consent, 'direct', 'native ETH: the direct path');
+    assert.equal(await review.locator('[data-review-inputs]').innerText(), 'You put in 0.5 ETH.');
+    assert.equal(await review.locator('[data-review-amounts]').innerText(), 'About 495 TOKEN + 495 OTHER');
+    await review.locator('[data-review-fee="charged"]').waitFor();
+    // Its one wallet step ready, its network fee read: the plan holds as reviewed (no error under it).
+    await review.locator('[data-review-network-fee="about"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(await review.locator('.dm-flow-wstep-title').allInnerTexts(), ['Create the position'], 'ETH needs no approval');
+    // The step's row says what was paid.
+    assert.equal(await words(page.locator('li[data-step="amount"] .dm-flow-row-summary')), '0.5 ETH');
+    await page.screenshot({ path: join(shots(), 'journey-pay-with-review-1280.png'), fullPage: true, animations: 'disabled' });
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+test('(z2) paying with ETH the wallet lacks too: the offer to bring ETH from another network, sized for what is missing', async () => {
+  const { s, chain, page } = await shortOfPair(10n ** 14n, payPlanner([]));
+  try {
+    await page.locator(`button[data-pay-with="${ZERO}"]`).click({ timeout: 30_000 });
+    const panel = page.locator(`[data-pay-with-amount="${ZERO}"]`);
+    await panel.locator('[data-pair-balance="ready"]').waitFor({ timeout: 30_000 });
+    await panel.locator('#create-amount-pay').fill('0.5');
+    const offer = page.locator(`[data-funds-offer][data-funds-token="${ZERO}"]`);
+    await offer.waitFor({ timeout: 30_000 });
+    assert.equal(await words(offer.locator('[data-funds-title]')), 'Bring ETH from another network');
+    // 0.5 ETH and the gas Review keeps, less the 0.0001 ETH there.
+    assert.equal(await words(offer.locator('[data-funds-lack]')), 'You need 0.5004 ETH more on Robinhood Chain.');
+    await bothWidths(page, 'journey-pay-with-bring');
+    assert.equal(s.planned.length, 0, 'no plan before Continue');
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the review of 2026-10-06): the line and the panel never wait on S2. With the crosschain route unserved
+// (S2's gate not live) the line is still there, from what Domino's service read under the network's S1 gate, and its panel
+// keeps its balance; and with the wallet locked or gone in the middle of it, the panel and its way back stay, drawn by the
+// step itself, with the amount as typed.
+test('(z3) S2 not live: the line and the panel all the same; the wallet gone, the panel and its way back stay', async () => {
+  const { s, chain, reads, page } = await shortOfPair(2n * 10n ** 18n, payPlanner([]), { s2: false });
+  try {
+    const line = page.locator(`button[data-pay-with="${ZERO}"]`);
+    await line.waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('[data-funds-offer]').count(), 0, 'no offer without S2');
+    assert.equal(await words(line), 'Pay with ETH instead · Domino swaps it for TOKEN and OTHER');
+    assert.ok(reads.calls.some((call) => call.route === 'chain-balances'), 'read under the S1 gate');
+    await line.click();
+    const panel = page.locator(`[data-pay-with-amount="${ZERO}"]`);
+    await panel.locator('[data-pair-balance="ready"]').waitFor({ timeout: 30_000 });
+    assert.equal(await words(panel.locator('.dm-flow-balance-line')), 'Balance: 2');
+    await panel.locator('#create-amount-pay').fill('0.5');
+    // The wallet disconnected: the panel, its amount and its way back stay; only the balance line goes.
+    await page.locator('header [aria-haspopup="dialog"]').click();
+    await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Disconnect wallet', exact: true }).click();
+    await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await page.keyboard.press('Escape');
+    await panel.locator('.dm-flow-balance').waitFor({ state: 'detached', timeout: 30_000 });
+    assert.equal(await panel.locator('#create-amount-pay').inputValue(), '0.5');
+    assert.equal(await words(panel.locator('[data-pay-with-back]')), 'Use TOKEN and OTHER instead');
+    assert.equal(await page.locator('[data-paired-amounts]').count(), 0);
+    await panel.locator('[data-pay-with-back]').click();
+    await page.locator('[data-paired-amounts]').waitFor();
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the review of 2026-10-06: a 50-character symbol pushed the line and the way back out of a phone's width;
+// the read contracts carry 40 at most, the longest drawn here): the pool's symbols are cut at 24 characters with "…", as
+// everywhere else, and nothing scrolls sideways at 390.
+test('(z4) a 40-character symbol: the line and the way back stay inside a phone’s width, the symbol cut with “…”', async () => {
+  const symbol = 'ULTRALONGSYMBOL'.repeat(2) + 'NOSPACEHER';
+  const { s, chain, page } = await shortOfPair(2n * 10n ** 18n, payPlanner([]), { symbol });
+  try {
+    const line = page.locator(`button[data-pay-with="${ZERO}"]`);
+    await line.waitFor({ timeout: 30_000 });
+    const cut = line.locator('bdi').last();
+    assert.equal(await cut.textContent(), symbol, 'the whole symbol is in the element');
+    assert.equal(await cut.evaluate((el) => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === 'ellipsis'), true, 'cut with “…”');
+    await bothWidths(page, 'journey-pay-with-long-symbol-line');
+    await line.click();
+    const back = page.locator('[data-pay-with-back]');
+    await back.waitFor();
+    assert.equal(await back.locator('bdi').last().evaluate((el) => getComputedStyle(el).textOverflow), 'ellipsis');
+    await bothWidths(page, 'journey-pay-with-long-symbol-panel');
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});

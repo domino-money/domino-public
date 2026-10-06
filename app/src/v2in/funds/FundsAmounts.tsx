@@ -3,7 +3,8 @@ import { crosschainSessionAccess } from '../../finance/v2/http'
 import type { PairBalancesState } from '../../components/create/usePairBalances'
 import { rawBalances } from '../../components/create/valuation'
 import { wholeFromOther } from '../../lib/create/depositPlan'
-import { candidatesFromPool, takesOnly, type JourneyState } from '../../lib/create/journey'
+import { candidatesFromPool, takesOnly, type JourneyState, type PayWith } from '../../lib/create/journey'
+import type { PayFacts } from '../../lib/create/poolPrices'
 import { reviewPlan, reviewTerms } from '../../lib/create/reviewPlan'
 import type { TokenCandidate } from '../../lib/read/screens/tokens'
 import { useWalletIdentity } from '../../lib/walletIdentity'
@@ -12,7 +13,8 @@ import type { V2ChainId } from '../../v2/types'
 import { BringFunds } from './BringFunds'
 import { fundsPage } from './live'
 import { useS2Gate } from './useS2Gate'
-import { keptAmount, lackingTokens } from './model'
+import { amountRawOf, keptAmount, lackingTokens, payLacks } from './model'
+import { PayLine } from './PayWith'
 import { fundsServices } from './services'
 
 const ZERO = '0x0000000000000000000000000000000000000000'
@@ -32,6 +34,15 @@ const ZERO = '0x0000000000000000000000000000000000000000'
  * row, exactly as typing in it would. The offer's services (./services.ts, over the page's parts in ./live.ts) exist
  * only under a `live` gate, which the crosschain route's own capabilities decide; otherwise they are null and the offer
  * runs locked, still reading what the wallet holds on other networks.
+ *
+ * Changed on purpose 2026-10-06 (the owner, on production: AI/PONS and CASHCAT/AI short on Robinhood Chain, and no offer at
+ * all, since neither token is one a deposit delivers): the deposit may also be paid with one other token, the network's
+ * ETH or its stable, which Domino V2's zap swaps for the pool's two (lib/create/journey.ts PayWith; ./PayWith.tsx), where
+ * Domino's service says what that would be (`pay`, lib/create/poolPrices.ts PayFacts: only where the network's S1 gate is
+ * live and no token of the pool can be brought). Offered in one line while the wallet is short of the amounts typed, first,
+ * outside the offer's card, whatever S2's gate says (the review of 2026-10-06); chosen, its one panel and the way back are
+ * the step's own (components/create/PairedAmounts.tsx), and the offer under it is about that token (`poolTokens` that
+ * token alone, what it lacks against the balance `pay` says, "Use" setting its amount).
  */
 export default function FundsAmounts({
   state,
@@ -39,6 +50,8 @@ export default function FundsAmounts({
   onBudget,
   onDeposit,
   onArrived,
+  onPayWith,
+  pay,
 }: {
   state: JourneyState
   balances: PairBalancesState
@@ -46,6 +59,10 @@ export default function FundsAmounts({
   onDeposit: (candidate: TokenCandidate, text: string) => void
   /** Added 2026-10-05: funds brought from another network arrived; the amount step reads its balances again. */
   onArrived?: () => void
+  /** Added 2026-10-06: pay with one other token (lib/create/journey.ts PayWith), or with the pool's own again (null). */
+  onPayWith?: (payWith: PayWith | null) => void
+  /** Added 2026-10-06: what paying with one other token would be: null where it is not offered, undefined while read. */
+  pay?: PayFacts | null
 }) {
   const pool = state.pool
   const found = pool ? pool.currencies[0].chainId : null
@@ -55,7 +72,7 @@ export default function FundsAmounts({
   const access = useSyncExternalStore(crosschainSessionAccess.subscribe, crosschainSessionAccess.getSnapshot, () => 'pending')
   const wallet = identity.kind === 'connected' ? identity.address.toLowerCase() : null
   const services = useMemo(() => (gate && wallet !== null ? fundsServices(gate, wallet, fundsPage) : null), [gate, wallet])
-  if (!pool || chainId === null || !gate || gate.mode === 'off' || wallet === null) return null
+  if (!pool || chainId === null) return null
 
   const raw = rawBalances(balances)
   const planned = reviewPlan(state, raw)
@@ -88,25 +105,37 @@ export default function FundsAmounts({
     // The range takes none of that token: the journey's own token stays (the swap pays with what arrived).
     else if (only === null || side === only) onDeposit(candidatesFromPool(pool)[side], text)
   }
+  // Added 2026-10-06: paid with one other token (its panel is the step's own, components/create/PairedAmounts.tsx), the
+  // offer is about that token: its amount against its balance here as Domino's service read it (`pay`), as the zap path's
+  // offer sizes its inputs (model.ts payLacks); "Use" after an arrival keeps that amount once covered.
+  const paid = state.payWith
+  const amount = paid && amountRawOf(paid.text, paid.token.decimals)
+  const held = paid && pay?.token.address === paid.token.address ? pay.raw : null
+  const paidLacks = paid ? payLacks(chainId, paid.token.address, paid.text, paid.token.decimals, held) : lacks
 
   return (
-    <BringFunds
-      key={`${identity.kind === 'connected' ? identity.connectorName : ''}|${wallet}|${pool.key}`}
-      gate={gate}
-      services={services}
-      chainId={chainId}
-      wallet={wallet}
-      access={access}
-      walletChainId={identity.kind === 'connected' ? identity.chainId : null}
-      lacks={lacks}
-      nativeOnDestination={nativeOnDestination}
-      poolTokens={[pool.currencies[0].address.toLowerCase(), pool.currencies[1].address.toLowerCase()]}
-      discreet={planned === null}
-      shortSaid
-      keep={keep}
-      takes={takes}
-      onUse={use}
-      onArrived={onArrived}
-    />
+    <>
+      {onPayWith && !paid && pay && planned?.plan?.kind === 'short' && <PayLine token={pay.token} pair={pool.currencies} onPay={() => onPayWith({ token: pay.token, text: '' })} />}
+      {gate && gate.mode !== 'off' && wallet !== null && (
+        <BringFunds
+          key={`${identity.kind === 'connected' ? identity.connectorName : ''}|${wallet}|${pool.key}`}
+          gate={gate}
+          services={services}
+          chainId={chainId}
+          wallet={wallet}
+          access={access}
+          walletChainId={identity.kind === 'connected' ? identity.chainId : null}
+          lacks={paidLacks}
+          nativeOnDestination={nativeOnDestination}
+          poolTokens={paid ? [paid.token.address] : [pool.currencies[0].address.toLowerCase(), pool.currencies[1].address.toLowerCase()]}
+          discreet={paid ? !amount : planned === null}
+          shortSaid={!paid}
+          keep={paid ? (held !== null && amount && paidLacks.length === 0 ? { side: 0, text: paid.text, label: `${paid.text} ${paid.token.symbol ?? ''}` } : null) : keep}
+          takes={paid ? null : takes}
+          onUse={paid ? (side, text) => side === 0 && onPayWith?.({ token: paid.token, text }) : use}
+          onArrived={onArrived}
+        />
+      )}
+    </>
   )
 }

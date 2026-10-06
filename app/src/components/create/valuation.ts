@@ -1,6 +1,6 @@
 import { USDG } from '../../config/mainTokens'
-import { parseScaled, scaledText } from '../../lib/format/decimal'
-import { PRICE_SCALE, priceFromSqrtIn } from '../../lib/format/price'
+import { parseScaled, scaledText, type Scaled } from '../../lib/format/decimal'
+import { PRICE_SCALE, priceFromSqrtIn, valueIn } from '../../lib/format/price'
 import { usdgValue } from '../../lib/format/usd'
 import type { JourneyState, TickRange } from '../../lib/create/journey'
 import { reviewPlan, type ReviewPlan } from '../../lib/create/reviewPlan'
@@ -13,7 +13,8 @@ import type { PairBalancesState } from './usePairBalances'
  * What the New position preview and the steps draw from the Journey state
  * (DESIGN-V2 §10.1, §6.2): a range as prices on the pool's own axis, the two
  * amounts the position holds, and their USD value when one side of the pair
- * is USDG. Module helpers, so every bigint stays out of render. Nothing here
+ * is USDG (since 2026-10-06 also at the qualified prices a pool carries,
+ * `usdOf`). Module helpers, so every bigint stays out of render. Nothing here
  * reads, and nothing here invents: a missing input is null, never a guess.
  */
 
@@ -67,6 +68,11 @@ export function rangeView(range: TickRange, price: Usable, pool: PoolOption): Ra
 /**
  * Which side of the pair is USDG (0 or 1), or null: USD is shown for USDG pairs only (§0.7). Changed on purpose 2026-10-06:
  * and for a pool on Base or Arbitrum One that carries its qualified prices (`usdPrices`, `qualifiedUsd` below).
+ * Changed on purpose 2026-10-06 (the owner: "USD estimate unavailable" on ETH/CASHCAT, AI/PONS and CASHCAT/AI: "when it is
+ * two coins that are not USD, USDG, ETH and the like, the price isn't fetched"): §0.7 no longer limits it to USDG pairs.
+ * A Robinhood Chain pool without USDG carries its currencies' qualified prices too, as Domino's service reads them
+ * (read-v6 chain-pools: the owner's decision #22, F7 §6.3; ./usePricedPool.ts), and is valued as a pool on Base or
+ * Arbitrum One is (`qualifiedUsd`). A USDG pair is valued as before.
  */
 export function usdgSide(pool: PoolOption): 0 | 1 | null {
   const usdg = USDG
@@ -75,29 +81,82 @@ export function usdgSide(pool: PoolOption): 0 | 1 | null {
   return null
 }
 
+/** A qualified price as the pool carries it (18 decimals), when there is one above zero. */
+function priceOfSide(prices: readonly [string | null, string | null], index: 0 | 1) {
+  const text = prices[index]
+  const price = text === null ? null : parseScaled(text)
+  return price && price.units > 0n ? price : null
+}
+
+/** `raw` units of a token with `decimals` at `price` USD per whole token, at PRICE_SCALE, rounded down; null without decimals. */
+const atPrice = (raw: bigint, decimals: number | null, price: Scaled): bigint | null =>
+  decimals === null || raw < 0n ? null : (raw * price.units * 10n ** BigInt(PRICE_SCALE)) / 10n ** BigInt(price.scale + decimals)
+
+/**
+ * Added 2026-10-06 (the amount paid with one other token, ./PairedAmounts.tsx): `raw` units (a raw integer string, as the
+ * amount step holds it) of a token at its qualified `price` (USD per whole token, 18 decimals), rounded down; null without
+ * a price or decimals (never a zero, never a guess).
+ */
+export function usdAt(raw: string, decimals: number | null, price: string | null): string | null {
+  const scaled = priceOfSide([price, null], 0)
+  const value = scaled && atPrice(BigInt(raw), decimals, scaled)
+  return value == null ? null : scaledText(value, PRICE_SCALE)
+}
+
 /**
  * Added 2026-10-06 (rugged97's delta of 5 Oct, item 4): the USD value of raw amounts at the qualified prices Domino's service
  * read for a pool on Base or Arbitrum One (PoolOption `usdPrices`, 18 decimals), each term rounded down; null when an amount
  * above zero has no price or no decimals (a dash, never a zero), or when the pool carries no prices.
+ * Changed on purpose 2026-10-06 (the owner: "USD estimate unavailable" for a pair whose second token has no qualified
+ * price, such as a token with no deep pool against ETH or the dollar): when only ONE of the two has a qualified price and
+ * the other side holds something, both amounts are valued in the priced one at this pool's own price (sqrtPriceX96), then
+ * at its price, exactly the rule a USDG pair is valued by (`usdOf`: at the pool's own price, 1 USDG = $1). A side holding
+ * nothing still needs neither a price nor its decimals (the review of 2026-10-06: an ETH panel beside a token whose
+ * decimals could not be read keeps its figure). Null when neither has one, or when a decimals count the value needs is
+ * unknown: never a zero, never a guess.
  */
 function qualifiedUsd(pool: PoolOption, amounts: readonly [bigint, bigint]): string | null {
   const prices = pool.usdPrices
   if (!prices) return null
+  const priced = [priceOfSide(prices, 0), priceOfSide(prices, 1)] as const
+  // The one side priced, when the other side, unpriced, holds something.
+  const lone = priced[0] ? (priced[1] || amounts[1] === 0n ? null : 0) : priced[1] && amounts[0] !== 0n ? 1 : null
+  if (lone !== null) return atPoolPrice(pool, amounts, lone, priced[lone] as Scaled)
   let total = 0n
   for (const index of [0, 1] as const) {
     const raw = amounts[index]
     if (raw === 0n) continue
-    const price = prices[index] === null ? null : parseScaled(prices[index] as string)
-    const decimals = pool.currencies[index].decimals
-    if (!price || price.units < 0n || decimals === null || raw < 0n) return null
-    total += (raw * price.units * 10n ** BigInt(PRICE_SCALE)) / (10n ** BigInt(price.scale + decimals))
+    const price = priced[index]
+    const value = price && atPrice(raw, pool.currencies[index].decimals, price)
+    if (value == null) return null
+    total += value
   }
   return scaledText(total, PRICE_SCALE)
 }
 
 /**
+ * Added 2026-10-06: both amounts in the priced side's units at the pool's own price (lib/format/price.ts valueIn, the one
+ * a USDG pair's value is), at that side's USD price, rounded down; null when that side's decimals are unknown or the price
+ * cannot be read. valueIn reads the decimals of the side it values into alone (the other side is converted in raw units at
+ * the pool's price), so the unpriced side's own decimals are not needed (the review of 2026-10-06).
+ */
+function atPoolPrice(pool: PoolOption, amounts: readonly [bigint, bigint], side: 0 | 1, price: Scaled): string | null {
+  const decimals = pool.currencies[side].decimals
+  if (decimals === null || amounts[0] < 0n || amounts[1] < 0n) return null
+  try {
+    const value = parseScaled(valueIn({ amounts, decimals: [decimals, decimals], into: side, sqrtPriceX96: BigInt(pool.sqrtPriceX96) }))
+    const usd = value && atPrice(value.units, value.scale, price)
+    return usd == null ? null : scaledText(usd, PRICE_SCALE)
+  } catch {
+    return null
+  }
+}
+
+/**
  * The USD value of raw amounts of the pool's two currencies at the pool's own price, 1 USDG = $1; null for any other pair.
  * Changed on purpose 2026-10-06: a pool on Base or Arbitrum One with its qualified prices is valued at them (`qualifiedUsd`).
+ * Changed on purpose 2026-10-06 (the owner, see `usdgSide`): so is a Robinhood Chain pool without USDG, and a pool whose one
+ * currency alone is priced is valued at its own price in that one (`qualifiedUsd`).
  */
 export function usdOf(pool: PoolOption, amounts: readonly [bigint, bigint]): string | null {
   const side = usdgSide(pool)
@@ -126,7 +185,7 @@ export const rawBalances = (balances: PairBalancesState): readonly [string | nul
 export interface HeldSide {
   /** The amount in whole tokens, grouped (`9.004652116466694467`, `3,797,063,508`). */
   text: string
-  /** Its USD value (USDG pairs only), or null. */
+  /** Its USD value (`usdOf`), or null. */
   usd: string | null
 }
 
@@ -174,7 +233,8 @@ export function heldRaw(planned: Pick<ReviewPlan, 'need' | 'plan'>): readonly [b
  */
 export function heldAmounts(state: JourneyState, balances: PairBalancesState): Held | null {
   const pool = state.pool
-  if (!pool) return null
+  // Paid with one other token (2026-10-06, lib/create/journey.ts PayWith): what its swap buys is the plan's to say.
+  if (!pool || state.payWith) return null
   const planned = reviewPlan(state, rawBalances(balances))
   if (!planned) return null
   const plan = planned.plan
