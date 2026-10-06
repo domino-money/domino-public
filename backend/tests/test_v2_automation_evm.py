@@ -17,6 +17,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -38,6 +39,7 @@ from v2_observation import ObservationSigner, PriceObservation, PublisherPolicy,
 from v2_planner import PlannerConfig
 from v2_rpc import ChainEndpoints, Endpoint
 from v2_uniswap import PoolRef
+from v2_vaults import VaultReader
 from v4_math import sqrt_at_tick, tick_at_sqrt
 from v2_local_chain import LocalChain, calldata, deploy_v2
 
@@ -192,9 +194,10 @@ class AutomationEvmTests(unittest.TestCase):
         return self.local.call(self.v4.positionManager, 'getPositionLiquidity(uint256)', ['uint128'], ['uint256'],
                                [token_id])[0]
 
-    def reserves(self, vault):
+    def reserves(self, vault, pool=None):
+        pool = pool or self.pool
         return tuple(self.local.call(vault, 'reserves(address)', ['uint256'], ['address'], [token])[0]
-                     for token in (self.pool.currency0, self.pool.currency1))
+                     for token in (pool.currency0, pool.currency1))
 
     def close(self, token_id, *, burn=False):
         """The owner closes its position on Uniswap itself, as the Uniswap app
@@ -528,6 +531,98 @@ class AutomationEvmTests(unittest.TestCase):
         self.assertEqual(local.call(address, 'slot0()', slots)[3:5], (1, 1))  # still one slot: nothing paid for
         local.send(self.owner, vault, calldata('pause()'), impersonate=True)
 
+    def test_on_v3_an_exit_never_fires_on_a_twap_from_before_its_mandate(self):
+        # A v3 pool whose ring holds the exit module's 600 s window (Base: 301 slots). The price sat at 1 for long
+        # and has just risen about 0.5%; then the owner turns Auto-exit on, with a trigger between the two. The
+        # module's 600 s TWAP still averages the old price: past the trigger, and the spot within the band of it, so
+        # anchored on it the exit would fire on prices from before the mandate. For the mandate's first 600 s the
+        # publisher signs the spot instead, which has not crossed; after them, the TWAP anchors it.
+        local = self.local
+        driver = local.deploy(self.deployer, 'OfficialV3Fixture.sol', 'OfficialV3SwapDriver')
+        pool, address = self.fresh_v3_pool('0x4000000000000000000000000000000000000004', driver, cardinality=400)
+        root = self.v3_position(self.owner, pool, 3 * 10**18)
+        vault = self.vault(root, paused=True, dex=3)  # protection without compounding
+        local.send(self.owner, vault, calldata('setExitModule(address)', ['address'], [self.deployment.auto_exit]),
+                   impersonate=True)
+        local.mine(1, 700)
+        self.move_to_v3(driver, address, 50)
+        local.mine(35, 2)
+        spot, = local.call(address, 'slot0()', ['uint160'])
+        below = sqrt_at_tick(25)
+        self.assertTrue(self.twap_sqrt(pool, 600) <= below < spot)
+        mandate_hash = self.register_mandate(vault, root, below=below, convert_to=0, nonce=21)
+        service = self.service()
+        report = service.run_once()
+        entry = {e['mandate']: e for e in report['exits']}[mandate_hash]
+        self.assertEqual((entry['anchorSource'], entry['act'], entry['reason']),
+                         ('signed', False, 'trigger_not_reached'), entry)
+        self.assertNotEqual((report['submitted'] or {}).get('kind'), 'exit', report)
+        # 620 s after the registration the whole window lies after it: the module's TWAP, which has not crossed.
+        local.mine(1, 620)
+        report = service.run_once()
+        entry = {e['mandate']: e for e in report['exits']}[mandate_hash]
+        self.assertEqual((entry['anchorSource'], entry['act'], entry['reason']),
+                         ('twap', False, 'trigger_not_reached'), entry)
+        local.send(self.owner, self.deployment.auto_exit, calldata('revokeMandate(bytes32)', ['bytes32'],
+                                                                  [bytes.fromhex(mandate_hash[2:])]), impersonate=True)
+
+    def test_on_v3_a_paused_vault_returns_its_reserves_once_its_owner_closes_the_root(self):
+        # A vault a full read found paused is checked on later passes with its pause, and while it holds reserves
+        # with its root's liquidity alone (ChainAutomation._held). Nothing tells a v3 vault that its owner closed the
+        # root on Uniswap (its state nonce does not move): that read is what finds it, and the reserves go back.
+        local = self.local
+        driver = local.deploy(self.deployer, 'OfficialV3Fixture.sol', 'OfficialV3SwapDriver')
+        pool, address = self.fresh_v3_pool('0x5000000000000000000000000000000000000005', driver)
+        root = self.v3_position(self.owner, pool, 3 * 10**18)
+        vault = self.vault(root, dex=3)
+        self.hold_v3(driver, address, 0)
+        local.mine(35, 2)
+        service = self.service()
+        report = service.run_once()
+        self.assertEqual((report['submitted']['kind'], report['submitted']['target']), ('compound', vault), report)
+        local.mine(1, 2)
+        service.run_once()
+        self.assertEqual(service.executor.journal.intent(report['submitted']['intent'])['state'], 'confirmed')
+        local.send(self.owner, vault, calldata('pause()'), impersonate=True)
+        reserves = self.reserves(vault, pool)
+        self.assertGreater(sum(reserves), 0, 'the compound left reserves')
+        read_in_full, read = [], VaultReader.read
+
+        def counted(reader, record, block):
+            read_in_full.append(record.vault)
+            return read(reader, record, block)
+        with patch.object(VaultReader, 'read', counted):
+            for _ in range(3):  # read in full once (its pause moved its nonce), then only checked
+                local.mine(1, 2)
+                report = service.run_once()
+                self.assertEqual({v['vault']: v['reason'] for v in report['vaults']}[vault], 'vault_paused')
+            self.assertEqual(read_in_full.count(vault), 1)
+            nonce, = local.call(vault, 'stateNonce()', ['uint64'])
+            manager = self.chain.uniswap.v3.positionManager
+            decrease, collect = '(uint256,uint128,uint256,uint256,uint256)', '(uint256,address,uint128,uint128)'
+            local.send(self.owner, manager, calldata(f'decreaseLiquidity({decrease})', [decrease], [
+                (root, self.v3_liquidity(root), 0, 0, self.chain_time() + 600)]), impersonate=True)
+            local.send(self.owner, manager, calldata(f'collect({collect})', [collect], [
+                (root, self.owner, 2**128 - 1, 2**128 - 1)]), impersonate=True)
+            self.assertEqual((self.v3_liquidity(root), local.call(vault, 'stateNonce()', ['uint64'])[0]), (0, nonce))
+            owner_before = tuple(self.balance(token, self.owner) for token in (pool.currency0, pool.currency1))
+            local.mine(1, 2)
+            report = service.run_once()
+            self.assertEqual(read_in_full.count(vault), 1)  # found by the root's read, not a full one
+        entry = {v['vault']: v for v in report['vaults']}[vault]
+        self.assertEqual((entry['act'], entry['reason'], entry['action'], entry['simulation']),
+                         (True, 'reserves_returnable', 'return_reserves', 'passed'), entry)
+        self.assertEqual(entry['paid'], [str(amount) for amount in reserves])
+        submitted = report['submitted']
+        self.assertEqual((submitted['kind'], submitted['target'], submitted['state']), ('return', vault, 'submitted'),
+                         report)
+        local.mine(1, 2)
+        service.run_once()
+        self.assertEqual(service.executor.journal.intent(submitted['intent'])['state'], 'confirmed')
+        self.assertEqual(tuple(self.balance(token, self.owner) - before for token, before in
+                               zip((pool.currency0, pool.currency1), owner_before)), reserves)
+        self.assertEqual(self.reserves(vault, pool), (0, 0))
+
     def v3_position(self, recipient, pool, amount):
         """A [-600, 600) position from `amount` of each token, minted to `recipient` by Base's v3 manager."""
         manager = self.chain.uniswap.v3.positionManager
@@ -569,12 +664,37 @@ class AutomationEvmTests(unittest.TestCase):
                 self.local.mine(1, 6)
         self.move_to_v3(driver, pool_address, tick)
 
-    def twap_sqrt(self, pool):
-        """The anchor's own TWAP reading at the head, over the vault's 300 s window."""
+    def twap_sqrt(self, pool, window=300):
+        """The anchor's own TWAP reading at the head, over the vault's 300 s window (or another)."""
         ref = '(uint8,address,address,uint24,int24,address)'
         return self.local.call(self.deployment.price_anchor, f'twapSqrtPrice({ref},uint32)', ['uint160'],
                                [ref, 'uint32'], [(3, pool.currency0, pool.currency1, pool.fee, pool.tick_spacing,
-                                                  ZERO), 300])[0]
+                                                  ZERO), window])[0]
+
+    def fresh_v3_pool(self, token, driver, *, cardinality=None):
+        """A fresh 0.05% v3 pool (spacing 10) of WETH and a SetupToken at `token`, at price 1, with someone else's
+        liquidity; `cardinality`: the oracle slots paid for first (else Uniswap's one)."""
+        local, v3 = self.local, self.chain.uniswap.v3
+        setup = local.deploy(self.deployer, 'DominoSetup.t.sol', 'SetupToken')
+        local.request('anvil_setCode', [token, local.request('eth_getCode', [setup, 'latest'])])
+        c0, c1 = sorted([self.weth, token])
+        local.send(self.deployer, v3.positionManager, calldata(
+            'createAndInitializePoolIfNecessary(address,address,uint24,uint160)',
+            ['address', 'address', 'uint24', 'uint160'], [c0, c1, 500, 2**96]))
+        address, = local.call(v3.factory, 'getPool(address,address,uint24)', ['address'],
+                              ['address', 'address', 'uint24'], [c0, c1, 500])
+        address = address.lower()
+        if cardinality:
+            local.send(self.deployer, address, calldata('increaseObservationCardinalityNext(uint16)', ['uint16'],
+                                                        [cardinality]))
+        pool = PoolRef(3, c0, c1, 500, 10)
+        for holder in (self.deployer, driver):
+            self.fund_tokens(holder, 10**21, token)
+        for currency in (c0, c1):
+            local.send(self.deployer, currency, calldata('approve(address,uint256)', ['address', 'uint256'],
+                                                         [v3.positionManager, 2**256 - 1]))
+        self.v3_position(self.lp, pool, 12 * 10**18)
+        return pool, address
 
     def test_a_dropped_execution_is_resent_as_the_same_bytes_and_spends_its_own_nonce(self):
         token_id = self.position(self.owner, 10**20)

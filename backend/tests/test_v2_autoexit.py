@@ -164,6 +164,36 @@ class WatchTests(unittest.TestCase):
         watcher.forget('0x' + '5a' * 32)
         self.assertEqual(watcher.scan(Index(), Block(start + 11, '0x' + '13' * 32, 3)), [])
 
+    def test_a_mandates_registration_time_is_its_logs_block_time_read_once(self):
+        deployment = checked_deployment(manifest_document(), profile('base-8453'))
+        registered = event('IDominoAutoExit', 'MandateRegistered')
+        start = deployment.start_block('autoExit')
+        reads = []
+        headers = {hex(start + 5): {'number': hex(start + 5), 'hash': '0x' + '55' * 32, 'timestamp': hex(1_790_000_000)}}
+
+        class Index:
+            def request(self, method, params):
+                reads.append((method, params))
+                if method == 'eth_getBlockByNumber':
+                    return headers.get(params[0])
+                return [{'address': deployment.auto_exit, 'blockNumber': hex(start + 5),
+                         'topics': [registered.topic, '0x' + '5a' * 32, '0x' + encode(['address'], [OWNER]).hex(),
+                                    '0x' + encode(['address'], [VAULT]).hex()],
+                         'data': '0x' + encode(['uint256', 'uint64'], [7, 2_000_000_000]).hex()}]
+        watcher = MandateWatcher(deployment)
+        mandate_hash, = watcher.scan(Index(), Block(start + 9, '0x' + '11' * 32, 1))
+        reads.clear()
+        self.assertEqual(watcher.registered_at(Index(), mandate_hash), 1_790_000_000)
+        self.assertEqual(watcher.registered_at(Index(), mandate_hash), 1_790_000_000)
+        self.assertEqual(reads, [('eth_getBlockByNumber', [hex(start + 5), False])])  # once: a block keeps its time
+        # A header for another block, or none, is no registration time.
+        for header in ({**headers[hex(start + 5)], 'number': hex(start + 6)}, None):
+            headers[hex(start + 5)] = header
+            fresh = MandateWatcher(deployment)
+            fresh.scan(Index(), Block(start + 9, '0x' + '11' * 32, 1))
+            with self.subTest(header=header), self.assertRaisesRegex(DataError, '^block_unavailable$'):
+                fresh.registered_at(Index(), mandate_hash)
+
     def test_a_log_from_another_address_is_refused(self):
         deployment = checked_deployment(manifest_document(), profile('base-8453'))
         registered = event('IDominoAutoExit', 'MandateRegistered')
@@ -226,6 +256,12 @@ class MandateWatcherStateTests(unittest.TestCase):
         index, reads = self.index()
         self.assertEqual(again.scan(index, Block(end + 5, '0x' + '12' * 32, 2)), ['0x' + '5a' * 32])
         self.assertEqual(min(read[0] for read in reads), end + 1 - REORG_MARGIN)
+        # The next process asks the registration's block, kept with the mandate, for its time.
+        asked = []
+        header = type('History', (), {'request': lambda _, method, params: asked.append(params) or {
+            'number': params[0], 'hash': '0x' + '55' * 32, 'timestamp': hex(1_790_000_005)}})()
+        self.assertEqual(again.registered_at(header, '0x' + '5a' * 32), 1_790_000_005)
+        self.assertEqual(asked, [[hex(self.start + 5), False]])
 
 
 if __name__ == '__main__':

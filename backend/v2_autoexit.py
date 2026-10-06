@@ -15,7 +15,10 @@ component autoExit) holds owners' signed one-shot ExitMandates. The operator:
    window to it), read through the price anchor itself; and fires only when
    that anchor price has crossed a trigger: at or below triggerBelow, or at or
    above a nonzero triggerAbove (the module's own comparison). The spot alone
-   never fires an exit;
+   never fires an exit. A TWAP never reaches back before the mandate's
+   registration (the timestamp of the block of its MandateRegistered log):
+   until the whole window lies after it, the publisher signs the spot instead,
+   so prices from before the owner turned Auto-exit on never fire it;
 3. builds IDominoAutoExit.Execution: the evidence; for a conversion one pool
    leg through the vault's own pool selling the other token for convertTo
    with amountIn 0, which the module fills with everything withdrawn, and a
@@ -30,7 +33,7 @@ component autoExit) holds owners' signed one-shot ExitMandates. The operator:
 from dataclasses import dataclass
 from math import isqrt
 
-from discovery import ZERO, DataError, address
+from discovery import ZERO, DataError, address, parse_block
 from v2_abi import event, function
 from v2_chains import DEX_V4
 from v2_plan import LEG_V3_POOL, LEG_V4_POOL, ExitExecution, SwapLeg, exit_calldata, twap_evidence, v3_path, v4_path
@@ -74,12 +77,15 @@ class MandateWatcher:
     """MandateRegistered logs of the module, from its deployment block on.
 
     Each window read moves the scan on at once (a pass that stops on its request budget keeps what it read), and
-    with a `state` (v2_scan_state.ScanState) the position and the mandates found outlive the process."""
+    with a `state` (v2_scan_state.ScanState) the position and the mandates found outlive the process. Each mandate
+    is kept with the block of its log; the time of that block, when the owner turned it on, is read once a process
+    and only when asked (registered_at)."""
 
     def __init__(self, deployment, *, max_blocks_per_read=50_000, state=None):
         self.deployment, self.max_blocks, self.state = deployment, max_blocks_per_read, state
         self.next_block = deployment.start_block('autoExit')
         self.hashes = {}
+        self.registered = {}  # mandate hash -> its registration block's timestamp
         self.final = set()  # revoked, executed or expired: never active again
         saved = state.get('autoExit') if state is not None else None
         if saved is not None:
@@ -112,6 +118,17 @@ class MandateWatcher:
                 self.state.put('autoExit', self.next_block, end, dict(self.hashes))
                 self.state.save()
         return sorted((h for h in self.hashes if h not in self.final), key=lambda h: (self.hashes[h], h))
+
+    def registered_at(self, rpc, mandate_hash):
+        """When the owner turned a mandate on: the timestamp of the block whose MandateRegistered log the scan found,
+        read through a history client (the header at that number) once a process; a block never changes its time."""
+        if mandate_hash not in self.registered:
+            number = self.hashes[mandate_hash]
+            block = parse_block(rpc.request('eth_getBlockByNumber', [hex(number), False]))
+            if block.number != number:
+                raise DataError('block_unavailable')
+            self.registered[mandate_hash] = block.timestamp
+        return self.registered[mandate_hash]
 
     def forget(self, mandate_hash):
         """A mandate that can never execute again is not read on later passes."""

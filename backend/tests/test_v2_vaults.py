@@ -21,7 +21,7 @@ from v2_manifest import checked_deployment
 from v2_planner import Limits, returnable
 from v2_rpc import ChainEndpoints, Endpoint
 from v2_scan_state import REORG_MARGIN, ScanState
-from v2_uniswap import PoolRef, v3_fee_growth_inside, v3_pool_address
+from v2_uniswap import PoolRef, PositionRef, v3_fee_growth_inside, v3_pool_address
 from v2_vaults import (L1_UPPER_BOUND, OP_GAS_PRICE_ORACLE, TX_OVERHEAD_BYTES, WIRING_SELECTOR, PriceReference,
                        VaultDiscovery, VaultRecord, VaultReader, clone_code, fee_growth_inside, l1_fee,
                        reference_prices, twap_price, twap_window)
@@ -327,16 +327,22 @@ class ClosedRootTests(unittest.TestCase):
     VAULT, OWNER, ROOT_ID, CHILD_ID = '0x' + 'a4' * 20, '0x' + 'b0' * 20, 7, 9
 
     class Positions:
-        """v2_uniswap.UniswapReader's two reads: the root's fails with `error`."""
+        """v2_uniswap.UniswapReader's three reads: the root's fails with `error`."""
 
         def __init__(self, error, pool, *, gone=(7,)):
-            self.error, self.ref, self.gone = error, PoolRef(*pool), gone
+            self.error, self.ref, self.gone, self.asked = error, PoolRef(*pool), gone, []
 
         def position(self, ref, block):
             if ref.token_id in self.gone:
                 raise DataError(self.error)
             return type('Position', (), {'pool': self.pool(self.ref, block), 'tick_lower': -600, 'tick_upper': 600,
                                          'liquidity': 10**18, 'fees_owed': (0, 0)})()
+
+        def position_liquidity(self, ref, block):
+            self.asked.append(ref)
+            if ref.token_id in self.gone:
+                raise DataError(self.error)
+            return 10**18
 
         def pool(self, ref, block):
             return type('State', (), {'pool': self.ref, 'sqrt_price_x96': 2**96, 'liquidity': 10**18,
@@ -363,6 +369,7 @@ class ClosedRootTests(unittest.TestCase):
         fake.on(deployment.registry, function('IDominoRegistry', 'automationHalted'), lambda: (False,))
         reader = VaultReader(BASE, deployment, client(fake), self.Positions(error, pool, gone=gone),
                              proven={(self.VAULT, dex)})
+        self.fake = fake
         return reader, VaultRecord(self.VAULT, self.OWNER, self.ROOT_ID, dex, 1)
 
     def test_the_quote_currency_sets_the_orientation_and_must_be_the_pools(self):
@@ -386,6 +393,30 @@ class ClosedRootTests(unittest.TestCase):
                 self.assertEqual((root.tick_lower, root.tick_upper), (-600, 600))
                 self.assertTrue(returnable(state))
                 self.assertEqual(reader.reserves(state, BLOCK), (1000, 3))
+
+    def test_the_roots_liquidity_alone_reads_a_burned_root_as_closed_and_nothing_else(self):
+        for dex, error in ((4, 'v2_position_not_found'), (3, 'rpc_call_reverted')):
+            with self.subTest(dex=dex):
+                reader, record = self.reader(dex, error, gone=())
+                state = reader.read(record, BLOCK)
+                self.assertEqual(reader.root_liquidity(state, BLOCK), 10**18)
+                manager = BASE.uniswap.v3.positionManager if dex == 3 else BASE.uniswap.v4.positionManager
+                self.assertEqual(reader.uniswap.asked, [PositionRef(dex, manager, self.ROOT_ID)])
+                reader.uniswap.gone = (self.ROOT_ID,)  # the owner burned it
+                self.assertEqual(reader.root_liquidity(state, BLOCK), 0)
+                reader.uniswap.error = 'rpc_unavailable'  # any other failure is no closure
+                with self.assertRaisesRegex(DataError, '^rpc_unavailable$'):
+                    reader.root_liquidity(state, BLOCK)
+
+    def test_the_pause_check_is_one_batch_and_asks_the_halt_only_when_not_known(self):
+        reader, _ = self.reader(4, 'v2_position_not_found')
+        self.assertEqual(reader.pause(self.VAULT, BLOCK), (False, 9, False))
+        self.assertEqual(self.fake.envelopes, 1)
+        self.assertEqual([params[0]['data'][:10] for _, _, params in self.fake.log],
+                         [function('IDominoVault', 'paused').selector, function('IDominoVault', 'stateNonce').selector,
+                          function('IDominoRegistry', 'automationHalted').selector])
+        self.assertEqual(reader.pause(self.VAULT, BLOCK, halted=True), (False, 9, True))
+        self.assertEqual(len(self.fake.log), 3 + 2)
 
     def test_any_other_failure_still_refuses_the_read(self):
         reader, record = self.reader(4, 'v4_position_pool_mismatch')

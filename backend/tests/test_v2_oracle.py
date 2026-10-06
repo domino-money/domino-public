@@ -239,14 +239,21 @@ class PassTests(unittest.TestCase):
         self.assertEqual(self.checks[-1], (ADDRESS, 900))
 
     # ------------------------------------------------------------ exits
-    def exit(self, *, triggered=True, publisher=None, executor=None):
-        """One active mandate on a v3 pool, through the real _exits, with plan_exit scripted."""
-        service = self.service(executor=executor)
+    def exit(self, *, triggered=True, publisher=None, executor=None, registered_ago=10**6, **changes):
+        """One active mandate on a v3 pool, registered `registered_ago` seconds before the head, through the real
+        _exits, with plan_exit scripted. self.asked: the mandates whose registration time the pass asked for."""
+        service = self.service(executor=executor, **changes)
         deployment = service.deployment
         mandate = type('Mandate', (), {'hash': '0x' + '0e' * 32, 'vault': '0x' + 'aa' * 20, 'token_id': 7,
                                        'status': 1, 'valid_until': BLOCK.timestamp + 10**6, 'owner': '0x' + 'bb' * 20,
                                        'triggered': lambda _, anchor: triggered})()
-        service.mandates = type('Watcher', (), {'scan': lambda _, index, block: [mandate.hash]})()
+        self.asked = []
+
+        def registered_at(_, index, mandate_hash):
+            self.asked.append(mandate_hash)
+            return BLOCK.timestamp - registered_ago
+        service.mandates = type('Watcher', (), {'scan': lambda _, index, block: [mandate.hash],
+                                                'registered_at': registered_at})()
         service.index = None
         spot = 2**96 - 5
         position = type('Position', (), {'pool': type('State', (), {'sqrt_price_x96': spot})()})()
@@ -284,6 +291,46 @@ class PassTests(unittest.TestCase):
         self.assertEqual((entry['reason'], planned, publisher.calls), ('trigger_not_reached', [], []))
         entry, _, _ = self.exit(publisher=None)
         self.assertEqual((entry['act'], entry['reason'], entry['anchorSource']), (True, 'triggered_keyless', 'signed'))
+
+    # ----------------------------------------------- exits and the registration
+    def test_an_exit_never_fires_on_a_twap_that_reaches_back_before_its_mandate(self):
+        # The pool holds the module's 600 s window, but the owner turned Auto-exit on 100 s ago: a TWAP would
+        # average 500 s of prices from before, so the publisher signs the spot, exactly as for a pool without the
+        # ring (valid at most the module's age).
+        self.guaranteed = {600: True}
+        publisher = FakePublisher()
+        entry, planned, spot = self.exit(publisher=publisher, registered_ago=100)
+        self.assertEqual(planned, [(spot, b'signed', BLOCK.timestamp + 90)])
+        self.assertEqual((entry['anchorSource'], publisher.calls, self.twaps), ('signed', [(POOL, BLOCK, 300)], []))
+        self.assertEqual(self.asked, ['0x' + '0e' * 32])
+        # 700 s on, the whole window lies after the registration: the module's TWAP.
+        publisher = FakePublisher()
+        entry, planned, _ = self.exit(publisher=publisher, registered_ago=700)
+        self.assertEqual(planned, [(2**96 + 600, twap_evidence(600), BLOCK.timestamp + 120)])
+        self.assertEqual((entry['anchorSource'], publisher.calls), ('twap', []))
+
+    def test_the_window_may_start_at_the_registration_and_not_a_second_before(self):
+        # A TWAP ending at inclusion, later than the head, starts later still: what clears the registration at the
+        # head clears it then.
+        self.guaranteed = {600: True}
+        for ago, source in ((599, 'signed'), (600, 'twap'), (601, 'twap')):
+            with self.subTest(ago=ago):
+                entry, _, _ = self.exit(publisher=FakePublisher(), registered_ago=ago)
+                self.assertEqual(entry['anchorSource'], source)
+
+    def test_the_registration_is_held_against_the_exits_own_window(self):
+        # A preferred window of 900 s: 700 s after the registration still reaches back before it.
+        self.guaranteed = {900: True}
+        for ago, source in ((700, 'signed'), (899, 'signed'), (900, 'twap')):
+            with self.subTest(ago=ago):
+                entry, _, _ = self.exit(publisher=FakePublisher(), registered_ago=ago, exit_twap_seconds=900)
+                self.assertEqual(entry['anchorSource'], source)
+        self.assertEqual(self.checks[-1], (ADDRESS, 900))
+
+    def test_a_pool_without_the_ring_never_asks_when_the_mandate_was_registered(self):
+        # The signed spot either way: the registration's block header is not read (a billed call).
+        entry, _, _ = self.exit(publisher=FakePublisher(), registered_ago=100)
+        self.assertEqual((entry['anchorSource'], self.asked), ('signed', []))
 
 
 if __name__ == '__main__':

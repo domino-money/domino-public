@@ -87,6 +87,9 @@ class FakeChain:
         # block whose state it still keeps (a pruned node).
         self.log_limits, self.batch_limits, self.pruned_below = {}, {}, {}
         self.logs, self.codes_at = [], {}  # codes_at: (address, block tag) -> code there
+        # A call budget: once `budget` calls were answered (each of a batch counted, as providers bill them), any
+        # further call fails the test instead of being answered. None: no budget.
+        self.budget = None
 
     def serve_code(self, profile_document):
         for record in profile_document['verification']['contracts']:
@@ -117,6 +120,8 @@ class FakeChain:
 
     def answer(self, url, body):
         method, params = body['method'], body['params']
+        if self.budget is not None and len(self.log) >= self.budget:
+            raise AssertionError(f'call {len(self.log) + 1} ({method}) is past the budget of {self.budget}')
         self.log.append((url, method, copy.deepcopy(params)))
         failure = self.fail.get((url, method))
         if failure:

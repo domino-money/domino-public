@@ -15,6 +15,8 @@ and the deployment manifest's addresses (v2_manifest):
   exists; it reads as a closed root (no liquidity, nothing owed), so a closed
   vault's reserves can still go back to the owner (returnReserves);
 - a closed vault's reserves (reserves(token) of both pool tokens);
+- what a vault a full read found paused is checked with on later passes: its
+  pause and state nonce, the registry's halt, and the root's liquidity alone;
 - the anchor the vault will use: on v4 the spot a publisher signs at this
   block (v2_observation), on v3 the pool's TWAP through the price anchor
   itself (twapSqrtPrice, the same arithmetic the vault's anchor() runs);
@@ -233,6 +235,27 @@ class VaultReader:
         (amount0,), (amount1,) = calls(self.rpc, block, [(vault.vault, function(VAULT, 'reserves'), (pool.currency0,)),
                                                          (vault.vault, function(VAULT, 'reserves'), (pool.currency1,))])
         return amount0, amount1
+
+    def pause(self, vault, block, *, halted=None):
+        """A vault's paused() and stateNonce(), and the registry's automationHalted() unless `halted` already holds
+        it at `block`: one batch, what a vault a full read found paused is checked with first (v2_automation)."""
+        items = [(vault, function(VAULT, 'paused'), ()), (vault, function(VAULT, 'stateNonce'), ())]
+        if halted is None:
+            items.append((self.deployment.registry, function(REGISTRY, 'automationHalted'), ()))
+        (paused,), (nonce,), *registry = calls(self.rpc, block, items)
+        return paused, nonce, registry[0][0] if registry else halted
+
+    def root_liquidity(self, vault, block):
+        """The root's liquidity at `block` from its position manager alone (one call): the closure returnReserves
+        reads live. A root the owner burned has none, as in read(): v4 reads it as zero, v3's manager refuses it."""
+        dex = vault.pool.pool.dex
+        manager = {DEX_V3: self.chain.uniswap.v3.positionManager, DEX_V4: self.chain.uniswap.v4.positionManager}[dex]
+        try:
+            return self.uniswap.position_liquidity(PositionRef(dex, manager, vault.root_token_id), block)
+        except DataError as error:
+            if str(error) not in GONE:
+                raise
+            return 0
 
 
 # ------------------------------------------------------------------ anchor

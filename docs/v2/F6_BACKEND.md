@@ -161,6 +161,7 @@ All three are the V1 read path's failover clients (`rpc_failover`): one deadline
 | --- | --- |
 | v4 position | 9 (1 + 8). |
 | v3 position | 8. Add 1 for a fee tier the profile does not list. |
+| A position's liquidity alone (`position_liquidity`) | 1, on either version: how the V2 automation finds a paused vault's root closed. |
 | Code proofs | 2 `eth_getCode` per Uniswap version, once per process. |
 | Head | One poll per chain per `max_age_seconds` for the whole host. |
 
@@ -263,7 +264,7 @@ reader.assert_canonical(head.block)  # before acting on what was read
 | `test_v2_abi.py` | All 19 exports (137 functions) load with the compiler's selectors. A stale export is refused. |
 | `test_v2_rpc.py` | Configuration shape, URL rules and the documented variables; Robinhood's provider file; batch envelopes and log windows per endpoint; pacing, cooldown and backoff; no `eth_chainId` from any client; failover logs naming endpoints only; history start per endpoint, including V1's Robinhood window; the `check` command. |
 | `test_v2_head.py` | One poll per max age; stalled heads refused; lag; one read shared by concurrent processes through the file. |
-| `test_v2_uniswap.py` | Both readers over a fake chain answering only the exported ABIs. The v3 inside-growth formula matches the V1 accounting's over random cases. CREATE2 pool addresses match the real pools the profiles recorded. A replay of real Base v3 positions matches the position manager's own `collect`. |
+| `test_v2_uniswap.py` | Both readers over a fake chain answering only the exported ABIs. The v3 inside-growth formula matches the V1 accounting's over random cases. CREATE2 pool addresses match the real pools the profiles recorded. A replay of real Base v3 positions matches the position manager's own `collect`. A position's liquidity alone costs one call on either version (v4 reads a cleared token as zero; v3 refuses a token it does not know). |
 | `test_v2_uniswap_evm.py` (Anvil, `DOMINO_TEST_EVM=1`) | Against the official v4 contracts, the fees the reader reports equal what the PositionManager pays the owner on collect, and the custody facts are the approval and subscription the owner gave. |
 
 **Mutation check.** Every guard in the five modules was deleted or neutralized one at a time: 170 single-guard mutants, run against all V2 test modules, and every one fails a test. Guards that another rule already enforced were removed rather than kept unpinned:

@@ -311,14 +311,29 @@ class UniswapReader:
         return self._v3_state(ref, block, pool, slot0, liquidity)
 
     # -------------------------------------------------------------- positions
-    def position(self, ref, block):
+    def _position_ref(self, ref, block):
         if not isinstance(ref, PositionRef):
             raise DataError('v2_invalid_position_ref')
         managers = {DEX_V3: self.chain.uniswap.v3.positionManager, DEX_V4: self.chain.uniswap.v4.positionManager}
         if ref.position_manager != managers[ref.dex]:
             raise DataError('v2_position_manager_unknown')
         self._prepare(block, ref.dex)
+
+    def position(self, ref, block):
+        self._position_ref(ref, block)
         return self._v3_position(ref, block) if ref.dex == DEX_V3 else self._v4_position(ref, block)
+
+    def position_liquidity(self, ref, block):
+        """A position's liquidity alone, in one call: v3's positions(tokenId), v4's getPositionLiquidity(tokenId).
+        A v3 token the manager does not know reverts, as in position(); on v4 Uniswap clears a burned token's info
+        and reads its liquidity as zero."""
+        self._position_ref(ref, block)
+        if ref.dex == DEX_V3:
+            position, = self._calls(block, [(ref.position_manager, function(V3_MANAGER, 'positions'), (ref.token_id,))])
+            return position[7]
+        (liquidity,), = self._calls(block, [(ref.position_manager, function(V4_MANAGER, 'getPositionLiquidity'),
+                                             (ref.token_id,))])
+        return liquidity
 
     def _v3_position(self, ref, block):
         manager, factory = self.chain.uniswap.v3.positionManager, self.chain.uniswap.v3.factory

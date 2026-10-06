@@ -315,6 +315,21 @@ class V4ReaderTests(unittest.TestCase):
         with self.assertRaisesRegex(DataError, '^snapshot_reorganized$'):
             reader.assert_canonical(anchor)
 
+    def test_a_positions_liquidity_alone_costs_one_call(self):
+        anchor = parse_block(HEAD)
+        reader = self.chain.reader(anchor=anchor)
+        self.assertEqual(reader.position_liquidity(self.ref, anchor), 10**18)
+        self.assertEqual(self.chain.endpoints.calls(), {'stack': 2 + 1})  # the code once a process
+        self.position.liquidity = 0  # decreased to nothing, or burned: Uniswap reads a cleared token's as zero
+        self.assertEqual(reader.position_liquidity(self.ref, anchor), 0)
+        self.assertEqual(self.chain.endpoints.calls(), {'stack': 2 + 1 + 1})
+        self.assertEqual(self.chain.fake.log[-1][2][0]['data'][:10],
+                         function('IV4PositionManagerMinimal', 'getPositionLiquidity').selector)
+        with self.assertRaisesRegex(DataError, '^v2_position_manager_unknown$'):
+            reader.position_liquidity(PositionRef(DEX_V3, self.ref.position_manager, 7), anchor)
+        with self.assertRaisesRegex(DataError, '^v2_invalid_position_ref$'):
+            reader.position_liquidity((DEX_V4, self.ref.position_manager, 7), anchor)
+
     def test_an_unpinned_block_is_pinned_and_proven_first(self):
         reader = self.chain.reader()
         block = parse_block(HEAD)
@@ -385,6 +400,18 @@ class V3ReaderTests(unittest.TestCase):
         self.assertEqual(list(state.principal()),
                          principal_amounts({'sqrtPriceX96': str(sqrt_at_tick(60))}, -600, 600, 10**18))
         self.assertEqual(self.chain.fake.calls('eth_chainId'), [])
+
+    def test_a_positions_liquidity_alone_costs_one_call(self):
+        V3Position(self.chain, liquidity=5 * 10**17)
+        anchor = parse_block(HEAD)
+        reader = self.chain.reader(anchor=anchor)
+        self.assertEqual(reader.position_liquidity(self.ref, anchor), 5 * 10**17)
+        self.assertEqual(self.chain.endpoints.calls(), {'stack': 2 + 1})  # the code once a process
+        self.assertEqual(self.chain.fake.log[-1][2][0]['data'][:10],
+                         function('IUniswapV3PositionManagerMinimal', 'positions').selector)
+        # A token the manager does not know (burned) reverts, as position() does.
+        with self.assertRaisesRegex(DataError, '^rpc_call_reverted$'):
+            reader.position_liquidity(PositionRef(DEX_V3, self.ref.position_manager, 12), anchor)
 
     def test_a_fee_tier_the_profile_does_not_list_is_asked_of_the_factory(self):
         position = V3Position(self.chain, fee=300, spacing=6, lower=-600, upper=600)

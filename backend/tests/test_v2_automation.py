@@ -1,4 +1,5 @@
-"""The V2 automation service's configuration and command line, and its return of a closed vault's reserves."""
+"""The V2 automation service's configuration and command line, its return of a closed vault's reserves, and what a
+paused vault costs a pass."""
 import contextlib
 import copy
 from dataclasses import replace
@@ -18,6 +19,7 @@ from eth_abi import encode
 from eth_hash.auto import keccak
 
 from discovery import DataError, parse_block
+from v2_abi import function
 import v2_automation as automation
 from v2_automation import ChainAutomation, build, checked_config, load_automation_config, main
 from v2_chains import chain as profile
@@ -26,6 +28,10 @@ from v2_manifest import checked_deployment
 from v2_observation import PublisherPolicy
 from v2_plan import return_reserves_calldata, return_subject
 from v2_planner import PlannerConfig
+from v2_rpc import ChainEndpoints, Endpoint
+from v2_uniswap import PoolRef, UniswapReader, v3_pool_address
+from v2_vaults import VaultRecord
+from v2_fixtures import HEAD, FakeChain, Revert
 from test_v2_manifest import manifest_document
 from test_v2_planner import RICH, member, vault_state
 from test_v2_planner_domino import domino_vault
@@ -357,6 +363,287 @@ class MintPassTests(unittest.TestCase):
         self.assertEqual((result['act'], result['reason'], result['action'], result['successor']),
                          (True, 'eligible_keyless', 'mint', [5760, 10080]))
         self.assertEqual(result['considered'][f'{vault.root_token_id}:all'], 'awaiting_successor')
+
+
+# --------------------------------------------------------------------------- a pass's reads, counted
+BASE = profile('base-8453')
+TOKEN_A, TOKEN_B, ZERO = '0x' + '1a' * 20, '0x' + '2b' * 20, '0x' + '00' * 20
+
+
+def selector(name):
+    return '0x' + keccak(name.encode())[:4].hex()
+
+
+class PassChain:
+    """Vaults, their members' positions and their pool on a fake Base, with everything a pass reads about them
+    through the frozen ABIs: the full read's views, the pause check, the reserves, the registry's halt, and the
+    positions on the vaults' Uniswap version (v3 or v4). A pass's cost is the endpoints' own meter of billed calls
+    (each call of a batch counted, as providers bill them), and past a pass's budget the fake fails the test instead
+    of answering."""
+
+    OWNER = '0x' + 'b0' * 20
+
+    def __init__(self, dex):
+        self.dex = dex
+        self.head = type('Head', (), {'block': parse_block(HEAD), 'base_fee_per_gas': 10**8})()
+        self.fake = FakeChain(8453)
+        endpoint = Endpoint('stack', 'stack.example.invalid', 'https://stack.example.invalid/', None, 100, None, None)
+        self.endpoints = ChainEndpoints(BASE, (endpoint,), 'v2_chain_rpc_file', send=self.fake)
+        uniswap = BASE.uniswap
+        for contract in (uniswap.v3.factory, uniswap.v3.positionManager, uniswap.v4.positionManager,
+                         uniswap.v4.stateView):
+            # Proven by the process's first pass: what a later pass costs is what is counted.
+            self.endpoints.code.record(contract, BASE.verified_codehash(contract), 0)
+        self.deployment = checked_deployment(manifest_document(), BASE)
+        self.pool = PoolRef(dex, TOKEN_A, TOKEN_B, 3000, 60)
+        self.manager = uniswap.v4.positionManager if dex == 4 else uniswap.v3.positionManager
+        self.ranges, self.liquidity = {}, {}  # by token id; a burned token has no liquidity entry
+        self.halted = False
+        self.fake.on(self.deployment.registry, function('IDominoRegistry', 'automationHalted'), lambda: (self.halted,))
+        (self._v4 if dex == 4 else self._v3)()
+
+    def _v4(self):
+        on, pool = self.fake.on, self.pool
+        manager, view = BASE.uniswap.v4.positionManager, BASE.uniswap.v4.stateView
+        key = (pool.currency0, pool.currency1, pool.fee, pool.tick_spacing, pool.hooks)
+
+        def info(token_id):
+            if token_id not in self.liquidity:
+                return ((ZERO, ZERO, 0, 0, ZERO), 0)  # Uniswap clears a burned token's info
+            lower, upper = self.ranges[token_id]
+            return key, (int(pool.pool_id, 16) >> 56) << 56 | (upper & 0xffffff) << 32 | (lower & 0xffffff) << 8
+        on(manager, function('IV4PositionManagerMinimal', 'getPoolAndPositionInfo'), info)
+        on(manager, function('IV4PositionManagerMinimal', 'ownerOf'), lambda token_id: (self.OWNER,))
+        on(manager, function('IV4PositionManagerMinimal', 'getApproved'), lambda token_id: (ZERO,))
+        on(manager, function('IV4PositionManagerMinimal', 'subscriber'), lambda token_id: (ZERO,))
+        on(manager, function('IV4PositionManagerMinimal', 'getPositionLiquidity'),
+           lambda token_id: (self.liquidity.get(token_id, 0),))
+        on(view, function('IV4StateViewMinimal', 'getSlot0'), lambda pool_id: (2**96, 0, 0, 3000))
+        on(view, function('IV4StateViewMinimal', 'getLiquidity'), lambda pool_id: (4 * 10**18,))
+        on(view, function('IV4StateViewMinimal', 'getPositionInfo'),
+           lambda pool_id, owner, lower, upper, salt: (self.liquidity.get(int.from_bytes(salt, 'big'), 0), 0, 0))
+        on(view, function('IV4StateViewMinimal', 'getFeeGrowthInside'), lambda pool_id, lower, upper: (0, 0))
+
+    def _v3(self):
+        on, pool = self.fake.on, self.pool
+        manager, factory = BASE.uniswap.v3.positionManager, BASE.uniswap.v3.factory
+        address = v3_pool_address(BASE, pool.currency0, pool.currency1, pool.fee)
+
+        def positions(token_id):
+            if token_id not in self.liquidity:
+                raise Revert()  # the manager's 'Invalid token ID'
+            lower, upper = self.ranges[token_id]
+            return (0, ZERO, pool.currency0, pool.currency1, pool.fee, lower, upper, self.liquidity[token_id],
+                    0, 0, 0, 0)
+        on(manager, function('IUniswapV3PositionManagerMinimal', 'positions'), positions)
+        on(manager, function('IUniswapV3PositionManagerMinimal', 'ownerOf'), lambda token_id: (self.OWNER,))
+        on(factory, function('IUniswapV3FactoryMinimal', 'getPool'), lambda a, b, fee: (address,))
+        on(factory, function('IUniswapV3FactoryMinimal', 'feeAmountTickSpacing'), lambda fee: (60,))
+        on(address, function('IUniswapV3PoolMinimal', 'slot0'), lambda: (2**96, 0, 0, 1, 1, 0, True))
+        on(address, function('IUniswapV3PoolMinimal', 'liquidity'), lambda: (3 * 10**18,))
+        on(address, function('IUniswapV3PoolMinimal', 'feeGrowthGlobal0X128'), lambda: (0,))
+        on(address, function('IUniswapV3PoolMinimal', 'feeGrowthGlobal1X128'), lambda: (0,))
+        on(address, function('IUniswapV3PoolMinimal', 'ticks'), lambda tick: (1, 0, 0, 0, 0, 0, 0, True))
+
+    def vault(self, address, root):
+        return FakeVault(self, address, root)
+
+    def service(self, *vaults, executor=None):
+        service = ChainAutomation(chain=BASE, deployment=self.deployment, endpoints=self.endpoints, follower=None,
+                                  planner=PlannerConfig(), observations=PublisherPolicy(), price_references=(),
+                                  earnings_window_seconds=600, twap_seconds=600, exit_twap_seconds=600,
+                                  deadline_seconds=120, executor=executor)
+        service.proven.update((vault.address, self.dex) for vault in vaults)  # once a process, on its first pass
+        return service
+
+    def run(self, service, vaults, budget):
+        """One pass over `vaults`, in discovery order: their entries and the billed calls the pass cost. A call past
+        `budget` fails the test."""
+        service._pass = {'references': None, 'growth': {}, 'min_twap': None, 'oracles': {}, 'halted': None}
+        rpc = self.endpoints.read_rpc(anchor=self.head.block, batch_reads=True, max_requests=600)
+        uniswap = UniswapReader(BASE, rpc)
+        before = sum(self.endpoints.calls().values())
+        self.fake.budget = len(self.fake.log) + budget
+        try:
+            entries = [service._compound(vault.record, self.head, rpc, uniswap, None, None) for vault in vaults]
+        finally:
+            self.fake.budget = None
+        return entries, sum(self.endpoints.calls().values()) - before
+
+    def asked(self, count):
+        """The selectors of the last `count` calls."""
+        return [params[0]['data'][:10] for _, _, params in self.fake.log[-count:]]
+
+
+class FakeVault:
+    """One vault as the chain holds it: created paused, its root alone, no reserves; tests change it between
+    passes (and move its state nonce whenever the contract would)."""
+
+    def __init__(self, chain, address, root):
+        self.chain, self.address, self.root = chain, address, root
+        self.paused, self.nonce, self.last, self.reserves, self.members = True, 9, 0, (0, 0), [root]
+        chain.ranges[root], chain.liquidity[root] = (-600, 600), 10**18
+        pool, on = chain.pool, chain.fake.on
+        raw = (pool.dex, pool.currency0, pool.currency1, pool.fee, pool.tick_spacing, pool.hooks)
+        views = {'owner': lambda: (PassChain.OWNER,), 'pool': lambda: (raw,),
+                 'root': lambda: ((chain.dex, chain.manager, root),), 'positions': lambda: (list(self.members),),
+                 'policy': lambda: ((2, 500, 2000, 600, 3),), 'limits': lambda: ((100, 100, 300, 5000),),
+                 'paused': lambda: (self.paused,), 'rootArmed': lambda: (True,), 'stateNonce': lambda: (self.nonce,)}
+        for name, view in views.items():
+            on(address, function('IDominoVault', name), view)
+        on(address, function('IDominoVault', 'reserves'),
+           lambda token: (self.reserves[(pool.currency0, pool.currency1).index(token)],))
+        on(address, function('IDominoVaultLedger', 'lastExecutionAt'), lambda: (self.last,))
+        on(address, function('IDominoVaultLedger', 'quoteCurrency'), lambda: (pool.currency1,))
+        on(address, function('IDominoVaultLedger', 'member'), self.member)
+        on(address, function('IDominoVaultLedger', 'lot'), lambda token_id, token: ((0, 0),))
+        self.record = VaultRecord(address, PassChain.OWNER, root, chain.dex, 1)
+
+    def member(self, token_id):
+        lower, upper = self.chain.ranges[token_id]
+        successor = next((m for m in self.members if m != self.root), 0) if token_id == self.root else 0
+        return ((token_id in self.members, 0 if token_id == self.root else self.root, successor, lower, upper),)
+
+    def mint_successor(self, token_id):
+        self.chain.ranges[token_id], self.chain.liquidity[token_id] = (600, 1200), 10**18
+        self.members.append(token_id)
+
+
+class PausedVaultTests(unittest.TestCase):
+    """A paused vault can do nothing but give its reserves back (returnReserves: its root closed, no successor
+    active, reserves left). Once a full read found it paused, while it stays paused at that state nonce a pass reads
+    only what decides that (ChainAutomation._held): its pause and nonce, the registry's halt once a pass, its reserves
+    once a nonce, and its root's liquidity only while it is alone and holds reserves. Its entry is the full read's."""
+
+    # One vault's full read with its root alone: 12 views, the member's 3 ledger rows, and its position (9 calls on
+    # v4, 8 on v3). What every pass cost a paused vault before.
+    FULL = {4: 24, 3: 23}
+    PAUSE_CHECK = [selector('paused()'), selector('stateNonce()'), selector('automationHalted()')]
+
+    def test_a_paused_vault_with_nothing_to_return_costs_its_pause_check_alone(self):
+        for dex in (4, 3):
+            with self.subTest(dex=dex):
+                chain = PassChain(dex)
+                vault = chain.vault('0x' + 'a4' * 20, 7)  # created paused for Auto-exit alone
+                service = chain.service(vault)
+                (first,), cost = chain.run(service, [vault], self.FULL[dex])
+                self.assertEqual((first, cost), ({'act': False, 'reason': 'vault_paused', 'stateNonce': 9},
+                                                 self.FULL[dex]))
+                # Then its pause check, with its reserves once at this nonce: none, so its root is never read.
+                (entry,), cost = chain.run(service, [vault], 3 + 2)
+                self.assertEqual((entry, cost), (first, 5))
+                for _ in range(3):
+                    (entry,), cost = chain.run(service, [vault], 3)
+                    # The same entry as the full read's: the waiting file, and the read API, see the same reason.
+                    self.assertEqual((entry, cost), (first, 3))
+                    self.assertEqual(chain.asked(3), self.PAUSE_CHECK)
+
+    def test_the_registrys_halt_is_read_once_a_pass_and_holds_every_paused_vault(self):
+        chain = PassChain(4)
+        first, second = chain.vault('0x' + 'a4' * 20, 7), chain.vault('0x' + 'a5' * 20, 8)
+        second.reserves = (1000, 3)  # what its compounds left before its owner paused it
+        executor = ReturnTests.Executor(ReturnTests.PAID)
+        service = chain.service(first, second, executor=executor)
+        chain.run(service, [first, second], 2 * self.FULL[4])
+        # The second vault holds reserves: its root is read on every pass, to return them once it closes.
+        entries, cost = chain.run(service, [first, second], 3 + 2 + 2 + 2 + 1)
+        self.assertEqual(([e['reason'] for e in entries], cost), (['vault_paused'] * 2, 10))
+        entries, cost = chain.run(service, [first, second], 3 + 2 + 1)
+        self.assertEqual(([e['reason'] for e in entries], cost), (['vault_paused'] * 2, 6))
+        # Halted, both wait for the halt, and nothing more is read, not even the root a return would need.
+        chain.halted, chain.liquidity[8] = True, 0
+        entries, cost = chain.run(service, [first, second], 3 + 2)
+        self.assertEqual(([e['reason'] for e in entries], cost), (['automation_halted'] * 2, 5))
+        self.assertEqual(executor.calls, [])
+        # Lifted, the closed root's reserves go back to its owner.
+        chain.halted = False
+        entries, cost = chain.run(service, [first, second], 3 + 2 + 1)
+        self.assertEqual(([e['reason'] for e in entries], cost), (['vault_paused', 'reserves_returnable'], 6))
+
+    def test_a_paused_vault_whose_owner_closes_the_root_still_returns_its_reserves(self):
+        for dex, burned in ((4, False), (4, True), (3, False), (3, True)):
+            with self.subTest(dex=dex, burned=burned):
+                chain = PassChain(dex)
+                vault = chain.vault('0x' + 'a4' * 20, 7)
+                vault.reserves = (1000, 3)  # what its compounds left before its owner paused it
+                executor = ReturnTests.Executor(ReturnTests.PAID)
+                service = chain.service(vault, executor=executor)
+                chain.run(service, [vault], self.FULL[dex])
+                (entry,), cost = chain.run(service, [vault], 3 + 2 + 1)  # its reserves once, then its root
+                self.assertEqual((entry['reason'], cost), ('vault_paused', 6))
+                (entry,), cost = chain.run(service, [vault], 3 + 1)
+                self.assertEqual((entry['reason'], cost), ('vault_paused', 4))
+                self.assertEqual(executor.calls, [])  # an open root: no return is even simulated
+                # The owner closes the root on Uniswap, and the vault's state nonce does not move: nothing tells a
+                # v3 vault, nor a v4 vault whose root was already disarmed (exitAll, say).
+                if burned:
+                    del chain.liquidity[7]
+                else:
+                    chain.liquidity[7] = 0
+                (entry,), cost = chain.run(service, [vault], 3 + 1)
+                self.assertEqual({k: entry[k] for k in ('act', 'reason', 'action', 'simulation', 'reserves', 'paid',
+                                                        'stateNonce')},
+                                 {'act': True, 'reason': 'reserves_returnable', 'action': 'return_reserves',
+                                  'simulation': 'passed', 'reserves': ['1000', '3'], 'paid': ['1000', '3'],
+                                  'stateNonce': 9})
+                self.assertEqual(entry['subject'], return_subject(8453, vault.address, 9, chain.head.block.number))
+                self.assertEqual(entry['plan']['calldata'], return_reserves_calldata())
+                self.assertEqual(executor.calls, [(vault.address, return_reserves_calldata(), chain.head.block, True)])
+                self.assertEqual(cost, 4)
+
+    def test_an_unpaused_vault_is_read_in_full_as_before(self):
+        for dex in (4, 3):
+            with self.subTest(dex=dex):
+                chain = PassChain(dex)
+                vault = chain.vault('0x' + 'a4' * 20, 7)
+                vault.paused, vault.last = False, chain.head.block.timestamp - 10  # inside its interval
+                service = chain.service(vault)
+                for _ in range(3):
+                    (entry,), cost = chain.run(service, [vault], self.FULL[dex])
+                    self.assertEqual((entry, cost), ({'act': False, 'reason': 'too_soon', 'stateNonce': 9},
+                                                     self.FULL[dex]))
+                # Its owner pauses it: one more full read, then its pause check.
+                vault.paused, vault.nonce = True, 10
+                (entry,), cost = chain.run(service, [vault], self.FULL[dex])
+                self.assertEqual((entry['reason'], cost), ('vault_paused', self.FULL[dex]))
+                (entry,), cost = chain.run(service, [vault], 3 + 2)
+                self.assertEqual((entry['reason'], cost), ('vault_paused', 5))
+                # It resumes it: the pause check that finds out, a full read, and only full reads after.
+                vault.paused, vault.nonce = False, 11
+                (entry,), cost = chain.run(service, [vault], 3 + self.FULL[dex])
+                self.assertEqual((entry['reason'], cost), ('too_soon', 3 + self.FULL[dex]))
+                (entry,), cost = chain.run(service, [vault], self.FULL[dex])
+                self.assertEqual((entry['reason'], cost), ('too_soon', self.FULL[dex]))
+
+    def test_a_paused_vault_whose_state_moved_is_read_in_full(self):
+        chain = PassChain(4)
+        vault = chain.vault('0x' + 'a4' * 20, 7)
+        vault.mint_successor(9)
+        vault.reserves = (1000, 3)
+        executor = ReturnTests.Executor(ReturnTests.PAID)
+        service = chain.service(vault, executor=executor)
+        chain.run(service, [vault], 12 + 2 * (3 + 9))  # two members
+        chain.liquidity[7] = 0  # the owner closes the root
+        # A successor is active: no return is possible, and nothing more is read.
+        (entry,), cost = chain.run(service, [vault], 3)
+        self.assertEqual((entry['reason'], cost), ('vault_paused', 3))
+        # The owner takes the successor out, which moves the nonce: read in full, its reserves go back.
+        vault.members.remove(9)
+        vault.nonce = 10
+        (entry,), cost = chain.run(service, [vault], 3 + self.FULL[4] + 2)
+        self.assertEqual((entry['act'], entry['reason'], entry['stateNonce'], cost),
+                         (True, 'reserves_returnable', 10, 3 + self.FULL[4] + 2))
+
+    def test_the_pause_is_read_not_inferred_from_the_nonce(self):
+        # Every change advances the nonce, a resume included (F3's B8); the pause is still read, so a vault found
+        # unpaused is planned at once even at the nonce it was paused at.
+        chain = PassChain(3)
+        vault = chain.vault('0x' + 'a4' * 20, 7)
+        service = chain.service(vault)
+        chain.run(service, [vault], self.FULL[3])
+        vault.paused, vault.last = False, chain.head.block.timestamp - 10
+        (entry,), cost = chain.run(service, [vault], 3 + self.FULL[3])
+        self.assertEqual((entry['reason'], cost), ('too_soon', 3 + self.FULL[3]))
 
 
 if __name__ == '__main__':

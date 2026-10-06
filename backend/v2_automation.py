@@ -24,7 +24,11 @@ pattern, never a plain key on the VM). Each pass:
    observation of the spot at the head the plan was made at; a v3 vault's,
    the pool's TWAP through the price anchor when the pool's own history
    guarantees the window until inclusion (v2_oracle), else the publisher's
-   observation too (the owner's decision of 5 Oct 2026). A v3 exit likewise.
+   observation too (the owner's decision of 5 Oct 2026). A v3 exit likewise,
+   and never on a TWAP that reaches back before its mandate's registration.
+   A vault the last full read found paused can do nothing but a return: while
+   it stays paused at that state nonce it costs its pause check alone, and the
+   root's closure only while it holds something a return would pay (_held).
 One transaction at most per pass, in that order.
 Output is one JSON object per command, with decisions and fixed codes; no
 key, password, keyed URL or raw provider message ever reaches it.
@@ -270,10 +274,15 @@ class ChainAutomation:
         self.discovery = VaultDiscovery(deployment, state=state)
         self.mandates = MandateWatcher(deployment, state=state)
         self.proven = set()  # vaults proven to be the manifest's clones, once per process
-        # Closed vaults found with nothing to return, by the state nonce they had:
-        # every change to a vault's reserves advances its nonce, so one is read
-        # again only once its nonce moves.
-        self.empty = {}
+        # Each vault's two reserves, by the state nonce they were read at: every
+        # change to a vault's reserves advances its nonce, so they are read again
+        # only once it moves (an emptied closed vault costs nothing more).
+        self.reserves = {}
+        # Vaults the last full read found paused, by address: their state then.
+        # While one stays paused at that nonce, nothing it stores has changed
+        # (every change advances it, F3's B8), so it costs its pause check only
+        # (_held), and a full read again once it moves.
+        self.paused = {}
         # v3 pools whose own history guarantees a TWAP window, by address: the widest such window. A ring never
         # shrinks and a guaranteed window never uncovers, so such a pool is not read again (v2_oracle).
         self.twap_ready = {}
@@ -300,7 +309,7 @@ class ChainAutomation:
                   'exits': [], 'vaults': [], 'submitted': None}
         rpc, uniswap, history, history_uniswap = self._clients(head)
         # Reads shared by every vault of this pass: billed calls, made once.
-        self._pass = {'references': None, 'growth': {}, 'min_twap': None, 'oracles': {}}
+        self._pass = {'references': None, 'growth': {}, 'min_twap': None, 'oracles': {}, 'halted': None}
         self.deployment.verify_code(rpc, block)
         busy = False
         if act and self.executor is not None:
@@ -384,7 +393,12 @@ class ChainAutomation:
     def _compound(self, record, head, rpc, uniswap, history, publisher):
         block = head.block
         reader = VaultReader(self.chain, self.deployment, rpc, uniswap, proven=self.proven)
+        held = self._held(record, reader, rpc, head)
+        if held is not None:
+            return held
         vault = reader.read(record, block)
+        if vault.paused:
+            self.paused[record.vault] = vault
         if returnable(vault):
             returned = self._return(vault, reader, rpc, head)
             if returned is not None:
@@ -482,11 +496,10 @@ class ChainAutomation:
         every action of the operator's. None (halted, or nothing left to
         return): the planner reports the vault as before."""
         block = head.block
-        if vault.halted or self.empty.get(vault.vault) == vault.state_nonce:
+        if vault.halted:
             return None
-        reserves = reader.reserves(vault, block)
+        reserves = self._reserves(vault, reader, block)
         if not any(reserves):
-            self.empty[vault.vault] = vault.state_nonce
             return None
         result = {'act': True, 'reason': 'reserves_returnable', 'action': 'return_reserves',
                   'stateNonce': vault.state_nonce, 'reserves': [str(amount) for amount in reserves]}
@@ -506,6 +519,43 @@ class ChainAutomation:
                 return {**result, 'act': False, 'reason': 'vault_gas_ceiling'}
         return {**result, 'subject': return_subject(self.chain.chainId, vault.vault, vault.state_nonce, block.number),
                 'plan': {'calldata': calldata, 'deadline': block.timestamp + self.deadline_seconds, 'gas': gas_limit}}
+
+    def _reserves(self, vault, reader, block):
+        """The vault's reserves in both pool tokens at its state nonce, read once per nonce."""
+        known = self.reserves.get(vault.vault)
+        if known is None or known[0] != vault.state_nonce:
+            known = self.reserves[vault.vault] = (vault.state_nonce, reader.reserves(vault, block))
+        return known[1]
+
+    def _held(self, record, reader, rpc, head):
+        """A vault the last full read found paused, while it stays paused at that state nonce: its entry from the
+        reads that decide whether anything can be done for it, else None, and it is read in full.
+
+        A paused vault refuses every plan (preconditions); the one thing left for it is returnReserves, due once its
+        root is closed, no successor is active and it holds reserves (pauses never hold a return back: exitAll
+        pauses). Its pause, members and reserves stand while its state nonce does; the registry's halt is read once a
+        pass. The root's closure, which the owner changes on Uniswap without the vault, is read live, and only while
+        it could decide a return: the vault alone and holding reserves. So a vault created paused for Auto-exit
+        alone costs two calls a pass instead of its full read (about 25), and the reasons stay those of the full
+        read, which the read API serves (`vault_paused`, `automation_halted`, the return's own)."""
+        known = self.paused.get(record.vault)
+        if known is None:
+            return None
+        block = head.block
+        paused, nonce, halted = reader.pause(record.vault, block, halted=self._pass.get('halted'))
+        self._pass['halted'] = halted
+        if not paused or nonce != known.state_nonce:
+            del self.paused[record.vault]  # resumed, or its owner acted: read it in full
+            return None
+        vault = replace(known, halted=halted, block_number=block.number, block_timestamp=block.timestamp)
+        if not halted and len(vault.members) == 1 and any(self._reserves(vault, reader, block)):
+            root = replace(vault.member(vault.root_token_id), liquidity=reader.root_liquidity(vault, block))
+            vault = replace(vault, members=(root,))
+            if returnable(vault):
+                returned = self._return(vault, reader, rpc, head)
+                if returned is not None:
+                    return returned
+        return {'act': False, 'reason': preconditions(vault, block.timestamp), 'stateNonce': nonce}
 
     def _growth(self, vault, rpc, history, block, targets):
         """Fee growth evidence for `targets` (member token ids) over the
@@ -566,7 +616,8 @@ class ChainAutomation:
                 twap = None
                 if pool.dex != DEX_V4:
                     window, twap = twap_exit_evidence(parameters, self.exit_twap_seconds)
-                    if not self._twap_holds(rpc, pool, window, block):
+                    if not self._twap_holds(rpc, pool, window, block) or self._before_registration(mandate, window,
+                                                                                                    block):
                         twap = None  # the publisher signs the spot, as on v4 (the owner's decision of 5 Oct 2026)
                     entry['anchorSource'] = 'signed' if twap is None else 'twap'
                 if twap is None:
@@ -600,6 +651,12 @@ class ChainAutomation:
                 entry.update(act=False, reason=str(error))
             entries.append(entry)
         return entries
+
+    def _before_registration(self, mandate, window, block):
+        """Whether a `window`-second TWAP ending at the head would reach back before the block that registered the
+        mandate: prices from before the owner turned Auto-exit on must never fire it. One ending at inclusion, later,
+        starts later still, so a window that clears the registration at the head clears it at inclusion too."""
+        return block.timestamp - self.mandates.registered_at(self.index, mandate.hash) < window
 
     def _twap_holds(self, rpc, pool, window, block):
         """Whether a v3 pool's TWAP over `window` can anchor (v2_oracle.twap_guaranteed): read once per pass and
