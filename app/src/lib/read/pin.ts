@@ -116,7 +116,8 @@ export const PRODUCER_PIN = {
       version: '1.1.0-rc.3',
       // Changed on purpose (data) 2026-10-05: read_api.py, which the manifest hashes, gained read-v6's chain reads; no
       // read-v1 route, schema or version moved.
-      manifestSha256: 'de252f2014178f2d538f1ef0777bba8e619cf1afc22fa09d75a12bf760db41d2',
+      // Changed on purpose (data) 2026-10-06: read_gateway.py, which the manifest hashes, gives each reader lane its own visitor budget; no route, schema or version moved.
+      manifestSha256: '38c6cfb7293db79483914f1a31bbb2e6d6055d7c8f6cc96106e446bc9f61b15d',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -139,7 +140,8 @@ export const PRODUCER_PIN = {
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
   // Changed on purpose (data) 2026-10-05: read_api.py gained read-v6's chain reads; no read-v2 route, schema or version moved.
-  manifestSha256: '6db809aa48c6df713e98e2bbfe0c518d095ad0a3092124d06930ae5aa5440b5c',
+  // Changed on purpose (data) 2026-10-06: read_gateway.py, which the manifest hashes, gives each reader lane its own visitor budget; no route, schema or version moved.
+  manifestSha256: 'aa41aa591a9d14a97b1002a8133ef7376d5dff9a28865b1406d20bd037d5a0cd',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

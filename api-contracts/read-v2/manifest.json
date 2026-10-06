@@ -278,7 +278,7 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "1ad77113f44e9249fbc0b3029cb7227e803997c9d97b068f9ac05b8d570a321a"
+      "sha256": "fe2e9ae54e12a7c1b3e5693a3c0edeb42fa57e839d47ea32b37067f245b8494a"
     },
     {
       "path": "backend/read_api.py",

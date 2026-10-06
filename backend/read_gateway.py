@@ -50,6 +50,12 @@ REQUEST_MODELS = {'token': TokenRequest, 'pools': PoolsRequest, 'pool-market': P
                   'markets-snapshot': MarketsSnapshotRequest}
 MAX_BODY = 8192
 MAX_RESPONSE = 1024 * 1024
+# What one visitor address may ask, per lane of the reader: (burst, reads a minute). 6 Oct 2026: one visitor opening New
+# position on the V2 app asked 9 reads within 2 s and 34 within a minute, and the single budget it then shared across
+# every route (5, then 30 a minute) refused 18 of his 82 reads. A stored read answers from the reader's own data in
+# milliseconds; a provider read pays a node or a market provider, and the reader's provider lane and caches bound what
+# it may cost, so it gets less.
+VISITOR_BUDGETS = {ReadGate.STORED: (30, 240), ReadGate.PROVIDER: (12, 60)}
 
 
 def safe_error(code):
@@ -92,7 +98,10 @@ class Gateway:
         self.enabled_v5, self.enabled_v5_reads = enabled_v5, frozenset(enabled_v5_reads)
         self.enabled_v6, self.enabled_v6_reads = enabled_v6, frozenset(enabled_v6_reads)
         self.verifier, self.upstream = verifier, upstream or LocalReaderHTTP()
-        self.budgets, self.cursors = budgets or ClientBudgets(), cursors or OpaqueCursors()
+        # One budget for every lane when given (the tests' and development's), else a visitor's own per lane.
+        self.budgets = budgets or {kind: ClientBudgets(burst=burst, per_minute=per_minute, clock=clock)
+                                   for kind, (burst, per_minute) in VISITOR_BUDGETS.items()}
+        self.cursors = cursors or OpaqueCursors()
         # The reader's own lanes: the provider lane's capacity and the stored lane
         # (v3, the featured list, the V2 index).
         self.gate = gate or (public_gate() if enabled_v3 or enabled_v5 or enabled_v6 else ReadGate())
@@ -121,10 +130,11 @@ class Gateway:
                     self.verifier.verify(assertion)
                 except DataError:
                     return 403, {'error': 'upstream_unavailable'}, {}
-            if not self.budgets.admit(client):
+            budget = self.budgets[reader_kind] if isinstance(self.budgets, dict) else self.budgets
+            if not budget.admit(client):
                 # The budget knows when a token returns; a budget that cannot say
                 # (the development lane's principal budget) defers to the gate.
-                wait = getattr(self.budgets, 'retry_after', None)
+                wait = getattr(budget, 'retry_after', None)
                 return 429, {'error': 'read_capacity_busy'}, {
                     'retryAfter': (wait(client) if callable(wait) else None) or self.gate.retry_after(kind)}
             deadline = min(deadline, self.clock() + 15)

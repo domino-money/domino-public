@@ -23,7 +23,8 @@ export const READ_V6_PIN = {
   // fixture builder and the README's reasons); same version, same schemas and fixtures.
   // Changed on purpose (data) 2026-10-06: the producer's v2_chain_reads.py reads over kept connections and the chains
   // of one answer at once; same version, same schemas and fixtures.
-  manifestSha256: '973b5a8220690202100554953c3f057b98f0851e13d60c6956168b472c0ecbab',
+  // Changed on purpose (data) 2026-10-06: read_gateway.py, which the manifest hashes, gives each reader lane its own visitor budget; no route, schema or version moved.
+  manifestSha256: 'd16eb5101ad8dd0a8138cd1add3e61db28b88a524ad01a2ae24fb0f9c8d242ea',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {

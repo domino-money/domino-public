@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sys
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -167,6 +168,35 @@ class ReadAdmissionTests(IdentityFixtures, unittest.TestCase):
             self.assertEqual(self.post('markets-snapshot', {}).status_code, 200)
         finally:
             self.gateway_gate.leave(ReadGate.PROVIDER)
+
+    def test_a_visitor_has_a_budget_per_lane_stored_reads_far_more(self):
+        # 6 Oct 2026: one visitor's New position asked 9 reads in 2 s; a single budget of 5 refused 18 of his 82.
+        from read_gateway import VISITOR_BUDGETS
+        self.assertEqual(VISITOR_BUDGETS, {ReadGate.STORED: (30, 240), ReadGate.PROVIDER: (12, 60)})
+        now = [time.monotonic()]  # the reader's transport bounds its calls by the real clock
+        gateway = Gateway(enabled=True, enabled_reads=('catalogue', 'markets-snapshot', 'token'),
+                          verifier=self.verifier(), upstream=LocalReaderHTTP(client=self.reader),
+                          gate=ReadGate(interval=0), clock=lambda: now[0])
+        client = TestClient(create_gateway(gateway), base_url='http://127.0.0.1:8878', client=('127.0.0.1', 40000))
+        self.addCleanup(client.close)
+
+        def post(route, body, visitor='192.0.2.1'):
+            return client.post('/internal/read/v1/' + route, json=body,
+                               headers={**self.headers, 'X-Domino-Client-Id': visitor})
+        for _ in range(30):
+            self.assertEqual(post('markets-snapshot', {}).status_code, 200)
+        refused = post('markets-snapshot', {})
+        self.assertEqual((refused.status_code, refused.json(), refused.headers['Retry-After']),
+                         (429, {'error': 'read_capacity_busy'}, '1'))  # four stored reads a second come back
+        # The stored lane spent nothing of the provider lane's, nor another visitor's.
+        for _ in range(12):
+            self.assertEqual(post('token', {'token': TOKEN}).status_code, 200)
+        self.assertEqual(post('token', {'token': TOKEN}).status_code, 429)
+        self.assertEqual(post('markets-snapshot', {}, visitor='192.0.2.2').status_code, 200)
+        now[0] += 1  # a second later: one provider read, four stored
+        self.assertEqual(post('token', {'token': TOKEN}).status_code, 200)
+        self.assertEqual(post('token', {'token': TOKEN}).status_code, 429)
+        self.assertEqual([post('markets-snapshot', {}).status_code for _ in range(5)], [200] * 4 + [429])
 
     def test_stored_reads_still_require_identity_and_share_client_budget(self):
         self.gateway.budgets = ClientBudgets(burst=1, per_minute=30)
