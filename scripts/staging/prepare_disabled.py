@@ -216,6 +216,16 @@ def require(condition, message):
         raise ValueError(message)
 
 
+# A release archive is `git archive` of one commit, the whole repository, and it is read whole with every member
+# kept in memory, so each of these bounds it (inclusive). The archive was at most 64 MiB, and the expansion 128 MiB,
+# until 6 Oct 2026: main's archive had reached 62.7 MB, after growing about 2 MB in a day. Each installer reads the
+# archive once, so 256 MiB plus its members stays far below the VM's memory (7.7 GB).
+MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
+MAX_EXPANDED_BYTES = 256 * 1024 * 1024
+MAX_MEMBER_BYTES = 32 * 1024 * 1024
+MAX_MEMBERS = 20000
+
+
 def archive_files(path, digest, commit):
     """Read once; hash and validate every member before any extraction or mutation."""
     require(re.fullmatch('[0-9a-f]{64}', digest), 'archive SHA256 must be lowercase hex')
@@ -223,9 +233,9 @@ def archive_files(path, digest, commit):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, 'rb') as stream:
         info = os.fstat(stream.fileno())
-        require(stat.S_ISREG(info.st_mode) and info.st_size <= 64*1024*1024,
-                'archive must be a regular plain tar of at most64MiB')
-        payload = stream.read(64*1024*1024 + 1)
+        require(stat.S_ISREG(info.st_mode) and info.st_size <= MAX_ARCHIVE_BYTES,
+                f'archive must be a regular plain tar of at most {MAX_ARCHIVE_BYTES >> 20} MiB')
+        payload = stream.read(MAX_ARCHIVE_BYTES + 1)
     require(hashlib.sha256(payload).hexdigest() == digest, 'archive SHA256 mismatch')
     files, kinds, total = {}, {}, 0
     with tarfile.open(fileobj=io.BytesIO(payload), mode='r:') as archive:
@@ -236,13 +246,13 @@ def archive_files(path, digest, commit):
             require(name and not name.startswith('/') and '\\' not in name
                     and not any(part in ('', '.', '..') for part in parts)
                     and not any(ord(c) < 32 or ord(c) == 127 for c in name), 'unsafe tar path')
-            require(name not in kinds and len(kinds) < 20000, 'duplicate or excessive tar members')
+            require(name not in kinds and len(kinds) < MAX_MEMBERS, 'duplicate or excessive tar members')
             require(member.isfile() or member.isdir(), 'tar links and special files are forbidden')
             require(not member.sparse, 'sparse tar files are forbidden')
             require(not set(parts) & {'.git', '.venv', 'runtime', 'node_modules', '__pycache__'},
                     'archive includes a runtime, dependency or Git work directory')
             total += member.size
-            require(0 <= member.size <= 32*1024*1024 and total <= 128*1024*1024,
+            require(0 <= member.size <= MAX_MEMBER_BYTES and total <= MAX_EXPANDED_BYTES,
                     'expanded tar size limit exceeded')
             kinds[name] = member.isdir()
             if member.isfile():

@@ -259,6 +259,22 @@ class FinancialTests(unittest.TestCase):
         self.assertEqual(len(calls), 1 + sum(len(roles) for roles in financial.PEERS.values()))
         pause.assert_called_once_with(0.1)
 
+    def test_the_archive_bounds_are_prepare_disabled_s_inclusive(self):
+        """The financial upgrade reads the same release archive with the same bounds (prepare_disabled's constants),
+        each met exactly by this repository's own archive and refused one below."""
+        with tarfile.open(self.path) as tar:
+            members = tar.getmembers()
+        exact = {'MAX_ARCHIVE_BYTES': (self.path.stat().st_size, 'regular_bounded_file_required'),
+                 'MAX_EXPANDED_BYTES': (sum(member.size for member in members), 'archive_expansion_limit'),
+                 'MAX_MEMBER_BYTES': (max(member.size for member in members), 'archive_expansion_limit'),
+                 'MAX_MEMBERS': (len(members), 'duplicate_or_excessive_archive')}
+        for name, (bound, refusal) in exact.items():
+            with self.subTest(limit=name), patch.object(financial.base, 'run', side_effect=AssertionError('host_command')):
+                with patch.object(financial.base, name, bound):
+                    self.assertEqual(set(financial.archive_files(self.path, self.digest, self.commit)), set(self.files))
+                with patch.object(financial.base, name, bound - 1), self.assertRaisesRegex(ValueError, refusal):
+                    financial.archive_files(self.path, self.digest, self.commit)
+
     def test_bad_archives_fail_before_host_commands(self):
         with patch.object(financial.base, 'run', side_effect=AssertionError('host_command')):
             with self.assertRaises(ValueError): financial.archive_files(self.path, '0' * 64, self.commit)

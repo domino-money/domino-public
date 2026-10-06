@@ -109,7 +109,7 @@ def read_file(path, maximum=64*1024*1024):
 
 def archive_files(path, digest, commit):
     require(re.fullmatch('[0-9a-f]{64}', digest) and re.fullmatch('[0-9a-f]{40}', commit), 'invalid_release_pin')
-    raw = read_file(path)
+    raw = read_file(path, base.MAX_ARCHIVE_BYTES)
     require(sha(raw) == digest, 'archive_hash_mismatch')
     files, kinds, total = {}, {}, 0
     with tarfile.open(fileobj=io.BytesIO(raw), mode='r:') as archive:
@@ -120,11 +120,11 @@ def archive_files(path, digest, commit):
             require(name and not name.startswith('/') and '\\' not in name
                     and not any(p in ('', '.', '..') for p in parts)
                     and not any(ord(c) < 32 or ord(c) == 127 for c in name), 'unsafe_archive_path')
-            require(name not in kinds and len(kinds) < 20000, 'duplicate_or_excessive_archive')
+            require(name not in kinds and len(kinds) < base.MAX_MEMBERS, 'duplicate_or_excessive_archive')
             require((item.isfile() or item.isdir()) and not item.sparse, 'archive_special_file')
             require(not set(parts) & {'.git', '.venv', 'runtime', 'node_modules', '__pycache__'}, 'archive_private_directory')
             total += item.size
-            require(0 <= item.size <= 32*1024*1024 and total <= 128*1024*1024, 'archive_expansion_limit')
+            require(0 <= item.size <= base.MAX_MEMBER_BYTES and total <= base.MAX_EXPANDED_BYTES, 'archive_expansion_limit')
             kinds[name] = item.isdir()
             if item.isfile(): files[name] = (archive.extractfile(item).read(), bool(item.mode & 0o111))
     for name in kinds:

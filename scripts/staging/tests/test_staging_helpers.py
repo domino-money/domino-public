@@ -207,6 +207,27 @@ class ArchiveTests(unittest.TestCase):
         with self.assertRaises(OSError):
             prepare_disabled.archive_files(link, digest, COMMIT)
 
+    def test_archive_bounds_are_the_named_limits_inclusive(self):
+        """The release archive is `git archive` of the whole repository, read whole: 64 MiB until 6 Oct 2026, when
+        main's had reached 62.7 MB, then 256 MiB. Each bound is its named constant, met exactly and refused one below."""
+        self.assertEqual((prepare_disabled.MAX_ARCHIVE_BYTES, prepare_disabled.MAX_EXPANDED_BYTES,
+                          prepare_disabled.MAX_MEMBER_BYTES, prepare_disabled.MAX_MEMBERS),
+                         (256 * 1024 * 1024, 256 * 1024 * 1024, 32 * 1024 * 1024, 20000))
+        digest = self.archive()
+        with tarfile.open(self.path) as tar:
+            members = tar.getmembers()
+        exact = {'MAX_ARCHIVE_BYTES': (self.path.stat().st_size, 'regular plain tar of at most'),
+                 'MAX_EXPANDED_BYTES': (sum(member.size for member in members), 'expanded tar size limit'),
+                 'MAX_MEMBER_BYTES': (max(member.size for member in members), 'expanded tar size limit'),
+                 'MAX_MEMBERS': (len(members), 'duplicate or excessive tar members')}
+        for name, (bound, refusal) in exact.items():
+            with self.subTest(limit=name):
+                with patch.object(prepare_disabled, name, bound):
+                    self.assertIn(prepare_disabled.MIGRATIONS[0],
+                                  prepare_disabled.archive_files(self.path, digest, COMMIT))
+                with patch.object(prepare_disabled, name, bound - 1), self.assertRaisesRegex(ValueError, refusal):
+                    prepare_disabled.archive_files(self.path, digest, COMMIT)
+
     def test_units_remain_disabled_and_have_fixed_service_boundary(self):
         for component in prepare_disabled.SERVICES:
             with self.subTest(component=component):

@@ -278,7 +278,7 @@ def candidate(path, digest):
             actual.add(target)
     need(actual == set(files), 'rootfs_inventory_mismatch')
     # The fixed parser reads the entire tar once before it returns any members.
-    read(path / 'release.tar', mode=0o600, maximum=64*1024*1024)
+    read(path / 'release.tar', mode=0o600, maximum=archive.MAX_ARCHIVE_BYTES)
     source = archive.archive_files(path / 'release.tar', plan['archiveSha256'], RELEASE)
     need(all('backend/' + name in source for name in ('dev_read_service.py', 'dev_read_gateway.py',
          'dev_read_identity.py', 'dev_read_budget.py')), 'development_entrypoint_missing')
