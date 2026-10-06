@@ -42,6 +42,11 @@ export interface PoolOption {
   hooks: AddressKey
   /** The pool's packed directional protocol fee at `block`, as read (figures.ts `protocolFee`). */
   protocolFeeRaw?: number
+  /**
+   * Added 2026-10-06 (the owner: Base's v3 rows showed no APR): a v3 pool's slot0.feeProtocol when its protocol fee is on,
+   * as read-v6 chain-pools reports it; the APR estimate takes the LPs' share from it (rowApr.ts v3LpShare).
+   */
+  v3FeeProtocol?: number
   integration: 'hookless_fixed_fee' | 'requires_separate_adapter'
   /**
    * Added 2026-10-05 (New position on Base and Arbitrum One, lib/create/otherChains.ts): the Uniswap version of a pool read

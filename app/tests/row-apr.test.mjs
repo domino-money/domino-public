@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { rowApr, rowAprReasonText } = require('../.test-build/app/src/lib/read/screens/rowApr.js');
+const { rowApr, rowAprReasonText, v3LpShare } = require('../.test-build/app/src/lib/read/screens/rowApr.js');
 
 const attributed = (raw, stale = false) => ({
   state: stale ? 'attributed_stale' : 'attributed',
@@ -63,6 +63,34 @@ test('the protocol fee leaves the input first, exactly as the producer takes it'
   assert.ok(Number(tenth.text) < Number(rowApr(pool()).text));
   // A fee charged one way only is not the same fee: the producer refuses it rather than apportioning.
   assert.deepEqual(rowApr(pool({ protocolFeeRaw: 1000 })), { kind: 'none', reason: 'protocol_fee_directional_unsupported' });
+});
+
+// Added 2026-10-06 (the owner: Base's v3 rows showed TVL and volume but no APR): a v3 pool's slot0.feeProtocol, read the way
+// UniswapV3Pool.swap spends it: the low four bits are N for a zero-for-one swap, the high four the other way; the protocol
+// keeps feeAmount / N, so LPs keep (N − 1)/N, and 0 is off.
+test('a v3 pool’s protocol fee keeps 1/N of the LP fee, exactly as the pool takes it', () => {
+  assert.deepEqual(v3LpShare(0), { keep: 1n, of: 1n });
+  assert.deepEqual(v3LpShare(0x44), { keep: 3n, of: 4n });
+  assert.deepEqual(v3LpShare(0x66), { keep: 5n, of: 6n });
+  assert.deepEqual(v3LpShare(0xaa), { keep: 9n, of: 10n });
+  assert.equal(v3LpShare(0x46), 'directional', 'a different N each way is not one fee');
+  assert.equal(v3LpShare(0x40), 'directional', 'on one way only');
+  assert.equal(v3LpShare(0x33), 'invalid', 'N = 3 is below the pool’s own floor of 4');
+  assert.equal(v3LpShare(0xbb), 'invalid', 'N = 11 is above its ceiling of 10');
+  assert.equal(v3LpShare(0x1ff), 'invalid');
+  assert.equal(v3LpShare(-1), 'invalid');
+  assert.equal(v3LpShare(4.5), 'invalid');
+  assert.equal(v3LpShare(NaN), 'invalid');
+  assert.equal(rowApr(pool()).text, '219');
+  assert.equal(rowApr(pool({ v3FeeProtocol: 0 })).text, '219');
+  assert.equal(rowApr(pool({ v3FeeProtocol: 0x44 })).text, '164.25', 'three quarters of the fee stay with LPs');
+  assert.equal(rowApr(pool({ v3FeeProtocol: 0x66 })).text, '182.5');
+  assert.equal(rowApr(pool({ v3FeeProtocol: 0xaa })).text, '197.1');
+  // Read instead of the packed v4 fee, even beside the marker every reader of the v4 fee refuses.
+  assert.equal(rowApr(pool({ protocolFeeRaw: 1 << 24, v3FeeProtocol: 0x44 })).text, '164.25');
+  assert.deepEqual(rowApr(pool({ protocolFeeRaw: 1 << 24 })), { kind: 'none', reason: 'invalid_protocol_fee' });
+  assert.deepEqual(rowApr(pool({ v3FeeProtocol: 0x46 })), { kind: 'none', reason: 'protocol_fee_directional_unsupported' });
+  assert.deepEqual(rowApr(pool({ v3FeeProtocol: 0x33 })), { kind: 'none', reason: 'invalid_protocol_fee' });
 });
 
 test('a pool the producer cannot describe is refused, by its own reason', () => {

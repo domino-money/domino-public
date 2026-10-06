@@ -372,7 +372,7 @@ function worthColumns(option: PoolOption): boolean {
  * (2026-10-06) says so once it has figures, and that no figures are reported before.
  */
 function noAprTitle(option: PoolOption, reason: RowAprReason): string {
-  if (option.protocolFeeRaw !== PROTOCOL_FEE_UNDESCRIBED) return rowAprReasonText(reason)
+  if (option.protocolFeeRaw !== PROTOCOL_FEE_UNDESCRIBED || option.v3FeeProtocol !== undefined) return rowAprReasonText(reason)
   const reported = option.liquidity.state === 'attributed' || option.liquidity.state === 'attributed_stale'
   return reported ? PROTOCOL_FEE_UNDESCRIBED_TITLE : rowAprReasonText('missing_reported_tvl')
 }
@@ -382,6 +382,7 @@ function RowAprFigure({ option, label = 'Pool APR' }: { option: PoolOption; labe
     integration: option.integration,
     currentLpFeePips: option.feePips,
     protocolFeeRaw: option.protocolFeeRaw,
+    ...(option.v3FeeProtocol !== undefined ? { v3FeeProtocol: option.v3FeeProtocol } : {}),
     liquidity: option.liquidity,
     volume: option.volume,
   })

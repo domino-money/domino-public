@@ -99,6 +99,8 @@ export type NetworkPools =
  * estimate can take (lib/read/screens/rowApr.ts reads only v4's): a v3 pool whose protocol fee is on (there it is a share
  * of the LP fee, not on top of it), or a pool read through the wallet, whose protocol fee was not read. Out of the packed
  * fee's range on purpose, so every estimate refuses it and the APR is a dash, never a figure the method does not describe.
+ * Since 2026-10-06 a v3 row read from chain-pools also carries its slot0.feeProtocol (PoolOption.v3FeeProtocol), and the
+ * estimate takes the LPs' share from that instead (rowApr.ts v3LpShare); the marker alone is still refused.
  */
 export const PROTOCOL_FEE_UNDESCRIBED = 1 << 24
 

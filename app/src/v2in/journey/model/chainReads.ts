@@ -100,9 +100,17 @@ export const passingReply = (reply: ReadV6Reply<unknown>): boolean => reply.kind
 
 /**
  * A pool's protocol fee as a row carries it for the fee APR estimate (2026-10-06): v4's packed fee as read; a v3 pool's
- * only when it is off (0), since there it is a share of the LP fee that the estimate does not describe.
+ * only when it is off (0). A v3 pool whose protocol fee is on keeps PROTOCOL_FEE_UNDESCRIBED here, so every reader of the
+ * packed v4 fee refuses it as before, and carries its slot0.feeProtocol beside it (`v3FeeOf`).
  */
 const protocolFeeOf = (live: LivePool): number => (live.pool.dex === 4 ? live.protocolFee : live.protocolFee === 0 ? 0 : PROTOCOL_FEE_UNDESCRIBED)
+
+/**
+ * Changed on purpose 2026-10-06 (the owner: Base's v3 rows showed TVL and volume but no APR): a v3 pool whose protocol fee is
+ * on carries its slot0.feeProtocol as read-v6 reports it, and the estimate takes the LPs' share of the fee from it
+ * (lib/read/screens/rowApr.ts v3LpShare: the protocol keeps 1/N, as UniswapV3Pool.swap spends it).
+ */
+const v3FeeOf = (live: LivePool): { v3FeeProtocol?: number } => (live.pool.dex === 3 && live.protocolFee !== 0 ? { v3FeeProtocol: live.protocolFee } : {})
 
 /** Whether a pool of the answer is one Domino can open a position in: hookless, on a tier the network offers for its version. */
 function openable(chainId: OtherChainId, pool: PoolRef): boolean {
@@ -136,7 +144,7 @@ export function poolsOfAnswer(chainId: OtherChainId, chosen: TokenDisplay | null
     const first = display(live.pool.currency0)
     const second = display(live.pool.currency1)
     if (!key || !first || !second || !openable(chainId, live.pool as PoolRef)) return []
-    return [poolRow({ pool: live.pool as PoolRef, key, tick: live.tick, sqrtPriceX96: live.sqrtPriceX96, block: answer.snapshot.number, usdPrices: pricesOf(answer, live.pool), protocolFeeRaw: protocolFeeOf(live) }, [first, second], readAt)]
+    return [poolRow({ pool: live.pool as PoolRef, key, tick: live.tick, sqrtPriceX96: live.sqrtPriceX96, block: answer.snapshot.number, usdPrices: pricesOf(answer, live.pool), protocolFeeRaw: protocolFeeOf(live), ...v3FeeOf(live) }, [first, second], readAt)]
   })
 }
 
@@ -177,7 +185,7 @@ export function rereadOf(option: PoolOption, ref: PoolRef, answer: ChainPoolsRes
   const live = answer.pools.find((entry) => samePool(entry.pool as PoolRef, ref))
   const key = live ? keyOf(live) : null
   if (!live || !key) return null
-  const row = poolRow({ pool: ref, key, tick: live.tick, sqrtPriceX96: live.sqrtPriceX96, block: answer.snapshot.number, usdPrices: pricesOf(answer, ref), protocolFeeRaw: protocolFeeOf(live) }, option.currencies, receivedAt - answer.freshness.ageSeconds * 1000)
+  const row = poolRow({ pool: ref, key, tick: live.tick, sqrtPriceX96: live.sqrtPriceX96, block: answer.snapshot.number, usdPrices: pricesOf(answer, ref), protocolFeeRaw: protocolFeeOf(live), ...v3FeeOf(live) }, option.currencies, receivedAt - answer.freshness.ageSeconds * 1000)
   return { ...row, liquidity: option.liquidity, volume: option.volume, providerNote: option.providerNote }
 }
 

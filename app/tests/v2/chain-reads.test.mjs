@@ -141,19 +141,27 @@ test('a test build\'s script serves the chain reads it scripts, answering by req
 const otherChains = require(`${BUILD}lib/create/otherChains.js`);
 const rowApr = require(`${BUILD}lib/read/screens/rowApr.js`);
 
-test('chain-pools rows carry their protocol fee for the APR (v4 as read; v3 only when off) and the facts that tell two rows apart; never the depth as TVL', () => {
+test('chain-pools rows carry their protocol fee for the APR (v4 as read; v3 as its slot0.feeProtocol) and the facts that tell two rows apart; never the depth as TVL', () => {
   const answer = fixture('chain-pools');
   const [v3, v4] = reads.poolsOfAnswer(8453, chosen, answer, 1_000_000);
   assert.equal(v4.protocolFeeRaw, answer.pools[1].protocolFee, 'v4: the packed fee as read');
-  assert.equal(v3.protocolFeeRaw, otherChains.PROTOCOL_FEE_UNDESCRIBED, 'v3 with its protocol fee on: a share of the LP fee the estimate does not describe');
+  assert.equal(v4.v3FeeProtocol, undefined);
+  assert.equal(v3.protocolFeeRaw, otherChains.PROTOCOL_FEE_UNDESCRIBED, 'v3 with its protocol fee on: never read as a packed v4 fee');
+  // Changed on purpose 2026-10-06 (the owner: Base's v3 rows showed no APR): beside it, its slot0.feeProtocol (0x44: a
+  // quarter of the fee each way), from which the estimate takes the LPs' share.
+  assert.equal(v3.v3FeeProtocol, answer.pools[0].protocolFee);
+  assert.equal(v3.v3FeeProtocol, 0x44);
   const off = structuredClone(answer);
   off.pools[0].protocolFee = 0;
   assert.equal(reads.poolsOfAnswer(8453, chosen, off, 1_000_000)[0].protocolFeeRaw, 0, 'v3 with it off: no protocol fee');
+  assert.equal(reads.poolsOfAnswer(8453, chosen, off, 1_000_000)[0].v3FeeProtocol, undefined);
   assert.deepEqual([v3.liquidity.state, v4.volume.state], ['unavailable', 'unavailable'], 'no TVL or volume from the answer itself');
-  // With a TVL and a volume, the estimate refuses the undescribed fee, so the APR is a dash.
+  // With a TVL and a volume: the marker alone is refused, and with the row's slot0.feeProtocol the APR is three quarters
+  // of the no-fee figure (0.05% × 1,000 / 1,000 × 365 = 18.25%, LPs keep 3/4: 13.69%).
   const figure = { state: 'attributed', value: '$1.0K', raw: '1000', zero: false, provider: 'dexscreener', retrievedAt: 1, cacheAgeSeconds: null };
   assert.deepEqual(rowApr.rowApr({ integration: v3.integration, currentLpFeePips: v3.feePips, protocolFeeRaw: v3.protocolFeeRaw, liquidity: figure, volume: figure }), { kind: 'none', reason: 'invalid_protocol_fee' });
-  assert.equal(rowApr.rowApr({ integration: v3.integration, currentLpFeePips: v3.feePips, protocolFeeRaw: 0, liquidity: figure, volume: figure }).kind, 'estimate');
+  assert.equal(rowApr.rowApr({ integration: v3.integration, currentLpFeePips: v3.feePips, protocolFeeRaw: 0, liquidity: figure, volume: figure }).text, '18.25');
+  assert.equal(rowApr.rowApr({ integration: v3.integration, currentLpFeePips: v3.feePips, protocolFeeRaw: v3.protocolFeeRaw, v3FeeProtocol: v3.v3FeeProtocol, liquidity: figure, volume: figure }).text, '13.69');
   assert.deepEqual(reads.factsOfAnswer(answer), {
     [v3.key]: { depthUsd: '102636.571596', liquidity: '1000000000000000000000' },
     [v4.key]: { depthUsd: '0.000000', liquidity: '4200000' },
@@ -172,7 +180,10 @@ test('a pool read again keeps its figures (they are about the pool, not its pric
   const again = reads.rereadOf(figured, networks.refOf(figured), paired, 2_000_000);
   assert.equal(again.tick, 13870);
   assert.equal(again.protocolFeeRaw, 0);
+  assert.equal(again.v3FeeProtocol, undefined);
   assert.deepEqual([again.liquidity, again.volume, again.providerNote], [figured.liquidity, figured.volume, figured.providerNote]);
+  // Added 2026-10-06: read again with its protocol fee on, the slot0.feeProtocol comes with it.
+  assert.equal(reads.rereadOf(figured, networks.refOf(figured), fixture('chain-pools-paired'), 2_000_000).v3FeeProtocol, 0x44);
 });
 
 test('a pasted address is named where it is a token on that network, and nothing where it is not', () => {

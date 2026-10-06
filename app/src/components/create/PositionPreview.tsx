@@ -23,7 +23,7 @@ type Usable = Extract<PoolPrice, { state: 'usable' }>
 /** The row's own figures: its provider TVL, and the APR estimate the row works out, or nothing. */
 function poolFigures(pool: PoolOption): { tvl: string | null; apr: string | null } {
   const tvl = pool.liquidity.state === 'attributed' || pool.liquidity.state === 'attributed_stale' ? pool.liquidity.value : null
-  const apr = rowApr({ integration: pool.integration, currentLpFeePips: pool.feePips, protocolFeeRaw: pool.protocolFeeRaw, liquidity: pool.liquidity, volume: pool.volume })
+  const apr = rowApr({ integration: pool.integration, currentLpFeePips: pool.feePips, protocolFeeRaw: pool.protocolFeeRaw, ...(pool.v3FeeProtocol !== undefined ? { v3FeeProtocol: pool.v3FeeProtocol } : {}), liquidity: pool.liquidity, volume: pool.volume })
   // The one APR rule of every screen (lib/format/apr.ts, audit E21).
   return { tvl, apr: apr.kind === 'estimate' ? `${aprDigits(apr.text) ?? apr.text}% est.` : null }
 }

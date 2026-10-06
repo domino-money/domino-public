@@ -151,10 +151,11 @@ export function factsOfFound(found: readonly Pick<PoolOnChain, 'pool' | 'id' | '
  * (2026-10-06): the pool's protocol fee as the APR estimate takes it (lib/create/otherChains.ts PROTOCOL_FEE_UNDESCRIBED
  * where it cannot).
  */
-export function poolRow(read: { pool: PoolRef; key: PoolIdKey; tick: number; sqrtPriceX96: string; block: number; usdPrices?: readonly [string | null, string | null]; protocolFeeRaw?: number }, currencies: readonly [TokenDisplay, TokenDisplay], readAt: number): PoolOption {
+export function poolRow(read: { pool: PoolRef; key: PoolIdKey; tick: number; sqrtPriceX96: string; block: number; usdPrices?: readonly [string | null, string | null]; protocolFeeRaw?: number; v3FeeProtocol?: number }, currencies: readonly [TokenDisplay, TokenDisplay], readAt: number): PoolOption {
   return {
     ...(read.usdPrices ? { usdPrices: read.usdPrices } : {}),
     ...(read.protocolFeeRaw !== undefined ? { protocolFeeRaw: read.protocolFeeRaw } : {}),
+    ...(read.v3FeeProtocol !== undefined ? { v3FeeProtocol: read.v3FeeProtocol } : {}),
     key: read.key,
     kind: 'discovery',
     currencies: [currencies[0], currencies[1]],
