@@ -104,7 +104,7 @@ python3 -B apply_migrations.py --archive <tar> --archive-sha256 <hex> --commit <
 - **No writer needs pausing.** A writer that waits longer than its own 5 s statement timeout fails that step, and its next run retries it a minute later.
 - **Bounded.** The migration gives up after 5 s without the lock, or after 120 s of building. Either way it rolls back without a receipt, so it can run again.
 - **Nothing to restart.** The planner uses the index on the next read.
-- **Check:** `pg_relation_size('domino_activity.activity_chunk')` is about 40 MB. `EXPLAIN` of the read for one of the large pools shows `Index Scan using activity_chunk`.
+- **Check:** `pg_relation_size('domino_activity.activity_chunk')` is tens of MB: 40 MB on the copy, 27 MB on prod-02. `EXPLAIN` of the read for one of the large pools shows `Index Scan using activity_chunk`.
 - **Rollback:** drop the index as the catalogue owner. `psql -c` runs it outside a transaction, as `CONCURRENTLY` requires, so reads are not blocked:
 
   ```sh
@@ -113,6 +113,10 @@ python3 -B apply_migrations.py --archive <tar> --archive-sha256 <hex> --commit <
   ```
 
   Then move the receipt `/var/backups/domino-migrations/053_activity_chunk_index.json` aside, so the tool can apply the migration again. The reads go back to scanning the table.
+
+**In production since 6 Oct 2026, 16:28:31 UTC** (prod-02, from `b0b28bde`'s archive; [the record](v2/V2_INDEXER_READ_API.md#in-production-robinhood-first), item 11).
+- The apply took 2 s, and no writer step failed.
+- The per-chunk read for the two large pools now plans `Index Scan using activity_chunk`, at an estimated cost of 835 and 629 instead of 243,420.
 
 ## Resume an already stored expensive chunk
 

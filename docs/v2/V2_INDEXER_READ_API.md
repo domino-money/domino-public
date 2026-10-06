@@ -232,6 +232,23 @@ The indexer runs as the catalogue writer, `domino-write`, from the public-data r
     - **Rollbacks:**
       - Each read release keeps the previous 70 drop-ins in `/root/deploy-v2-<commit>/read-dropins/`.
       - Public-data: `install_public_data.py --rollback 99d8f12e…` (files only), then reload and restart the lanes.
+11. **6 Oct 2026, evening: Ethereum and OP Mainnet in chain-balances, and migration 053.**
+    - **Credentials:** the owner sealed `v2-rpc-{ethereum-1,optimism-10}-{chainstack,alchemy}` (step 2 of [Ethereum and OP Mainnet](#ethereum-and-op-mainnet-chain-balances-only)). Each one decrypts to its expected host: `ethereum-mainnet.core.chainstack.com`, `eth-mainnet.g.alchemy.com`, `optimism-mainnet.core.chainstack.com` and `opt-mainnet.g.alchemy.com`.
+    - **The file:** `/etc/domino/read/balance-chain-rpc.json` (`domino-read`, 0600) copies `chain-rpc.json`'s Chainstack and Alchemy entries, with OP Mainnet's public endpoint last. `v2_rpc.py validate` passed on both chains as the reader.
+    - **Egress, 15:59:13 UTC:** collected with `--balance-chains` on top of the live flags, keeping every earlier address. It changed only the policy, `read.hosts` and the reader's 60 drop-in. Nothing restarted, and the tunnel kept its 4 connections.
+    - **Check as the reader:** Chainstack and Alchemy passed on both chains. They proved the chain id, a head 2–14 s old, all 8 contracts on Ethereum and all 9 on OP Mainnet, and the archive probe. OP Mainnet's public endpoint answered `http_429`: it stays a last resort, as on Base and Arbitrum.
+    - **Reader `99d8f12e` with `--balance-chains`, 15:59:48 UTC:** the reader's drop-in gained only `DOMINO_V2_BALANCE_CHAIN_RPC_FILE`; the gateway's did not change.
+      - `chain-balances` with chain 1 and 10 tokens: both chains `current`. ETH is priced from each chain's Chainlink ETH/USD (US$ 2,706.61 and US$ 2,701.52), USDC at US$ 1 (`chain_stable`).
+      - Without `tokens`: the three Domino chains `current`, as before. The journal has no `balance_chains_unavailable`.
+      - The Worker (`a0a0b1c4`) already accepted chains 1 and 10, so the app's `SERVED_BALANCE_CHAINS` change is all that is left (the F7 delta of 6 Oct, evening).
+    - **Migration 053 (#385, `b0b28bde`), 16:28:29–16:28:31 UTC:** `apply_migrations.py --inspect`, then `--apply`, from the merge commit's archive. It ran as `domino-admin` / `domino_catalogue_admin`, with file sha256 `506f182b…`.
+      - The index is 27 MB and valid.
+      - `EXPLAIN` of the per-chunk read for `0x84bd…cad0b6` and `0x4be9…f38a` now shows `Index Scan using activity_chunk`, at an estimated cost of 835 and 629. The parallel sequential scan before it cost 243,420.
+      - No writer step failed during the build, and no unit failed.
+    - **Rollbacks:**
+      - Balance chains: the previous drop-ins are in `/root/deploy-v2-99d8f12e…/read-dropins/70-*-release.balance-before.conf`, and the egress backup is in `…/egress-backup-balance-20261006T155913Z` (`install_continuous_egress.py --restore`, then `nft -f`).
+      - Removing `balance-chain-rpc.json` and restarting the reader instead leaves chains 1 and 10 `chain_not_configured`.
+      - Migration 053: the `DROP INDEX CONCURRENTLY` in [historical capacity](../HISTORICAL_CAPACITY.md#the-per-chunk-read-and-its-index).
 
 ### Base and Arbitrum
 
@@ -270,17 +287,22 @@ The public endpoints were throttled at their 2 requests per second.
 
 ### Ethereum and OP Mainnet (`chain-balances` only)
 
-The owner's steps, in this order. Nothing here touches Base's, Arbitrum's or Robinhood's reads.
+Live since 6 Oct 2026, 15:59:48 UTC ([In production](#in-production-robinhood-first), item 11). The owner's steps, in this order. Nothing here touches Base's, Arbitrum's or Robinhood's reads.
 
 1. **Endpoints.** Create an Ethereum and an OP Mainnet endpoint at Chainstack and at Alchemy, as for Base and Arbitrum (Chainstack primary, Alchemy fallback only).
-2. **Seal the URLs** on `domino-prod`, one credential per endpoint, each typed at the prompt (never on a command line):
+2. **Seal the URLs** on `domino-prod`, one credential per endpoint, each pasted at its prompt (never on a command line). From the operator's machine, as the owner did on 6 Oct 2026:
 
    ```sh
-   sudo systemd-ask-password -n "URL:" | sudo systemd-creds encrypt --with-key=host+tpm2 --name=v2-rpc-ethereum-1-chainstack - /etc/credstore.encrypted/v2-rpc-ethereum-1-chainstack
-   sudo systemd-ask-password -n "URL:" | sudo systemd-creds encrypt --with-key=host+tpm2 --name=v2-rpc-ethereum-1-alchemy - /etc/credstore.encrypted/v2-rpc-ethereum-1-alchemy
-   sudo systemd-ask-password -n "URL:" | sudo systemd-creds encrypt --with-key=host+tpm2 --name=v2-rpc-optimism-10-chainstack - /etc/credstore.encrypted/v2-rpc-optimism-10-chainstack
-   sudo systemd-ask-password -n "URL:" | sudo systemd-creds encrypt --with-key=host+tpm2 --name=v2-rpc-optimism-10-alchemy - /etc/credstore.encrypted/v2-rpc-optimism-10-alchemy
+   ssh -t domino-prod 'for n in ethereum-1-chainstack ethereum-1-alchemy optimism-10-chainstack optimism-10-alchemy; do sudo systemd-ask-password -n --timeout=0 "URL $n:" | sudo systemd-creds encrypt --with-key=host+tpm2 --name="v2-rpc-$n" - "/etc/credstore.encrypted/v2-rpc-$n" && sudo chmod 0600 "/etc/credstore.encrypted/v2-rpc-$n"; done'
    ```
+
+   - `-n` keeps the newline out of the credential. `--timeout=0` keeps each prompt open while its URL is copied.
+   - `systemd-creds` writes the file with the umask's mode, 0644 on this VM, so `chmod` makes it 0600 like the others. Its notice that the host key "is not located on encrypted media" is expected.
+   - The check names each credential's host, never its path, where the key is:
+
+     ```sh
+     for n in ethereum-1-chainstack ethereum-1-alchemy optimism-10-chainstack optimism-10-alchemy; do printf '%-24s %s ' "$n" "$(sudo stat -c %a "/etc/credstore.encrypted/v2-rpc-$n")"; sudo systemd-creds decrypt "/etc/credstore.encrypted/v2-rpc-$n" - | python3 -c 'import sys, urllib.parse as p; s = sys.stdin.read(); u = p.urlsplit(s); print(u.hostname, "ok" if u.scheme == "https" and len(u.path) > 8 and s == s.strip() else "REDO")'; done
+     ```
 
    The reader already imports every `v2-rpc-*` credential.
 3. **The file:** `/etc/domino/read/balance-chain-rpc.json`, beside `chain-rpc.json` (owned by `domino-read`, mode 0600). Copy `chain-rpc.json`'s Chainstack and Alchemy entries as they are (`name`, `archive` and the three limits), change each `host`, and put them under the two chains, in that order:
