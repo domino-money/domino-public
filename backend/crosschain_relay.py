@@ -1,10 +1,16 @@
 """Relay (api.relay.link) for the deposit from another chain: quote, status, fee record, chains.
 
-Quote: POST /quote/v2, EXACT_INPUT, with appFees [{recipient, fee: "35"}] (bps of
-the input, charged by Relay on top of its own fees and credited to an off-chain
-USDC app balance that Domino claims), refundTo = the user, explicitDeposit
-(approve, then depositErc20: safe for every wallet type) and, when asked, a
-destination gas top-up. The key is optional for quotes and status.
+Quote: POST /quote/v2 with appFees [{recipient, fee: "35"}] (charged by Relay on
+top of its own fees and credited to an off-chain USDC app balance that Domino
+claims), refundTo = the user, explicitDeposit (approve, then depositErc20: safe
+for every wallet type) and, when asked, a destination gas top-up. The key is
+optional for quotes and status. Two trade types:
+- exact input: EXACT_INPUT for the amount the wallet sends;
+- by output (crosschain-v1 1.1.0-rc.1): EXPECTED_OUTPUT for the need grossed up
+  by the user's slippage (expected_for_minimum), so that the minimum the solver
+  signs, the expected amount less the slippage, covers the need. Relay then
+  computes the input. Never EXACT_OUTPUT: its minimum is the expected amount, so
+  any shortfall fails the fill (live answers of 6 Oct 2026).
 
 What is checked before any step reaches the wallet (parse_quote):
 - only Relay's protocol v2 deposit into the Depository pinned for the origin
@@ -14,8 +20,14 @@ What is checked before any step reaches the wallet (parse_quote):
 - the order the solver signed pays the user's own wallet, in the requested
   token, on the requested chain, with no destination calls, and refunds only
   the user;
-- the input amount, token and chain are the request's, everywhere they appear;
-- the app fee Relay reports is 35 bps of the input, in the input token.
+- the input token and chain are the request's, and the input amount is the
+  same everywhere it appears: the request's in exact input; by output, the
+  signed payment's, which defines it;
+- by output, the order prices the amount asked and its signed minimum covers
+  the need;
+- the app fee Relay reports is 35 bps, in the input token: of the input in
+  exact input; by output, of the net amount, (input − relayer fee) × 35 / 10035,
+  as Relay computes it there (every output answer of 6 Oct 2026, to the unit).
 
 Measurement: GET /requests/v3?id= returns appFees.quoted and appFees.actual; it
 needs the API key (/requests/v2 retires on 24 Nov 2026).
@@ -73,10 +85,21 @@ def _single_item(step, origin, owner):
     return address(data.get('to'), 'relay_quote_step_target'), hexdata(data.get('data'), 'relay_quote_step_data'), value
 
 
+def expected_for_minimum(need, slippage_bps):
+    """What to ask Relay for by output (EXPECTED_OUTPUT) so that the minimum its solver signs, the expected amount
+    less the slippage, floor(expected × (10000 − s) / 10000), is at least `need`: ceil(need × 10000 / (10000 − s)).
+    Live, 6 Oct 2026: 100,502,513 USDG asked at 50 bps signed a minimum of exactly 100,000,000, and 0.050251256281407036
+    ETH one of exactly 0.05."""
+    return -(-need * 10000 // (10000 - slippage_bps))
+
+
 def parse_quote(payload, request, pins, *, fee_bps=APP_FEE_BPS):
-    """A Relay /quote/v2 answer, checked against the request; returns the normalized candidate."""
+    """A Relay /quote/v2 answer, checked against the request; returns the normalized candidate.
+
+    The request is the service's provider call (crosschain_service.provider_call): exact input names `amount`; by
+    output it names `need`, what must arrive, and `asked`, what Relay was asked to deliver."""
     owner, origin, destination = request['owner'], request['originChainId'], request['destinationChainId']
-    token_in, token_out, amount = request['originToken'], request['destinationToken'], request['amount']
+    token_in, token_out, by_output = request['originToken'], request['destinationToken'], request['amountKind'] == 'output'
     origin_pin, destination_pin = pins['chains'].get(origin, {}).get('relay'), pins['chains'].get(destination, {}).get('relay')
     if origin_pin is None or destination_pin is None:
         raise _unsafe('chain_not_pinned')
@@ -92,8 +115,13 @@ def parse_quote(payload, request, pins, *, fee_bps=APP_FEE_BPS):
     payment = protocol.get('paymentDetails')
     if (not isinstance(payment, dict) or payment.get('chainId') != origin_pin['slug']
             or address(payment.get('depository'), 'relay_quote_payment') != depository
-            or address(payment.get('currency'), 'relay_quote_payment') != token_in
-            or raw(payment.get('amount'), 'relay_quote_payment') != amount):
+            or address(payment.get('currency'), 'relay_quote_payment') != token_in):
+        raise _unsafe('quote_payment_mismatch')
+    signed = raw(payment.get('amount'), 'relay_quote_payment')
+    # The input: the request's amount in exact input. By output the solver computed it, and its signed payment
+    # defines it; every other place it appears below must then say the same.
+    amount = signed if by_output else request['amount']
+    if signed != amount or signed == 0:
         raise _unsafe('quote_payment_mismatch')
     order = protocol.get('orderData')
     if not isinstance(order, dict) or not isinstance(order.get('inputs'), list) or len(order['inputs']) != 1:
@@ -129,6 +157,12 @@ def parse_quote(payload, request, pins, *, fee_bps=APP_FEE_BPS):
     # The signed minimum honours the slippage the user chose.
     if minimum_out < expected_out * (10000 - request['slippageBps']) // 10000 - 1:
         raise _unsafe('quote_minimum_below_slippage')
+    if by_output:
+        # The solver priced the amount asked, and the minimum it signed, the guarantee, covers the need.
+        if expected_out != request['asked']:
+            raise _unsafe('quote_output_not_requested')
+        if minimum_out < request['need']:
+            raise _unsafe('quote_minimum_below_request')
     # The summary the user is shown must say the same.
     details = payload.get('details')
     if not isinstance(details, dict):
@@ -182,7 +216,18 @@ def parse_quote(payload, request, pins, *, fee_bps=APP_FEE_BPS):
     app = fees.get('app')
     _currency(app, origin, token_in, 'quote_app_fee_currency')
     charged = raw(app.get('amount'), 'relay_quote_app_fee')
-    expected_fee = bps_of(amount, fee_bps)
+    if by_output:
+        # By output Relay charges the 35 bps on the net amount, what is left of the input after its own fee and this
+        # one: (input − relayer fee) × 35 / 10035. Its relayer fee is then part of the rule, so it must be there, in
+        # the input token on the origin, and no more than the input. A gas top-up is in that fee, outside the base.
+        relayer = fees.get('relayer')
+        _currency(relayer, origin, token_in, 'quote_fee_base')
+        relayer_fee = raw(relayer.get('amount'), 'relay_quote_fee_base')
+        if relayer_fee > amount:
+            raise _unsafe('quote_fee_base')
+        expected_fee = (amount - relayer_fee) * fee_bps // (10000 + fee_bps)
+    else:
+        expected_fee = bps_of(amount, fee_bps)
     if expected_fee == 0 or abs(charged - expected_fee) > 1:
         raise _unsafe('quote_app_fee_not_applied')
     gas_topup = None
@@ -210,7 +255,7 @@ def parse_quote(payload, request, pins, *, fee_bps=APP_FEE_BPS):
             pass
     eta = details.get('timeEstimate')
     eta = eta if type(eta) is int and 0 <= eta <= MAX_ETA_SECONDS else None
-    return {'provider': 'relay', 'status': 'quoted', 'reason': None,
+    return {'provider': 'relay', 'status': 'quoted', 'reason': None, 'inputRaw': str(amount),
             'outputRaw': str(expected_out), 'minimumOutputRaw': str(minimum_out),
             'appFee': {'amountRaw': str(charged), 'chainId': origin, 'token': token_in, 'charged': 'origin_input'},
             'providerFee': provider_fee, 'originGas': origin_gas,
@@ -316,10 +361,13 @@ class RelayProvider:
         self.records = Memo()
 
     def quote(self, request):
+        # By output, the need grossed up by the slippage (expected_for_minimum); never EXACT_OUTPUT.
+        output = request['amountKind'] == 'output'
         body = {'user': request['owner'], 'recipient': request['owner'], 'refundTo': request['owner'],
                 'originChainId': request['originChainId'], 'destinationChainId': request['destinationChainId'],
                 'originCurrency': request['originToken'], 'destinationCurrency': request['destinationToken'],
-                'amount': str(request['amount']), 'tradeType': 'EXACT_INPUT',
+                'amount': str(request['asked'] if output else request['amount']),
+                'tradeType': 'EXPECTED_OUTPUT' if output else 'EXACT_INPUT',
                 'appFees': [{'recipient': self.fee_recipient, 'fee': str(self.fee_bps)}],
                 'explicitDeposit': True, 'slippageTolerance': str(request['slippageBps'])}
         if request['destinationGas']:

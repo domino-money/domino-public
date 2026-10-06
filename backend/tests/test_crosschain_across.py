@@ -9,7 +9,7 @@ import unittest
 from eth_abi import decode, encode
 
 from crosschain_support import (FEE, FILL_HASH, OTHER, OWNER, USDC_ARBITRUM, USDC_BASE, USDG, WETH_ROBINHOOD, ZERO,
-                                FakeHttp, FakeRpc, across_deposit, across_record, fill_receipt, fixture,
+                                FakeHttp, FakeRpc, across_deposit, across_record, fill_receipt, fixture, output_call,
                                 provider_request, quote_time)
 from discovery import DataError
 from crosschain_across import (DEPOSIT, DEPOSIT_NATIVE, DRAIN, EMIT, INSTRUCTIONS, MAKE_CALL, TRANSFER, WITHDRAW,
@@ -31,6 +31,15 @@ USDG_QUOTE = 'across-quote-usdc-arbitrum-usdg-robinhood.json'
 ETH_QUOTE = 'across-quote-eth-arbitrum-robinhood.json'
 USDG_REQUEST = dict(origin=42161, origin_token=USDC_ARBITRUM, destination=4663, destination_token=USDG)
 ETH_REQUEST = dict(origin=42161, origin_token=ZERO, destination=4663, destination_token=ZERO, amount='50000000000000000')
+# The answers by output of 6 Oct 2026 (minOutput), and Across' exactOutput answer, which is never admitted.
+OUTPUT_USDG = 'across-quote-min-output-usdc-base-usdg.json'            # 100 USDG from Base's USDC
+OUTPUT_ARB_BASE = 'across-quote-min-output-usdc-arbitrum-base.json'    # 100 USDC from Arbitrum to Base
+OUTPUT_ETH = 'across-quote-min-output-eth-base-robinhood.json'         # 0.05 ETH from Base to Robinhood
+EXACT_OUTPUT = 'across-quote-exact-output.json'                        # 100 USDG from Base's USDC, exactOutput
+USDG_FROM_BASE = dict(origin=8453, origin_token=USDC_BASE, destination=4663, destination_token=USDG)
+USDC_ARB_TO_BASE = dict(origin=42161, origin_token=USDC_ARBITRUM, destination=8453, destination_token=USDC_BASE)
+ETH_FROM_BASE = dict(origin=8453, origin_token=ZERO, destination=4663, destination_token=ZERO)
+SPOKE_BASE = '0x09aea4b2242abc8bb4bb78d537a67a245a7bec64'
 word = lambda value: bytes.fromhex(value[2:].rjust(64, '0'))
 
 
@@ -217,7 +226,93 @@ class AcrossQuoteTests(unittest.TestCase):
         self.assertEqual((params['appFee'], params['appFeeRecipient'], params['integratorId']), ('0.0035', FEE, '0xdead'))
         self.assertEqual((params['depositor'], params['recipient'], params['refundAddress'], params['refundOnOrigin']),
                          (OWNER, OWNER, OWNER, 'true'))
-        self.assertEqual((params['tradeType'], params['slippage']), ('exactInput', '0.0050'))
+        self.assertEqual((params['tradeType'], params['amount'], params['slippage']), ('exactInput', '100000000', '0.0050'))
+
+
+class AcrossOutputQuoteTests(unittest.TestCase):
+    """By output (minOutput): an exact-input deposit whose input Across padded so that at least the need arrives, net
+    of Domino's fee. The input is Across', the same everywhere the answer and its deposit state it; exactOutput is
+    refused by either mode."""
+
+    def parse(self, payload, name, need, **request):
+        return parse_quote(payload, output_call(need, **request), PINS, DESTINATIONS, fee_recipient=FEE, now=quote_time(name))
+
+    def refuse(self, payload, code, name=OUTPUT_USDG, need=100000000, **request):
+        with self.assertRaises(DataError) as caught:
+            self.parse(payload, name, need, **(request or USDG_FROM_BASE))
+        self.assertEqual(str(caught.exception), code)
+
+    def test_every_recorded_answer_by_output(self):
+        cases = ((OUTPUT_USDG, 100000000, USDG_FROM_BASE, SPOKE_BASE, ('100902201', '100473291', 352891)),
+                 (OUTPUT_ARB_BASE, 100000000, USDC_ARB_TO_BASE, SPOKE_ARBITRUM, ('100851750', '100481838', 352921)),
+                 (OUTPUT_ETH, 50000000000000000, ETH_FROM_BASE, None, ('50425875000000000', '50229569590961096', 176420966952698)))
+        for name, need, request, spoke, (sent, delivered, fee) in cases:
+            with self.subTest(name=name):
+                payload = fixture(name)
+                quote = self.parse(payload, name, need, **request)
+                self.assertEqual((quote['inputRaw'], quote['outputRaw'], quote['minimumOutputRaw']), (sent, delivered, delivered))
+                # The padding arrives as surplus, drained to the user with the rest.
+                self.assertGreater(int(delivered), need)
+                # Domino's 35 bps of the deposit's output, paid first on the destination, as in exact input.
+                output_amount = across_deposit(payload)['outputAmount']
+                self.assertEqual((fee, int(delivered)), (output_amount * 35 // 10000, output_amount - fee))
+                self.assertEqual(quote['appFee']['amountRaw'], str(fee))
+                if request['origin_token'] == ZERO:
+                    self.assertIsNone(quote['approval'])
+                    self.assertEqual((quote['deposit']['to'], quote['deposit']['valueRaw']), (PERIPHERY, sent))
+                else:
+                    self.assertEqual(quote['approval'], {'token': request['origin_token'], 'spender': spoke, 'amountRaw': sent})
+                    self.assertEqual((quote['deposit']['to'], quote['deposit']['valueRaw']), (spoke, '0'))
+
+    def test_by_output_only_min_output_and_never_exact_output(self):
+        # Across' exactOutput, recorded live: refused by output, and as the exact input of what it takes.
+        self.refuse(fixture(EXACT_OUTPUT), 'across_quote_trade_type', EXACT_OUTPUT)
+        with self.assertRaisesRegex(DataError, '^across_quote_trade_type$'):
+            parse_quote(fixture(EXACT_OUTPUT), provider_request(**USDG_FROM_BASE, amount='100902201'), PINS, DESTINATIONS,
+                        fee_recipient=FEE, now=quote_time(EXACT_OUTPUT))
+        # Renamed, its message would still pay the user exactly and drain the rest to Across: refused all the same.
+        renamed = fixture(EXACT_OUTPUT)
+        renamed['amountType'] = 'minOutput'
+        self.refuse(renamed, 'across_message_fee_call', EXACT_OUTPUT)
+        # By output, an exact-input answer is not what was asked.
+        payload = fixture(OUTPUT_USDG)
+        payload['amountType'] = 'exactInput'
+        self.refuse(payload, 'across_quote_trade_type')
+
+    def test_the_input_is_acrosss_own_and_the_deposit_takes_it(self):
+        def changed(**fields):
+            payload = fixture(OUTPUT_USDG)
+            for key, value in fields.items():
+                if value is None:
+                    payload.pop(key)
+                else:
+                    payload[key] = value
+            return payload
+        self.refuse(changed(maxInputAmount='100902202'), 'across_quote_input_mismatch')
+        self.refuse(changed(maxInputAmount=None), 'across_quote_input_mismatch')
+        self.refuse(changed(inputAmount='0', maxInputAmount='0'), 'across_quote_input_mismatch')
+        self.refuse(changed(inputAmount='100902202', maxInputAmount='100902202'), 'across_quote_deposit_amount')
+        self.refuse(rebuild(fixture(OUTPUT_USDG), inputAmount=100902202), 'across_quote_deposit_amount')
+        native = fixture(OUTPUT_ETH)
+        native['swapTx']['value'] = str(int(native['swapTx']['value']) + 1)
+        self.refuse(native, 'across_quote_deposit_value', OUTPUT_ETH, 50000000000000000, **ETH_FROM_BASE)
+
+    def test_what_the_user_is_guaranteed_covers_the_need(self):
+        self.refuse(fixture(OUTPUT_USDG), 'across_quote_minimum_below_request', need=100473292)
+        self.assertEqual(self.parse(fixture(OUTPUT_USDG), OUTPUT_USDG, 100473291, **USDG_FROM_BASE)['minimumOutputRaw'], '100473291')
+
+    def test_by_output_across_is_asked_min_output_for_the_need(self):
+        http = FakeHttp('across', {('GET', '/swap/approval'): fixture(OUTPUT_USDG)})
+        provider = AcrossProvider(http, PINS, DESTINATIONS, fee_recipient=FEE, integrator_id='0xdead')
+        quote = provider.quote(output_call(100000000, **USDG_FROM_BASE), now=quote_time(OUTPUT_USDG))
+        self.assertEqual(quote['inputRaw'], '100902201')
+        params = http.calls[0]['params']
+        self.assertEqual((params['tradeType'], params['amount'], params['slippage'], params['appFee']),
+                         ('minOutput', '100000000', '0.0050', '0.0035'))
+        self.assertEqual((params['inputToken'], params['outputToken'], params['originChainId'], params['destinationChainId']),
+                         (USDC_BASE, USDG, '8453', '4663'))
+        self.assertEqual((params['depositor'], params['recipient'], params['refundAddress'], params['refundOnOrigin']),
+                         (OWNER, OWNER, OWNER, 'true'))
 
 
 class AcrossTrackingTests(unittest.TestCase):

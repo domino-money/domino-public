@@ -11,12 +11,14 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from crosschain_support import CSRF, FEE, OWNER, PRIVATE, SESSION, default_routes, make_service, quote_request
+from crosschain_support import (CSRF, FEE, OWNER, PRIVATE, RC1, SESSION, default_routes, make_service, previous_request,
+                                quote_request)
 from fastapi.testclient import TestClient
 import hop_log
 from crosschain_api import CrosschainGateway, build_service, create_crosschain_app, main
 from crosschain_config import load_settings
-from crosschain_models import CONTRACT_VERSION
+from crosschain_models import CONTRACT_VERSION, PREVIOUS_VERSION
+import crosschain_models_rc1
 from crosschain_service import DECISION_KEYS
 from session_api import acquire_session_lock
 
@@ -78,6 +80,50 @@ class CrosschainApiTests(unittest.TestCase):
         self.assertEqual(self.client.get('/internal/crosschain/v1/quote').status_code, 405)
         response = self.post(body={**quote_request(), 'amountRaw': '1' * 5000})
         self.assertEqual(response.json(), {'error': 'request_too_large'})
+
+    def versioned(self, version, body, route='quote'):
+        with redirect_stderr(io.StringIO()) as printed:
+            response = self.post(route, body, headers={**HEADERS, 'X-Domino-Crosschain-Contract': version})
+        return response, json.loads(printed.getvalue().splitlines()[-1])
+
+    def test_the_switch_window_serves_both_versions_each_in_its_own(self):
+        for version, body in ((CONTRACT_VERSION, quote_request()), (PREVIOUS_VERSION, previous_request())):
+            with self.subTest(version=version):
+                response, record = self.versioned(version, body)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.headers['X-Domino-Crosschain-Contract'], version)
+                self.assertEqual(response.json()['contractVersion'], version)
+                self.assertEqual((record['contractVersion'], record['status']), (version, 200))
+        # A 1.0.0-rc.1 answer is the one main served, byte for byte, for the same provider answers.
+        response, _ = self.versioned(PREVIOUS_VERSION, previous_request())
+        frozen = json.loads((RC1 / 'responses' / 'quote.json').read_text())
+        served = crosschain_models_rc1.RESPONSE_MODELS['quote'].model_validate(frozen).model_dump()
+        self.assertEqual(response.content, json.dumps(served, ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode())
+
+    def test_the_switch_window_refuses_every_other_version_and_holds_each_to_its_own_request(self):
+        for version in ('1.0.0-rc.2', '1.0.0', '1.1.0', '1.1.0-rc.2', f'{CONTRACT_VERSION}, {PREVIOUS_VERSION}', ''):
+            with self.subTest(version=version):
+                response, record = self.versioned(version, quote_request())
+                self.assertEqual(response.json(), {'error': 'upstream_contract_mismatch'})
+                self.assertEqual((response.headers['X-Domino-Crosschain-Contract'], record['contractVersion']),
+                                 (CONTRACT_VERSION, CONTRACT_VERSION))
+        headers = {name: value for name, value in HEADERS.items() if name != 'X-Domino-Crosschain-Contract'}
+        self.assertEqual(self.post(headers=headers).json(), {'error': 'upstream_contract_mismatch'})
+        # Each version's request is its own: refused before any provider, in the version the request named.
+        for version, body in ((CONTRACT_VERSION, previous_request()), (PREVIOUS_VERSION, quote_request())):
+            with self.subTest(version=version):
+                response, record = self.versioned(version, body)
+                self.assertEqual(response.json(), {'error': 'invalid_request'})
+                self.assertEqual((response.headers['X-Domino-Crosschain-Contract'], record['contractVersion']), (version, version))
+        # A refusal before the header's own check is answered in the version named too, when it is accepted.
+        for version, answered in ((CONTRACT_VERSION, CONTRACT_VERSION), (PREVIOUS_VERSION, PREVIOUS_VERSION),
+                                  ('1.0.0-rc.2', CONTRACT_VERSION)):
+            with self.subTest(version=version), redirect_stderr(io.StringIO()):
+                response = self.post(headers={**HEADERS, 'X-Domino-Crosschain-Contract': version,
+                                              'X-Domino-Browser-Origin': 'https://evil.example'})
+                self.assertEqual((response.json(), response.headers['X-Domino-Crosschain-Contract']),
+                                 ({'error': 'origin_not_allowed'}, answered))
+        self.assertEqual(self.relay_http.calls, [])
 
     def test_a_disabled_listener_serves_nothing(self):
         with TestClient(create_crosschain_app(), client=('127.0.0.1', 43000)) as client:

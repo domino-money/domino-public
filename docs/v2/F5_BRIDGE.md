@@ -16,11 +16,15 @@ S2 of [#283](https://github.com/domino-money/domino/issues/283): a user with fun
 ## Flow
 
 1. **Origins.** The app asks `origins` for a destination chain and token. The destination token must be one of that chain's charge currencies: its stable (USDG on Robinhood, USDC on Base and Arbitrum), ETH or WETH. The answer lists the EVM chains and tokens each provider can bridge from, merged per chain.
-2. **Quote.** The app asks `quote` with the origin chain and token, the destination, the exact input amount, the slippage (10–500 bps) and `destinationGas`. The backend then:
+2. **Quote.** The app asks `quote` with the origin chain and token, the destination, the amount, the slippage (10–500 bps) and `destinationGas`. Since crosschain-v1 1.1.0-rc.1 (owner's authorization, 6 Oct 2026) the amount is asked one of two ways (`amountKind`):
+   - `exact_input`: `amountRaw` is what leaves the wallet;
+   - `output`: `amountRaw` is the least that must arrive in the wallet after every fee, and `maxInputRaw` the most the wallet may send. The backend answers with what each provider's deposit takes.
+
+   The backend then:
    - quotes Relay and Across at once, both with the 35 bps fee;
    - checks every answer (below);
-   - picks the better output for the user;
-   - returns the wallet steps.
+   - picks the better rate for the user;
+   - returns the wallet steps for what the winner's deposit takes (`inputRaw`).
 3. **Wallet.** The app switches the wallet to the origin chain. It sends the exact `approval`, skipped when the allowance already covers the amount, then the `deposit`. Both come from the session's wallet and must go out before `expiresAt` (120 s); re-quote after that.
 4. **Status.** The app polls `status` every `nextCheckSeconds` with the deposit transaction hash (plus Relay's `requestId`) and the last state it showed, until the answer is terminal.
 5. **Position.** Once `filled`, the funds are in the user's wallet on the destination, and the app continues with S1 there.
@@ -29,48 +33,74 @@ The owner is always the SIWE session's wallet: the depositor, the recipient and 
 
 ### Choosing the provider
 
-- The candidate that delivers more of the destination token to the user's wallet wins. That output is counted after every provider fee and the app fee, and it is an exact integer in the same token for both.
-- Equal outputs go to the shorter time estimate, then to Relay.
+- The candidate with the better rate wins: more of the destination token in the user's wallet per unit sent (`outputRaw / inputRaw`). The output is counted after every provider fee and the app fee. Both amounts are exact integers, and the rates are compared exactly (`E_a·I_b` against `E_b·I_a`), never as floats.
+- Equal rates go to the smaller input, then to the shorter time estimate, then to Relay.
+- In exact input both candidates take the amount asked, so this is the larger output, as before 1.1.0-rc.1. By output the inputs differ: the owner chose the rate over the smaller input (6 Oct 2026). Relay's input is padded by the user's slippage and Across' by about 0.47%, so the smaller input would follow those paddings rather than the fees.
+- By output, a quote whose deposit needs more than `maxInputRaw` is `input_above_max`. It is still priced, so the app can say what it would take, but it is never chosen. With both above it there is no decision. Destination gas is judged first: a candidate that cannot deliver the gas asked for is `destination_gas_unsupported`, above the cap or not.
 - Origin gas is shown for each but does not decide. Both need the same wallet transactions (an exact approval for an ERC-20, then one deposit), and their gas figures are unverified provider estimates. Across often reports none, since its simulation fails for a wallet without allowance.
-- `destinationGas: true` asks for native gas on the destination with a non-native delivery, so the user can create the position without holding ETH there. Only Relay's `topupGas` provides it, about US$2 of ETH taken from the output. Across has no such option and is then `destination_gas_unsupported`.
-- The answer states the comparison: each candidate's output and minimum, the app fee and the provider fee with their tokens, origin gas, delivered gas and the time estimate, plus the winner's margin in raw units and bps. `runtime.mjs` recomputes the decision.
+- `destinationGas: true` asks for native gas on the destination with a non-native delivery, so the user can create the position without holding ETH there. Only Relay's `topupGas` provides it, about US$2 of ETH taken from the output. By output, Relay adds its cost to the input instead, and the output stays whole. Across has no such option and is then `destination_gas_unsupported`.
+- The answer states the comparison: each candidate's input, output and minimum, the app fee and the provider fee with their tokens, origin gas, delivered gas and the time estimate.
+  - `advantageRaw` is the extra output the winner delivers for the other's input, `floor(E_w·I_o / I_w) − E_o`.
+  - `advantageBps` is `(E_w·I_o − E_o·I_w) · 10000 // (E_o·I_w)`.
+  - In exact input they are the output margin and its bps, as before.
+  - `runtime.mjs` recomputes the decision and both figures.
+
+**Live comparison by output, 6 Oct 2026** (100 USDG on Robinhood from Base's USDC, 50 bps):
+
+| | Sends | Expected | Guaranteed |
+| --- | --- | --- | --- |
+| Relay | 100.916974 USDC | 100.502513 USDG | 100 USDG |
+| Across | 100.902201 USDC | 100.473291 USDG | 100.473291 USDG |
+
+Relay wins on rate: 14,509 USDG units more for Across' input, 1 bp. The same pair in exact input (100 USDC) also went to Relay, by 13,451 units.
 
 ### What is checked before a step reaches the wallet
 
 Every check refuses the whole quote (`status: "unsafe"`, `reason` naming the check). The other provider can still serve the request.
 
 **Relay** (`backend/crosschain_relay.py`). Only protocol v2 deposits into the Depository pinned for the origin chain are admitted:
-- `depositNative(user, orderId)` with value = amount, or an exact `approve(depository, amount)` then `depositErc20(user, token, amount, orderId)`;
+- `depositNative(user, orderId)` with value = the input, or an exact `approve(depository, input)` then `depositErc20(user, token, input, orderId)`;
 - an implicit transfer, a router call, a deposit address or another chain is refused.
+
+Relay is asked `EXACT_INPUT` for an exact input. By output it is asked `EXPECTED_OUTPUT` for the need grossed up by the user's slippage, `ceil(need × 10000 / (10000 − slippageBps))`. The minimum its solver signs is the expected amount less the slippage, so it is then at least the need: asking 100.502513 USDG at 50 bps signed exactly 100 USDG. Relay is never asked `EXACT_OUTPUT`, whose minimum is the expected amount, so any shortfall fails the fill.
+
+The input is the request's amount in exact input. By output the solver computes it, and the signed payment (`paymentDetails.amount`, positive) defines it.
 
 The solver-signed order must:
 - pay the user's wallet, in the requested token, on the requested chain;
 - carry no destination calls;
 - refund only the user;
-- take exactly the requested input;
-- keep a minimum within the user's slippage.
+- take exactly the input, which must be the same in the payment, the order, the summary, the approval and the deposit;
+- keep a minimum within the user's slippage;
+- by output, price exactly the amount asked (`relay_quote_output_not_requested`) with a signed minimum of at least the need (`relay_quote_minimum_below_request`).
 
-The order id in the calldata must be the order's. The summary Relay shows must match the order. The app fee Relay reports must be 35 bps of the input, in the input token.
+The order id in the calldata must be the order's. The summary Relay shows must match the order. The app fee Relay reports must be in the input token, and within one unit of:
+- in exact input, 35 bps of the input;
+- by output, what Relay charges there: 35 bps of the net amount, `floor((input − relayer fee) × 35 / 10035)`. Every output answer of 6 Oct 2026 matched it to the unit. It is about 34.86 bps of what is sent, or 34.18 bps with a gas top-up, which stays outside the base. The relayer fee is then part of the rule: it must be there, in the input token on the origin, and no more than the input (`relay_quote_fee_base`). The label stays "Domino fee 0.35%", and the amount shown is Relay's.
 
-**Across** (`backend/crosschain_across.py`). Only plain bridges (`bridgeableToBridgeable`), exact input, are admitted:
+**Across** (`backend/crosschain_across.py`). Only plain bridges (`bridgeableToBridgeable`) are admitted:
 - for an ERC-20: `SpokePool.deposit` on the origin's pinned SpokePool;
 - for ETH: `SpokePoolPeriphery.depositNative`, naming that SpokePool and the origin's WETH.
 
-The depositor must be the user, with the requested input amount, destination chain and output token. Timestamps must sit within the SpokePool's buffers.
+Across is asked `exactInput` for an exact input. By output it is asked `minOutput` for the need. That answer is an exact-input deposit whose input Across pads, by 0.46–0.50% on the live answers, whatever the slippage sent, so that at least the need arrives net of Domino's fee. The surplus is drained to the user with the rest. The answer's `amountType` must be the one asked.
+
+`exactOutput` is never admitted, by either kind of request. At the same input it pays the user exactly the need, turns the padding into relayer fee (a bridge fee of 551,925 USDC units against `minOutput`'s 75,981, on 6 Oct 2026), and drains the leftovers to Across instead of the user. Its message would also fail the fee and drain checks below.
+
+The input is the request's amount in exact input. By output it is Across' `inputAmount`, positive, which `maxInputAmount` must repeat (`across_quote_input_mismatch`). The depositor must be the user, with that input, the destination chain and the output token (and, for ETH, that input as the deposit's value). Timestamps must sit within the SpokePool's buffers. By output, the guaranteed amount (`minOutputAmount`, which is `expectedOutputAmount`) must be at least the need (`across_quote_minimum_below_request`).
 
 With the app fee, the deposit's recipient is Across' MulticallHandler, pinned per destination. Its message may only:
 - pay the fee to Domino's recipient, before anything else leaves (for ETH, after unwrapping WETH);
 - drain the rest to the user;
 - emit Across' integrator event.
 
-`fallbackRecipient` must be zero, so a failing call reverts the whole fill instead of sending funds elsewhere. The fee must be 35 bps of the deposit's output, matching what the API reports. The API's unlimited approval is never used: the backend builds an exact one for the pinned SpokePool.
+`fallbackRecipient` must be zero, so a failing call reverts the whole fill instead of sending funds elsewhere. The fee must be 35 bps of the deposit's output, matching what the API reports, in either kind of request. The API's unlimited approval is never used: the backend builds an exact one, for the input, to the pinned SpokePool.
 
 **Both:**
 - calldata must be the canonical ABI encoding; only Across' short ignored suffix (`0x73c0de`, or `0x1dc0de` + integrator id) may follow;
-- the response contract (`crosschain_models.py`, and `runtime.mjs` for the app) checks again that the deposit and approval go only to the pinned contract, for the exact amount, on the origin chain;
+- the response contract (`crosschain_models.py`, and `runtime.mjs` for the app) checks again that the deposit and approval go only to the pinned contract, on the origin chain, for exactly what the winner's deposit takes (`inputRaw`). It also checks that every priced candidate takes exactly the amount asked in exact input; that by output every priced candidate guarantees at least the amount asked; and that only a quote within `maxInputRaw` is eligible;
 - no response may contain a key, RPC URL, integrator id, session or CSRF value.
 
-These checks were each confirmed by deleting them: 42 guards, each failing a test when removed.
+These checks were each confirmed by deleting them: 42 guards when S2 shipped. Quoting by output added 33 and moved 10 onto the computed input, 75 in all. Each new or changed one was deleted or weakened in turn: 109 mutants over the adapters, the service, the models and runtime, the switch window and the app's own pre-wallet check, and every one failed a test (6 Oct 2026).
 
 The pinned contracts are in [`backend/crosschain_pins.json`](../../backend/crosschain_pins.json):
 - Relay's Depository per EVM chain (52), from Relay's `/chains`;
@@ -104,6 +134,7 @@ On `filled`, `status` reports what the provider collected for Domino:
 
 **Relay**
 - `GET /requests/v3?id=<requestId>` (key required) gives `appFees.actual` for Domino's recipient, in the currency Relay charged (`evidence: relay_requests_v3`).
+- By output, the fee Relay quotes and collects is the net-based amount, `floor((input − relayer fee) × 35 / 10035)`. So `appFees.quoted` and `actual` read a little under 35 bps of what was sent: about 34.86 bps, or 34.18 with a gas top-up.
 - Without a key: `fee.status: unavailable`, `reason: relay_api_key_missing`.
 - `/requests/v2` retires on 24 Nov 2026 and is not used.
 
@@ -211,6 +242,19 @@ The bridge owns the rest of the path (0xdecimal, 5 Oct 2026):
 - Its egress (`crosschain`, collected with `--v2-chains`) admits every Base and Arbitrum host F6's file names: Chainstack, Alchemy and the public endpoint. Each resolved address was checked in the role's set.
 - The fee on Base and Arbitrum is read from the destination's receipt, like Robinhood's, once a deposit fills. By 17:50 UTC only `origins` had been called (four answered 200, one 403 `origin_not_allowed`), so there is no fee proof on those chains yet.
 
+### Quoting by output: the switch to crosschain-v1 1.1.0-rc.1
+
+The owner chose a window (option A, 6 Oct 2026): the listener answers both versions for a while, and the Worker and the app each move to the new one.
+
+1. **The listener first.** Release the merged commit with `install_crosschain.py --archive <git archive tar> --archive-sha256 <hex> --commit <sha>`, first with `--inspect`, then with `--apply`. Then run `systemctl daemon-reload` and `systemctl restart domino-crosschain.service`.
+   - It answers 1.1.0-rc.1, and still 1.0.0-rc.1 exactly as before (the frozen models, the same bytes for the same provider answers). The live Worker and app keep working unchanged.
+   - Check: `journalctl -u domino-crosschain.service -o cat | grep '"contractVersion":"1.0.0-rc.1"'` shows the site's requests, still answered 200.
+   - Rollback: `--rollback <sha>`, then daemon-reload and restart.
+2. **The Worker and the app, back to back** (the bridge's `domino-crosschain-bridge`, then the Pages build, from the same commit). Both speak 1.1.0-rc.1 only.
+   - Between the two deploys, an open page reads the Worker's capabilities in a version it does not know, so S2 shows locked and sends nothing.
+   - A tab opened before the switch stays locked until it is reloaded.
+3. **Drop 1.0.0-rc.1** once the listener's lines show no rc.1 request for a few days. The steps are in the contract's [README](../../api-contracts/crosschain-v1/README.md#versions-and-the-switch-window).
+
 ## Operations
 
 - **Claiming the Relay app balance.**
@@ -230,9 +274,10 @@ The bridge owns the rest of the path (0xdecimal, 5 Oct 2026):
   - A 429 blocks that provider until its `Retry-After` passes (default 60 s, at most 10 min); during the block it is reported `rate_limited` without being called.
   - Listings (`/chains`, `/available-routes`) are cached for 10 minutes and served stale for up to an hour if the provider fails.
   - Status reads retry once after a network or 5xx failure. Quotes are never retried.
-- **Records.** Each request leaves one `hop_log` line (route, status, duration). It never includes a body, address, key or provider text.
+- **Records.** Each request leaves one `hop_log` line (route, status, duration, and the `contractVersion` the request named, so 1.0.0-rc.1 traffic can be counted during the switch window). It never includes a body, address, key or provider text.
   - Each quote answered also leaves one decision line just before it (`crosschain_service.decision_record`, the owner's request of 5 Oct 2026, after the first quotes could not be traced to a provider). Its vocabulary is closed (`DECISION_KEYS`):
     - `record: decision`, with the origin and destination chain ids;
+    - `amountKind`: `exact_input` or `output` (a 1.0.0-rc.1 quote is `exact_input`);
     - `decision`: `relay`, `across` or `none`, and `reason`: `best_output`, `only_quote` or `no_quote`;
     - for each provider, its status and, when there is one, its reason, as the answer's candidates give them (for example `relay: no_route`, `relayReason: provider_no_route`);
     - `fingerprint`: the first 8 characters of the answer's `requestFingerprint`, to match the answer the Worker received.
@@ -253,6 +298,14 @@ The bridge owns the rest of the path (0xdecimal, 5 Oct 2026):
   - read destination chains and tokens from the chain registry instead of `api-contracts/v2/chains` (the RPCs already come from F6's file);
   - Relay and Across pins may move there too.
 - **For F7:** the screens, through the Worker route. The contract's README lists what the app reads.
+  - The app moved to 1.1.0-rc.1 by exact input only.
+  - Sizing a deposit by output (one quote of what the position lacks, with the sendable balance as `maxInputRaw`) is its follow-up, with the `input_above_max` wording and the advantage sentence by rate.
 - **For F8:** done by `install_crosschain.py` and the egress role `crosschain` ([In production](#in-production)), except the hosted RPCs.
+- **The switch window:** drop 1.0.0-rc.1 after the switch ([In production](#quoting-by-output-the-switch-to-crosschain-v1-110-rc1)).
+- **Users bring a little more than they need by output.** Relay's surplus is about the slippage and Across' about 0.47%; both arrive in the user's wallet. Relay's surplus is expected, not guaranteed: its signed minimum is exactly the need.
 
-Sources: the Relay and Across documentation and live keyless answers of 1–2 Oct 2026, recorded with synthetic wallets in `backend/tests/fixtures/crosschain/`, and the adversarial verification of both fee mechanisms done for #283.
+Sources:
+- the Relay and Across documentation, and live keyless answers of 1–2 Oct 2026;
+- live keyless answers by output of 6 Oct 2026: 19 quotes, from 16:00:08 to 16:09:20 UTC, with the backend's own request shapes and only the trade type and amount changed (eight of them are the `*-expected-output-*`, `*-min-output-*` and `across-quote-exact-output` fixtures);
+- the answers of both days are recorded with synthetic wallets in `backend/tests/fixtures/crosschain/`;
+- the adversarial verification of both fee mechanisms done for #283.

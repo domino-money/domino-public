@@ -9,10 +9,15 @@
  * which also pins the deposit target per provider and origin):
  *
  *   - every transaction is on `originChainId`, which is not the destination;
- *   - an ERC-20 is exactly [approval, deposit]; the native token is exactly [deposit], whose value is the amount;
+ *   - an ERC-20 is exactly [approval, deposit]; the native token is exactly [deposit], whose value is what the winner's
+ *     deposit takes;
  *   - the approval is exact: to the origin token, value 0, calldata `approve(spender, amountRaw)` byte for byte, and
- *     its amount is the request's; the API's unlimited approval is never used;
+ *     its amount is what the winner's deposit takes; the API's unlimited approval is never used;
  *   - the steps are sent exactly as they came: `to`, `data`, and `value = BigInt(valueRaw)`.
+ *
+ * What the deposit takes is the winning candidate's `inputRaw` (Changed on purpose (data) 2026-10-06, crosschain-v1
+ * 1.1.0-rc.1): the request's `amountRaw` when it asks by exact input, as this page does, and the provider's when it
+ * asks by output, where `amountRaw` is what must arrive.
  *
  * The approval is skipped only when an allowance reading for this owner, this token and this spender on the origin
  * chain covers the amount. Without a reading the exact approval stays: it moves nothing by itself (F5).
@@ -97,7 +102,7 @@ export interface SendablePlan {
 
 export type StepsResult = SendablePlan | { ok: false; reason: StepsRefusal }
 
-function exactApproval(quote: QuotePlan, step: QuotePlan['steps'][number]): boolean {
+function exactApproval(quote: QuotePlan, step: QuotePlan['steps'][number], sent: string): boolean {
   const { request } = quote
   const approval = step.approval
   const tx = step.transaction
@@ -107,13 +112,14 @@ function exactApproval(quote: QuotePlan, step: QuotePlan['steps'][number]): bool
     ADDRESS.test(approval.spender) &&
     lower(approval.token) === lower(request.originToken) &&
     lower(tx.to) === lower(approval.token) &&
-    approval.amountRaw === request.amountRaw &&
+    approval.amountRaw === sent &&
     tx.valueRaw === '0' &&
     lower(tx.data) === approvalCalldata(approval.spender, approval.amountRaw)
   )
 }
 
-function shapeHolds(quote: QuotePlan): boolean {
+/** `sent`: what the winner's deposit takes (its `inputRaw`). */
+function shapeHolds(quote: QuotePlan, sent: string): boolean {
   const { request, steps } = quote
   const native = lower(request.originToken) === ZERO
   if (request.originChainId === request.destinationChainId) return false
@@ -124,9 +130,9 @@ function shapeHolds(quote: QuotePlan): boolean {
   }
   const deposit = steps[steps.length - 1]
   if (deposit.kind !== 'deposit' || deposit.approval !== null) return false
-  if (deposit.transaction.valueRaw !== (native ? request.amountRaw : '0')) return false
+  if (deposit.transaction.valueRaw !== (native ? sent : '0')) return false
   if (deposit.transaction.data.length < 10) return false
-  return native || exactApproval(quote, steps[0])
+  return native || exactApproval(quote, steps[0], sent)
 }
 
 /**
@@ -163,9 +169,9 @@ export function walletSteps({
   if (quote.decision === null || quote.steps.length === 0) return { ok: false, reason: 'no_decision' }
   const sendBeforeMono = quoteDeadlineMono(quote, timing) - SEND_MARGIN_MS
   if (!(nowMono < sendBeforeMono)) return { ok: false, reason: 'expired' }
-  if (!shapeHolds(quote)) return { ok: false, reason: 'shape' }
   const winner = quote.candidates.find((c) => c.provider === quote.decision)
-  if (!winner || winner.status !== 'quoted' || winner.tracking === null) return { ok: false, reason: 'shape' }
+  if (!winner || winner.status !== 'quoted' || winner.tracking === null || winner.inputRaw === null) return { ok: false, reason: 'shape' }
+  if (!shapeHolds(quote, winner.inputRaw)) return { ok: false, reason: 'shape' }
   const requestId = winner.tracking.requestId
   if ((quote.decision === 'relay') !== (requestId !== null) || (requestId !== null && !HASH.test(requestId))) return { ok: false, reason: 'shape' }
 

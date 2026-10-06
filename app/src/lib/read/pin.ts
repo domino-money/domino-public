@@ -135,11 +135,17 @@ export const PRODUCER_PIN = {
     },
     'onboarding-v1': {
       version: '1.1.0',
-      manifestSha256: '6395986d1b860ca057bb29b9905715f448269bf89328c0f3c4d3257457d4c85d',
+      // Changed on purpose (data) 2026-10-06: authenticated_api.py, which the manifest hashes, lets a family accept a
+      // second contract version for a switch window (crosschain-v1's); onboarding-v1 keeps its one, and no route, schema
+      // or version moved.
+      manifestSha256: '8e6aa5eff239a9487ce255291611c80ff238f39ec0d0d91d239b36fed1f8717b',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
-      manifestSha256: '676e2b56ffcfeca6ea9e501c57e6d92914112a3438a78f202a1609bb522aede1',
+      // Changed on purpose (data) 2026-10-06: authenticated_api.py, which the manifest hashes, lets a family accept a
+      // second contract version for a switch window (crosschain-v1's); deposit-v1 keeps its one, and no route, schema or
+      // version moved.
+      manifestSha256: '3bd57d043a0534d6af4140dd06750eab515e5a52d134eff65ddf3d1b4b240fb6',
     },
   },
 } as const
@@ -223,11 +229,17 @@ export const REQUEST_READ_CONTRACT: ReadContractPin = PRODUCER_PIN.packages['rea
 /** Authenticated private numeric history, independent of public pool estimates. */
 export const PERFORMANCE_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: 'b9652f0869493490b9bfda9909b7d63d2781b5a918a1430bdf36ed2effdb5faf',
+  // Changed on purpose (data) 2026-10-06: authenticated_api.py, which the manifest hashes, lets a family accept a second
+  // contract version for a switch window (crosschain-v1's); performance-v2 keeps its one, and no route, schema or
+  // version moved.
+  manifestSha256: '8fe57c6938fe66fd18db5149b9ae362088fe8ef7f8f265bee39e1d6673fe73ee',
 } as const
 
 /** Sanitized private execution status, finalized receipts and short-lived service availability. */
 export const EXECUTION_V1_PIN = {
   version: '1.0.0-rc.1',
-  manifestSha256: 'd9c354cf27beca2e8a7068eec6ba45e98a3c56b71e2e569f393817185a299308',
+  // Changed on purpose (data) 2026-10-06: authenticated_api.py, which the manifest hashes, lets a family accept a second
+  // contract version for a switch window (crosschain-v1's); execution-v1 keeps its one, and no route, schema or version
+  // moved.
+  manifestSha256: '19ea0a9de9b74e8f71ef717843c8bc0f9087c70bac109658fb1d48aa6e7d43d0',
 } as const

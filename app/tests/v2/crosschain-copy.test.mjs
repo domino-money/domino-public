@@ -112,11 +112,22 @@ test('destination gas: Relay delivers it and says so; Across says it cannot', ()
   assert.equal(view.candidates[1].winner, false);
 });
 
+// Added 2026-10-06 (crosschain-v1 1.1.0-rc.1): a quote by output whose Relay deposit needs more than the wallet may send.
+test('by output, a candidate above what the wallet may send says so, keeps its price, and is never the winner', () => {
+  const view = presentQuote(quoteOf('variants/quote.output-above-max.json'), NAME);
+  assert.equal(view.decision, 'across');
+  const relay = view.candidates[0];
+  assert.deepEqual([relay.status, relay.winner, relay.text], ['input_above_max', false, 'Relay needs more than you can send from Base.']);
+  assert.ok(relay.lines.includes('You receive about 100.502513 USDG on Robinhood Chain (at least 100 USDG)'), 'still priced');
+  assert.equal(view.winner.provider, 'across');
+});
+
 test('every candidate status has the spec’s sentence (§3.4)', () => {
   const words = Object.fromEntries(Object.entries(CANDIDATE_COPY).map(([status, template]) => [status, template === null ? null : fill(template, { provider: 'Relay', destination: 'Base', origin: 'Optimism' })]));
   assert.deepEqual(words, {
     quoted: null,
     destination_gas_unsupported: "Relay can't deliver gas on Base.",
+    input_above_max: 'Relay needs more than you can send from Optimism.',
     no_route: 'Relay has no route for this token.',
     amount_too_low: 'Amount too low for Relay.',
     amount_too_high: 'Amount too high for Relay.',

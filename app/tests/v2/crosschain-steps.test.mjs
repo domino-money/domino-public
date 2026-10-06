@@ -111,6 +111,40 @@ test('a tampered quote yields no steps: deposit target, approval amount, order, 
   assert.deepEqual(steps(native), { ok: false, reason: 'not_validated' });
 });
 
+// Added 2026-10-06 (crosschain-v1 1.1.0-rc.1): by output, the wallet sends the winner's inputRaw; the request's
+// amountRaw is what must arrive, in the destination token.
+test('by output, the steps send the winner’s input: the exact approval for it, or the native deposit carrying it', () => {
+  const usdg = quoteOf('variants/quote.output.json');
+  const plan = steps(usdg, { allowance: null });
+  assert.equal(plan.provider, 'relay');
+  assert.deepEqual([usdg.request.amountRaw, usdg.steps[0].approval.amountRaw], ['100000000', '100916974']);
+  assert.equal(plan.steps[0].data, approvalCalldata('0x4cd00e387622c35bddb9b4c962c136462338bc31', '100916974'));
+  // The allowance is held against what is sent.
+  assert.equal(steps(usdg, { allowance: allowanceFor(usdg, '100916973') }).approvalSkipped, false);
+  assert.equal(steps(usdg, { allowance: allowanceFor(usdg, '100916974') }).approvalSkipped, true);
+  const native = steps(quoteOf('variants/quote.output-native.json'));
+  assert.deepEqual(native.steps.map((s) => [s.kind, s.value]), [['deposit', 50445218582624564n]]);
+  // Relay above what the wallet may send: Across serves, for its own input.
+  const above = steps(quoteOf('variants/quote.output-above-max.json'));
+  assert.deepEqual([above.provider, above.steps[0].data], ['across', approvalCalldata('0x09aea4b2242abc8bb4bb78d537a67a245a7bec64', '100902201')]);
+});
+
+test('defense in depth: under a runtime that accepts anything, the page still sends only the winner’s input', () => {
+  const lax = { ...runtime, validateResponse: () => true };
+  const sends = (quote) => walletSteps({ runtime: lax, quote, owner: OWNER, timing: TIMING, nowMono: NOW, allowance: null, source: 'http' });
+  assert.equal(sends(quoteOf('variants/quote.output.json')).ok, true);
+  // An approval for what must arrive instead of what the deposit takes, its calldata rebuilt to match: no steps.
+  const need = quoteOf('variants/quote.output.json');
+  need.steps[0].approval.amountRaw = need.request.amountRaw;
+  need.steps[0].transaction.data = approvalCalldata(need.steps[0].approval.spender, need.request.amountRaw);
+  assert.deepEqual(sends(need), { ok: false, reason: 'shape' });
+  // A native deposit carrying what must arrive: no steps.
+  assert.equal(sends(quoteOf('variants/quote.output-native.json')).ok, true);
+  const native = quoteOf('variants/quote.output-native.json');
+  native.steps[0].transaction.valueRaw = native.request.amountRaw;
+  assert.deepEqual(sends(native), { ok: false, reason: 'shape' });
+});
+
 test('a quote about another wallet gives no steps, even unchanged; so a fixture quote never gives a real wallet any', () => {
   assert.deepEqual(steps(base(), { owner: OTHER }), { ok: false, reason: 'owner' });
   assert.deepEqual(steps(base(), { owner: 'nobody' }), { ok: false, reason: 'owner' });

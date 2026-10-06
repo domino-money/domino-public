@@ -168,6 +168,8 @@ test('only an exact capabilities answer is on; every other reply has its one rea
     ['crosschain', json({ error: 'not_found' }, { status: 404 }), { on: false, reason: 'not_deployed' }],
     ['crosschain', json(XC_LIVE, { contractHeader: PLAN_VERSION }), { on: false, reason: 'invalid' }],
     ['crosschain', xc({ ...XC_LIVE, contractVersion: '1.0.0-rc.2' }), { on: false, reason: 'invalid' }],
+    // Added 2026-10-06 (crosschain-v1 1.1.0-rc.1): a Worker still on 1.0.0-rc.1 keeps the offer locked until it moves.
+    ['crosschain', json({ ...XC_LIVE, contractVersion: '1.0.0-rc.1' }, { contractHeader: '1.0.0-rc.1' }), { on: false, reason: 'invalid' }],
     ['crosschain', xc({ ...XC_LIVE, enabledRoutes: ['origins', 'quote', 'status', 'deposit'] }), { on: false, reason: 'invalid' }],
     ['crosschain', xc({ ...XC_LIVE, enabledRoutes: ['plan'] }), { on: false, reason: 'invalid' }],
     ['crosschain', xc({ ...XC_LIVE, dataMode: 'live_read_only' }), { on: false, reason: 'invalid' }],

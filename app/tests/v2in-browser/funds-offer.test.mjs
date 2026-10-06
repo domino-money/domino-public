@@ -92,8 +92,9 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
   const bridgeRoute = async (request, url) => {
     if (!bridge || !url.pathname.startsWith('/api/crosschain/v1/')) return undefined;
     const route = url.pathname.split('/').at(-1);
-    const headers = { 'X-Domino-Crosschain-Contract': '1.0.0-rc.1' };
-    if (route === 'capabilities') return Response.json({ contractVersion: '1.0.0-rc.1', dataMode: 'live', enabledRoutes: ['origins', 'quote', 'status'] }, { headers });
+    // Changed on purpose (data) 2026-10-06: crosschain-v1 1.1.0-rc.1.
+    const headers = { 'X-Domino-Crosschain-Contract': '1.1.0-rc.1' };
+    if (route === 'capabilities') return Response.json({ contractVersion: '1.1.0-rc.1', dataMode: 'live', enabledRoutes: ['origins', 'quote', 'status'] }, { headers });
     const cookie = request.headers.get('cookie')?.match(/__Host-domino-session=([^;]+)/)?.[1];
     const session = fake.state.sessions.get(cookie);
     assert.ok(session && !session.revoked, 'private bridge reads use a real test session');

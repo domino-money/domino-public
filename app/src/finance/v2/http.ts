@@ -8,7 +8,7 @@
  *     `X-Domino-Position-Plan-Contract: 1.0.0-rc.2` (src/v2/plan/httpTransport.ts);
  *   - crosschain-v1 (§3.2; Changed on purpose (data) 2026-10-02 (S2 wired), open point #17): POST
  *     /api/crosschain/v1/origins, /quote and /status, the session cookie and its CSRF,
- *     `X-Domino-Crosschain-Contract: 1.0.0-rc.1` (src/v2/crosschain/httpTransport.ts), for the inline offer in New
+ *     `X-Domino-Crosschain-Contract: 1.1.0-rc.1` (src/v2/crosschain/httpTransport.ts), for the inline offer in New
  *     position's amount step (src/v2in/funds);
  *   - each route's capabilities GET (src/v2/routes.ts), which says whether the route is on.
  *

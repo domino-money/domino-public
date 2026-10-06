@@ -1,0 +1,110 @@
+{
+  "contractVersion": "1.1.0-rc.1",
+  "quote": {
+    "appFeeBps": 35,
+    "candidates": [
+      {
+        "appFee": {
+          "amountRaw": "175879396984924",
+          "chainId": 8453,
+          "charged": "origin_input",
+          "token": "0x0000000000000000000000000000000000000000"
+        },
+        "destinationGas": null,
+        "etaSeconds": 1,
+        "inputRaw": "50445218582624564",
+        "minimumOutputRaw": "50000000000000000",
+        "originGas": {
+          "feeRaw": "229707630673",
+          "usd": "0.000621"
+        },
+        "outputRaw": "50251256281407036",
+        "provider": "relay",
+        "providerFee": {
+          "amountRaw": "18082904232604",
+          "chainId": 8453,
+          "token": "0x0000000000000000000000000000000000000000"
+        },
+        "reason": null,
+        "refund": {
+          "chainId": 8453,
+          "recipient": "0x1111111111111111111111111111111111111111"
+        },
+        "status": "quoted",
+        "tracking": {
+          "requestId": "0x179130291911c23511685f055259a4ee72f1f761aff3e20f9832377401edf25e"
+        }
+      },
+      {
+        "appFee": {
+          "amountRaw": "176420966952698",
+          "chainId": 4663,
+          "charged": "destination_output",
+          "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73"
+        },
+        "destinationGas": null,
+        "etaSeconds": 1,
+        "inputRaw": "50425875000000000",
+        "minimumOutputRaw": "50229569590961096",
+        "originGas": {
+          "feeRaw": "1566810000000",
+          "usd": "0.004233457947600001"
+        },
+        "outputRaw": "50229569590961096",
+        "provider": "across",
+        "providerFee": {
+          "amountRaw": "19884442086206",
+          "chainId": 8453,
+          "token": "0x4200000000000000000000000000000000000006"
+        },
+        "reason": null,
+        "refund": {
+          "chainId": 8453,
+          "recipient": "0x1111111111111111111111111111111111111111"
+        },
+        "status": "quoted",
+        "tracking": {
+          "requestId": null
+        }
+      }
+    ],
+    "comparison": {
+      "advantageBps": 0,
+      "advantageRaw": "2417484063665",
+      "basis": "expected_output_per_input_after_all_fees"
+    },
+    "decision": "relay",
+    "expiresAt": 1791302747,
+    "feeRecipient": "0x2222222222222222222222222222222222222222",
+    "reason": "best_output",
+    "request": {
+      "amountKind": "output",
+      "amountRaw": "50000000000000000",
+      "destinationChainId": 4663,
+      "destinationGas": false,
+      "destinationToken": "0x0000000000000000000000000000000000000000",
+      "maxInputRaw": "60000000000000000",
+      "originChainId": 8453,
+      "originToken": "0x0000000000000000000000000000000000000000",
+      "owner": "0x1111111111111111111111111111111111111111",
+      "slippageBps": 50
+    },
+    "requestFingerprint": "63f24307a4bb9df32c76bce767fd5bd2d824a122435c7c6a490e3e75111f12ae",
+    "requestedAt": 1791302627,
+    "retrievedAt": 1791302627,
+    "schemaVersion": 1,
+    "source": "crosschain_quote_v1",
+    "steps": [
+      {
+        "approval": null,
+        "kind": "deposit",
+        "transaction": {
+          "chainId": 8453,
+          "data": "0x49290c1c0000000000000000000000001111111111111111111111111111111111111111e5d8509c24e31a35d74fb1402f92b9e5cfa23c7e2c4ee0104c111542dbf78a5c",
+          "to": "0x4cd00e387622c35bddb9b4c962c136462338bc31",
+          "valueRaw": "50445218582624564"
+        }
+      }
+    ]
+  }
+}

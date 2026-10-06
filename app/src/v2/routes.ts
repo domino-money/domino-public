@@ -11,7 +11,8 @@
  *   - position-plan-v1 `1.0.0-rc.2`, POST /api/position-plan/v1/plan (session and CSRF): GET
  *     /api/position-plan/v1/capabilities, the plan Worker's (bridge/src/position-plan-worker.mjs) `{ contractVersion,
  *     dataMode: 'live' | 'disabled', enabledRoutes }`;
- *   - crosschain-v1 `1.0.0-rc.1` (Changed on purpose (data) 2026-10-02 (S2 wired)), POST /api/crosschain/v1/origins,
+ *   - crosschain-v1 `1.1.0-rc.1` (Changed on purpose (data) 2026-10-02 (S2 wired); Changed on purpose (data) 2026-10-06:
+ *     1.0.0-rc.1 -> 1.1.0-rc.1, quoting by output, ./crosschain/version.ts), POST /api/crosschain/v1/origins,
  *     /quote and /status (session and CSRF): GET /api/crosschain/v1/capabilities, the crosschain Worker's
  *     (bridge/src/crosschain-worker.mjs), in the plan Worker's shape.
  *

@@ -3,23 +3,37 @@
 Three POST routes behind the authenticated private listener (crosschain_api.py):
 - origins: the EVM chains and tokens Relay and Across can bridge from, to one
   destination token on Robinhood, Base or Arbitrum;
-- quote: both providers quoted with the 35 bps app fee, the better output for
-  the user chosen, and the unsigned wallet steps (exact approval, then deposit);
+- quote: both providers quoted with the 35 bps app fee, for an exact input or,
+  since 1.1.0-rc.1, for the least that must arrive (`amountKind: output`); the
+  better rate for the user chosen, and the unsigned wallet steps (exact
+  approval, then deposit) for what the winner's deposit takes (`inputRaw`);
 - status: the deposit tracked to completion or refund, and the app fee measured.
 
 The owner is always the SIWE session's wallet; no request names an owner,
 recipient, refund address or fee recipient. A response never grants signing
 authority: the wallet shows the user every step it signs.
+
+Switch window (the owner's option A, 6 Oct 2026): the listener also answers
+1.0.0-rc.1 while the Worker and the app move to 1.1.0-rc.1. Such a request is
+held to the frozen copy of that contract's models (crosschain_models_rc1.py),
+runs by exact input, and its answer is projected back to rc.1
+(crosschain_service.previous_answer). rc.1 is dropped once the listener's
+request lines show none (docs/v2/F5_BRIDGE.md).
 """
+from fractions import Fraction
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BeforeValidator, Field, StrictBool, StrictInt, model_validator
 
 from crosschain_common import (APP_FEE_BPS, PROVIDERS, ZERO, encode_call, load_destinations, load_pins)
+import crosschain_models_rc1 as previous
 from onboarding_models import (ERROR_STATUS_BY_CODE as AUTH_ERRORS, Fingerprint, NormalizedAddress, PositiveRaw,
                                Raw, SchemaVersion, Slippage, StrictModel, Timestamp, Address)
 
-CONTRACT_VERSION = '1.0.0-rc.1'
+CONTRACT_VERSION = '1.1.0-rc.1'
+# The contract before quoting by output, accepted for the switch window only.
+PREVIOUS_VERSION = previous.CONTRACT_VERSION
+CONTRACT_VERSIONS = (CONTRACT_VERSION, PREVIOUS_VERSION)
 MAX_BODY = 4096
 MAX_RESPONSE = 262144
 QUOTE_LIFETIME_SECONDS = 120
@@ -47,8 +61,11 @@ POLL_SECONDS = {
     'relay': {'awaiting_deposit': 5, 'pending': 5, 'failed': 300, 'refund_failed': 900},
     'across': {'awaiting_deposit': 10, 'pending': 10, 'refund_pending': 300},
 }
-CANDIDATE_STATUSES = ('quoted', 'destination_gas_unsupported', 'no_route', 'amount_too_low', 'amount_too_high',
-                      'rate_limited', 'unavailable', 'rejected', 'unsafe', 'origin_not_supported')
+CANDIDATE_STATUSES = ('quoted', 'destination_gas_unsupported', 'input_above_max', 'no_route', 'amount_too_low',
+                      'amount_too_high', 'rate_limited', 'unavailable', 'rejected', 'unsafe', 'origin_not_supported')
+# Statuses with a price: `quoted`, and two that are priced but not eligible (the destination gas asked for cannot
+# be delivered; by output, the deposit needs more than the wallet may send).
+PRICED = ('quoted', 'destination_gas_unsupported', 'input_above_max')
 
 
 class CrosschainError(Exception):
@@ -123,7 +140,12 @@ class QuoteRequest(StrictModel):
     originToken: Address
     destinationChainId: DestinationChain
     destinationToken: Address
+    # exact_input: amountRaw is what leaves the wallet, in origin token units. output: amountRaw is the least that
+    # must arrive in the user's wallet after every fee, in destination token units, and maxInputRaw the most the
+    # wallet may send (the app's sendable balance); maxInputRaw is null in exact_input.
+    amountKind: Literal['exact_input', 'output']
     amountRaw: PositiveRaw
+    maxInputRaw: PositiveRaw | None
     slippageBps: Slippage
     # Ask for native gas on the destination with the funds (Relay's top-up). Only
     # meaningful when the delivered token is not the native one.
@@ -138,6 +160,10 @@ class QuoteRequest(StrictModel):
             raise ValueError('native_output_carries_gas')
         if int(self.amountRaw) >= 2**128:
             raise ValueError('amount_too_large')
+        if (self.maxInputRaw is None) != (self.amountKind == 'exact_input'):
+            raise ValueError('max_input_kind')
+        if self.maxInputRaw is not None and int(self.maxInputRaw) >= 2**128:
+            raise ValueError('max_input_too_large')
         return self
 
 
@@ -192,9 +218,12 @@ class Tracking(StrictModel):
 
 class Candidate(StrictModel):
     provider: Provider
-    status: Literal['quoted', 'destination_gas_unsupported', 'no_route', 'amount_too_low', 'amount_too_high',
-                    'rate_limited', 'unavailable', 'rejected', 'unsafe', 'origin_not_supported']
+    status: Literal['quoted', 'destination_gas_unsupported', 'input_above_max', 'no_route', 'amount_too_low',
+                    'amount_too_high', 'rate_limited', 'unavailable', 'rejected', 'unsafe', 'origin_not_supported']
     reason: SafeCode | None
+    # What the deposit takes from the wallet on the origin chain: the approval's amount, and the deposit's value for
+    # the native token. The request's amountRaw in exact_input; by output, the provider's.
+    inputRaw: PositiveRaw | None
     outputRaw: PositiveRaw | None
     minimumOutputRaw: PositiveRaw | None
     appFee: AppFeeQuote | None
@@ -207,8 +236,9 @@ class Candidate(StrictModel):
 
     @model_validator(mode='after')
     def consistent(self):
-        priced = self.status in ('quoted', 'destination_gas_unsupported')
-        fields = (self.outputRaw, self.minimumOutputRaw, self.appFee, self.originGas, self.refund, self.tracking)
+        priced = self.status in PRICED
+        fields = (self.inputRaw, self.outputRaw, self.minimumOutputRaw, self.appFee, self.originGas, self.refund,
+                  self.tracking)
         if priced:
             if any(value is None for value in fields) or int(self.minimumOutputRaw) > int(self.outputRaw):
                 raise ValueError('candidate_quote_incomplete')
@@ -263,7 +293,7 @@ class QuoteIdentity(QuoteRequest):
 
 
 class Comparison(StrictModel):
-    basis: Literal['expected_output_after_all_fees']
+    basis: Literal['expected_output_per_input_after_all_fees']
     advantageRaw: Raw | None
     advantageBps: Annotated[StrictInt, Field(ge=0, le=10**12)] | None
 
@@ -286,11 +316,25 @@ def approval_spender(provider, chain):
 
 
 def ranked(candidates):
-    """Eligible candidates, best first: the higher expected output, then the shorter wait, then provider order."""
+    """Eligible candidates, best first: the higher expected output per unit sent, after every fee (compared exactly,
+    as E_a·I_b against E_b·I_a), then the smaller input, then the shorter wait, then provider order (the owner's
+    decision of 6 Oct 2026). With equal inputs, as in exact input, the first key is the higher expected output."""
     eligible = [c for c in candidates if c['status'] == 'quoted']
-    return sorted(eligible, key=lambda c: (-int(c['outputRaw']),
+    return sorted(eligible, key=lambda c: (-Fraction(int(c['outputRaw']), int(c['inputRaw'])), int(c['inputRaw']),
                                            c['etaSeconds'] if c['etaSeconds'] is not None else 10**9,
                                            PROVIDERS.index(c['provider'])))
+
+
+def advantage(best):
+    """(advantageRaw, advantageBps) of the winner over the other quoted candidate; (None, None) without one.
+
+    advantageRaw is the extra output the winner delivers for the other's input, floor(E_w·I_o / I_w) − E_o, and
+    advantageBps (E_w·I_o − E_o·I_w) · 10000 // (E_o·I_w). Both are at least zero by the ranking, and with equal
+    inputs they are E_w − E_o and (E_w − E_o) · 10000 // E_o, as exact input always counted them."""
+    if len(best) != 2:
+        return None, None
+    (out_w, in_w), (out_o, in_o) = ((int(c['outputRaw']), int(c['inputRaw'])) for c in best)
+    return out_w * in_o // in_w - out_o, (out_w * in_o - out_o * in_w) * 10000 // (out_o * in_w)
 
 
 class QuotePlan(StrictModel):
@@ -316,7 +360,7 @@ class QuotePlan(StrictModel):
             raise ValueError('quote_times')
         if [c.provider for c in self.candidates] != list(PROVIDERS) or self.feeRecipient in (ZERO, request.owner):
             raise ValueError('quote_candidates')
-        origin, amount, native = request.originChainId, request.amountRaw, request.originToken == ZERO
+        origin, native, output = request.originChainId, request.originToken == ZERO, request.amountKind == 'output'
         for candidate in self.candidates:
             if candidate.refund is not None and (candidate.refund.chainId != origin or candidate.refund.recipient != request.owner):
                 raise ValueError('quote_refund')
@@ -324,20 +368,28 @@ class QuotePlan(StrictModel):
                 fee_chain = origin if candidate.provider == 'relay' else request.destinationChainId
                 if candidate.appFee.chainId != fee_chain:
                     raise ValueError('quote_fee_chain')
-            if candidate.status == 'quoted' and request.destinationGas and candidate.destinationGas is None:
+            # Destination gas is judged before the cap: a candidate quoted above it served the gas asked for too.
+            if candidate.status in ('quoted', 'input_above_max') and request.destinationGas and candidate.destinationGas is None:
                 raise ValueError('quote_destination_gas')
             if candidate.destinationGas is not None and not request.destinationGas:
                 raise ValueError('quote_destination_gas')
+            # Exact input: the deposit takes exactly the amount asked. By output, every price guarantees at least
+            # the amount asked: its minimum is the floor the provider signed or the deposit encodes.
+            if candidate.inputRaw is not None and (int(candidate.minimumOutputRaw) < int(request.amountRaw) if output
+                                                   else candidate.inputRaw != request.amountRaw):
+                raise ValueError('quote_amounts')
+            # By output, a quote is eligible only within what the wallet may send; one above it is input_above_max.
+            if candidate.status in ('quoted', 'input_above_max') and (candidate.status == 'input_above_max') != (
+                    output and int(candidate.inputRaw) > int(request.maxInputRaw)):
+                raise ValueError('quote_input_cap')
         best = ranked([c.model_dump() for c in self.candidates])
         decision = best[0]['provider'] if best else None
         reason = 'no_quote' if not best else 'only_quote' if len(best) == 1 else 'best_output'
         if self.decision != decision or self.reason != reason:
             raise ValueError('quote_decision')
-        advantage = (int(best[0]['outputRaw']) - int(best[1]['outputRaw'])) if len(best) == 2 else None
-        if self.comparison.advantageRaw != (None if advantage is None else str(advantage)):
-            raise ValueError('quote_comparison')
-        if (self.comparison.advantageBps is None) != (advantage is None) or (
-                advantage is not None and self.comparison.advantageBps != advantage * 10000 // int(best[1]['outputRaw'])):
+        advantage_raw, advantage_bps = advantage(best)
+        if (self.comparison.advantageRaw != (None if advantage_raw is None else str(advantage_raw))
+                or self.comparison.advantageBps != advantage_bps):
             raise ValueError('quote_comparison')
         if decision is None:
             if self.steps:
@@ -349,12 +401,14 @@ class QuotePlan(StrictModel):
         for step in self.steps:
             if step.transaction.chainId != origin:
                 raise ValueError('quote_steps')
+        # The wallet sends what the winner's deposit takes.
+        sent = best[0]['inputRaw']
         deposit = self.steps[-1].transaction
-        if deposit.to != deposit_targets(decision, origin, native) or deposit.valueRaw != (amount if native else '0'):
+        if deposit.to != deposit_targets(decision, origin, native) or deposit.valueRaw != (sent if native else '0'):
             raise ValueError('quote_deposit_target')
         if not native:
             approval = self.steps[0].approval
-            if (approval.token != request.originToken or approval.amountRaw != amount
+            if (approval.token != request.originToken or approval.amountRaw != sent
                     or approval.spender != approval_spender(decision, origin)):
                 raise ValueError('quote_approval')
         return self
@@ -517,17 +571,23 @@ class StatusResponse(StrictModel):
 REQUEST_MODELS = {'origins': OriginsRequest, 'quote': QuoteRequest, 'status': StatusRequest}
 RESPONSE_MODELS = {'origins': OriginsResponse, 'quote': QuoteResponse, 'status': StatusResponse}
 ROUTES = frozenset(REQUEST_MODELS)
+# Each accepted version's models: this contract's, and the frozen ones of the version before (the switch window).
+MODELS = {CONTRACT_VERSION: (REQUEST_MODELS, RESPONSE_MODELS),
+          PREVIOUS_VERSION: (previous.REQUEST_MODELS, previous.RESPONSE_MODELS)}
 
 
-def validate_request(route, body):
+def validate_request(route, body, version=CONTRACT_VERSION):
+    """The request, held to the models of the version it was sent with; a version not accepted is a mismatch."""
+    if version not in MODELS:
+        raise CrosschainError('upstream_contract_mismatch')
     try:
-        return REQUEST_MODELS[route].model_validate(body)
+        return MODELS[version][0][route].model_validate(body)
     except (KeyError, ValueError, TypeError):
         raise CrosschainError('invalid_request') from None
 
 
-def validate_response(route, body):
+def validate_response(route, body, version=CONTRACT_VERSION):
     try:
-        return RESPONSE_MODELS[route].model_validate(body).model_dump()
+        return MODELS[version][1][route].model_validate(body).model_dump()
     except (KeyError, ValueError, TypeError):
         raise CrosschainError('upstream_contract_mismatch') from None

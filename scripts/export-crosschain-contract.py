@@ -13,9 +13,11 @@ from crosschain_models import (CONTRACT_VERSION, DESTINATIONS, ERROR_STATUS_BY_C
 from crosschain_contract_fixtures import build_fixtures, build_variants
 
 DEST = ROOT / 'api-contracts/crosschain-v1'
-SOURCES = ['backend/crosschain_models.py', 'backend/crosschain_service.py', 'backend/crosschain_api.py',
-           'backend/crosschain_common.py', 'backend/crosschain_relay.py', 'backend/crosschain_across.py',
-           'backend/crosschain_http.py', 'backend/crosschain_config.py', 'backend/crosschain_pins.json',
+# crosschain_models_rc1.py: the frozen 1.0.0-rc.1 models the listener holds that version's requests to (the switch window).
+SOURCES = ['backend/crosschain_models.py', 'backend/crosschain_models_rc1.py', 'backend/crosschain_service.py',
+           'backend/crosschain_api.py', 'backend/crosschain_common.py', 'backend/crosschain_relay.py',
+           'backend/crosschain_across.py', 'backend/crosschain_http.py', 'backend/crosschain_config.py',
+           'backend/crosschain_pins.json',
            'backend/authenticated_api.py', 'backend/onboarding_auth.py',
            'backend/tests/crosschain_support.py', 'backend/tests/crosschain_contract_fixtures.py',
            'scripts/export-crosschain-contract.py']

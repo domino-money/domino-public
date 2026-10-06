@@ -275,7 +275,11 @@ export function originToken(list: OriginsList, chainId: number | null, address: 
   return list.chains.find((c) => c.chainId === chainId)?.tokens.find((t) => lower(t.address) === lower(address)) ?? null
 }
 
-/** The quote request the form makes: exactly the seven fields, addresses lowercase (§3.4). */
+/**
+ * The quote request the form makes: exactly the nine fields, addresses lowercase (§3.4). Changed on purpose (data)
+ * 2026-10-06 (crosschain-v1 1.1.0-rc.1): by exact input, `amountKind: 'exact_input'` and `maxInputRaw: null`; asking
+ * by output (what must arrive, with the most that can be sent) is the offer's follow-up.
+ */
 export function quoteRequestOf(input: {
   originChainId: number
   originToken: string
@@ -290,24 +294,37 @@ export function quoteRequestOf(input: {
     originToken: lower(input.originToken),
     destinationChainId: input.destinationChainId,
     destinationToken: lower(input.destinationToken),
+    amountKind: 'exact_input',
     amountRaw: input.amountRaw,
+    maxInputRaw: null,
     slippageBps: input.slippageBps,
     destinationGas: input.destinationGas,
   }
 }
 
 /**
+ * What the quote's wallet steps send (Added 2026-10-06, crosschain-v1 1.1.0-rc.1): the winner's `inputRaw`, the amount
+ * asked when the quote is by exact input; the request's amount while no candidate won.
+ */
+export function sentRaw(quote: QuotePlan): string {
+  const winner = quote.candidates.find((c) => c.provider === quote.decision)
+  return winner?.inputRaw ?? quote.request.amountRaw
+}
+
+/**
  * The wallet steps of a quote in words (§3.6): the switch, the approval (ERC-20 only) and the deposit, with the amount
  * sent, rounded for the screen and exact (Changed on purpose 2026-10-06, the owner's point 4). Changed on purpose
  * 2026-10-06 (the integration review): rounded UP, since it is what the wallet is asked to approve and send, so the
- * button never says less than leaves the wallet.
+ * button never says less than leaves the wallet. Changed on purpose (data) 2026-10-06 (crosschain-v1 1.1.0-rc.1): the
+ * amount is what the winner's deposit takes (sentRaw), the same as the request's while it asks by exact input.
  */
 export function stepWords(quote: QuotePlan, name: Naming): { origin: string; amount: string; exact: string; approval: boolean } {
   const { request } = quote
   const origin = name.origin(request.originChainId) ?? `network ${request.originChainId}`
   const info = name.book(request.originChainId, request.originToken)
-  const exact = info !== null && knownDecimals(info.decimals) ? `${formatUnitsExact(request.amountRaw, info.decimals) ?? request.amountRaw} ${tokenLabel(request.originToken, info.symbol)}` : shortAmountText(request.amountRaw, request.originToken, info)
-  return { origin, amount: shortAmountText(request.amountRaw, request.originToken, info, 'up'), exact, approval: lower(request.originToken) !== ZERO }
+  const sent = sentRaw(quote)
+  const exact = info !== null && knownDecimals(info.decimals) ? `${formatUnitsExact(sent, info.decimals) ?? sent} ${tokenLabel(request.originToken, info.symbol)}` : shortAmountText(sent, request.originToken, info)
+  return { origin, amount: shortAmountText(sent, request.originToken, info, 'up'), exact, approval: lower(request.originToken) !== ZERO }
 }
 
 /**

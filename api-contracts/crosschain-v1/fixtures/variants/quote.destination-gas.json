@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.0.0-rc.1",
+  "contractVersion": "1.1.0-rc.1",
   "quote": {
     "appFeeBps": 35,
     "candidates": [
@@ -14,6 +14,7 @@
           "deliveredRaw": "740778127264099"
         },
         "etaSeconds": 1,
+        "inputRaw": "100000000",
         "minimumOutputRaw": "97046108",
         "originGas": {
           "feeRaw": "1693164000000",
@@ -45,6 +46,7 @@
         },
         "destinationGas": null,
         "etaSeconds": 2,
+        "inputRaw": "100000000",
         "minimumOutputRaw": "99563269",
         "originGas": {
           "feeRaw": null,
@@ -71,23 +73,25 @@
     "comparison": {
       "advantageBps": null,
       "advantageRaw": null,
-      "basis": "expected_output_after_all_fees"
+      "basis": "expected_output_per_input_after_all_fees"
     },
     "decision": "relay",
     "expiresAt": 1790905259,
     "feeRecipient": "0x2222222222222222222222222222222222222222",
     "reason": "only_quote",
     "request": {
+      "amountKind": "exact_input",
       "amountRaw": "100000000",
       "destinationChainId": 4663,
       "destinationGas": true,
       "destinationToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "maxInputRaw": null,
       "originChainId": 42161,
       "originToken": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
       "owner": "0x1111111111111111111111111111111111111111",
       "slippageBps": 50
     },
-    "requestFingerprint": "d7b36917eae755762c583f7821ba3c29a033b32bf241dad7d62c5702f365f6c7",
+    "requestFingerprint": "cb043f518761981cbe25720aad7d5250ef0fa559bb285142bbb7c0f64263e711",
     "requestedAt": 1790905139,
     "retrievedAt": 1790905139,
     "schemaVersion": 1,

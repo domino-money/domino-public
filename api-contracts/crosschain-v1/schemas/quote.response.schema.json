@@ -108,6 +108,19 @@
           ],
           "title": "Etaseconds"
         },
+        "inputRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Inputraw"
+        },
         "minimumOutputRaw": {
           "anyOf": [
             {
@@ -189,6 +202,7 @@
           "enum": [
             "quoted",
             "destination_gas_unsupported",
+            "input_above_max",
             "no_route",
             "amount_too_low",
             "amount_too_high",
@@ -216,6 +230,7 @@
         "provider",
         "status",
         "reason",
+        "inputRaw",
         "outputRaw",
         "minimumOutputRaw",
         "appFee",
@@ -259,7 +274,7 @@
           "title": "Advantageraw"
         },
         "basis": {
-          "const": "expected_output_after_all_fees",
+          "const": "expected_output_per_input_after_all_fees",
           "title": "Basis",
           "type": "string"
         }
@@ -328,6 +343,14 @@
     "QuoteIdentity": {
       "additionalProperties": false,
       "properties": {
+        "amountKind": {
+          "enum": [
+            "exact_input",
+            "output"
+          ],
+          "title": "Amountkind",
+          "type": "string"
+        },
         "amountRaw": {
           "maxLength": 78,
           "pattern": "^[1-9][0-9]{0,77}$",
@@ -353,6 +376,19 @@
           "pattern": "^0x[0-9a-f]{40}$",
           "title": "Destinationtoken",
           "type": "string"
+        },
+        "maxInputRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Maxinputraw"
         },
         "originChainId": {
           "maximum": 9007199254740991,
@@ -386,7 +422,9 @@
         "originToken",
         "destinationChainId",
         "destinationToken",
+        "amountKind",
         "amountRaw",
+        "maxInputRaw",
         "slippageBps",
         "destinationGas",
         "owner"
@@ -670,7 +708,7 @@
   "additionalProperties": false,
   "properties": {
     "contractVersion": {
-      "const": "1.0.0-rc.1",
+      "const": "1.1.0-rc.1",
       "title": "Contractversion",
       "type": "string"
     },
@@ -684,5 +722,5 @@
   ],
   "title": "QuoteResponse",
   "type": "object",
-  "x-contract-version": "1.0.0-rc.1"
+  "x-contract-version": "1.1.0-rc.1"
 }

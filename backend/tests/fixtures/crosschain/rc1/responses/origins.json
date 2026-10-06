@@ -1,0 +1,390 @@
+{
+  "contractVersion": "1.0.0-rc.1",
+  "origins": {
+    "chains": [
+      {
+        "chainId": 1,
+        "name": "Ethereum",
+        "tokens": [
+          {
+            "address": "0x0000000000000000000000000000000000000000",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "ETH"
+          },
+          {
+            "address": "0x00000000efe302beaa2b3e6e1b18d08d69a9012a",
+            "decimals": 6,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "AUSD"
+          },
+          {
+            "address": "0x1b0f6590d21dc02b92ad3a7d00f8884dc4f1aed9",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "SOMI"
+          },
+          {
+            "address": "0x4c1746a800d224393fe2470c70a35717ed4ea5f1",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "PLUME"
+          },
+          {
+            "address": "0x4c9edd5852cd905f086c759e8383e09bff1e68b3",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "USDe"
+          },
+          {
+            "address": "0x4d224452801aced8b2f0aebe155379bb5d594381",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "APE"
+          },
+          {
+            "address": "0x6b175474e89094c44da98b954eedeac495271d0f",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "DAI"
+          },
+          {
+            "address": "0x6c3ea9036406852006290770bedfcaba0e23a0e8",
+            "decimals": 6,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "PYUSD"
+          },
+          {
+            "address": "0x72dfb2e44f59c5ad2bafe84314e5b99a7cd5075e",
+            "decimals": 8,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "cirBTC"
+          },
+          {
+            "address": "0x73e0c0d45e048d25fc26fa3159b0aa04bfa4db98",
+            "decimals": 8,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "kBTC"
+          },
+          {
+            "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+            "decimals": 6,
+            "providers": [
+              "relay",
+              "across"
+            ],
+            "symbol": "USDC"
+          },
+          {
+            "address": "0xaca92e438df0b2401ff60da7e4337b687a2435da",
+            "decimals": 6,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "mUSD"
+          },
+          {
+            "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "WETH"
+          },
+          {
+            "address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+            "decimals": 6,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "USDT"
+          },
+          {
+            "address": "0xe343167631d89b6ffc58b88d6b7fb0228795491d",
+            "decimals": 6,
+            "providers": [
+              "relay",
+              "across"
+            ],
+            "symbol": "USDG"
+          },
+          {
+            "address": "0xec2af1c8b110a61fd9c3fa6a554a031ca9943926",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "USDm"
+          }
+        ]
+      },
+      {
+        "chainId": 10,
+        "name": "Optimism",
+        "tokens": [
+          {
+            "address": "0x0000000000000000000000000000000000000000",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "ETH"
+          },
+          {
+            "address": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+            "decimals": 6,
+            "providers": [
+              "relay",
+              "across"
+            ],
+            "symbol": "USDC"
+          },
+          {
+            "address": "0x4200000000000000000000000000000000000006",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "WETH"
+          },
+          {
+            "address": "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
+            "decimals": 6,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "USDT"
+          }
+        ]
+      },
+      {
+        "chainId": 25,
+        "name": "Cronos",
+        "tokens": [
+          {
+            "address": "0x0000000000000000000000000000000000000000",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "CRO"
+          },
+          {
+            "address": "0x3d7f2c478aafdb65542bcb44bceec05849999d2d",
+            "decimals": 6,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "USDC"
+          },
+          {
+            "address": "0xc21223249ca28397b4b6541dffaecc539bff0c59",
+            "decimals": 6,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "USDC.e"
+          }
+        ]
+      },
+      {
+        "chainId": 137,
+        "name": "Polygon",
+        "tokens": [
+          {
+            "address": "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
+            "decimals": null,
+            "providers": [
+              "across"
+            ],
+            "symbol": "USDC"
+          }
+        ]
+      },
+      {
+        "chainId": 8453,
+        "name": "Base",
+        "tokens": [
+          {
+            "address": "0x0000000000000000000000000000000000000000",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "ETH"
+          },
+          {
+            "address": "0x311935cd80b76769bf2ecc9d8ab7635b2139cf82",
+            "decimals": 9,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "SOL"
+          },
+          {
+            "address": "0x4200000000000000000000000000000000000006",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "WETH"
+          },
+          {
+            "address": "0x4ed4e862860bed51a9570b96d89af5e1b0efefed",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "DEGEN"
+          },
+          {
+            "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+            "decimals": 6,
+            "providers": [
+              "relay",
+              "across"
+            ],
+            "symbol": "USDC"
+          },
+          {
+            "address": "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf",
+            "decimals": 8,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "cbBTC"
+          },
+          {
+            "address": "0xfde4c96c8593536e31f229ea8f37b2ada2699bb2",
+            "decimals": 6,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "USDT"
+          }
+        ]
+      },
+      {
+        "chainId": 42161,
+        "name": "Arbitrum",
+        "tokens": [
+          {
+            "address": "0x0000000000000000000000000000000000000000",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "ETH"
+          },
+          {
+            "address": "0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "USDe"
+          },
+          {
+            "address": "0x7f9fbf9bdd3f4105c478b996b648fe6e828a1e98",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "APE"
+          },
+          {
+            "address": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "WETH"
+          },
+          {
+            "address": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+            "decimals": 6,
+            "providers": [
+              "relay",
+              "across"
+            ],
+            "symbol": "USDC"
+          },
+          {
+            "address": "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+            "decimals": 6,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "USDT"
+          }
+        ]
+      },
+      {
+        "chainId": 59144,
+        "name": "Linea",
+        "tokens": [
+          {
+            "address": "0x0000000000000000000000000000000000000000",
+            "decimals": 18,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "ETH"
+          },
+          {
+            "address": "0x176211869ca2b568f2a7d4ee941e073a821ee1ff",
+            "decimals": 6,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "USDC"
+          },
+          {
+            "address": "0xaca92e438df0b2401ff60da7e4337b687a2435da",
+            "decimals": 6,
+            "providers": [
+              "relay"
+            ],
+            "symbol": "mUSD"
+          }
+        ]
+      }
+    ],
+    "destinationChainId": 4663,
+    "destinationToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "providers": [
+      {
+        "provider": "relay",
+        "reason": null,
+        "status": "listed"
+      },
+      {
+        "provider": "across",
+        "reason": null,
+        "status": "listed"
+      }
+    ],
+    "retrievedAt": 1790905139,
+    "schemaVersion": 1
+  }
+}

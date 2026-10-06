@@ -16,6 +16,9 @@ export const PROVIDER_NAME: Readonly<Record<Provider, string>> = Object.freeze({
 export const CANDIDATE_COPY: Readonly<Record<CandidateStatus, string | null>> = Object.freeze({
   quoted: null,
   destination_gas_unsupported: "{provider} can't deliver gas on {destination}.",
+  // Added 2026-10-06 (crosschain-v1 1.1.0-rc.1): a quote by output whose deposit needs more than the wallet may send.
+  // Never met while the page asks by exact input.
+  input_above_max: '{provider} needs more than you can send from {origin}.',
   no_route: '{provider} has no route for this token.',
   amount_too_low: 'Amount too low for {provider}.',
   amount_too_high: 'Amount too high for {provider}.',

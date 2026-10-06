@@ -7,6 +7,13 @@ The provider fixtures in fixtures/crosschain are live keyless answers recorded o
 a real answer used as a shape template, its people's addresses and transactions
 replaced. Relay /requests/v3 needs a key, so its record here follows the
 documented schema.
+
+The quotes by output (relay-quote-expected-output-*, across-quote-min-output-*,
+and across-quote-exact-output, which must be refused) are live keyless answers
+of 6 October 2026, with the same synthetic wallets and the backend's own request
+shapes; only the trade type and the amount differ. fixtures/crosschain/rc1 holds
+the crosschain-v1 1.0.0-rc.1 package fixtures as main 26e264f7 exported them,
+for the switch window's byte-for-byte check.
 """
 from copy import deepcopy
 import json
@@ -21,9 +28,10 @@ from crosschain_across import DEPOSIT, DEPOSIT_NATIVE, ERC20_TRANSFER, FILLED_RE
 from crosschain_common import load_destinations, load_pins
 from crosschain_http import ProviderError
 from crosschain_relay import RelayProvider
-from crosschain_service import CrosschainService
+from crosschain_service import CrosschainService, provider_call
 
 FIXTURES = Path(__file__).resolve().parent / 'fixtures' / 'crosschain'
+RC1 = FIXTURES / 'rc1'
 OWNER = '0x' + '11' * 20
 FEE = '0x' + '22' * 20
 OTHER = '0x' + '33' * 20
@@ -44,17 +52,39 @@ def fixture(name):
 
 
 def quote_request(origin=42161, origin_token=USDC_ARBITRUM, destination=4663, destination_token=USDG,
-                  amount='100000000', slippage=50, gas=False):
+                  amount='100000000', slippage=50, gas=False, kind='exact_input', max_input=None):
+    """A 1.1.0-rc.1 quote request: by exact input unless `kind` is 'output' (then `max_input` is required)."""
     return {'originChainId': origin, 'originToken': origin_token, 'destinationChainId': destination,
-            'destinationToken': destination_token, 'amountRaw': amount, 'slippageBps': slippage, 'destinationGas': gas}
+            'destinationToken': destination_token, 'amountKind': kind, 'amountRaw': amount, 'maxInputRaw': max_input,
+            'slippageBps': slippage, 'destinationGas': gas}
+
+
+# What the wallet may send in a quote by output when the test is not about the cap: far above every fixture's input.
+NO_CAP = str(10**30)
+
+
+def output_request(need, max_input=NO_CAP, **changes):
+    """A quote request by output: `need` must arrive; `max_input` caps what the wallet may send."""
+    return quote_request(amount=str(need), kind='output', max_input=str(max_input), **changes)
+
+
+def previous_request(**changes):
+    """The same request as crosschain-v1 1.0.0-rc.1 sent it: by exact input, without amountKind or maxInputRaw."""
+    body = quote_request(**changes)
+    assert body['amountKind'] == 'exact_input'
+    return {key: value for key, value in body.items() if key not in ('amountKind', 'maxInputRaw')}
 
 
 def provider_request(**changes):
-    """The normalized call an adapter receives."""
+    """The normalized call an adapter receives (crosschain_service.provider_call over the quote's identity)."""
     body = quote_request(**changes)
-    return {'owner': OWNER, 'originChainId': body['originChainId'], 'originToken': body['originToken'].lower(),
-            'destinationChainId': body['destinationChainId'], 'destinationToken': body['destinationToken'].lower(),
-            'amount': int(body['amountRaw']), 'slippageBps': body['slippageBps'], 'destinationGas': body['destinationGas']}
+    return provider_call({'owner': OWNER, **body, 'originToken': body['originToken'].lower(),
+                          'destinationToken': body['destinationToken'].lower()})
+
+
+def output_call(need, max_input=NO_CAP, **changes):
+    """The call an adapter receives for a quote by output of `need`."""
+    return provider_request(amount=str(need), kind='output', max_input=str(max_input), **changes)
 
 
 def across_deposit(payload):

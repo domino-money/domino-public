@@ -1,6 +1,6 @@
 {
   "contract": "crosschain-v1",
-  "contractVersion": "1.0.0-rc.1",
+  "contractVersion": "1.1.0-rc.1",
   "files": [
     {
       "path": "fixtures/errors.json",
@@ -12,7 +12,7 @@
     },
     {
       "path": "fixtures/requests/quote.json",
-      "sha256": "9a7d3900dee14886a9ebef46d5c2507228381a50a27ba7b83875da4dc0e6fd05"
+      "sha256": "510bb46c32110632303956cffc54a1d03e5975de6d7f4f25e316c21250b17c9a"
     },
     {
       "path": "fixtures/requests/status.json",
@@ -20,51 +20,63 @@
     },
     {
       "path": "fixtures/responses/origins.json",
-      "sha256": "c5522c57190d02f0b63897fe4d329d286bc0c259e13232fda3c6a535da7ab869"
+      "sha256": "71de0984802698a3bf1627e0738cc2a81ad8186f9a4a00fc26decb976f5ef22a"
     },
     {
       "path": "fixtures/responses/quote.json",
-      "sha256": "f18bdbc5900e385a6d1876bf7e45f0d9669fb73fb4b391d392155fd81b331b0e"
+      "sha256": "ff9354ac1cd9f9cecc6d9c410181538a32303446d6552f5d412d896fb7787c3a"
     },
     {
       "path": "fixtures/responses/status.json",
-      "sha256": "f2e599ab43db9d6197842fbc370c73db034f76e798d7b80093d5507d1493f586"
+      "sha256": "99796819e645312a60fb2a608d7ba08a1bca3493d81ceccc6ec46fbfb109aaea"
     },
     {
       "path": "fixtures/variants/quote.destination-gas.json",
-      "sha256": "75c9db7163fbc3021ebe38a6474df05126d06109210581b44c10ad916e5fbe7d"
+      "sha256": "be4c81d74784979b10ceb98ead50140939d7ac69d9aa32ee3d3fef617afe5bfd"
     },
     {
       "path": "fixtures/variants/quote.native-only-across.json",
-      "sha256": "12691c2d38018cfb964a812df4278e3ffddfa6cfadc4da0a6f01ed5c5c960066"
+      "sha256": "faa14af9c1add48b203ba5ef7644145d180bd71a395cc284993234cc9fd0a877"
     },
     {
       "path": "fixtures/variants/quote.none.json",
-      "sha256": "6e22c901df7c2187b72b9c9b600aa245fb82e43527ff5b5e23ca5af9250ce245"
+      "sha256": "f84d7e3181ae24e5a055705a440221848a735259d7aab956fd12637b5e1570f4"
+    },
+    {
+      "path": "fixtures/variants/quote.output-above-max.json",
+      "sha256": "39cc537b6c2dc1aecbe78c1236a3af8def068042beeae5415238119a788daeed"
+    },
+    {
+      "path": "fixtures/variants/quote.output-native.json",
+      "sha256": "48ac2c56917ef3e69f98606a82b6db175c00c07ccaabdf4f4b8813f952682761"
+    },
+    {
+      "path": "fixtures/variants/quote.output.json",
+      "sha256": "e5d8121f3212044318beb63d2472f7013b4ea4cf879cc9ab1fdba8b2061c7361"
     },
     {
       "path": "fixtures/variants/status.across-held.json",
-      "sha256": "b7d8ad48edf058866cd316cfc5019849254cd566e5e1542db087f2f0fe42246c"
+      "sha256": "13379b59a1e49ccadf25531492cdff2b7cf56abbaddd4d7e589eb4db76e567f2"
     },
     {
       "path": "fixtures/variants/status.across-refund-pending.json",
-      "sha256": "57829add1d2e2a37d8aaec1fea1c0a8bbbbb843ffe632a6bfaa16de8cff83cf1"
+      "sha256": "6f6af3469b7aaed8207657a7934bcca8c95f01f6cf17a4a6168ca1f71780a0a5"
     },
     {
       "path": "fixtures/variants/status.relay-awaiting.json",
-      "sha256": "b59e1448fd575a9878fb9c3656bb4343a25f26ba87724e7831daff17597ea610"
+      "sha256": "44325c7fdb611785d1fdf3c4a29a7df2698a74f4aac5ec649341727f3ee72136"
     },
     {
       "path": "fixtures/variants/status.relay-filled.json",
-      "sha256": "365c4c6a66fb8904041aa8402caea44ab0d8213c7da8c5cd5e5e020159ecdca2"
+      "sha256": "8643362aecf92fab6060871a464dfd57092e20f241aeae0ad44736d72fea7c23"
     },
     {
       "path": "runtime.d.mts",
-      "sha256": "88fdd664eb0448fcf9903f061e02960b15a5d067fb06a2cec124b19a1f9d2a60"
+      "sha256": "49f87147cc96e3a99604647d1c8632c3441b5310c1438e20b25b7f8f28afbfae"
     },
     {
       "path": "schema-data.mjs",
-      "sha256": "b728916433affe1e887282c511e2f42c834246064f0eef5ea11aca8403121281"
+      "sha256": "2aec118461f64e420693cb12f29c750dab5dee0ff8d2798490959b1764e02c21"
     },
     {
       "path": "schemas/error.response.schema.json",
@@ -72,35 +84,35 @@
     },
     {
       "path": "schemas/origins.request.schema.json",
-      "sha256": "496768cecb0491f612b3e98a41565c252d269306277fe05f31dac93077173c28"
+      "sha256": "7aed047c63bd182370156aaf751c7ee0a3c469beae5b727ef4a5610c3aad9924"
     },
     {
       "path": "schemas/origins.response.schema.json",
-      "sha256": "5f03a26654ff5c16ed9c98cc36b24ddad80ae88ca1ad5c773c6d414772540d92"
+      "sha256": "cb9fc1da14f07b0fa49670ad754ac9df45c0ffc7aac8821c0eb3c95aed00ce66"
     },
     {
       "path": "schemas/quote.request.schema.json",
-      "sha256": "a261e6a44ce3c720ec48b16e6df65730e7db0662f73e4390cc7915a6a59f989b"
+      "sha256": "20855063f09e18d89a1c227317ce8fdd754ee33c5122fbfbfaf9921f5c0db2c0"
     },
     {
       "path": "schemas/quote.response.schema.json",
-      "sha256": "72ac7602c68e9781cf52df721161285bf7c352c2b332654fbbbb266c19d2d6fa"
+      "sha256": "15dfc0193e6bd8b3386bc03dce2d311755ae55a6b74efc0a1684460b5137f0de"
     },
     {
       "path": "schemas/status.request.schema.json",
-      "sha256": "0166cfb2397801e7169647f162c5bb3ef8bb87359f117c08f3d02e324ce56287"
+      "sha256": "76e8f6c87d51a367d17b99d744214a62467ff39405b846127a185166f9a42f04"
     },
     {
       "path": "schemas/status.response.schema.json",
-      "sha256": "cb08e1fb65050c7c7023b9da0059d38ea0671a8bd97ed0265eaa445da41bfd8d"
+      "sha256": "a23f4cd6023340acd92a44f31a9a534fbf9ffa7a43fdc3e05cf90ea1a9d97526"
     },
     {
       "path": "types.ts",
-      "sha256": "d090bf91d3432dccc83b04eaa660fe50b174f773df92d621ad9e8bbb6595137e"
+      "sha256": "1b48a3fc06da67bee0ca6d3a16aa670a56b61739fe9d67fe21e9cf1040043f85"
     },
     {
       "path": "runtime.mjs",
-      "sha256": "8b11de0b1d0c7279e639d3488e3607382c7f186ee84252e6129a97d34766ebc8"
+      "sha256": "8f6e8acb2bebd9a6cc10b9ddc066349aac46af7c9330cc5e8faa27b8ac6e5289"
     },
     {
       "path": "../shared/closed-schema.mjs",
@@ -108,26 +120,30 @@
     },
     {
       "path": "README.md",
-      "sha256": "3e14e401517929649440ef5b18a2fc11df2d37518c224026f603531c140527db"
+      "sha256": "34f827448466c56b36d8eea263b6cf107c6d95f631d044e9eeb00f8f8ce17268"
     },
     {
       "path": "consumer.test.mjs",
-      "sha256": "7463a6bff6273fa4417a8f371c7b54e5e0e7f62cc50c431a7785fd7b731fbf15"
+      "sha256": "a1a7db14f88d4586d8e4fe573601ef7b9bbd7268b59793f22d868eb08ce8c60f"
     }
   ],
   "generator": "scripts/export-crosschain-contract.py",
   "sources": [
     {
       "path": "backend/crosschain_models.py",
+      "sha256": "1056a40ede519545fd77633b618ec9fff6509fd76c54f46e0a089c7bf0ed1d46"
+    },
+    {
+      "path": "backend/crosschain_models_rc1.py",
       "sha256": "72f1dc75fdac60419cd3f7f7a4c4a2712424ba3cee4c7d70b445ac92687e4b66"
     },
     {
       "path": "backend/crosschain_service.py",
-      "sha256": "207e47123b4874734e97d6df8d270eb12fbfa7fd8019f9a9d9e8f137fe2f03da"
+      "sha256": "da78a5e74f8cee4fed3d45698ce710633ae0ade009adba7891ab4828ec7a72bb"
     },
     {
       "path": "backend/crosschain_api.py",
-      "sha256": "921b18681dc734b461361cc38c88ce1e8808977c4dd24409962a83d677b0b27a"
+      "sha256": "19c719f90e6a57f46474fc66aeb4e1575462e32d8dbf7e338266cb4b3c28ca34"
     },
     {
       "path": "backend/crosschain_common.py",
@@ -135,11 +151,11 @@
     },
     {
       "path": "backend/crosschain_relay.py",
-      "sha256": "b3ba9a2b410184505a382d642a95764df02c9819bedccdc9d97c98b588005b6e"
+      "sha256": "bff30453aad149c5244133c35fc9763c58ce8365532adddd0074622e576fad3c"
     },
     {
       "path": "backend/crosschain_across.py",
-      "sha256": "52700b99241a9da78901e64f7aa14b5c8cf206d015fbc345d1b65cec894d369c"
+      "sha256": "0cddf7ce24704bdc7010346970c4748e840113a88c8699bde5d658d4417ba32c"
     },
     {
       "path": "backend/crosschain_http.py",
@@ -155,7 +171,7 @@
     },
     {
       "path": "backend/authenticated_api.py",
-      "sha256": "dd4d8f9fdb41bf69d8831f9e7b71dbe533e085874e304ca67ede5a5091ecd79f"
+      "sha256": "d498d87b4aba6705ae2fb33c94ddf63a3108fd8a95d9fbcf213dba32877eb35e"
     },
     {
       "path": "backend/onboarding_auth.py",
@@ -163,15 +179,15 @@
     },
     {
       "path": "backend/tests/crosschain_support.py",
-      "sha256": "e53b6acd4e24fe004e891fc5a7a2dc7c9637e8c98e629b2242073225139232d3"
+      "sha256": "9a72bea2a1b18a52bedcbe555ec48a41f6edc49a7fb534b9a4c552766d91e548"
     },
     {
       "path": "backend/tests/crosschain_contract_fixtures.py",
-      "sha256": "bc64f5587e0920aaf1c40c0295baeb27a390cf985d8aec16e25a9fcf14c6d52a"
+      "sha256": "2902fa45ab54e3abd2d249999824c90d26c766c02c39087f1e886b1436ef98f8"
     },
     {
       "path": "scripts/export-crosschain-contract.py",
-      "sha256": "6bc4960fd9b3029a8d867edc6f07cffa388f34479c1e93e765073c4e468ecb35"
+      "sha256": "5fb8df28a2649748509927270ca4d039538a753895f26af53f9fc4bedceaa2fb"
     }
   ],
   "status": "candidate_disabled_pending_keys_and_worker"

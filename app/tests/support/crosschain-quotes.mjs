@@ -23,7 +23,7 @@ const word = (hex) => hex.replace(/^0x/, '').padStart(64, '0');
 export const recorded = (name, owner) => JSON.parse(readFileSync(new URL(`${name}.json`, PACKAGE), 'utf8').replaceAll(FIXTURE_OWNER, owner));
 
 /** Across with no route (the package's own quote.none candidate). */
-const NO_ROUTE = Object.freeze({ appFee: null, destinationGas: null, etaSeconds: null, minimumOutputRaw: null, originGas: null, outputRaw: null, provider: 'across', providerFee: null, reason: 'provider_no_route', refund: null, status: 'no_route', tracking: null });
+const NO_ROUTE = Object.freeze({ appFee: null, destinationGas: null, etaSeconds: null, inputRaw: null, minimumOutputRaw: null, originGas: null, outputRaw: null, provider: 'across', providerFee: null, reason: 'provider_no_route', refund: null, status: 'no_route', tracking: null });
 
 /** The answer to `body` (the request the page sent) for `owner`, from the recorded answer `name`. Throws if it would not validate. */
 export function quoteFor(body, owner, name = 'responses/quote', { rate = null, relayOnly = false } = {}) {
@@ -39,6 +39,9 @@ export function quoteFor(body, owner, name = 'responses/quote', { rate = null, r
   q.request = { ...body, owner };
   if (relayOnly) q.candidates = q.candidates.map((c) => (c.provider === 'across' ? { ...NO_ROUTE } : c));
   for (const c of q.candidates) {
+    // Changed on purpose (data) 2026-10-06 (crosschain-v1 1.1.0-rc.1): what each deposit takes, the amount asked (the
+    // page asks by exact input).
+    c.inputRaw = scale(c.inputRaw);
     c.outputRaw = arrives(c.outputRaw);
     c.minimumOutputRaw = arrives(c.minimumOutputRaw);
     if (c.appFee) {

@@ -1,12 +1,15 @@
-// crosschain-v1 1.0.0-rc.1 through the authenticated bridge (spec F7 §3.2; added 2026-10-02, the bridge side of S2, open
+// crosschain-v1 1.1.0-rc.1 through the authenticated bridge (spec F7 §3.2; added 2026-10-02, the bridge side of S2, open
 // point #17): POST /api/crosschain/v1/origins, /quote and /status, a SIWE session and its CSRF token, forwarded to the
 // private listener's /internal/crosschain/v1/<route> (backend/crosschain_api.py, 127.0.0.1:8910 behind its own tunnel
-// hostname and Access identity). The shared transport is onboarding's, deposit's and position-plan's
-// (authenticated-worker.mjs): the browser's session cookie and CSRF header become X-Domino-Session and X-Domino-CSRF, the
-// edge's client address X-Domino-Client-Id, and every answer passes the package's runtime (validateRequest,
-// validateResponse with its recomputed decision and its pinned-contract steps, validateError) before it reaches the
-// browser. The owner is the session's wallet: no request names one, a recipient, a refund address or a fee recipient
-// (the package's closed request schemas refuse the fields), and this Worker never calls Relay or Across itself.
+// hostname and Access identity). Changed on purpose (data) 2026-10-06: 1.0.0-rc.1 -> 1.1.0-rc.1 (a quote by exact input
+// or by output; no logic changed here): this Worker speaks the package's one version, while the listener also answers
+// 1.0.0-rc.1 for the switch window (api-contracts/crosschain-v1/README.md). The shared transport is onboarding's,
+// deposit's and position-plan's (authenticated-worker.mjs): the browser's session cookie and CSRF header become
+// X-Domino-Session and X-Domino-CSRF, the edge's client address X-Domino-Client-Id, and every answer passes the
+// package's runtime (validateRequest, validateResponse with its recomputed decision and its pinned-contract steps,
+// validateError) before it reaches the browser. The owner is the session's wallet: no request names one, a recipient,
+// a refund address or a fee recipient (the package's closed request schemas refuse the fields), and this Worker never
+// calls Relay or Across itself.
 //
 // Off until CROSSCHAIN_BRIDGE_ENABLED is exactly "true" (route_not_available, no upstream call), with
 // CROSSCHAIN_GATEWAY_ORIGIN and the Access pair CROSSCHAIN_ACCESS_CLIENT_ID / _SECRET; an enabled but incomplete

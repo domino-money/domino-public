@@ -29,7 +29,7 @@ export const SCHEMAS = {
       ],
       "title": "OriginsRequest",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     },
     "response": {
       "$defs": {
@@ -233,7 +233,7 @@ export const SCHEMAS = {
       "additionalProperties": false,
       "properties": {
         "contractVersion": {
-          "const": "1.0.0-rc.1",
+          "const": "1.1.0-rc.1",
           "title": "Contractversion",
           "type": "string"
         },
@@ -247,7 +247,7 @@ export const SCHEMAS = {
       ],
       "title": "OriginsResponse",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     }
   },
   "quote": {
@@ -256,6 +256,14 @@ export const SCHEMAS = {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "amountKind": {
+          "enum": [
+            "exact_input",
+            "output"
+          ],
+          "title": "Amountkind",
+          "type": "string"
+        },
         "amountRaw": {
           "maxLength": 78,
           "pattern": "^[1-9][0-9]{0,77}$",
@@ -282,6 +290,19 @@ export const SCHEMAS = {
           "title": "Destinationtoken",
           "type": "string"
         },
+        "maxInputRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Maxinputraw"
+        },
         "originChainId": {
           "maximum": 9007199254740991,
           "minimum": 1,
@@ -307,13 +328,15 @@ export const SCHEMAS = {
         "originToken",
         "destinationChainId",
         "destinationToken",
+        "amountKind",
         "amountRaw",
+        "maxInputRaw",
         "slippageBps",
         "destinationGas"
       ],
       "title": "QuoteRequest",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     },
     "response": {
       "$defs": {
@@ -425,6 +448,19 @@ export const SCHEMAS = {
               ],
               "title": "Etaseconds"
             },
+            "inputRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^[1-9][0-9]{0,77}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Inputraw"
+            },
             "minimumOutputRaw": {
               "anyOf": [
                 {
@@ -506,6 +542,7 @@ export const SCHEMAS = {
               "enum": [
                 "quoted",
                 "destination_gas_unsupported",
+                "input_above_max",
                 "no_route",
                 "amount_too_low",
                 "amount_too_high",
@@ -533,6 +570,7 @@ export const SCHEMAS = {
             "provider",
             "status",
             "reason",
+            "inputRaw",
             "outputRaw",
             "minimumOutputRaw",
             "appFee",
@@ -576,7 +614,7 @@ export const SCHEMAS = {
               "title": "Advantageraw"
             },
             "basis": {
-              "const": "expected_output_after_all_fees",
+              "const": "expected_output_per_input_after_all_fees",
               "title": "Basis",
               "type": "string"
             }
@@ -645,6 +683,14 @@ export const SCHEMAS = {
         "QuoteIdentity": {
           "additionalProperties": false,
           "properties": {
+            "amountKind": {
+              "enum": [
+                "exact_input",
+                "output"
+              ],
+              "title": "Amountkind",
+              "type": "string"
+            },
             "amountRaw": {
               "maxLength": 78,
               "pattern": "^[1-9][0-9]{0,77}$",
@@ -670,6 +716,19 @@ export const SCHEMAS = {
               "pattern": "^0x[0-9a-f]{40}$",
               "title": "Destinationtoken",
               "type": "string"
+            },
+            "maxInputRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^[1-9][0-9]{0,77}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Maxinputraw"
             },
             "originChainId": {
               "maximum": 9007199254740991,
@@ -703,7 +762,9 @@ export const SCHEMAS = {
             "originToken",
             "destinationChainId",
             "destinationToken",
+            "amountKind",
             "amountRaw",
+            "maxInputRaw",
             "slippageBps",
             "destinationGas",
             "owner"
@@ -987,7 +1048,7 @@ export const SCHEMAS = {
       "additionalProperties": false,
       "properties": {
         "contractVersion": {
-          "const": "1.0.0-rc.1",
+          "const": "1.1.0-rc.1",
           "title": "Contractversion",
           "type": "string"
         },
@@ -1001,7 +1062,7 @@ export const SCHEMAS = {
       ],
       "title": "QuoteResponse",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     }
   },
   "status": {
@@ -1085,7 +1146,7 @@ export const SCHEMAS = {
       ],
       "title": "StatusRequest",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     },
     "response": {
       "$defs": {
@@ -1453,7 +1514,7 @@ export const SCHEMAS = {
       "additionalProperties": false,
       "properties": {
         "contractVersion": {
-          "const": "1.0.0-rc.1",
+          "const": "1.1.0-rc.1",
           "title": "Contractversion",
           "type": "string"
         },
@@ -1467,7 +1528,7 @@ export const SCHEMAS = {
       ],
       "title": "StatusResponse",
       "type": "object",
-      "x-contract-version": "1.0.0-rc.1"
+      "x-contract-version": "1.1.0-rc.1"
     }
   }
 };

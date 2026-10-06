@@ -45,10 +45,13 @@ class AuthenticatedGateway:
         self.clock, self.total_seconds, self.upload_seconds = clock, total_seconds, upload_seconds
         self.slot = BoundedSemaphore(MAX_WORKERS)
 
-    def execute(self, route, body, headers, deadline):
+    def execute(self, route, body, headers, deadline, version=None):
+        """`version`: the one the request named, for a family with a switch window (CONTRACT_VERSIONS); its service
+        and its models answer in that version. None for every other family, which has one."""
         OnboardingError = self.contract.Error
         validate_response = self.contract.validate_response
         MAX_RESPONSE = self.contract.MAX_RESPONSE
+        window = {} if version is None else {'version': version}
         try:
             remaining = deadline - self.clock()
             if remaining <= 0:
@@ -59,8 +62,8 @@ class AuthenticatedGateway:
                 except Exception:
                     raise OnboardingError('upstream_unavailable') from None
                 response = self.service.execute(route, body, client=headers['client'],
-                                                session=headers['session'], csrf=headers['csrf'])
-                response = validate_response(route, response)
+                                                session=headers['session'], csrf=headers['csrf'], **window)
+                response = validate_response(route, response, **window)
                 encoded = json.dumps(response, allow_nan=False, separators=(',', ':'))
                 if len(encoded.encode()) > MAX_RESPONSE or any(headers[name] and headers[name] in encoded
                         for name in ('assertion', 'session', 'csrf')):
@@ -87,6 +90,11 @@ def create_authenticated_app(gateway):
     validate_request = contract.validate_request
     MAX_BODY, CONTRACT_VERSION = contract.MAX_BODY, contract.CONTRACT_VERSION
     PREFIX, HEADER = contract.PREFIX, contract.HEADER
+    # A family may accept a second version while its consumers switch (crosschain-v1, 6 Oct 2026): the request's
+    # header names one of CONTRACT_VERSIONS, and its answer, the answer's header and its record carry that one. Every
+    # other family has exactly CONTRACT_VERSION, as before.
+    WINDOW = getattr(contract, 'CONTRACT_VERSIONS', None)
+    ACCEPTED = frozenset(version.encode('ascii') for version in (WINDOW or (CONTRACT_VERSION,)))
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix='authenticated-api')
     pending = set()
 
@@ -109,6 +117,10 @@ def create_authenticated_app(gateway):
             request_id = secrets.token_hex(16)
             opened = gateway.clock()
             logged_route = 'unmatched'
+            # The version answered: the one the request names when this family accepts it, a refusal before the
+            # header's own check included (a window's previous version is answered in it); else this family's own.
+            named = next((value for name, value in request.scope['headers'] if name.lower() == HEADER.lower().encode()), None)
+            version = named.decode('ascii') if named in ACCEPTED else CONTRACT_VERSION
             notes = hop_log.open_notes()
             recorded = []
 
@@ -118,7 +130,7 @@ def create_authenticated_app(gateway):
                     return
                 recorded.append(status)
                 hop_log.emit(service=SERVICE_NAME, requestId=request_id, route=logged_route,
-                             contractVersion=CONTRACT_VERSION, method=request.method, status=status,
+                             contractVersion=version, method=request.method, status=status,
                              reason=reason, durationMs=int((gateway.clock() - opened) * 1000),
                              **hop_log.close_notes(notes))
 
@@ -126,7 +138,7 @@ def create_authenticated_app(gateway):
                 record(status, body.get('error') if isinstance(body, dict) else None)
                 headers = {'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff',
                            'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
-                           HEADER: CONTRACT_VERSION, 'X-Domino-Request-Id': request_id}
+                           HEADER: version, 'X-Domino-Request-Id': request_id}
                 if status == 429:
                     headers['Retry-After'] = '60'
                 return JSONResponse(body, status_code=status, headers=headers)
@@ -159,7 +171,7 @@ def create_authenticated_app(gateway):
                 headers[name] = value
             if headers.get(b'x-domino-browser-origin') != gateway.origin.encode('ascii'):
                 return error('origin_not_allowed')
-            if headers.get(HEADER.lower().encode()) != CONTRACT_VERSION.encode('ascii'):
+            if headers.get(HEADER.lower().encode()) not in ACCEPTED:
                 return error('upstream_contract_mismatch')
             if (not re.fullmatch(rb'application/json(?:;\s*charset=utf-8)?', headers.get(b'content-type', b''), re.I)
                     or headers.get(b'content-encoding', b'identity') != b'identity'):
@@ -194,7 +206,10 @@ def create_authenticated_app(gateway):
                 if length is not None and len(raw) != int(length):
                     return error('invalid_request')
                 body = strict_json(raw)
-                validate_request(match[1], body)
+                if WINDOW is None:
+                    validate_request(match[1], body)
+                else:
+                    validate_request(match[1], body, version)
                 if gateway.clock() >= upload_deadline:
                     raise TimeoutError()
             except TimeoutError:
@@ -207,7 +222,8 @@ def create_authenticated_app(gateway):
                 return error(getattr(contract, 'CAPACITY_CODE', 'onboarding_capacity_busy'))
             try:
                 future = asyncio.get_running_loop().run_in_executor(executor, gateway.execute, match[1], body,
-                    {'assertion': assertion, 'client': client, **credentials}, deadline)
+                    {'assertion': assertion, 'client': client, **credentials}, deadline,
+                    None if WINDOW is None else version)
             except Exception:
                 gateway.slot.release()
                 return error('upstream_unavailable')

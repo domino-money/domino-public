@@ -7,7 +7,7 @@
  *   2. The transport: an abort, this page's deadline, a network failure, a redirect.
  *   3. No `X-Domino-Crosschain-Contract` header: the beta gate's 401 and 503, a missing route (404, 405, the SPA's
  *      HTML), anything else. None of these is a crosschain answer, and no validator sees them.
- *   4. A header other than exactly 1.0.0-rc.1.
+ *   4. A header other than exactly the pinned version (./version.ts: 1.1.0-rc.1).
  *   5. JSON media and parsing.
  *   6. 2xx: `validateResponse(route, body)`, then the echo: the answer is about the request this page sent, and
  *      `quote.request.owner` / `status.request.owner` is the connected wallet the caller names (lowercase compare).

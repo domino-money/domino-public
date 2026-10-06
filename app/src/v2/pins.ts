@@ -37,5 +37,8 @@ export const POSITION_PLAN_V1_PIN = {
   version: '1.0.0-rc.2',
   // Changed on purpose (data) 2026-10-05: main's #337 and #338 changed two backend sources the manifest lists
   // (v2_uniswap_api.py, v2_position_plan.py); the package's own files and its version are unchanged.
-  manifestSha256: '6206c9454bcfe2ed88d9e860bbb3e0ff9924e4e2a8c425b72e6e47b93dad6110',
+  // Changed on purpose (data) 2026-10-06: authenticated_api.py, which the manifest hashes, lets a family accept a second
+  // contract version for a switch window (crosschain-v1's); position-plan-v1 keeps its one, and its files and version
+  // are unchanged.
+  manifestSha256: '95ffcc7d7c31a7a22d7f74b909c3cfcdf94c9036ae6443b5a75d6b15eb0ee930',
 } as const

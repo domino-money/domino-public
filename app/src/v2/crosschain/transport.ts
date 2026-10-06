@@ -1,6 +1,6 @@
 /**
  * How a crosschain-v1 request leaves the page (spec F7 §3.2): `POST /api/crosschain/v1/<route>`, a JSON body, the
- * session cookie, `X-Domino-CSRF` and `X-Domino-Crosschain-Contract: 1.0.0-rc.1`. Two kinds:
+ * session cookie, `X-Domino-CSRF` and `X-Domino-Crosschain-Contract: 1.1.0-rc.1` (./version.ts). Two kinds:
  *
  *   fixture  scripted replies from the package fixtures (./fixtureTransport.ts), for the node tests and a future lab.
  *            Nothing leaves the page.

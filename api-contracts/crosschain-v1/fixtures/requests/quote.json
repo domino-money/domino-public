@@ -1,8 +1,10 @@
 {
+  "amountKind": "exact_input",
   "amountRaw": "100000000",
   "destinationChainId": 4663,
   "destinationGas": false,
   "destinationToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+  "maxInputRaw": null,
   "originChainId": 42161,
   "originToken": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
   "slippageBps": 50

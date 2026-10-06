@@ -56,6 +56,31 @@ test('the decision is recomputed from the candidates', () => {
   assert(!mutate((q) => { q.expiresAt += 60; }));
 });
 
+test('by output (1.1.0-rc.1): the cap, the guarantee, the better rate and the winner\'s input', () => {
+  const variant = (name) => variants.find(([file]) => file === `${name}.json`)[2];
+  const [output, above, native] = ['quote.output', 'quote.output-above-max', 'quote.output-native'].map(variant);
+  const mutate = (base, change) => { const value = clone(base); change(value.quote); return runtime.validateResponse('quote', value); };
+  // Relay takes more but delivers more per unit sent: it wins, and the wallet approves what its deposit takes.
+  assert.equal(output.quote.decision, 'relay');
+  assert.equal(output.quote.steps[0].approval.amountRaw, output.quote.candidates[0].inputRaw);
+  assert.notEqual(output.quote.candidates[0].inputRaw, output.quote.request.amountRaw);
+  assert(!mutate(output, (q) => { q.decision = 'across'; }));
+  assert(!mutate(output, (q) => { q.steps[0].approval.amountRaw = q.request.amountRaw; }));
+  assert(!mutate(native, (q) => { q.steps[0].transaction.valueRaw = q.request.amountRaw; }));
+  // Only what the wallet may send is eligible; above it a candidate is input_above_max, still priced.
+  assert.equal(above.quote.candidates[0].status, 'input_above_max');
+  assert(!mutate(output, (q) => { q.request.maxInputRaw = '100910000'; }));
+  assert(!mutate(above, (q) => { q.request.maxInputRaw = '150000000'; }));
+  // Every price guarantees what must arrive, and says what its deposit takes.
+  assert(!mutate(above, (q) => { q.candidates[0].minimumOutputRaw = '99999999'; }));
+  assert(!mutate(above, (q) => { q.candidates[0].inputRaw = null; }));
+  // The request: a cap exactly when asking by output.
+  assert(runtime.validateRequest('quote', { ...requests.quote, amountKind: 'output', maxInputRaw: '1' }));
+  assert(!runtime.validateRequest('quote', { ...requests.quote, amountKind: 'output' }));
+  assert(!runtime.validateRequest('quote', { ...requests.quote, maxInputRaw: '1' }));
+  assert(!runtime.validateRequest('quote', { ...requests.quote, amountKind: 'exact_output' }));
+});
+
 test('tracking only moves forward and reports fees for fills only', () => {
   const base = responses.status;
   const mutate = (change) => { const value = clone(base); change(value.status); return runtime.validateResponse('status', value); };

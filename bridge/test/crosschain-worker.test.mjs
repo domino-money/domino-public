@@ -130,7 +130,8 @@ for (const settings of [
 
 test('every answer the producer serves passes through exactly, for its route, with only the fixed authentication headers upstream', async (t) => {
   assert.deepEqual([...ROUTES], ['origins', 'quote', 'status']);
-  assert.equal(ANSWERS.length, 10);
+  // Changed on purpose (data) 2026-10-06 (1.1.0-rc.1): three quotes by output join the variants.
+  assert.equal(ANSWERS.length, 13);
   for (const [name, route, answer] of ANSWERS) {
     t.mock.restoreAll();
     during(t, route, answer);
@@ -177,6 +178,7 @@ test('the answer is about this browser\'s request: one for another request is re
     ['quote', 'another destination token', (body) => { body.destinationToken = WETH_RH; }],
     ['quote', 'another slippage', (body) => { body.slippageBps = 100; }],
     ['quote', 'destination gas asked', (body) => { body.destinationGas = true; }],
+    ['quote', 'asked by output', (body) => { body.amountKind = 'output'; body.maxInputRaw = body.amountRaw; }],
     ['status', 'another deposit', (body) => { body.depositTxHash = '0x' + 'e'.repeat(64); }],
     ['status', 'another origin chain', (body) => { body.originChainId = 8453; }],
     ['status', 'another previous state', (body) => { body.previousState = null; }],
@@ -188,6 +190,18 @@ test('the answer is about this browser\'s request: one for another request is re
     await error(await h.worker.fetch(request({ route, body: JSON.stringify(body) }), env), 'upstream_contract_mismatch', `${route}: ${label}`);
     assert.equal(h.calls.length, 1, label);
   }
+  // A quote by output (1.1.0-rc.1) is about its cap too: the same answer for another cap, or asked by exact input, is not it.
+  const byOutput = ANSWERS.find(([name]) => name.endsWith('quote.output.json'))[2];
+  t.mock.restoreAll();
+  during(t, 'quote', byOutput);
+  const asked = sentFor('quote', byOutput);
+  assert.equal((await harness(() => response(byOutput)).worker.fetch(request({ body: JSON.stringify(asked) }), env)).status, 200);
+  for (const changed of [{ ...asked, maxInputRaw: '150000001' }, { ...asked, amountKind: 'exact_input', maxInputRaw: null }]) {
+    assert.equal(validateRequest('quote', changed), true);
+    await error(await harness(() => response(byOutput)).worker.fetch(request({ body: JSON.stringify(changed) }), env), 'upstream_contract_mismatch');
+  }
+  t.mock.restoreAll();
+  during(t);
   // Relay's answer is a request about Relay: the same report for Across's request is not it.
   const relay = ANSWERS.find(([name]) => name.endsWith('status.relay-filled.json'))[2];
   const sent = sentFor('status', relay);
@@ -329,7 +343,8 @@ test('only the three POST paths dispatch, and a request is the package\'s exactl
   for (const headers of [{}, { 'Content-Length': '2' }]) {
     await error(await h.worker.fetch(request({ body: ' '.repeat(CROSSCHAIN_LIMITS.requestBytes + 1), headers }), env), 'request_too_large');
   }
-  for (const version of ['1.0.0-rc.2', '1.0.0', `${CONTRACT_VERSION}, ${CONTRACT_VERSION}`]) {
+  // 1.0.0-rc.1 too: the listener's switch window is the listener's; this Worker speaks the package's one version.
+  for (const version of ['1.0.0-rc.1', '1.0.0-rc.2', '1.0.0', `${CONTRACT_VERSION}, ${CONTRACT_VERSION}`]) {
     await error(await h.worker.fetch(request({ headers: { [HEADER]: version } }), env), 'upstream_contract_mismatch');
   }
   assert.equal(h.calls.length, 0);
@@ -352,7 +367,7 @@ test('what is not the listener\'s answer is unavailable, a foreign version a mis
     response({ error: 'onboarding_capacity_busy' }, 503)]) {
     await error(await harness(() => output).worker.fetch(request(), env), 'upstream_unavailable');
   }
-  for (const version of ['2.0.0', '1.0.0-rc.2', `${CONTRACT_VERSION}, ${CONTRACT_VERSION}`]) {
+  for (const version of ['2.0.0', '1.0.0-rc.1', '1.0.0-rc.2', `${CONTRACT_VERSION}, ${CONTRACT_VERSION}`]) {
     await error(await harness(() => response(QUOTE, 200, { [HEADER]: version })).worker.fetch(request(), env), 'upstream_contract_mismatch');
   }
   const text = JSON.stringify(QUOTE);
@@ -439,6 +454,7 @@ test('capabilities: a local GET with no session that says whether the routes are
   await error(await h.worker.fetch(capabilitiesRequest({}, 'POST'), env), 'method_not_allowed');
   await error(await h.worker.fetch(new Request(`${origin}/api/crosschain/v1/capabilities?x=1`), env), 'route_not_available');
   await error(await h.worker.fetch(capabilitiesRequest({ [HEADER]: '1.0.0-rc.2' }), env), 'upstream_contract_mismatch');
+  await error(await h.worker.fetch(capabilitiesRequest({ [HEADER]: '1.0.0-rc.1' }), env), 'upstream_contract_mismatch');
   assert.equal((await h.worker.fetch(capabilitiesRequest({ [HEADER]: CONTRACT_VERSION }), env)).status, 200);
   assert.equal(h.calls.length, 0, 'never upstream');
 });

@@ -1,16 +1,21 @@
 // Closed schema validation plus the crosschain-v1 rules the backend enforces: the route
 // decision recomputed from the candidates, wallet steps that only reach the contracts
-// pinned for that provider and origin chain, exact approvals, and tracking states that
-// only move forward. No fetch, wallet or signing.
+// pinned for that provider and origin chain, exact approvals for what the winner's deposit
+// takes, and tracking states that only move forward. No fetch, wallet or signing.
+// 1.1.0-rc.1 (6 Oct 2026): a quote asks by exact input or by output (the least that must
+// arrive, with the most the wallet may send), each priced candidate says what its deposit
+// takes (inputRaw), and the decision is the better rate (backend/crosschain_models.py).
 import { SCHEMAS, ERRORS, CONSTANTS } from './schema-data.mjs';
 import { createContractValidators } from '../shared/closed-schema.mjs';
 
-export const CONTRACT_VERSION = '1.0.0-rc.1';
+export const CONTRACT_VERSION = '1.1.0-rc.1';
 export const ROUTES = Object.freeze(Object.keys(SCHEMAS));
 export const ERROR_STATUS_BY_CODE = Object.freeze({ ...ERRORS });
 
 const ZERO = '0x' + '0'.repeat(40);
 const PROVIDERS = ['relay', 'across'];
+const PRICED = ['quoted', 'destination_gas_unsupported', 'input_above_max'];
+const UINT128 = 1n << 128n;
 const STATES = ['awaiting_deposit', 'pending', 'refund_pending', 'failed', 'refund_failed', 'filled', 'refunded'];
 const TERMINAL = new Set(['filled', 'refunded']);
 const NEXT = {
@@ -48,24 +53,37 @@ function approvalSpender(provider, chain) {
   return provider === 'relay' ? pin.depository : pin.spokePool;
 }
 
-// Eligible candidates, best first: more output, then a shorter wait, then provider order.
+// Eligible candidates, best first: more output per unit sent (E_a·I_b against E_b·I_a, exactly), then the smaller
+// input, then a shorter wait, then provider order. With equal inputs (exact input) the first key is more output.
 function ranked(candidates) {
   return candidates.filter((c) => c.status === 'quoted').sort((a, b) => {
-    const out = BigInt(b.outputRaw) - BigInt(a.outputRaw);
-    if (out !== 0n) return out > 0n ? 1 : -1;
+    const rate = BigInt(b.outputRaw) * BigInt(a.inputRaw) - BigInt(a.outputRaw) * BigInt(b.inputRaw);
+    if (rate !== 0n) return rate > 0n ? 1 : -1;
+    const input = BigInt(a.inputRaw) - BigInt(b.inputRaw);
+    if (input !== 0n) return input > 0n ? 1 : -1;
     const eta = (a.etaSeconds ?? 1e9) - (b.etaSeconds ?? 1e9);
     return eta !== 0 ? eta : PROVIDERS.indexOf(a.provider) - PROVIDERS.indexOf(b.provider);
   });
 }
 
+// The winner's margin over the other quoted candidate: the extra output it delivers for the other's input,
+// floor(E_w·I_o / I_w) − E_o, and (E_w·I_o − E_o·I_w) · 10000 / (E_o·I_w) in whole bps; null without one.
+function advantage(best) {
+  if (best.length !== 2) return null;
+  const [ew, iw, eo, io] = [best[0].outputRaw, best[0].inputRaw, best[1].outputRaw, best[1].inputRaw].map(BigInt);
+  return { raw: (ew * io) / iw - eo, bps: ((ew * io - eo * iw) * 10000n) / (eo * iw) };
+}
+
 function quoteRequest(value) {
   return offered(value.destinationChainId, value.destinationToken) && value.originChainId !== value.destinationChainId &&
-    !(value.destinationGas && value.destinationToken.toLowerCase() === ZERO) && BigInt(value.amountRaw) < (1n << 128n);
+    !(value.destinationGas && value.destinationToken.toLowerCase() === ZERO) && BigInt(value.amountRaw) < UINT128 &&
+    (value.maxInputRaw === null) === (value.amountKind === 'exact_input') &&
+    (value.maxInputRaw === null || BigInt(value.maxInputRaw) < UINT128);
 }
 
 function candidate(value) {
-  const priced = ['quoted', 'destination_gas_unsupported'].includes(value.status);
-  const fields = [value.outputRaw, value.minimumOutputRaw, value.appFee, value.originGas, value.refund, value.tracking];
+  const priced = PRICED.includes(value.status);
+  const fields = [value.inputRaw, value.outputRaw, value.minimumOutputRaw, value.appFee, value.originGas, value.refund, value.tracking];
   if (priced) {
     if (fields.some((field) => field === null) || BigInt(value.minimumOutputRaw) > BigInt(value.outputRaw)) return false;
     if ((value.provider === 'relay') !== (value.tracking.requestId !== null)) return false;
@@ -90,29 +108,36 @@ function quotePlan(value) {
   if (!(value.requestedAt <= value.retrievedAt && value.retrievedAt < value.expiresAt &&
         value.expiresAt === value.requestedAt + CONSTANTS.quoteLifetimeSeconds)) return false;
   if (value.candidates.map((c) => c.provider).join() !== PROVIDERS.join() || [ZERO, request.owner].includes(value.feeRecipient)) return false;
-  const origin = request.originChainId, native = request.originToken === ZERO;
+  const origin = request.originChainId, native = request.originToken === ZERO, output = request.amountKind === 'output';
   for (const c of value.candidates) {
     if (c.refund !== null && (c.refund.chainId !== origin || c.refund.recipient !== request.owner)) return false;
     if (c.appFee !== null && c.appFee.chainId !== (c.provider === 'relay' ? origin : request.destinationChainId)) return false;
-    if (c.status === 'quoted' && request.destinationGas && c.destinationGas === null) return false;
+    // Destination gas is judged before the cap: a candidate quoted above it served the gas asked for too.
+    if (['quoted', 'input_above_max'].includes(c.status) && request.destinationGas && c.destinationGas === null) return false;
     if (c.destinationGas !== null && !request.destinationGas) return false;
+    // Exact input: the deposit takes exactly the amount asked. By output: every price guarantees at least that amount.
+    if (c.inputRaw !== null && (output ? BigInt(c.minimumOutputRaw) < BigInt(request.amountRaw) : c.inputRaw !== request.amountRaw)) return false;
+    // By output, only a quote within what the wallet may send is eligible; one above it is input_above_max.
+    if (['quoted', 'input_above_max'].includes(c.status) &&
+        (c.status === 'input_above_max') !== (output && BigInt(c.inputRaw) > BigInt(request.maxInputRaw))) return false;
   }
   const best = ranked(value.candidates);
   const decision = best.length ? best[0].provider : null;
   const reason = !best.length ? 'no_quote' : best.length === 1 ? 'only_quote' : 'best_output';
   if (value.decision !== decision || value.reason !== reason) return false;
-  const advantage = best.length === 2 ? BigInt(best[0].outputRaw) - BigInt(best[1].outputRaw) : null;
-  if (value.comparison.advantageRaw !== (advantage === null ? null : String(advantage))) return false;
-  if (advantage === null ? value.comparison.advantageBps !== null
-      : BigInt(value.comparison.advantageBps ?? -1) !== advantage * 10000n / BigInt(best[1].outputRaw)) return false;
+  const margin = advantage(best);
+  if (value.comparison.advantageRaw !== (margin === null ? null : String(margin.raw))) return false;
+  if (margin === null ? value.comparison.advantageBps !== null : BigInt(value.comparison.advantageBps ?? -1) !== margin.bps) return false;
   if (decision === null) return value.steps.length === 0;
   const kinds = value.steps.map((s) => s.kind).join();
   if (kinds !== (native ? 'deposit' : 'approval,deposit') || value.steps.some((s) => s.transaction.chainId !== origin)) return false;
+  // The wallet sends what the winner's deposit takes.
+  const sent = best[0].inputRaw;
   const deposit = value.steps.at(-1).transaction;
-  if (deposit.to !== depositTarget(decision, origin, native) || deposit.valueRaw !== (native ? request.amountRaw : '0')) return false;
+  if (deposit.to !== depositTarget(decision, origin, native) || deposit.valueRaw !== (native ? sent : '0')) return false;
   if (native) return true;
   const approval = value.steps[0].approval;
-  return approval.token === request.originToken && approval.amountRaw === request.amountRaw &&
+  return approval.token === request.originToken && approval.amountRaw === sent &&
     approval.spender === approvalSpender(decision, origin);
 }
 

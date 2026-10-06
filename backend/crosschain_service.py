@@ -4,13 +4,21 @@ Bound to a SIWE session like the onboarding previews: the session's wallet is
 the depositor, the recipient on the destination and the refund address; the
 browser names none of them. Never a signer: the wallet signs and sends every step.
 
+A quote asks for an exact input, or (1.1.0-rc.1) for the least that must arrive
+after every fee, with the most the wallet may send: Relay is then asked for the
+need grossed up by the slippage, so the minimum its solver signs covers it, and
+Across for its minOutput. Each answer says what its deposit takes (`inputRaw`);
+one above the most the wallet may send is `input_above_max`.
+
 Choosing between providers: both are quoted at once with Domino's 35 bps app fee.
-The candidate that delivers more of the destination token to the user's wallet,
-after every provider and app fee, wins; equal outputs go to the shorter time
-estimate, then to Relay. Origin gas is shown for each but does not decide: both
-need the same wallet transactions (an exact approval for an ERC-20, then one
-deposit) and their gas figures are unverified provider estimates. A user who
-asks for destination gas can only be served by Relay's top-up.
+The candidate that delivers more of the destination token per unit sent, after
+every provider and app fee, wins (exactly, as fractions of integers); then the
+smaller input, the shorter time estimate, and Relay (the owner's decision of
+6 Oct 2026). With equal inputs, as in exact input, this is the larger output.
+Origin gas is shown for each but does not decide: both need the same wallet
+transactions (an exact approval for an ERC-20, then one deposit) and their gas
+figures are unverified provider estimates. A user who asks for destination gas
+can only be served by Relay's top-up.
 """
 from concurrent.futures import ThreadPoolExecutor
 import contextvars
@@ -28,8 +36,9 @@ import hop_log
 from crosschain_common import APP_FEE_BPS, PROVIDERS, ZERO, fingerprint
 from crosschain_http import ProviderError
 from crosschain_models import (CONTRACT_VERSION, MAX_ORIGIN_CHAINS, MAX_ORIGIN_TOKENS, MAX_RESPONSE,
-                               PINS, POLL_SECONDS, QUOTE_LIFETIME_SECONDS, TERMINAL, CrosschainError, advance,
-                               approve_data, ranked, validate_request, validate_response)
+                               PINS, POLL_SECONDS, PREVIOUS_VERSION, QUOTE_LIFETIME_SECONDS, TERMINAL, CrosschainError,
+                               advance, advantage, approve_data, ranked, validate_request, validate_response)
+from crosschain_relay import expected_for_minimum
 from read_deadline import check_read_deadline
 
 LISTING_TTL_SECONDS = 600
@@ -91,18 +100,21 @@ def status_failure(error):
 # The listener's name in its request records (authenticated_api's SERVICE_NAME for crosschain_api.PREFIX).
 DECISION_SERVICE = 'internal-crosschain-v1'
 # The decision record's whole vocabulary, as hop_log.ALLOWED_KEYS is the request line's.
-DECISION_KEYS = frozenset(('service', 'route', 'record', 'originChainId', 'destinationChainId', 'decision', 'reason',
-                           'fingerprint', *PROVIDERS, *(provider + 'Reason' for provider in PROVIDERS)))
+DECISION_KEYS = frozenset(('service', 'route', 'record', 'originChainId', 'destinationChainId', 'amountKind',
+                           'decision', 'reason', 'fingerprint', *PROVIDERS, *(provider + 'Reason' for provider in PROVIDERS)))
 
 
 def decision_record(answer):
-    """What a quote decided, beside the listener's request line (hop_log), which holds no body: the chains, the
-    provider that won or `none` and why, and each provider's status and reason, all fixed codes (the owner's request
-    of 5 Oct 2026: the first quotes could not be traced to a provider). No address, amount or provider text; the first
-    characters of the request's fingerprint tie it to the answer the Worker received, which carries the whole one."""
+    """What a quote decided, beside the listener's request line (hop_log), which holds no body: the chains, how the
+    amount was asked (`exact_input` or `output`), the provider that won or `none` and why, and each provider's status
+    and reason, all fixed codes (the owner's request of 5 Oct 2026: the first quotes could not be traced to a
+    provider). No address, amount or provider text; the first characters of the request's fingerprint tie it to the
+    answer the Worker received, which carries the whole one."""
     request = answer['request']
     record = {'service': DECISION_SERVICE, 'route': 'quote', 'record': 'decision',
               'originChainId': request['originChainId'], 'destinationChainId': request['destinationChainId'],
+              # A 1.0.0-rc.1 answer (the switch window) does not say: that contract asks by exact input only.
+              'amountKind': request.get('amountKind', 'exact_input'),
               'decision': answer['decision'] or 'none', 'reason': answer['reason'],
               'fingerprint': answer['requestFingerprint'][:8]}
     for candidate in answer['candidates']:
@@ -118,9 +130,31 @@ def emit_decision(answer):
 
 
 def unpriced(provider, status, reason):
-    return {'provider': provider, 'status': status, 'reason': reason, 'outputRaw': None, 'minimumOutputRaw': None,
-            'appFee': None, 'providerFee': None, 'originGas': None, 'destinationGas': None, 'etaSeconds': None,
-            'refund': None, 'tracking': None}
+    return {'provider': provider, 'status': status, 'reason': reason, 'inputRaw': None, 'outputRaw': None,
+            'minimumOutputRaw': None, 'appFee': None, 'providerFee': None, 'originGas': None, 'destinationGas': None,
+            'etaSeconds': None, 'refund': None, 'tracking': None}
+
+
+def provider_call(identity):
+    """What the adapters are asked, from the quote's identity. Exact input: `amount`, what the wallet sends. By output:
+    `need`, the least that must arrive; `asked`, what Relay is asked to deliver so that the minimum its solver signs
+    covers the need (crosschain_relay.expected_for_minimum); and `maxInput`, the most the wallet may send."""
+    amount, output = int(identity['amountRaw']), identity['amountKind'] == 'output'
+    return {**identity, 'amount': None if output else amount, 'need': amount if output else None,
+            'asked': expected_for_minimum(amount, identity['slippageBps']) if output else None,
+            'maxInput': int(identity['maxInputRaw']) if output else None}
+
+
+def previous_answer(answer):
+    """A quote answer as 1.0.0-rc.1 says it (the switch window). That contract asks by exact input only: its request
+    has no amountKind or maxInputRaw, its candidates no inputRaw (each is the request's amountRaw), its basis is the
+    same comparison under its own name (with equal inputs the rate is the output), and its fingerprint covers its own
+    identity. The decision, the advantage and the steps are the same by construction."""
+    request = {key: value for key, value in answer['request'].items() if key not in ('amountKind', 'maxInputRaw')}
+    return {**answer, 'requestFingerprint': fingerprint(request), 'request': request,
+            'comparison': {**answer['comparison'], 'basis': 'expected_output_after_all_fees'},
+            'candidates': [{key: value for key, value in candidate.items() if key != 'inputRaw'}
+                           for candidate in answer['candidates']]}
 
 
 def public(candidate):
@@ -174,25 +208,29 @@ class CrosschainService:
             raise CrosschainError('upstream_unavailable')
         return value
 
-    def execute(self, route, body, *, client, session, csrf):
+    def execute(self, route, body, *, client, session, csrf, version=CONTRACT_VERSION):
+        """One request, in the contract version it was sent with (authenticated_api, the switch window): its models
+        hold the request and the answer. A 1.0.0-rc.1 quote runs by exact input and is answered as rc.1 says it."""
         try:
-            request = validate_request(route, body).model_dump()
+            request = validate_request(route, body, version).model_dump()
         except CrosschainError:
             raise
         except (DataError, ValidationError, ValueError, TypeError):
             raise CrosschainError('invalid_request') from None
+        if route == 'quote' and version == PREVIOUS_VERSION:
+            request = {**request, 'amountKind': 'exact_input', 'maxInputRaw': None}
         started = self._now()
         check_read_deadline()
         context = self.auth.begin(client, session, csrf)
         owner = context['owner']
         check_read_deadline()
         if route == 'origins':
-            body = {'contractVersion': CONTRACT_VERSION, 'origins': self.origins(request)}
+            body = {'contractVersion': version, 'origins': self.origins(request)}
         elif route == 'quote':
-            body = {'contractVersion': CONTRACT_VERSION, 'quote': self.quote(request, owner, started)}
+            body = {'contractVersion': version, 'quote': self.quote(request, owner, started, version)}
         else:
-            body = {'contractVersion': CONTRACT_VERSION, 'status': self.status(request, owner)}
-        result = validate_response(route, body)
+            body = {'contractVersion': version, 'status': self.status(request, owner)}
+        result = validate_response(route, body, version)
         encoded = json.dumps(result, allow_nan=False, separators=(',', ':'))
         if len(encoded.encode()) > MAX_RESPONSE or any(value in encoded for value in (*self.private_values, session, csrf) if value):
             raise CrosschainError('upstream_invalid_response')
@@ -242,14 +280,15 @@ class CrosschainService:
 
     # quote ------------------------------------------------------------------
 
-    def quote(self, request, owner, started):
+    def quote(self, request, owner, started, version=CONTRACT_VERSION):
         identity = {'owner': owner, 'originChainId': request['originChainId'],
                     'originToken': request['originToken'].lower(), 'destinationChainId': request['destinationChainId'],
-                    'destinationToken': request['destinationToken'].lower(), 'amountRaw': request['amountRaw'],
+                    'destinationToken': request['destinationToken'].lower(), 'amountKind': request['amountKind'],
+                    'amountRaw': request['amountRaw'], 'maxInputRaw': request['maxInputRaw'],
                     'slippageBps': request['slippageBps'], 'destinationGas': request['destinationGas']}
         if owner in (ZERO, self.fee_recipient):
             raise CrosschainError('crosschain_route_unsupported')
-        call = {**identity, 'amount': int(request['amountRaw'])}
+        call = provider_call(identity)
         jobs = {'relay': lambda: self.relay.quote(call), 'across': lambda: self.across.quote(call, now=int(started))}
         candidates = {}
         runnable = {}
@@ -268,12 +307,15 @@ class CrosschainService:
                         candidates[provider] = unpriced(provider, *candidate_failure(provider, error))
         check_read_deadline()
         for candidate in candidates.values():
+            # Destination gas first; then, by output, what the wallet may send.
             if candidate['status'] == 'quoted' and call['destinationGas'] and candidate['destinationGas'] is None:
                 candidate.update(status='destination_gas_unsupported', reason='destination_gas_unsupported')
+            if candidate['status'] == 'quoted' and call['maxInput'] is not None and int(candidate['inputRaw']) > call['maxInput']:
+                candidate.update(status='input_above_max', reason='input_above_max')
         ordered = [candidates[provider] for provider in PROVIDERS]
         best = ranked(ordered)
         decision = best[0] if best else None
-        advantage = int(best[0]['outputRaw']) - int(best[1]['outputRaw']) if len(best) == 2 else None
+        advantage_raw, advantage_bps = advantage(best)
         completed = self._now()
         if completed < started or completed >= int(started) + QUOTE_LIFETIME_SECONDS:
             raise CrosschainError('preview_expired')
@@ -283,11 +325,13 @@ class CrosschainService:
                 'appFeeBps': APP_FEE_BPS, 'feeRecipient': self.fee_recipient,
                 'decision': decision['provider'] if decision else None,
                 'reason': 'no_quote' if not best else 'only_quote' if len(best) == 1 else 'best_output',
-                'comparison': {'basis': 'expected_output_after_all_fees',
-                               'advantageRaw': None if advantage is None else str(advantage),
-                               'advantageBps': None if advantage is None else advantage * 10000 // int(best[1]['outputRaw'])},
+                'comparison': {'basis': 'expected_output_per_input_after_all_fees',
+                               'advantageRaw': None if advantage_raw is None else str(advantage_raw),
+                               'advantageBps': advantage_bps},
                 'candidates': [public(candidate) for candidate in ordered],
                 'steps': steps_for(decision, call['originChainId']) if decision else []}
+        if version == PREVIOUS_VERSION:
+            answer = previous_answer(answer)
         emit_decision(answer)
         return answer
 

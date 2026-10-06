@@ -179,7 +179,7 @@
     },
     {
       "path": "backend/authenticated_api.py",
-      "sha256": "dd4d8f9fdb41bf69d8831f9e7b71dbe533e085874e304ca67ede5a5091ecd79f"
+      "sha256": "d498d87b4aba6705ae2fb33c94ddf63a3108fd8a95d9fbcf213dba32877eb35e"
     },
     {
       "path": "backend/hop_log.py",

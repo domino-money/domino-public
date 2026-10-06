@@ -3,6 +3,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "amountKind": {
+      "enum": [
+        "exact_input",
+        "output"
+      ],
+      "title": "Amountkind",
+      "type": "string"
+    },
     "amountRaw": {
       "maxLength": 78,
       "pattern": "^[1-9][0-9]{0,77}$",
@@ -29,6 +37,19 @@
       "title": "Destinationtoken",
       "type": "string"
     },
+    "maxInputRaw": {
+      "anyOf": [
+        {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Maxinputraw"
+    },
     "originChainId": {
       "maximum": 9007199254740991,
       "minimum": 1,
@@ -54,11 +75,13 @@
     "originToken",
     "destinationChainId",
     "destinationToken",
+    "amountKind",
     "amountRaw",
+    "maxInputRaw",
     "slippageBps",
     "destinationGas"
   ],
   "title": "QuoteRequest",
   "type": "object",
-  "x-contract-version": "1.0.0-rc.1"
+  "x-contract-version": "1.1.0-rc.1"
 }

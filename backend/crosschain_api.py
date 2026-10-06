@@ -4,6 +4,10 @@ Same boundary as the onboarding and deposit listeners (authenticated_api.py):
 loopback only, POST, the Cloudflare Access assertion, a SIWE session and CSRF,
 a closed contract header. Routes: /internal/crosschain/v1/{origins,quote,status}.
 Configuration and keys: crosschain_config.py and docs/v2/F5_BRIDGE.md.
+
+The header may name 1.1.0-rc.1 or, for the switch window, 1.0.0-rc.1
+(CONTRACT_VERSIONS): the answer, its header and the request's line carry the
+version the request named (crosschain_models).
 """
 import os
 import re
@@ -19,7 +23,8 @@ HEADER = 'X-Domino-Crosschain-Contract'
 DEFAULT_PORT = 8910
 RESERVED_PORTS = (8765, 8876, 8877, 8878, 8879, 8880, 8881, 8900, 8901)
 CONTRACT = SimpleNamespace(PREFIX=PREFIX, HEADER=HEADER, Error=models.CrosschainError,
-    CONTRACT_VERSION=models.CONTRACT_VERSION, MAX_BODY=models.MAX_BODY, MAX_RESPONSE=models.MAX_RESPONSE,
+    CONTRACT_VERSION=models.CONTRACT_VERSION, CONTRACT_VERSIONS=models.CONTRACT_VERSIONS,
+    MAX_BODY=models.MAX_BODY, MAX_RESPONSE=models.MAX_RESPONSE,
     REQUEST_MODELS=models.REQUEST_MODELS, CAPACITY_CODE='crosschain_capacity_busy',
     validate_request=models.validate_request, validate_response=models.validate_response)
 

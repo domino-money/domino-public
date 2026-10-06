@@ -51,7 +51,7 @@ function optimismQuote() {
   quote.steps[0].approval.token = OP_USDC;
   quote.steps[0].transaction.to = OP_USDC;
   for (const step of quote.steps) step.transaction.chainId = 10;
-  assert.ok(runtime.validateResponse('quote', { contractVersion: '1.0.0-rc.1', quote }), 'the Optimism quote passes the package runtime');
+  assert.ok(runtime.validateResponse('quote', { contractVersion: runtime.CONTRACT_VERSION, quote }), 'the Optimism quote passes the package runtime');
   return quote;
 }
 
@@ -167,7 +167,7 @@ test('decision #21 (§1.3): no tip from Arbitrum One or Robinhood Chain (arrival
     c.providerFee.chainId = 8453;
   }
   for (const step of fromBase.steps) step.transaction.chainId = 8453;
-  assert.ok(runtime.validateResponse('quote', { contractVersion: '1.0.0-rc.1', quote: fromBase }));
+  assert.ok(runtime.validateResponse('quote', { contractVersion: runtime.CONTRACT_VERSION, quote: fromBase }));
   const base = lab({ quote: fromBase, chain: { tip: 7_000_000n } });
   base.origin.state.allowances.set(`${BASE_USDC}|${OWNER}|${DEPOSITORY}`, 100_000_000n);
   await base.sender.send(await base.sender.review(base.input), 'deposit');

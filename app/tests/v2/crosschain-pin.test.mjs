@@ -36,11 +36,12 @@ test('every file the manifest lists hashes as listed, the shared closed-schema h
   assert.deepEqual(drifted, [], `crosschain-v1 files that no longer match their manifest entry: ${drifted.join(', ')}`);
 });
 
-test('the version sent, the version accepted, the runtime and the generated types agree on 1.0.0-rc.1', () => {
-  assert.equal(CROSSCHAIN_CONTRACT, '1.0.0-rc.1');
+// Changed on purpose (data) 2026-10-06: 1.0.0-rc.1 -> 1.1.0-rc.1 (quoting by output; the listener's switch window).
+test('the version sent, the version accepted, the runtime and the generated types agree on 1.1.0-rc.1', () => {
+  assert.equal(CROSSCHAIN_CONTRACT, '1.1.0-rc.1');
   assert.equal(CROSSCHAIN_V1_PIN.version, CROSSCHAIN_CONTRACT);
   assert.equal(runtime.CONTRACT_VERSION, CROSSCHAIN_CONTRACT);
-  assert.match(readFileSync(join(PACKAGE, 'types.ts'), 'utf8'), /export type CrosschainContractVersion = "1\.0\.0-rc\.1";/);
+  assert.match(readFileSync(join(PACKAGE, 'types.ts'), 'utf8'), /export type CrosschainContractVersion = "1\.1\.0-rc\.1";/);
   assert.equal(CROSSCHAIN_HEADER, 'X-Domino-Crosschain-Contract');
   assert.ok(Object.isFrozen(CROSSCHAIN_V1_PIN));
 });

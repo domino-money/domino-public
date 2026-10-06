@@ -1,0 +1,8 @@
+{
+  "depositTxHash": "0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+  "destinationChainId": 4663,
+  "originChainId": 42161,
+  "previousState": "pending",
+  "provider": "across",
+  "requestId": null
+}

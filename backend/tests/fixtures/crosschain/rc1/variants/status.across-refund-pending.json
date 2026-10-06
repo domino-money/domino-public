@@ -1,0 +1,37 @@
+{
+  "contractVersion": "1.0.0-rc.1",
+  "status": {
+    "checkedAt": 1790905139,
+    "fee": {
+      "amountRaw": null,
+      "chainId": null,
+      "evidence": null,
+      "reason": "deposit_not_filled",
+      "status": "pending",
+      "token": null
+    },
+    "fillTxHash": null,
+    "nextCheckSeconds": 300,
+    "observedState": "refund_pending",
+    "providerStatus": "expired",
+    "recovery": {
+      "chainId": 42161,
+      "kind": "automatic_refund",
+      "recipient": "0x1111111111111111111111111111111111111111"
+    },
+    "refundTxHash": null,
+    "request": {
+      "depositTxHash": "0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "destinationChainId": 4663,
+      "originChainId": 42161,
+      "owner": "0x1111111111111111111111111111111111111111",
+      "previousState": "pending",
+      "provider": "across",
+      "requestId": null
+    },
+    "schemaVersion": 1,
+    "state": "refund_pending",
+    "terminal": false,
+    "transition": "advanced"
+  }
+}

@@ -3,11 +3,11 @@ from copy import deepcopy
 import unittest
 
 from crosschain_support import (FEE, OTHER, OWNER, RELAY_REQUEST, USDC_ARBITRUM, USDC_BASE, USDG, ZERO, FakeHttp,
-                                fixture, provider_request, relay_record)
+                                fixture, output_call, provider_request, relay_record)
 from discovery import DataError
 from crosschain_common import encode_call, load_pins
-from crosschain_relay import (DEPOSIT_ERC20, DEPOSIT_NATIVE, RelayProvider, parse_chains, parse_quote,
-                              parse_request_record, parse_status)
+from crosschain_relay import (DEPOSIT_ERC20, DEPOSIT_NATIVE, RelayProvider, expected_for_minimum, parse_chains,
+                              parse_quote, parse_request_record, parse_status)
 
 PINS = load_pins()
 DEPOSITORY = '0x4cd00e387622c35bddb9b4c962c136462338bc31'
@@ -15,6 +15,14 @@ USDC_REQUEST = dict(origin=8453, origin_token=USDC_BASE, destination=42161, dest
 USDG_REQUEST = dict(origin=42161, origin_token=USDC_ARBITRUM, destination=4663, destination_token=USDG)
 ETH_REQUEST = dict(origin=8453, origin_token=ZERO, destination=4663, destination_token=ZERO,
                    amount='100000000000000000', slippage=200)
+# The answers by output of 6 Oct 2026 (EXPECTED_OUTPUT, 50 bps), with the need each was asked for.
+OUTPUT_USDG = 'relay-quote-expected-output-usdc-base-usdg.json'           # 100 USDG, asked 100.502513 (grossed up)
+OUTPUT_ETH = 'relay-quote-expected-output-eth-base-robinhood.json'        # 0.05 ETH, asked 0.050251256281407036
+OUTPUT_ARB_BASE = 'relay-quote-expected-output-usdc-arbitrum-base.json'   # 99.5 USDC, asked 100
+OUTPUT_TOPUP = 'relay-quote-expected-output-topup.json'                   # 99.5 USDG with gas, asked 100
+USDG_FROM_BASE = dict(origin=8453, origin_token=USDC_BASE, destination=4663, destination_token=USDG)
+ETH_FROM_BASE = dict(origin=8453, origin_token=ZERO, destination=4663, destination_token=ZERO)
+USDC_ARB_TO_BASE = dict(origin=42161, origin_token=USDC_ARBITRUM, destination=8453, destination_token=USDC_BASE)
 
 
 def step(payload, kind):
@@ -148,6 +156,140 @@ class RelayQuoteTests(unittest.TestCase):
         self.refuse(fixture('relay-quote-usdc-base-arbitrum.json'), 'relay_chain_not_pinned', **{**USDC_REQUEST, 'origin': 999999})
 
 
+def order_out(payload):
+    return payload['protocol']['v2']['orderData']['output']['payments'][0]
+
+
+class RelayOutputQuoteTests(unittest.TestCase):
+    """By output (EXPECTED_OUTPUT): the solver computes the input, which must then be the same everywhere; the order
+    prices the amount asked and its signed minimum covers the need; Relay's fee is 35 bps of the net amount."""
+
+    def parse(self, payload, need, **request):
+        return parse_quote(payload, output_call(need, **request), PINS)
+
+    def refuse(self, payload, code, need=100000000, **request):
+        with self.assertRaises(DataError) as caught:
+            self.parse(payload, need, **(request or USDG_FROM_BASE))
+        self.assertEqual(str(caught.exception), code)
+
+    def tampered(self, change, code, name=OUTPUT_USDG, need=100000000, request=USDG_FROM_BASE):
+        payload = fixture(name)
+        change(payload)
+        self.refuse(payload, code, need, **request)
+
+    def test_every_recorded_answer_by_output(self):
+        cases = (  # name, need, route, (input, expected, minimum, app fee, relayer fee)
+            (OUTPUT_USDG, 100000000, USDG_FROM_BASE, ('100916974', '100502513', '100000000', 351817, 46007)),
+            (OUTPUT_ETH, 50000000000000000, ETH_FROM_BASE,
+             ('50445218582624564', '50251256281407036', '50000000000000000', 175879396984924, 18082904232604)),
+            (OUTPUT_ARB_BASE, 99500000, USDC_ARB_TO_BASE, ('100381125', '100000000', '99500000', 350000, 31125)),
+            (OUTPUT_TOPUP, 99500000, {**USDG_FROM_BASE, 'gas': True}, ('102431289', '100000000', '99500000', 350062, 2063465)),
+        )
+        for name, need, request, (sent, expected, minimum, fee, relayer) in cases:
+            with self.subTest(name=name):
+                quote = self.parse(fixture(name), need, **request)
+                self.assertEqual((quote['inputRaw'], quote['outputRaw'], quote['minimumOutputRaw']), (sent, expected, minimum))
+                # What was asked is the need grossed up by the slippage, and the signed minimum is the need, exactly.
+                self.assertEqual(int(expected), expected_for_minimum(need, 50))
+                self.assertEqual(int(minimum), need)
+                # 35 bps of the net amount, in the input token on the origin: not 35 bps of what is sent.
+                self.assertEqual(int(quote['appFee']['amountRaw']), fee)
+                self.assertEqual(fee, (int(sent) - relayer) * 35 // 10035)
+                self.assertEqual(quote['appFee'], {'amountRaw': str(fee), 'chainId': request['origin'],
+                                                   'token': request['origin_token'], 'charged': 'origin_input'})
+                # The steps take the input: the exact approval, or the native deposit's value.
+                if request['origin_token'] == ZERO:
+                    self.assertIsNone(quote['approval'])
+                    self.assertEqual(quote['deposit']['valueRaw'], sent)
+                else:
+                    self.assertEqual(quote['approval'], {'token': request['origin_token'], 'spender': DEPOSITORY, 'amountRaw': sent})
+                    self.assertEqual(quote['deposit']['valueRaw'], '0')
+        # A gas top-up is added to the input, outside the fee's base; the output stays whole.
+        topup = self.parse(fixture(OUTPUT_TOPUP), 99500000, **USDG_FROM_BASE, gas=True)
+        self.assertEqual(topup['destinationGas'], {'deliveredRaw': '739967225046082'})
+        self.assertNotEqual(int(topup['appFee']['amountRaw']), 102431289 * 35 // 10000)
+
+    def test_the_input_is_the_signed_payment_and_the_same_everywhere(self):
+        payment = lambda p: p['protocol']['v2']['paymentDetails']
+        plus_one = lambda value: str(int(value) + 1)
+        self.tampered(lambda p: payment(p).update(amount='0'), 'relay_quote_payment_mismatch')
+        self.tampered(lambda p: payment(p).update(amount=plus_one(payment(p)['amount'])), 'relay_quote_order_input_mismatch')
+        order_in = lambda p: p['protocol']['v2']['orderData']['inputs'][0]['payment']
+        self.tampered(lambda p: order_in(p).update(amount=plus_one(order_in(p)['amount'])), 'relay_quote_order_input_mismatch')
+        self.tampered(lambda p: p['details']['currencyIn'].update(amount=plus_one(p['details']['currencyIn']['amount'])),
+                      'relay_quote_input_mismatch')
+
+        def deposited(amount):
+            def change(p):
+                order = bytes.fromhex(p['protocol']['v2']['orderId'][2:])
+                step(p, 'deposit')['data'] = encode_call(DEPOSIT_ERC20[0], DEPOSIT_ERC20[1], [OWNER, USDC_BASE, amount, order])
+            return change
+        self.tampered(deposited(100916975), 'relay_quote_deposit_amount')
+        approve = lambda amount: lambda p: step(p, 'approve').update(
+            data=encode_call('approve(address,uint256)', ('address', 'uint256'), (DEPOSITORY, amount)))
+        self.tampered(approve(100916975), 'relay_quote_approval_amount')
+        self.tampered(approve(100000000), 'relay_quote_approval_amount')
+        # The native deposit's value is the input.
+        self.tampered(lambda p: step(p, 'deposit').update(value=plus_one(step(p, 'deposit')['value'])),
+                      'relay_quote_deposit_value', OUTPUT_ETH, 50000000000000000, ETH_FROM_BASE)
+
+    def test_the_order_prices_the_amount_asked_and_its_minimum_covers_the_need(self):
+        def short(p):
+            for row, key in ((order_out(p), 'expectedAmount'), (p['details']['currencyOut'], 'amount')):
+                row[key] = str(int(row[key]) - 1)
+        self.tampered(short, 'relay_quote_output_not_requested')
+        # The same amount asked, but a need one above the minimum Relay signed: refused; at the minimum itself, served.
+        call = output_call(100000000, **USDG_FROM_BASE)
+        with self.assertRaisesRegex(DataError, '^relay_quote_minimum_below_request$'):
+            parse_quote(fixture(OUTPUT_USDG), {**call, 'need': 100000001}, PINS)
+        self.assertEqual(parse_quote(fixture(OUTPUT_USDG), call, PINS)['minimumOutputRaw'], '100000000')
+        # An answer for the bare need (100 USDC asked, a minimum of 99.5 signed) is not what a need of 100 asks for.
+        self.refuse(fixture(OUTPUT_ARB_BASE), 'relay_quote_output_not_requested', 100000000, **USDC_ARB_TO_BASE)
+
+    def test_the_fee_base_is_relays_own_fee_in_the_input_token(self):
+        relayer = lambda p: p['fees']['relayer']
+        self.tampered(lambda p: p['fees'].pop('relayer'), 'relay_quote_fee_base')
+        self.tampered(lambda p: relayer(p)['currency'].update(chainId=42161), 'relay_quote_fee_base')
+        self.tampered(lambda p: relayer(p)['currency'].update(address=USDG), 'relay_quote_fee_base')
+        self.tampered(lambda p: relayer(p).update(amount='100916975'), 'relay_quote_fee_base')
+        # A fee of the whole input leaves no base, so no fee could be 35 bps of it, not even a fee of nothing.
+        self.tampered(lambda p: relayer(p).update(amount='100916974'), 'relay_quote_app_fee_not_applied')
+        self.tampered(lambda p: (relayer(p).update(amount='100916974'), p['fees']['app'].update(amount='0')),
+                      'relay_quote_app_fee_not_applied')
+
+    def test_the_app_fee_is_35_bps_of_the_net_amount_within_one_unit(self):
+        expected = (100916974 - 46007) * 35 // 10035
+        self.assertEqual(expected, 351817)
+        for charged in (expected - 1, expected + 1):
+            with self.subTest(charged=charged):
+                payload = fixture(OUTPUT_USDG)
+                payload['fees']['app']['amount'] = str(charged)
+                self.assertEqual(self.parse(payload, 100000000, **USDG_FROM_BASE)['appFee']['amountRaw'], str(charged))
+        for charged in (expected - 2, expected + 2, 0, 100916974 * 35 // 10000):
+            with self.subTest(charged=charged):
+                self.tampered(lambda p: p['fees']['app'].update(amount=str(charged)), 'relay_quote_app_fee_not_applied')
+
+    def test_exact_input_keeps_its_rule(self):
+        # The same answer read as an exact input of what it takes is refused: there the fee is 35 bps of the input.
+        with self.assertRaises(DataError) as caught:
+            parse_quote(fixture(OUTPUT_USDG), provider_request(**USDG_FROM_BASE, amount='100916974'), PINS)
+        self.assertEqual(str(caught.exception), 'relay_quote_app_fee_not_applied')
+        # And an exact input is the request's amount, whatever the payment says.
+        self.assertEqual(parse_quote(fixture('relay-quote-usdc-base-arbitrum.json'), provider_request(**USDC_REQUEST),
+                                     PINS)['inputRaw'], '25000000')
+
+    def test_the_gross_up_is_the_least_amount_whose_signed_minimum_covers_the_need(self):
+        self.assertEqual(expected_for_minimum(100000000, 50), 100502513)
+        self.assertEqual(expected_for_minimum(50000000000000000, 50), 50251256281407036)
+        self.assertEqual(expected_for_minimum(99500000, 50), 100000000)
+        for need in (1, 7, 9950, 12345, 99500000, 100000000, 10**18 + 1):
+            for slippage in (10, 50, 199, 200, 500):
+                asked = expected_for_minimum(need, slippage)
+                with self.subTest(need=need, slippage=slippage):
+                    self.assertGreaterEqual(asked * (10000 - slippage) // 10000, need)
+                    self.assertLess((asked - 1) * (10000 - slippage) // 10000, need)
+
+
 class RelayRequestTests(unittest.TestCase):
     def test_the_quote_request_carries_the_fee_refund_and_user(self):
         http = FakeHttp('relay', {('POST', '/quote/v2'): fixture('relay-quote-usdc-arbitrum-usdg-topup.json')})
@@ -163,6 +305,27 @@ class RelayRequestTests(unittest.TestCase):
         http.routes[('POST', '/quote/v2')] = fixture('relay-quote-usdc-arbitrum-usdg.json')
         provider.quote(provider_request(**USDG_REQUEST))
         self.assertNotIn('topupGas', http.calls[0]['body'])
+        self.assertEqual((http.calls[0]['body']['tradeType'], http.calls[0]['body']['amount']), ('EXACT_INPUT', '100000000'))
+
+    def test_by_output_relay_is_asked_the_need_grossed_up_by_the_slippage_never_exact_output(self):
+        http = FakeHttp('relay', {('POST', '/quote/v2'): fixture(OUTPUT_USDG)})
+        provider = RelayProvider(http, PINS, fee_recipient=FEE)
+        self.assertEqual(provider.quote(output_call(100000000, **USDG_FROM_BASE))['inputRaw'], '100916974')
+        # The need grossed up, rounded up (an odd need), exactly (no rounding), and at a wider slippage.
+        for need, slippage, asked in ((100000000, 50, '100502513'), (12345, 50, '12408'), (99500000, 50, '100000000'),
+                                      (100000000, 200, '102040817')):
+            with self.subTest(need=need, slippage=slippage):
+                http.calls.clear()
+                try:
+                    provider.quote(output_call(need, **USDG_FROM_BASE, slippage=slippage))
+                except DataError:
+                    pass  # the recorded answer was for another request; only what was asked matters here
+                body = http.calls[0]['body']
+                self.assertEqual((body['tradeType'], body['amount'], body['slippageTolerance']),
+                                 ('EXPECTED_OUTPUT', asked, str(slippage)))
+                self.assertEqual(body['appFees'], [{'recipient': FEE, 'fee': '35'}])
+                self.assertEqual((body['user'], body['recipient'], body['refundTo'], body['explicitDeposit']),
+                                 (OWNER, OWNER, OWNER, True))
 
     def test_status_maps_every_relay_status(self):
         cases = {'waiting': 'awaiting_deposit', 'depositing': 'pending', 'pending': 'pending', 'submitted': 'pending',

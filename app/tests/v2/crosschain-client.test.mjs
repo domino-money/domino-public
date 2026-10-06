@@ -1,6 +1,8 @@
 /**
  * The S2 client (spec F7 §3.2-§3.4, §3.7, §3.8) over the crosschain-v1 package fixtures and the real runtime: every
- * response and variant is accepted for its route and echoes what was sent; the exact 1.0.0-rc.1 header; the gate;
+ * response and variant is accepted for its route and echoes what was sent; the exact 1.1.0-rc.1 header (Changed on
+ * purpose (data) 2026-10-06: 1.0.0-rc.1 -> 1.1.0-rc.1, quoting by output; the listener's window for rc.1 is not this
+ * page's, which accepts its own version only); the gate;
  * the owner and echo bindings the runtime cannot do; a quote that arrives expired; every errors.json pair, its copy
  * and what the page does next, with denials reported to the session; the fixture transport's log; and the unimported
  * http transport's headers.
@@ -22,7 +24,7 @@ const raw = (status, body, extra = {}) => ({
     status,
     opaqueRedirect: false,
     contentType: 'application/json; charset=utf-8',
-    contractHeader: '1.0.0-rc.1',
+    contractHeader: '1.1.0-rc.1',
     requestIdHeader: null,
     retryAfterHeader: null,
     body: { kind: 'text', text: typeof body === 'string' ? body : JSON.stringify(body) },
@@ -51,6 +53,10 @@ test('every response and variant validates and is accepted for its route, echoin
     'quote.destination-gas.json',
     'quote.native-only-across.json',
     'quote.none.json',
+    // Added 2026-10-06 (1.1.0-rc.1): quotes by output, which this client accepts although the page does not ask them yet.
+    'quote.output-above-max.json',
+    'quote.output-native.json',
+    'quote.output.json',
     'status.across-held.json',
     'status.across-refund-pending.json',
     'status.relay-awaiting.json',
@@ -71,9 +77,9 @@ test('every response and variant validates and is accepted for its route, echoin
   assert.deepEqual(sentFor('origins', fixture('responses/origins.json')), fixture('requests/origins.json'));
 });
 
-test('the header must be exactly 1.0.0-rc.1; header-less replies are the gate, a missing route, or refused', () => {
+test('the header must be exactly 1.1.0-rc.1; header-less replies are the gate, a missing route, or refused', () => {
   const body = fixture('responses/quote.json');
-  for (const version of ['1.0.0-rc.2', '1.0.0-rc.0', '1.0.0', '1.0.0-rc.1 ', '1.1.0-rc.4']) {
+  for (const version of ['1.0.0-rc.1', '1.0.0-rc.2', '1.1.0', '1.1.0-rc.1 ', '1.1.0-rc.2', '1.1.0-rc.4']) {
     assert.deepEqual(interpret('quote', body, { contractHeader: version }).failure, { kind: 'contract', detail: 'version' }, version);
   }
   const headerless = (status, text, contentType) => interpretCrosschain('quote', fixture('requests/quote.json'), raw(status, text, { contractHeader: null, contentType }), runtime, OWNER, TIMING, 'fixture').failure;
@@ -106,6 +112,10 @@ test('an answer about another wallet, or about another request, returns nothing 
   // Echo: the answer must be about the request this page sent.
   assert.equal(interpret('quote', quote, {}, { ...sentFor('quote', quote), amountRaw: '100000001' }).failure.detail, 'echo');
   assert.equal(interpret('quote', quote, {}, { ...sentFor('quote', quote), slippageBps: 51 }).failure.detail, 'echo');
+  // Added 2026-10-06 (1.1.0-rc.1): how the amount was asked, and the cap, are part of the request too.
+  assert.equal(interpret('quote', quote, {}, { ...sentFor('quote', quote), amountKind: 'output', maxInputRaw: '100000000' }).failure.detail, 'echo');
+  const byOutput = fixture('variants/quote.output.json');
+  assert.equal(interpret('quote', byOutput, {}, { ...sentFor('quote', byOutput), maxInputRaw: '150000001' }).failure.detail, 'echo');
   assert.equal(interpret('status', status, {}, { ...sentFor('status', status), previousState: null }).failure.detail, 'echo');
   assert.equal(interpret('status', status, {}, { ...sentFor('status', status), depositTxHash: `0x${'e'.repeat(64)}` }).failure.detail, 'echo');
   const origins = fixture('responses/origins.json');
@@ -270,7 +280,7 @@ test('the http transport (imported by nothing) posts same-origin to /api/crossch
     assert.deepEqual(init.headers, {
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      'X-Domino-Crosschain-Contract': '1.0.0-rc.1',
+      'X-Domino-Crosschain-Contract': '1.1.0-rc.1',
       'X-Domino-CSRF': CSRF,
     });
     assert.equal(options.contractHeader, 'X-Domino-Crosschain-Contract');

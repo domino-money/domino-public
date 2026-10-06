@@ -46,8 +46,9 @@ async function openFunding({ balance = 0n, failed = false, bridge = true, served
   const routes = [async (request, url) => {
     if (!bridge || !url.pathname.startsWith('/api/crosschain/v1/')) return undefined;
     const route = url.pathname.split('/').at(-1);
-    const headers = { 'X-Domino-Crosschain-Contract': '1.0.0-rc.1' };
-    if (route === 'capabilities') return Response.json({ contractVersion: '1.0.0-rc.1', dataMode: 'live', enabledRoutes: ['origins', 'quote', 'status'] }, { headers });
+    // Changed on purpose (data) 2026-10-06: crosschain-v1 1.1.0-rc.1.
+    const headers = { 'X-Domino-Crosschain-Contract': '1.1.0-rc.1' };
+    if (route === 'capabilities') return Response.json({ contractVersion: '1.1.0-rc.1', dataMode: 'live', enabledRoutes: ['origins', 'quote', 'status'] }, { headers });
     const body = await request.json(); calls.push({ route, body });
     assert.ok(request.headers.get('X-Domino-CSRF'));
     // Changed on purpose 2026-10-06 (the review): whatever amount is asked, as ../support/crosschain-quotes.mjs answers it;

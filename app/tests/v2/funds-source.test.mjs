@@ -114,7 +114,7 @@ test('no fixtures and no test data: nothing of the offer imports the package fix
     const built = [];
     const clock = { monoMs: () => 1_000, setTimer: (callback, ms) => { built.push(['timer', ms]); return () => {}; } };
     const session = { withCsrf: async () => ({ lent: false }), reportDenial: () => {} };
-    const runtime = { CONTRACT_VERSION: '1.0.0-rc.1', ROUTES: ['origins', 'quote', 'status'], ERROR_STATUS_BY_CODE: {}, validateRequest: () => true, validateResponse: () => true, validateError: () => true, advance: () => ['pending', 'initial'] };
+    const runtime = { CONTRACT_VERSION: '1.1.0-rc.1', ROUTES: ['origins', 'quote', 'status'], ERROR_STATUS_BY_CODE: {}, validateRequest: () => true, validateResponse: () => true, validateError: () => true, advance: () => ['pending', 'initial'] };
     return { built, runtime, clock, live: () => { built.push(['live']); return { transport: { kind, send: async () => ({ kind: 'network' }) }, runtime, session, clock }; } };
   };
   for (const mode of ['off', 'preview']) {

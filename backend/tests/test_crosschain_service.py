@@ -1,27 +1,35 @@
 """The service: best route with wallet steps, origins, and tracking with transitions and fee measurement."""
 import contextlib
 from copy import deepcopy
+import hashlib
 import io
 import json
+from pathlib import Path
 import unittest
 
-from crosschain_contract_fixtures import across_filled, relay_status, status_request
-from crosschain_support import (CSRF, FEE, FILL_HASH, OTHER, OWNER, PRIVATE, SESSION, USDC_ARBITRUM,
-                                USDG, ZERO, FakeAuth, FakeRpc, default_routes, fixture, make_service, quote_request,
-                                quote_time, relay_record)
+from crosschain_contract_fixtures import (OUTPUT_ETH, OUTPUT_USDG, across_filled, build_fixtures, build_variants,
+                                          relay_status, status_request)
+from crosschain_support import (CSRF, FEE, FILL_HASH, OTHER, OWNER, PRIVATE, RC1, SESSION, USDC_ARBITRUM, USDC_BASE,
+                                USDG, ZERO, FakeAuth, FakeRpc, default_routes, fixture, make_service, output_request,
+                                previous_request, quote_request, quote_time, relay_record)
 from discovery import DataError
 from crosschain_http import ProviderError
-from crosschain_models import CrosschainError, advance, validate_response
+from crosschain_models import (CONTRACT_VERSION, CONTRACT_VERSIONS, PREVIOUS_VERSION, CrosschainError, advance,
+                               advantage, ranked, validate_request, validate_response)
+import crosschain_models_rc1
 import crosschain_api
 from crosschain_service import DECISION_KEYS, DECISION_SERVICE, candidate_failure
 from session_models import SessionError
 
 DEPOSITORY = '0x4cd00e387622c35bddb9b4c962c136462338bc31'
 SPOKE_ARBITRUM = '0xe35e9842fceaca96570b734083f4a58e8f7c5f2a'
+SPOKE_BASE = '0x09aea4b2242abc8bb4bb78d537a67a245a7bec64'
+USDG_FROM_BASE = dict(origin=8453, origin_token=USDC_BASE)
+ETH_FROM_BASE = dict(origin=8453, origin_token=ZERO, destination_token=ZERO)
 
 
-def run(service, route, body):
-    return service.execute(route, body, client='192.0.2.1', session=SESSION, csrf=CSRF)
+def run(service, route, body, version=CONTRACT_VERSION):
+    return service.execute(route, body, client='192.0.2.1', session=SESSION, csrf=CSRF, version=version)
 
 
 class QuoteTests(unittest.TestCase):
@@ -40,7 +48,10 @@ class QuoteTests(unittest.TestCase):
         self.assertEqual(across_http.calls[0]['params']['appFeeRecipient'], FEE)
         self.assertEqual([c['status'] for c in quote['candidates']], ['quoted', 'quoted'])
         self.assertEqual((quote['decision'], quote['reason']), ('relay', 'best_output'))
-        self.assertEqual(quote['comparison'], {'basis': 'expected_output_after_all_fees', 'advantageRaw': '8177', 'advantageBps': 0})
+        self.assertEqual(quote['comparison'], {'basis': 'expected_output_per_input_after_all_fees', 'advantageRaw': '8177',
+                                               'advantageBps': 0})
+        # Exact input: each priced candidate takes exactly the amount asked.
+        self.assertEqual([c['inputRaw'] for c in quote['candidates']], ['100000000', '100000000'])
         self.assertEqual(quote['request']['owner'], OWNER)
         self.assertEqual((quote['appFeeBps'], quote['feeRecipient']), (35, FEE))
         approval, deposit = quote['steps']
@@ -152,7 +163,202 @@ class QuoteTests(unittest.TestCase):
 
     def test_every_answer_satisfies_the_contract(self):
         quote, _, _ = self.quote()
-        validate_response('quote', {'contractVersion': '1.0.0-rc.1', 'quote': quote})
+        validate_response('quote', {'contractVersion': '1.1.0-rc.1', 'quote': quote})
+
+
+class OutputQuoteTests(unittest.TestCase):
+    """By output (1.1.0-rc.1): the least that must arrive, and the most the wallet may send. Relay is asked the need
+    grossed up by the slippage, Across for its minOutput; the better rate wins; the wallet sends the winner's input."""
+
+    def quote(self, answers=OUTPUT_USDG, need=100000000, max_input=150000000, request=USDG_FROM_BASE):
+        relay, across = answers
+        service, relay_http, across_http = make_service(relay_routes={('POST', '/quote/v2'): fixture(relay)},
+                                                        across_routes={('GET', '/swap/approval'): fixture(across)},
+                                                        clock=quote_time(across))
+        return run(service, 'quote', output_request(need, max_input=max_input, **request))['quote'], relay_http, across_http
+
+    def test_the_better_rate_wins_and_the_wallet_sends_the_winners_input(self):
+        quote, relay_http, across_http = self.quote()
+        self.assertEqual({key: quote['request'][key] for key in ('amountKind', 'amountRaw', 'maxInputRaw')},
+                         {'amountKind': 'output', 'amountRaw': '100000000', 'maxInputRaw': '150000000'})
+        relay, across = quote['candidates']
+        self.assertEqual([(c['status'], c['inputRaw'], c['outputRaw'], c['minimumOutputRaw']) for c in quote['candidates']],
+                         [('quoted', '100916974', '100502513', '100000000'), ('quoted', '100902201', '100473291', '100473291')])
+        # Relay takes more, and delivers more per USDC sent: it wins, 14,509 USDG units more for Across' input (1 bp).
+        self.assertGreater(int(relay['inputRaw']), int(across['inputRaw']))
+        self.assertEqual((quote['decision'], quote['reason']), ('relay', 'best_output'))
+        self.assertEqual(quote['comparison'], {'basis': 'expected_output_per_input_after_all_fees', 'advantageRaw': '14509',
+                                               'advantageBps': 1})
+        approval, deposit = quote['steps']
+        self.assertEqual(approval['approval'], {'token': USDC_BASE, 'spender': DEPOSITORY, 'amountRaw': '100916974'})
+        self.assertEqual((deposit['transaction']['to'], deposit['transaction']['chainId'], deposit['transaction']['valueRaw']),
+                         (DEPOSITORY, 8453, '0'))
+        self.assertEqual((relay_http.calls[0]['body']['tradeType'], relay_http.calls[0]['body']['amount']),
+                         ('EXPECTED_OUTPUT', '100502513'))
+        self.assertEqual((across_http.calls[0]['params']['tradeType'], across_http.calls[0]['params']['amount']),
+                         ('minOutput', '100000000'))
+
+    def test_a_native_origin_deposits_the_winners_input_as_its_value(self):
+        quote, _, _ = self.quote(OUTPUT_ETH, need=50000000000000000, max_input=60000000000000000, request=ETH_FROM_BASE)
+        self.assertEqual((quote['decision'], [c['inputRaw'] for c in quote['candidates']]),
+                         ('relay', ['50445218582624564', '50425875000000000']))
+        [deposit] = quote['steps']
+        self.assertEqual((deposit['kind'], deposit['transaction']['to'], deposit['transaction']['valueRaw']),
+                         ('deposit', DEPOSITORY, '50445218582624564'))
+
+    def test_a_quote_above_what_the_wallet_may_send_is_priced_but_not_eligible(self):
+        quote, _, _ = self.quote(max_input=100910000)
+        relay, across = quote['candidates']
+        self.assertEqual((relay['status'], relay['reason'], relay['inputRaw'], relay['outputRaw']),
+                         ('input_above_max', 'input_above_max', '100916974', '100502513'))
+        self.assertEqual((across['status'], quote['decision'], quote['reason']), ('quoted', 'across', 'only_quote'))
+        self.assertEqual(quote['comparison'], {'basis': 'expected_output_per_input_after_all_fees', 'advantageRaw': None,
+                                               'advantageBps': None})
+        approval, deposit = quote['steps']
+        self.assertEqual(approval['approval'], {'token': USDC_BASE, 'spender': SPOKE_BASE, 'amountRaw': '100902201'})
+        self.assertEqual(deposit['transaction']['to'], SPOKE_BASE)
+        # Exactly what the wallet may send is within it.
+        quote, _, _ = self.quote(max_input=100916974)
+        self.assertEqual(([c['status'] for c in quote['candidates']], quote['decision']), (['quoted', 'quoted'], 'relay'))
+        # Above both: no decision and no steps, both still priced.
+        quote, _, _ = self.quote(max_input=100902200)
+        self.assertEqual([(c['status'], c['inputRaw']) for c in quote['candidates']],
+                         [('input_above_max', '100916974'), ('input_above_max', '100902201')])
+        self.assertEqual((quote['decision'], quote['reason'], quote['steps']), (None, 'no_quote', []))
+
+    def test_destination_gas_is_judged_before_the_cap(self):
+        # 99.5 USDG with gas on Robinhood: Relay's top-up adds its cost to the input, and only Relay can deliver gas.
+        answers = ('relay-quote-expected-output-topup.json', OUTPUT_USDG[1])
+        quote, relay_http, _ = self.quote(answers, need=99500000, max_input=100000000, request={**USDG_FROM_BASE, 'gas': True})
+        relay, across = quote['candidates']
+        self.assertTrue(relay_http.calls[0]['body']['topupGas'])
+        self.assertEqual((relay['status'], relay['destinationGas']), ('input_above_max', {'deliveredRaw': '739967225046082'}))
+        self.assertEqual(across['status'], 'destination_gas_unsupported', 'not input_above_max, although above it too')
+        self.assertEqual((quote['decision'], quote['steps']), (None, []))
+        quote, _, _ = self.quote(answers, need=99500000, max_input=102431289, request={**USDG_FROM_BASE, 'gas': True})
+        self.assertEqual((quote['decision'], quote['reason']), ('relay', 'only_quote'))
+        self.assertEqual(quote['steps'][0]['approval']['amountRaw'], '102431289')
+
+    def test_invalid_requests_by_output_never_reach_a_provider(self):
+        relay_routes, across_routes = default_routes()
+        service, relay_http, across_http = make_service(relay_routes=relay_routes, across_routes=across_routes)
+        good = output_request(100000000, max_input=150000000, **USDG_FROM_BASE)
+        without = lambda key: {name: value for name, value in good.items() if name != key}
+        for body in ({**good, 'maxInputRaw': None}, quote_request(max_input='100000000'), {**good, 'maxInputRaw': str(2**128)},
+                     {**good, 'maxInputRaw': '0'}, {**good, 'maxInputRaw': 150000000}, {**good, 'amountKind': 'exact_output'},
+                     without('amountKind'), without('maxInputRaw'), {**good, 'amountRaw': str(2**128)}):
+            with self.subTest(body=body), self.assertRaisesRegex(CrosschainError, 'invalid_request'):
+                run(service, 'quote', body)
+        self.assertEqual((relay_http.calls, across_http.calls), ([], []))
+        # The largest cap is 2^128 - 1, as for the amount.
+        validate_request('quote', {**good, 'maxInputRaw': str(2**128 - 1)})
+
+
+def ranked_candidate(provider, output, sent, eta=1, status='quoted'):
+    return {'provider': provider, 'status': status, 'outputRaw': str(output), 'inputRaw': str(sent), 'etaSeconds': eta}
+
+
+class RankingTests(unittest.TestCase):
+    """The decision (the owner's, 6 Oct 2026): the better rate, then the smaller input, the shorter wait, then Relay."""
+
+    def order(self, *candidates):
+        return [c['provider'] for c in ranked(list(candidates))]
+
+    def test_the_better_rate_wins_even_with_the_larger_input(self):
+        live = (ranked_candidate('relay', 100502513, 100916974), ranked_candidate('across', 100473291, 100902201))
+        self.assertEqual(self.order(*live), ['relay', 'across'])
+        swapped = (ranked_candidate('relay', 100473291, 100902201), ranked_candidate('across', 100502513, 100916974))
+        self.assertEqual(self.order(*swapped), ['across', 'relay'])
+
+    def test_more_output_at_a_worse_rate_does_not_win(self):
+        self.assertEqual(self.order(ranked_candidate('relay', 100502513, 100916974), ranked_candidate('across', 100600000, 101100000)),
+                         ['relay', 'across'])
+
+    def test_equal_rates_go_to_the_smaller_input_then_the_shorter_wait_then_relay(self):
+        self.assertEqual(self.order(ranked_candidate('relay', 200946582, 201804402), ranked_candidate('across', 100473291, 100902201)),
+                         ['across', 'relay'])
+        self.assertEqual(self.order(ranked_candidate('relay', 100, 100, eta=5), ranked_candidate('across', 100, 100, eta=2)),
+                         ['across', 'relay'])
+        self.assertEqual(self.order(ranked_candidate('relay', 100, 100, eta=None), ranked_candidate('across', 100, 100, eta=2)),
+                         ['across', 'relay'])
+        self.assertEqual(self.order(ranked_candidate('across', 100, 100, eta=2), ranked_candidate('relay', 100, 100, eta=2)),
+                         ['relay', 'across'])
+        # Only a quoted candidate is eligible.
+        self.assertEqual(self.order(ranked_candidate('relay', 200, 100, status='input_above_max'), ranked_candidate('across', 100, 100)),
+                         ['across'])
+
+    def test_the_advantage_is_the_extra_output_for_the_others_input(self):
+        live = ranked([ranked_candidate('relay', 100502513, 100916974), ranked_candidate('across', 100473291, 100902201)])
+        self.assertEqual(advantage(live), (14509, 1))
+        # Independently: floor(E_w·I_o / I_w) − E_o.
+        self.assertEqual(100502513 * 100902201 // 100916974 - 100473291, 14509)
+        # With equal inputs (exact input): E_w − E_o and (E_w − E_o) · 10000 // E_o, as before.
+        for winner, other, sent in ((99571446, 99563269, 100000000), (100, 1, 7), (10**30 + 7, 10**30, 3)):
+            with self.subTest(winner=winner, other=other):
+                best = ranked([ranked_candidate('relay', winner, sent), ranked_candidate('across', other, sent)])
+                self.assertEqual(advantage(best), (winner - other, (winner - other) * 10000 // other))
+        self.assertEqual(advantage(ranked([ranked_candidate('relay', 100, 100)])), (None, None))
+
+
+class PreviousVersionTests(unittest.TestCase):
+    """The switch window (the owner's option A, 6 Oct 2026): a 1.0.0-rc.1 request is held to the frozen rc.1 models,
+    runs by exact input, and is answered as main 26e264f7 answered it, byte for byte, for the same provider answers."""
+
+    def test_the_two_versions_and_no_other(self):
+        self.assertEqual(CONTRACT_VERSIONS, ('1.1.0-rc.1', '1.0.0-rc.1'))
+        self.assertEqual((CONTRACT_VERSION, PREVIOUS_VERSION, crosschain_models_rc1.CONTRACT_VERSION),
+                         ('1.1.0-rc.1', '1.0.0-rc.1', '1.0.0-rc.1'))
+        relay_routes, across_routes = default_routes()
+        service, relay_http, _ = make_service(relay_routes=relay_routes, across_routes=across_routes)
+        for version in ('1.0.0', '1.0.0-rc.2', '1.1.0', '2.0.0', ''):
+            with self.subTest(version=version), self.assertRaisesRegex(CrosschainError, 'upstream_contract_mismatch'):
+                run(service, 'quote', quote_request(), version)
+        self.assertEqual(relay_http.calls, [])
+
+    def test_the_frozen_models_are_mains_rc1_models_byte_for_byte(self):
+        source = Path(crosschain_models_rc1.__file__).read_bytes()
+        # The SHA-256 that crosschain-v1 1.0.0-rc.1's manifest recorded for backend/crosschain_models.py (main 26e264f7).
+        self.assertEqual(hashlib.sha256(source).hexdigest(), '72f1dc75fdac60419cd3f7f7a4c4a2712424ba3cee4c7d70b445ac92687e4b66')
+
+    def test_every_rc1_answer_is_mains_byte_for_byte_and_valid_under_the_frozen_models(self):
+        text = lambda value: json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + '\n'
+        with contextlib.redirect_stderr(io.StringIO()):
+            requests, responses, _ = build_fixtures(PREVIOUS_VERSION)
+            variants = build_variants(PREVIOUS_VERSION)
+        built = {**{f'requests/{route}.json': body for route, body in requests.items()},
+                 **{f'responses/{route}.json': body for route, body in responses.items()},
+                 **{f'variants/{name}.json': body for name, (_, body) in variants.items()}}
+        self.assertEqual(sorted(built), sorted(path.relative_to(RC1).as_posix() for path in RC1.rglob('*.json')))
+        for path, body in built.items():
+            with self.subTest(path=path):
+                self.assertEqual(text(body), (RC1 / path).read_text(), 'not what 1.0.0-rc.1 answered')
+        for route, body in requests.items():
+            crosschain_models_rc1.REQUEST_MODELS[route].model_validate(body)
+        for route, body in [*responses.items(), *variants.values()]:
+            self.assertEqual(crosschain_models_rc1.RESPONSE_MODELS[route].model_validate(body).model_dump(), body)
+
+    def test_an_rc1_quote_runs_by_exact_input_and_each_version_takes_only_its_own_request(self):
+        relay_routes, across_routes = default_routes()
+        service, relay_http, across_http = make_service(relay_routes=relay_routes, across_routes=across_routes)
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            quote = run(service, 'quote', previous_request(), PREVIOUS_VERSION)['quote']
+        self.assertEqual((relay_http.calls[0]['body']['tradeType'], across_http.calls[0]['params']['tradeType']),
+                         ('EXACT_INPUT', 'exactInput'))
+        self.assertEqual(quote['request'], {**previous_request(), 'owner': OWNER})
+        self.assertEqual(quote['comparison']['basis'], 'expected_output_after_all_fees')
+        self.assertTrue(all('inputRaw' not in candidate for candidate in quote['candidates']))
+        # Its decision line says how it was asked and ties to the answer the Worker received.
+        record = json.loads(stream.getvalue())
+        self.assertEqual((record['amountKind'], record['fingerprint']), ('exact_input', quote['requestFingerprint'][:8]))
+        for body, version in ((previous_request(), CONTRACT_VERSION), (quote_request(), PREVIOUS_VERSION),
+                              (output_request(100000000, **USDG_FROM_BASE), PREVIOUS_VERSION)):
+            with self.subTest(version=version, body=body), self.assertRaisesRegex(CrosschainError, 'invalid_request'):
+                run(service, 'quote', body, version)
+        # Origins and status are the same routes in both, each answered in the version asked.
+        for version in CONTRACT_VERSIONS:
+            origins = run(service, 'origins', {'destinationChainId': 4663, 'destinationToken': USDG}, version)
+            self.assertEqual(origins['contractVersion'], version)
 
 
 class DecisionRecordTests(unittest.TestCase):
@@ -178,9 +384,24 @@ class DecisionRecordTests(unittest.TestCase):
         self.assertEqual(json.loads(line), {
             'service': 'internal-crosschain-v1', 'route': 'quote', 'record': 'decision',
             'originChainId': quote['request']['originChainId'],
-            'destinationChainId': quote['request']['destinationChainId'],
+            'destinationChainId': quote['request']['destinationChainId'], 'amountKind': 'exact_input',
             'decision': 'relay', 'reason': 'best_output', 'relay': 'quoted', 'across': 'quoted',
             'fingerprint': quote['requestFingerprint'][:8]})
+
+    def test_a_quote_by_output_says_so_and_names_the_cap(self):
+        relay, across = OUTPUT_USDG
+        service, _, _ = make_service(relay_routes={('POST', '/quote/v2'): fixture(relay)},
+                                     across_routes={('GET', '/swap/approval'): fixture(across)}, clock=quote_time(across))
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            quote = run(service, 'quote', output_request(100000000, max_input=100910000, **USDG_FROM_BASE))['quote']
+        record = json.loads(stream.getvalue())
+        self.assertEqual({key: record[key] for key in ('amountKind', 'decision', 'reason', 'relay', 'relayReason', 'across')},
+                         {'amountKind': 'output', 'decision': 'across', 'reason': 'only_quote', 'relay': 'input_above_max',
+                          'relayReason': 'input_above_max', 'across': 'quoted'})
+        self.assertEqual(record['fingerprint'], quote['requestFingerprint'][:8])
+        for amount in ('100000000', '100910000', '100916974', '100902201'):
+            self.assertNotIn(amount, stream.getvalue())
 
     def test_no_route_names_each_providers_reason(self):
         _, line, _ = self.quoted(relay=ProviderError('relay_request_rejected', 'NO_QUOTES'),
@@ -213,8 +434,9 @@ class DecisionRecordTests(unittest.TestCase):
     def test_the_record_keeps_to_its_vocabulary(self):
         _, line, _ = self.quoted(relay=ProviderError('relay_unavailable'), across=ProviderError('across_unavailable'))
         self.assertLessEqual(set(json.loads(line)), DECISION_KEYS)
-        self.assertEqual(DECISION_KEYS, {'service', 'route', 'record', 'originChainId', 'destinationChainId', 'decision',
-                                         'reason', 'fingerprint', 'relay', 'relayReason', 'across', 'acrossReason'})
+        self.assertEqual(DECISION_KEYS, {'service', 'route', 'record', 'originChainId', 'destinationChainId', 'amountKind',
+                                         'decision', 'reason', 'fingerprint', 'relay', 'relayReason', 'across',
+                                         'acrossReason'})
 
 
 class FailureMappingTests(unittest.TestCase):

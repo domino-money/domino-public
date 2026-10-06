@@ -1,0 +1,124 @@
+{
+  "contractVersion": "1.1.0-rc.1",
+  "quote": {
+    "appFeeBps": 35,
+    "candidates": [
+      {
+        "appFee": {
+          "amountRaw": "351817",
+          "chainId": 8453,
+          "charged": "origin_input",
+          "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+        },
+        "destinationGas": null,
+        "etaSeconds": 1,
+        "inputRaw": "100916974",
+        "minimumOutputRaw": "100000000",
+        "originGas": {
+          "feeRaw": "523395870437",
+          "usd": "0.001414"
+        },
+        "outputRaw": "100502513",
+        "provider": "relay",
+        "providerFee": {
+          "amountRaw": "46007",
+          "chainId": 8453,
+          "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+        },
+        "reason": null,
+        "refund": {
+          "chainId": 8453,
+          "recipient": "0x1111111111111111111111111111111111111111"
+        },
+        "status": "quoted",
+        "tracking": {
+          "requestId": "0x1791302781827628a380ac0cfa612cf681bd28344c6e020867149dc9153f5ee8"
+        }
+      },
+      {
+        "appFee": {
+          "amountRaw": "352891",
+          "chainId": 4663,
+          "charged": "destination_output",
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        },
+        "destinationGas": null,
+        "etaSeconds": 1,
+        "inputRaw": "100902201",
+        "minimumOutputRaw": "100473291",
+        "originGas": {
+          "feeRaw": null,
+          "usd": null
+        },
+        "outputRaw": "100473291",
+        "provider": "across",
+        "providerFee": {
+          "amountRaw": "75981",
+          "chainId": 8453,
+          "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+        },
+        "reason": null,
+        "refund": {
+          "chainId": 8453,
+          "recipient": "0x1111111111111111111111111111111111111111"
+        },
+        "status": "quoted",
+        "tracking": {
+          "requestId": null
+        }
+      }
+    ],
+    "comparison": {
+      "advantageBps": 1,
+      "advantageRaw": "14509",
+      "basis": "expected_output_per_input_after_all_fees"
+    },
+    "decision": "relay",
+    "expiresAt": 1791302507,
+    "feeRecipient": "0x2222222222222222222222222222222222222222",
+    "reason": "best_output",
+    "request": {
+      "amountKind": "output",
+      "amountRaw": "100000000",
+      "destinationChainId": 4663,
+      "destinationGas": false,
+      "destinationToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "maxInputRaw": "150000000",
+      "originChainId": 8453,
+      "originToken": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "owner": "0x1111111111111111111111111111111111111111",
+      "slippageBps": 50
+    },
+    "requestFingerprint": "1077b1088d05821bf3950a59b74d01408c6f3b60be69f527db7f2b50071ca5b1",
+    "requestedAt": 1791302387,
+    "retrievedAt": 1791302387,
+    "schemaVersion": 1,
+    "source": "crosschain_quote_v1",
+    "steps": [
+      {
+        "approval": {
+          "amountRaw": "100916974",
+          "spender": "0x4cd00e387622c35bddb9b4c962c136462338bc31",
+          "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+        },
+        "kind": "approval",
+        "transaction": {
+          "chainId": 8453,
+          "data": "0x095ea7b30000000000000000000000004cd00e387622c35bddb9b4c962c136462338bc31000000000000000000000000000000000000000000000000000000000603deee",
+          "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "valueRaw": "0"
+        }
+      },
+      {
+        "approval": null,
+        "kind": "deposit",
+        "transaction": {
+          "chainId": 8453,
+          "data": "0xe80179520000000000000000000000001111111111111111111111111111111111111111000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda02913000000000000000000000000000000000000000000000000000000000603deeeda2ae79e534aa0465c935422cea4b391f2160a9c00675c74d549c10d2aa925b6",
+          "to": "0x4cd00e387622c35bddb9b4c962c136462338bc31",
+          "valueRaw": "0"
+        }
+      }
+    ]
+  }
+}

@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
+import { runtime } from './support/crosschain.mjs';
 
 const require = createRequire(import.meta.url);
 const model = require('../../.test-build/app/src/v2in/funds/model.js');
@@ -210,10 +211,10 @@ test('the form: exact amounts, slippage in the service bounds, destination gas, 
   assert.equal(model.offerDestinationGas(USDG, '0'), 'suggested');
   assert.equal(model.offerDestinationGas(USDG, '1'), null);
   assert.equal(model.offerDestinationGas(USDG, null), 'undecided');
-  assert.deepEqual(
-    model.quoteRequestOf({ originChainId: 42161, originToken: '0xAF88d065e77c8cC2239327C5EDb3A432268e5831', destinationChainId: 4663, destinationToken: '0x5FC5360D0400a0Fd4f2af552ADD042D716F1d168', amountRaw: '100000000', slippageBps: 50, destinationGas: false }),
-    { originChainId: 42161, originToken: '0xaf88d065e77c8cc2239327c5edb3a432268e5831', destinationChainId: 4663, destinationToken: USDG, amountRaw: '100000000', slippageBps: 50, destinationGas: false },
-  );
+  // Changed on purpose (data) 2026-10-06 (crosschain-v1 1.1.0-rc.1): by exact input, with no cap; the runtime takes it.
+  const request = model.quoteRequestOf({ originChainId: 42161, originToken: '0xAF88d065e77c8cC2239327C5EDb3A432268e5831', destinationChainId: 4663, destinationToken: '0x5FC5360D0400a0Fd4f2af552ADD042D716F1d168', amountRaw: '100000000', slippageBps: 50, destinationGas: false });
+  assert.deepEqual(request, { originChainId: 42161, originToken: '0xaf88d065e77c8cc2239327c5edb3a432268e5831', destinationChainId: 4663, destinationToken: USDG, amountKind: 'exact_input', amountRaw: '100000000', maxInputRaw: null, slippageBps: 50, destinationGas: false });
+  assert.equal(runtime.validateRequest('quote', request), true);
 });
 
 test('a failed request: §3.8 words, its code apart, and whether it asks again by itself', () => {
@@ -380,12 +381,21 @@ test('Other networks: the listing\'s networks with both bridges, one name each, 
 
 // Changed on purpose 2026-10-06 (the integration review): the amount sent is rounded UP for the button and "You send", so
 // it never says less than the wallet is asked to approve and send.
+// Changed on purpose (data) 2026-10-06 (crosschain-v1 1.1.0-rc.1): what is sent is the winner's inputRaw, the amount
+// asked while the page asks by exact input; the request's amount only while no candidate won.
 test('the wallet steps in words: the amount sent rounded up for the screen, and exact', () => {
   const { naming } = require('../../.test-build/app/src/v2/crosschain/present.js');
-  const quote = { request: { originChainId: 42161, originToken: ETH, amountRaw: '99395417139745917', destinationChainId: 8453, destinationToken: '0x4200000000000000000000000000000000000006' } };
+  const sending = (request, sent) => ({ request, decision: 'relay', candidates: [{ provider: 'relay', inputRaw: sent }, { provider: 'across', inputRaw: null }] });
+  const eth = { originChainId: 42161, originToken: ETH, amountKind: 'exact_input', amountRaw: '99395417139745917', maxInputRaw: null, destinationChainId: 8453, destinationToken: '0x4200000000000000000000000000000000000006' };
+  const quote = sending(eth, eth.amountRaw);
   assert.deepEqual(model.stepWords(quote, naming(null)), { origin: 'Arbitrum One', amount: '0.099396 ETH', exact: '0.099395417139745917 ETH', approval: false });
-  const usdc = { request: { ...quote.request, originToken: '0xaf88d065e77c8cc2239327c5edb3a432268e5831', amountRaw: '51000000' } };
-  assert.deepEqual(model.stepWords(usdc, naming(null)), { origin: 'Arbitrum One', amount: '51 USDC', exact: '51 USDC', approval: true }, 'nothing dropped: as it is');
+  const usdc = { ...eth, originToken: '0xaf88d065e77c8cc2239327c5edb3a432268e5831', amountRaw: '51000000' };
+  assert.deepEqual(model.stepWords(sending(usdc, usdc.amountRaw), naming(null)), { origin: 'Arbitrum One', amount: '51 USDC', exact: '51 USDC', approval: true }, 'nothing dropped: as it is');
+  // By output (the offer's follow-up) amountRaw is what must arrive; the button and "You send" say the winner's input.
+  const byOutput = sending({ ...usdc, amountKind: 'output', amountRaw: '50000000', maxInputRaw: '60000000' }, '50251001');
+  assert.deepEqual(model.stepWords(byOutput, naming(null)), { origin: 'Arbitrum One', amount: '50.251001 USDC', exact: '50.251001 USDC', approval: true });
+  assert.equal(model.sentRaw(byOutput), '50251001');
+  assert.equal(model.sentRaw({ ...byOutput, decision: null }), '50000000', 'no winner: nothing is sent, the request is shown as asked');
 });
 
 // Added 2026-10-06 (the 2026-10-06 study: "Use" resized the position to the whole balance after an arrival): once the

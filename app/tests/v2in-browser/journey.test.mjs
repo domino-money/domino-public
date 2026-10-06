@@ -48,7 +48,7 @@ const footerBox = (page) => page.locator('[data-stage-card="review"] [data-journ
  * answers): Amount's bring-funds offer is open. Nothing else of that route is answered.
  */
 const crosschainLive = (request, url) => (url.pathname === '/api/crosschain/v1/capabilities'
-  ? Response.json({ contractVersion: '1.0.0-rc.1', dataMode: 'live', enabledRoutes: ['origins', 'quote', 'status'] }, { headers: { 'X-Domino-Crosschain-Contract': '1.0.0-rc.1' } })
+  ? Response.json({ contractVersion: '1.1.0-rc.1', dataMode: 'live', enabledRoutes: ['origins', 'quote', 'status'] }, { headers: { 'X-Domino-Crosschain-Contract': '1.1.0-rc.1' } })
   : undefined);
 
 /** position-plan-v1 as it would answer a create on Robinhood Chain (tests/support/s1-plans.mjs): 500 of the stable swapped for ETH. */

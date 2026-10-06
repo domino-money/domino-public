@@ -1,9 +1,16 @@
 """Across (app.across.to/api) for the deposit from another chain: quote, deposit record, routes, fee proof.
 
-Quote: GET /swap/approval, exactInput, depositor = recipient = refundAddress =
-the user, refundOnOrigin, appFee 0.0035 with Domino's appFeeRecipient and, when
+Quote: GET /swap/approval, depositor = recipient = refundAddress = the user,
+refundOnOrigin, appFee 0.0035 with Domino's appFeeRecipient and, when
 configured, the 2-byte integratorId and the Bearer key (production requires
-both; neither may reach the browser).
+both; neither may reach the browser). Two trade types:
+- exact input: exactInput for the amount the wallet sends;
+- by output (crosschain-v1 1.1.0-rc.1): minOutput for the need. That is an
+  exact-input deposit whose input Across pads, about 0.46-0.50% on the live
+  answers of 6 Oct 2026, so that at least the need, net of Domino's fee,
+  arrives; the surplus drains to the user with the rest. Never exactOutput: at
+  the same input it delivers exactly the need, turns the padding into relayer
+  fee and drains leftovers to Across, not the user. Both modes refuse it.
 
 With an app fee the Swap API does not raise the input. It sends the deposit to
 Across' MulticallHandler on the destination with a message that transfers a
@@ -159,8 +166,9 @@ def classify_message(message, *, output_token, owner, fee_recipient, handler, em
                        wrapped_native=wrapped_native), True
 
 
-def _deposit_args(swap, request, origin_pin, wrapped_out):
-    owner, origin, token_in, amount = request['owner'], request['originChainId'], request['originToken'], request['amount']
+def _deposit_args(swap, request, origin_pin, wrapped_out, amount):
+    """The deposit call's arguments, for `amount`, the input: the request's in exact input, Across' by output."""
+    owner, origin, token_in = request['owner'], request['originChainId'], request['originToken']
     if not isinstance(swap, dict) or swap.get('ecosystem', 'evm') != 'evm':
         raise _unsafe('quote_transaction_shape')
     if chain_id(swap.get('chainId'), 'across_quote_transaction_chain') != origin:
@@ -197,9 +205,12 @@ def _deposit_args(swap, request, origin_pin, wrapped_out):
 
 
 def parse_quote(payload, request, pins, destinations, *, fee_recipient, now, fee_bps=APP_FEE_BPS):
-    """An Across /swap/approval answer, checked against the request; returns the normalized candidate."""
+    """An Across /swap/approval answer, checked against the request; returns the normalized candidate.
+
+    The request is the service's provider call (crosschain_service.provider_call): exact input names `amount`; by
+    output it names `need`, the least that must arrive."""
     owner, origin, destination = request['owner'], request['originChainId'], request['destinationChainId']
-    token_in, token_out, amount = request['originToken'], request['destinationToken'], request['amount']
+    token_in, token_out, by_output = request['originToken'], request['destinationToken'], request['amountKind'] == 'output'
     origin_pin = pins['chains'].get(origin, {}).get('across')
     destination_pin = pins['destinations'].get(destination, {}).get('across')
     if origin_pin is None or destination_pin is None or destination not in destinations:
@@ -210,14 +221,22 @@ def parse_quote(payload, request, pins, destinations, *, fee_recipient, now, fee
         raise _unsafe('quote_shape')
     if payload.get('crossSwapType') != 'bridgeableToBridgeable':
         raise _unsafe('quote_route_unsupported')
-    if payload.get('amountType') != 'exactInput':
+    # exactOutput is never admitted, by either mode (the module's docstring).
+    if payload.get('amountType') != ('minOutput' if by_output else 'exactInput'):
         raise _unsafe('quote_trade_type')
     _token(payload.get('inputToken'), origin, token_in, 'quote_input_mismatch')
     _token(payload.get('outputToken'), destination, token_out, 'quote_output_mismatch')
-    if raw(payload.get('inputAmount'), 'across_quote_input_mismatch') != amount or (
-            payload.get('maxInputAmount') is not None and raw(payload['maxInputAmount'], 'across_quote_input_mismatch') != amount):
-        raise _unsafe('quote_input_mismatch')
-    deposit = _deposit_args(payload.get('swapTx'), request, origin_pin, wrapped_out)
+    if by_output:
+        # The input is Across': inputAmount, which maxInputAmount must repeat and the deposit must take.
+        amount = raw(payload.get('inputAmount'), 'across_quote_input_mismatch', positive=True)
+        if raw(payload.get('maxInputAmount'), 'across_quote_input_mismatch') != amount:
+            raise _unsafe('quote_input_mismatch')
+    else:
+        amount = request['amount']
+        if raw(payload.get('inputAmount'), 'across_quote_input_mismatch') != amount or (
+                payload.get('maxInputAmount') is not None and raw(payload['maxInputAmount'], 'across_quote_input_mismatch') != amount):
+            raise _unsafe('quote_input_mismatch')
+    deposit = _deposit_args(payload.get('swapTx'), request, origin_pin, wrapped_out, amount)
     if not now - QUOTE_TIME_BUFFER <= deposit['quotedAt'] <= now + 300:
         raise _unsafe('quote_timestamp')
     if not now < deposit['fillDeadline'] <= now + FILL_DEADLINE_BUFFER:
@@ -245,6 +264,10 @@ def parse_quote(payload, request, pins, destinations, *, fee_recipient, now, fee
         raise _unsafe('quote_output_amount')
     if minimum_out < expected_out * (10000 - request['slippageBps']) // 10000 - 1:
         raise _unsafe('quote_minimum_below_slippage')
+    # By output, what the user is guaranteed, net of Domino's fee, covers the need (the expected amount is at least
+    # the minimum, above).
+    if by_output and minimum_out < request['need']:
+        raise _unsafe('quote_minimum_below_request')
     fees = payload.get('fees') if isinstance(payload.get('fees'), dict) else {}
     details = ((fees.get('total') or {}).get('details') or {}) if isinstance(fees.get('total'), dict) else {}
     app = details.get('app')
@@ -285,7 +308,7 @@ def parse_quote(payload, request, pins, destinations, *, fee_recipient, now, fee
     eta = payload.get('expectedFillTime')
     eta = eta if type(eta) is int and 0 <= eta <= MAX_ETA_SECONDS else None
     approval = None if token_in == ZERO else {'token': token_in, 'spender': origin_pin['spokePool'], 'amountRaw': str(amount)}
-    return {'provider': 'across', 'status': 'quoted', 'reason': None,
+    return {'provider': 'across', 'status': 'quoted', 'reason': None, 'inputRaw': str(amount),
             'outputRaw': str(expected_out), 'minimumOutputRaw': str(minimum_out),
             'appFee': {'amountRaw': str(fee), 'chainId': destination, 'token': wrapped_out, 'charged': 'destination_output'},
             'providerFee': provider_fee, 'originGas': origin_gas, 'destinationGas': None,
@@ -509,7 +532,11 @@ class AcrossProvider:
         self.rpc_factory, self.proofs = rpc_factory, Memo()
 
     def quote(self, request, *, now):
-        params = {'tradeType': 'exactInput', 'amount': str(request['amount']),
+        # By output, minOutput for the need; never exactOutput. The user's slippage is still sent: on a plain bridge it
+        # moves neither the input nor what arrives (10, 50 and 200 bps, 6 Oct 2026).
+        output = request['amountKind'] == 'output'
+        params = {'tradeType': 'minOutput' if output else 'exactInput',
+                  'amount': str(request['need'] if output else request['amount']),
                   'inputToken': request['originToken'], 'outputToken': request['destinationToken'],
                   'originChainId': str(request['originChainId']), 'destinationChainId': str(request['destinationChainId']),
                   'depositor': request['owner'], 'recipient': request['owner'], 'refundAddress': request['owner'],
