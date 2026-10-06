@@ -4,6 +4,7 @@ import type { PreparedV2, SignedNonce, V2Receipt } from '../../finance/v2/transa
 import type { ZapBatch, ZapReview, ZapStep } from '../../finance/v2/zap'
 import { v2Chain } from '../../v2/chains'
 import type { ConsentChoice } from '../../v2/plan/consent'
+import { readFeesToCome } from '../../v2/plan/present'
 import { planTargetOf } from '../../v2/plan/route'
 import type { S1PlanConsent, S1PlanReply, S1PlanRequest } from '../../v2/plan/types'
 import type { ActionName, Address, Hex, V2ChainId } from '../../v2/types'
@@ -102,6 +103,12 @@ export interface RunInput {
   request: (consent: S1PlanConsent) => S1PlanRequest
   /** A safe label for a token address, for the error sentences. */
   label: (token: Address) => string
+  /**
+   * Added 2026-10-06 (the integration review, rugged-literal #1): the position is the root of Auto-exit's own automation,
+   * its Auto-exit on or paused (./model.ts PositionVault.exitLive): a review that keeps the position's approval (no zap
+   * approval replaces it), all that exit needs, has its armed root's pause acknowledged without a tick.
+   */
+  exitLive?: boolean
 }
 
 class PlanFailure extends Error {
@@ -115,6 +122,19 @@ class PlanFailure extends Error {
 const now = () => Date.now() / 1000
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const stepsOf = (review: ZapReview): RunStep[] => review.steps.map((step, index) => ({ kind: step.kind, index, step, status: 'waiting', feeWei: null, hash: null }))
+
+/**
+ * Added 2026-10-06 (the review of point 4, a second look, as New position's run): the reads a review leaves running on
+ * its zap client (its current step being prepared, then the later approvals' fees), by client. A client runs one request
+ * at a time and refuses a second (`wallet_action_busy`), and the page keeps one client per chain and wallet
+ * (./wallet.ts), so a new quote on it (the dialog reopened, or its review asked again) waits for them first. A review
+ * that is gone stops at its next check, so this is at most the one read under way.
+ */
+const reading = new WeakMap<object, Promise<unknown>>()
+function held<T>(zap: object, work: Promise<T>): Promise<T> {
+  reading.set(zap, work.catch(() => undefined))
+  return work
+}
 
 /** The zap receipt in the decoder's input shape (finance/v2/receipt.ts RpcReceipt). */
 export function rpcReceiptOf(hash: Hex | null, receipt: Extract<V2Receipt, { logs: unknown }>) {
@@ -155,6 +175,9 @@ export function useActionRun(input: RunInput) {
       const connection = await connectPosition(gate)
       const zap = connection.zap
       if (!zap) throw new Error('deployment_not_live')
+      // What an earlier review still reads on this client, first (one request at a time).
+      await reading.get(zap)
+      if (gen !== generation.current) return
       const chosen = await zap.consentFor(action, inputs)
       const chain = v2Chain(gate.chainId)
       // The answer is held to this wallet, the chain's pinned zaps and the profile's Uniswap and Permit2 (rev2 §2.4).
@@ -187,8 +210,10 @@ export function useActionRun(input: RunInput) {
         steps: path === 'batch' ? [{ kind: 'batch', index: -1, step: null, status: 'waiting', feeWei: null, hash: null }] : stepsOf(review),
       })
       bump()
-      // An armed root's action (rev2 §2.13): nothing is prepared until the person ticks the warning.
+      // An armed root's action (rev2 §2.13): nothing is prepared until the person ticks the warning (on Auto-exit's own
+      // root, only when the zap's approval replaces the one its exit needs).
       if (review.pausesAutomation === null) await prepareCurrent(gen)
+      else if (latest.current.exitLive && review.replacesApproval === null) await acknowledgePause()
     } catch (error) {
       if (gen !== generation.current) return
       const view = errorOf(error)
@@ -230,18 +255,22 @@ export function useActionRun(input: RunInput) {
     }
     step.status = 'preparing'
     bump()
+    const { zap } = reviewed.connection
     try {
       if (step.kind === 'batch') {
-        const batch = await reviewed.connection.zap.prepareBatch(reviewed.review)
+        const batch = await held(zap, zap.prepareBatch(reviewed.review))
         if (gen !== generation.current) return
         state.batch = batch
         step.feeWei = batch.networkFeeWei
       } else {
-        const prepared = await reviewed.connection.zap.prepareStep(reviewed.review, step.index)
+        const prepared = await held(zap, zap.prepareStep(reviewed.review, step.index))
         if (gen !== generation.current) return
         state.prepared = prepared
         step.feeWei = prepared.networkFeeWei
         state.feePerGas = BigInt(prepared.transaction.maxFeePerGas)
+        // The approvals after this one, for their fee only (2026-10-06: the review's one network fee line counts them).
+        await held(zap, readFeesToCome(state.steps, state.current, async (index) => (await zap.prepareStep(reviewed.review, index)).networkFeeWei, () => gen === generation.current))
+        if (gen !== generation.current) return
       }
       step.status = 'ready'
       bump()

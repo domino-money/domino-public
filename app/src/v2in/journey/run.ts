@@ -6,6 +6,7 @@ import { v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
 import { requestS1Plan } from '../../v2/plan/client'
 import type { ConsentChoice } from '../../v2/plan/consent'
+import { readFeesToCome } from '../../v2/plan/present'
 import { planTargetOf } from '../../v2/plan/route'
 import type { S1PlanConsent, S1PlanReply, S1PlanRequest } from '../../v2/plan/types'
 import type { Address, Hex, V2ChainId } from '../../v2/types'
@@ -34,7 +35,8 @@ import { connectJourney, onChain, type JourneyConnection } from './wallet'
  *            expired one again, without a word;
  *   steps:   one press: a batch (one confirmation, [approvals…, action]) when the wallet batches; else each step in turn,
  *            each prepared (simulated, its fee known) when it becomes current, each confirmed on the network
- *            ("Included") before the next; a Permit2 signature is a step of its own;
+ *            ("Included") before the next; a Permit2 signature is a step of its own. The approvals after the first are
+ *            also read at the review, for their fee only (Review's one network fee line counts them);
  *   receipt: read from the zap's events, matched to the plan by its intentHash, followed from "Included" to "Finalized"
  *            (a delay is never a failure).
  * A plan that fails on price (or expires) goes back to a fresh quote by itself, at most twice in a row, and the person
@@ -123,6 +125,19 @@ const now = () => Date.now() / 1000
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const stepsOf = (review: ZapReview): RunStep[] => review.steps.map((step, index) => ({ kind: step.kind, index, step, status: 'waiting', feeWei: null, hash: null }))
 
+/**
+ * Added 2026-10-06 (the review of point 4, a second look): the reads a review leaves running on its zap client (its
+ * current step being prepared, then the later approvals' fees), by client. A client runs one request at a time and refuses
+ * a second (`wallet_action_busy`), and the page keeps one client per chain and wallet (./wallet.ts), so a new quote on it
+ * waits for them first: Back, then Continue, on Review met "Another request to your wallet is still open". A review that
+ * is gone stops at its next check, so this is at most the one read under way.
+ */
+const reading = new WeakMap<object, Promise<unknown>>()
+function held<T>(zap: object, work: Promise<T>): Promise<T> {
+  reading.set(zap, work.catch(() => undefined))
+  return work
+}
+
 /** The zap receipt in the decoder's input shape (finance/v2/receipt.ts RpcReceipt). */
 export function rpcReceiptOf(hash: Hex | null, receipt: Extract<V2Receipt, { logs: unknown }>) {
   return {
@@ -161,6 +176,9 @@ export function useJourneyRun(input: RunInput) {
       const transport = livePlanTransport()
       if (!transport) throw new PlanFailure({ copy: JOURNEY.review.planUnavailable, code: 'plan_route_unavailable', recovery: 'none' })
       const connection = await connectJourney(chainId, gate.contracts)
+      // What an earlier review still reads on this client, first (one request at a time).
+      await reading.get(connection.zap)
+      if (gen !== generation.current) return
       const chosen = await connection.zap.consentFor('create', inputs)
       const context = liveContext(chainId, connection.zap.owner, gate.contracts)
       let consent = chosen
@@ -235,18 +253,22 @@ export function useJourneyRun(input: RunInput) {
     }
     step.status = 'preparing'
     bump()
+    const { zap } = reviewed.connection
     try {
       if (step.kind === 'batch') {
-        const batch = await reviewed.connection.zap.prepareBatch(reviewed.review)
+        const batch = await held(zap, zap.prepareBatch(reviewed.review))
         if (gen !== generation.current) return false
         state.batch = batch
         step.feeWei = batch.networkFeeWei
       } else {
-        const prepared = await reviewed.connection.zap.prepareStep(reviewed.review, step.index)
+        const prepared = await held(zap, zap.prepareStep(reviewed.review, step.index))
         if (gen !== generation.current) return false
         state.prepared = prepared
         step.feeWei = prepared.networkFeeWei
         state.feePerGas = BigInt(prepared.transaction.maxFeePerGas)
+        // The approvals after this one, for their fee only (2026-10-06: Review's one network fee line counts them).
+        await held(zap, readFeesToCome(state.steps, state.current, async (index) => (await zap.prepareStep(reviewed.review, index)).networkFeeWei, () => gen === generation.current))
+        if (gen !== generation.current) return false
       }
       step.status = 'ready'
       bump()
@@ -606,16 +628,5 @@ export function stepTitle(step: RunStep, amount: (token: Address, raw: bigint) =
     case 'approve-nft': return JOURNEY.steps.create
     case 'sign-permit': return JOURNEY.steps.signPermit
     case 'action': return JOURNEY.steps.create
-  }
-}
-
-/** A step's line under its title, before the press. */
-export function stepDetail(step: RunStep): string {
-  if (step.kind === 'batch') return JOURNEY.steps.detailBatch
-  switch (step.step?.kind) {
-    case 'approve-reset':
-    case 'approve': return JOURNEY.steps.detailApprove
-    case 'sign-permit': return JOURNEY.steps.detailSign
-    default: return JOURNEY.steps.detailCreate
   }
 }

@@ -187,7 +187,8 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
       <Display as="h1" className="dm-display-title">
         Set up automation
       </Display>
-      <p className="dm-acct-lede">Choose a position and what its earned fees do.</p>
+      {/* Changed on purpose 2026-10-06 (the owner's point 5): with Domino V2 the choices include Auto-exit, which is not about earned fees. */}
+      <p className="dm-acct-lede">{V2Setup ? 'Choose a position and what Domino does for it.' : 'Choose a position and what its earned fees do.'}</p>
       {body}
     </main>
   )

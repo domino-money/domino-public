@@ -29,3 +29,17 @@ export const FEATURES: Readonly<Record<FeatureKey, Feature>> = {
 
 /** The order they are offered in: the position first, then what its fees can do. */
 export const FEATURE_ORDER: readonly FeatureKey[] = ['plain', 'compound', 'domino']
+
+/**
+ * Added 2026-10-06 (the owner's point 5; rugged97: "this stop loss-take profit product was named wrong. It is AUTO-EXIT.
+ * It must be separate from the rest. Someone makes an LP to buy or sell; when the price hits the edge of the range we
+ * close the position automatically and send the tokens to the wallet"): not one of the three ways to use earned fees, so
+ * outside FEATURE_ORDER; offered beside them where a position was just created (components/create/CreatedNext.tsx), and
+ * recommended there for a range beside today's price (a buy or a sell). Its fee is on the position's value, only if it
+ * closes the position, never on earned fees.
+ */
+export const AUTO_EXIT_FEATURE = Object.freeze({
+  name: 'Auto-exit',
+  line: 'Closes it at the end of its range and sends the tokens to your wallet.',
+  fee: '0.2% if it closes',
+} as const)

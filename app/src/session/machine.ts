@@ -234,15 +234,39 @@ export interface Env {
  */
 export function sessionChains(origin: string): readonly number[] {
   const registry = REGISTRY_CHAIN_IDS.filter((id) => id !== ELYSIUM_ID || sectionLinked(origin, ELYSIUM_STATUS))
-  return V2_ON ? [...registry, ...V2_CHAIN_IDS.filter((id) => !registry.includes(id))] : registry
+  return V2_ON ? withV2(registry) : registry
+}
+
+/**
+ * The other networks a deposit to Domino may come from: every origin chain crosschain-v1 pins a Relay or Across contract
+ * on (api-contracts/crosschain-v1/schema-data.mjs CONSTANTS.chains, rugged97's pins), less Domino's own three, which
+ * V2_CHAIN_IDS names; tests/v2/multichain-base.test.mjs holds the two lists to the pins, so they never drift. Added
+ * 2026-10-06 (the owner's point 2a, "bring funds from more networks"): the wallet goes to one of them only to send a
+ * deposit, and the session stays held there under heldAway's rules, as on Base and Arbitrum One, so the deposit is
+ * tracked and the wallet brought back with no new signature. Copied here as numbers, not imported: the package's pin
+ * table would put every bridge address in the page's entry.
+ */
+export const CROSSCHAIN_ORIGIN_CHAIN_IDS: readonly number[] = Object.freeze([
+  1, 10, 25, 56, 100, 130, 137, 143, 146, 169, 196, 288, 324, 360, 480, 747, 988, 999, 1088, 1135, 1868, 2020, 2741, 2818, 4217, 4326,
+  5000, 5031, 5042, 5330, 9745, 33139, 34443, 42018, 42220, 43114, 48900, 57073, 59144, 60808, 80094, 81457, 97477, 98866, 534352,
+  685689, 747474, 5064014, 7777777,
+])
+
+/** `chains`, then Domino V2's, then the deposit origins (Changed on purpose 2026-10-06), each once, in that order. */
+function withV2(chains: readonly number[]): readonly number[] {
+  const out = [...chains]
+  for (const id of [...V2_CHAIN_IDS, ...CROSSCHAIN_ORIGIN_CHAIN_IDS]) if (!out.includes(id)) out.push(id)
+  return out
 }
 
 /**
  * The chains a session may be kept across at all (Changed on purpose 2026-10-02, Domino V2 spec F7 §1.3 and §3: the wallet
  * goes to another chain for a V2 action or a deposit and comes back): the registry's, and Domino V2's only in a build that
  * carries V2 (src/v2/flag.ts): production and development too since 2026-10-04 (the owner: the site runs on Domino V2).
+ * Changed on purpose 2026-10-06 (the owner's point 2a): and, in that build, the networks a deposit may come from
+ * (CROSSCHAIN_ORIGIN_CHAIN_IDS).
  */
-export const keptChains = (): readonly number[] => (V2_ON ? [...REGISTRY_CHAIN_IDS, ...V2_CHAIN_IDS.filter((id) => !REGISTRY_CHAIN_IDS.includes(id))] : REGISTRY_CHAIN_IDS)
+export const keptChains = (): readonly number[] => (V2_ON ? withV2(REGISTRY_CHAIN_IDS) : REGISTRY_CHAIN_IDS)
 
 /**
  * Whether the session this tab holds may be used where the account's wallet is now, away from Robinhood Chain: Changed on
@@ -251,11 +275,15 @@ export const keptChains = (): readonly number[] => (V2_ON ? [...REGISTRY_CHAIN_I
  * private routes (a plan for a position on that network, a deposit from it) asked for a signature again at every
  * network switch. Held away: only in a build that carries V2, only on Base and Arbitrum One where the page keeps
  * sessions, only at rest, only for the session's own account. Robinhood Chain's own screens still say wrong_network.
+ * Changed on purpose 2026-10-06 (the owner's point 2a): and on a network a deposit may come from
+ * (CROSSCHAIN_ORIGIN_CHAIN_IDS), under the same rules: a quote that expires while the wallet sits there is asked again,
+ * and the deposit is followed, with no new signature.
  */
 export function heldAway(m: Machine, env: Env): boolean {
   if (!V2_ON || m.view.status !== 'wrong_network' || m.session === null || m.flow.kind !== 'idle') return false
   const id = m.identity
-  if (id.kind !== 'connected' || id.chainId === ROBINHOOD_CHAIN_ID || !V2_CHAIN_IDS.includes(id.chainId)) return false
+  if (id.kind !== 'connected' || id.chainId === ROBINHOOD_CHAIN_ID) return false
+  if (!V2_CHAIN_IDS.includes(id.chainId) && !CROSSCHAIN_ORIGIN_CHAIN_IDS.includes(id.chainId)) return false
   return (env.chains ?? [ROBINHOOD_CHAIN_ID]).includes(id.chainId) && lower(id.address) === lower(m.session.owner)
 }
 

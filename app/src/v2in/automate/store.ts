@@ -34,15 +34,22 @@ export interface SessionMandate {
   tokenId: bigint
   /** True once its registration's receipt is in a block. */
   registered: boolean
+  /**
+   * Added 2026-10-06 (the owner's point 5): its two triggers as signed (0 is one that is off), so the position's card says
+   * where it closes before the index lists it.
+   */
+  triggers?: { below: bigint; above: bigint }
 }
 
 interface State {
   vaults: ReadonlyMap<string, readonly Address[]>
   events: ReadonlyMap<string, VaultEvent>
   mandates: readonly SessionMandate[]
+  /** Added 2026-10-06 (the owner's point 5): the Auto-exits this page turned off (revoked), by `${chainId}|${id}`. */
+  revoked: ReadonlySet<string>
 }
 
-let state: State = { vaults: new Map(), events: new Map(), mandates: [] }
+let state: State = { vaults: new Map(), events: new Map(), mandates: [], revoked: new Set() }
 const listeners = new Set<() => void>()
 const emit = (next: State) => {
   state = next
@@ -109,7 +116,21 @@ export function rememberMandate(entry: SessionMandate): void {
 export const sessionMandates = (s: State, chainId: V2ChainId, owner: Address): readonly SessionMandate[] =>
   s.mandates.filter((m) => m.chainId === chainId && m.owner === owner.toLowerCase())
 
+/**
+ * Added 2026-10-06 (the owner's point 5): an Auto-exit this page turned off, once its revocation is in a block: the card
+ * says "off" at once, whatever the index still lists, and this page's own registration of it no longer counts.
+ */
+export function rememberRevoked(chainId: V2ChainId, id: Hex): void {
+  const key = `${chainId}|${id.toLowerCase()}`
+  if (state.revoked.has(key)) return
+  emit({ ...state, revoked: new Set([...state.revoked, key]) })
+}
+
+/** The Auto-exits this page turned off on a chain, by id. */
+export const sessionRevoked = (s: State, chainId: V2ChainId): ReadonlySet<string> =>
+  new Set([...s.revoked].filter((key) => key.startsWith(`${chainId}|`)).map((key) => key.slice(key.indexOf('|') + 1)))
+
 /** Forgets everything (a test's fresh start). */
 export function forgetAutomationSession(): void {
-  emit({ vaults: new Map(), events: new Map(), mandates: [] })
+  emit({ vaults: new Map(), events: new Map(), mandates: [], revoked: new Set() })
 }

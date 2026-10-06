@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type KeyboardEvent } from 'react'
-import type { NetworkSearch, NetworkToken } from '../../../lib/create/otherChains'
+import { mainTokenAt } from '../../../config/mainTokens'
+import { mergeHits, preselectOf, type HitFacts, type NetworkSearch, type NetworkToken } from '../../../lib/create/otherChains'
 import { unreadToken } from '../../../lib/read/project'
 import { formatUsdCompact } from '../../../lib/read/decimal'
 import { dexStore, usdText } from '../../../lib/read/dexFigures'
@@ -20,6 +21,10 @@ import { cx } from '../../ui'
 import { Address } from './Address'
 
 const NO_MATCH = 'No token by that name. Paste its contract address.'
+/** Added 2026-10-06: a pasted address no network names as a token (with the other networks listed). */
+const NO_TOKEN_AT = 'No token at this address.'
+/** Added 2026-10-06: the list's line while a search is still out and nothing is listed yet, in place of a "no token". */
+const SEARCHING = 'Searching…'
 const LISTBOX_LABEL = 'Matching tokens'
 const UNNAMED = 'Unnamed token'
 const READ_ADDRESS = 'Look up this address'
@@ -27,9 +32,27 @@ const ALREADY_CHOSEN = 'Already chosen'
 const NOT_READ = 'This token couldn’t be read.'
 const reading = (name: string) => `Reading ${name}…`
 const readAt = (block: number) => `Read at block ${block}.`
+const WHOLE_ADDRESS = /^0x[0-9a-fA-F]{40}$/
 
 /** What the polite live region says about the chosen token's read. */
 type Said = { code: string; words: string }
+
+/**
+ * A pasted address on Robinhood Chain, read as soon as it is pasted when the other networks are listed beside it
+ * (2026-10-06, the owner's point 3): a token there (named), not one there, or not read.
+ */
+type HomePaste = { key: AddressKey; state: 'token'; token: KnownToken } | { key: AddressKey; state: 'none' | 'failed' }
+
+/** A token read for a pasted address, as a known token: its read symbol and artwork, choosable with what the read said. */
+const knownOfCandidate = (candidate: TokenCandidate): KnownToken => ({
+  key: candidate.key,
+  wire: candidate.wire,
+  label: candidate.token.symbol,
+  sources: ['read'],
+  artwork: candidate.token.artwork,
+  candidate,
+  balanceText: null,
+})
 
 /** A label as one short line of text: cut where SymbolText cuts, so a long symbol never fills a status line. */
 const shortLabel = (label: string) => (label.length > 24 ? `${label.slice(0, 24)}…` : label)
@@ -69,6 +92,37 @@ function factsOf(token: KnownToken | null, key: AddressKey): TokenFacts {
     warned: token !== null && tokenWarning({ symbol: token.label, address: key }) !== null,
   }
 }
+
+/** A token DEX Screener reports no liquidity for, in any pool (the hit's "No liquidity found"). Not one not known yet. */
+const emptyOf = (facts: TokenFacts) => facts.liquidityUsd !== null && facts.liquidityUsd <= 0
+
+/**
+ * What the page knows of another network's hit (2026-10-06), as `factsOf` says it of today's: DEX Screener's liquidity
+ * across its pools on that network (read with its artwork), whether a logo was found for it, and whether it passes for
+ * one of that network's own currencies.
+ */
+function networkFacts(row: NetworkToken): TokenFacts {
+  const known = dexStore.chainToken(row.chainId, row.token.address)
+  const peeked = tokenArtwork.peek(row.chainId, row.token.address)
+  return {
+    liquidityUsd: known ? known.liquidityUsd : null,
+    artwork: row.token.artwork ? true : peeked === undefined ? null : peeked !== null,
+    warned: row.warning !== undefined,
+  }
+}
+
+/**
+ * Today's hit as the list of every network's hits reads it for Enter (2026-10-06): its name as read, and its facts.
+ * Changed on purpose 2026-10-06 (the review of the next update): and whether it is Robinhood Chain's own ETH, WETH or USDG
+ * (config/mainTokens.ts), which another network's own currency does not rival (preselectOf).
+ */
+function homeFacts(result: SearchResult): HitFacts {
+  if (result.kind !== 'known') return { name: null, liquidityUsd: null, artwork: null, warned: false, home: true }
+  return { ...factsOf(result.token, result.token.key), name: result.token.label === null ? null : symbolReading(result.token.label), home: true, own: mainTokenAt(result.token.key) !== null }
+}
+
+/** Another network's hit, the same way (2026-10-06); `own` (the same review): one of that network's own currencies. */
+const networkHitFacts = (row: NetworkToken): HitFacts => ({ ...networkFacts(row), name: row.unread || row.token.symbol === null ? null : symbolReading(row.token.symbol), own: row.own === true })
 
 /** Liquidity as a hit's line says it: "$144.6K liquidity", or that no pool trades it. Null while not known. */
 function liquidityText(facts: TokenFacts): string | null {
@@ -155,8 +209,10 @@ function NetworkTag({ chainId, name }: { chainId: number; name: string }) {
 
 /**
  * Another network's token as a hit (2026-10-05, New position on Base and Arbitrum One): its name and address, and its
- * network's tag. Nothing is looked up for it here, no artwork lookup, no liquidity, no lookalike check (those are
- * Robinhood Chain's); a pasted address is offered as one to look up on that network.
+ * network's tag. No liquidity and no lookalike check here (the network's own warning comes with the row); a pasted
+ * address not read on that network is offered as one to look up there. Changed on purpose 2026-10-06 (the owner's point
+ * 3: no icon on the other networks): its mark asks DEX Screener for the token's artwork on its network, as a Robinhood
+ * Chain token's does (lib/tokenArtwork.ts).
  */
 function NetworkRow({ row }: { row: NetworkToken }) {
   const symbol = row.token.symbol
@@ -199,6 +255,16 @@ export type NetworkChoice = { ok: true } | { ok: false; code: string; reason: st
  * times, while the page is visible; one that stays failed leaves a single
  * plain line, its reason in the line's title and data attribute. The live
  * region says each step in words for a screen reader.
+ *
+ * Changed on purpose 2026-10-06 (the owner's points 3 and 4: the search
+ * sometimes brought Robinhood Chain alone, with no sign of anything going
+ * on): while a name is still being searched (the stored search, the other
+ * networks' search, a pasted address read on Robinhood Chain), the search
+ * icon pulses, and an empty list says "Searching…" instead of "no token".
+ * With the other networks listed, their hits and today's are one list ranked
+ * by match quality, and a pasted address is named on every network where it
+ * is a token and left out where it is not (the plain "Look up this address"
+ * row stays only where nothing could be read and nothing is named).
  */
 export function TokenSearch({
   source,
@@ -251,8 +317,9 @@ export function TokenSearch({
 }) {
   const [value, setValue] = useState(initialValue ?? '')
   const [open, setOpen] = useState(false)
-  // The hit moved to by the keyboard or the pointer; null until then, when the preselected one (if any) is highlighted.
-  const [active, setActive] = useState<number | null>(null)
+  // The hit moved to by the keyboard or the pointer, by its option's id; null until then, when the preselected one (if
+  // any) is highlighted.
+  const [active, setActive] = useState<string | null>(null)
   // DEX Screener's figures arriving for the hits re-order and re-word them (audit V3).
   useSyncExternalStore(dexStore.subscribe, dexStore.version, dexStore.version)
   // The other networks' search answers arriving add their hits (2026-10-06).
@@ -263,6 +330,10 @@ export function TokenSearch({
   const [failed, setFailed] = useState<{ code: string; reason: string; text?: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [stored, setStored] = useState<{ query: string; candidates: TokenCandidate[] } | null>(null)
+  // The last text the stored search came to nothing for (off, or failed): no longer being searched (2026-10-06).
+  const [settled, setSettled] = useState<string | null>(null)
+  // A pasted address read on Robinhood Chain beside the other networks' (2026-10-06).
+  const [homePaste, setHomePaste] = useState<HomePaste | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const running = useRef<AbortController | null>(null)
   // A quiet re-ask waiting for its time, cancelled by any newer choice.
@@ -317,9 +388,18 @@ export function TokenSearch({
       const controller = new AbortController()
       const done = (source.routeEnabled?.('search', { signal: controller.signal }) ?? Promise.resolve(undefined))
         .then(async (check) => {
-          if (check?.state !== 'enabled' || controller.signal.aborted) return
+          if (controller.signal.aborted) return
+          // Nothing to wait for any more: the search icon stops pulsing for this text (2026-10-06).
+          if (check?.state !== 'enabled') {
+            setSettled(query)
+            return
+          }
           const outcome = await readWithin(source, 'search', { query, limit: SEARCH_LIMIT }, { signal: controller.signal })
-          if (controller.signal.aborted || outcome.state !== 'ok') return
+          if (controller.signal.aborted || outcome.state === 'aborted') return
+          if (outcome.state !== 'ok') {
+            setSettled(query)
+            return
+          }
           keepSearch(source, query, outcome.data.tokens)
           setStored({ query, candidates: searchCandidates(outcome.data.tokens) })
         })
@@ -339,20 +419,62 @@ export function TokenSearch({
       clearTimeout(timer)
     }
   }, [source, value, open])
-  // The other networks' search (2026-10-06): asked after the same short pause, while the list is open.
+  // The other networks' search (2026-10-06): asked after the same short pause, while the list is open. Changed on purpose
+  // the same day: what it returns stops it once the list closes or the text changes, so a failed read is asked again
+  // only while it is wanted.
   useEffect(() => {
     if (!open || !othersSearch) return
-    const timer = setTimeout(() => othersSearch.ask(value), 350)
-    return () => clearTimeout(timer)
+    let stop = () => {}
+    const timer = setTimeout(() => {
+      stop = othersSearch.ask(value)
+    }, 350)
+    return () => {
+      clearTimeout(timer)
+      stop()
+    }
   }, [othersSearch, value, open])
   const query = value.trim()
+  const present = new Set(known.map((token) => token.key))
+  // A pasted address Robinhood Chain does not know yet, read there at once when the other networks are listed (2026-10-06,
+  // the owner's point 3: a pasted contract came as one unnamed row per network). The read is the one choosing it makes,
+  // so a choice hands over its answer. Everywhere else the address is read once chosen, as before.
+  const paste = home !== undefined && WHOLE_ADDRESS.test(query) ? parseAddressInput(query) : null
+  const pasteKey = paste?.ok && !present.has(paste.key) ? paste.key : null
+  const pasteWire = paste?.ok ? paste.wire : null
+  // Until its answer is in, the address is being read (`homePaste` names another address, or none).
+  // Changed on purpose 2026-10-06 (review of the same day): only an address with no contract there is "not a token"
+  // (read-v1 says `no_contract` for no code alone). An unknown token the read could not get through for the moment (an
+  // RPC error, a deadline, a spent budget: `unavailable`) is unread, never "no token": its plain row stays, and choosing
+  // it reads it again, as before.
+  useEffect(() => {
+    if (pasteKey === null || pasteWire === null) return
+    const controller = new AbortController()
+    void readWithin(source, 'token', { token: pasteWire }, { signal: controller.signal }).then((outcome) => {
+      if (controller.signal.aborted) return
+      if (outcome.state !== 'ok') {
+        setHomePaste({ key: pasteKey, state: 'failed' })
+        return
+      }
+      const candidate = candidateFromToken(outcome.data, pasteWire)
+      if (candidate.why === null) setHomePaste({ key: pasteKey, state: 'token', token: knownOfCandidate(candidate) })
+      else setHomePaste({ key: pasteKey, state: candidate.why === 'no_contract' ? 'none' : 'failed' })
+    })
+    return () => controller.abort()
+  }, [source, pasteKey, pasteWire])
   const answered = searchable(query) ? (keptSearch(source, query) ?? (stored?.query === query ? stored.candidates : null)) : null
   const persisted = answered ? knownTokens({ catalogue: [], candidates: answered }) : []
-  const present = new Set(known.map((token) => token.key))
   // Every hit the stored search answered, 20 at the most, where the list used to stop at 8 without a word (audit B7);
   // hits with one name told apart, and the clearly real one alone preselected (audit V3).
-  const found = searchTokens(value, [...known, ...persisted.filter((token) => !present.has(token.key))], SEARCH_LIMIT)
-  const { results, twins, preselect } = disambiguate(found, (key) => factsOf(found.flatMap((result) => (result.kind === 'known' && result.token.key === key ? [result.token] : []))[0] ?? null, key), symbolReading)
+  const searched = searchTokens(value, [...known, ...persisted.filter((token) => !present.has(token.key))], SEARCH_LIMIT)
+  // That pasted address's row (2026-10-06): named when it is a token on Robinhood Chain, left out when it is not or while
+  // it is read, and the plain row only when the read failed.
+  const found = pasteKey === null ? searched : searched.flatMap((result): SearchResult[] => {
+    if (result.kind !== 'address' || result.key !== pasteKey) return [result]
+    if (homePaste?.key !== pasteKey) return []
+    if (homePaste.state === 'token') return [{ kind: 'known', token: homePaste.token, rank: 0 }]
+    return homePaste.state === 'failed' ? [result] : []
+  })
+  const { results: ranked, twins, preselect } = disambiguate(found, (key) => factsOf(found.flatMap((result) => (result.kind === 'known' && result.token.key === key ? [result.token] : []))[0] ?? null, key), symbolReading)
   const asked = [...twins].filter((key) => dexStore.token(key) === null).sort().join()
   useEffect(() => {
     for (const key of asked ? asked.split(',') : []) dexStore.ask(key)
@@ -361,22 +483,60 @@ export function TokenSearch({
   // hands over the search's answer instead of reading it again (study item 28, 2026-09-28).
   const verifiedBySearch = new Map(persisted.flatMap((token) => (token.candidate ? [[token.key, token.candidate] as const] : [])))
   const expanded = open && problem === null
-  // The other networks' hits (2026-10-05), after today's: one list for the keyboard, today's preselection unchanged.
-  const extra = expanded && others ? others(query) : []
-  const total = results.length + extra.length
-  const highlighted = total === 0 ? -1 : active === null ? preselect : Math.min(active, total - 1)
+  // The other networks' hits (2026-10-05).
+  const offered = expanded && others ? others(query) : []
+  // A pasted address named on some network leaves out every plain row of a network it could not be read on (2026-10-06):
+  // those stay only while nothing is named, as the one way on.
+  const named = home !== undefined && WHOLE_ADDRESS.test(query) && (ranked.some((result) => result.kind === 'known') || offered.some((row) => !row.unread))
+  const results = named ? ranked.filter((result) => result.kind !== 'address') : ranked
+  const extra = named ? offered.filter((row) => !row.unread) : offered
+  // One list for the eye and the keyboard (2026-10-06, the owner's point 3: an exact match on Base must not sit under
+  // twenty Robinhood Chain rows): every hit by match quality, today's first between two of one quality, each list in its
+  // own order; with other networks listed, a token known to have no liquidity after the ones that may have some (review
+  // of the same day). Without other networks it is today's list exactly.
+  const merged = mergeHits(
+    results,
+    (result) => (result.kind === 'known' ? result.rank : 0),
+    extra,
+    query,
+    home === undefined ? {} : { home: (result) => result.kind === 'known' && emptyOf(factsOf(result.token, result.token.key)), network: (row) => emptyOf(networkFacts(row)) },
+  )
+  const total = merged.length
   const listboxId = `${id}-listbox`
   const optionId = (result: SearchResult) => `${id}-option-${keyOf(result)}`
   const networkOptionId = (row: NetworkToken) => `${id}-option-${row.chainId}-${row.token.address}`
-  const highlightedId = highlighted < 0 ? undefined : highlighted < results.length ? optionId(results[highlighted]) : networkOptionId(extra[highlighted - results.length])
+  const entryId = (entry: (typeof merged)[number]) => ('home' in entry ? optionId(entry.home) : networkOptionId(entry.network))
+  // The hit Enter takes. Today's rule (audit V3) over today's hits alone; with other networks listed, the same rule over
+  // every network's hits (review of 2026-10-06): a copy on Robinhood Chain is never highlighted beside the real token on
+  // Base, nor a weaker match below exact ones.
+  const preselected = preselect >= 0 ? ranked[preselect] : undefined
+  const preselectAt =
+    home === undefined
+      ? preselected === undefined
+        ? -1
+        : merged.findIndex((entry) => 'home' in entry && entry.home === preselected)
+      : preselectOf(merged, (entry) => ('home' in entry ? homeFacts(entry.home) : networkHitFacts(entry.network)))
+  // Changed on purpose 2026-10-06 (review of the same day): the hit moved to is kept by its option, not its place, so a
+  // network's answer arriving above it never moves the highlight, nor Enter's choice, to another token.
+  const highlighted = total === 0 ? -1 : active === null ? preselectAt : merged.findIndex((entry) => entryId(entry) === active)
+  const highlightedEntry = highlighted < 0 ? undefined : merged[highlighted]
+  const highlightedId = highlightedEntry === undefined ? undefined : entryId(highlightedEntry)
   // A hit that passes for one of the site's main tokens, or carries a misleading name, is listed and never chosen (I1).
   const warned = (result: SearchResult) => result.kind === 'known' && tokenWarning({ symbol: result.token.label, address: result.token.key }) !== null
   const excluded = (result: SearchResult) => (exclude !== null && keyOf(result) === exclude) || warned(result)
   // The row pointed at while the list is open: New position asks its pool hints now (speed wave, 2026-09-28).
-  const pointed = expanded && highlighted >= 0 && highlighted < results.length ? keyOf(results[highlighted]) : null
+  const pointed = expanded && highlightedEntry !== undefined && 'home' in highlightedEntry ? keyOf(highlightedEntry.home) : null
   useEffect(() => {
     if (pointed) point.current?.(pointed)
   }, [pointed])
+  // Still being searched (2026-10-06): the stored search for this text, a pasted address on Robinhood Chain, or another
+  // network. The icon pulses meanwhile, and an empty list says so instead of "no token".
+  const storedWanted = searchable(query) && !!source.supportsStoredReads && !!source.routeEnabled
+  const lookingUp =
+    expanded &&
+    ((storedWanted && answered === null && settled !== query) ||
+      (pasteKey !== null && homePaste?.key !== pasteKey) ||
+      (othersSearch?.pending(query) ?? false))
 
   /** Stops whatever the last choice still has running or waiting. */
   const stop = () => {
@@ -501,18 +661,18 @@ export function TokenSearch({
           setOpen(true)
           setActive(null)
         } else if (total > 0) {
-          setActive(Math.min(highlighted + 1, total - 1))
+          setActive(entryId(merged[Math.min(highlighted + 1, total - 1)]))
         }
         return
       case 'ArrowUp':
         event.preventDefault()
-        if (expanded && total > 0) setActive(Math.max(highlighted - 1, 0))
+        if (expanded && total > 0) setActive(entryId(merged[Math.max(highlighted - 1, 0)]))
         return
       case 'Enter': {
         event.preventDefault()
-        if (expanded && highlighted >= 0) {
-          if (highlighted < results.length) choose(results[highlighted])
-          else chooseOther(extra[highlighted - results.length])
+        if (expanded && highlightedEntry !== undefined) {
+          if ('home' in highlightedEntry) choose(highlightedEntry.home)
+          else chooseOther(highlightedEntry.network)
           return
         }
         const trimmed = value.trim()
@@ -543,8 +703,8 @@ export function TokenSearch({
       <label htmlFor={id} className="dm-label">
         {label}
       </label>
-      <div className="dm-flow-combo" aria-busy={busy || undefined}>
-        <IconSearch size={16} className={cx('dm-flow-combo-icon', busy && 'animate-pulse-soft')} />
+      <div className="dm-flow-combo" aria-busy={busy || undefined} data-searching={lookingUp ? '' : undefined}>
+        <IconSearch size={16} className={cx('dm-flow-combo-icon', (busy || lookingUp) && 'animate-pulse-soft')} />
         <input
           ref={input}
           id={id}
@@ -580,58 +740,64 @@ export function TokenSearch({
               through aria-activedescendant, and Tab moves on from the input to the next control. */}
           <div id={listboxId} role="listbox" aria-label={LISTBOX_LABEL} className="dm-flow-listbox-scroll" tabIndex={-1}>
             {expanded &&
-              results.map((result, index) => {
-                const key = keyOf(result)
-                const disabled = excluded(result)
+              merged.map((entry, index) => {
                 const current = index === highlighted
+                if ('home' in entry) {
+                  const result = entry.home
+                  const key = keyOf(result)
+                  const disabled = excluded(result)
+                  return (
+                    // Options are reached through aria-activedescendant, never by Tab: the input keeps focus.
+                    <button
+                      key={key}
+                      type="button"
+                      id={optionId(result)}
+                      role="option"
+                      tabIndex={-1}
+                      aria-selected={current}
+                      aria-disabled={disabled || undefined}
+                      data-token-option={key}
+                      data-token-sources={result.kind === 'known' ? result.token.sources.join(' ') : undefined}
+                      data-active={current ? '' : undefined}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setActive(optionId(result))}
+                      onClick={() => choose(result)}
+                      className={cx('dm-flow-hit', disabled && 'dm-flow-hit--off')}
+                    >
+                      {result.kind === 'known' ? <KnownRow token={result.token} twin={twins.has(result.token.key)} /> : <AddressRow wire={result.wire} />}
+                      {disabled && !warned(result) && <span className="dm-flow-hit-meta shrink-0">{ALREADY_CHOSEN}</span>}
+                      {home !== undefined && <NetworkTag chainId={4663} name={home} />}
+                    </button>
+                  )
+                }
+                const row = entry.network
                 return (
-                  // Options are reached through aria-activedescendant, never by Tab: the input keeps focus.
                   <button
-                    key={key}
+                    key={`${row.chainId}:${row.token.address}`}
                     type="button"
-                    id={optionId(result)}
+                    id={networkOptionId(row)}
                     role="option"
                     tabIndex={-1}
                     aria-selected={current}
-                    aria-disabled={disabled || undefined}
-                    data-token-option={key}
-                    data-token-sources={result.kind === 'known' ? result.token.sources.join(' ') : undefined}
+                    data-token-network-option={`${row.chainId}:${row.token.address}`}
                     data-active={current ? '' : undefined}
+                    aria-disabled={row.warning !== undefined ? true : undefined}
                     onMouseDown={(event) => event.preventDefault()}
-                    onMouseEnter={() => setActive(index)}
-                    onClick={() => choose(result)}
-                    className={cx('dm-flow-hit', disabled && 'dm-flow-hit--off')}
+                    onMouseEnter={() => setActive(networkOptionId(row))}
+                    onClick={() => chooseOther(row)}
+                    className={cx('dm-flow-hit', row.warning !== undefined && 'dm-flow-hit--off')}
                   >
-                    {result.kind === 'known' ? <KnownRow token={result.token} twin={twins.has(result.token.key)} /> : <AddressRow wire={result.wire} />}
-                    {disabled && !warned(result) && <span className="dm-flow-hit-meta shrink-0">{ALREADY_CHOSEN}</span>}
-                    {home !== undefined && <NetworkTag chainId={4663} name={home} />}
+                    <NetworkRow row={row} />
                   </button>
                 )
               })}
-            {extra.map((row, index) => {
-              const current = results.length + index === highlighted
-              return (
-                <button
-                  key={`${row.chainId}:${row.token.address}`}
-                  type="button"
-                  id={networkOptionId(row)}
-                  role="option"
-                  tabIndex={-1}
-                  aria-selected={current}
-                  data-token-network-option={`${row.chainId}:${row.token.address}`}
-                  data-active={current ? '' : undefined}
-                  aria-disabled={row.warning !== undefined ? true : undefined}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setActive(results.length + index)}
-                  onClick={() => chooseOther(row)}
-                  className={cx('dm-flow-hit', row.warning !== undefined && 'dm-flow-hit--off')}
-                >
-                  <NetworkRow row={row} />
-                </button>
-              )
-            })}
           </div>
-          {expanded && total === 0 && <p className="dm-flow-listbox-empty">{NO_MATCH}</p>}
+          {/* Changed on purpose 2026-10-06: never "no token" while a search is still out; an address no network names says so. */}
+          {expanded && total === 0 && (
+            <p className="dm-flow-listbox-empty" data-searching={lookingUp ? '' : undefined}>
+              {lookingUp ? SEARCHING : home !== undefined && WHOLE_ADDRESS.test(query) ? NO_TOKEN_AT : NO_MATCH}
+            </p>
+          )}
         </div>
       </div>
       {problem && (

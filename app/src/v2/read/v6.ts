@@ -19,6 +19,7 @@ import type {
   ActivityResponse, ChainBalancesResponse, ChainPoolsResponse, ChainStatus, ChainTokensResponse, PortfolioResponse,
   ReadV6ErrorCode, ReadV6Route,
 } from 'api-contracts/read-v6/types'
+import { ARBITRUM_ID, ARBITRUM_NAME, BASE_ID, BASE_NAME, ROBINHOOD_ID, ROBINHOOD_NAME } from '../../config/chainIdentity'
 
 export const READ_V6_CONTRACT_VERSION = '1.1.0-rc.1' as const
 export const READ_V6_HEADER = 'X-Domino-Read-Contract' as const
@@ -112,8 +113,12 @@ export function readChainTokens(transport: ReadV6Transport, runtime: ReadV6Valid
   return exchange<ChainTokensResponse>(transport, runtime, 'chain-tokens', request)
 }
 
-/** The names §6.3's sentence uses ("Showing Base and Arbitrum. Robinhood Chain is unavailable right now."). */
-const CHAIN_NAMES: Readonly<Record<number, string>> = { 4663: 'Robinhood Chain', 8453: 'Base', 42161: 'Arbitrum' }
+/**
+ * The names §6.3's sentence uses ("Showing Base and Arbitrum. Robinhood Chain is unavailable right now."). Changed on
+ * purpose 2026-10-06 (the owner: one name for one network, never two on one screen): each network as the registry names
+ * it (config/chainIdentity.ts), so "Arbitrum One" here as on every other screen, not the spec example's "Arbitrum".
+ */
+const CHAIN_NAMES: Readonly<Record<number, string>> = { [ROBINHOOD_ID]: ROBINHOOD_NAME, [BASE_ID]: BASE_NAME, [ARBITRUM_ID]: ARBITRUM_NAME }
 
 /**
  * What the answer's per-chain status means for the screens (§6.2, §6.3): `current` shows as is; `stale` shows with

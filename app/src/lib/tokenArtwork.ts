@@ -33,8 +33,20 @@
  * liquidity and 24h volume in the same token-pairs body, as a second source
  * beside the read service's, always attributed to DEX Screener and dated by when
  * it was retrieved (lib/read/dexFigures.ts, `onPairs`). Nothing else of it is used.
+ *
+ * Changed on purpose 2026-10-06 (the owner's point 3: Base and Arbitrum One in
+ * New position "like Robinhood Chain", their tokens' icons and their pools' TVL,
+ * 24h volume and APR): the same reads for a token on Base or Arbitrum One, by
+ * the provider's own name for its chain (`base`, `arbitrum`), through our edge
+ * first as on Robinhood Chain. Identity is chain plus address everywhere here:
+ * every key below names the chain, since an address can repeat across chains.
+ * The `tokens` read stays Robinhood Chain's (the Wallet card's).
  */
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
+/** The provider's names for the chains a token here can be on (Robinhood Chain, Base, Arbitrum One). */
+const DEX_CHAIN_SLUGS: Readonly<Record<number, string>> = { 4663: 'robinhood', 8453: 'base', 42161: 'arbitrum' }
+/** The provider's name for a chain, or null for a chain these reads do not cover. */
+export const dexChainSlug = (chainId: number): string | null => DEX_CHAIN_SLUGS[chainId] ?? null
 const CDN_IMAGE = /^https:\/\/cdn\.dexscreener\.com\/cms\/images\/([A-Za-z0-9_-]{8,128})(?:\?[^#\s]*)?$/
 const MAX_BODY = 262144
 const TIMEOUT = 6000
@@ -52,8 +64,9 @@ const FAILED_TTL = 30000
 /** Addresses one `tokens` GET may name: the provider's own limit. */
 export const PRICE_BATCH = 30
 
+/** A token's artwork key: its chain and its address (Robinhood Chain, and since 2026-10-06 Base and Arbitrum One); never native ETH. */
 export function tokenArtworkKey(chainId: number, address: string): string | null {
-  return chainId === 4663 && ADDRESS.test(address) && !/^0x0{40}$/i.test(address) ? `4663:${address.toLowerCase()}` : null
+  return dexChainSlug(chainId) !== null && ADDRESS.test(address) && !/^0x0{40}$/i.test(address) ? `${chainId}:${address.toLowerCase()}` : null
 }
 
 export function safeTokenImage(value: unknown): string | null {
@@ -61,11 +74,13 @@ export function safeTokenImage(value: unknown): string | null {
   return match ? `https://cdn.dexscreener.com/cms/images/${match[1]}?width=64&height=64&quality=85&format=auto` : null
 }
 
-export function artworkFromPairs(body: unknown, address: string): string | null {
-  if (!Array.isArray(body) || body.length > 100 || !ADDRESS.test(address)) return null
+/** The one image a token-pairs body gives `address` as a base token, on `chainId`'s pairs only; null for none, or for two. */
+export function artworkFromPairs(body: unknown, address: string, chainId = 4663): string | null {
+  const slug = dexChainSlug(chainId)
+  if (!Array.isArray(body) || body.length > 100 || !ADDRESS.test(address) || slug === null) return null
   const urls = new Set<string>()
   for (const pair of body) {
-    if (!pair || pair.chainId !== 'robinhood' || typeof pair.baseToken?.address !== 'string'
+    if (!pair || pair.chainId !== slug || typeof pair.baseToken?.address !== 'string'
       || pair.baseToken.address.toLowerCase() !== address.toLowerCase()) continue
     const image = safeTokenImage(pair.info?.imageUrl)
     if (image) urls.add(image)
@@ -84,7 +99,16 @@ const EDGE_TIMEOUT = 3000
  * one token at a time and keeps each, about three subrequests a token, within a Function's own limit.
  */
 const EDGE_BATCH = 10
-const EDGE_PATH = /^(token-pairs|tokens)\/v1\/robinhood\/([0-9a-fA-Fx,]+)$/
+/** A provider path our edge answers, by chain: Robinhood Chain's two reads, and Base's and Arbitrum One's token-pairs (2026-10-06). */
+const EDGE_PATH = /^(token-pairs|tokens)\/v1\/(robinhood|base|arbitrum)\/([0-9a-fA-Fx,]+)$/
+/** Our edge's path for a provider path it answers: Robinhood Chain's as they always were, another chain's named before the token. */
+function edgePathOf(path: string): string | null {
+  const match = EDGE_PATH.exec(path)
+  if (!match) return null
+  const [, kind, chain, list] = match
+  if (chain === 'robinhood') return `${kind}/${list}`
+  return kind === 'token-pairs' ? `${kind}/${chain}/${list}` : null
+}
 
 type Options = {
   fetch?: typeof fetch
@@ -96,16 +120,25 @@ type Options = {
   edge?: string | null
 }
 type Entry = { value: string | null; expires: number }
-/** A token-pairs body as it was read: who it is about, and when it was retrieved (wall ms, the edge's own retrieval where it answered). */
-export type PairsListener = (address: string, body: unknown, retrievedAt: number) => void
+/**
+ * A token-pairs body as it was read: who it is about, when it was retrieved (wall ms, the edge's own retrieval where it
+ * answered), and on which chain (added 2026-10-06; Robinhood Chain's bodies say 4663).
+ */
+export type PairsListener = (address: string, body: unknown, retrievedAt: number, chainId: number) => void
 
 export function createTokenArtworkResolver(options: Options = {}) {
   const fetch = options.fetch ?? globalThis.fetch
   const now = options.now ?? (() => performance.now())
   const wall = options.wall ?? (() => Date.now())
   const edge = options.edge ?? null
-  /** Until when (on `now`) the provider is asked directly: our edge gave no answer lately. */
-  let edgeDownUntil = -Infinity
+  /**
+   * Until when (on `now`) the provider is asked directly for a chain's reads, by the provider's name for the chain: our
+   * edge gave no answer lately for that chain. Changed on purpose 2026-10-06 (review of the same day): one state for every
+   * chain let a slow answer for a little-read Base or Arbitrum One token send Robinhood Chain's reads, the Wallet card's
+   * `tokens` batch included, to the provider directly for five minutes (audit I3).
+   */
+  const edgeDownUntil = new Map<string, number>()
+  const edgeUp = (slug: string) => now() >= (edgeDownUntil.get(slug) ?? -Infinity)
   const pairsListeners = new Set<PairsListener>()
   const cache = new Map<string, Entry>()
   const pending = new Map<string, Promise<string | null>>()
@@ -116,16 +149,18 @@ export function createTokenArtworkResolver(options: Options = {}) {
   const reading = new Map<string, { result: Promise<unknown>; deadline: number }>()
 
   /**
-   * One guarded GET of a provider body (`token-pairs/…` or `tokens/…` on Robinhood), through our own edge first where
-   * the deployment has it (audit I3): the parsed JSON and when it was retrieved (wall ms), or null for anything else.
+   * One guarded GET of a provider body (`token-pairs/…` or `tokens/…` on Robinhood, `token-pairs/…` on Base or Arbitrum
+   * One), through our own edge first where the deployment has it (audit I3): the parsed JSON and when it was retrieved
+   * (wall ms), or null for anything else.
    */
   async function retrieveDated(path: string, remaining: number, signal?: AbortSignal): Promise<{ body: unknown; retrievedAt: number } | null> {
-    const viaEdge = edge !== null && now() >= edgeDownUntil ? EDGE_PATH.exec(path) : null
-    if (viaEdge && edge !== null) {
+    const slug = EDGE_PATH.exec(path)?.[2] ?? null
+    const viaEdge = edge !== null && slug !== null && edgeUp(slug) ? edgePathOf(path) : null
+    if (viaEdge !== null && edge !== null && slug !== null) {
       const started = now()
-      const answered = await get(`${edge}${viaEdge[1]}/${viaEdge[2]}`, Math.min(remaining, EDGE_TIMEOUT), signal, true)
+      const answered = await get(`${edge}${viaEdge}`, Math.min(remaining, EDGE_TIMEOUT), signal, true)
       if (answered !== null || signal?.aborted) return answered
-      edgeDownUntil = now() + EDGE_RETRY_MS
+      edgeDownUntil.set(slug, now() + EDGE_RETRY_MS)
       remaining -= now() - started
       if (remaining <= 0) return null
     }
@@ -184,31 +219,36 @@ export function createTokenArtworkResolver(options: Options = {}) {
    * flight may have less time left than the caller that joins it (it started
    * earlier). When such a read gives up, its null is not the joiner's answer,
    * so the joiner reads again with the time it has left.
+   *
+   * `chainId` names the chain (2026-10-06): one body per chain and address.
    */
-  function pairsWithin(address: string, remaining: number): Promise<unknown> {
-    const kept = bodies.get(address)
+  function pairsWithin(chainId: number, address: string, remaining: number): Promise<unknown> {
+    const slug = dexChainSlug(chainId)
+    if (slug === null) return Promise.resolve(null)
+    const key = `${chainId}:${address}`
+    const kept = bodies.get(key)
     if (kept && kept.expires > now()) return Promise.resolve(kept.body)
     const deadline = now() + remaining
-    const joined = reading.get(address)
+    const joined = reading.get(key)
     if (joined) {
       if (joined.deadline >= deadline) return joined.result
       return joined.result.then((body) => {
         const left = deadline - now()
-        return body !== null || left <= 0 ? body : pairsWithin(address, left)
+        return body !== null || left <= 0 ? body : pairsWithin(chainId, address, left)
       })
     }
     const entry: { result: Promise<unknown>; deadline: number } = {
       deadline,
-      result: retrieveDated(`token-pairs/v1/robinhood/${address}`, remaining).then((dated) => {
-        if (reading.get(address) === entry) reading.delete(address)
+      result: retrieveDated(`token-pairs/v1/${slug}/${address}`, remaining).then((dated) => {
+        if (reading.get(key) === entry) reading.delete(key)
         const body = dated?.body ?? null
         if (dated !== null && body !== null) {
-          bodies.delete(address)
-          bodies.set(address, { body, expires: now() + BODY_TTL })
+          bodies.delete(key)
+          bodies.set(key, { body, expires: now() + BODY_TTL })
           while (bodies.size > 16) bodies.delete(bodies.keys().next().value!)
           for (const listener of pairsListeners) {
             try {
-              listener(address, body, dated.retrievedAt)
+              listener(address, body, dated.retrievedAt, chainId)
             } catch {
               // A listener's failure is its own: the artwork and the hints read the body as before.
             }
@@ -217,15 +257,15 @@ export function createTokenArtworkResolver(options: Options = {}) {
         return body
       }),
     }
-    reading.set(address, entry)
+    reading.set(key, entry)
     return entry.result
   }
 
   /** The token's artwork, null when the provider's answer names none, or undefined when no answer came. */
-  async function artworkOf(address: string): Promise<string | null | undefined> {
+  async function artworkOf(chainId: number, address: string): Promise<string | null | undefined> {
     try {
-      const body = await pairsWithin(address, TIMEOUT)
-      return body === null ? undefined : artworkFromPairs(body, address)
+      const body = await pairsWithin(chainId, address, TIMEOUT)
+      return body === null ? undefined : artworkFromPairs(body, address, chainId)
     } catch { return undefined }
   }
 
@@ -248,7 +288,7 @@ export function createTokenArtworkResolver(options: Options = {}) {
       // a token late in the queue used to run out of time without ever being asked, then showed none for 5 minutes).
       const run = () => {
         active++
-        void artworkOf(address.toLowerCase()).then((found) => {
+        void artworkOf(chainId, address.toLowerCase()).then((found) => {
           remember(key, found ?? null, found === undefined)
           done(found ?? null)
         }).finally(() => {
@@ -267,11 +307,12 @@ export function createTokenArtworkResolver(options: Options = {}) {
   /**
    * The token-pairs body for a Robinhood token, or for native ETH by the zero
    * address, or null: the same guarded GET and 30 s reuse as the artwork. Not
-   * queued behind the artwork lookups: the one caller (New position's pool
-   * hints) waits for it with its own limit.
+   * queued behind the artwork lookups: its callers (New position's pool hints,
+   * the markets' figures) wait for it with their own limits. Since 2026-10-06
+   * also a token's on Base or Arbitrum One (New position's pools there).
    */
   function pairs(chainId: number, address: string): Promise<unknown> {
-    return chainId === 4663 && ADDRESS.test(address) ? pairsWithin(address.toLowerCase(), TIMEOUT) : Promise.resolve(null)
+    return dexChainSlug(chainId) !== null && ADDRESS.test(address) ? pairsWithin(chainId, address.toLowerCase(), TIMEOUT) : Promise.resolve(null)
   }
 
   /**
@@ -283,7 +324,7 @@ export function createTokenArtworkResolver(options: Options = {}) {
   function tokenPrices(addresses: readonly string[], signal?: AbortSignal): Promise<unknown> {
     const list = [...new Set(addresses.map((address) => address.toLowerCase()))].filter((address) => ADDRESS.test(address)).sort().slice(0, PRICE_BATCH)
     if (list.length === 0) return Promise.resolve(null)
-    if (edge === null || now() < edgeDownUntil || list.length <= EDGE_BATCH) return retrieve(`tokens/v1/robinhood/${list.join(',')}`, TIMEOUT, signal)
+    if (edge === null || !edgeUp('robinhood') || list.length <= EDGE_BATCH) return retrieve(`tokens/v1/robinhood/${list.join(',')}`, TIMEOUT, signal)
     // Through our edge, EDGE_BATCH tokens a GET, side by side, as one answer; any GET without one sends the whole list
     // to the provider directly, as before (audit I3).
     return (async () => {
@@ -293,7 +334,7 @@ export function createTokenArtworkResolver(options: Options = {}) {
       const answers = await Promise.all(parts.map((part) => get(`${edge}tokens/${part.join(',')}`, Math.min(TIMEOUT, EDGE_TIMEOUT), signal, true)))
       if (answers.every((answer) => answer !== null && Array.isArray(answer.body))) return answers.flatMap((answer) => answer?.body as unknown[])
       if (signal?.aborted) return null
-      edgeDownUntil = now() + EDGE_RETRY_MS
+      edgeDownUntil.set('robinhood', now() + EDGE_RETRY_MS)
       const left = TIMEOUT - (now() - started)
       return left > 0 ? get(`https://api.dexscreener.com/tokens/v1/robinhood/${list.join(',')}`, left, signal, false).then((answer) => answer?.body ?? null) : null
     })()

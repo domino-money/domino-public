@@ -55,36 +55,39 @@ export const CLOSED_TEXT: Readonly<Record<string, string>> = Object.freeze({
   vault_nothing_to_revoke: 'Your automation has no approval on this position.',
   vault_not_subscribed: "Domino isn't connected to this position anymore.",
   vault_unsubscribe_v4_only: 'This only applies to Uniswap v4 positions.',
-  vault_exit_module_refused: "This automation can only use Domino's own auto-exit.",
+  vault_exit_module_refused: "This automation can only use Domino's own Auto-exit.",
   vault_invalid_token: "That isn't a token address.",
   vault_token_not_in_pool: "This token isn't one of this pool's two tokens.",
   vault_prediction_invalid: "Your new automation's address couldn't be worked out. Nothing was sent.",
   vault_action_unknown: CHANGED,
-  mandate_invalid_request: 'Review the order, then try again.',
-  mandate_nonce_unavailable: "A fresh order number couldn't be chosen. Try again.",
-  mandate_already_signed: 'This order is already signed.',
-  mandate_nonce_held: 'This order is waiting for its registration. Register it, or cancel it.',
-  mandate_nonce_used: 'This signed order was already used or cancelled. Sign a new one.',
+  // Changed on purpose 2026-10-06 (the owner's point 5): Auto-exit by its name, never an "order".
+  mandate_invalid_request: 'Check your Auto-exit, then try again.',
+  mandate_nonce_unavailable: "A fresh signature number couldn't be chosen. Try again.",
+  mandate_already_signed: 'This Auto-exit is already signed.',
+  mandate_nonce_held: 'This Auto-exit is signed and waiting. Finish turning it on, or cancel it.',
+  mandate_nonce_used: 'This signed Auto-exit was already used or cancelled. Sign again.',
   mandate_review_unknown: CHANGED,
   mandate_review_stale: CHANGED,
   mandate_step_unknown: CHANGED,
   mandate_step_is_signature: CHANGED,
   mandate_step_not_needed: 'This step is already done.',
-  mandate_not_signed: 'Sign the order first.',
-  mandate_signature_mismatch: "Your wallet's signature can't be used for this order.",
-  mandate_module_not_enabled: 'Turn on auto-exit for your automation first.',
-  mandate_already_registered: 'This order is already registered.',
-  mandate_not_active: 'This order is no longer active.',
+  mandate_not_signed: 'Sign your Auto-exit first.',
+  mandate_signature_mismatch: "Your wallet's signature can't be used for this Auto-exit.",
+  mandate_module_not_enabled: 'Turn on Auto-exit for your automation first.',
+  mandate_already_registered: 'This Auto-exit is already on.',
+  mandate_not_active: 'This Auto-exit is already off.',
   mandate_not_owner: 'Only the owner of this automation can do this.',
   mandate_invalid_id: CHANGED,
   mandate_invalid_nonce: CHANGED,
-  mandate_nonce_not_held: 'This signed order is not waiting for a registration on this page.',
+  mandate_nonce_not_held: "This signed Auto-exit isn't waiting on this page.",
+  // Added 2026-10-06 (the review of point 5): the pool's own price, which the edges are chosen against.
+  mandate_price_unavailable: "The pool's price couldn't be read. Try again in a moment.",
   claim_invalid_token: "That isn't a token address.",
   claim_invalid_recipient: 'Choose a valid address to receive the funds.',
   claim_nothing: 'Nothing to claim in {token}.',
-  signature_high_s: "Your wallet's signature can't be used for this order.",
+  signature_high_s: "Your wallet's signature can't be used for this Auto-exit.",
   signature_not_from_owner: "The signature isn't from the owner of this automation.",
-  invalid_signature: "Your wallet's signature can't be used for this order.",
+  invalid_signature: "Your wallet's signature can't be used for this Auto-exit.",
   typed_data_chain_mismatch: 'Your wallet is on another network. Switch to {chain}, then try again.',
   typed_data_signer_mismatch: 'Only the owner of this automation can do this.',
   deployment_missing: UNKNOWN_CONTRACT,
@@ -161,8 +164,32 @@ function fill(text: string, labels: ErrorLabels): string {
 }
 
 /**
+ * §4.9's rows for the auto-exit module (src/v2/errors.ts AUTO_EXIT_ERRORS, the spec's words, which call it an order) in
+ * Auto-exit's own, where the screens say them, by the error's name. Changed on purpose 2026-10-06 (the owner's point 5:
+ * the product is Auto-exit, never an "order" on screen); what each means and its recovery are the spec's.
+ */
+const AUTO_EXIT_REVERT_TEXT: Readonly<Record<string, string>> = Object.freeze({
+  MandateAlreadyRegistered: 'This Auto-exit is already on.',
+  NonceAlreadyUsed: 'This signature was already used or cancelled. Sign a new one.',
+  MandateNotActive: 'This Auto-exit is no longer on.',
+})
+const autoExitWords = (dataCode: string, copy: string): string =>
+  Object.hasOwn(AUTO_EXIT_REVERT_TEXT, dataCode) ? AUTO_EXIT_REVERT_TEXT[dataCode] : copy.replace(/^This order isn't valid:/, "This Auto-exit isn't valid:")
+
+/**
+ * §4.9's waiting rows and §6.2's waiting reason that speak of a trigger or of "auto-exit for your automation", in
+ * Auto-exit's own words where its card and its automation say them (./portfolio.ts waitingWords), by the error's name or
+ * the reason's code. Changed on purpose 2026-10-06 (the review of point 5); the meaning is the spec's.
+ */
+export const AUTO_EXIT_WAITING_TEXT: Readonly<Record<string, string>> = Object.freeze({
+  TriggerNotReached: 'Waiting for the price to reach the end of your range',
+  trigger_not_reached: 'Waiting for the price to reach the end of your range',
+  ExitModuleNotEnabled: 'Paused: Auto-exit is turned off for this position',
+})
+
+/**
  * What a failure says, and its code for `data-error-code`. `context` is the contract the step talks to: 'vault' for a
- * vault, its factory or the position manager's approval; 'autoExit' for the auto-exit module.
+ * vault, its factory or the position manager's approval; 'autoExit' for the auto-exit module (in Auto-exit's words).
  */
 export function describeError(error: unknown, context: 'vault' | 'autoExit', labels: ErrorLabels): ErrorView {
   // The money lock before Domino's new contracts are live (finance/v2/liveLock.ts): nothing was asked of any wallet,
@@ -172,7 +199,7 @@ export function describeError(error: unknown, context: 'vault' | 'autoExit', lab
   // (decodeV2Error would read the word "reverted" as one): the page's own outcome codes.
   if (error instanceof Error && (SENT_OUTCOMES.has(error.message) || isBatchCode(error.message))) return { text: CLOSED_TEXT[error.message], code: error.message }
   const decoded = decodeV2Error(error, context, labels)
-  if (decoded) return { text: decoded.copy, code: decoded.dataCode, recovery: decoded.recovery }
+  if (decoded) return { text: context === 'autoExit' ? autoExitWords(decoded.dataCode, decoded.copy) : decoded.copy, code: decoded.dataCode, recovery: decoded.recovery }
   // A refusal the wallet said in other words than 4001 (WalletConnect's 5000, a hardware wallet's): nothing was sent.
   if (personRefused(error)) return { text: DECLINED_COPY, code: 'declined' }
   // The page's own switch to the chain (wallet/port.ts v2SwitchNotice already said it).
@@ -215,8 +242,12 @@ export const DISARM_5_ADDED = 'Domino may turn it back on automatically.'
 /**
  * §5.1 "Copy do consentimento", the protection-only vault's (decision #25: the mode is chosen only when automation is
  * turned on). The automation vault's is VAULT_TEXT.vault_consent_uncollected_fees, with the chosen mode's fee.
+ * Changed on purpose 2026-10-06 (the owner's point 5; the study: the old words spoke of turning automation on later,
+ * which confuses a product that never reinvests): Auto-exit reinvests nothing; the contract's consent is still given
+ * (consentToUncollectedFees), and the sentence says what it means, under the dialog's Details.
  */
-export const PROTECTION_CONSENT_TEXT = 'If you turn on automation later, fees this position has already earned and not collected will be reinvested, and the fee of the mode you choose applies when they are.'
+export const PROTECTION_CONSENT_TEXT = 'Auto-exit never reinvests. The fees this position earns leave with it when it closes, and the 0.2% fee counts them too.'
+
 /** No log says why, and the live reads do not either: never guessed. */
 export const DISARM_UNKNOWN = "Automation is off for this position. We can't tell why yet."
 /** §5.6: what the fees waiting in a vault are, under the card's Details and as the withdrawal dialog's lede. */

@@ -5,7 +5,7 @@ import type { DocPage } from '../types'
 /**
  * Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): custody as Domino's new contracts keep it (spec F7
  * §1.5, in its suggested words): the position stays in the wallet, an action keeps nothing afterwards, and the contract
- * behind Auto-compound, Domino-compound and Protection only is "your automation" (the owner, 2026-10-04). Domino V1's
+ * behind Auto-compound, Domino-compound and Auto-exit is "your automation" (the owner, 2026-10-04). Domino V1's
  * setup operation and sequence controls left with V1's automation, which ends when the new one starts.
  */
 export const NON_CUSTODIAL: DocPage = {
@@ -29,7 +29,7 @@ export const NON_CUSTODIAL: DocPage = {
       title: 'What your automation holds',
       blocks: [
         p('Positions Domino-compound opens, and earned fees not yet added back, are held by your automation until you withdraw them. Positions it opens are standard Uniswap position NFTs too.'),
-        p('Your permission covers earned fees only, including fees your position had not collected when you set it up. Principal is never used, except by a stop-loss or take-profit order you signed.'),
+        p('Your permission covers earned fees only, including fees your position had not collected when you set it up. Principal is never used, except by an Auto-exit you turned on.'),
         p('Your automation is made for your wallet alone, and no function can change its owner. Only your wallet controls its withdrawals, limits and pause, and every withdrawal goes to your wallet.'),
       ],
     },
@@ -37,7 +37,7 @@ export const NON_CUSTODIAL: DocPage = {
       id: 'operator',
       title: 'What Domino’s automation can and cannot do',
       blocks: [
-        p('Your wallet stays the only owner. Domino’s automation service, the operator, can only run fee-only steps within your limits, pause, and carry out an order you signed.'),
+        p('Your wallet stays the only owner. Domino’s automation service, the operator, can only run fee-only steps within your limits, pause, and carry out an Auto-exit you turned on.'),
         {
           kind: 'split',
           columns: [
@@ -48,14 +48,14 @@ export const NON_CUSTODIAL: DocPage = {
                 ['Open or fund the next position from earned fees, within your limits.'],
                 ['Swap earned fees within your slippage and price-gap limits.'],
                 ['Pause automation.'],
-                ['Carry out a stop-loss or take-profit order you signed, exactly as signed.'],
+                ['Carry out an Auto-exit you turned on, exactly as you signed it.'],
                 ['Return the fees it holds to your wallet once your position is closed.'],
               ],
             },
             {
               title: 'The operator cannot',
               items: [
-                ['Withdraw positions or fees, except as an order you signed says.'],
+                ['Withdraw positions or fees, except to close a position as your Auto-exit says.'],
                 ['Change your limits, or resume automation after a pause.'],
                 ['Pull tokens from your wallet.'],
                 ['Send anything to anyone but you.'],
@@ -73,12 +73,12 @@ export const NON_CUSTODIAL: DocPage = {
         {
           kind: 'facts',
           rows: [
-            { label: 'Pause', value: 'You, or Domino', note: 'Stops automated runs; your stop-loss orders stay active. Only you can resume.' },
+            { label: 'Pause', value: 'You, or Domino', note: 'Stops automated runs; Auto-exit stays on. Only you can resume.' },
             { label: 'Turn back on', value: 'You', note: 'Restarts automation after a change outside Domino stopped it.' },
             { label: 'Withdraw to wallet', value: 'You', note: 'Sends the fees your automation holds to your wallet, in any state.' },
             { label: 'Withdraw a next position', value: 'You', note: 'Sends a position Domino-compound opened to your wallet, as a plain position.' },
-            { label: 'Leave automation', value: 'You', note: 'Everything your automation holds to your wallet, and automation ends; stop-loss orders pause.' },
-            { label: 'Cancel order', value: 'You', note: 'Stops a stop-loss or take-profit order for good.' },
+            { label: 'Leave automation', value: 'You', note: 'Everything your automation holds to your wallet, and automation ends; Auto-exit pauses.' },
+            { label: 'Turn off Auto-exit', value: 'You', note: 'Ends it for good.' },
           ],
         },
         p('Each is a transaction your wallet signs, with no Domino fee, and none waits on Domino’s service. They are on the position’s page, and in Managed positions on Positions.'),
@@ -112,8 +112,8 @@ export const RISKS: DocPage = {
       title: 'No promised return',
       blocks: [
         p('Fees are not profit. A position can collect fees for weeks and still be worth less than holding the assets.'),
-        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): an exit order is a limit, not a promise.
-        p('Automation adds earned fees to positions. It does not stop a token falling, and a stop-loss limits a fall only when its exit runs: see ', doc('Stop-loss / take-profit', 'stop-loss', 'warnings'), '.'),
+        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): an exit is a limit, not a promise (2026-10-06: Auto-exit).
+        p('Automation adds earned fees to positions. It does not stop a token falling, and Auto-exit limits a fall only when it closes the position: see ', doc('Auto-exit', 'auto-exit', 'warnings'), '.'),
       ],
     },
     {
@@ -191,7 +191,7 @@ export const PRIVACY: DocPage = {
         p('Your positions, their fees and their history, as the chain has them now, are read by Domino’s own servers, from Domino’s own Robinhood Chain node. Your browser asks only Domino, so no other node sees your address. Your wallet signs and sends through its own connection to the chain.'),
         p('A position’s fees at a past moment, for its chart, are read by Domino’s read service through an archive provider outside Domino. It is given only the position’s number and the block, never your address.'),
         // 2026-10-04 (the owner: docs revalidated for V2): read-v6, position-plan-v1, crosschain-v1 and the wallet's own reads.
-        p('Your positions on Base and Arbitrum One, your automation and your orders come from Domino’s read service, which keeps its own record of Domino’s contracts. A quote, for a position or a deposit, is asked of Domino with your signed-in address; a deposit’s bridge, Relay or Across, is given your address, which sends and receives it. Before you sign, and for Look in my wallet, your wallet reads the network through its own connection.'),
+        p('Your positions on Base and Arbitrum One, your automation and your Auto-exit come from Domino’s read service, which keeps its own record of Domino’s contracts. A quote, for a position or a deposit, is asked of Domino with your signed-in address; a deposit’s bridge, Relay or Across, is given your address, which sends and receives it. Before you sign, and for Look in my wallet, your wallet reads the network through its own connection.'),
         p('Token pictures and prices come from a public market data provider. Like any site it sees your internet address, never your wallet’s.'),
         p('The Wallet card asks Domino’s read service for a wallet’s tokens by its address. ', doc('Signing in', 'wallet', 'sign-in'), ' tells Domino’s sign-in service your address, for the session.'),
       ],

@@ -153,7 +153,8 @@ test('Across not filled in time: refund pending, asked again after 300 s, with t
   assert.equal(state.stopped, null);
   assert.deepEqual(t.clock.pending(), [300_000]);
   const view = presentStatus({ report: state.report, shown: 'refund_pending', provider: 'across', originChainId: 42161, destinationChainId: 4663, originToken: 'USDC', name: naming(fixture('responses/origins.json').origins) });
-  assert.equal(view.text, 'Not filled in time. Across will refund USDC to your wallet on Arbitrum, usually 2.5 to 3 hours after your deposit.');
+  // Changed on purpose 2026-10-06 (the owner: one name for one network): the app's own name, Arbitrum One.
+  assert.equal(view.text, 'Not filled in time. Across will refund USDC to your wallet on Arbitrum One, usually 2.5 to 3 hours after your deposit.');
   assert.equal(view.feeDetail, null, 'the fee is never shown before filled');
   assert.equal(view.terminal, false);
 });

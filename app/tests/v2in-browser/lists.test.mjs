@@ -207,7 +207,7 @@ test('preview reads the connected wallet from the site route and shows its parti
   try {
     const note = s.page.locator('[data-owned] [data-v2-own-note="partial"]');
     await note.waitFor();
-    assert.equal(await text(note), 'Showing Robinhood Chain. Base and Arbitrum are unavailable right now.');
+    assert.equal(await text(note), 'Showing Robinhood Chain. Base and Arbitrum One are unavailable right now.');
     assert.equal(await s.page.locator('a[data-v2-position-row="4663:4:7"] [data-v2-stale]').getAttribute('data-v2-stale'), 'updated 15 min ago');
     await v1RowAsItIs(s.page);
     assert.deepEqual(await tabs(s.page), ['Open 2', 'Closed 0']);
@@ -232,7 +232,7 @@ test('live: the person’s own positions from the site’s route join V1’s gri
     assert.equal(await s.page.locator(`[data-position-row="${V1_OPEN}"], [data-v2-position-row="4663:4:${V1_OPEN}"]`).count(), 1);
     await s.page.getByRole('tab', { name: /^Open 5/ }).waitFor();
     assert.deepEqual(await tabs(s.page), ['Open 5', 'Closed 0'], 'the person’s own rows count');
-    assert.equal(await text(s.page.locator('[data-owned] [data-v2-own-note="partial"]')), 'Showing Robinhood Chain and Base. Arbitrum is unavailable right now.');
+    assert.equal(await text(s.page.locator('[data-owned] [data-v2-own-note="partial"]')), 'Showing Robinhood Chain and Base. Arbitrum One is unavailable right now.');
     assert.equal(await s.page.locator('[data-v2-examples], [data-test-data]').count(), 0, 'no test data in a live list');
     const portfolio = s.asked.find((entry) => entry.route === 'portfolio');
     assert.deepEqual([portfolio.method, portfolio.contract, portfolio.body], ['POST', CONTRACT, { wallet: OWNER }]);

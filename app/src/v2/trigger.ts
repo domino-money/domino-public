@@ -1,12 +1,17 @@
 /**
- * An auto-exit trigger, from the price a person types to the `sqrtPriceX96` the `ExitMandate` signs, and back (spec F7
- * §4.2, §4.3). Exact rational and integer arithmetic only: a price is parsed into a fraction of two BigInts, the square
- * root is an integer square root, and no value ever passes through a JS number.
+ * An auto-exit trigger, from a price to the `sqrtPriceX96` the `ExitMandate` signs, and back (spec F7 §4.2, §4.3). Exact
+ * rational and integer arithmetic only: a price is parsed into a fraction of two BigInts, the square root is an integer
+ * square root, and no value ever passes through a JS number.
+ *
+ * Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "it is AUTO-EXIT: when the price hits the edge of the
+ * range we close the position"): Auto-exit signs the range's own edges (src/v2in/autoexit/form.ts: TickMath's
+ * sqrtPriceAtTick of each tick), so no price is typed on its screens any more; this module still says those integers back
+ * as prices, in the orientation the screens write them, and keeps the typed-price translation its tests hold.
  *
  * The rule [F4 "Triggers"]: a trigger is the pool's sqrt price, token1 per token0, in Q64.96. "Below" fires with the
- * anchor at or under it, "above" at or over it. Whether "below" is a stop-loss depends on the token order, so the person
- * says the price in the orientation they think in ("USDG per ETH", or "ETH per USDG") and whether it "falls to" or
- * "rises to" it, and this module picks the field:
+ * anchor at or under it, "above" at or over it. Whether "below" is the lower price on screen depends on the token order,
+ * so a price is said in the orientation a person thinks in ("USDG per ETH", or "ETH per USDG") and as "falls to" or
+ * "rises to", and this module picks the field:
  *
  *   | the person's orientation        | "falls to P"               | "rises to P"               |
  *   | token1 per token0 (the pool's)  | triggerBelowSqrtPriceX96   | triggerAboveSqrtPriceX96   |

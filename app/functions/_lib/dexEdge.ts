@@ -11,7 +11,7 @@
  * STALE_SECONDS while it is read again behind.
  *
  * What is passed on: only the fields the page reads (chain, dex, labels, pair address, the two tokens' addresses and
- * symbols, prices, liquidity, 24h volume, creation time and image), of pairs on Robinhood Chain, as the provider wrote
+ * symbols, prices, liquidity, 24h volume, creation time and image), of pairs on the chain asked, as the provider wrote
  * them: never a figure of ours. The page checks every field again, as it always did. A `tokens` answer keeps, per
  * token, its most liquid pairs and the most liquid pair it is the base of (its artwork): what the Wallet card reads.
  *
@@ -24,11 +24,20 @@
  * Every answer says how old the oldest part of it is (X-Domino-Edge-Age, ms), so the page dates the figures by when
  * this edge retrieved them, and how it was made (Server-Timing). The gate runs first, as for every /api path, and the
  * answer leaves no-store.
+ *
+ * Changed on purpose 2026-10-06 (the owner's point 3: Base and Arbitrum One's pools in New position with TVL, 24h volume
+ * and APR "like Robinhood Chain", from the same provider): GET /api/read/dex/token-pairs/<chain>/<token> for `base` and
+ * `arbitrum`, the provider's own names for Base and Arbitrum One, asked and kept the same way, each answer about one
+ * chain and kept under that chain's name (a token's address can repeat across chains). Robinhood Chain keeps its paths
+ * and its keys as they were. `tokens` stays Robinhood Chain's alone: the Wallet card is its one reader.
  */
 import type { EdgeCache } from './publicEdge'
 
 export const DEX_PREFIX = '/api/read/dex/'
 export const DEX_UPSTREAM = 'https://api.dexscreener.com'
+/** The chains this route asks about, by the provider's own names: Robinhood Chain's paths name none (as before 2026-10-06). */
+export const DEX_CHAINS = ['robinhood', 'base', 'arbitrum'] as const
+export type DexChain = (typeof DEX_CHAINS)[number]
 /** How long a token's answer is served as it is: the provider's own `Cache-Control: max-age=30`. */
 export const DEX_FRESH_SECONDS = 30
 /** How long it is served at all, read again behind once DEX_FRESH_SECONDS old. */
@@ -83,8 +92,12 @@ function refuse(code: string, status: number): Response {
   })
 }
 
-/** The ask, when it is one this route answers: its kind and its tokens, lowercase, each once, in order. */
-export function dexAsk(request: Request): { kind: Kind; tokens: string[]; origin: string } | null {
+/**
+ * The ask, when it is one this route answers: its kind, its chain and its tokens, lowercase, each once, in order.
+ * `token-pairs/<token>` and `tokens/<tokens>` are Robinhood Chain's; `token-pairs/<chain>/<token>` is Base's or Arbitrum
+ * One's (2026-10-06). Robinhood Chain has one path only, the one it always had.
+ */
+export function dexAsk(request: Request): { kind: Kind; chain: DexChain; tokens: string[]; origin: string } | null {
   const url = new URL(request.url)
   const headers = request.headers
   const one = (name: string, accepted: readonly (string | null)[]) => accepted.includes(headers.get(name))
@@ -92,11 +105,16 @@ export function dexAsk(request: Request): { kind: Kind; tokens: string[]; origin
   if (headers.has('Origin') && headers.get('Origin') !== url.origin) return null
   if (!one('Sec-Fetch-Site', [null, 'same-origin']) || !one('Sec-Fetch-Mode', [null, 'cors', 'same-origin']) || !one('Sec-Fetch-Dest', [null, 'empty']) || headers.has('Sec-Fetch-User')) return null
   if (!url.pathname.startsWith(DEX_PREFIX)) return null
-  const [kind, list, ...rest] = url.pathname.slice(DEX_PREFIX.length).split('/')
-  if (rest.length > 0 || (kind !== 'token-pairs' && kind !== 'tokens') || !list) return null
+  const parts = url.pathname.slice(DEX_PREFIX.length).split('/')
+  const [kind] = parts
+  if (kind !== 'token-pairs' && kind !== 'tokens') return null
+  // Another chain is named before the token, and only for token-pairs: never Robinhood Chain's own name.
+  const chain: DexChain | null = parts.length === 2 ? 'robinhood' : parts.length === 3 && kind === 'token-pairs' && (parts[1] === 'base' || parts[1] === 'arbitrum') ? parts[1] : null
+  const list = parts[parts.length - 1]
+  if (chain === null || !list) return null
   const named = list.split(',')
   if (named.length > (kind === 'tokens' ? MAX_TOKENS : 1) || !named.every((token) => ADDRESS.test(token))) return null
-  return { kind, tokens: [...new Set(named.map((token) => token.toLowerCase()))], origin: url.origin }
+  return { kind, chain, tokens: [...new Set(named.map((token) => token.toLowerCase()))], origin: url.origin }
 }
 
 const text = (value: unknown, max: number) => (typeof value === 'string' && value.length <= max ? value : undefined)
@@ -104,9 +122,14 @@ const finite = (value: unknown) => (typeof value === 'number' && Number.isFinite
 
 /** One provider pair as passed on: the fields the page reads, of a pair on Robinhood Chain; null for anything else. */
 export function trimPair(pair: unknown): Record<string, unknown> | null {
+  return trimPairOn('robinhood')(pair)
+}
+
+/** The same for a pair on `chain` (2026-10-06: Base's and Arbitrum One's, under their own names). */
+export const trimPairOn = (chain: DexChain) => (pair: unknown): Record<string, unknown> | null => {
   if (!pair || typeof pair !== 'object') return null
   const p = pair as Record<string, unknown>
-  if (p.chainId !== 'robinhood' || typeof p.pairAddress !== 'string') return null
+  if (p.chainId !== chain || typeof p.pairAddress !== 'string') return null
   const token = (value: unknown) => {
     const t = value as Record<string, unknown> | null
     return t && typeof t === 'object' && typeof t.address === 'string' && ADDRESS.test(t.address)
@@ -121,7 +144,7 @@ export function trimPair(pair: unknown): Record<string, unknown> | null {
   const info = p.info as Record<string, unknown> | null
   const labels = Array.isArray(p.labels) ? p.labels.filter((label): label is string => typeof label === 'string' && label.length <= 16).slice(0, 8) : undefined
   return {
-    chainId: 'robinhood',
+    chainId: chain,
     ...(text(p.dexId, 64) !== undefined ? { dexId: p.dexId } : {}),
     ...(labels ? { labels } : {}),
     pairAddress: text(p.pairAddress, 66),
@@ -150,12 +173,12 @@ export function pairsForPrice(pairs: readonly Record<string, unknown>[], token: 
 }
 
 /** One upstream body for one token, as the passed-on JSON text of its trimmed pairs; null when there is no usable answer. */
-async function upstream(rt: DexRuntime, kind: Kind, token: string): Promise<string | null> {
+async function upstream(rt: DexRuntime, kind: Kind, chain: DexChain, token: string): Promise<string | null> {
   const fetchImpl = rt.fetch ?? ((input: string, init: RequestInit) => fetch(input, init))
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), UPSTREAM_MS)
   try {
-    const response = await fetchImpl(`${DEX_UPSTREAM}/${kind}/v1/robinhood/${token}`, {
+    const response = await fetchImpl(`${DEX_UPSTREAM}/${kind}/v1/${chain}/${token}`, {
       method: 'GET', headers: { Accept: 'application/json' }, redirect: 'manual', signal: controller.signal,
     })
     if (response.status !== 200 || !(response.headers.get('Content-Type') ?? '').startsWith('application/json') || !response.body) return null
@@ -176,7 +199,7 @@ async function upstream(rt: DexRuntime, kind: Kind, token: string): Promise<stri
     for (const part of parts) { bytes.set(part, offset); offset += part.byteLength }
     const body: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
     if (!Array.isArray(body) || body.length > 100) return null
-    const pairs = body.map(trimPair).filter((pair): pair is Record<string, unknown> => pair !== null)
+    const pairs = body.map(trimPairOn(chain)).filter((pair): pair is Record<string, unknown> => pair !== null)
     return JSON.stringify(kind === 'tokens' ? pairsForPrice(pairs, token) : pairs)
   } catch {
     return null
@@ -185,7 +208,9 @@ async function upstream(rt: DexRuntime, kind: Kind, token: string): Promise<stri
   }
 }
 
-const cacheKey = (origin: string, kind: Kind, token: string) => `${origin}/api/read/dex/cache/v1/${kind}/${token}`
+/** Where one token's answer is kept: Robinhood Chain's where it always was, another chain's under that chain's name. */
+const cacheKey = (origin: string, kind: Kind, chain: DexChain, token: string) =>
+  chain === 'robinhood' ? `${origin}/api/read/dex/cache/v1/${kind}/${token}` : `${origin}/api/read/dex/cache/v1/${chain}/${kind}/${token}`
 
 /** A kept answer for one token and its age, while younger than DEX_STALE_SECONDS; null otherwise. */
 async function keptPart(rt: DexRuntime, key: string): Promise<{ text: string; age: number } | null> {
@@ -210,11 +235,11 @@ function keepPart(rt: DexRuntime, key: string, body: string): Promise<void> {
 }
 
 /** One token's upstream read, shared by every ask for it on its way (F7), and kept when it answered. */
-function readPart(rt: DexRuntime, key: string, kind: Kind, token: string): Promise<string | null> {
+function readPart(rt: DexRuntime, key: string, kind: Kind, chain: DexChain, token: string): Promise<string | null> {
   const inflight = rt.inflight ?? INFLIGHT
   const leading = inflight.get(key)
   if (leading) return leading
-  const work = upstream(rt, kind, token).then(async (body) => {
+  const work = upstream(rt, kind, chain, token).then(async (body) => {
     if (body !== null) await keepPart(rt, key, body)
     return body
   }).finally(() => {
@@ -227,8 +252,8 @@ function readPart(rt: DexRuntime, key: string, kind: Kind, token: string): Promi
 type Part = { text: string; age: number; made: 'hit' | 'stale' | 'miss' } | null
 
 /** One token's answer: kept and fresh, kept and stale (read again behind), or read now. */
-async function part(rt: DexRuntime, origin: string, kind: Kind, token: string): Promise<Part> {
-  const key = cacheKey(origin, kind, token)
+async function part(rt: DexRuntime, origin: string, kind: Kind, chain: DexChain, token: string): Promise<Part> {
+  const key = cacheKey(origin, kind, chain, token)
   const kept = await keptPart(rt, key)
   if (kept && kept.age < DEX_FRESH_SECONDS * 1000) return { ...kept, made: 'hit' }
   if (kept) {
@@ -236,13 +261,13 @@ async function part(rt: DexRuntime, origin: string, kind: Kind, token: string): 
     const since = refreshing.get(key)
     if (since === undefined || rt.now() - since >= REFRESH_GUARD_MS || rt.now() < since) {
       refreshing.set(key, rt.now())
-      const work = readPart(rt, key, kind, token).finally(() => refreshing.delete(key))
+      const work = readPart(rt, key, kind, chain, token).finally(() => refreshing.delete(key))
       if (rt.waitUntil) rt.waitUntil(work)
       else void work
     }
     return { ...kept, made: 'stale' }
   }
-  const body = await readPart(rt, key, kind, token)
+  const body = await readPart(rt, key, kind, chain, token)
   return body === null ? null : { text: body, age: 0, made: 'miss' }
 }
 
@@ -254,7 +279,7 @@ export async function answerDex(request: Request, rt: DexRuntime): Promise<Respo
   const lane = async () => {
     while (next < asked.tokens.length) {
       const at = next++
-      parts[at] = await part(rt, asked.origin, asked.kind, asked.tokens[at])
+      parts[at] = await part(rt, asked.origin, asked.kind, asked.chain, asked.tokens[at])
     }
   }
   const lanes = Promise.all(Array.from({ length: Math.min(WIDTH, asked.tokens.length) }, lane))

@@ -1,15 +1,20 @@
 import { Button, StepMarker } from '../../components/ui'
 import { v2Chain } from '../../v2/chains'
-import { ethText } from '../../v2/plan/present'
+import { EXACT_FRACTION, SHOWN_FRACTION } from '../../v2/plan/present'
 import type { ActionName, Address, V2ChainId } from '../../v2/types'
 import { COPY } from './copy'
 import { stepLabel, type RunView } from './run'
 import { ErrorLine, Note } from './ui'
 import { amountText, labelOf, type TokenBook } from './tokens'
 
+/**
+ * The line under a step: its live state. Changed on purpose 2026-10-06 (the owner's point 4, as New position's wallet
+ * steps: titles only until something happens): no "Waiting" under a step not started, nor under one being checked (its
+ * row and its turning arc say so, ROW below).
+ */
 const STATUS: Record<string, string> = {
-  waiting: COPY.wallet.waiting,
-  preparing: COPY.wallet.waiting,
+  waiting: '',
+  preparing: '',
   ready: '',
   wallet: COPY.wallet.inWallet,
   sent: COPY.wallet.pendingNetwork,
@@ -29,10 +34,12 @@ export function stepsDone(view: RunView): boolean {
 
 /**
  * The wallet's steps of a reviewed action (spec F7 §2.6.1 card 5; the S1 reference's WalletSteps): each in order with
- * its network fee once prepared and its state ("Included", then "Finalized"). A batch is one step: every call runs
- * together or not at all. A reverted Permit2 action offers to cancel its signature first. The button for the current
- * step is the dialog's foot (`StepButton`). Changed on purpose 2026-10-03 (the owner, point 9): drawn as New position's
- * wallet steps, a timeline whose done steps turn green with a check and whose step under way turns its arc.
+ * its state ("Included", then "Finalized"). A batch is one step: every call runs together or not at all. A reverted
+ * Permit2 action offers to cancel its signature first. The button for the current step is the dialog's foot
+ * (`StepButton`). Changed on purpose 2026-10-03 (the owner, point 9): drawn as New position's wallet steps, a timeline
+ * whose done steps turn green with a check and whose step under way turns its arc. Changed on purpose 2026-10-06 (the
+ * owner's point 4: little text): no network fee on each step, the review above says it once (./Review.tsx); no line
+ * under a step until it is under way; an amount to allow rounded up (as the wallet asks for it), every digit in its title.
  */
 export function StepsList({ chainId, view, action, book, onCancelSignature, onKeepSignature, onRejected }: { chainId: V2ChainId; view: RunView; action: ActionName; book: TokenBook; onCancelSignature: () => void; onKeepSignature: () => void; onRejected: () => void }) {
   const reviewed = view.reviewed
@@ -44,20 +51,15 @@ export function StepsList({ chainId, view, action, book, onCancelSignature, onKe
       <ol className="dm-flow-wsteps">
         {view.steps.map((step, i) => {
           const state = i < view.current || step.status === 'included' || step.status === 'finalized' ? 'done' : i === view.current ? 'current' : 'upcoming'
-          const label = stepLabel(step, action, (token, raw) => amountText(book, token, raw), (token) => labelOf(book, token), permit2)
+          const label = stepLabel(step, action, (token, raw) => amountText(book, token, raw, SHOWN_FRACTION, 'up'), (token) => labelOf(book, token), permit2)
+          const whole = stepLabel(step, action, (token, raw) => amountText(book, token, raw, EXACT_FRACTION), (token) => labelOf(book, token), permit2)
           const status = STATUS[step.status]
-          const fee = step.feeWei !== null && step.status !== 'included' && step.status !== 'finalized'
           return (
             <li key={`${step.kind}-${i}`} data-position-step={step.kind} data-status={step.status} data-step-state={state === 'done' ? 'done' : state === 'current' ? ROW[step.status] : undefined}>
               <StepMarker index={i + 1} state={state} label={`${label}, ${state}`} />
               <div className="dm-flow-wstep-body">
-                <span className="dm-flow-wstep-title">{label}</span>
-                {(status || fee) && (
-                  <span className="dm-flow-wstep-note">
-                    {status}
-                    {fee && <span data-position-step-fee="">{status ? ' · ' : ''}{COPY.review.networkFee}: {COPY.review.networkFeeUpTo(ethText(step.feeWei ?? 0n))}</span>}
-                  </span>
-                )}
+                <span className="dm-flow-wstep-title" title={whole}>{label}</span>
+                {status && <span className="dm-flow-wstep-note">{status}</span>}
               </div>
             </li>
           )

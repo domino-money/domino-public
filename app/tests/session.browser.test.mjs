@@ -21,6 +21,7 @@ import { createFakeSession } from './support/fake-session.mjs';
 import { routeChain } from './support/browser-chain.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
 import { createWalletServer, WALLET_DIST } from './support/wallet-server.mjs';
+import { WALLET_V2_DIST } from './support/wallet-dist.mjs';
 
 if (!existsSync(join(WALLET_DIST, 'index.html'))) {
   throw new Error('.wallet-test-dist is missing. Run `npm run build:wallet-test` before this test.');
@@ -486,7 +487,9 @@ test('switching network signs out once, reads nothing on the wrong chain, and sw
   await connect(page);
   await signIn(s, page);
 
-  await s.wallet.switchChain('a', 1);
+  // Changed on purpose 2026-10-06 (the owner's point 2a): a network no deposit comes from (Sepolia). In a build with Domino
+  // V2 the session is kept on Ethereum, a network funds are brought from (session/machine.ts CROSSCHAIN_ORIGIN_CHAIN_IDS).
+  await s.wallet.switchChain('a', 11155111);
   await viewIs(page, 'wrong_network');
   await until(page, () => true, null, 'settle');
   const meBefore = s.fake.count('me');
@@ -500,6 +503,38 @@ test('switching network signs out once, reads nothing on the wrong chain, and sw
   const back = await viewIs(page, 'signed_out');
   assert.equal(back.reason, 'none', 'the old session is gone; a fresh sign-in is required');
   assert.deepEqual(s.wallet.calls('wallet_switchEthereumChain').map((call) => call.params[0].chainId), ['0x1237']);
+  await s.close();
+});
+
+// Added 2026-10-06 (the review of the next update): in a build that carries Domino V2 the session is held while the wallet is
+// on Base (session/machine.ts heldAway), and the wallet dialog and the header say so: signed in there, with Sign out, and
+// no switch to Robinhood Chain, which would take the wallet away from the network the page is using. A build without V2
+// signs out there and asks to switch, as before.
+test('a session held on Base: the wallet dialog says signed in there, with Sign out and no switch; without Domino V2, signed out and asked to switch', async () => {
+  const s = await scenario();
+  const page = await s.open();
+  await connect(page);
+  await signIn(s, page);
+  await s.wallet.switchChain('a', 8453);
+  await viewIs(page, 'wrong_network');
+  await openDialog(page);
+  const said = (want, label) => until(page, (text) => document.querySelector('#wallet-dialog-status')?.textContent === text, want, label);
+  const switchButton = dialog(page).getByRole('button', { name: 'Switch to Robinhood Chain' });
+  const asked = 'Your wallet is on Base. Domino works on Robinhood Chain. Switch to continue.';
+  if (WALLET_DIST === WALLET_V2_DIST) {
+    await said('Signed in. Your wallet is on Base.', 'the held session said');
+    assert.equal(s.fake.count('logout'), 0, 'the session is kept');
+    assert.equal(await switchButton.count(), 0, 'no switch to Robinhood Chain');
+    assert.equal((await dialog(page).locator('.dm-wallet-id-state').innerText()).trim(), 'Signed in');
+    assert.match(await trigger(page).textContent(), /^Signed in as /);
+    await dialog(page).getByRole('button', { name: 'Sign out', exact: true }).click();
+    await said(asked, 'signed out, on Base');
+    await eventually(() => s.fake.count('logout') === 1, 'one sign-out, when asked');
+  } else {
+    await said(asked, 'signed out there, as before');
+    await eventually(() => s.fake.count('logout') === 1, 'one sign-out');
+  }
+  await switchButton.waitFor();
   await s.close();
 });
 

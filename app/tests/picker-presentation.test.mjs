@@ -242,6 +242,14 @@ test('New position’s pool row: TVL, 24h volume and APR on every row, a dash fo
   assert.match(full, />[\d.,]+% est\.</)
   // 2026-10-01 (audit E21): the fee as every chip writes it.
   assert.match(full, /data-fee="">0\.30% fee</)
+  // Changed on purpose 2026-10-06 (the review of the next update): a row that names its network draws the fee chip beside the
+  // network chip, on one line under the pair (.dm-flow-pool-chips, which wraps where both do not fit); a row without one keeps
+  // its fee chip beside the pair, last in the label.
+  assert.match(full, /<\/span><span class="dm-chip shrink-0" data-fee="">0\.30% fee<\/span><\/label>/)
+  assert.doesNotMatch(full, /dm-flow-pool-chips|dm-flow-pool-net/)
+  const networked = html(PoolRow, { option, checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true, network: 'Base' })
+  assert.match(networked, /<span class="dm-flow-pool-chips"><span class="dm-chip dm-flow-pool-net" data-chain-chip="\d+">Base<\/span><span class="dm-chip shrink-0" data-fee="">0\.30% fee<\/span><\/span><\/span><\/label>/)
+  assert.equal((networked.match(/data-fee=/g) ?? []).length, 1, 'one fee chip')
   assert.match(full, /data-token-metadata="available"/)
   // Changed on purpose (round 6, 2026-09-27, New position for beginners): the row names its pair and fee only; the
   // "Uniswap · <pool id>" line is gone from New position's rows, and the id is the row's data-pool-key.

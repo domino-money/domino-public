@@ -32,7 +32,8 @@ export const AUTO_COMPOUND: DocPage = {
       title: 'What it cannot do',
       blocks: [
         list(['Reduce your position’s liquidity.'], ['Pull tokens from your wallet.'], ['Sell your principal.']),
-        p('Only a ', doc('stop-loss or take-profit', 'stop-loss'), ' order you signed can withdraw the position.'),
+        // Changed on purpose 2026-10-06 (the owner's point 5): Auto-exit, its own product, is what closes a position.
+        p('Only ', doc('Auto-exit', 'auto-exit'), ', turned on by you, can close the position.'),
       ],
     },
     {
@@ -133,90 +134,84 @@ export const DOMINO_COMPOUNDER: DocPage = {
 }
 
 /**
- * 2026-10-04 (the owner: docs revalidated for V2): stop-loss and take-profit (spec F4, F7 §4; src/v2in/autoexit), in the
- * order dialog's own words; the warnings are §4.7's, which the review asks the person to tick as read.
+ * 2026-10-04 (the owner: docs revalidated for V2): stop-loss and take-profit (spec F4, F7 §4; src/v2in/autoexit).
+ * Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "this stop loss-take profit product was named wrong. It is
+ * AUTO-EXIT. When the price hits the edge of the range we close the position automatically and send the tokens to the
+ * wallet. It must be separate from the rest"): Auto-exit, in its dialog's and card's own words, its prices the range's
+ * edges, one per position, never with compounding. The old slug opens it (registry.ts DOC_ALIASES). The warnings are
+ * §4.7's, as the dialog says them under its Details. Changed on purpose 2026-10-06 (the review of point 5): where it is
+ * offered (every network's position page; New position's success on Robinhood Chain), and the card's own words.
  */
-export const STOP_LOSS: DocPage = {
-  slug: 'stop-loss',
-  title: 'Stop-loss / take-profit',
-  summary: 'Withdraw a position automatically at a price you choose. The fee is 0.2%, only if it runs.',
+export const AUTO_EXIT: DocPage = {
+  slug: 'auto-exit',
+  title: 'Auto-exit',
+  summary: 'Closes a position when the price reaches the end of its range, and sends the tokens to your wallet. 0.2%, only if it closes.',
   sections: [
     {
       id: 'what-it-is',
       title: 'What it is',
       blocks: [
-        p('A stop-loss withdraws at a lower price; a take-profit, at a higher one. Each is an order you sign, which fires once and can be cancelled any time.'),
-        p('An exit sends the position only to your wallet, as signed. Receipts call it auto-exit.'),
+        p('Auto-exit watches one position. When the price reaches the end of its range, Domino closes the position and sends the tokens to your wallet. You don’t type a price: the range’s ends are where it closes.'),
+        p('For a range beside today’s price, a buy or a sell, only the far end counts: the position converts as the price crosses its range, and Auto-exit closes it once it has.'),
       ],
     },
     {
-      id: 'set-it-up',
-      title: 'Set it up',
+      id: 'turn-it-on',
+      title: 'Turn it on',
       blocks: [
-        p('Select ', b('Stop-loss / take-profit'), ' below a position’s title. Its dialog shows the pool price: type an exit price or choose a percentage. Saved or unavailable prices offer no shortcuts. On Automate, this action starts ', b('Protection only'), '. Choose:'),
-        list(
-          [b('Lower exit'), ' when the displayed price falls, ', b('Upper exit'), ' when it rises, or both. Switching price units keeps the same targets.'],
-          ['What you receive: both tokens, or only one.'],
-          [b('Max slippage, on top of the pool fee'), ': 1% at first, up to 5%.'],
-          ['How long it stays valid: 30 days at first, up to a year.'],
-        ),
-        p('Review shows the terms, fee and warnings to acknowledge. Your wallet then signs and registers the order; exact signed prices are under each trigger’s details.'),
+        p('Select ', b('Auto-exit'), ' below a position’s title, on any network, or right after you create a position. The dialog shows where it closes, the price now and its fee. ', b('Turn on Auto-exit'), ' asks your wallet for one signature, then one confirmation when your wallet can send the calls together.'),
+        p('Behind it, Domino sets up an automation for that position alone, which never reinvests. Your position stays in your wallet. ', b('Details'), ' has the exact terms: both tokens as they come out, a 1% slippage limit on top of the pool fee, valid for a year.'),
       ],
     },
     {
-      id: 'protection-only',
-      title: 'Protection only',
-      blocks: [
-        p('An order needs Domino’s automation on the position. A plain position gets ', b('Protection only'), ' first: Domino doesn’t reinvest it, only watches your orders, and charges no automation fee.'),
-      ],
+      id: 'separate',
+      title: 'Separate from compounding',
+      blocks: [p('A position has compounding or Auto-exit, never both, and one Auto-exit at a time.')],
     },
     {
       id: 'cost',
       title: 'What it costs',
-      blocks: [
-        p('0.2% of the position’s value at exit, only if the order runs: the only fee, even when converting. Fees your automation holds come back free.'),
-      ],
+      blocks: [p('0.2% of the position’s value when it closes, only if it does: the only fee. Nothing while it waits.')],
     },
     {
       id: 'warnings',
       title: 'What it can’t promise',
       blocks: [
         list(
-          ['The trigger price is not guaranteed. In a price gap or a rug, liquidity can disappear before the exit.'],
-          ['The exit runs only after the reference price crosses your trigger and the pool price is within your slippage of it.'],
+          ['The exit price is not guaranteed. In a sudden gap or a rug, the pool’s liquidity can disappear before Domino closes the position.'],
+          ['Domino closes it once the reference price passes the end of your range and the pool price is within the slippage limit of it.'],
           ['On v3 pools the reference price is a time-weighted average. After a fast move the exit waits for it to catch up, and it may never happen if the pool empties first.'],
-          ['When converting, your slippage limit comes on top of the pool’s own fee.'],
-          ['Turning auto-exit off for your automation pauses your orders; it doesn’t cancel them.'],
-          ['If one order fires, your other orders on this position stay active.'],
-          ['If Domino stops automation for safety, auto-exits stop too. You can still cancel your orders and withdraw at any time.'],
+          ['Leave automation pauses Auto-exit; it doesn’t turn it off for good.'],
+          ['If Domino stops automation for safety, Auto-exit stops too. You can still turn it off and withdraw at any time.'],
+          ['Moving this position or approving another app on it pauses Auto-exit until you approve it again. Collecting fees doesn’t.'],
         ),
       ],
     },
     {
       id: 'after',
-      title: 'Orders and what follows',
+      title: 'On, off and after',
       blocks: [
-        p('Orders show ', b('Active'), ', ', b('Expired'), ', ', b('Cancelled'), ' or ', b('Executed'), ' and what they await. ', b('Cancel order'), ' stops one permanently; pausing automation does not. An executed order sends the position to your wallet after the fee; amounts your wallet cannot receive wait in the card to claim.'),
+        p('The position’s page shows where Auto-exit closes, with ', b('Turn off'), ', which ends it for good. Once it closes the position, the page says so with what you received; anything your wallet could not receive waits there to claim. The emptied NFT stays in your wallet.'),
       ],
     },
   ],
 }
 
 /**
- * 2026-10-04 (the owner: docs revalidated for V2): the contract behind Auto-compound, Domino-compound and Protection only
+ * 2026-10-04 (the owner: docs revalidated for V2): the contract behind Auto-compound, Domino-compound and Auto-exit
  * (spec F7 §1.5, §5.3–§5.6; src/v2in/automate VaultCard.tsx, VaultDialog.tsx), said as "your automation" (the owner,
  * 2026-10-04), with its card's and dialogs' own words, and what Domino V1's automation leaves to do (spec §1.1).
  */
 export const YOUR_AUTOMATION: DocPage = {
   slug: 'your-automation',
   title: 'Your automation',
-  summary: 'What runs Auto-compound, Domino-compound or Protection only on a position: what it holds, its card, and how to stop it.',
+  summary: 'What runs Auto-compound, Domino-compound or Auto-exit on a position: what it holds, its card, and how to stop it.',
   sections: [
     {
       id: 'one-position',
       title: 'One position, one automation',
       blocks: [
-        p('Setting up Auto-compound, Domino-compound or Protection only creates a contract for that one position: your automation. Made for your wallet alone; only your wallet controls it.'),
+        p('Setting up Auto-compound, Domino-compound or Auto-exit creates a contract for that one position: your automation. Made for your wallet alone; only your wallet controls it.'),
         p('Your position stays in your wallet: you approve only that NFT, and approving another app on it stops your automation.'),
       ],
     },
@@ -227,7 +222,7 @@ export const YOUR_AUTOMATION: DocPage = {
         list(
           [doc('Auto-compound', 'auto-compound'), ': its fees go back into the position. 2% of the fees it reinvests.'],
           [doc('Domino-compound', 'domino-compound'), ': near the top of its range, its fees open the next position one step higher. 4% of the fees it reinvests.'],
-          [b('Protection only'), ': Domino doesn’t reinvest this position; it only watches your ', doc('stop-loss and take-profit', 'stop-loss'), '. 0.2% only if an exit runs.'],
+          [doc('Auto-exit', 'auto-exit'), ': closes the position at the end of its range and never reinvests. 0.2% only if it closes.'],
         ),
         p('Nothing is chosen for you.'),
       ],
@@ -236,8 +231,8 @@ export const YOUR_AUTOMATION: DocPage = {
       id: 'its-card',
       title: 'Its card',
       blocks: [
-        p('It shows as ', b('Automation'), ' on the position’s page, and as a row of Managed positions: its network, its state (', b('Automation on'), ', ', b('Paused'), ', ', b('Protection only'), ' or ', b('Automation off'), '), what it waits for, and the fees it collected and hasn’t reinvested yet.'),
-        p(b('Details'), ' has its mode and fee, the positions Domino-compound opened, and ', b('Pause'), ' or ', b('Resume'), '. Pausing stops automated runs; your stop-loss orders stay active.'),
+        p('It shows as ', b('Automation'), ' on the position’s page, and as a row of Managed positions: its network, its state (', b('Automation on'), ', ', b('Paused'), ', ', b('Auto-exit'), ' or ', b('Automation off'), '), what it waits for, and the fees it collected and hasn’t reinvested yet. Auto-exit’s own shows as its card instead.'),
+        p(b('Details'), ' has its mode and fee, the positions Domino-compound opened, and ', b('Pause'), ' or ', b('Resume'), '. Pausing stops automated runs; Auto-exit stays on.'),
       ],
     },
     {
@@ -255,7 +250,7 @@ export const YOUR_AUTOMATION: DocPage = {
       title: 'Leave automation',
       blocks: [
         // 2026-10-04 (rugged97's delta of 4 Oct §2 item 3, #319): exitAll turns auto-exit off too.
-        p(b('Leave automation'), ' sends the positions Domino-compound opened, and everything your automation can pay, to your wallet in one action, and the position stops being automated. No fee. Your ', doc('stop-loss', 'stop-loss'), ' orders pause until you turn auto-exit back on.'),
+        p(b('Leave automation'), ' sends the positions Domino-compound opened, and everything your automation can pay, to your wallet in one action, and the position stops being automated. No fee. ', doc('Auto-exit', 'auto-exit'), ' pauses until you turn it back on.'),
         p('Each next position can also be withdrawn alone. On a Uniswap v4 position, once nothing is left, ', b('Remove Domino from this position'), ' and ', b('Revoke approval'), ' end Domino’s access.'),
       ],
     },
@@ -264,14 +259,14 @@ export const YOUR_AUTOMATION: DocPage = {
       title: 'When it stops',
       blocks: [
         p('If you change the position, move it or approve another app, automation stops for it until you turn it back on. ', b('Turn back on'), ' asks your consent again for the fees it has not collected.'),
-        p('If Domino stops automation on a network for safety, runs and exit orders stop there; you can still withdraw and manage your positions.'),
+        p('If Domino stops automation on a network for safety, runs and Auto-exit stop there; you can still withdraw and manage your positions.'),
       ],
     },
     {
       id: 'domino-v1',
       title: 'Domino V1’s automation',
       blocks: [
-        p('Domino V1’s automation ends when the new one starts, with no migration: withdraw what V1 holds for you with ', b('Withdraw to wallet'), ', then set up the new automation. A position still in V1’s automation can’t take the new one, or a stop-loss, until it leaves.'),
+        p('Domino V1’s automation ends when the new one starts, with no migration: withdraw what V1 holds for you with ', b('Withdraw to wallet'), ', then set up the new automation. A position still in V1’s automation can’t take the new one, or Auto-exit, until it leaves.'),
       ],
     },
   ],

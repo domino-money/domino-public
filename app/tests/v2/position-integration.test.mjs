@@ -59,7 +59,7 @@ test('the actions\' one shape from read-v6: live positions only, the vault\'s ro
   assert.equal(model.findPosition(portfolio, 8453, 4, 7n), null, 'identity is chain + DEX + id');
   assert.equal(model.findPosition(portfolio, 4663, 3, 7n), null);
   const rootAction = model.fromV6(root, portfolio);
-  assert.deepEqual(rootAction.vault, { address: '0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2', role: 'root', armed: true });
+  assert.deepEqual(rootAction.vault, { address: '0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2', role: 'root', armed: true, exitLive: false });
   assert.equal(rootAction.source, 'read6', 'read-v6 is the one source besides V1\'s own chain read: no test data');
   assert.equal(model.fromV6(successor, portfolio).vault.role, 'successor');
   assert.equal(model.fromV6(plain, portfolio).vault, null);
@@ -68,7 +68,19 @@ test('the actions\' one shape from read-v6: live positions only, the vault\'s ro
   assert.equal(model.fromV6(model.findPosition(portfolio, 4663, 4, 13n), portfolio), null);
   assert.deepEqual(model.vaultReservesOf(portfolio, 4663, '0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2').reserves, [{ token: USDG, amount: 1202n }, { token: MANY, amount: 990n }]);
   assert.equal(model.vaultReservesOf(portfolio, 4663, '0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5').reserves, null, 'not read: never a made-up zero');
-  assert.equal(model.vaultArmed(portfolio, 4663, '0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6'), null);
+  assert.deepEqual(model.positionVault(portfolio, 4663, { address: '0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6', role: 'root' }), { address: '0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6', role: 'root', armed: null, exitLive: false }, 'custody unread: null, never guessed');
+  // Added 2026-10-06 (the integration review, rugged-literal #1): whether Auto-exit is on or paused on a root, its own
+  // automation's (paused, an active order listed on the root): there only a moved approval pauses anything.
+  const ROOT_VAULT = '0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2';
+  const [active] = portfolio.mandates;
+  const own = (mandates, paused = true) => ({ ...portfolio, mandates, vaults: portfolio.vaults.map((vault) => (vault.address === ROOT_VAULT ? { ...vault, state: { ...vault.state, paused } } : vault)) });
+  assert.deepEqual([active.vault, active.tokenId, active.status, active.expired, active.blockedBy], [ROOT_VAULT, '7', 'active', false, []]);
+  assert.equal(model.fromV6(root, own([active])).vault.exitLive, true, 'on');
+  assert.equal(model.fromV6(root, own([{ ...active, blockedBy: ['custody_lost'] }])).vault.exitLive, true, 'paused');
+  assert.equal(model.fromV6(root, own([{ ...active, status: 'revoked' }])).vault.exitLive, false, 'turned off');
+  assert.equal(model.fromV6(root, own([{ ...active, expired: true }])).vault.exitLive, false, 'expired');
+  assert.equal(model.fromV6(root, own([active], false)).vault.exitLive, false, 'a running automation is never Auto-exit\'s own');
+  assert.equal(model.fromV6(successor, own([active])).vault.exitLive, false, 'a successor is its vault\'s');
   assert.equal(readRuntime.validateResponse('activity', activity), true);
   assert.deepEqual(model.actionsOfPosition(activity, 4663, 9n).map((item) => item.action), ['exit', 'create']);
   assert.deepEqual(model.actionsOfPosition(activity, 8453, 9n), []);
@@ -160,6 +172,8 @@ test('the owner\'s decisions, one named constant each', () => {
   assert.equal(constants.RELAYED_OFFERED, false, 'decision #4');
   assert.equal(constants.ROOT_BLOCKS_CHANGE_RANGE, true, 'decision #5');
   assert.equal(constants.ROOT_PAUSE_COPY, 'This pauses automation for this position. You can turn it back on afterwards.');
+  // Added 2026-10-06 (the integration review, rugged-literal #1): on Auto-exit's own root, only a moved approval pauses it.
+  assert.deepEqual([constants.EXIT_PAUSE_COPY, constants.EXIT_REARM_COPY], ['This pauses Auto-exit until you approve this position again.', 'Approve again']);
   // Review of 2026-10-03 (#13): the blocked reasons are the "···" menu's heading, said for a person who knows no pool.
   assert.equal(constants.HOOKED_COPY, "Pools with hooks aren't supported yet.", 'decision #6');
   // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation").

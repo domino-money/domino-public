@@ -2,7 +2,8 @@
 const PURPOSE = {
   compound: 'Reinvest earned fees into the same position.',
   domino: 'Use earned fees to grow into the next price range.',
-  protection: 'Set price targets for an automatic exit.',
+  // Changed on purpose 2026-10-06 (the owner's point 5: Auto-exit closes at the range's edges; no price is typed).
+  protection: 'Closes the position at the end of its range.',
 } as const
 
 export function ModeSummary({ mode, title, fee }: { mode: keyof typeof PURPOSE; title: string; fee: string | null }) {
@@ -10,7 +11,7 @@ export function ModeSummary({ mode, title, fee }: { mode: keyof typeof PURPOSE; 
     <span className="dm-mode-copy">
       <span className="dm-mode-name">{title}</span>
       <span className="dm-mode-purpose">{PURPOSE[mode]}</span>
-      <span className="dm-mode-cost">{fee ? `${fee} of the earned fees it uses` : '0.2% of its value, only if an exit runs'}</span>
+      <span className="dm-mode-cost">{fee ? `${fee} of the earned fees it uses` : '0.2% of its value, only if it closes'}</span>
     </span>
   )
 }

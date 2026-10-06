@@ -187,7 +187,12 @@ test('Close position removes all of the liquidity with minimums from the slippag
     // Changed on purpose 2026-10-01 (audit E5): the slippage tolerance is under the dialog's closed Advanced, as on New position.
     assert.equal(await dialog.locator('[data-close-advanced]').getAttribute('open'), null, 'closed until opened');
     await dialog.locator('[data-close-advanced] > summary').click();
+    // Changed on purpose 2026-10-06 (the owner's point 4: one rule everywhere): above 2% the spec's one sentence, as
+    // New position and Domino V2's dialogs say it; 1% is no longer warned about.
+    await dialog.locator('#close-slippage-exact').fill('3');
+    assert.equal(await text(dialog.locator('[data-slippage-warning]')), 'High slippage: you may receive noticeably less than quoted.');
     await dialog.locator('[data-slippage-preset="100"]').click();
+    assert.equal(await dialog.locator('[data-slippage-warning]').count(), 0, '1% is not warned about');
     const minimums = position.closeMinimums(NFT.sqrtPriceX96, NFT.tickLower, NFT.tickUpper, NFT.liquidity, 100);
     assert.match(await text(dialog.locator('[data-position-at-least]')), /^At least\s+0\.98\d+ USDG\s+319\.\d+ UFG$/, 'the minimums follow the limit chosen');
     assert.doesNotMatch(await text(dialog), FORBIDDEN);

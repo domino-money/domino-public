@@ -2,7 +2,8 @@ import type { PortfolioResponse, Vault } from 'api-contracts/read-v6/types'
 import { liveCustody, type VaultSnapshot } from '../../finance/v2/vault'
 import { v2Chain } from '../../v2/chains'
 import type { Address, Dex, V2ChainId, VaultLimits, VaultPolicy } from '../../v2/types'
-import { DISARM_5_ADDED, DISARM_TEXT, DISARM_UNKNOWN } from './copy'
+import { AUTO_EXIT_WAITING_TEXT, DISARM_5_ADDED, DISARM_TEXT, DISARM_UNKNOWN } from './copy'
+import { exitStandingOf, exitVaultOf, protectionStanding, type ProtectionStanding } from '../autoexit/standing'
 import { agoWords, DISARM_REASON_NUMBER, listedMembers, listedPaused, listedReserves, vaultStatus, waitingWords, type VaultMemberView, type VaultStatus } from './portfolio'
 import { rawFromText, tokenView, wholeFromText, type TokenView } from './tokens'
 
@@ -69,6 +70,13 @@ export interface VaultView {
   autoExitEnabled: boolean
   paused: boolean | null
   /**
+   * Added 2026-10-06 (the review of point 5): for Auto-exit's own vault, where its Auto-exit stands from read-v6's orders
+   * of its root (../autoexit/standing.ts: on, paused, off, closed); null for any other vault. Changed on purpose
+   * 2026-10-06 (the integration review, rugged-literal #2): Auto-exit's own also after Leave automation turned its module
+   * off (../autoexit/standing.ts exitVaultOf).
+   */
+  exit: ProtectionStanding | null
+  /**
    * What still links the root to the vault after automation ended for it (§5.6 "Depois do exitAll numa v4"): the vault
    * as the v4 position's subscriber, the vault's individual approval, and whether the owner still holds the root. Null
    * when unknown. Only these make "Remove Domino from this position" and "Revoke approval" possible.
@@ -113,6 +121,7 @@ export function vaultViewFromListing(vault: Vault, body: PortfolioResponse, wall
     ? (vault.custody.reason ? DISARM_REASON_NUMBER[vault.custody.reason] : 'unknown')
     : null
   const policy = policyOf(vault)
+  const exit = protectionStanding(vault, body.mandates ?? [])
   return Object.freeze({
     source: 'listing' as const,
     chainId: vault.chainId,
@@ -134,9 +143,10 @@ export function vaultViewFromListing(vault: Vault, body: PortfolioResponse, wall
     members: listedMembers(vault),
     quoteCurrency: state ? (state.quoteCurrency.toLowerCase() as Address) : null,
     reserves: reserves.known ? Object.freeze({ known: true as const, list: reserves.reserves, held: reserves.held }) : Object.freeze({ known: false as const, reason: reserves.reason }),
-    waiting: waitingWords(vault.waiting, vault.chainId, nowSeconds, { maxPositions: policy?.maxPositions ?? null }),
+    waiting: waitingWords(vault.waiting, vault.chainId, nowSeconds, { maxPositions: policy?.maxPositions ?? null }, exit !== null ? AUTO_EXIT_WAITING_TEXT : null),
     autoExitEnabled: vault.autoExitEnabled,
     paused: state ? state.paused : vault.pausedBy !== null ? true : null,
+    exit,
     links: listedLinks(vault, body),
   })
 }
@@ -157,10 +167,14 @@ function listedLinks(vault: Vault, body: PortfolioResponse): VaultView['links'] 
 /**
  * A vault read on chain (live) as the screens show it. `listed`: its read-v6 item, used for what the chain cannot say
  * only while it was read at the same stateNonce. `closed`: the root's liveness as the vault client's own check found it
- * (null when not read).
+ * (null when not read). `exit`: where its Auto-exit stands, from the listing's orders (Added 2026-10-06, the review of
+ * point 5), for Auto-exit's own vault as the chain reads it now; null otherwise (the caller's word: shownVaultView).
  */
-export function vaultViewFromChain(snapshot: VaultSnapshot, listed: Vault | null, closed: boolean | null, nowSeconds: number): VaultView {
+export function vaultViewFromChain(snapshot: VaultSnapshot, listed: Vault | null, closed: boolean | null, nowSeconds: number, exit: ProtectionStanding | null = null): VaultView {
   const custody = liveCustody(snapshot)
+  // Changed on purpose 2026-10-06 (the integration review, rugged-literal #2): Auto-exit's own by the caller's word, its
+  // module on or off (Leave automation turns it off), never by the module alone.
+  const protection = snapshot.paused && exit !== null
   const current = listed !== null && listed.state.status === 'read' && listed.state.stateNonce === snapshot.stateNonce.toString()
   const status: VaultStatus = !custody.armed ? 'off' : snapshot.paused && snapshot.autoExitEnabled ? 'protection' : snapshot.paused ? 'paused' : 'on'
   let reason: number | 'unknown' | null = null
@@ -211,9 +225,10 @@ export function vaultViewFromChain(snapshot: VaultSnapshot, listed: Vault | null
     members: Object.freeze([...members].sort((a, b) => (a.role === 'root' ? -1 : b.role === 'root' ? 1 : 0))),
     quoteCurrency: snapshot.quoteCurrency,
     reserves: Object.freeze({ known: true as const, list: Object.freeze(snapshot.reserves.map((r) => Object.freeze({ token: r.token, total: r.total, idle: r.idle }))), held: snapshot.reserves.some((r) => r.total > 0n) }),
-    waiting: listed ? waitingWords(listed.waiting, snapshot.chainId, nowSeconds, { maxPositions: snapshot.policy.maxPositions }) : null,
+    waiting: listed ? waitingWords(listed.waiting, snapshot.chainId, nowSeconds, { maxPositions: snapshot.policy.maxPositions }, protection ? AUTO_EXIT_WAITING_TEXT : null) : null,
     autoExitEnabled: snapshot.autoExitEnabled,
     paused: snapshot.paused,
+    exit: protection ? exit : null,
     links: Object.freeze({
       subscribed: snapshot.dex === 4 ? snapshot.custody.subscriber === snapshot.vault : false,
       approved: snapshot.custody.approved === snapshot.vault,
@@ -230,7 +245,9 @@ export function vaultViewFromChain(snapshot: VaultSnapshot, listed: Vault | null
  */
 export function shownVaultView(listed: Vault, body: PortfolioResponse, wallet: Address, nowSeconds: number, fresh: VaultSnapshot | null): VaultView {
   if (fresh && fresh.chainId === listed.chainId && fresh.vault === listed.address.toLowerCase() && (listed.state.status !== 'read' || BigInt(listed.state.stateNonce) < fresh.stateNonce)) {
-    return vaultViewFromChain(fresh, listed, listedRootClosed(listed, body) === true ? true : null, nowSeconds)
+    // The listing's word on its Auto-exit, its root's orders: the chain read of the vault does not carry them.
+    const exit = exitVaultOf(listed, body.mandates ?? [], fresh) ? exitStandingOf(listed, body.mandates ?? []) : null
+    return vaultViewFromChain(fresh, listed, listedRootClosed(listed, body) === true ? true : null, nowSeconds, exit)
   }
   return vaultViewFromListing(listed, body, wallet, nowSeconds)
 }
@@ -274,22 +291,32 @@ export const VAULT_ADVANCED_ACTIONS: ReadonlySet<VaultActionKind> = new Set<Vaul
  * The actions the owner has on this vault now, in the order the card offers them. `withdraw-child` stands for one offer
  * per active successor (beside its id); the advanced two come last and are always the owner's (§5.3: the owner's actions
  * go on in every state, a halt included).
+ *
+ * Changed on purpose 2026-10-06 (the integration review, rugged-literal #1): Auto-exit's own vault (`exit`) closes its
+ * position with the position's approval alone (DominoV2VaultExecutor.executeExit), whatever its root's armed flag. While
+ * its Auto-exit is on, its rearm adds nothing to it; while it is on or paused, "Remove Domino from this position" and
+ * "Revoke approval" are never offered (revoking would stop the exit); Pause and Resume never apply (resuming would
+ * reinvest). Its rearm stays offered after Leave automation too (reason 7; §5.4: rearm to start again), where it gives the
+ * approval back to a paused Auto-exit or is the first part of turning Auto-exit on again.
  */
 export function vaultActions(view: VaultView): VaultActionKind[] {
   if (!view.ownedByWallet) return []
   const actions: VaultActionKind[] = []
   const offer = reservesOffer(view)
+  const exit = view.exit
+  const exitLive = exit === 'on' || exit === 'paused'
   if (offer.withdraw) actions.push('withdraw')
   if (offer.returnable) actions.push('return')
   // The rearm (decision #5): the root not armed for a reason the owner can undo (not burned, not withdrawn by auto-exit).
-  if (view.armed === false && view.rootClosed !== true && view.disarm && view.disarm.reason !== 3 && view.disarm.reason !== 6 && view.disarm.reason !== 7) actions.push('rearm')
-  if (view.armed !== false && view.status === 'on') actions.push('pause')
-  if (view.status === 'paused') actions.push('resume')
+  const ended = (reason: number | 'unknown') => reason === 3 || reason === 6 || (reason === 7 && exit === null)
+  if (exit !== 'on' && view.armed === false && view.rootClosed !== true && view.disarm && !ended(view.disarm.reason)) actions.push('rearm')
+  if (exit === null && view.armed !== false && view.status === 'on') actions.push('pause')
+  if (exit === null && view.status === 'paused') actions.push('resume')
   if (view.successors.length > 0) actions.push('withdraw-child')
   if (view.status !== 'off' || view.successors.length > 0 || offer.withdraw) actions.push('leave')
   // After automation ended for the root (§5.6): what still links it to the vault, on the owner's own position, once the
   // vault holds nothing more for the owner (its fees and next positions come first).
-  if (view.armed === false && view.links.ownerHolds === true && !offer.withdraw && view.successors.length === 0) {
+  if (!exitLive && view.armed === false && view.links.ownerHolds === true && !offer.withdraw && view.successors.length === 0) {
     if (view.dex === 4 && view.links.subscribed === true) actions.push('unsubscribe')
     if (view.links.approved === true) actions.push('revoke')
   }
@@ -357,3 +384,12 @@ export function withdrawRecipientInput(text: string, refused: { owner: Address |
 
 /** "Since {relative time}" for a disarm, or null. */
 export const sinceWords = (since: number | null, nowSeconds: number): string | null => (since === null ? null : `since ${agoWords(since, nowSeconds)}`)
+
+/**
+ * Added 2026-10-06 (the owner's point 5): whether a vault is Auto-exit's own, the protection-only vault of decision #25:
+ * paused, its auto-exit module on, whatever its root's state (after its exit the root is off, and the vault stays paused
+ * with its module on). Its place on a position's page is the Auto-exit card's (../autoexit/Orders.tsx). Changed on
+ * purpose 2026-10-06 (the integration review, rugged-literal #2): the view's own word (`exit`), so a vault Leave automation
+ * paused with its module off stays Auto-exit's while Auto-exit is listed on its root (../autoexit/standing.ts exitVaultOf).
+ */
+export const protectionVault = (view: Pick<VaultView, 'exit'>): boolean => view.exit !== null

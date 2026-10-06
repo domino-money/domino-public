@@ -18,7 +18,7 @@ import { SlippagePresets } from './SlippagePresets'
  * as buttons, a track marked at the same 0.1%, 0.5% and 1%, and a box for a
  * percentage between the marks, on one line where the step is wide enough
  * (flow.css stacks them otherwise), with the percentage itself at the head.
- * Above 1% a line says what the tolerance allows. What is kept is still whole
+ * Above 2% a line warns (2026-10-06, one rule everywhere). What is kept is still whole
  * basis points; the percentage is only how it is chosen and written
  * (create/slippage.ts).
  *
@@ -130,7 +130,7 @@ export function SlippageSlider({ bps, onSlippage }: { bps: string; onSlippage: (
       )}
       {slippageWarns(value) && (
         <p role="status" className="dm-flow-slip-warn" data-slippage-warning="">
-          {CREATE.amount.slippageWarning(slippageWritten(value))}
+          {CREATE.amount.slippageWarning}
         </p>
       )}
     </div>

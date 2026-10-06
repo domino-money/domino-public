@@ -121,7 +121,8 @@ test('§4.2: every invalid term is refused with its reason before anything is si
     await assert.rejects(client.reviewMandate(golden(vault, fields)), (error) => error.message.startsWith('mandate_invalid: ') && error.message.split(' ').includes(reason), `${reason} for ${JSON.stringify(fields, (_k, v) => (typeof v === 'bigint' ? `${v}n` : v))}`);
     assert.equal(typeof auto.MANDATE_REASON_TEXT[reason], 'string');
   }
-  assert.equal(auto.mandateInvalidText('mandate_no_trigger'), "This order isn't valid: set at least one trigger price.");
+  // Changed on purpose 2026-10-06 (the owner's point 5: the product is Auto-exit, never an "order" on screen).
+  assert.equal(auto.mandateInvalidText('mandate_no_trigger'), "This Auto-exit isn't valid: it needs at least one price to close at.");
   // The edges that ARE allowed: 1 and 1,000 bps, the upper trigger alone, 2^160 − 1, validUntil 2^64 − 1.
   for (const fields of [{ maxSlippageBps: 1 }, { maxSlippageBps: 1000 }, { triggerBelowSqrtPriceX96: 0n, triggerAboveSqrtPriceX96: (1n << 160n) - 1n }, { validUntil: (1n << 64n) - 1n }]) {
     await client.reviewMandate(golden(vault, fields));
@@ -159,7 +160,7 @@ test('§4.6: the fee rule of the way to receive, by the pool tokens\' charge-cur
   assert.deepEqual(auto.autoExitFeeRule(0, ZERO, pool(ZERO, USDG), 2, 1), { key: 'autoexit_fee_both_charge', token: USDG });
   assert.deepEqual(auto.autoExitFeeRule(0, ZERO, pool(WETH, ZERO), 2, 2), { key: 'autoexit_fee_both_charge', token: WETH }, 'a tie: token0');
   assert.deepEqual(auto.autoExitFeeRule(0, ZERO, pool(TSLA, MANY), 0, 0), { key: 'autoexit_fee_both_none', token: null }, 'MANY/TSLA both: 20 bps of each');
-  assert.equal(auto.AUTO_EXIT_TEXT.autoexit_fee_line, "Auto-exit fee: 0.2% of the position's value at exit. It's the only fee, even when converting.");
+  assert.equal(auto.AUTO_EXIT_TEXT.autoexit_fee_line, "Fee: 0.2% of the position's value, only if it closes. It's the only fee.");
 });
 
 test('the warnings must be acknowledged; the v3 TWAP one is on a v3 vault only, the fee line last', async () => {
@@ -381,8 +382,8 @@ test('status (§4.5): the module off pauses, the vault\'s owner changed, the roo
   const paused = await client.status(review.id);
   assert.equal(paused.status, 'active');
   assert.deepEqual(paused.failing, ['mandate_module_off']);
-  // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation").
-  assert.equal(auto.AUTO_EXIT_TEXT.mandate_module_off, 'Paused: auto-exit is turned off for your automation.');
+  // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation"); 2026-10-06, Auto-exit by its name.
+  assert.equal(auto.AUTO_EXIT_TEXT.mandate_module_off, 'Paused: Auto-exit is turned off for this position.');
   chain.setExitModule(vault, FAKE.autoExit);
   assert.deepEqual((await client.status(review.id)).failing, [], 'turned on again: the order is back');
 
@@ -415,7 +416,7 @@ test('revoke: only an active order of this owner (0xd91ebc2a); not again; not an
   const prepared = await client.prepareRevoke(review.id, GAS);
   assert.equal(prepared.transaction.to, FAKE.autoExit);
   assert.equal(prepared.transaction.data.slice(0, 10), '0xd91ebc2a');
-  assert.equal(prepared.summary[0], 'Cancel this auto-exit order.');
+  assert.equal(prepared.summary[0], 'Turn off this Auto-exit.');
   const receipt = await client.receipt(await client.send(prepared, true));
   assert.ok(receipt.events.some((e) => e.eventName === 'MandateRevoked' && e.args.mandateHash === review.id));
   await assert.rejects(client.prepareRevoke(review.id, GAS), /mandate_not_active/);

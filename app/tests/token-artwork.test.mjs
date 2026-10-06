@@ -11,9 +11,13 @@ const expected = 'https://cdn.dexscreener.com/cms/images/abcdefghijklmnop?width=
 const pair = (overrides = {}) => ({ chainId: 'robinhood', baseToken: { address }, quoteToken: { address: other }, info: { imageUrl: image }, ...overrides });
 const json = (value) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
 
-test('artwork identity is only Robinhood and exact base token address, never quote or symbol', () => {
+// Changed on purpose 2026-10-06 (the owner's point 3: no icon on Base or Arbitrum One): the three chains a token can be
+// on, each its own identity (chain plus address).
+test('artwork identity is one of the three chains and the exact base token address, never quote or symbol', () => {
   assert.equal(tokenArtworkKey(4663, address.toUpperCase().replace('0X', '0x')), `4663:${address}`);
-  for (const [chain, token] of [[1, address], [4663, 'WETH'], [4663, 'https://127.0.0.1'], [4663, `0x${'0'.repeat(40)}`]]) assert.equal(tokenArtworkKey(chain, token), null);
+  assert.equal(tokenArtworkKey(8453, address), `8453:${address}`);
+  assert.equal(tokenArtworkKey(42161, address), `42161:${address}`);
+  for (const [chain, token] of [[1, address], [10, address], [4663, 'WETH'], [4663, 'https://127.0.0.1'], [4663, `0x${'0'.repeat(40)}`], [8453, `0x${'0'.repeat(40)}`]]) assert.equal(tokenArtworkKey(chain, token), null);
   assert.equal(artworkFromPairs([pair()], address), expected);
   assert.equal(artworkFromPairs([pair({ chainId: 'ethereum' })], address), null);
   assert.equal(artworkFromPairs([pair()], other), null);
@@ -292,4 +296,66 @@ test('CSPs admit only explicit decoration hosts; component suppresses referrer a
   assert.match(component, /key=\{`\$\{token.chainId\}:\$\{token.address\}`\}/);
   assert.match(component, /referrerPolicy="no-referrer"/);
   assert.match(component, /brokenSrc !== src/);
+});
+
+// Added 2026-10-06 (the owner's point 3: Base and Arbitrum One "like Robinhood Chain", their icons and their pools'
+// figures): the same guarded read for a token on Base or Arbitrum One, by the provider's own name for its chain, its
+// artwork only from that chain's pairs, one body per chain and address, and our edge first with the chain named.
+test('Base and Arbitrum One: artwork and pairs by the chain’s own name, one body per chain and address, through our edge with the chain named', async () => {
+  const base = (overrides = {}) => pair({ chainId: 'base', ...overrides });
+  assert.equal(artworkFromPairs([base()], address, 8453), expected);
+  assert.equal(artworkFromPairs([base()], address), null, 'a Robinhood Chain lookup never takes Base’s image');
+  assert.equal(artworkFromPairs([pair()], address, 8453), null, 'nor Base’s a Robinhood Chain image');
+  assert.equal(artworkFromPairs([base()], address, 1), null, 'a chain these reads do not cover');
+  const asked = [];
+  const heard = [];
+  const resolver = createTokenArtworkResolver({ wall: () => 5_000, fetch: async (url) => {
+    asked.push(url);
+    return json(url.includes('/base/') ? [base()] : url.includes('/arbitrum/') ? [pair({ chainId: 'arbitrum', info: {} })] : [pair()]);
+  } });
+  resolver.onPairs((token, body, retrievedAt, chainId) => heard.push([token, chainId]));
+  assert.equal(await resolver.resolve(8453, address), expected);
+  assert.equal(await resolver.resolve(42161, address), null, 'Arbitrum One’s pairs name no image for it');
+  assert.equal(await resolver.resolve(4663, address), expected);
+  assert.deepEqual(asked, [8453, 42161, 4663].map((chain) => `https://api.dexscreener.com/token-pairs/v1/${{ 8453: 'base', 42161: 'arbitrum', 4663: 'robinhood' }[chain]}/${address}`), 'one GET per chain, never one chain’s body for another');
+  assert.deepEqual(heard, [[address, 8453], [address, 42161], [address, 4663]], 'every body heard with its chain');
+  assert.deepEqual(await resolver.pairs(8453, `0x${'0'.repeat(40)}`), [base()], 'native ETH’s pairs by the zero address');
+  assert.equal(await resolver.pairs(10, address), null);
+  assert.equal(resolver.peek(8453, address), expected);
+  assert.equal(resolver.peek(4663, other), undefined);
+  // Our edge, where the deployment has it: Base's and Arbitrum One's token-pairs name the chain before the token.
+  const viaEdge = [];
+  const edged = createTokenArtworkResolver({ edge: '/api/read/dex/', fetch: async (url) => (viaEdge.push(url), json([base()])) });
+  await edged.pairs(8453, address);
+  await edged.pairs(42161, other);
+  await edged.pairs(4663, address);
+  assert.deepEqual(viaEdge, [`/api/read/dex/token-pairs/base/${address}`, `/api/read/dex/token-pairs/arbitrum/${other}`, `/api/read/dex/token-pairs/${address}`]);
+});
+
+// Added 2026-10-06 (review of the same day, audit I3): our edge gave no answer for a little-read Base token; that sends
+// Base's reads to the provider directly for five minutes, never Robinhood Chain's, nor the Wallet card's `tokens` batch.
+test('our edge given up for one chain only: a miss on Base keeps Robinhood Chain’s reads and the Wallet card’s prices on our edge', async () => {
+  const asked = [];
+  let at = 0;
+  const resolver = createTokenArtworkResolver({ edge: '/api/read/dex/', now: () => at, wall: () => 1, fetch: async (url) => {
+    asked.push(url);
+    if (url === `/api/read/dex/token-pairs/base/${address}`) return new Response('{"error":"upstream_unavailable"}', { status: 502, headers: { 'content-type': 'application/json' } });
+    return json([pair({ chainId: url.includes('/base/') ? 'base' : 'robinhood' })]);
+  } });
+  await resolver.pairs(8453, address);
+  assert.deepEqual(asked, [`/api/read/dex/token-pairs/base/${address}`, `https://api.dexscreener.com/token-pairs/v1/base/${address}`], 'Base: the provider directly once our edge gave no answer');
+  asked.length = 0;
+  at += 31_000;
+  await resolver.pairs(4663, address);
+  await resolver.tokenPrices([address, other]);
+  await resolver.pairs(8453, other);
+  assert.deepEqual(asked, [
+    `/api/read/dex/token-pairs/${address}`,
+    `/api/read/dex/tokens/${[address, other].sort().join(',')}`,
+    `https://api.dexscreener.com/token-pairs/v1/base/${other}`,
+  ], 'Robinhood Chain’s reads still on our edge; Base’s directly for five minutes');
+  asked.length = 0;
+  at += 300_001;
+  await resolver.pairs(8453, `0x${'c'.repeat(40)}`);
+  assert.deepEqual(asked, [`/api/read/dex/token-pairs/base/0x${'c'.repeat(40)}`], 'then Base’s on our edge again');
 });

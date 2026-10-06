@@ -4,7 +4,7 @@
  * "On this page" all read from here, so a page added to a group appears in
  * each of them at once.
  */
-import { AUTO_COMPOUND, DOMINO_COMPOUNDER, STOP_LOSS, YOUR_AUTOMATION } from './pages/automation'
+import { AUTO_COMPOUND, AUTO_EXIT, DOMINO_COMPOUNDER, YOUR_AUTOMATION } from './pages/automation'
 import { EARNED_FEES, POOLS, RANGES } from './pages/basics'
 import { NON_CUSTODIAL, PRIVACY, RISKS } from './pages/custody'
 import { WALLET, WALLET_REQUESTS, WHAT_IS_DOMINO } from './pages/introduction'
@@ -16,9 +16,10 @@ export const DOC_GROUPS: readonly DocGroup[] = [
   { key: 'introduction', title: 'Introduction', pages: [WHAT_IS_DOMINO, WALLET, WALLET_REQUESTS] },
   { key: 'basics', title: 'Liquidity basics', pages: [POOLS, RANGES, EARNED_FEES] },
   // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): bringing funds from another network, managing a
-  // position from its page, stop-loss and take-profit, and the automation behind them, each a page of its own.
+  // position from its page, Auto-exit (2026-10-06, once stop-loss and take-profit), and the automation behind them, each a
+  // page of its own.
   { key: 'using', title: 'Using Domino', pages: [MARKETS, POOL_PAGE, NEW_POSITION, BRING_FUNDS, POSITIONS, MANAGE_POSITION] },
-  { key: 'automation', title: 'Automation', pages: [AUTO_COMPOUND, DOMINO_COMPOUNDER, STOP_LOSS, YOUR_AUTOMATION] },
+  { key: 'automation', title: 'Automation', pages: [AUTO_COMPOUND, DOMINO_COMPOUNDER, AUTO_EXIT, YOUR_AUTOMATION] },
   { key: 'custody', title: 'Custody and risk', pages: [NON_CUSTODIAL, RISKS, PRIVACY] },
   { key: 'reference', title: 'Reference', pages: [FEES, FIGURES, CONTRACTS, GLOSSARY] },
 ]
@@ -35,8 +36,11 @@ export const DOCS_HOME = {
 /** The three pages the index offers first. */
 export const DOC_START: readonly string[] = ['what-is-domino', 'ranges', 'non-custodial']
 
-/** Older slugs that still open their page (2026-10-01, live note L12). */
-export const DOC_ALIASES: Readonly<Record<string, string>> = Object.freeze({ 'domino-compounder': 'domino-compound' })
+/**
+ * Older slugs that still open their page (2026-10-01, live note L12). Changed on purpose 2026-10-06 (the owner's point 5):
+ * Stop-loss / take-profit is Auto-exit now, and its old links still land there.
+ */
+export const DOC_ALIASES: Readonly<Record<string, string>> = Object.freeze({ 'domino-compounder': 'domino-compound', 'stop-loss': 'auto-exit' })
 
 const BY_SLUG: Readonly<Record<string, DocPage>> = Object.fromEntries(DOC_PAGES.map((page) => [page.slug, page]))
 const GROUP_OF: Readonly<Record<string, DocGroup>> = Object.fromEntries(DOC_GROUPS.flatMap((group) => group.pages.map((page) => [page.slug, group])))

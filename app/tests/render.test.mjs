@@ -1540,7 +1540,9 @@ test('a docs section lands just under the header: opened directly, from On this 
   await close(page);
 });
 
-test('the Non-custodial card on Home opens the custody page of the docs', async (t) => {
+// Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "it goes in the home page cards, in place of
+// Non-custodial"): the third card is Auto-exit, with its own drawing, and opens its page of the docs.
+test('the Auto-exit card on Home, in Non-custodial’s place, opens its page of the docs', async (t) => {
   const context = await browser.newContext();
   t.after(() => context.close());
   await context.route('https://api.dexscreener.com/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
@@ -1548,14 +1550,23 @@ test('the Non-custodial card on Home opens the custody page of the docs', async 
   watch(page);
   await page.goto(`${origin}/#/`);
   await shown(page, '/');
+  assert.deepEqual(await page.locator('.dm-features [data-feature]').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-feature'))), ['compound', 'domino', 'autoexit']);
+  assert.equal(await page.locator('#dm-features-title').innerText(), 'Your position. A choice of next steps.');
+  const card = page.locator('main article[data-feature="autoexit"]');
+  assert.equal(await card.locator('.dm-feature-kind').innerText(), 'Auto-exit');
+  assert.equal(await card.locator('.dm-feature-title').innerText(), 'Close at the edge.');
+  assert.equal(await card.locator('.dm-feature-text').innerText(), 'When the price reaches the end of your range, Domino closes the position and sends the tokens to your wallet.');
+  assert.equal(await card.locator('svg.dm-vig-exit').count(), 1, 'its own drawing');
+  assert.equal(await page.locator('main article', { hasText: 'Non-custodial' }).count(), 0);
   // Scoped to the card: the footer also has a "How it works" link, to the landing section.
-  const link = page.locator('main article', { hasText: 'Non-custodial' }).getByRole('link', { name: 'How it works', exact: true });
-  assert.equal(await link.getAttribute('href'), '#/docs/non-custodial');
+  const link = card.getByRole('link', { name: 'How it works', exact: true });
+  assert.equal(await link.getAttribute('href'), '#/docs/auto-exit');
+  await captureUI(page, 'home-autoexit-card', 'main article[data-feature="autoexit"]');
   leaving(page);
   await link.click();
-  await page.waitForFunction(() => location.hash === '#/docs/non-custodial');
-  await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Non-custodial');
-  clean(page, 'home custody card');
+  await page.waitForFunction(() => location.hash === '#/docs/auto-exit');
+  await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Auto-exit');
+  clean(page, 'home auto-exit card');
   await close(page);
 });
 

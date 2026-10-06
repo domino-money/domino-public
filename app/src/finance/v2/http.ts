@@ -18,7 +18,9 @@
  * controller (wallet/session.ts `withSessionCsrf`), only while the session of the epoch asked is the signed-in one:
  * handed to the request and never kept, returned or stored. Without a signed-in session for the connected account
  * nothing is sent (`session_required`). A build that carries V2 keeps the session across Base and Arbitrum One
- * (session/machine.ts keptChains), so a plan is asked whichever of the three chains the wallet is on; the V1 consumers'
+ * (session/machine.ts keptChains), so a plan is asked whichever of the three chains the wallet is on, and, since
+ * 2026-10-06 (the owner's point 2a), across the networks a deposit may come from, so a deposit sent from one of them is
+ * quoted again and followed with no new signature; the V1 consumers'
  * own view of the session (session/port.ts) stays Robinhood Chain's. A crosschain route's refusal of the session
  * (session_required, csrf_invalid, account_unsupported) goes to the page's one session port (session/livePort.ts
  * `reportDenial`), as the onboarding and deposit clients report theirs.
@@ -101,6 +103,7 @@ export function livePlanTransport(): S1PlanTransport {
  * Changed on purpose 2026-10-05 (the owner: "it keeps asking me to sign in"): on Base and Arbitrum One too. The view says
  * wrong_network there, and only Robinhood Chain counted, so a plan or a deposit asked for a new signature at every
  * network switch; the session held there (session/machine.ts heldAway) is the same session, for the same account.
+ * Changed on purpose 2026-10-06 (the owner's point 2a): heldAway holds it on a deposit's origin network too.
  */
 const LIVE_SESSION: PlanSession = {
   csrfAccess: true,

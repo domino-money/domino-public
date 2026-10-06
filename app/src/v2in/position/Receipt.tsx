@@ -17,11 +17,14 @@ import { labelOf, type TokenBook } from './tokens'
  * the receipt (Base adds its L1 data fee), and the state, "Included" then "Finalized" (a delay is never a failure). No
  * USD. Copied from the S1 reference's ReceiptDialog, drawn inside the action's own dialog as V1's are. Changed on purpose
  * 2026-10-03 (the owner, point 9): the state leads, in green with a check once the network has it, and every line's
- * amounts are token rows with their marks.
+ * amounts are token rows with their marks. Changed on purpose 2026-10-06 (the owner's point 4: no 18-digit amounts):
+ * each amount at most 6 decimals, every digit in its row's title (FeeCharged's exact amount included, spec L1024); the
+ * fee rounded up, never shown lower than it is, and what was paid in rounded up as the review's "You put in" (the review
+ * of point 4, money #3: one figure for one amount in the same dialog).
  */
 export function ZapReceiptView({ chainId, view, book }: { chainId: V2ChainId; view: ReceiptView; book: TokenBook }) {
   const read = view.read
-  const amount = (token: Address, raw: bigint) => <Rows chainId={chainId} book={book} items={[{ token, amount: raw }]} size="sm" maxFraction={18} />
+  const amount = (token: Address, raw: bigint) => <Rows chainId={chainId} book={book} items={[{ token, amount: raw }]} size="sm" />
   const landed = view.state === 'finalized' || view.state === 'included'
   return (
     <div className="dm-pa-field" data-position-receipt={view.state}>
@@ -49,22 +52,32 @@ export function ZapReceiptView({ chainId, view, book }: { chainId: V2ChainId; vi
 function Line({ line, amount, chainId, book }: { line: ReceiptLine; amount: (token: Address, raw: bigint) => ReactNode; chainId: V2ChainId; book: TokenBook }) {
   switch (line.kind) {
     case 'paid-in':
-      return <SheetFact label={COPY.receipt.paidIn} data-position-receipt-line="paid-in">{amount(line.token, line.amount)}</SheetFact>
+      // Rounded up, as the review's "You put in" and the wallet's "Allow" are: one figure for one amount (2026-10-06).
+      return (
+        <SheetFact label={COPY.receipt.paidIn} data-position-receipt-line="paid-in">
+          <Rows chainId={chainId} book={book} items={[{ token: line.token, amount: line.amount }]} size="sm" round="up" />
+        </SheetFact>
+      )
     case 'swapped':
       return (
         <SheetFact label={COPY.receipt.swapped} data-position-receipt-line="swapped">
           <span>
-            <Amount chainId={chainId} book={book} token={line.tokenIn} raw={line.amountIn} maxFraction={18} /> → <Amount chainId={chainId} book={book} token={line.tokenOut} raw={line.amountOut} maxFraction={18} />
+            <Amount chainId={chainId} book={book} token={line.tokenIn} raw={line.amountIn} /> → <Amount chainId={chainId} book={book} token={line.tokenOut} raw={line.amountOut} />
           </span>
         </SheetFact>
       )
     case 'fee':
-      return <SheetFact label={COPY.receipt.fee} data-position-receipt-line="fee" data-position-receipt-fee={line.amount.toString()}>{amount(line.token, line.amount)}</SheetFact>
+      // Rounded up where it is drawn, as the review's fee line is: a fee is never shown lower than it is (2026-10-06).
+      return (
+        <SheetFact label={COPY.receipt.fee} data-position-receipt-line="fee" data-position-receipt-fee={line.amount.toString()}>
+          <Rows chainId={chainId} book={book} items={[{ token: line.token, amount: line.amount }]} size="sm" round="up" />
+        </SheetFact>
+      )
     case 'position': {
       const label = line.step === 'added' ? COPY.receipt.added : line.step === 'removed' ? COPY.receipt.removed : COPY.receipt.collected
       return (
         <SheetFact label={label} data-position-receipt-line={`position-${line.step}`}>
-          <Rows chainId={chainId} book={book} items={line.amounts} size="sm" maxFraction={18} />
+          <Rows chainId={chainId} book={book} items={line.amounts} size="sm" />
           <span className="dm-pa-sub">#{line.tokenId.toString()} · {labelOf(book, line.pool.currency0)} / {labelOf(book, line.pool.currency1)}</span>
         </SheetFact>
       )
@@ -93,7 +106,7 @@ export function DirectReceiptView({ chainId, receipt, book }: { chainId: V2Chain
         <SheetFact label={COPY.receipt.paidByUniswap} data-position-receipt-line="paid-by-uniswap">
           {receipt.paid.map((paid) => (
             <span key={paid.token}>
-              {paid.amount === null ? <>{labelOf(book, paid.token)}: {COPY.receipt.notInLogs}</> : <Rows chainId={chainId} book={book} items={[{ token: paid.token, amount: paid.amount }]} size="sm" maxFraction={18} />}
+              {paid.amount === null ? <>{labelOf(book, paid.token)}: {COPY.receipt.notInLogs}</> : <Rows chainId={chainId} book={book} items={[{ token: paid.token, amount: paid.amount }]} size="sm" />}
             </span>
           ))}
         </SheetFact>

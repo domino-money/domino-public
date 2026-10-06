@@ -10,8 +10,11 @@ export const COPY = {
     changeRange: 'Change range',
     withdraw: 'Withdraw',
     collect: 'Collect fees',
-    /** The page's way into its stop-loss / take-profit (the owner, 2026-10-04: inside the position, as a button there). */
-    protect: 'Stop-loss / take-profit',
+    /**
+     * The page's way into its Auto-exit (the owner, 2026-10-04: inside the position, as a button there). Changed on purpose
+     * 2026-10-06 (the owner's point 5; rugged97: "this stop loss-take profit product was named wrong. It is AUTO-EXIT").
+     */
+    protect: 'Auto-exit',
     /** The "···" trigger's accessible name (the owner, 2026-10-03: one row, few buttons). */
     more: 'More actions',
   },
@@ -77,12 +80,11 @@ export const COPY = {
     expected: 'Expected',
     atLeast: 'At least',
     asQuoted: 'as quoted',
-    // §2.8: the label, then the amount and the token; the base ("0.65% of … swapped") on the value's sub-line, as New
-    // position's review says it.
+    // §2.8: the label, then the amount and the token, then its base in brackets ("0.65% of … swapped"), as New position's
+    // review says it (Changed on purpose 2026-10-06, the owner's point 4: one line, the receipt says the exact fee).
     fee: 'Domino fee',
     feeBase: (swapped: string) => `0.65% of ${swapped} swapped`,
     feeRate: '0.65% of the amount swapped',
-    feeEstimate: 'As planned; the receipt shows the exact fee.',
     noFee: 'No Domino fee',
     liquidity: 'Goes into the position',
     // §2.9, exactly.
@@ -92,9 +94,15 @@ export const COPY = {
     leftoversNone: 'Nothing',
     networkFee: 'Network fee',
     networkFeeUpTo: (eth: string) => `Up to ${eth}`,
-    networkFeeQuoted: (eth: string) => `About ${eth} (as quoted)`,
-    networkFeeCeiling: (eth: string) => `At most ${eth}`,
-    networkFeeLater: 'Shown before each step',
+    // Changed on purpose 2026-10-06 (the owner's point 4): the review's one network fee figure (present.ts networkFeeLine:
+    // the plan's cost and the approvals still to send); Base's ceiling under Details with a label of its own. Changed on
+    // purpose 2026-10-06 (the review of point 4: no jargon and no bare dash in view): a part that could not be read is
+    // `networkMore`, after the figure; Details' ceiling still names it, "+ other steps —".
+    networkAbout: (eth: string) => `About ${eth}`,
+    networkMore: 'plus a little more your wallet shows before you confirm',
+    networkOthers: 'other steps',
+    networkCeiling: 'Network fee, at most',
+    networkUnknown: 'Your wallet shows it before you confirm',
     l1Fee: 'L1 data fee',
     l1Unavailable: 'Not available right now',
     deadline: 'Good for',
@@ -112,7 +120,9 @@ export const COPY = {
     replacesApproval: 'This replaces another app’s permission on this position.',
     details: 'Details',
     quoting: 'Getting a quote…',
-    requoting: 'The price moved. Getting a fresh quote…',
+    // Changed on purpose 2026-10-06 (the review of point 4): no longer "The price moved. …", said of every new quote,
+    // also of one that only ran out or followed a cancelled signature.
+    requoting: 'Getting a fresh quote…',
     planUnavailable: 'The planning service isn’t available yet.',
     planInvalid: 'The quote came back in a form this app does not accept.',
     slippageLabel: 'Slippage',

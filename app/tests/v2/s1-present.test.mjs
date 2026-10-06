@@ -2,6 +2,8 @@
  * What the S1 screens say, as pure functions (src/v2/plan/present.ts, consent.ts): amounts rounded down and never
  * guessed without decimals, typed amounts and slippage, prices in both orientations, ranges on the spacing, the minimum
  * liquidity as token amounts, leftovers (WETH on v3), the network fee rounded up, and the consent path of spec §2.5.4.
+ * Since 2026-10-06 (the owner's point 4): the rounding defaults, Review's one network fee line, and the review kept
+ * while the same choices are quoted again.
  */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -99,11 +101,129 @@ test('the minimum liquidity as token amounts, and the leftovers (WETH for unused
   assert.equal(p.leftovers({ pool, weth: WETH, inputs: [{ token: USDG, amount: 1n }], legs: [], quotedOut: [], fee: null, added: [0n, 2n] }), null, 'a plan that does not add up shows nothing');
 });
 
+// Added 2026-10-06 (the owner's point 4: no 18-digit amounts on screen): an amount shows at most 6 decimals, rounded
+// down; its title says every digit (EXACT_FRACTION), whatever the token's decimals.
+test('rounding defaults: at most 6 decimals shown, every digit in the exact form', () => {
+  assert.equal(p.SHOWN_FRACTION, 6);
+  assert.equal(p.formatUnitsText(99_395_417_139_745_917n, 18), '0.099395', 'the owner’s print: 0.099395417139745917 WETH');
+  assert.equal(p.formatUnitsText(99_395_417_139_745_917n, 18, p.EXACT_FRACTION), '0.099395417139745917');
+  assert.equal(p.formatUnitsText(99_571_446n, 6), '99.571446', 'six decimals keep a 6-decimal token exact (spec §3.5’s 99.571446 USDG)');
+  assert.equal(p.formatUnitsText(3_250_000n, 6, p.EXACT_FRACTION), '3.25', 'trailing zeros dropped in the exact form too');
+  assert.equal(p.formatUnitsText(1n, 30, p.EXACT_FRACTION), `0.${'0'.repeat(29)}1`, 'more than 18 decimals, still exact');
+});
+
+// Added 2026-10-06 (the review of point 4, the study's correction: rounding down suits "about" and "at least", never a
+// fee or an amount to allow): `round` 'up' raises the last digit shown whenever a digit is dropped.
+test('a fee or an amount to allow rounds up: never shown lower than it is; nothing changes when no digit is dropped', () => {
+  assert.equal(p.formatUnitsText(8_024_690_700_000_000n, 18, p.SHOWN_FRACTION, 'up'), '0.008025', 'the review’s 0.0080246907 WETH');
+  assert.equal(p.formatUnitsText(8_024_690_700_000_000n, 18), '0.008024', 'rounded down by default');
+  assert.equal(p.formatUnitsText(3_250_000n, 6, p.SHOWN_FRACTION, 'up'), '3.25', 'exact already: as it is');
+  assert.equal(p.formatUnitsText(1_000_000_000n, 6, p.SHOWN_FRACTION, 'up'), '1,000');
+  assert.equal(p.formatUnitsText(999_999_999_999_999_999n, 18, p.SHOWN_FRACTION, 'up'), '1', 'carried into the whole');
+  assert.equal(p.formatUnitsText(1n, 18, p.SHOWN_FRACTION, 'up'), '0.000001', 'the smallest figure shown, never "<0.000001"');
+  assert.equal(p.formatUnitsText(0n, 18, p.SHOWN_FRACTION, 'up'), '0');
+  assert.equal(p.formatUnitsText(123n, null, p.SHOWN_FRACTION, 'up'), '123', 'raw units are exact');
+  assert.equal(p.formatUnitsText(1_999_999_999_999_999_999n, 18, 4, 'up'), '2');
+  assert.equal(p.formatUnitsText(5n, 0, p.SHOWN_FRACTION, 'up'), '5', 'a token without decimals');
+});
+
+// Added 2026-10-06 (the owner's point 4): Review's one network fee line.
+test('the one network fee line: the plan’s cost “about”, a batch’s ceiling “up to”, else unknown; the L1 part flagged when the plan could not read it', () => {
+  // Robinhood: a measured zero L1 fee is a figure like any other (spec §2.4), nothing to flag.
+  const robinhood = p.planNetworkCost({ gasUnits: 500_000n, feePerGas: 10n, l1: { source: 'nitro_node_interface', wei: 0n, l1GasUnits: 0n } });
+  assert.deepEqual(p.networkFeeLine({ cost: robinhood, l1Available: true, batchFee: null }), { kind: 'about', wei: 5_000_000n, ceiling: null, l1Missing: false, othersMissing: false });
+  // Base without its L1 data fee: the total is the L2 part alone, and the line says the L1 part is missing (never 0).
+  const base = p.planNetworkCost({ gasUnits: 500_000n, feePerGas: 10n, l1: null });
+  assert.deepEqual(p.networkFeeLine({ cost: base, l1Available: false, batchFee: 9n }), { kind: 'about', wei: 5_000_000n, ceiling: null, l1Missing: true, othersMissing: false }, 'the plan’s own cost wins over a batch ceiling');
+  // Before the wallet's fee per gas is known: a batch's own ceiling (its calls together, L1 ceiling included), else nothing.
+  assert.deepEqual(p.networkFeeLine({ cost: null, l1Available: true, batchFee: 7_000_000n }), { kind: 'upTo', wei: 7_000_000n, ceiling: null, l1Missing: false, othersMissing: false });
+  assert.deepEqual(p.networkFeeLine({ cost: null, l1Available: false, batchFee: null }), { kind: 'unknown' });
+});
+
+// Added 2026-10-06 (the review of point 4): an approval is a wallet transaction of its own, so the one line counts the
+// approvals still to send, each at its prepared figure; one not prepared yet is flagged (a dash on screen), never left
+// out; Base's ceiling under Details carries the same approvals, so it is never below the line in view.
+test('the one network fee line counts the approvals still to send; one not prepared yet is flagged, never left out', () => {
+  const robinhood = p.planNetworkCost({ gasUnits: 500_000n, feePerGas: 200_000_000n, l1: { source: 'nitro_node_interface', wei: 0n, l1GasUnits: 0n } });
+  // The journey's own test (c): 0.0001 ETH for the plan, and the approval prepared at 600,000 gas × 0.2 gwei.
+  assert.deepEqual(p.networkFeeLine({ cost: robinhood, l1Available: true, batchFee: null, others: [120_000_000_000_000n] }), { kind: 'about', wei: 220_000_000_000_000n, ceiling: null, l1Missing: false, othersMissing: false });
+  assert.equal(p.ethAboutText(220_000_000_000_000n), '0.00022 ETH');
+  // Two tokens to allow: the second is prepared only once the first is on chain.
+  assert.deepEqual(p.networkFeeLine({ cost: robinhood, l1Available: true, batchFee: null, others: [120_000_000_000_000n, null] }), { kind: 'about', wei: 220_000_000_000_000n, ceiling: null, l1Missing: false, othersMissing: true });
+  // Base: its ceiling with the same approvals.
+  const base = p.planNetworkCost({ gasUnits: 500_000n, feePerGas: 10n, l1: { source: 'op_gas_price_oracle', wei: 1_000n, upperBoundWei: 4_000n } });
+  assert.deepEqual(p.networkFeeLine({ cost: base, l1Available: true, batchFee: null, others: [700n] }), { kind: 'about', wei: 5_001_700n, ceiling: 5_004_700n, l1Missing: false, othersMissing: false });
+  // feesToCome: the transactions other than the action, still to be included; a signature costs nothing.
+  const step = (kind, status, feeWei = null) => ({ kind, status, feeWei });
+  assert.deepEqual(p.feesToCome([step('approve', 'ready', 9n), step('action', 'waiting')]), [9n]);
+  assert.deepEqual(p.feesToCome([step('approve-reset', 'included', 5n), step('approve', 'preparing'), step('sign-permit', 'waiting'), step('action', 'waiting', 99n)]), [null], 'one on chain is paid; one not prepared yet is null');
+  assert.deepEqual(p.feesToCome([step('approve-nft', 'ready', 3n), step('action', 'ready', 7n)]), [3n], 'the position’s approval too');
+  assert.deepEqual(p.feesToCome([step('batch', 'ready', 11n)]), [], 'a batch is its own figure');
+  assert.deepEqual(p.feesToCome([step('approve', 'finalized', 4n), step('approve', 'sent', 6n)]), [6n], 'one sent but not included yet still counts');
+});
+
+// Added 2026-10-06 (the review of point 4, ux #1: one network fee line, never "+ other steps —"): the approvals after the
+// current step are read at the review for their fee only, one after another; one that cannot be read yet stays null (the
+// line then says the rest in words), and a new quote stops the reads.
+test('the approvals still to come are read at the review for their fee: later ones only, a failure left unread, stopped by a new quote', async () => {
+  const step = (kind, index, status = 'waiting', feeWei = null) => ({ kind, index, status, feeWei });
+  const steps = [step('approve-reset', 0, 'preparing', 5n), step('approve', 1), step('approve', 2), step('approve-nft', 3), step('sign-permit', 4), step('action', 5)];
+  const asked = [];
+  await p.readFeesToCome(steps, 0, async (index) => {
+    asked.push(index);
+    if (index === 1) throw new Error('step_out_of_order');
+    return BigInt(index) * 100n;
+  }, () => true);
+  assert.deepEqual(asked, [1, 2, 3], 'only the approvals after the current one: never a signature or the action');
+  assert.deepEqual(steps.map((s) => s.feeWei), [5n, null, 200n, 300n, null, null], 'the approval after a reset to zero stays unread');
+  assert.deepEqual(p.feesToCome(steps), [5n, null, 200n, 300n]);
+  // One already read, or no longer waiting, is not asked again.
+  const again = [];
+  await p.readFeesToCome(steps, 0, async (index) => { again.push(index); return 1n; }, () => true);
+  assert.deepEqual(again, [1], 'only the one still unread');
+  // A new quote while a read is out: what comes back is dropped and nothing more is asked.
+  let alive = true;
+  const fresh = [step('approve', 0, 'preparing', 9n), step('approve', 1), step('approve', 2), step('action', 3)];
+  const late = [];
+  await p.readFeesToCome(fresh, 0, async (index) => { late.push(index); alive = false; return 7n; }, () => alive);
+  assert.deepEqual([late, fresh.map((s) => s.feeWei)], [[1], [9n, null, null, null]]);
+});
+
+// Added 2026-10-06 (the review of the owner's point 5): Auto-exit at New position's success on every network: never for a
+// range covering every price (nothing to close it at), recommended for a range beside the price (a buy or a sell).
+test('Auto-exit at the success: none for a full range, recommended beside the price, offered around it or with no price', () => {
+  // Spacing 10: the usable ends are -887270 and 887270.
+  assert.equal(p.exitOffer(-887270, 887270, 10, 0), 'none', 'every price: no end to close at');
+  assert.equal(p.exitOffer(-887272, 887272, 1, 5), 'none');
+  assert.equal(p.exitOffer(-887260, 887270, 10, 0), 'offered', 'one end short of the edge can close');
+  assert.equal(p.exitOffer(-200, 200, 10, 0), 'offered', 'the price inside');
+  assert.equal(p.exitOffer(-200, 200, 10, -200), 'offered', 'at the lower tick is inside (v3 and v4 count it so)');
+  assert.equal(p.exitOffer(-200, 200, 10, 200), 'recommended', 'at the upper tick is beside');
+  assert.equal(p.exitOffer(100, 200, 10, 0), 'recommended', 'a sell range above the price');
+  assert.equal(p.exitOffer(-200, -100, 10, 0), 'recommended', 'a buy range below the price');
+  assert.equal(p.exitOffer(100, 200, 10, null), 'offered', 'an unknown price: offered, never recommended');
+});
+
+// Added 2026-10-06 (the owner's point 4: a small cue, never a blank).
+test('a review kept while the same choices are quoted again: the last one, stale; nothing for new choices or a first quote', () => {
+  assert.deepEqual(p.keptWhileRequoting('now', true, 'last'), { shown: 'now', stale: false }, 'a review in hand is drawn as it is');
+  assert.deepEqual(p.keptWhileRequoting(null, true, 'last'), { shown: 'last', stale: true });
+  assert.deepEqual(p.keptWhileRequoting(null, false, 'last'), { shown: null, stale: false }, 'a quote for new choices starts blank');
+  assert.deepEqual(p.keptWhileRequoting(null, true, null), { shown: null, stale: false }, 'nothing to keep');
+});
+
 test('spans and ETH fees (rounded up)', () => {
   assert.deepEqual([p.spanText(59), p.spanText(600), p.spanText(3900), p.spanText(7200)], ['59 s', '10 min', '1 h 5 min', '2 h']);
   assert.equal(p.ethText(48_000_000_000_000n), '0.000048 ETH');
   assert.equal(p.ethText(1n), '0.00000001 ETH', 'a ceiling is never shown lower');
   assert.equal(p.ethText(0n), '0 ETH');
+  // Added 2026-10-06 (the owner's point 4): an estimate said "about", three significant digits, to the nearest.
+  assert.equal(p.ethAboutText(100_020_000_000_000n), '0.0001 ETH', 'not 0.00010002');
+  assert.equal(p.ethAboutText(123_456_789_012_345n), '0.000123 ETH');
+  assert.equal(p.ethAboutText(999_600_000_000_000n), '0.001 ETH', 'rounded to the nearest, carried over');
+  assert.equal(p.ethAboutText(1_234_000_000_000_000_000n), '1.23 ETH');
+  assert.equal(p.ethAboutText(55n), '0.000000000000000055 ETH', 'a figure with three digits or fewer stays as it is');
+  assert.equal(p.ethAboutText(0n), '0 ETH');
 });
 
 test('the consent path (spec §2.5.4): a batch first, then Permit2 for a plain account with ERC-20 only, else direct', () => {

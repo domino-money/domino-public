@@ -3,14 +3,22 @@ import { Journey } from '../../components/create/Journey'
 import { PageHeader, PageShell } from '../../components/ui'
 import { CREATE } from '../../lib/create/copy'
 import { OtherChainsContext } from '../../lib/create/otherChains'
+import { whenVisibleAfter } from '../../lib/read/screens/quietRead'
 import { SlotBoundary, SlotFailed } from '../../lib/read/screens/slots'
+import { quietDelayMs, type TransientCandidate } from '../../lib/read/screens/transient'
 import type { V2ChainId } from '../../v2/types'
 import { JourneyNetworkContext, type JourneyNetwork } from './context'
 import { JOURNEY_STAYS_ON_ROBINHOOD, SETUP_STAYS_WHILE_PREVIEW } from './constants'
+import { mergeGates } from './model/networks'
 import { robinhoodFinderOpen, routeFor, ROBINHOOD, type GateMode } from './model/routing'
 import { otherChainsFor } from './otherChains'
-import { journeyGates, type JourneyGates } from './source'
+import { journeyGatesRead, type JourneyGates } from './source'
 import { ZapJourney } from './ZapJourney'
+
+/** A gate read that may pass, as the read screens' one rule waits for one (lib/read/screens/transient.ts). */
+const PASSING: TransientCandidate = { state: 'unavailable', cause: { kind: 'network' } }
+/** On the page's focus the gates are read again at most this often, while reading again could change them. */
+const FOCUS_EVERY_MS = 15_000
 
 /**
  * New position in a build that carries Domino V2 (the integrated journey, 2026-10-02): the one screen New position opens
@@ -28,6 +36,11 @@ import { ZapJourney } from './ZapJourney'
  * S1 gate is live (./otherChains.ts, handed in through lib/create/otherChains.ts): their tokens in today's search with
  * their network's tag, their pools in today's list, today's range and amount steps, and Review and Create position on
  * that network's contracts (./JourneyCreateV2.tsx). Still no network picker: the search is the way in.
+ * Changed on purpose 2026-10-06 (the owner's point 3: the search "sometimes only brings Robinhood Chain"): the gates were
+ * read once, and one failed read of the plan route's word left Base and Arbitrum One out for the whole visit. A read that
+ * failed, or whose word could not be had for the moment (./source.ts journeyGatesRead `again`), is read again a few
+ * times on its own (the read screens' quiet waits) and on the page's focus; a network once live stays live, and a gate
+ * that says the same keeps its object (./model/networks.ts mergeGates), so nothing on screen starts over.
  *
  * Default export: the lazily mounted part.
  */
@@ -45,14 +58,51 @@ export default function NewPositionV2({ flow, poolId, linkToken }: { flow: numbe
   const [finder, setFinder] = useState(false)
   useEffect(() => {
     let alive = true
-    void journeyGates().then(
-      (read) => {
-        if (alive) setGates(read)
-      },
-      () => undefined,
-    )
+    let reading = false
+    // Whether reading again could change the gates: a failed read, or a word that could not be had for the moment.
+    let wanted = false
+    let attempt = 0
+    let lastRead = 0
+    let cancelWait: (() => void) | null = null
+    const later = () => {
+      const wait = quietDelayMs(PASSING, attempt)
+      if (wait === null) return
+      attempt += 1
+      cancelWait = whenVisibleAfter(wait, read)
+    }
+    function read() {
+      if (!alive || reading) return
+      reading = true
+      lastRead = Date.now()
+      cancelWait?.()
+      cancelWait = null
+      void journeyGatesRead().then(
+        ({ gates: next, again }) => {
+          reading = false
+          if (!alive) return
+          setGates((held) => mergeGates(held, next))
+          wanted = again
+          if (again) later()
+        },
+        () => {
+          reading = false
+          if (!alive) return
+          wanted = true
+          later()
+        },
+      )
+    }
+    const onFocus = () => {
+      if (wanted && document.visibilityState === 'visible' && Date.now() - lastRead >= FOCUS_EVERY_MS) read()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    read()
     return () => {
       alive = false
+      cancelWait?.()
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
     }
   }, [])
   // A new flow (screens/NewPosition.tsx useFlowKey: New position followed again after a position was made) starts on today's journey.

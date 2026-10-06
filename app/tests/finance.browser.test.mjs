@@ -14,6 +14,7 @@ import { routePermitAbi, routeExecuteAbi } from '../.test-build/app/src/finance/
 import { ROUTE_PERMIT2, UNIVERSAL_ROUTER, ROUTE_FEE_RECIPIENT } from '../.test-build/app/src/finance/pin.js';
 import { createFakeSession } from './support/fake-session.mjs';
 import { createWalletServer, WALLET_DIST } from './support/wallet-server.mjs';
+import { WALLET_V2_DIST } from './support/wallet-dist.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
 import { ARTWORK, choosePool, footerButton, pressContinue, walkToReview } from './support/new-position.mjs';
 import { FIXTURE_TOKEN, createReadStub, gatewayError } from './support/read-stub.mjs';
@@ -1237,17 +1238,23 @@ const walletStepStates = page => page.locator('[data-wallet-steps] li').evaluate
  * next in Create position's place instead of opening Positions on its own (components/create/CreatedNext.tsx): keep it
  * as a plain position and open it, or automate it with Auto-compound or Domino-compound, the position chosen. Waits
  * for that offer for `id`, checks its three ways, optionally keeps a picture of it, and takes the first.
+ * Changed on purpose 2026-10-06 (the review of the next update): on the build that carries Domino V2 (V1's suites run on
+ * wallet-test-v2, scripts/v1-on-v2.mjs), Auto-exit is offered beside them for a range that is not full, opening the
+ * position's page (CreatedNext.tsx); no range made here is full. The build without V2 offers the three alone.
  */
 async function openCreated(page, id, timeout = 60_000, shot = null) {
   const next = page.locator(`[data-created-position="${id}"]`);
   await next.waitFor({ timeout });
   assert.equal(await page.locator('[data-create-position]').innerText(), 'Position created');
+  const v2 = WALLET_DIST === WALLET_V2_DIST;
   assert.deepEqual(await next.locator('a').evaluateAll((links) => links.map((a) => [a.getAttribute('data-created-next'), a.getAttribute('href')])), [
     ['plain', `#/positions/${id}`],
     ['compound', `#/sequence/compound/${id}`],
     ['domino', `#/sequence/domino/${id}`],
+    ...(v2 ? [['autoexit', `#/positions/${id}`]] : []),
   ]);
   assert.match(await next.innerText(), new RegExp(`Position NFT ${id} is in your wallet\\.[\\s\\S]*Plain position[\\s\\S]*View position[\\s\\S]*Auto-compound · 2%[\\s\\S]*Domino-compound · 4%`));
+  if (v2) assert.match(await next.locator('[data-created-next="autoexit"]').innerText(), /Auto-exit · 0\.2% if it closes[\s\S]*Closes it at the end of its range and sends the tokens to your wallet\.[\s\S]*Turn on/);
   assert.ok(!(await page.locator('[data-journey-footer] > button').first().isVisible()), 'Back rests once the position exists');
   if (shot) {
     await next.evaluate((element) => element.scrollIntoView({ block: 'end' }));
@@ -3583,9 +3590,10 @@ test('with ETH only and TOKEN typed, the ETH pays for the whole position: deposi
 // Added 2026-09-28 (round 6 review): the amount typed in the token the wallet does not hold. The swap then buys the typed
 // token, and the wallet's other token pays for the whole position. The typed panel stays as typed, never quieted like a
 // panel the swap fills. The line under the panels says, from the wallet's side, what comes out of it and how much of that
-// is swapped: the deposit Review names. Above 1%, Review's warning names the tolerance and where it is changed, because
-// the tolerance itself is inside Review's closed Details.
-test('typed in the token the wallet lacks, the typed panel stays whole and the line says what comes from the wallet; Review names a tolerance above 1% and where to change it', async () => {
+// is swapped: the deposit Review names. Changed on purpose 2026-10-06 (the owner's point 4): that line is one short
+// sentence ("Domino swaps about … for you, so … comes from your wallet."), and above 2% (the spec's line) the step and
+// Review warn in the same words, the spec's.
+test('typed in the token the wallet lacks, the typed panel stays whole and the line says what comes from the wallet; above 2% the step and Review warn in the spec’s one line', async () => {
   const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 18n });
   const s = await atReview(chain);
   try {
@@ -3610,21 +3618,20 @@ test('typed in the token the wallet lacks, the typed panel stays whole and the l
     assert.equal(ink, full, 'the typed amount keeps its full ink');
     const line = amount.locator('[data-amount-swap="0"]');
     assert.equal(await line.getAttribute('data-amount-swap-typed'), '');
-    const [, from, part] = (await line.innerText()).match(/^You don’t have enough TOKEN, so ([\d.,]+) ETH will come from your wallet\. About ([\d.,]+) ETH of it will be swapped for TOKEN when you create the position\.$/) ?? [];
+    const [, part, from] = (await line.innerText()).match(/^Domino swaps about ([\d.,]+) ETH for TOKEN for you, so ([\d.,]+) ETH comes from your wallet\.$/) ?? [];
     assert.equal(from, put, 'the deposit Review names, shown here too');
     const partRaw = parseUnits(part.replaceAll(',', ''), 18);
     assert.ok(partRaw > 0n && partRaw < parseUnits(from.replaceAll(',', ''), 18), `part of it: ${part} of ${from}`);
     assert.equal(await amount.locator('[data-amount-short]').count(), 0);
 
-    // 3%, typed under Advanced: the step says what it allows beside its slider, and Review says what the 3% is and where it is changed.
+    // 3%, typed under Advanced: the step warns beside its slider, and Review warns in the same words.
     await amount.locator('[data-flow-advanced] > summary').click();
     await amount.locator('#create-slippage-exact').fill('3');
     await amount.locator('[data-slippage-warning]').waitFor();
-    assert.match(await amount.locator('[data-slippage-warning]').innerText(), /^3% is more than the usual 1%\./);
+    assert.equal(await amount.locator('[data-slippage-warning]').innerText(), 'High slippage: you may receive noticeably less than quoted.');
     await footerButton(s.page, 'Continue').click();
     await s.page.locator('[data-stage-card="review"] [data-review-slippage-warning]').waitFor();
-    assert.equal(await s.page.locator('[data-review-slippage-warning]').innerText(),
-      'You let prices move up to 3% (Amount › Advanced), more than the usual 1%. The deposit can take up to 3% more of each token, and a swap can return 3% less.');
+    assert.equal(await s.page.locator('[data-review-slippage-warning]').innerText(), 'High slippage: you may receive noticeably less than quoted.');
     assert.equal(await s.page.locator('[data-review-details]').evaluate(node => node.open), false, 'the tolerance itself stays inside the closed Details');
     assert.deepEqual(chain.sends, [], 'nothing is sent by going back and forth');
   } finally { await s.close(); }
@@ -4005,7 +4012,7 @@ test('New position’s Range step: Closer, Wider and Custom in words, the arrow 
     assert.deepEqual(await checked(), ['Closer']);
     assert.deepEqual(await ticks(), ['3600', '-4080']);
     assert.deepEqual(await away(), ['30% below today', '50% above today']);
-    assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'A smaller price window. The price can leave it sooner, so check it more often.');
+    assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'A smaller window: the price can leave it sooner.');
     assert.equal(await step.locator('[data-range-bound="lower"] [data-bound-price]').innerText(), '1 TOKEN = 0.000000000000697689 ETH');
     assert.equal(await step.locator('[data-range-bound="upper"] [data-bound-price]').innerText(), '1 TOKEN = 0.00000000000150378 ETH');
     assert.equal(await step.locator('input').count(), 0, 'no field, step or slider until Custom');
@@ -4015,7 +4022,7 @@ test('New position’s Range step: Closer, Wider and Custom in words, the arrow 
     assert.deepEqual(await checked(), ['Wider']);
     assert.deepEqual(await ticks(), ['6960', '-6960']);
     assert.deepEqual(await away(), ['50% below today', '101% above today']);
-    assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'A larger price window gives the price more room to move. Fees are spread over a wider range.');
+    assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'A larger window: more room to move, fees spread thinner.');
 
     // The arrow keys move the width switch, and the focus with it; Home and End go to either end.
     await step.getByRole('radio', { name: 'Wider' }).focus();
@@ -4069,8 +4076,7 @@ test('New position’s Range step: Closer, Wider and Custom in words, the arrow 
     await lowerPrice.press('Enter');
     assert.deepEqual(await ticks(), ['-900', '-4080'], 'moved outward, down to the pool’s step');
     assert.deepEqual(await away(), ['9.4% above today', '50% above today']);
-    assert.equal(await step.locator('p[data-range-position="below"]').innerText(),
-      'Today’s price is below this range: the position starts with one token only and earns no fees until the price rises into it.');
+    assert.equal(await step.locator('p[data-range-position="below"]').innerText(), 'No fees until the price rises into this range.');
     await step.getByRole('radio', { name: 'Closer' }).click();
     assert.equal(await step.locator('p[data-range-position]').count(), 0);
 

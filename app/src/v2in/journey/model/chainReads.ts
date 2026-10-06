@@ -1,11 +1,12 @@
 import type { ChainBalancesResponse, ChainPoolsResponse, ChainTokensResponse, LivePool, LiveToken } from 'api-contracts/read-v6/types'
 import { rawFromFact, type CurrencyBalance } from '../../../lib/create/budgets'
-import type { NetworkResolved, NetworkToken, OtherChainId } from '../../../lib/create/otherChains'
+import { PROTOCOL_FEE_UNDESCRIBED, type NetworkPoolFacts, type NetworkResolved, type NetworkToken, type OtherChainId } from '../../../lib/create/otherChains'
 import { amountFact } from '../../../lib/read/pagers'
 import { poolIdKey } from '../../../lib/read/screens/identity'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import type { TokenDisplay } from '../../../lib/read/types'
 import { v2Chain } from '../../../v2/chains'
+import type { ReadV6Reply } from '../../../v2/read/v6'
 import { ZERO_ADDRESS, type Address, type PoolRef } from '../../../v2/types'
 import { JOURNEY_USD_SHOWN } from '../constants'
 import { JOURNEY } from '../copy'
@@ -18,6 +19,8 @@ import { offeredPool, tiersOf } from './pools'
  * reads chain-pools, chain-balances and chain-tokens, api-contracts/read-v6 README "Chain reads"): what is pure of it. The
  * answers, already checked against the contract (src/v2/read/v6.ts), become today's search rows, pool rows and balances,
  * so the wallet stays where it is until a step asks it to sign (spec F7 §1.3). No wallet, no React, no clock of its own.
+ * Added the same day (the owner's point 3): a pasted address named on each network (`pastedOf`), the pools' facts that
+ * tell two rows of one pair and fee apart (`factsOfAnswer`), and which failed reads are worth asking again (`passingReply`).
  */
 
 /** How well a symbol matches the text typed: 0 exact, 1 a prefix, 2 inside it, 3 not at all (a name or address hit). */
@@ -42,13 +45,19 @@ export function lookalikeOf(chainId: OtherChainId, token: { address: string; sym
   return own && own.address !== token.address.toLowerCase() ? (own.symbol ?? null) : null
 }
 
-/** A chain-tokens answer as the search's rows for that network (pure), in the answer's own order. */
+/**
+ * A chain-tokens answer as the search's rows for that network (pure), in the answer's own order. Changed on purpose
+ * 2026-10-06 (the review of the next update): one of the network's own currencies (its profile's, by address) says so
+ * (`own`), so it never rivals Robinhood Chain's own ETH or WETH for Enter (lib/create/otherChains.ts preselectOf).
+ */
 export function rowsOfTokens(chainId: OtherChainId, answer: ChainTokensResponse): NetworkToken[] {
   const network = v2Chain(chainId).name
+  const profile = profileTokens(chainId)
   return answer.tokens.map((token): NetworkToken => {
     const shown = displayOf(chainId, { address: token.address.toLowerCase() as Address, symbol: cleanSymbol(token.symbol), decimals: token.decimals })
     const main = lookalikeOf(chainId, shown)
-    return { chainId, network, token: shown, unread: false, ...(main ? { warning: JOURNEY.pool.lookalike(main) } : {}) }
+    const own = profile.some((entry) => entry.address === shown.address)
+    return { chainId, network, token: shown, unread: false, ...(main ? { warning: JOURNEY.pool.lookalike(main) } : {}), ...(own ? { own: true as const } : {}) }
   })
 }
 
@@ -66,6 +75,35 @@ export function resolvedOf(chainId: OtherChainId, address: string, answer: Chain
   return { ok: true, token: tokenOf(chainId, live) }
 }
 
+/**
+ * What a pasted address is on a network, from the chain-pools answer about it (pure; 2026-10-06, the owner's point 3: a
+ * pasted contract came as three unnamed "Look up this address" rows): the token, named, where it is one that can be used
+ * there (read, with its decimals); none where it is not (no contract, or not a token). The search lists only the first.
+ */
+export function pastedOf(chainId: OtherChainId, address: string, answer: ChainPoolsResponse): { state: 'token'; token: TokenDisplay } | { state: 'none' } {
+  const live = answer.tokens.find((token) => token.address.toLowerCase() === address.toLowerCase())
+  if (!live || live.status === 'unavailable' || live.decimals === null) return { state: 'none' }
+  return { state: 'token', token: tokenOf(chainId, live) }
+}
+
+/**
+ * Why a chain read did not answer, read for whether asking again soon could help (pure; 2026-10-06): a dropped connection,
+ * a busy or slow reader, a chain or upstream briefly out. Anything else (a refusal, a reply the contract refuses, a route
+ * that is off) comes back the same and is final.
+ */
+const PASSING_REASONS: ReadonlySet<string> = new Set([
+  'network', 'unexpected_status', 'read_capacity_busy', 'read_deadline_exceeded', 'request_timeout', 'request_budget_exhausted',
+  'upstream_timeout', 'upstream_unavailable', 'upstream_contract_mismatch', 'network_unavailable', 'rpc_error', 'block_unavailable',
+  'snapshot_not_built', 'snapshot_reorganized', 'stale_or_future_block', 'catalogue_database_unavailable', 'missing_rpc_result',
+])
+export const passingReply = (reply: ReadV6Reply<unknown>): boolean => reply.kind === 'unavailable' && PASSING_REASONS.has(reply.reason)
+
+/**
+ * A pool's protocol fee as a row carries it for the fee APR estimate (2026-10-06): v4's packed fee as read; a v3 pool's
+ * only when it is off (0), since there it is a share of the LP fee that the estimate does not describe.
+ */
+const protocolFeeOf = (live: LivePool): number => (live.pool.dex === 4 ? live.protocolFee : live.protocolFee === 0 ? 0 : PROTOCOL_FEE_UNDESCRIBED)
+
 /** Whether a pool of the answer is one Domino can open a position in: hookless, on a tier the network offers for its version. */
 function openable(chainId: OtherChainId, pool: PoolRef): boolean {
   return offeredPool(pool) && tiersOf(chainId, pool.dex).some((tier) => tier.fee === pool.fee && tier.tickSpacing === pool.tickSpacing)
@@ -81,7 +119,9 @@ function keyOf(live: LivePool) {
 /**
  * A chain-pools answer's pools as today's pool rows (pure): the ones a position can open in, in the answer's order (ETH and
  * WETH partners first, then the dollar, then the most liquidity in range). `chosen` is the token as the journey holds it,
- * kept as it is on its own rows. `receivedAt`: when the answer arrived, on the page's clock.
+ * kept as it is on its own rows. `receivedAt`: when the answer arrived, on the page's clock. Since 2026-10-06 each row
+ * carries its pool's protocol fee for the APR estimate (`protocolFeeOf`); its TVL and 24h volume are DEX Screener's, put
+ * on as New position draws the rows (lib/create/otherChains.ts networkRows), never the answer's depth.
  */
 export function poolsOfAnswer(chainId: OtherChainId, chosen: TokenDisplay | null, answer: ChainPoolsResponse, receivedAt: number): PoolOption[] {
   const readAt = receivedAt - answer.freshness.ageSeconds * 1000
@@ -96,8 +136,21 @@ export function poolsOfAnswer(chainId: OtherChainId, chosen: TokenDisplay | null
     const first = display(live.pool.currency0)
     const second = display(live.pool.currency1)
     if (!key || !first || !second || !openable(chainId, live.pool as PoolRef)) return []
-    return [poolRow({ pool: live.pool as PoolRef, key, tick: live.tick, sqrtPriceX96: live.sqrtPriceX96, block: answer.snapshot.number, usdPrices: pricesOf(answer, live.pool) }, [first, second], readAt)]
+    return [poolRow({ pool: live.pool as PoolRef, key, tick: live.tick, sqrtPriceX96: live.sqrtPriceX96, block: answer.snapshot.number, usdPrices: pricesOf(answer, live.pool), protocolFeeRaw: protocolFeeOf(live) }, [first, second], readAt)]
   })
+}
+
+/**
+ * What the answer says of each listed pool beyond its row, by row key (pure; 2026-10-06): its depth within the band and its
+ * active liquidity, for telling a v3 and a v4 pool of one pair and fee apart (networkRows). Never shown.
+ */
+export function factsOfAnswer(answer: ChainPoolsResponse): Record<string, NetworkPoolFacts> {
+  const out: Record<string, NetworkPoolFacts> = {}
+  for (const live of answer.pools) {
+    const key = keyOf(live)
+    if (key) out[key] = { depthUsd: live.market.status === 'measured' ? live.market.depthUsd : null, liquidity: live.liquidity }
+  }
+  return out
 }
 
 /**
@@ -115,12 +168,17 @@ export const samePool = (a: PoolRef, b: PoolRef): boolean =>
   a.dex === b.dex && a.currency0.toLowerCase() === b.currency0.toLowerCase() && a.currency1.toLowerCase() === b.currency1.toLowerCase() &&
   a.fee === b.fee && a.tickSpacing === b.tickSpacing && a.hooks.toLowerCase() === b.hooks.toLowerCase()
 
-/** The pool on screen as a chain-pools answer about its pair reads it now (pure), or null when it is not listed any more. */
+/**
+ * The pool on screen as a chain-pools answer about its pair reads it now (pure), or null when it is not listed any more.
+ * Its price is the answer's; its TVL and 24h volume stay the row's own (2026-10-06: they are DEX Screener's, about the
+ * pool and not its price, so a price read again keeps them, and the APR beside them).
+ */
 export function rereadOf(option: PoolOption, ref: PoolRef, answer: ChainPoolsResponse, receivedAt: number): PoolOption | null {
   const live = answer.pools.find((entry) => samePool(entry.pool as PoolRef, ref))
   const key = live ? keyOf(live) : null
   if (!live || !key) return null
-  return poolRow({ pool: ref, key, tick: live.tick, sqrtPriceX96: live.sqrtPriceX96, block: answer.snapshot.number, usdPrices: pricesOf(answer, ref) }, option.currencies, receivedAt - answer.freshness.ageSeconds * 1000)
+  const row = poolRow({ pool: ref, key, tick: live.tick, sqrtPriceX96: live.sqrtPriceX96, block: answer.snapshot.number, usdPrices: pricesOf(answer, ref), protocolFeeRaw: protocolFeeOf(live) }, option.currencies, receivedAt - answer.freshness.ageSeconds * 1000)
+  return { ...row, liquidity: option.liquidity, volume: option.volume, providerNote: option.providerNote }
 }
 
 /** The tokens to ask chain-balances about for a pool's two currencies: native ETH is the zero address there too. */

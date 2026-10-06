@@ -208,7 +208,11 @@ export function WalletSessionDialog({
   // A connected wallet with an unavailable sign-in must say why no Sign in action is offered.
   // Otherwise receipts look like a missing feature even though the session service is the missing part.
   const quiet = view.status === 'no_wallet'
-  const status = waiting !== null ? (pairing ? null : approveIn(walletName(waiting.name))) : quiet ? null : describe(view)
+  // Changed on purpose 2026-10-06 (the review of the next update): the session held while the wallet is on another network
+  // Domino uses or brings funds from (session/machine.ts heldAway) is signed in there, with Sign out, and no switch to
+  // Robinhood Chain, which would take the wallet away from the network the page is using.
+  const away = view.status === 'wrong_network' && session.away
+  const status = waiting !== null ? (pairing ? null : approveIn(walletName(waiting.name))) : quiet ? null : describe(view, away)
 
   let actions: React.ReactNode = null
   if (waiting !== null) {
@@ -220,7 +224,9 @@ export function WalletSessionDialog({
   } else {
     switch (view.status) {
       case 'wrong_network':
-        actions = (
+        actions = away ? (
+          <Button onClick={() => sessionController.dispatch({ type: 'sign_out' })}>Sign out</Button>
+        ) : (
           <>
             {disconnectButton}
             <Button onClick={switchNetwork} disabled={pending} aria-busy={pending || undefined}>
@@ -312,13 +318,13 @@ export function WalletSessionDialog({
             // Changed on purpose 2026-10-03 (the owner: "no need to say which wallet app it is", and the pill above with the
             // address below looked broken): one calm row, the address's disc, the short address and its state under it,
             // and Copy for the whole address (also its title). The wallet app's name is no longer shown.
-            <div className="dm-wallet-id" data-wallet-state={view.status === 'signed_in' ? 'signed-in' : view.status === 'wrong_network' ? 'other-network' : 'connected'}>
+            <div className="dm-wallet-id" data-wallet-state={view.status === 'signed_in' || away ? 'signed-in' : view.status === 'wrong_network' ? 'other-network' : 'connected'}>
               <span aria-hidden="true" className="dm-wallet-disc dm-wallet-id-disc" style={{ '--mark-h': 200 + (tokenHue(identity.address) % 120) } as CSSProperties} />
               <span className="dm-wallet-id-text">
                 <span className="dm-wallet-id-address tnum" title={identity.address} data-testid="wallet-address" data-address={identity.address}>
                   {shortAddress(identity.address)}
                 </span>
-                <span className="dm-wallet-id-state">{view.status === 'signed_in' ? 'Signed in' : view.status === 'wrong_network' ? 'Connected, on another network' : 'Connected'}</span>
+                <span className="dm-wallet-id-state">{view.status === 'signed_in' || away ? 'Signed in' : view.status === 'wrong_network' ? 'Connected, on another network' : 'Connected'}</span>
               </span>
               <CopyButton value={identity.address} label="Copy address" className="dm-wallet-id-copy" />
             </div>

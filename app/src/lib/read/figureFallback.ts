@@ -100,7 +100,12 @@ function standIn(value: string | null, pick: FigurePick): Metric | null {
     : { value, state: 'stale', asOf: pick.at, source: 'GeckoTerminal', fallback: pick.basis }
 }
 
-const attributed = (raw: string | null, retrievedAt: number): AttributedFigure =>
+/**
+ * A DEX Screener figure as a row carries it: attributed to the provider and dated by its retrieval, or not reported.
+ * Exported 2026-10-06: New position's pools on Base and Arbitrum One build their TVL and 24h volume with it, the same
+ * figure a Robinhood Chain row's stand-in is (lib/create/otherChains.ts `networkRows`).
+ */
+export const attributed = (raw: string | null, retrievedAt: number): AttributedFigure =>
   raw === null || formatUsdCompact(raw) === null
     ? { state: 'not_reported', provider: 'dexscreener' }
     : { state: 'attributed', value: formatUsdCompact(raw) as string, raw, zero: parseDecimal(raw)?.coefficient === 0n, provider: 'dexscreener', retrievedAt, cacheAgeSeconds: null }

@@ -9,6 +9,8 @@ import { openJourney } from '../support/journey-browser.mjs';
 import { launchBrowser } from '../support/s1-browser.mjs';
 import { S2_ACCOUNT, S2_OWNER } from '../support/s2-wallet.mjs';
 import { contractsFor, createV2Chain } from '../support/v2-chain.mjs';
+import { createChainReads } from '../support/chain-reads.mjs';
+import { quoteFor } from '../support/crosschain-quotes.mjs';
 import { WALLET_V2_DIST } from '../support/wallet-dist.mjs';
 
 const require = createRequire(import.meta.url);
@@ -21,7 +23,11 @@ let browser;
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await closeBrowser(browser); });
 
-async function openFunding({ balance = 0n, failed = false, bridge = true } = {}) {
+/** ETH at the read fixtures' ETH/USD round, in USDG units per wei: what the bridge stub delivers for ETH sent as USDG. */
+const FIXTURE_ETH_USD = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../api-contracts/read-v6/fixtures/valid/chain-pools.json'), 'utf8')).tokens.find((token) => token.symbol === 'ETH').price.usd;
+const ETH_AS_USDG = { num: BigInt(FIXTURE_ETH_USD.replace('.', '').slice(0, FIXTURE_ETH_USD.indexOf('.') + 6)), den: 10n ** 18n };
+
+async function openFunding({ balance = 0n, failed = false, bridge = true, served = null } = {}) {
   const calls = [], walletMethods = [];
   const chain = createV2Chain({ chainId: 4663, timestamp: Math.floor(Date.now() / 1000), balances: { [USDG]: balance }, pools: [{ pool: POOL, sqrtPriceX96: sqrtPriceAtTick(TICK), tick: TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);
@@ -32,15 +38,14 @@ async function openFunding({ balance = 0n, failed = false, bridge = true } = {})
     if (route === 'capabilities') return Response.json({ contractVersion: '1.0.0-rc.1', dataMode: 'live', enabledRoutes: ['origins', 'quote', 'status'] }, { headers });
     const body = await request.json(); calls.push({ route, body });
     assert.ok(request.headers.get('X-Domino-CSRF'));
+    // Changed on purpose 2026-10-06 (the review): whatever amount is asked, as ../support/crosschain-quotes.mjs answers it;
+    // ETH sent as USDG at the read fixtures' round, through Relay alone (Across bridges one token as itself only).
+    if (route === 'quote') return Response.json(quoteFor(body, S2_OWNER, 'responses/quote', body.originToken === ZERO && body.destinationToken === USDG ? { rate: ETH_AS_USDG, relayOnly: true } : {}), { headers });
     const data = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../api-contracts/crosschain-v1/fixtures/responses/' + route + '.json'), 'utf8').replaceAll('0x1111111111111111111111111111111111111111', S2_OWNER));
-    if (route === 'quote') {
-      data.quote.requestedAt = data.quote.retrievedAt = Math.floor(Date.now() / 1000);
-      data.quote.expiresAt = data.quote.requestedAt + 120;
-      assert.deepEqual(body, Object.fromEntries(Object.entries(data.quote.request).filter(([key]) => key !== 'owner')));
-    }
+    if (route === 'origins') data.origins.destinationToken = body.destinationToken;
     return Response.json(data, { headers });
   }];
-  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, routes, zapOnRobinhood: true,
+  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, routes, zapOnRobinhood: true, chainReads: served,
     intercept: async (method, params) => {
       walletMethods.push(method);
       if (method === 'personal_sign') return { result: await S2_ACCOUNT.signMessage({ message: { raw: params[0] } }) };
@@ -94,6 +99,9 @@ test('live V2 Amount automatically finds its exact shortfall and offers the othe
     await s.zap.locator(`[data-zap-amount="${USDG}"] input`).fill('60');
     await offer.locator('[data-funds-lack]').getByText('You need 60 USDG more on Robinhood Chain.', { exact: true }).waitFor();
     assert.equal(s.walletMethods.filter((method) => method === 'eth_getBalance').length, readsBefore, 'typing reuses the destination read');
+    // Changed on purpose 2026-10-06: the networks show once Domino's service answered for them (here it reads none: each
+    // keeps its button, the wallet's own read there).
+    await offer.locator('[data-funds-network]').first().waitFor();
     assert.deepEqual(await offer.locator('[data-funds-network]').evaluateAll((els) => els.map((el) => [el.getAttribute('data-funds-network'), el.textContent.trim()])), [['8453', 'Base'], ['42161', 'Arbitrum One']]);
     assert.equal(await offer.locator('[data-funds-signin], #funds-origin-chain, [data-funds-scan]').count(), 0, 'no separate sign-in, no list of networks, no scan');
     assert.deepEqual(s.calls, [], 'nothing asked before the choice');
@@ -123,6 +131,69 @@ test('an unread V2 balance is unavailable, never a zero shortfall; disconnect re
     await s.page.waitForFunction(() => window.__dominoSessionProbe.view().status === 'no_wallet');
     assert.equal(await s.zap.locator('[data-zap-funds]').count(), 0);
     assert.equal(s.walletMethods.includes('wallet_switchEthereumChain'), false);
+    assert.equal(s.chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the review of 2026-10-06, its blocker: a US$100 position offered to bring all the ETH held elsewhere):
+// what the position lacks is USDG, and only ETH is held on another network. The amount asked is about what it lacks,
+// worked out at the prices Domino's service read, or, with none, from the first quote's own rate; never the balance.
+const ARB_WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
+const ARB_USDC = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
+const BASE_WETH = '0x4200000000000000000000000000000000000006';
+const BASE_USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+/** 0.02 ETH, and nothing else, on `chainId` as Domino's service reads it (Base's ETH is priced there; Arbitrum One's is not). */
+const etherOnly = (chainId) => createChainReads({
+  chainId,
+  tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: chainId === 8453 ? BASE_WETH : ARB_WETH, symbol: 'WETH', decimals: 18 }, { address: chainId === 8453 ? BASE_USDC : ARB_USDC, symbol: 'USDC', decimals: 6 }],
+  balances: { [ZERO]: 20_000_000_000_000_000n },
+});
+const signInFromDialog = async (page) => {
+  const dialog = page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+  await dialog.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.waitForFunction(() => window.__dominoSessionProbe.view().status === 'signed_in');
+  await page.keyboard.press('Escape');
+};
+const ALL_ETH = 20_000_000_000_000_000n - 500_000_000_000_000n; // 0.02 ETH less the gas Review keeps
+
+test('ETH held on Base for the USDG the position lacks: one quote of about 50 USDG of ETH at the read prices, never all of it', async () => {
+  const s = await openFunding({ served: etherOnly(8453) });
+  try {
+    const offer = s.zap.locator('[data-funds-offer][data-funds-mode="live"]');
+    await offer.locator('[data-funds-network-holds="8453"]').waitFor({ timeout: 30_000 });
+    await offer.locator('[data-funds-network="8453"]').click();
+    await signInFromDialog(s.page);
+    const quote = offer.locator('[data-funds-quote]');
+    await quote.waitFor({ timeout: 30_000 });
+    const asked = s.calls.filter((c) => c.route === 'quote').map((c) => c.body);
+    assert.equal(asked.length, 1, 'the read prices sized it: one quote');
+    assert.deepEqual([asked[0].originChainId, asked[0].originToken, asked[0].destinationToken], [8453, ZERO, USDG]);
+    const sent = BigInt(asked[0].amountRaw);
+    // 50 USDG at the fixtures' US$4,000.12 an ETH, with 2% room: about 0.01275 ETH.
+    assert.ok(sent > 12_500_000_000_000_000n && sent < 13_000_000_000_000_000n, `about the need: ${sent}`);
+    assert.ok(sent * 3n < ALL_ETH * 2n, 'never all of it');
+    assert.match((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), /^Bring 0\.0127\d* ETH from Base$/);
+    assert.match((await quote.locator('[data-funds-receive] .dm-funds-delivery').innerText()).trim(), /^You receive about 50\.\d+ USDG on Robinhood Chain \(at least 50\.\d+ USDG\)$/, 'what arrives covers the 50 USDG');
+    assert.equal(await offer.locator('[data-funds-short-holding]').count(), 0, 'enough there: nothing said about it');
+    assert.equal(s.chain.sends.length, 0);
+    await captureCard(s, 'other-kind');
+  } finally { await s.close(); }
+});
+
+test('ETH held on Arbitrum One with no price read: all of it is quoted once, and the quote shown is sized from that rate', async () => {
+  const s = await openFunding({ served: etherOnly(42161) });
+  try {
+    const offer = s.zap.locator('[data-funds-offer][data-funds-mode="live"]');
+    await offer.locator('[data-funds-network-holds="42161"]').waitFor({ timeout: 30_000 });
+    await offer.locator('[data-funds-network="42161"]').click();
+    await signInFromDialog(s.page);
+    const quote = offer.locator('[data-funds-quote]:not([aria-busy])');
+    await s.page.waitForFunction(() => /^Bring 0\.01\d* ETH from Arbitrum One$/.test(document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.textContent?.trim() ?? ''), null, { timeout: 30_000 });
+    const asked = s.calls.filter((c) => c.route === 'quote').map((c) => BigInt(c.body.amountRaw));
+    assert.equal(asked.length, 2, 'a first quote, and one more: never a third');
+    assert.equal(asked[0], ALL_ETH, 'the first: all that can be sent, its rate only');
+    assert.ok(asked[1] > 12_000_000_000_000_000n && asked[1] < 13_500_000_000_000_000n, `the one shown: about the need at that rate, ${asked[1]}`);
+    assert.equal(await quote.count(), 1);
     assert.equal(s.chain.sends.length, 0);
   } finally { await s.close(); }
 });

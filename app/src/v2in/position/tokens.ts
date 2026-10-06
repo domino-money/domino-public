@@ -76,10 +76,13 @@ export function decimalsOf(book: TokenBook, token: Address): number | null {
   return book.get(token.toLowerCase())?.decimals ?? null
 }
 
-/** "1,234.5 USDG", or "1234500 raw units of 0x1234…abcd" when the decimals are unknown (never guessed). */
-export function amountText(book: TokenBook, token: Address, raw: bigint, maxFraction = 6): string {
+/**
+ * "1,234.5 USDG", or "1234500 raw units of 0x1234…abcd" when the decimals are unknown (never guessed). `round` 'up' for a
+ * fee or an amount to allow, never shown lower than it is (v2/plan/present.ts formatUnitsText, 2026-10-06).
+ */
+export function amountText(book: TokenBook, token: Address, raw: bigint, maxFraction = 6, round: 'down' | 'up' = 'down'): string {
   const decimals = decimalsOf(book, token)
   const label = labelOf(book, token)
   if (decimals === null) return `${formatUnitsText(raw, null)} ${COPY.form.rawUnits} of ${label}`
-  return `${formatUnitsText(raw, decimals, maxFraction)} ${label}`
+  return `${formatUnitsText(raw, decimals, maxFraction, round)} ${label}`
 }

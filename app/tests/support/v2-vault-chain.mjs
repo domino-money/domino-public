@@ -83,6 +83,7 @@ export const ABI = Object.freeze({
   registry: json('IDominoRegistry'),
   priceAnchor: json('IDominoPriceAnchor'),
   v3Pool: json('IUniswapV3PoolMinimal'),
+  v4StateView: json('IV4StateViewMinimal'),
   v4: [...json('IV4PositionManagerMinimal'), APPROVE],
   v3: [...json('IUniswapV3PositionManagerMinimal'), APPROVE],
 });
@@ -147,7 +148,13 @@ export const CODES = Object.freeze({
 const CLONE_CODE = '0x363d3d373d3d3d363d73d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d05af43d82803e903d91602b57fd5bf3';
 const DELEGATE_CODE = '0x60016000526001601ff3';
 /** Stand-ins for Uniswap's managers' code (the clients do not pin Uniswap's code; the chain profile names them). */
-const UNISWAP_CODE = Object.freeze({ v3: '0x60aa600355', v4: '0x60aa600455' });
+const UNISWAP_CODE = Object.freeze({ v3: '0x60aa600355', v4: '0x60aa600455', stateView: '0x60aa600456', v3Pool: '0x60aa600301' });
+/**
+ * Added 2026-10-06 (the review of the owner's point 5: Auto-exit reads the pool's own price before it arms an edge): the
+ * pools' price when a test sets none, 2 x 2^96 (tick about 6,931): above every lower trigger the client tests sign (the
+ * golden's 2^96), and no upper one is armed there. A test of Auto-exit's edges sets its own (`setPrice`).
+ */
+export const DEFAULT_SQRT_PRICE = 2n * 79228162514264337593543950336n;
 
 /**
  * Added on purpose (data) 2026-10-02 (Domino V2 rev2 §5.2): the price anchor's TEST-ONLY address and invented code, in a
@@ -224,6 +231,18 @@ export function createVaultChain({ chainId = 4663, owner = OWNER, positions = []
   let twap = null;
   const v3Spots = new Map();
   const v3PoolOf = (pool) => lower(getContractAddress({ opcode: 'CREATE2', from: profile.uniswap.v3.factory, salt: keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }], [pool.currency0, pool.currency1, pool.fee])), bytecodeHash: profile.uniswap.v3.poolInitCodeHash }));
+  // Added 2026-10-06 (Auto-exit's edges): each v4 pool's price by its id, through the chain profile's StateView.
+  const STATE_VIEW = lower(profile.uniswap.v4.stateView);
+  code.set(STATE_VIEW, UNISWAP_CODE.stateView);
+  const v4Prices = new Map();
+  const v4PoolId = (pool) => lower(keccak256(encodeAbiParameters([{ type: 'tuple', components: [{ name: 'currency0', type: 'address' }, { name: 'currency1', type: 'address' }, { name: 'fee', type: 'uint24' }, { name: 'tickSpacing', type: 'int24' }, { name: 'hooks', type: 'address' }] }], [{ currency0: lower(pool.currency0), currency1: lower(pool.currency1), fee: pool.fee, tickSpacing: pool.tickSpacing, hooks: lower(pool.hooks ?? ZERO) }])));
+  // Every listed position's v3 pool answers slot0, at the default price until a test sets one.
+  for (const p of positions) {
+    if (p.dex !== 3) continue;
+    const at = v3PoolOf({ currency0: lower(p.pool.currency0), currency1: lower(p.pool.currency1), fee: p.pool.fee });
+    if (!v3Spots.has(at)) v3Spots.set(at, DEFAULT_SQRT_PRICE);
+    code.set(at, UNISWAP_CODE.v3Pool);
+  }
   if (ownerCode !== null) {
     code.set(owner, lower(ownerCode));
     const delegate = /^0xef0100([0-9a-f]{40})$/.exec(lower(ownerCode));
@@ -703,7 +722,14 @@ export function createVaultChain({ chainId = 4663, owner = OWNER, positions = []
     if (v3Spots.has(to)) {
       const { functionName } = decode(ABI.v3Pool, data, 'v3Pool', ctx);
       if (functionName !== 'slot0') throw new Error(`unexpected v3 pool ${functionName}`);
+      ctx.calls.push('v3Pool.slot0');
       return encodeFunctionResult({ abi: ABI.v3Pool, functionName, result: [v3Spots.get(to), 0, 0, 1, 1, 0, true] });
+    }
+    if (to === STATE_VIEW) {
+      const { functionName, args = [] } = decode(ABI.v4StateView, data, 'stateView', ctx);
+      if (functionName !== 'getSlot0') throw new Error(`unexpected StateView.${functionName}`);
+      ctx.calls.push('stateView.getSlot0');
+      return encodeFunctionResult({ abi: ABI.v4StateView, functionName, result: [v4Prices.get(lower(args[0])) ?? DEFAULT_SQRT_PRICE, 0, 0, 3000] });
     }
     const v = st.vaults.get(to);
     if (v) return vault(st, ctx, v, from, data);
@@ -931,8 +957,15 @@ export function createVaultChain({ chainId = 4663, owner = OWNER, positions = []
     setV3Spot(pool, sqrtPriceX96) {
       const at = v3PoolOf({ currency0: lower(pool.currency0), currency1: lower(pool.currency1), fee: pool.fee });
       v3Spots.set(at, sqrtPriceX96);
-      code.set(at, '0x60aa600301');
+      code.set(at, UNISWAP_CODE.v3Pool);
       return at;
+    },
+    /** Added 2026-10-06 (Auto-exit's edges): a pool's price now, v4 by its key's id (StateView.getSlot0), v3 by its spot. */
+    setPrice(dex, pool, sqrtPriceX96) {
+      if (dex === 3) return chainObject.setV3Spot(pool, sqrtPriceX96);
+      const id = v4PoolId(pool);
+      v4Prices.set(id, sqrtPriceX96);
+      return id;
     },
     halt(on = true) { state.halted = on; },
     /** Moves the chain's clock forward (the latest block's timestamp). */

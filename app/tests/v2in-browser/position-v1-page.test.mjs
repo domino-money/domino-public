@@ -155,7 +155,8 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     const more = actions.locator('[data-position-v2-actions="preview"] [data-position-v2-more]');
     await more.waitFor({ timeout: 30_000 });
     await actions.locator('[data-position-v2-action="protect"]').waitFor();
-    assert.deepEqual(await actions.locator('button').allInnerTexts(), ['Collect fees', 'Add liquidity', 'Change range', 'Withdraw', 'Stop-loss / take-profit', 'Close position']);
+    // Changed on purpose 2026-10-06 (the owner's point 5): the protection is named Auto-exit.
+    assert.deepEqual(await actions.locator('button').allInnerTexts(), ['Collect fees', 'Add liquidity', 'Change range', 'Withdraw', 'Auto-exit', 'Close position']);
     assert.deepEqual([await more.getAttribute('aria-label'), await more.getAttribute('role')], ['Position actions', 'group']);
     assert.equal(await actions.locator('[data-position-v2-action]').count(), 4, 'all V2 actions are visible without a hidden menu');
     for (const button of await actions.locator('button').all()) assert.equal(await button.isVisible(), true);

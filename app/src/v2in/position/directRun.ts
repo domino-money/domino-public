@@ -38,6 +38,10 @@ const IDLE: DirectState = { stage: 'idle', prepared: null, error: null, receipt:
 
 export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (token: `0x${string}`) => string) {
   const [state, setState] = useState<DirectState>(IDLE)
+  // Changed on purpose 2026-10-06 (the integration review, rugged-literal #1): on the root of Auto-exit's own automation,
+  // its Auto-exit on or paused, a direct action keeps the position's approval, all its exit needs: the armed root's pause
+  // is acknowledged without a tick (that automation never reinvests), and nothing is offered after (./PositionDialog.tsx).
+  const quiet = position.vault?.exitLive === true
   const asked = useRef<{ kind: DirectKind; bps: number; part: bigint } | null>(null)
   // Every prepared exit handed to the client's send: never handed again (a new press reviews afresh).
   const handed = useRef(new WeakSet<DirectPrepared>())
@@ -66,7 +70,7 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
     const ask = asked.current
     // The preview never sends: its dialog offers no button, and nothing here asks the wallet.
     if (gate.mode !== 'live' || !ask || (state.stage !== 'ready' && !(state.stage === 'failed' && state.retry))) return
-    if (state.prepared?.pausesAutomation && !state.ticked) return
+    if (state.prepared?.pausesAutomation && !state.ticked && !quiet) return
     setState((now) => ({ ...now, stage: 'wallet', error: null }))
     let connection: PositionConnection
     let prepared: DirectPrepared
@@ -76,7 +80,7 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
       prepared = kept && !handed.current.has(kept) && kept.step.expiresAt > Date.now() / 1000 + 2 ? kept : await prepareNow(connection, ask.kind, ask.bps, ask.part)
       // The warning was ticked on this review: a fresh preparation of the same exit carries it (rev2 §2.13).
       if (prepared.pausesAutomation !== null) {
-        if (!state.ticked) throw new Error('automation_pause_unacknowledged')
+        if (!state.ticked && !quiet) throw new Error('automation_pause_unacknowledged')
         connection.direct.acknowledgePause(prepared)
       }
     } catch (error) {

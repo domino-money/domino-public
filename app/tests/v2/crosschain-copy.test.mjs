@@ -2,15 +2,20 @@
  * The S2 screens' words (spec F7 §3.3-§3.5, §3.7, §3.9): every fixture and variant drawn as the spec quotes it.
  * Amounts are exact from raw strings, never floats; unknown decimals show the raw amount; a missing or hostile symbol
  * becomes a short address or clean text; no USD anywhere; the Domino fee is never said to be charged before `filled`.
+ * Changed on purpose 2026-10-06 (the owner's point 4: "0.099395417139745917 WETH"): the quote's amounts are written for
+ * the screen as the V2 Review writes its own (at most six decimals, rounded down), every line also kept exact; and one
+ * name for one network (Arbitrum One, OP Mainnet), never the listing's second name beside the app's.
  */
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { build, fixture, fixtureText, lab, OWNER, runtime, VARIANTS } from './support/crosschain.mjs';
 
-const { presentQuote, presentOrigins, presentStatus, naming, originGasDetail, destinationChoices } = build('present');
+const { presentQuote, presentOrigins, presentStatus, naming, originGasDetail, destinationChoices, roundedUnits, shortAmountText, networkName, OWN_NETWORK_NAMES, providersDown } = build('present');
 const { formatUnitsExact, amountText, tokenLabel, cleanSymbol, durationText, createTokenBook, createChainNames } = build('amounts');
 const { CANDIDATE_COPY, STATE_COPY, FEE_STATUS_WORDS, bpsPercent, fill, PROVIDER_NAME, ADD_ORIGIN } = build('copy');
 const { reply } = build('fixtureTransport');
+const require = createRequire(import.meta.url);
 
 const NAME = naming(fixture('responses/origins.json').origins);
 const quoteOf = (name) => fixture(name).quote;
@@ -25,15 +30,18 @@ test('§3.5: the base quote reads exactly as the spec writes it, Relay the winne
   const view = presentQuote(quote.data.quote, naming(origins.data.origins));
   assert.equal(view.decision, 'relay');
   assert.equal(view.headline, null);
-  assert.equal(view.origin, 'Arbitrum');
+  assert.equal(view.origin, 'Arbitrum One', 'the app\'s own name, never the listing\'s second one');
   assert.equal(view.destination, 'Robinhood Chain');
   assert.deepEqual(view.winner.lines, [
-    'Domino fee (0.35%): 0.35 USDC, charged by Relay on Arbitrum',
+    'Domino fee (0.35%): 0.35 USDC, charged by Relay on Arbitrum One',
     'Bridge fee: 0.048945 USDC',
     'You receive about 99.571446 USDG on Robinhood Chain (at least 99.073589 USDG)',
-    'Network fee on Arbitrum: estimated by Relay',
+    'Network fee on Arbitrum One: estimated by Relay',
     'Arrives in about 1 s',
   ]);
+  assert.deepEqual(view.winner.exactLines, view.winner.lines, 'at six decimals or fewer, the same words');
+  assert.deepEqual(view.winner.receive, { text: 'You receive about 99.571446 USDG on Robinhood Chain (at least 99.073589 USDG)', exact: 'You receive about 99.571446 USDG on Robinhood Chain (at least 99.073589 USDG)' });
+  assert.equal(view.winner.eta, 'Arrives in about 1 s');
   assert.deepEqual(view.candidates.map((c) => [c.provider, c.name, c.winner, c.status, c.text]), [
     ['relay', 'Relay', true, 'quoted', null],
     ['across', 'Across', false, 'quoted', null],
@@ -42,11 +50,12 @@ test('§3.5: the base quote reads exactly as the spec writes it, Relay the winne
     'Domino fee (0.35%): 0.349695 USDG, charged by Across on Robinhood Chain',
     'Bridge fee: 0.087036 USDC',
     'You receive about 99.563269 USDG on Robinhood Chain (at least 99.563269 USDG)',
-    'Network fee on Arbitrum: Not reported',
+    'Network fee on Arbitrum One: Not reported',
     'Arrives in about 2 s',
   ]);
   const q = quote.data.quote;
-  assert.equal(originGasDetail(q, q.candidates[0], NAME), '0.000001692667911 ETH');
+  assert.equal(originGasDetail(q, q.candidates[0], NAME), '0.000001 ETH', 'rounded for the screen');
+  assert.equal(originGasDetail(q, q.candidates[0], NAME, true), '0.000001692667911 ETH', 'and exact');
   assert.equal(originGasDetail(q, q.candidates[1], NAME), null);
 });
 
@@ -67,11 +76,21 @@ test('native ETH through Across while Relay is busy: WETH fees on each side, ETH
   assert.equal(view.decision, 'across');
   assert.equal(view.candidates[0].text, 'Relay is busy. Try again shortly.');
   assert.equal(view.candidates[0].lines, null);
+  // Changed on purpose 2026-10-06 (the integration review): the two fees rounded UP (0.000174929… is 0.000175), what
+  // arrives and "at least" rounded down.
   assert.deepEqual(view.winner.lines, [
+    'Domino fee (0.35%): 0.000175 WETH, charged by Across on Robinhood Chain',
+    'Bridge fee: 0.000021 WETH',
+    'You receive about 0.049804 ETH on Robinhood Chain (at least 0.049804 ETH)',
+    'Network fee on Arbitrum One: Not reported',
+    'Arrives in about 1 s',
+  ]);
+  // Exact to the wei, kept for a title.
+  assert.deepEqual(view.winner.exactLines, [
     'Domino fee (0.35%): 0.000174929011197839 WETH, charged by Across on Robinhood Chain',
     'Bridge fee: 0.000020282514903141 WETH',
     'You receive about 0.04980478847389902 ETH on Robinhood Chain (at least 0.04980478847389902 ETH)',
-    'Network fee on Arbitrum: Not reported',
+    'Network fee on Arbitrum One: Not reported',
     'Arrives in about 1 s',
   ]);
 });
@@ -79,7 +98,8 @@ test('native ETH through Across while Relay is busy: WETH fees on each side, ETH
 test('destination gas: Relay delivers it and says so; Across says it cannot', () => {
   const view = presentQuote(quoteOf('variants/quote.destination-gas.json'), NAME);
   assert.equal(view.decision, 'relay');
-  assert.ok(view.winner.lines.includes('Includes 0.000740778127264099 ETH for network fees on Robinhood Chain'));
+  assert.ok(view.winner.lines.includes('Includes 0.00074 ETH for network fees on Robinhood Chain'));
+  assert.ok(view.winner.exactLines.includes('Includes 0.000740778127264099 ETH for network fees on Robinhood Chain'));
   assert.equal(view.candidates[1].status, 'destination_gas_unsupported');
   assert.equal(view.candidates[1].text, "Across can't deliver gas on Robinhood Chain.");
   assert.equal(view.candidates[1].winner, false);
@@ -121,7 +141,7 @@ test('every status fixture and variant draws its state; the fee appears only onc
   const expected = {
     'responses/status.json': ['filled', 'Arrived in your wallet on Robinhood Chain.', { status: 'measured', words: 'measured', amount: '0.349695 USDG' }, 'fill'],
     'variants/status.across-held.json': ['filled', 'Arrived in your wallet on Robinhood Chain.', { status: 'pending', words: 'pending', amount: null }, null],
-    'variants/status.across-refund-pending.json': ['refund_pending', 'Not filled in time. Across will refund your deposit to your wallet on Arbitrum, usually 2.5 to 3 hours after your deposit.', null, null],
+    'variants/status.across-refund-pending.json': ['refund_pending', 'Not filled in time. Across will refund your deposit to your wallet on Arbitrum One, usually 2.5 to 3 hours after your deposit.', null, null],
     'variants/status.relay-awaiting.json': ['awaiting_deposit', 'Waiting for Relay to see your deposit…', null, null],
     'variants/status.relay-filled.json': ['filled', 'Arrived in your wallet on Robinhood Chain.', { status: 'measured', words: 'measured', amount: '0.35 USDC' }, 'fill'],
   };
@@ -144,8 +164,8 @@ test('every status fixture and variant draws its state; the fee appears only onc
   assert.equal(before.feeDetail, null);
   // Refunded links to the origin; failed and refund_failed say what Relay does.
   const refunded = presentStatus({ report: { ...fixture('responses/status.json').status, fillTxHash: null, refundTxHash: `0x${'ab'.repeat(32)}` }, shown: 'refunded', provider: 'relay', originChainId: 42161, destinationChainId: 4663, name: NAME });
-  assert.deepEqual([refunded.text, refunded.link, refunded.feeDetail], ['Refunded to your wallet on Arbitrum.', { kind: 'refund', chainId: 42161, hash: `0x${'ab'.repeat(32)}` }, null]);
-  assert.equal(presentStatus({ report: null, shown: 'failed', provider: 'relay', originChainId: 10, destinationChainId: 8453, name: NAME }).text, "The bridge failed. Relay is refunding your deposit on Optimism, minus the refund's gas.");
+  assert.deepEqual([refunded.text, refunded.link, refunded.feeDetail], ['Refunded to your wallet on Arbitrum One.', { kind: 'refund', chainId: 42161, hash: `0x${'ab'.repeat(32)}` }, null]);
+  assert.equal(presentStatus({ report: null, shown: 'failed', provider: 'relay', originChainId: 10, destinationChainId: 8453, name: NAME }).text, "The bridge failed. Relay is refunding your deposit on OP Mainnet, minus the refund's gas.");
 });
 
 test('origins: providers’ availability, chains in order, untrusted symbols, decimals null kept as unknown', () => {
@@ -155,11 +175,15 @@ test('origins: providers’ availability, chains in order, untrusted symbols, de
     { provider: 'relay', name: 'Relay', available: true, text: null },
     { provider: 'across', name: 'Across', available: true, text: null },
   ]);
-  assert.deepEqual(view.chains.map((c) => [c.chainId, c.name]), [[1, 'Ethereum'], [10, 'Optimism'], [25, 'Cronos'], [137, 'Polygon'], [8453, 'Base'], [42161, 'Arbitrum'], [59144, 'Linea']]);
+  assert.deepEqual(view.chains.map((c) => [c.chainId, c.name]), [[1, 'Ethereum'], [10, 'OP Mainnet'], [25, 'Cronos'], [137, 'Polygon'], [8453, 'Base'], [42161, 'Arbitrum One'], [59144, 'Linea']]);
   const polygon = view.chains.find((c) => c.chainId === 137).tokens[0];
   assert.deepEqual(polygon, { address: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', label: 'USDC', decimals: null, providers: ['Across'] });
   const busy = presentOrigins({ ...list, providers: [{ provider: 'relay', status: 'rate_limited', reason: 'x' }, { provider: 'across', status: 'unavailable', reason: 'y' }] });
   assert.deepEqual(busy.providers.map((p) => [p.available, p.text]), [[false, 'Relay is busy. Try again shortly.'], [false, 'Across is unavailable right now.']]);
+  // Added 2026-10-06 (the integration review): the offer says only the providers that could not list, in these words.
+  assert.deepEqual(providersDown(list), [], 'both listed: nothing said');
+  assert.deepEqual(providersDown({ ...list, providers: [{ provider: 'relay', status: 'rate_limited', reason: 'x' }, list.providers[1]] }), ['Relay is busy. Try again shortly.']);
+  assert.deepEqual(providersDown({ ...list, providers: busy.providers.map((p) => ({ provider: p.provider, status: p.provider === 'relay' ? 'rate_limited' : 'unavailable', reason: 'x' })) }), ['Relay is busy. Try again shortly.', 'Across is unavailable right now.']);
   // The book: a listed token's decimals, a profile's charge currency, an unknown one.
   const book = createTokenBook(list);
   assert.deepEqual(book(137, '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359'), { symbol: 'USDC', decimals: null });
@@ -172,6 +196,13 @@ test('origins: providers’ availability, chains in order, untrusted symbols, de
   assert.equal(names.destination(42161), 'Arbitrum One');
   assert.equal(createChainNames(null).origin(42161), 'Arbitrum One', 'without a listing, the profile name');
   assert.equal(names.origin(999999), null);
+  // Changed on purpose 2026-10-06 (the owner: one name for one network): what the screens say, through naming().
+  assert.deepEqual([42161, 10, 1, 8453, 4663, 137, 999999].map((id) => NAME.origin(id)), ['Arbitrum One', 'OP Mainnet', 'Ethereum', 'Base', 'Robinhood Chain', 'Polygon', null]);
+  assert.equal(networkName(10, 'Optimism'), 'OP Mainnet');
+  assert.equal(networkName(56, 'BNB'), 'BNB');
+  assert.equal(networkName(56, null), null);
+  const { CANDIDATE_ORIGINS } = require('../../.test-build/app/src/finance/v2/holdings.js');
+  for (const candidate of CANDIDATE_ORIGINS) assert.equal(OWN_NETWORK_NAMES[candidate.chainId], candidate.name, `${candidate.chainId}: the name the app's other screens write`);
 });
 
 test('amounts are exact from raw strings; unknown decimals show the raw amount; symbols are cleaned or replaced', () => {
@@ -227,4 +258,35 @@ test('destinations are only each V2 chain’s charge currencies, the same three 
     for (const t of c.tokens) assert.ok(runtime.validateRequest('origins', { destinationChainId: c.chainId, destinationToken: t.address }), `${c.chain} ${t.symbol}`);
   }
   assert.equal(runtime.validateRequest('origins', { destinationChainId: 4663, destinationToken: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' }), false, "Base's USDC is not a Robinhood destination");
+});
+
+// Added 2026-10-06 (the owner's point 4): the S2 screens round as the V2 Review does (v2/plan/present.ts formatUnitsText's
+// default); the crosschain module restates the rule (it imports nothing outside itself), so the two are held together here.
+test('the screen\'s amounts: at most six decimals, rounded down, never "0" for a non-zero amount; the same as formatUnitsText', () => {
+  const { formatUnitsText } = require('../../.test-build/app/src/v2/plan/present.js');
+  const cases = [['0', 6], ['1', 18], ['99395417139745917', 18], ['99571446', 6], ['1234500000', 6], ['123456789012345678901234567890', 18], ['5', 0], ['1000000000000', 6], ['999999999', 9], ['1', 6], ['10', 7], ['740778127264099', 18], ['999999999999999999', 18], ['348950000000000', 18]];
+  for (const [raw, decimals] of cases) assert.equal(roundedUnits(raw, decimals), formatUnitsText(BigInt(raw), decimals), `${raw} at ${decimals}`);
+  // Added 2026-10-06 (the integration review): rounded UP as formatUnitsText's 'up' rounds, for fees, what leaves the
+  // wallet and what is still needed.
+  for (const [raw, decimals] of cases) assert.equal(roundedUnits(raw, decimals, 6, 'up'), formatUnitsText(BigInt(raw), decimals, 6, 'up'), `${raw} at ${decimals}, up`);
+  assert.equal(roundedUnits('99395417139745917', 18), '0.099395');
+  assert.equal(roundedUnits('99395417139745917', 18, 6, 'up'), '0.099396');
+  assert.equal(roundedUnits('348950000000000', 18, 6, 'up'), '0.000349', 'a Domino fee never reads lower than the fee measured once filled');
+  assert.equal(roundedUnits('999999999999999999', 18, 6, 'up'), '1');
+  assert.equal(roundedUnits('99571446', 6, 6, 'up'), '99.571446', 'nothing dropped: as it is');
+  assert.equal(roundedUnits('1', 18), '<0.000001');
+  assert.equal(roundedUnits('1', 18, 6, 'up'), '0.000001');
+  assert.equal(roundedUnits('1.5', 6), null);
+  assert.equal(roundedUnits('1', 300), null);
+  assert.equal(shortAmountText('99395417139745917', '0x4200000000000000000000000000000000000006', { symbol: 'WETH', decimals: 18 }), '0.099395 WETH');
+  assert.equal(shortAmountText('99876543200000000', '0x4200000000000000000000000000000000000006', { symbol: 'WETH', decimals: 18 }, 'up'), '0.099877 WETH', 'never less than the wallet is asked to send');
+  assert.equal(shortAmountText('1000000', '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', { symbol: 'USDC', decimals: null }), '1000000 raw units of USDC', 'unknown decimals: never a guess');
+  // The quote's fees up, what arrives down: one quote whose every amount drops digits.
+  const quote = structuredClone(quoteOf('variants/quote.native-only-across.json'));
+  const across = quote.candidates.find((c) => c.provider === 'across');
+  const lines = presentQuote(quote, NAME).winner.lines;
+  const exact = (raw) => BigInt(raw);
+  assert.equal(lines[0], `Domino fee (0.35%): ${formatUnitsText(exact(across.appFee.amountRaw), 18, 6, 'up')} WETH, charged by Across on Robinhood Chain`);
+  assert.equal(lines[1], `Bridge fee: ${formatUnitsText(exact(across.providerFee.amountRaw), 18, 6, 'up')} WETH`);
+  assert.equal(lines[2], `You receive about ${formatUnitsText(exact(across.outputRaw), 18)} ETH on Robinhood Chain (at least ${formatUnitsText(exact(across.minimumOutputRaw), 18)} ETH)`);
 });

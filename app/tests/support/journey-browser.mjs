@@ -25,9 +25,10 @@ export const WALLET_NAME = 'Journey Wallet';
  * Opens New position (`hash`, `#/new` by default) of `dist` with `chain` as the wallet. `live`: the chains (ids) whose gate
  * is `live` on `contracts`; every other open chain is `preview`. `planner(request)`: the plan answer (a body,
  * `{ status, body }`, or undefined). `intercept(method, params)`: a reply that replaces the chain's for one request.
- * `originOpen` false leaves the gate closed (today's journey exactly).
+ * `originOpen` false leaves the gate closed (today's journey exactly). `read6` (2026-10-06): more of read-v6's routes,
+ * `{ route: (request) => answer }`, for the position's own page a test opens from New position's success.
  */
-export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null } = {}) {
+export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null, read6 = null, dex = null } = {}) {
   const fake = createFakeSession();
   const server = createWalletServer({ fake, dist, routes });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
@@ -40,17 +41,30 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
     return route.abort('blockedbyclient');
   });
   // `artwork` (2026-10-05): today's journey asks DexScreener for token artwork, as the V1 suites answer it (an empty list);
-  // registered after the refusal above, so it is asked first.
-  if (artwork) await context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  // registered after the refusal above, so it is asked first. `dex(url)` (2026-10-06): DEX Screener's own answer for a
+  // URL instead, a body (token-pairs) or `{ image, contentType }` (an artwork image), else nothing found; every URL asked
+  // is kept in `dexAsked`.
+  const dexAsked = [];
+  if (artwork || dex) {
+    await context.route(ARTWORK, async (route) => {
+      const url = route.request().url();
+      dexAsked.push(url);
+      const said = dex ? await dex(url) : undefined;
+      if (said && said.image !== undefined) return route.fulfill({ status: 200, contentType: said.contentType ?? 'image/svg+xml', body: said.image });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(said ?? []) });
+    });
+  }
   await context.exposeFunction('__dominoJourneyWallet', async (method, params) => (await intercept(method, params)) ?? chain.request(method, params));
   await context.exposeFunction('__dominoJourneyPlan', async (request) => {
     planned.push(request);
     return planner(request);
   });
   await context.exposeFunction('__dominoJourneyCsp', (text) => csp.push(text));
-  // read-v6's chain reads (2026-10-06): `chainReads.answer(route, request)`, for the three routes, when a suite hands one in.
-  const chainRoutes = chainReads ? ['chain-pools', 'chain-balances', 'chain-tokens'] : [];
-  if (chainReads) await context.exposeFunction('__dominoChainRead', (route, request) => chainReads.answer(route, request) ?? null);
+  // read-v6's chain reads (2026-10-06): `chainReads.answer(route, request)`, for the three routes, when a suite hands one in;
+  // and any other route a suite scripts (`read6`), answered the same way.
+  const scripted = { ...(chainReads ? Object.fromEntries(['chain-pools', 'chain-balances', 'chain-tokens'].map((route) => [route, (request) => chainReads.answer(route, request)])) : {}), ...(read6 ?? {}) };
+  const chainRoutes = Object.keys(scripted);
+  if (chainRoutes.length) await context.exposeFunction('__dominoChainRead', async (route, request) => (await scripted[route](request)) ?? null);
   const sets = Object.fromEntries(live.map((id) => [id, contracts[id]]));
   // `zapOnRobinhood` (2026-10-05): the zap path's screens on Robinhood Chain, which the owner's journey keeps out of every
   // deployable build (src/v2in/journey/NewPositionV2.tsx).
@@ -75,7 +89,7 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   const s = {
-    page, context, origin, foreign, csp, errors, planned,
+    page, context, origin, foreign, csp, errors, planned, dexAsked,
     async close() {
       await context.close();
       await server.closeAll();

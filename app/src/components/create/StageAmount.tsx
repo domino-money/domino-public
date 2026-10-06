@@ -75,7 +75,7 @@ export function StageRange({
  * Changed on purpose (round 6, 2026-09-27, the owner: the technical parts go in
  * a collapsed Advanced): the slippage tolerance is under Advanced, closed, with
  * the tolerance in its summary. It opens by itself only when the tolerance was
- * already set above the usual 1%, so what it allows is in view.
+ * already set above 2% (create/slippage.ts), so its warning is in view.
  */
 export function StageAmount({
   state,

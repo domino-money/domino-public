@@ -17,6 +17,7 @@ import { shortDate, shortTime } from '../../lib/format/time'
 import { useRouteTitle } from '../../lib/routeTitle'
 import { useMediaQuery } from '../../lib/useMediaQuery'
 import { useWalletIdentity } from '../../lib/walletIdentity'
+import { newPositionExpected } from '../../lib/automate/autoExitAsk'
 import { v2Chain } from '../../v2/chains'
 import { v2Gate, type V2Gate } from '../../v2/gate'
 import { v2PageProbe } from '../transports'
@@ -28,7 +29,7 @@ import { ApprovalFact, useZapApproval } from './Approval'
 import { cardOf, poolIdentity, walletPositionOf } from './card'
 import PositionAutomation from '../automate/PositionAutomation'
 import { askExitOrder, exitOrderKey, useExitOrderOffered } from '../autoexit/entry'
-import { HOOKED_COPY, SUCCESSOR_BLOCKED_COPY } from './constants'
+import { HOOKED_COPY, NEW_POSITION_REREAD_MS, SUCCESSOR_BLOCKED_COPY } from './constants'
 import { COPY } from './copy'
 import { actionsOfPosition, chainStatusOf, findPosition, fromV6, hookedPool, isLive, tokensOf, vaultReservesOf, type ActionPosition, type LiveV6Position } from './model'
 import { MoreActions, positionMenuItems } from './MoreActions'
@@ -134,6 +135,19 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
     }
   }, [needsWallet, gate, wallet, round])
 
+  // Added 2026-10-06 (the review of point 5, a second look): a position New position just made, opened from its success
+  // (its own link or Auto-exit's), reaches read-v6's list some seconds later (the index runs behind the chain; at first
+  // it may be listed as not read yet). While it is expected (two minutes, lib/automate/autoExitAsk.ts) the page reads the
+  // list again every few seconds and waits on its loading frame, then says it isn't listed only once that time is over.
+  // Auto-exit's dialog, asked for on the way here, opens as soon as the position is drawn.
+  const found = read?.reply.kind === 'ok' ? findPosition(read.reply.body, target.chainId, target.dex, target.tokenId) : null
+  const awaited = read !== null && !(found && isLive(found)) && newPositionExpected(exitOrderKey(id, target.chainId, target.dex))
+  useEffect(() => {
+    if (!awaited) return
+    const timer = setTimeout(() => setRound((n) => n + 1), NEW_POSITION_REREAD_MS)
+    return () => clearTimeout(timer)
+  }, [awaited, read])
+
   if (needsWallet) return <Empty title={`Position #${id}`} body={COPY.page.connect} reason="connect_wallet" />
   if (read === null) return <Waiting id={id} />
   const reply = read.reply
@@ -143,9 +157,11 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
   // §6.2: the chain's status before any of its values; an unavailable chain never shows zeros.
   const status = chainStatusOf(answer, target.chainId)
   if (!status || status.status === 'unavailable') return <Empty title={`Position #${id}`} body={COPY.page.chainUnavailable(chain.name)} reason={status?.reason ?? 'chain_unavailable'} />
-  const found = findPosition(answer, target.chainId, target.dex, target.tokenId)
-  if (!found) return <Empty title={`Position #${id}`} body={COPY.page.notListed} reason="position_not_listed" />
-  if (!isLive(found)) return <Empty title={`Position #${id}`} body={found.status === 'unavailable' ? COPY.page.unreadable : COPY.page.notRead} reason={found.status} />
+  if (!found || !isLive(found)) {
+    if (awaited) return <Waiting id={id} />
+    if (!found) return <Empty title={`Position #${id}`} body={COPY.page.notListed} reason="position_not_listed" />
+    return <Empty title={`Position #${id}`} body={found.status === 'unavailable' ? COPY.page.unreadable : COPY.page.notRead} reason={found.status} />
+  }
   return (
     <PageShell>
       <Back />

@@ -99,12 +99,13 @@ test('each owner action is one reviewed step with the spec\'s selector, to the v
   assert.deepEqual(child.receipts[0].events.map((e) => e.eventName), ['ChildWithdrawn']);
   assert.equal(chain.nft(4, CHILD).owner, OWNER, 'the successor is now an ordinary position in the wallet');
   const on = await act(client, vault, { kind: 'set-exit-module', module: FAKE.autoExit });
-  assert.equal(on.review.steps[0].summary[0], 'Turn on auto-exit for this vault.');
+  assert.equal(on.review.steps[0].summary[0], 'Turn on Auto-exit for this vault.');
   assert.equal(chain.vault(vault).exitModule, FAKE.autoExit);
   const off = await act(client, vault, { kind: 'set-exit-module', module: ZERO });
   assert.deepEqual(off.review.notes, ['vault_exit_module_off_pauses']);
   // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation"): the note's words, as the dialog shows them.
-  assert.ok(off.review.steps[0].summary.includes("Turning auto-exit off for your automation pauses your orders; it doesn't cancel them."), 'turning it off says it pauses, not cancels');
+  // Changed on purpose 2026-10-06 (the owner's point 5): Auto-exit by its name, never "orders".
+  assert.ok(off.review.steps[0].summary.includes("Turning Auto-exit off for your automation pauses it; it doesn't cancel it."), 'turning it off says it pauses, not cancels');
   assert.equal(chain.vault(vault).exitModule, ZERO);
 });
 
@@ -377,7 +378,7 @@ test('delta §2 item 3: Leave automation (exitAll) also turns auto-exit off when
   const { review, receipts } = await act(client, vault, { kind: 'exit-all' });
   assert.ok(review.notes.includes('vault_exit_all_pauses_orders'));
   assert.ok(review.steps[0].summary.includes(VAULT_TEXT.vault_exit_all_pauses_orders));
-  assert.equal(VAULT_TEXT.vault_exit_all_pauses_orders, 'This also pauses your auto-exit orders. You can turn them back on later.');
+  assert.equal(VAULT_TEXT.vault_exit_all_pauses_orders, 'This also pauses Auto-exit. You can turn it back on later.');
   const set = receipts[0].events.find((e) => e.eventName === 'ExitModuleSet');
   assert.ok(set, 'ExitModuleSet in the receipt');
   assert.equal(set.args.module.toLowerCase(), ZERO);

@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { reasonText } from '../../../lib/read/describe'
 import { aprDigits } from '../../../lib/format/apr'
 import { feeWords } from '../../../lib/format/fee'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { cataloguePoolId, createCatalogueSession, verifyCandidate, type CatalogueSession, type CatalogueSnapshot } from '../../../lib/read/screens/catalogueSession'
-import type { NetworkPools } from '../../../lib/create/otherChains'
+import { PROTOCOL_FEE_UNDESCRIBED, networkRows, type NetworkPools } from '../../../lib/create/otherChains'
+import { dexStore } from '../../../lib/read/dexFigures'
 import { keptCreatePools, readCreatePools, type PoolsAnswer } from '../../../lib/create/poolsAhead'
 import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from '../../../lib/read/screens/identity'
 import { pricePair } from '../../../lib/read/orientation'
@@ -18,7 +19,7 @@ import { TokenMarkPair } from '../../TokenIcon'
 import { Button, Skeleton, cx } from '../../ui'
 import { Address } from './Address'
 import { ProviderFigure } from './ProviderFigure'
-import { rowApr, rowAprReasonText } from '../../../lib/read/screens/rowApr'
+import { rowApr, rowAprReasonText, type RowAprReason } from '../../../lib/read/screens/rowApr'
 import { useWalletIdentity } from '../../../lib/walletIdentity'
 import { SymbolText } from './SymbolText'
 
@@ -42,6 +43,8 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false,
   // New position's plain rows sit flat on the card: 32px marks ringed in the card, the pair over its id, the fee right after them.
   // The pair is named as its price is written, "TOKEN / USDG" (audit E21, lib/read/orientation.ts).
   const pair = pricePair(option.currencies[0], option.currencies[1])
+  // The fee as every chip writes it (lib/format/fee.ts, audit E21): "0.30% fee".
+  const fee = <span className="dm-chip shrink-0" data-fee="">{feeWords(option.fee)}</span>
   const identity = (
     <>
       <TokenMarkPair base={pair.base} quote={pair.quote} size={plain || !compact ? 32 : 28} ring={plain ? 'var(--card)' : 'var(--surface-1)'} />
@@ -51,11 +54,17 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false,
             the pool id is on the row's data-pool-key. */}
         {!plain && <span className="text-caption text-fg-subtle">Uniswap · <Address value={option.key} short /></span>}
         {/* 2026-10-05 (New position on Base and Arbitrum One): the pool's network under its pair, once other networks are
-            offered; beside the fee it would cut the pair's name, and on a phone sit on the fee's chip. */}
-        {network !== null && <span className="dm-chip dm-flow-pool-net" data-chain-chip={option.currencies[0].chainId}>{network}</span>}
+            offered; beside the fee it would cut the pair's name, and on a phone sit on the fee's chip. Changed on purpose
+            2026-10-06 (the review of the next update): the fee chip on that line too, as the chosen pool's, so the pair has
+            the row's width; it goes under the network's where both do not fit, and a phone keeps it in the corner. */}
+        {network !== null && (
+          <span className="dm-flow-pool-chips">
+            <span className="dm-chip dm-flow-pool-net" data-chain-chip={option.currencies[0].chainId}>{network}</span>
+            {fee}
+          </span>
+        )}
       </span>
-      {/* The fee as every chip writes it (lib/format/fee.ts, audit E21): "0.30% fee". */}
-      <span className="dm-chip shrink-0" data-fee="">{feeWords(option.fee)}</span>
+      {network === null && fee}
     </>
   )
   const head = open ? (
@@ -341,6 +350,10 @@ type PoolsResult =
  * pool; neither is described as the other. Refusals say which input was missing.
  */
 const ROW_APR_TITLE = 'Estimate from this pool’s fixed LP fee and the 24h volume and liquidity reported in this list, annualised. A pool estimate, not a position’s APR, not APY and not a forecast, and not the pool page’s figure, which a different provider reports.'
+/** Added 2026-10-06: a pool on Base or Arbitrum One whose protocol fee the estimate cannot take (lib/create/otherChains.ts). */
+const PROTOCOL_FEE_UNDESCRIBED_TITLE = 'This pool’s protocol fee can’t be counted in this estimate.'
+/** Added 2026-10-06: how long Base's or Arbitrum One's rows wait for DEX Screener's answer before they are drawn without it. */
+const FIGURES_WAIT_MS = 1500
 
 /**
  * Whether the figure columns have anything to say.
@@ -352,6 +365,16 @@ const ROW_APR_TITLE = 'Estimate from this pool’s fixed LP fee and the 24h volu
  */
 function worthColumns(option: PoolOption): boolean {
   return option.liquidity.state !== 'unavailable' || option.volume.state !== 'unavailable'
+}
+
+/**
+ * Why a row has no APR, in the title's words. A pool on another network whose protocol fee the estimate cannot take
+ * (2026-10-06) says so once it has figures, and that no figures are reported before.
+ */
+function noAprTitle(option: PoolOption, reason: RowAprReason): string {
+  if (option.protocolFeeRaw !== PROTOCOL_FEE_UNDESCRIBED) return rowAprReasonText(reason)
+  const reported = option.liquidity.state === 'attributed' || option.liquidity.state === 'attributed_stale'
+  return reported ? PROTOCOL_FEE_UNDESCRIBED_TITLE : rowAprReasonText('missing_reported_tvl')
 }
 
 function RowAprFigure({ option, label = 'Pool APR' }: { option: PoolOption; label?: string }) {
@@ -371,7 +394,7 @@ function RowAprFigure({ option, label = 'Pool APR' }: { option: PoolOption; labe
           {aprDigits(apr.text) ?? apr.text}% est.
         </span>
       ) : (
-        <span className="text-fg-subtle" title={rowAprReasonText(apr.reason)}>
+        <span className="text-fg-subtle" title={noAprTitle(option, apr.reason)}>
           —
         </span>
       )}
@@ -612,6 +635,11 @@ export function PoolPicker({
  * (no read service exists there yet, spec F7 §6.2), already in the order to show; nothing is asked again on its own. A
  * list that could not be read says why in its own words (a wallet that does not know the network, a refused switch),
  * which are the person's to act on.
+ *
+ * Changed on purpose 2026-10-06 (the owner's point 3: these rows came "dry"; "like Robinhood Chain"): each row shows DEX
+ * Screener's TVL and 24h volume where the provider lists that pool, and the APR worked out from them, drawn again as the
+ * figures arrive (lib/read/dexFigures.ts); a v3 and a v4 pool of one pair and fee are one row; the largest TVL first
+ * (lib/create/otherChains.ts networkRows). The token's figures are asked again once they are older than the store keeps.
  */
 export function NetworkPoolPicker({
   read,
@@ -646,7 +674,27 @@ export function NetworkPoolPicker({
     )
     return () => controller.abort()
   }, [owner])
-  const options = result.kind === 'ok' ? result.options : []
+  // DEX Screener's figures arriving draw the rows again (2026-10-06).
+  useSyncExternalStore(dexStore.subscribe, dexStore.version, dexStore.version)
+  const chainId = result.kind === 'ok' ? (result.options[0]?.currencies[0].chainId ?? null) : null
+  const subject = result.kind === 'ok' ? (result.subject ?? null) : null
+  // The token's figures, asked again when the store holds none fresh (at most once a minute, the store's own limit).
+  const stale = chainId !== null && subject !== null && dexStore.chainToken(chainId, subject) === null
+  useEffect(() => {
+    if (stale && chainId !== null && subject !== null) dexStore.askOn(chainId, subject)
+  }, [stale, chainId, subject])
+  // Changed on purpose 2026-10-06 (review of the same day): the rows rest a moment more while DEX Screener has not answered
+  // for the token (asked beside the pools, so it usually has), at most FIGURES_WAIT_MS, so they are drawn once, in their
+  // order and with their figures, and a row is chosen with the figures it showed (the chosen pool keeps the ones it had).
+  const [waited, setWaited] = useState<NetworkPools | null>(null)
+  const answered = result.kind === 'ok' ? result : null
+  const waiting = answered !== null && stale && waited !== answered
+  useEffect(() => {
+    if (!waiting || answered === null) return
+    const timer = setTimeout(() => setWaited(answered), FIGURES_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [waiting, answered])
+  const options = result.kind === 'ok' && !waiting ? networkRows(result.options, (chain, name) => dexStore.chainPool(chain, name), result.facts, pending?.key ?? null) : []
   const list = (
     <ul className="dm-flow-pool-rows">
       {options.map((option) => (
@@ -655,15 +703,15 @@ export function NetworkPoolPicker({
     </ul>
   )
   return (
-    <div className="grid gap-3" data-picker="pool" data-picker-variant="create" data-picker-network={options[0]?.currencies[0].chainId ?? ''} data-pools-state={result.kind === 'failed' ? result.code : result.kind}>
-      <p role="status" aria-live="polite" className="sr-only">{result.kind === 'loading' ? COPY.picker.poolsLoading : result.kind === 'failed' ? result.reason : ''}</p>
-      {result.kind === 'loading' && <RestingCreateRows />}
+    <div className="grid gap-3" data-picker="pool" data-picker-variant="create" data-picker-network={options[0]?.currencies[0].chainId ?? ''} data-pools-state={result.kind === 'failed' ? result.code : waiting ? 'loading' : result.kind}>
+      <p role="status" aria-live="polite" className="sr-only">{result.kind === 'loading' || waiting ? COPY.picker.poolsLoading : result.kind === 'failed' ? result.reason : ''}</p>
+      {(result.kind === 'loading' || waiting) && <RestingCreateRows />}
       {result.kind === 'failed' && (
         <p className="px-1 py-4 text-center text-body text-fg-muted" data-pools-unavailable={result.code}>
           {result.reason}
         </p>
       )}
-      {result.kind === 'ok' && options.length === 0 && (
+      {result.kind === 'ok' && !waiting && options.length === 0 && (
         <p className="px-1 py-4 text-center text-body text-fg-muted" data-pools-empty="">
           {COPY.picker.poolsNone}
         </p>

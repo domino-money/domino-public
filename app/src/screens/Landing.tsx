@@ -169,7 +169,8 @@ export function Landing() {
         <div className="dm-home-section-head">
           <div>
             <p className="dm-home-eyebrow">After you open a position</p>
-            <Display as="h2" id="dm-features-title" className="dm-display-section">Your fees. A choice of next steps.</Display>
+            {/* Changed on purpose 2026-10-06 (the owner's point 5): Auto-exit joins the fee automations, so the heading names the position. */}
+            <Display as="h2" id="dm-features-title" className="dm-display-section">Your position. A choice of next steps.</Display>
           </div>
         </div>
         <FeatureCards className="dm-home-features" delay={160} />

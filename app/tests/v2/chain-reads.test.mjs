@@ -100,9 +100,13 @@ test('chain-tokens: the search\'s rows, with their network; a token passing for 
   const usdc = reads.rowsOfTokens(8453, fixture('chain-tokens-usdc'));
   assert.equal(usdc[0].token.address, USDC_BASE);
   assert.equal(usdc[0].warning, undefined, 'the network\'s own USDC');
+  // Added 2026-10-06 (the review of the next update): the network's own currency says so, for Enter's choice (preselectOf).
+  assert.equal(usdc[0].own, true);
+  assert.deepEqual(rows.map((row) => row.own), [undefined, undefined], 'any other token is not the network\'s own');
   const fake = fixture('chain-tokens-usdc');
   fake.tokens[0] = { ...fake.tokens[0], address: '0x9999999999999999999999999999999999999999', sources: ['looked_up'] };
   assert.equal(reads.rowsOfTokens(8453, fake)[0].warning, 'Not the USDC Domino uses');
+  assert.equal(reads.rowsOfTokens(8453, fake)[0].own, undefined, 'a token passing for it is not');
   assert.equal(reads.lookalikeOf(8453, { address: '0x9999999999999999999999999999999999999999', symbol: ' weth ' }), 'WETH');
   assert.equal(reads.lookalikeOf(8453, { address: WETH_BASE, symbol: 'WETH' }), null);
   assert.deepEqual(['usdc', 'us', 'sd', 'aero'].map((query) => reads.symbolRank('USDC', query)), [0, 1, 2, 3]);
@@ -129,4 +133,65 @@ test('a test build\'s script serves the chain reads it scripts, answering by req
   // Without chain reads scripted, today's routes alone, as before.
   const plain = dataSource.createV2Transports(gate, deps({ read6: { portfolio: { status: 200, body: fixture('portfolio') } } }));
   assert.deepEqual((await plain.routeState('readV6')).routes, ['portfolio', 'activity', 'plan']);
+});
+
+// Added 2026-10-06 (the owner's point 3: Base's and Arbitrum One's rows "dry", unnamed pasted addresses, "sometimes only
+// Robinhood Chain"): what the rows carry for the APR estimate and for telling two of them apart, a pasted address named
+// where it is a token, and which failed reads are worth asking again.
+const otherChains = require(`${BUILD}lib/create/otherChains.js`);
+const rowApr = require(`${BUILD}lib/read/screens/rowApr.js`);
+
+test('chain-pools rows carry their protocol fee for the APR (v4 as read; v3 only when off) and the facts that tell two rows apart; never the depth as TVL', () => {
+  const answer = fixture('chain-pools');
+  const [v3, v4] = reads.poolsOfAnswer(8453, chosen, answer, 1_000_000);
+  assert.equal(v4.protocolFeeRaw, answer.pools[1].protocolFee, 'v4: the packed fee as read');
+  assert.equal(v3.protocolFeeRaw, otherChains.PROTOCOL_FEE_UNDESCRIBED, 'v3 with its protocol fee on: a share of the LP fee the estimate does not describe');
+  const off = structuredClone(answer);
+  off.pools[0].protocolFee = 0;
+  assert.equal(reads.poolsOfAnswer(8453, chosen, off, 1_000_000)[0].protocolFeeRaw, 0, 'v3 with it off: no protocol fee');
+  assert.deepEqual([v3.liquidity.state, v4.volume.state], ['unavailable', 'unavailable'], 'no TVL or volume from the answer itself');
+  // With a TVL and a volume, the estimate refuses the undescribed fee, so the APR is a dash.
+  const figure = { state: 'attributed', value: '$1.0K', raw: '1000', zero: false, provider: 'dexscreener', retrievedAt: 1, cacheAgeSeconds: null };
+  assert.deepEqual(rowApr.rowApr({ integration: v3.integration, currentLpFeePips: v3.feePips, protocolFeeRaw: v3.protocolFeeRaw, liquidity: figure, volume: figure }), { kind: 'none', reason: 'invalid_protocol_fee' });
+  assert.equal(rowApr.rowApr({ integration: v3.integration, currentLpFeePips: v3.feePips, protocolFeeRaw: 0, liquidity: figure, volume: figure }).kind, 'estimate');
+  assert.deepEqual(reads.factsOfAnswer(answer), {
+    [v3.key]: { depthUsd: '102636.571596', liquidity: '1000000000000000000000' },
+    [v4.key]: { depthUsd: '0.000000', liquidity: '4200000' },
+  });
+  const unmeasured = structuredClone(answer);
+  unmeasured.pools[0].market = { status: 'unavailable', reference: null, depthUsd: null, reason: 'pool_depth_unmeasurable' };
+  assert.equal(reads.factsOfAnswer(unmeasured)[v3.key].depthUsd, null);
+});
+
+test('a pool read again keeps its figures (they are about the pool, not its price), and takes the answer’s price and protocol fee', () => {
+  const [row] = reads.poolsOfAnswer(8453, chosen, fixture('chain-pools'), 1_000_000);
+  const figured = { ...row, liquidity: { state: 'attributed', value: '$102.6K', raw: '102636.57', zero: false, provider: 'dexscreener', retrievedAt: 7, cacheAgeSeconds: null }, volume: { state: 'not_reported', provider: 'dexscreener' }, providerNote: 'Provider figures retrieved…' };
+  const paired = fixture('chain-pools-paired');
+  paired.pools[0].tick = 13870;
+  paired.pools[0].protocolFee = 0;
+  const again = reads.rereadOf(figured, networks.refOf(figured), paired, 2_000_000);
+  assert.equal(again.tick, 13870);
+  assert.equal(again.protocolFeeRaw, 0);
+  assert.deepEqual([again.liquidity, again.volume, again.providerNote], [figured.liquidity, figured.volume, figured.providerNote]);
+});
+
+test('a pasted address is named where it is a token on that network, and nothing where it is not', () => {
+  const named = reads.pastedOf(8453, LIVE.toUpperCase().replace('0X', '0x'), fixture('chain-pools'));
+  assert.equal(named.state, 'token');
+  assert.deepEqual([named.token.address, named.token.symbol, named.token.decimals, named.token.chainId], [LIVE, 'LIVE', 18, 8453]);
+  assert.deepEqual(reads.pastedOf(8453, '0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f', fixture('chain-pools-none')), { state: 'none' }, 'no contract there: not listed');
+  const partial = structuredClone(fixture('chain-pools'));
+  const live = partial.tokens.find((token) => token.address === LIVE);
+  Object.assign(live, { decimals: null, status: 'partial' });
+  assert.deepEqual(reads.pastedOf(8453, LIVE, partial), { state: 'none' }, 'a contract without decimals is no token to use');
+  assert.equal(reads.pastedOf(8453, USDC_BASE, fixture('chain-pools')).token.symbol, 'USDC', 'the network’s own currency as the profile names it');
+});
+
+test('a failed chain read is asked again only when it may pass by itself', () => {
+  for (const reason of ['network', 'read_capacity_busy', 'read_deadline_exceeded', 'request_timeout', 'upstream_unavailable', 'request_budget_exhausted', 'network_unavailable']) {
+    assert.equal(reads.passingReply({ kind: 'unavailable', reason }), true, reason);
+  }
+  for (const reply of [{ kind: 'unavailable', reason: 'invalid_request' }, { kind: 'unavailable', reason: 'route_not_available' }, { kind: 'unavailable', reason: 'origin_not_allowed' }, { kind: 'invalid', detail: 'response' }, { kind: 'ok', body: {} }]) {
+    assert.equal(reads.passingReply(reply), false, JSON.stringify(reply));
+  }
 });

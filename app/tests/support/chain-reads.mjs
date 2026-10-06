@@ -51,6 +51,8 @@ function checked(route, request, body) {
 /**
  * The chain reads for one network: `tokens` ({address, symbol, name, decimals}) the search knows, `pools` ({pool,
  * sqrtPriceX96, tick, liquidity}) at its head, the wallet's `balances` ({[address]: raw}). `calls` records each request.
+ * Added 2026-10-06: a v3 pool's `address` beside its `pool` (or on it, as before), and a pool's `depthUsd` when its depth
+ * was measured.
  */
 export function createChainReads({ chainId, tokens = [], pools = [], balances = {} }) {
   const calls = [];
@@ -78,11 +80,12 @@ export function createChainReads({ chainId, tokens = [], pools = [], balances = 
         return checked(route, request, {
           ...POOLS, chainId, token, pairedToken: paired,
           tokens: named.map(live),
-          pools: listed.map(({ pool, sqrtPriceX96, tick, liquidity }) => ({
-            pool, id: pool.dex === 4 ? poolIdOf(pool) : null, address: pool.dex === 3 ? pool.address : null,
+          pools: listed.map(({ pool, address, sqrtPriceX96, tick, liquidity, depthUsd = null }) => ({
+            pool: { dex: pool.dex, currency0: pool.currency0, currency1: pool.currency1, fee: pool.fee, tickSpacing: pool.tickSpacing, hooks: pool.hooks },
+            id: pool.dex === 4 ? poolIdOf(pool) : null, address: pool.dex === 3 ? (address ?? pool.address) : null,
             sqrtPriceX96: String(sqrtPriceX96), tick, liquidity: String(liquidity), lpFeePips: pool.fee, protocolFee: 0,
             swapFeePips: { zeroForOne: pool.fee, oneForZero: pool.fee },
-            market: { status: 'unavailable', reference: null, depthUsd: null, reason: 'pool_depth_unmeasurable' },
+            market: depthUsd === null ? { status: 'unavailable', reference: null, depthUsd: null, reason: 'pool_depth_unmeasurable' } : { status: 'measured', reference: pool.currency0, depthUsd, reason: null },
           })),
           truncated: false,
         });

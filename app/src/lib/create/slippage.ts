@@ -26,8 +26,12 @@ export const SLIPPAGE_MARKS = SLIPPAGE_PRESETS
 /** What a new position starts with: 0.5%. */
 export const SLIPPAGE_DEFAULT_BPS = 50
 
-/** Above this the screen says what the tolerance allows: more than 1% is unusual for a mint. */
-export const SLIPPAGE_WARN_ABOVE_BPS = 100
+/**
+ * Above this the screen warns ("High slippage: you may receive noticeably less than quoted.", CREATE.amount). Changed
+ * on purpose 2026-10-06 (the owner's point 4: one rule everywhere): the spec's 2% (F7 §2.9, the owner's decision #2), as
+ * Domino V2's journey and position dialogs warn, instead of this flow's own 1%.
+ */
+export const SLIPPAGE_WARN_ABOVE_BPS = 200
 
 /** How near a mark the thumb may be let go and still take it, in basis points. */
 const SNAP_BPS = 4
@@ -74,7 +78,7 @@ export function slippageBpsFrom(text: string): number | null {
   return bps >= SLIPPAGE_MIN_BPS && bps <= SLIPPAGE_MAX_BPS ? bps : null
 }
 
-/** Whether a tolerance is past the line the screen warns at: above 1%. */
+/** Whether a tolerance is past the line the screen warns at: above 2%. */
 export const slippageWarns = (bps: number): boolean => bps > SLIPPAGE_WARN_ABOVE_BPS
 
 /** The kept value in basis points. Anything outside the ends takes the nearer end, since the track cannot draw it. */

@@ -37,7 +37,9 @@ import { createTransactor, l1FeeCeiling, quantity, refused, REVIEW_S, revertIn, 
  * Failures are closed codes (`vault_*`, `deployment_*`, the sender's `wallet_*`); the screens word them (VAULT_TEXT
  * holds the spec's copy for the ones this client raises). Raw amounts are bigints, never JS numbers.
  *
- * PHASE A: nothing here is wired to a screen, and no V2 contract is deployed anywhere.
+ * Changed on purpose 2026-10-06 (stale since the V2 screens went live): the integrated screens (src/v2in/automate,
+ * src/v2in/autoexit) drive this client wherever a gate is live; a creation's derivation is shared with ./autoExit.ts
+ * (vaultCreation), which turns Auto-exit on in one batch.
  */
 
 // Declared here, module-scoped, exactly as finance/pin.ts does (see its note): a compile Vite never touched answers
@@ -476,11 +478,13 @@ export const automationFeeText = (mode: 1 | 2): '2%' | '4%' => (mode === 2 ? `${
 export const VAULT_TEXT = Object.freeze({
   vault_consent_uncollected_fees: 'Fees this position has already earned and not collected will be reinvested by automation, and the {fee} fee applies when they are.',
   vault_v3_owed_to_wallet: 'Amounts waiting to be collected from this position will be sent to your wallet when automation starts.',
-  vault_exit_module_off_pauses: "Turning auto-exit off for your automation pauses your orders; it doesn't cancel them.",
+  // Changed on purpose 2026-10-06 (the owner's point 5: the product is Auto-exit, never "orders" on screen): the same
+  // meaning in its name.
+  vault_exit_module_off_pauses: "Turning Auto-exit off for your automation pauses it; it doesn't cancel it.",
   // Changed on purpose 2026-10-04 (rugged97's delta of 4 Oct §2 item 3, #319): exitAll also turns the exit module off. The
-  // delta's words without "on this vault" (the owner: no "vault" on screen).
-  vault_exit_all_pauses_orders: 'This also pauses your auto-exit orders. You can turn them back on later.',
-  vault_pause_keeps_auto_exit: 'Pausing stops automated runs. Your auto-exit orders stay active.',
+  // delta's words without "on this vault" (the owner: no "vault" on screen); 2026-10-06, Auto-exit by its name.
+  vault_exit_all_pauses_orders: 'This also pauses Auto-exit. You can turn it back on later.',
+  vault_pause_keeps_auto_exit: 'Pausing stops automated runs. Auto-exit stays on.',
   vault_halted: 'Domino has stopped automation on {chain} for safety. You can still withdraw and manage your positions.',
   vault_stops_automation: 'This stops automation for this position until you turn it back on.',
   // The codes this client raises that the spec gives copy for (§5.8).
@@ -644,6 +648,115 @@ export function vaultBatchKey(chainId: V2ChainId, factory: Address, owner: Addre
   return keccak256(encodeAbiParameters([{ type: 'uint256' }, { type: 'address' }, { type: 'address' }, { type: 'uint256' }], [BigInt(chainId), factory, owner, nonce]))
 }
 
+// ---------------------------------------------------------------------------
+// A creation's facts, through any V2 client's bounded port (Added on purpose 2026-10-06, the owner's point 5: Auto-exit
+// turned on as a signature plus ONE batch, approve + createVault + setExitModule + registerMandate; ./autoExit.ts builds
+// that batch with exactly the derivation below, the vault client's own, so its approval and its creation are never
+// built twice or another way).
+// ---------------------------------------------------------------------------
+
+/** One vault step: where it goes, its exact calldata, its lines. @internal */
+const vaultStep = (kind: VaultStepKind, to: Address, abi: Abi, functionName: string, args: readonly unknown[], summary: readonly string[]): VaultStep =>
+  Object.freeze({ kind, to, data: encodeFunctionData({ abi, functionName, args }), summary: Object.freeze([...summary]) })
+
+/** Who holds an NFT on a DEX's manager; null when the manager refuses (burned, never minted). @internal */
+async function holderAt(t: Transactor, chain: V2Chain, at: ReadAt, dex: Dex, tokenId: bigint): Promise<Address | null> {
+  try {
+    return lower(await viewAt<string>(t, at, managerOf(chain, dex), managerAbi(dex), 'ownerOf', [tokenId]))
+  } catch (error) {
+    if (revertIn(error)) return null
+    throw error
+  }
+}
+const approvedAt = async (t: Transactor, chain: V2Chain, at: ReadAt, dex: Dex, tokenId: bigint): Promise<Address> => lower(await viewAt<string>(t, at, managerOf(chain, dex), managerAbi(dex), 'getApproved', [tokenId], 'vault_position_not_found'))
+const subscriberAt = async (t: Transactor, chain: V2Chain, at: ReadAt, tokenId: bigint): Promise<Address> => lower(await viewAt<string>(t, at, managerOf(chain, 4), V4_POSITION_MANAGER_ABI, 'subscriber', [tokenId], 'vault_position_not_found'))
+
+/**
+ * The root of a vault this wallet has not created yet (spec §5.1), read at `at`: the NFT held by the wallet on its DEX's
+ * manager, its pool (v4: no hook), what v3 owes it, the factory's nonce for the wallet and `predictVault(owner, n)`
+ * (still free), the v4 subscriber (none, or that prediction) and the NFT's current individual approval. Closed codes as
+ * the vault client's review raises them. @internal
+ */
+export interface NewVaultRoot {
+  dex: Dex
+  manager: Address
+  factory: Address
+  /** The factory's nonce for this owner (`nextNonce`). */
+  nonce: bigint
+  /** `factory.predictVault(owner, nonce)`. */
+  vault: Address
+  pool: VaultCreateReview['pool']
+  owed: readonly [bigint, bigint] | null
+  approved: Address
+}
+
+export async function newVaultRoot(t: Transactor, chain: V2Chain, contracts: V2Contracts, at: ReadAt, dex: Dex, tokenId: bigint): Promise<NewVaultRoot> {
+  if (dex !== 3 && dex !== 4) return fail('vault_invalid_dex')
+  if (typeof tokenId !== 'bigint' || tokenId <= 0n || tokenId > MAX_ROOT_TOKEN_ID) return fail('vault_invalid_token_id')
+  const manager = managerOf(chain, dex)
+  const factory = factoryOf(contracts, dex)
+  const holder = await holderAt(t, chain, at, dex, tokenId)
+  if (holder === null) return fail('vault_position_not_found')
+  if (holder !== t.owner) return fail('vault_root_not_owned')
+  let pool: VaultCreateReview['pool']
+  let owed: readonly [bigint, bigint] | null = null
+  if (dex === 4) {
+    const [key] = await viewAt<readonly [RawPool]>(t, at, manager, V4_POSITION_MANAGER_ABI, 'getPoolAndPositionInfo', [tokenId])
+    if (key.tickSpacing === 0) return fail('vault_position_not_found')
+    // A v4 pool with a hook is refused for automation (spec §1.4; the factory reverts HookedPool).
+    if (!same(key.hooks, ZERO_ADDRESS)) return fail('vault_hooked_pool')
+    pool = Object.freeze({ currency0: lower(key.currency0), currency1: lower(key.currency1), fee: key.fee, tickSpacing: key.tickSpacing, hooks: ZERO_ADDRESS })
+  } else {
+    const position = await viewAt<readonly unknown[]>(t, at, manager, V3_POSITION_MANAGER_ABI, 'positions', [tokenId], 'vault_position_not_found')
+    const fee = position[4] as number
+    pool = Object.freeze({ currency0: lower(position[2] as string), currency1: lower(position[3] as string), fee, tickSpacing: v3TickSpacing(chain, fee), hooks: ZERO_ADDRESS })
+    owed = Object.freeze([position[10] as bigint, position[11] as bigint] as const)
+  }
+  const nonce = await viewAt<bigint>(t, at, factory, VAULT_FACTORY_ABI, 'nextNonce', [t.owner])
+  const vault = lower(await viewAt<string>(t, at, factory, VAULT_FACTORY_ABI, 'predictVault', [t.owner, nonce]))
+  if (same(vault, ZERO_ADDRESS)) return fail('vault_prediction_invalid')
+  // The predicted address must be free: a vault already there means the nonce this read saw is stale.
+  if (await viewAt<boolean>(t, at, factory, VAULT_FACTORY_ABI, 'isVault', [vault])) return fail('vault_nonce_moved')
+  if (dex === 4) {
+    const subscriber = await subscriberAt(t, chain, at, tokenId)
+    if (subscriber !== ZERO_ADDRESS && subscriber !== vault) return fail('vault_foreign_subscriber')
+  }
+  const approved = await approvedAt(t, chain, at, dex, tokenId)
+  return { dex, manager, factory, nonce, vault, pool, owed, approved }
+}
+
+/** A creation's facts and the steps it needs now: the individual approval to the prediction when missing, then `createVault(init, n)`. @internal */
+export interface VaultCreation extends NewVaultRoot {
+  init: VaultInit
+  steps: readonly VaultStep[]
+}
+
+/** Everything spec §5.1 requires of a creation, read at `at` through `t`, and the steps it needs (the vault client's own review). @internal */
+export async function vaultCreation(t: Transactor, chain: V2Chain, contracts: V2Contracts, at: ReadAt, request: VaultCreateRequest): Promise<VaultCreation> {
+  const { dex, tokenId } = request
+  if (dex !== 3 && dex !== 4) return fail('vault_invalid_dex')
+  if (typeof tokenId !== 'bigint' || tokenId <= 0n || tokenId > MAX_ROOT_TOKEN_ID) return fail('vault_invalid_token_id')
+  if (request.consentToUncollectedFees !== true) return fail('vault_consent_required')
+  if (typeof request.startPaused !== 'boolean') return fail('vault_invalid_request')
+  checkSettings(request.policy, request.limits, dex, 1)
+  const root = await newVaultRoot(t, chain, contracts, at, dex, tokenId)
+  const init: VaultInit = Object.freeze({
+    root: Object.freeze({ dex, positionManager: root.manager, tokenId }),
+    policy: policyOf(request.policy),
+    limits: limitsOf(request.limits),
+    startPaused: request.startPaused,
+    consentToUncollectedFees: true,
+  })
+  const mode = init.policy.mode === 2 ? 'Domino-compound' : 'Auto-compound'
+  const steps: VaultStep[] = []
+  if (root.approved !== root.vault) {
+    // Individual, exact: this one NFT to the predicted vault on the chain's own manager. Never setApprovalForAll.
+    steps.push(vaultStep('approve-root', root.manager, managerAbi(dex), 'approve', [root.vault, tokenId], [`Approve position #${tokenId} to your new vault ${root.vault}.`]))
+  }
+  steps.push(vaultStep('create-vault', root.factory, VAULT_FACTORY_ABI, 'createVault', [init, root.nonce], [`Create your vault ${root.vault} and turn on ${mode} for position #${tokenId}.`]))
+  return { ...root, init, steps: Object.freeze(steps) }
+}
+
 /**
  * Every reserve of a vault withdrawn to its owner as ONE EIP-5792 batch (spec F7 rev3 §2.13, §5.6: closing a root never
  * leaves fees stuck): `withdrawReserves(token, reserves(token))` for each pool token holding more than zero, exactly the
@@ -799,8 +912,7 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
   const issuedWithdraws = new WeakSet<VaultWithdrawBatch>()
   const offeredWithdraws = new Map<string, VaultWithdrawBatch>()
   const view = <T>(at: ReadAt, to: Address, abi: Abi, functionName: string, args: readonly unknown[] = [], onRevert?: string) => viewAt<T>(t, at, to, abi, functionName, args, onRevert)
-  const step = (kind: VaultStepKind, to: Address, abi: Abi, functionName: string, args: readonly unknown[], summary: readonly string[]): VaultStep =>
-    Object.freeze({ kind, to, data: encodeFunctionData({ abi, functionName, args }), summary: Object.freeze([...summary]) })
+  const step = vaultStep
   /**
    * Where a withdrawal of the vault's reserves goes (rugged97's delta of 4 Oct §2 item 1): the owner's own wallet, or an
    * address the owner names once a transfer to that wallet failed (TokenCallFailed). Never address(0) (InvalidRecipient),
@@ -822,16 +934,9 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
   }
 
   /** Who holds an NFT on a manager; null when the manager refuses (burned, never minted). */
-  async function holderOf(at: ReadAt, dex: Dex, tokenId: bigint): Promise<Address | null> {
-    try {
-      return lower(await view<string>(at, managerOf(chain, dex), managerAbi(dex), 'ownerOf', [tokenId]))
-    } catch (error) {
-      if (revertIn(error)) return null
-      throw error
-    }
-  }
-  const approvedOf = async (at: ReadAt, dex: Dex, tokenId: bigint): Promise<Address> => lower(await view<string>(at, managerOf(chain, dex), managerAbi(dex), 'getApproved', [tokenId], 'vault_position_not_found'))
-  const subscriberOf = async (at: ReadAt, tokenId: bigint): Promise<Address> => lower(await view<string>(at, managerOf(chain, 4), V4_POSITION_MANAGER_ABI, 'subscriber', [tokenId], 'vault_position_not_found'))
+  const holderOf = (at: ReadAt, dex: Dex, tokenId: bigint): Promise<Address | null> => holderAt(t, chain, at, dex, tokenId)
+  const approvedOf = (at: ReadAt, dex: Dex, tokenId: bigint): Promise<Address> => approvedAt(t, chain, at, dex, tokenId)
+  const subscriberOf = (at: ReadAt, tokenId: bigint): Promise<Address> => subscriberAt(t, chain, at, tokenId)
 
   /**
    * Whether the root is closed, read live as the vault's `returnReserves()` reads it (Changed on purpose (data)
@@ -853,69 +958,12 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
 
   // ----- creation -----
 
-  interface CreateFacts {
-    nonce: bigint
-    vault: Address
-    init: VaultInit
-    pool: VaultCreateReview['pool']
-    owed: readonly [bigint, bigint] | null
-    approved: Address
-    steps: readonly VaultStep[]
-  }
-
-  /** Everything spec §5.1 requires of a creation, read at `at`, and the steps it needs. */
-  async function createFacts(at: ReadAt, request: VaultCreateRequest): Promise<CreateFacts> {
-    const { dex, tokenId } = request
-    if (dex !== 3 && dex !== 4) return fail('vault_invalid_dex')
-    if (typeof tokenId !== 'bigint' || tokenId <= 0n || tokenId > MAX_ROOT_TOKEN_ID) return fail('vault_invalid_token_id')
-    if (request.consentToUncollectedFees !== true) return fail('vault_consent_required')
-    if (typeof request.startPaused !== 'boolean') return fail('vault_invalid_request')
-    checkSettings(request.policy, request.limits, dex, 1)
-    const manager = managerOf(chain, dex)
-    const factory = factoryOf(contracts, dex)
-    const holder = await holderOf(at, dex, tokenId)
-    if (holder === null) return fail('vault_position_not_found')
-    if (holder !== owner) return fail('vault_root_not_owned')
-    let pool: VaultCreateReview['pool']
-    let owed: readonly [bigint, bigint] | null = null
-    if (dex === 4) {
-      const [key] = await view<readonly [RawPool]>(at, manager, V4_POSITION_MANAGER_ABI, 'getPoolAndPositionInfo', [tokenId])
-      if (key.tickSpacing === 0) return fail('vault_position_not_found')
-      // A v4 pool with a hook is refused for automation (spec §1.4; the factory reverts HookedPool).
-      if (!same(key.hooks, ZERO_ADDRESS)) return fail('vault_hooked_pool')
-      pool = Object.freeze({ currency0: lower(key.currency0), currency1: lower(key.currency1), fee: key.fee, tickSpacing: key.tickSpacing, hooks: ZERO_ADDRESS })
-    } else {
-      const position = await view<readonly unknown[]>(at, manager, V3_POSITION_MANAGER_ABI, 'positions', [tokenId], 'vault_position_not_found')
-      const fee = position[4] as number
-      pool = Object.freeze({ currency0: lower(position[2] as string), currency1: lower(position[3] as string), fee, tickSpacing: v3TickSpacing(chain, fee), hooks: ZERO_ADDRESS })
-      owed = Object.freeze([position[10] as bigint, position[11] as bigint] as const)
-    }
-    const nonce = await view<bigint>(at, factory, VAULT_FACTORY_ABI, 'nextNonce', [owner])
-    const vault = lower(await view<string>(at, factory, VAULT_FACTORY_ABI, 'predictVault', [owner, nonce]))
-    if (same(vault, ZERO_ADDRESS)) return fail('vault_prediction_invalid')
-    // The predicted address must be free: a vault already there means the nonce this read saw is stale.
-    if (await view<boolean>(at, factory, VAULT_FACTORY_ABI, 'isVault', [vault])) return fail('vault_nonce_moved')
-    if (dex === 4) {
-      const subscriber = await subscriberOf(at, tokenId)
-      if (subscriber !== ZERO_ADDRESS && subscriber !== vault) return fail('vault_foreign_subscriber')
-    }
-    const approved = await approvedOf(at, dex, tokenId)
-    const init: VaultInit = Object.freeze({
-      root: Object.freeze({ dex, positionManager: manager, tokenId }),
-      policy: policyOf(request.policy),
-      limits: limitsOf(request.limits),
-      startPaused: request.startPaused,
-      consentToUncollectedFees: true,
-    })
-    const mode = init.policy.mode === 2 ? 'Domino-compound' : 'Auto-compound'
-    const steps: VaultStep[] = []
-    if (approved !== vault) {
-      // Individual, exact: this one NFT to the predicted vault on the chain's own manager. Never setApprovalForAll.
-      steps.push(step('approve-root', manager, managerAbi(dex), 'approve', [vault, tokenId], [`Approve position #${tokenId} to your new vault ${vault}.`]))
-    }
-    steps.push(step('create-vault', factory, VAULT_FACTORY_ABI, 'createVault', [init, nonce], [`Create your vault ${vault} and turn on ${mode} for position #${tokenId}.`]))
-    return { nonce, vault, init, pool, owed, approved, steps: Object.freeze(steps) }
-  }
+  /**
+   * Everything spec §5.1 requires of a creation, read at `at`, and the steps it needs. Changed on purpose 2026-10-06 (the
+   * owner's point 5, Auto-exit in one batch): the derivation itself moved to the module (vaultCreation above), unchanged,
+   * so ./autoExit.ts builds its one batch with exactly this one.
+   */
+  const createFacts = (at: ReadAt, request: VaultCreateRequest): Promise<VaultCreation> => vaultCreation(t, chain, contracts, at, request)
 
   // ----- owner actions -----
 
@@ -1024,9 +1072,9 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
         if (current === module) return fail('vault_step_not_needed')
         if (module === ZERO_ADDRESS) {
           notes.push('vault_exit_module_off_pauses')
-          steps.push(own('set-exit-module', 'setExitModule', [module], ['Turn off auto-exit for this vault.', VAULT_TEXT.vault_exit_module_off_pauses]))
+          steps.push(own('set-exit-module', 'setExitModule', [module], ['Turn off Auto-exit for this vault.', VAULT_TEXT.vault_exit_module_off_pauses]))
         } else {
-          steps.push(own('set-exit-module', 'setExitModule', [module], ['Turn on auto-exit for this vault.']))
+          steps.push(own('set-exit-module', 'setExitModule', [module], ['Turn on Auto-exit for this vault.']))
         }
         break
       }

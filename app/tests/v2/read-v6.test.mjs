@@ -109,7 +109,8 @@ test('an answer about another wallet is refused (validateExchange); an error is 
 test('one chain out is said as out, and never empties the others (§6.3)', () => {
   const chains = fixture('valid/portfolio-behind.json').chains;
   const out = (ids) => chains.map((c) => (ids.includes(c.chainId) ? { ...c, status: 'unavailable', reason: 'never_indexed' } : { ...c, status: 'current', reason: null }));
-  assert.equal(coverageNote(out([4663])), 'Showing Base and Arbitrum. Robinhood Chain is unavailable right now.');
+  // Changed on purpose 2026-10-06 (the owner: one name for one network): Arbitrum One, as every other screen names it.
+  assert.equal(coverageNote(out([4663])), 'Showing Base and Arbitrum One. Robinhood Chain is unavailable right now.');
   assert.equal(coverageNote(out([])), null);
-  assert.equal(coverageNote(out([4663, 8453, 42161])), 'Robinhood Chain, Base and Arbitrum are unavailable right now.');
+  assert.equal(coverageNote(out([4663, 8453, 42161])), 'Robinhood Chain, Base and Arbitrum One are unavailable right now.');
 });

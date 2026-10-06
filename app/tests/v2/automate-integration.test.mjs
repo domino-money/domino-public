@@ -11,7 +11,8 @@
  *   - the §2.13 hand-over, taken once and only for its vault;
  *   - Set up automation's own decisions: no default mode (#12), the fixed 600 s and 300 s (#27), the vault's flow for
  *     Auto-compound and Domino-compound on the preview too (the owner, 2026-10-02 night), Protection only from its own link;
- *   - an exit order's default orientation (the stable's price first) and the §4.3 vectors through the copied form.
+ *   - Auto-exit's default orientation (the stable's price first) and its terms from the range's edges (Changed on purpose
+ *     2026-10-06, the owner's point 5: no price is typed any more).
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -195,19 +196,22 @@ test('Set up automation: no default mode, fixed 600 s and 300 s, the vault\'s th
   assert.deepEqual(intent.protectionIntent('#/sequence/protection/x'), { mode: 'protection', tokenId: null });
 });
 
-test('an exit order reads the stable\'s price first, and the §4.3 vectors survive the copied form', () => {
+// Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "when the price hits the edge of the range we close the
+// position automatically"): Auto-exit's prices are the range's edges, its other terms fixed (both tokens, decision #19's
+// 1%, a year: the app's longest validity, for an autonomous service).
+test('Auto-exit reads the stable\'s price first, and signs the range\'s edges with fixed terms', () => {
   const ethUsdg = { currency0: '0x0000000000000000000000000000000000000000', currency1: USDG };
   assert.equal(orientation.defaultOrientation(4663, ethUsdg), 'token1PerToken0', 'USDG per ETH');
   assert.equal(orientation.defaultOrientation(4663, { currency0: USDG, currency1: MANY }), 'token0PerToken1', 'USDG per MANY');
-  const base = exitForm.defaultMandateForm('token1PerToken0');
-  assert.equal(base.slippagePercent, '1', 'decision #19: 1% by default');
-  assert.deepEqual(exitConstants.AUTO_EXIT_SLIPPAGE_SHORTCUTS_BPS, [50, 100, 200]);
-  assert.equal(exitConstants.AUTO_EXIT_UI_MAX_SLIPPAGE_BPS, 500, 'decision #28');
-  const terms = exitForm.mandateTermsFrom({ ...base, fallsTo: '2000', risesTo: '3500' }, ethUsdg, { decimals0: 18, decimals1: 6 }, NOW);
-  assert.equal(terms.ok, true);
-  assert.equal(terms.terms.triggerBelowSqrtPriceX96, 3543191142285914205922034n);
-  assert.equal(terms.terms.triggerAboveSqrtPriceX96, 4687201305027700927646043n);
-  assert.equal(exitForm.mandateTermsFrom({ ...base, fallsTo: '2000', slippagePercent: '5.5' }, ethUsdg, { decimals0: 18, decimals1: 6 }, NOW).ok, false);
+  assert.equal(exitConstants.AUTO_EXIT_DEFAULT_SLIPPAGE_BPS, 100, 'decision #19: 1% by default');
+  assert.equal(exitConstants.AUTO_EXIT_DEFAULT_VALIDITY_DAYS, 365);
+  assert.equal('AUTO_EXIT_SLIPPAGE_SHORTCUTS_BPS' in exitConstants, false, 'no shortcuts: nothing is typed');
+  const range = { tickLower: -201060, tickUpper: -198060 };
+  const inside = exitForm.exitEdges(range, 3_700_000_000_000_000_000_000_000n, 60);
+  assert.equal(inside.ok, true);
+  const terms = exitForm.autoExitTerms(inside.edges, NOW);
+  assert.deepEqual([terms.receiveMode, terms.convertTo, terms.maxSlippageBps], [0, '0x0000000000000000000000000000000000000000', 100]);
+  assert.equal(terms.validUntil, BigInt(NOW + 365 * 86_400));
 });
 
 // Added 2026-10-04 (rugged97's delta of 4 Oct §2 item 1): the address typed for "Send to another address you own".

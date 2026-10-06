@@ -2,20 +2,18 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 const require = createRequire(import.meta.url);
-const { exitReferencePrice, exitShortcutPrice, exitPriceDistance, reorientExitForm, positionExitPrice, exitTokenMeta } = require('../../.test-build/app/src/v2in/autoexit/priceContext.js');
-const { defaultMandateForm, mandateTermsFrom } = require('../../.test-build/app/src/v2in/autoexit/form.js');
+const { positionExitPrice, exitTokenMeta, freshSqrtPrice, snapshotSqrtPrice } = require('../../.test-build/app/src/v2in/autoexit/priceContext.js');
 const { sqrtPriceX96FromPrice } = require('../../.test-build/app/src/v2/trigger.js');
-const decimals = { decimals0: 18, decimals1: 6 };
 const pool = { currency0: '0x0000000000000000000000000000000000000000', currency1: '0x0000000000000000000000000000000000000001' };
 
-test('position reference stays tied to its own chain read, even when an order cannot currently be offered', () => {
+test('position reference stays tied to its own chain read, even when Auto-exit cannot currently be offered', () => {
   // A USDG / arbitrary ERC-20 pair as /state and WalletPosition actually carry it: decimals differ,
   // the stable is currency0, and the user-facing quote is inverted from the pool integer.
   const result = sqrtPriceX96FromPrice('0.0956429', { decimals0: 6, decimals1: 18 }, 'token0PerToken1');
   assert.equal(result.ok, true);
   const read = { sqrtPriceX96: result.sqrtPriceX96.toString() };
   const snapshot = positionExitPrice(read, { block: 1356798, saved: false });
-  assert.equal(exitReferencePrice(snapshot, { decimals0: 6, decimals1: 18 }, 'token0PerToken1'), '0.0956429');
+  assert.equal(snapshot.sqrtPriceX96, read.sqrtPriceX96);
   assert.equal(snapshot.block, 1356798);
   assert.equal(snapshot.saved, false);
   assert.deepEqual(positionExitPrice(read, { block: 1356798, saved: true }), { ...snapshot, saved: true });
@@ -34,45 +32,26 @@ test('missing page decimals can be completed by the same indexed token, never an
   assert.equal(exitTokenMeta(null, null), null);
 });
 
-test('protection reference uses the pool integer and actual decimals in either orientation; missing data is never zero', () => {
-  const result = sqrtPriceX96FromPrice('2500', decimals, 'token1PerToken0');
-  assert.equal(result.ok, true);
-  const snapshot = { sqrtPriceX96: result.sqrtPriceX96.toString(), block: 123, saved: false };
-  assert.equal(exitReferencePrice(snapshot, decimals, 'token1PerToken0'), '2500');
-  assert.equal(exitReferencePrice(snapshot, decimals, 'token0PerToken1'), '0.0004');
-  assert.equal(exitReferencePrice(null, decimals, 'token1PerToken0'), null);
-  assert.equal(exitReferencePrice({ ...snapshot, sqrtPriceX96: '0' }, decimals, 'token1PerToken0'), null);
-  assert.equal(exitReferencePrice(snapshot, { decimals0: null, decimals1: 6 }, 'token1PerToken0'), null);
+// Changed on purpose 2026-10-06 (the owner's point 5): Auto-exit chooses its edges by the page's own current read only; an
+// old copy could say an edge is still ahead when the price has crossed it, and arming it would close the position at once.
+test('Auto-exit takes only the page\'s current read of the price: never a saved copy, never a missing or malformed one', () => {
+  const sqrt = sqrtPriceX96FromPrice('2500', { decimals0: 18, decimals1: 6 }, 'token1PerToken0').sqrtPriceX96;
+  assert.equal(freshSqrtPrice({ sqrtPriceX96: sqrt.toString(), block: 7, saved: false }), sqrt);
+  assert.equal(freshSqrtPrice({ sqrtPriceX96: sqrt.toString(), block: 7, saved: true }), null, 'a saved copy');
+  assert.equal(freshSqrtPrice({ sqrtPriceX96: null, block: 7, saved: false }), null);
+  assert.equal(freshSqrtPrice({ sqrtPriceX96: '0', block: 7, saved: false }), null);
+  assert.equal(freshSqrtPrice({ sqrtPriceX96: '12ab', block: 7, saved: false }), null);
+  assert.equal(freshSqrtPrice(null), null);
+  assert.equal(freshSqrtPrice(undefined), null);
 });
 
-test('explicit percentage shortcuts produce exact decimal prices and never invent an unavailable reference', () => {
-  assert.equal(exitShortcutPrice('2500', 'falls', 10), '2250');
-  assert.equal(exitShortcutPrice('0.0004', 'rises', 20), '0.00048');
-  assert.equal(exitShortcutPrice(null, 'falls', 10), null);
-  assert.equal(exitShortcutPrice('0', 'falls', 10), null);
-  assert.equal(exitShortcutPrice('2500', 'falls', 100), null);
-  assert.deepEqual(exitPriceDistance('2250', '2500'), { text: '−10% from pool price', percent: -10 });
-  assert.equal(exitPriceDistance('', '2500'), null);
-});
-
-test('switching units keeps both signed trigger integers and swaps direction, without losing a single-sided exit', () => {
-  for (const prices of [{ fallsTo: '2000', risesTo: '3200' }, { fallsTo: '0.0000357', risesTo: '' }]) {
-    const original = { ...defaultMandateForm('token1PerToken0'), ...prices };
-    const before = mandateTermsFrom(original, pool, decimals, 123);
-    assert.equal(before.ok, true);
-    const inverted = reorientExitForm(original, decimals, 'token0PerToken1');
-    assert.ok(inverted);
-    const after = mandateTermsFrom(inverted, pool, decimals, 123);
-    assert.equal(after.ok, true);
-    assert.equal(after.terms.triggerBelowSqrtPriceX96, before.terms.triggerBelowSqrtPriceX96);
-    assert.equal(after.terms.triggerAboveSqrtPriceX96, before.terms.triggerAboveSqrtPriceX96);
-    if (!original.risesTo) assert.equal(inverted.fallsTo, '');
-    const back = reorientExitForm(inverted, decimals, 'token1PerToken0');
-    const roundTrip = mandateTermsFrom(back, pool, decimals, 123);
-    assert.equal(roundTrip.terms.triggerBelowSqrtPriceX96, before.terms.triggerBelowSqrtPriceX96);
-    assert.equal(roundTrip.terms.triggerAboveSqrtPriceX96, before.terms.triggerAboveSqrtPriceX96);
-  }
-  const invalid = { ...defaultMandateForm('token1PerToken0'), fallsTo: 'unfinished.' };
-  assert.equal(reorientExitForm(invalid, decimals, 'token0PerToken1'), null);
-  assert.equal(invalid.fallsTo, 'unfinished.', 'an incomplete typed value is not silently cleared');
+// Changed on purpose 2026-10-06 (the review of point 5): the page's price only draws the dialog until the pool's own price,
+// read through the wallet, is in (the edges a review arms are chosen against that one); under the preview, where nothing
+// is armed, the page's read is all there is, saved or not, so the dialog never waits for a read that is not coming.
+test('the page\'s price as a number, saved or not, for what the dialog shows before the pool\'s own price', () => {
+  const sqrt = sqrtPriceX96FromPrice('2500', { decimals0: 18, decimals1: 6 }, 'token1PerToken0').sqrtPriceX96;
+  assert.equal(snapshotSqrtPrice({ sqrtPriceX96: sqrt.toString(), block: 7, saved: true }), sqrt, 'a saved copy is still a number');
+  assert.equal(snapshotSqrtPrice({ sqrtPriceX96: sqrt.toString(), block: 7, saved: false }), sqrt);
+  for (const bad of [null, '0', '12ab', '-5']) assert.equal(snapshotSqrtPrice({ sqrtPriceX96: bad, block: 7, saved: false }), null, String(bad));
+  assert.equal(snapshotSqrtPrice(undefined), null);
 });

@@ -1,4 +1,4 @@
-import type { NetworkToken, OtherChainId } from '../../../lib/create/otherChains'
+import { PROTOCOL_FEE_UNDESCRIBED, type NetworkPoolFacts, type NetworkToken, type OtherChainId } from '../../../lib/create/otherChains'
 import { fixedFeePercent } from '../../../lib/read/screens/fee'
 import type { AttributedFigure } from '../../../lib/read/screens/figures'
 import { NATIVE_CURRENCY, poolIdKey, type PoolIdKey } from '../../../lib/read/screens/identity'
@@ -17,12 +17,31 @@ import { offeredPool, poolOf, tiersOf } from './pools'
  * today's pool rows (lib/read/screens/poolsList.ts PoolOption) and back. No wallet, no React.
  */
 
+/** A row's TVL and 24h volume until DEX Screener's are put on as the rows are drawn (lib/create/otherChains.ts networkRows). */
 const UNREPORTED: AttributedFigure = { state: 'unavailable', provider: 'dexscreener', reason: 'no_provider_figures' }
 
 /** The networks offered: Base and Arbitrum One, each only while its S1 gate is live. */
 export function offeredNetworks(gates: JourneyGates | null): OtherChainId[] {
   if (!gates) return []
   return ([8453, 42161] as const).filter((chainId) => gates[chainId]?.mode === 'live')
+}
+
+/**
+ * The S1 gates read again, merged into the ones the page holds (pure; 2026-10-06, the owner's point 3: one failed read
+ * of the plan route's word used to leave Base and Arbitrum One out for the whole visit): a network once live stays live,
+ * and a network whose gate says the same keeps the very gate it had, so nothing downstream starts over. The held gates
+ * themselves come back when nothing changed.
+ */
+export function mergeGates(held: JourneyGates | null, next: JourneyGates): JourneyGates {
+  if (!held) return next
+  let changed = false
+  const out = { ...held }
+  for (const chainId of [4663, 8453, 42161] as const) {
+    if (held[chainId].mode === 'live' || held[chainId].mode === next[chainId].mode) continue
+    out[chainId] = next[chainId]
+    changed = true
+  }
+  return changed ? Object.freeze(out) : held
 }
 
 /** A token of another network as a screen shows it: the profile's artwork for ETH and the network's WETH, else a disc. */
@@ -54,7 +73,9 @@ function matchOf(symbol: string | null, needle: string): number | null {
 /**
  * The other networks' hits for the text typed (pure): two characters at least, as today's search. A name matches the
  * profile tokens' symbols, the closest first, Base before Arbitrum One for the same match; an address is that token on
- * each network (a profile token as it is named there, any other to read once chosen).
+ * each network (a profile token as it is named there, any other to read once chosen). Changed on purpose 2026-10-06 (the
+ * review of the next update): a profile token's row says it is the network's own currency (`own`), so it never rivals
+ * Robinhood Chain's own ETH or WETH for Enter (lib/create/otherChains.ts preselectOf).
  */
 export function networkTokens(query: string, chains: readonly OtherChainId[]): NetworkToken[] {
   const text = query.trim()
@@ -65,7 +86,7 @@ export function networkTokens(query: string, chains: readonly OtherChainId[]): N
     return chains.map((chainId): NetworkToken => {
       const known = profileTokens(chainId).find((token) => token.address === address)
       const network = v2Chain(chainId).name
-      if (known) return { chainId, network, token: displayOf(chainId, known), unread: false }
+      if (known) return { chainId, network, token: displayOf(chainId, known), unread: false, own: true }
       return { chainId, network, token: { origin: 'read', chainId, address, symbol: null, decimals: null, readStatus: 'partial', artwork: null }, unread: true }
     })
   }
@@ -74,7 +95,7 @@ export function networkTokens(query: string, chains: readonly OtherChainId[]): N
   chains.forEach((chainId, order) => {
     for (const token of profileTokens(chainId)) {
       const rank = matchOf(token.symbol, needle)
-      if (rank !== null) hits.push({ row: { chainId, network: v2Chain(chainId).name, token: displayOf(chainId, token), unread: false }, rank, order })
+      if (rank !== null) hits.push({ row: { chainId, network: v2Chain(chainId).name, token: displayOf(chainId, token), unread: false, own: true }, rank, order })
     }
   })
   return hits.sort((a, b) => a.rank - b.rank || a.order - b.order).map((hit) => hit.row)
@@ -111,18 +132,29 @@ export function poolsToRead(chainId: OtherChainId, token: Address): PoolRef[] {
 /** A pool's key on screen: the v4 pool id, or a v3 pool's address as a 32-byte word (lib/read/screens/poolsList.ts `dex`). */
 export const optionKey = (found: Pick<PoolOnChain, 'pool' | 'id'>) => poolIdKey(found.pool.dex === 4 ? found.id : `0x${'0'.repeat(24)}${found.id.slice(2)}`)
 
-/** A pool read through the wallet, as today's pool rows and steps take one (pure). */
+/**
+ * A pool read through the wallet, as today's pool rows and steps take one (pure). Its protocol fee is not read that way,
+ * so no APR estimate is worked out for it (2026-10-06: PROTOCOL_FEE_UNDESCRIBED), whatever figures it is drawn with.
+ */
 export function optionOf(found: PoolOnChain, currencies: readonly [TokenDisplay, TokenDisplay], readAt: number): PoolOption {
-  return poolRow({ pool: found.pool, key: optionKey(found), tick: found.tick, sqrtPriceX96: found.sqrtPriceX96.toString(), block: Number(found.block) }, currencies, readAt)
+  return poolRow({ pool: found.pool, key: optionKey(found), tick: found.tick, sqrtPriceX96: found.sqrtPriceX96.toString(), block: Number(found.block), protocolFeeRaw: PROTOCOL_FEE_UNDESCRIBED }, currencies, readAt)
+}
+
+/** What a wallet read says of each listed pool beyond its row, by row key (2026-10-06): its active liquidity, no depth. */
+export function factsOfFound(found: readonly Pick<PoolOnChain, 'pool' | 'id' | 'liquidity'>[]): Record<string, NetworkPoolFacts> {
+  return Object.fromEntries(found.map((entry) => [optionKey(entry), { depthUsd: null, liquidity: entry.liquidity.toString() }]))
 }
 
 /**
  * A pool as today's pool rows and steps take one (pure), from whatever read it: the wallet (`optionOf`) or Domino's service
- * (./chainReads.ts, 2026-10-06). `key`: the v4 pool id, or a v3 pool's address as a 32-byte word.
+ * (./chainReads.ts, 2026-10-06). `key`: the v4 pool id, or a v3 pool's address as a 32-byte word. `protocolFeeRaw`
+ * (2026-10-06): the pool's protocol fee as the APR estimate takes it (lib/create/otherChains.ts PROTOCOL_FEE_UNDESCRIBED
+ * where it cannot).
  */
-export function poolRow(read: { pool: PoolRef; key: PoolIdKey; tick: number; sqrtPriceX96: string; block: number; usdPrices?: readonly [string | null, string | null] }, currencies: readonly [TokenDisplay, TokenDisplay], readAt: number): PoolOption {
+export function poolRow(read: { pool: PoolRef; key: PoolIdKey; tick: number; sqrtPriceX96: string; block: number; usdPrices?: readonly [string | null, string | null]; protocolFeeRaw?: number }, currencies: readonly [TokenDisplay, TokenDisplay], readAt: number): PoolOption {
   return {
     ...(read.usdPrices ? { usdPrices: read.usdPrices } : {}),
+    ...(read.protocolFeeRaw !== undefined ? { protocolFeeRaw: read.protocolFeeRaw } : {}),
     key: read.key,
     kind: 'discovery',
     currencies: [currencies[0], currencies[1]],

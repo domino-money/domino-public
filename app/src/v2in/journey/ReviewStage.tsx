@@ -1,14 +1,19 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { PlainArt } from '../../components/automate/ModeArt'
+import { ExitThumb } from '../../components/home/Vignettes'
 import { IconChevronRight } from '../../components/icons'
-import { Button, FigureDash } from '../../components/ui'
+import { Button, cx, FigureDash, Pill, Skeleton } from '../../components/ui'
+import { askAutoExitOnArrival, expectNewPosition } from '../../lib/automate/autoExitAsk'
+import { AUTO_EXIT_FEATURE } from '../../lib/automate/features'
 import { CREATE } from '../../lib/create/copy'
 import { rangePosition } from '../../lib/read/screens/poolRange'
 import type { ReceiptLine } from '../../finance/v2/receipt'
 import { v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
-import { ethText, planNetworkCost, priceText, rangeBothWays, smallerUpToPercent, spanText } from '../../v2/plan/present'
-import { ZERO_ADDRESS, type Address } from '../../v2/types'
+import { ethAboutText, ethText, EXACT_FRACTION, exitOffer, feesToCome, keptWhileRequoting, networkFeeLine, planNetworkCost, priceText, rangeBothWays, SHOWN_FRACTION, smallerUpToPercent, spanText } from '../../v2/plan/present'
+import { ZERO_ADDRESS, type Address, type Dex, type V2ChainId } from '../../v2/types'
+import { exitOrderKey } from '../autoexit/entry'
+import { gateOpen, useGate } from '../automate/gate'
 import { v2PositionHref } from '../route'
 import { JOURNEY_HIGH_SLIPPAGE_COPY, JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS, NEW_POOL_CONFIRM_COPY, NEW_POOL_TITLE } from './constants'
 import { JOURNEY } from './copy'
@@ -16,7 +21,7 @@ import { dexName, feePercent } from './model/pools'
 import type { JourneyPriceState } from './model/price'
 import type { JourneyState } from './model/state'
 import { ErrorLine, Note, PoolChips, Tick, TokenDiscPair, TokenName } from './parts'
-import { stepDetail, stepTitle, type RunStep, type RunView } from './run'
+import { stepTitle, type Reviewed, type RunStep, type RunView } from './run'
 import { amountText, decimalsOf, labelOf, tokenBook, type TokenBook } from './tokens'
 
 type Gate = Extract<V2Gate, { mode: 'preview' | 'live' }>
@@ -33,34 +38,100 @@ const LIVE: Record<RunStep['status'], string> = {
   finalized: JOURNEY.live.finalized,
 }
 
-/** A step's marker state in today's list of wallet steps (styles/flow.css .dm-flow-wsteps). */
-function markerOf(step: RunStep): 'done' | 'current' | undefined {
+/**
+ * A step's marker state in today's list of wallet steps (styles/flow.css .dm-flow-wsteps). On a review kept from the last
+ * quote (`stale`) a step already on chain keeps its check, and nothing else turns: that review waits for the new one.
+ */
+function markerOf(step: RunStep, stale: boolean): 'done' | 'current' | undefined {
   if (step.status === 'included' || step.status === 'finalized') return 'done'
+  if (stale) return undefined
   if (step.status === 'wallet' || step.status === 'sent' || step.status === 'preparing') return 'current'
   return undefined
 }
 
+/**
+ * The line under a step: its live state only (Changed on purpose 2026-10-06, the owner's point 4: titles only, no
+ * sentence explaining each step, no fee on each). "Next" under the first step still waiting while Create position runs,
+ * as today's Review says it; nothing before the press, nor on a review kept from the last quote.
+ */
+function captionOf(step: RunStep, index: number, next: number, busy: boolean, stale: boolean): string {
+  if (stale) return ''
+  if (step.status === 'waiting') return busy && index === next ? LIVE.waiting : ''
+  return LIVE[step.status]
+}
+
 /** The figures a review draws, from a `live` review (the zap client's); null before one (and always under `preview`). */
-function figuresOf(view: RunView) {
-  if (!view.reviewed) return null
-  const { review, reply, request } = view.reviewed
-  return { reply, request, legs: review.legs, warnings: review.warnings as readonly string[], createsPool: review.createsPool, replacesApproval: review.replacesApproval !== null, quoteLeft: reply.facts.expiresAt - Math.floor(view.reviewed.at) }
+function figuresOf(reviewed: Reviewed | null) {
+  if (!reviewed) return null
+  const { review, reply, request } = reviewed
+  return { reply, request, legs: review.legs, warnings: review.warnings as readonly string[], createsPool: review.createsPool, replacesApproval: review.replacesApproval !== null, quoteLeft: reply.facts.expiresAt - Math.floor(reviewed.at) }
+}
+
+/**
+ * What the last review drew, kept for the next quote of the same choices: its steps as they last stood (an approval
+ * already on chain stays done), its fee per gas, and through its steps a batch's own ceiling and the approvals' fees.
+ */
+interface Kept {
+  reviewed: Reviewed
+  feePerGas: bigint | null
+  steps: readonly RunStep[]
+}
+
+const batchFeeOf = (steps: readonly RunStep[]): bigint | null => steps.find((step) => step.kind === 'batch')?.feeWei ?? null
+
+/**
+ * Changed on purpose 2026-10-06 (the owner's point 4: a small cue, never a blank): while the same choices are quoted
+ * again (the price moved, the quote ran out, or a signature was cancelled; ./run.ts clears its review for it), Review
+ * keeps drawing the last review, greyed and marked busy, until the new one replaces it (present.ts keptWhileRequoting).
+ * New choices start blank. Its steps are kept as they last stood, never redrawn as new: a re-quote that follows an
+ * approval already on chain still shows that approval done (the new review then leaves it out, as it is no longer needed).
+ */
+function useKept(view: RunView): { reviewed: Reviewed | null; steps: readonly RunStep[]; feePerGas: bigint | null; stale: boolean } {
+  const [last, setLast] = useState<Kept | null>(null)
+  const now: Kept | null = view.reviewed ? { reviewed: view.reviewed, feePerGas: view.feePerGas, steps: view.steps } : null
+  // Remembered as it is drawn (React's "information from previous renders"): set again only when it changed (the owner's
+  // journey hands in a copy of the steps on every change, the zap path the run's own list, changed in place), and
+  // forgotten when a quote for new choices starts (or the run is reset), so it can never stand for other choices.
+  if (now && (last === null || last.reviewed !== now.reviewed || last.feePerGas !== now.feePerGas || last.steps !== now.steps)) setLast(now)
+  else if (!now && last !== null && (view.stage === 'idle' || (view.stage === 'quoting' && !view.requoting))) setLast(null)
+  const { shown, stale } = keptWhileRequoting(now, view.stage === 'quoting' && view.requoting, last)
+  if (!stale || !shown) return { reviewed: view.reviewed, steps: view.steps, feePerGas: view.feePerGas, stale: false }
+  return { reviewed: shown.reviewed, steps: shown.steps, feePerGas: shown.feePerGas, stale: true }
 }
 
 /**
  * Step 4, Review, on Domino's new contracts, in today's Review's look (components/create/StageReview.tsx): the position at
- * the top, then what the plan does in plain words, then the wallet's steps, then the technical facts under a closed
- * Details. Everything spec F7 rev2 §2.6.1 "Revisão" and §8.2 "S1, criar" ask for: the pool by its tokens, its network and
- * tier (the DEX as ./parts.tsx PoolChips says it: never its version as text); the range both ways round; what goes in; the
- * route leg by leg with what it should and must deliver and its pools' tiers; the Domino fee in today's words with its
- * token, amount and base ("0.65% of {amount} {token} swapped"; the receipt is exact); the liquidity expected and how much
- * smaller it may come out within the slippage (§2.9); what comes back; the network cost with the L2 gas and the plan's L1
- * data fee per stack (§2.4); how long the quote is good for and what is signed for.
+ * the top, then the wallet's steps, then the technical facts under a closed Details. Everything spec F7 rev2 §2.6.1
+ * "Revisão" and §8.2 "S1, criar" ask for: the pool by its tokens, its network and tier (the DEX as ./parts.tsx PoolChips
+ * says it: never its version as text); the range both ways round; what goes in; the Domino fee with its token, amount
+ * and base (§2.8: "Domino fee: 3.25 USDG (0.65% of 500 USDG swapped)"; the receipt is exact); the network cost with the
+ * plan's L1 data fee per stack (§2.4); the route leg by leg with what it should and must deliver and its pools' tiers;
+ * how much smaller the position may come out within the slippage (§2.9); what comes back; how long the quote is good
+ * for and what is signed for.
+ *
+ * Changed on purpose 2026-10-06 (the owner's point 4: "just a next button, click and done", little text): in view are
+ * only the pair and its chips, the amounts (rounded: at most 6 decimals, every digit in the title), what you put in, the
+ * range, ONE Domino fee line, ONE network fee line, and the notes that keep you safe (high slippage, out of range, WETH
+ * leftovers, another app's permission replaced, a new pool's gas and its box to tick). The route, the leftovers, the
+ * network fee's ceiling and L1 data fee, the deadlines, the "up to X% smaller" line and "Paying with ETH needs a direct
+ * transaction." are under the one Details; the developer facts (plan and route hashes, nonce, raw deadline, contract,
+ * consent path, raw liquidity, gas units, L1 fee in wei, quote internals) only as data-* attributes on it. The wallet's
+ * steps are titles with their live state. A quote asked again for the same choices greys the last review instead of
+ * blanking it; "Getting a quote…" is said once, under Create position. Amounts are rounded down ("about", "at least"),
+ * except the Domino fee and an amount to allow, rounded up: never shown lower than they are.
+ *
+ * Changed on purpose 2026-10-06 (the review of the owner's point 4): the position's amounts read as the estimate they are
+ * ("About 0.19 ETH + 490 USDG", as today's Review writes them), never "0" of a token the range does not take; "You put
+ * in" is the very figure the wallet is asked to allow (both rounded up), and the receipt's "Paid in" too; the network fee
+ * line says any part not read yet in one plain clause, and a fee not known at all in words, never "L1" or a bare dash in
+ * view (the detail stays under Details). A wallet `short` of the amount asks no quote: the review then shows what the
+ * position needs, and says once, in view, what the wallet has and the two ways on (bringing the token from another
+ * network only where the offer can bring it, else adding it to the wallet, as today's Review says).
  *
  * Under a `preview` gate no plan is asked (real data only: nothing stands in): the review shows what was chosen (`asked`),
  * and the wallet's steps are not drawn: the gate's sentence stands in their place, once, under Create position too.
  */
-export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, onRejected, onNewPool, onPoolRace }: {
+export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, onRejected, onNewPool, onPoolRace, short = null }: {
   state: JourneyState
   gate: Gate
   view: RunView
@@ -70,14 +141,27 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
   onRejected: () => void
   onNewPool: () => void
   onPoolRace: () => void
+  /**
+   * The wallet cannot fund the amount (no quote is asked): what the position takes of each token, and the token it lacks;
+   * `bring` when a deposit from another network can bring that token here now (else it is added to the wallet).
+   */
+  short?: { amounts: readonly [bigint, bigint]; token: Address; have: bigint; need: bigint; bring: boolean } | null
 }) {
+  const kept = useKept(view)
   const pool = state.pool
   if (!pool) return null
   const chain = v2Chain(state.chainId)
-  const figures = figuresOf(view)
+  const reviewed = kept.reviewed
+  const figures = figuresOf(reviewed)
   const facts = figures?.reply.facts ?? null
+  const stale = kept.stale
+  const quoting = view.stage === 'quoting'
   const book: TokenBook = tokenBook(state.chainId, [...pool.tokens])
-  const amount = (token: Address, raw: bigint, maxFraction = 6) => amountText(book, token, raw, maxFraction)
+  // Rounded where it is drawn (at most 6 decimals, present.ts SHOWN_FRACTION); every digit in the title. A fee and an
+  // amount to allow round up (`owed`): never shown lower than they are.
+  const amount = (token: Address, raw: bigint) => amountText(book, token, raw)
+  const owed = (token: Address, raw: bigint) => amountText(book, token, raw, SHOWN_FRACTION, 'up')
+  const exact = (token: Address, raw: bigint) => amountText(book, token, raw, EXACT_FRACTION)
   const [l0, l1] = [labelOf(book, pool.pool.currency0), labelOf(book, pool.pool.currency1)]
   const range = state.range
   const both = range ? rangeBothWays(range.lower, range.upper, decimalsOf(book, pool.pool.currency0), decimalsOf(book, pool.pool.currency1)) : null
@@ -94,32 +178,34 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
       if (key === 'v3_weth_leftovers' && pool.pool.dex === 3) warnings.push({ key, text: JOURNEY.review.wethWarning })
       if (key === 'nft_approval_stays') warnings.push({ key, text: JOURNEY.review.approvalStays })
     }
-    if (paysEth) warnings.push({ key: 'eth_direct', text: JOURNEY.review.ethDirect })
     if (figures.replacesApproval) warnings.push({ key: 'replaces_approval', text: JOURNEY.review.replacesApproval })
     if (figures.createsPool) warnings.push({ key: 'new_pool_gas', text: JOURNEY.newPool.gas })
   }
-  const known = view.steps.filter((step) => step.feeWei !== null)
-  const feeSum = known.reduce((sum, step) => sum + (step.feeWei ?? 0n), 0n)
   const l1Fee = facts?.l1DataFee ?? null
-  const cost = facts && facts.gasUnits !== null && view.feePerGas !== null && l1Fee
-    ? planNetworkCost({ gasUnits: facts.gasUnits, feePerGas: view.feePerGas, l1: l1Fee.status === 'ok' ? (l1Fee.source === 'op_gas_price_oracle' ? { source: l1Fee.source, wei: l1Fee.wei, upperBoundWei: l1Fee.upperBoundWei } : { source: l1Fee.source, wei: l1Fee.wei, l1GasUnits: l1Fee.l1GasUnits }) : null })
+  const cost = facts && facts.gasUnits !== null && kept.feePerGas !== null && l1Fee
+    ? planNetworkCost({ gasUnits: facts.gasUnits, feePerGas: kept.feePerGas, l1: l1Fee.status === 'ok' ? (l1Fee.source === 'op_gas_price_oracle' ? { source: l1Fee.source, wei: l1Fee.wei, upperBoundWei: l1Fee.upperBoundWei } : { source: l1Fee.source, wei: l1Fee.wei, l1GasUnits: l1Fee.l1GasUnits }) : null })
     : null
+  // The plan's cost and the approvals still to send (each a transaction of its own), or a batch's own ceiling.
+  const network = networkFeeLine({ cost, l1Available: l1Fee?.status === 'ok', batchFee: batchFeeOf(kept.steps), others: feesToCome(kept.steps) })
   const fee = facts?.fee ?? null
   const recovery = view.error?.recovery
   const permit2 = chain.permit2 as Address
+  const intent = figures?.reply.plan.plan.intent ?? null
+  const next = kept.steps.findIndex((step) => step.status === 'waiting')
+  // What the position holds (the plan's estimate), or while the wallet is short what it needs: each token it takes, never
+  // "0" of the other (today's Review's rule for a range beside the price).
+  const currencies = [pool.pool.currency0, pool.pool.currency1] as const
+  const held = facts?.expected.amounts ?? short?.amounts ?? null
+  const sides = held === null ? [] : held[0] > 0n || held[1] > 0n ? ([0, 1] as const).filter((i) => held[i] > 0n) : ([0, 1] as const)
+  const heldText = (write: (token: Address, raw: bigint) => string) => (held === null ? '' : sides.map((i) => write(currencies[i], held[i])).join(' + '))
 
   return (
-    <div className="dm-flow-stack" data-stage="review" data-zap-review={gate.mode} data-zap-review-stage={view.stage}>
-      {view.stage === 'quoting' && (
-        <p role="status" className="dm-flow-position" data-tone="neutral" data-zap-quoting="">
-          <span>{view.requoting ? JOURNEY.review.requoting : JOURNEY.review.quoting}</span>
-        </p>
-      )}
+    <div className="dm-flow-stack" data-stage="review" data-zap-review={gate.mode} data-zap-review-stage={view.stage} data-review-stale={stale ? '' : undefined}>
       <section aria-labelledby="zap-choices-heading" className="dm-flow-section">
         <h3 id="zap-choices-heading" className="dm-flow-subtitle">
           {CREATE.review.choices}
         </h3>
-        <div className="dm-flow-headline" data-review-headline="">
+        <div className={cx('dm-flow-headline', stale && 'opacity-60 transition-opacity')} data-review-headline="" aria-busy={quoting || undefined}>
           <p className="dm-flow-headline-pair">
             <TokenDiscPair chainId={state.chainId} first={pool.tokens[0]} second={pool.tokens[1]} size={24} ring="var(--flow-well, var(--surface-1))" />
             <span className="min-w-0" data-review-pool="">
@@ -127,12 +213,20 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
             </span>
           </p>
           <PoolChips chainId={state.chainId} dex={pool.pool.dex} fee={pool.pool.fee} />
-          <p className="dm-flow-headline-amounts tnum" data-review-amounts="">
-            {facts ? `${amount(pool.pool.currency0, facts.expected.amounts[0])} + ${amount(pool.pool.currency1, facts.expected.amounts[1])}` : CREATE.page.notChosen}
+          <p className={cx('dm-flow-headline-amounts tnum', stale && 'animate-pulse-soft')} data-review-amounts="" title={held ? heldText(exact) : undefined}>
+            {held ? (
+              `${CREATE.review.about} ${heldText(amount)}`
+            ) : quoting ? (
+              // The figures are on their way: the page's resting bubble, never a digit (components/ui.tsx Skeleton).
+              <Skeleton className="inline-block h-[1.25em] w-48 max-w-full align-middle" />
+            ) : (
+              CREATE.page.notChosen
+            )}
           </p>
           {inputs.length > 0 && (
-            <p className="dm-flow-headline-line tnum" data-review-inputs="">
-              {JOURNEY.review.youPut} {inputs.map((input) => amount(input.token, input.amount)).join(' + ')}.
+            // What goes in, as the wallet is asked to allow it: the same figure, rounded up, every digit in the title.
+            <p className="dm-flow-headline-line tnum" data-review-inputs="" title={inputs.map((input) => exact(input.token, input.amount)).join(' + ')}>
+              {JOURNEY.review.youPut} {inputs.map((input) => owed(input.token, input.amount)).join(' + ')}.
             </p>
           )}
           <p className="dm-flow-headline-line tnum" data-review-range="">
@@ -141,7 +235,57 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
               ? `1 ${l0} = ${priceText(both.forward.low)} to ${priceText(both.forward.high)} ${l1} · 1 ${l1} = ${priceText(both.inverse.low) ?? '—'} to ${priceText(both.inverse.high) ?? '—'} ${l0}`
               : range ? CREATE.review.summary.rangeTicks(range.lower, range.upper) : CREATE.page.notChosen}
           </p>
+          {/* A new pool's starting price, in view: the box to tick below speaks of "this price" (§2.6.5). */}
+          {facts?.initialPrice && (
+            <p className="dm-flow-headline-line tnum" data-fact="review-start">
+              {`${JOURNEY.newPool.price}: 1 ${l0} = ${facts.initialPrice.price0In1} ${l1} · 1 ${l1} = ${facts.initialPrice.price1In0} ${l0}`}
+            </p>
+          )}
+          {facts && (
+            // §2.8, one line: "Domino fee: 3.25 USDG (0.65% of 500 USDG swapped)", or "No Domino fee".
+            <p className="dm-flow-headline-line tnum" data-review-fee={fee ? 'charged' : 'none'} data-review-fee-state={fee ? 'charged' : 'none'}>
+              {fee ? (
+                <>
+                  {JOURNEY.review.fee}: <span data-review-fee-amount="" title={exact(fee.token, fee.amount)}>{owed(fee.token, fee.amount)}</span> (
+                  <span data-review-fee-base="" title={JOURNEY.review.feeBase(exact(fee.token, fee.basis))}>{JOURNEY.review.feeBase(amount(fee.token, fee.basis))}</span>)
+                </>
+              ) : (
+                JOURNEY.review.noFee
+              )}
+            </p>
+          )}
+          {facts && (
+            // §2.4, one line: the plan's cost and the approvals still to send (each read at the review, ./run.ts). Changed
+            // on purpose 2026-10-06 (the review of the owner's point 4: no jargon, no bare dash in view): a part that could
+            // not be read (the plan's L1 data fee, or an approval that waits for an earlier one) is one plain clause beside
+            // the figure, never a 0 and never left out; Details says which part. With no figure yet, the resting bubble
+            // while a step is checked, else the words (a signature first: no transaction to read a fee from yet).
+            <p
+              className="dm-flow-headline-line tnum"
+              data-review-network-fee={network.kind}
+              data-review-network-wei={network.kind === 'unknown' ? undefined : network.wei.toString()}
+              data-review-network-others={network.kind === 'about' && network.othersMissing ? 'unprepared' : undefined}
+              data-review-l1-fee={l1Fee && l1Fee.status === 'ok' ? l1Fee.wei.toString() : 'unavailable'}
+            >
+              {JOURNEY.review.networkFee}:{' '}
+              {network.kind === 'about'
+                ? JOURNEY.review.networkAbout(ethAboutText(network.wei))
+                : network.kind === 'upTo'
+                  ? JOURNEY.review.networkUpTo(ethText(network.wei))
+                  : !stale && kept.steps.some((step) => step.status === 'preparing')
+                    ? <Skeleton className="inline-block h-[1em] w-24 align-middle" />
+                    : JOURNEY.review.networkLater}
+              {network.kind === 'about' && (network.l1Missing || network.othersMissing) && `, ${JOURNEY.review.networkMore}`}
+            </p>
+          )}
         </div>
+        {short && (
+          // Said once, here in view (Changed on purpose 2026-10-06, the review of the owner's point 4): what the wallet has
+          // of the token it lacks, what the position needs, and the two ways on; Create position's line only says why it waits.
+          <Note data-review-short={short.token}>
+            {JOURNEY.review.walletShort(amount(short.token, short.have), owed(short.token, short.need), labelOf(book, short.token), short.token === ZERO_ADDRESS, short.bring)}
+          </Note>
+        )}
         {slippage > JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS && <Note data-review-slippage-warning="">{JOURNEY_HIGH_SLIPPAGE_COPY}</Note>}
         {inside === false && <Note data-review-position="">{CREATE.review.outOfRange}</Note>}
         {warnings.map((warning) => (
@@ -163,149 +307,136 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
         )}
       </section>
 
-      {facts && figures && (
-        <section aria-labelledby="zap-plan-heading" className="dm-flow-section" data-review-plan="">
-          <h3 id="zap-plan-heading" className="sr-only">
-            {CREATE.review.details}
-          </h3>
-          <dl className="dm-flow-facts">
-            {facts.initialPrice && (
-              <Fact label={JOURNEY.newPool.price} data="review-start">
-                {`1 ${l0} = ${facts.initialPrice.price0In1} ${l1} · 1 ${l1} = ${facts.initialPrice.price1In0} ${l0}`}
-              </Fact>
-            )}
-            {figures.legs.map((leg, i) => (
-              <Fact key={i} label={figures.legs.length > 1 ? `${JOURNEY.review.route} ${i + 1}` : JOURNEY.review.route} data={`route-leg-${i}`}>
-                <span className="block">{amount(leg.tokenIn, leg.amountIn)} → {labelOf(book, leg.tokenOut)}</span>
-                <span className="block text-fg-muted">{JOURNEY.review.expected} {amount(leg.tokenOut, leg.expectedOut)}</span>
-                <span className="block" data-review-at-least="">{JOURNEY.review.atLeast} {amount(leg.tokenOut, leg.minAmountOut)}</span>
-                <span className="block text-fg-subtle">
-                  {/* Each pool of the leg by its tier; the DEX says "Uniswap", its version in the title only (./parts.tsx PoolChips' rule). */}
-                  {leg.pools.map((p, j) => (
-                    <span key={j} title={dexName(p.dex)} data-route-pool-dex={p.dex}>{`${j > 0 ? ', ' : ''}Uniswap · ${feePercent(p.fee)}`}</span>
-                  ))}
-                  {leg.asQuoted ? ` (${JOURNEY.review.asQuoted})` : ''}
-                </span>
-              </Fact>
-            ))}
-            <Fact label={fee ? JOURNEY.review.fee : JOURNEY.review.noFee} data="review-fee" attrs={{ 'data-review-fee-state': fee ? 'charged' : 'none' }}>
-              {fee ? (
-                <>
-                  <span className="block" data-review-fee-amount="">{amount(fee.token, fee.amount, 18)}</span>
-                  <span className="block">
-                    <span className="dm-chip" data-review-fee-base="">{JOURNEY.review.feeBase(amount(fee.token, fee.basis, 18))}</span>
-                  </span>
-                  <span className="block text-fg-subtle">{JOURNEY.review.feeEstimate}</span>
-                </>
-              ) : (
-                '—'
-              )}
-            </Fact>
-            <Fact label={JOURNEY.review.goesIn} data="review-liquidity">
-              <span className="block">{`${amount(pool.pool.currency0, facts.expected.amounts[0])} + ${amount(pool.pool.currency1, facts.expected.amounts[1])}`}</span>
-            </Fact>
-            <Fact label={JOURNEY.review.leftovers} data="review-leftovers">
-              {facts.expected.returned.length === 0 ? JOURNEY.review.leftoversNone : facts.expected.returned.map((item) => <span key={item.token} className="block">{amount(item.token, item.amount)}</span>)}
-            </Fact>
-            <Fact label={JOURNEY.review.networkFee} data="review-network-fee">
-              <span className="block">{known.length > 0 ? JOURNEY.review.networkFeeUpTo(ethText(feeSum)) : JOURNEY.review.networkFeeLater}</span>
-              {cost !== null && <span className="block text-fg-muted" data-review-network-quoted="">{JOURNEY.review.networkFeeQuoted(ethText(cost.total))}</span>}
-              {cost !== null && cost.ceiling !== null && <span className="block text-fg-subtle">{JOURNEY.review.networkFeeCeiling(ethText(cost.ceiling))}</span>}
-              <span className="block text-fg-subtle" data-review-l1-fee={l1Fee && l1Fee.status === 'ok' ? l1Fee.wei.toString() : 'unavailable'}>
-                {JOURNEY.review.l1Fee}: {l1Fee && l1Fee.status === 'ok' ? ethText(l1Fee.wei) : <FigureDash reason={JOURNEY.review.l1Unavailable} />}
-              </span>
-            </Fact>
-            <Fact label={JOURNEY.review.deadline} data="review-deadline">
-              <span className="block">{JOURNEY.review.deadlineValue(spanText(figures.quoteLeft))}</span>
-              <span className="block text-fg-subtle">{JOURNEY.review.signedFor(spanText(Number(facts.deadline) - facts.requestedAt))}</span>
-            </Fact>
-          </dl>
-        </section>
-      )}
-
-      {facts && (
-        smaller !== null ? (
-          <Note data-review-smaller={smaller}>{JOURNEY.review.smaller(smaller)}</Note>
-        ) : (
-          <Note data-review-smaller="unreported">
-            {JOURNEY.review.goesIn}: <FigureDash reason="Not reported" />
-          </Note>
-        )
-      )}
-
       {facts && figures?.createsPool && (
         <Tick checked={confirmed} onChange={onConfirmed} data-new-pool-confirm="">
           {NEW_POOL_CONFIRM_COPY}
         </Tick>
       )}
 
-      <section aria-labelledby="zap-steps-heading" className="dm-flow-section">
-        <h3 id="zap-steps-heading" className="dm-flow-subtitle">
-          {CREATE.review.steps}
-        </h3>
-        {gate.mode === 'preview' ? (
-          <p role="status" className="dm-flow-position" data-tone="neutral" data-v2-locked="" data-wallet-steps="locked">
-            <span>{gate.lockedCopy}</span>
-          </p>
-        ) : view.steps.length === 0 ? (
-          <p className="dm-flow-position" data-tone="neutral" data-wallet-steps="pending">
-            <span>{view.stage === 'quoting' ? JOURNEY.review.quoting : CREATE.page.notChosen}</span>
-          </p>
-        ) : (
-          <ol className="dm-flow-wsteps" data-wallet-steps={view.reviewed?.path ?? ''} data-live={view.busy ? '' : undefined} aria-live="polite">
-            {view.steps.map((step, index) => {
-              const caption = view.busy || step.status !== 'waiting' ? LIVE[step.status] || stepDetail(step) : stepDetail(step)
-              const marker = markerOf(step)
-              return (
-                <li key={`${step.kind}-${index}`} data-wallet-step={step.kind} data-step-status={step.status} data-step-state={marker === 'done' ? 'done' : step.status === 'wallet' ? 'wallet' : step.status === 'sent' ? 'chain' : step.status === 'preparing' ? 'reading' : undefined}>
-                  <span aria-hidden="true" className="dm-step-marker" data-state={marker}>
-                    {marker === 'done' ? '✓' : index + 1}
-                  </span>
-                  <span className="dm-flow-wstep-body">
-                    <span className="dm-flow-wstep-title">
-                      <span>{stepTitle(step, (token, raw) => amount(token, raw), (token) => labelOf(book, token), permit2)}</span>
+      {/* The wallet's steps once a review lists them; before that, nothing here ("Getting a quote…" is said once, under Create position). */}
+      {(gate.mode === 'preview' || kept.steps.length > 0) && (
+        <section aria-labelledby="zap-steps-heading" className="dm-flow-section">
+          <h3 id="zap-steps-heading" className="dm-flow-subtitle">
+            {CREATE.review.steps}
+          </h3>
+          {gate.mode === 'preview' ? (
+            <p role="status" className="dm-flow-position" data-tone="neutral" data-v2-locked="" data-wallet-steps="locked">
+              <span>{gate.lockedCopy}</span>
+            </p>
+          ) : (
+            <ol
+              className={cx('dm-flow-wsteps', stale && 'opacity-60 transition-opacity')}
+              data-wallet-steps={reviewed?.path ?? ''}
+              data-live={view.busy ? '' : undefined}
+              aria-live="polite"
+              aria-busy={stale || undefined}
+            >
+              {kept.steps.map((step, index) => {
+                const caption = captionOf(step, index, next, view.busy, stale)
+                const marker = markerOf(step, stale)
+                const row = marker === 'done' ? 'done' : stale ? undefined : step.status === 'wallet' ? 'wallet' : step.status === 'sent' ? 'chain' : step.status === 'preparing' ? 'reading' : undefined
+                const label = (token: Address) => labelOf(book, token)
+                // An amount to allow rounded up, as the wallet will ask for it; every digit in the title.
+                const title = stepTitle(step, owed, label, permit2)
+                const whole = stepTitle(step, exact, label, permit2)
+                return (
+                  <li key={`${step.kind}-${index}`} data-wallet-step={step.kind} data-step-status={step.status} data-step-state={row}>
+                    <span aria-hidden="true" className="dm-step-marker" data-state={marker}>
+                      {marker === 'done' ? '✓' : index + 1}
                     </span>
-                    <span className="dm-flow-wstep-note">
-                      {caption}
-                      {step.feeWei !== null && step.status !== 'included' && step.status !== 'finalized' && (
-                        <span data-step-fee="">{caption ? ' · ' : ''}{JOURNEY.review.networkFee}: {JOURNEY.review.networkFeeUpTo(ethText(step.feeWei))}</span>
-                      )}
+                    <span className="dm-flow-wstep-body">
+                      <span className="dm-flow-wstep-title">
+                        <span title={whole}>{title}</span>
+                      </span>
+                      {caption && <span className="dm-flow-wstep-note">{caption}</span>}
                     </span>
-                  </span>
-                </li>
-              )
-            })}
-          </ol>
-        )}
-      </section>
+                  </li>
+                )
+              })}
+            </ol>
+          )}
+        </section>
+      )}
 
-      {figures && facts && (
-        <details className="dm-details dm-flow-advanced" data-review-details="">
+      {figures && facts && reviewed && intent && (
+        // The developer facts stay on the element for tests and support, never as text (2026-10-06, the owner's point 4).
+        <details
+          className={cx('dm-details dm-flow-advanced', stale && 'opacity-60 transition-opacity')}
+          data-review-details=""
+          data-plan-hash={reviewed.review.intentHash}
+          data-routes-hash={intent.routesHash}
+          data-nonce={intent.nonce.toString()}
+          data-deadline={intent.deadline.toString()}
+          data-zap={reviewed.review.zap}
+          data-consent={`${reviewed.path} ${reviewed.consent.reason} ${reviewed.consent.account} ${reviewed.consent.atomic}`}
+          data-liquidity={`${facts.expected.liquidity.toString()} ${facts.minimums.liquidity.toString()}`}
+          data-gas-units={facts.gasUnits === null ? '' : facts.gasUnits.toString()}
+          data-l1-wei={l1Fee && l1Fee.status === 'ok' ? `${l1Fee.wei.toString()} ${l1Fee.source}` : `unavailable ${l1Fee?.source ?? ''}`.trim()}
+          data-quote={`${facts.contractVersion} ${facts.block.number.toString()} ${facts.simulation.status} ${facts.routing}`}
+        >
           <summary>
             <span>{CREATE.review.details}</span>
           </summary>
-          <dl className="dm-flow-facts">
-            <Fact label={JOURNEY.review.network} data="details-network">{chain.name}</Fact>
-            <Fact label={CREATE.amount.slippageLabel} data="details-slippage">{`${figures.request.slippageBps / 100}%`}</Fact>
-            {range && <Fact label={CREATE.review.detailRows.ticks} data="details-ticks">{`${range.lower} to ${range.upper}`}</Fact>}
-            <Fact label={CREATE.review.detailRows.contracts} data="details-tokens">
-              <span className="block">{pool.pool.currency0 === ZERO_ADDRESS ? `ETH (${CREATE.review.detailRows.native})` : pool.pool.currency0}</span>
-              <span className="block">{pool.pool.currency1}</span>
-            </Fact>
-            <Fact label={CREATE.review.detailRows.pool} data="details-pool">{pool.id}</Fact>
-            {view.reviewed && <Fact label="Plan hash" data="details-intent">{view.reviewed.review.intentHash}</Fact>}
-            <Fact label="Route hash" data="details-routes">{figures.reply.plan.plan.intent.routesHash}</Fact>
-            <Fact label="Signature nonce" data="details-nonce">{figures.reply.plan.plan.intent.nonce.toString()}</Fact>
-            <Fact label="Deadline" data="details-deadline">{figures.reply.plan.plan.intent.deadline.toString()}</Fact>
-            <Fact label="Domino contract" data="details-zap">{view.reviewed ? view.reviewed.review.zap : '—'}</Fact>
-            {facts.initialPrice && <Fact label="Starting sqrt price" data="details-start-sqrt">{facts.initialPrice.sqrtPriceX96.toString()}</Fact>}
-            {facts.initialPrice && <Fact label={JOURNEY.newPool.tick} data="details-start-tick">{String(facts.initialPrice.tick)}</Fact>}
-            {view.reviewed && <Fact label="Consent" data="details-consent">{`${view.reviewed.path} (${view.reviewed.consent.reason}; account ${view.reviewed.consent.account}; batches ${view.reviewed.consent.atomic})`}</Fact>}
-            <Fact label="Liquidity" data="details-liquidity">{`${facts.expected.liquidity.toString()} (minimum ${facts.minimums.liquidity.toString()})`}</Fact>
-            <Fact label="Gas (L2)" data="details-gas">{facts.gasUnits === null ? '—' : facts.gasUnits.toString()}</Fact>
-            <Fact label={JOURNEY.review.l1Fee} data="details-l1">{l1Fee && l1Fee.status === 'ok' ? `${l1Fee.wei.toString()} wei (${l1Fee.source})` : `unavailable (${l1Fee?.source ?? '—'})`}</Fact>
-            <Fact label="Quote" data="details-quote">{`${facts.contractVersion}, block ${facts.block.number.toString()}, simulation ${facts.simulation.status}, routing ${facts.routing}`}</Fact>
-          </dl>
+          <div className="grid gap-3">
+            {(smaller !== null || paysEth) && (
+              <div className="grid gap-2 pt-2">
+                {smaller !== null && <Note data-review-smaller={smaller}>{JOURNEY.review.smaller(smaller)}</Note>}
+                {paysEth && <Note data-review-warning="eth_direct">{JOURNEY.review.ethDirect}</Note>}
+              </div>
+            )}
+            <dl className="dm-flow-facts" data-review-plan="">
+              {figures.legs.map((leg, i) => (
+                <Fact key={i} label={figures.legs.length > 1 ? `${JOURNEY.review.route} ${i + 1}` : JOURNEY.review.route} data={`route-leg-${i}`}>
+                  <span className="block" title={exact(leg.tokenIn, leg.amountIn)}>{amount(leg.tokenIn, leg.amountIn)} → {labelOf(book, leg.tokenOut)}</span>
+                  <span className="block text-fg-muted" title={exact(leg.tokenOut, leg.expectedOut)}>{JOURNEY.review.expected} {amount(leg.tokenOut, leg.expectedOut)}</span>
+                  <span className="block" data-review-at-least="" title={exact(leg.tokenOut, leg.minAmountOut)}>{JOURNEY.review.atLeast} {amount(leg.tokenOut, leg.minAmountOut)}</span>
+                  <span className="block text-fg-subtle">
+                    {/* Each pool of the leg by its tier; the DEX says "Uniswap", its version in the title only (./parts.tsx PoolChips' rule). */}
+                    {leg.pools.map((p, j) => (
+                      <span key={j} title={dexName(p.dex)} data-route-pool-dex={p.dex}>{`${j > 0 ? ', ' : ''}Uniswap · ${feePercent(p.fee)}`}</span>
+                    ))}
+                    {leg.asQuoted ? ` (${JOURNEY.review.asQuoted})` : ''}
+                  </span>
+                </Fact>
+              ))}
+              <Fact label={JOURNEY.review.leftovers} data="review-leftovers">
+                {facts.expected.returned.length === 0
+                  ? JOURNEY.review.leftoversNone
+                  : facts.expected.returned.map((item) => <span key={item.token} className="block" title={exact(item.token, item.amount)}>{amount(item.token, item.amount)}</span>)}
+              </Fact>
+              {/* §2.4: the plan's L1 data fee per stack (Robinhood's a measured 0, an unread one a dash), and Base's ceiling
+                  under a label of its own (with the approvals the line in view counts, so never below it). */}
+              {network.kind === 'about' && network.ceiling !== null && (
+                <Fact label={JOURNEY.review.networkCeiling} data="review-network-fee">
+                  {ethText(network.ceiling)}
+                  {network.othersMissing && (
+                    <>
+                      {' + '}
+                      {JOURNEY.review.networkOthers} <FigureDash reason={JOURNEY.review.networkUnknown} />
+                    </>
+                  )}
+                </Fact>
+              )}
+              <Fact label={JOURNEY.review.l1Fee} data="review-l1-fee">
+                {l1Fee && l1Fee.status === 'ok' ? ethText(l1Fee.wei) : <FigureDash reason={JOURNEY.review.l1Unavailable} />}
+              </Fact>
+              <Fact label={JOURNEY.review.deadline} data="review-deadline">
+                <span className="block">{JOURNEY.review.deadlineValue(spanText(figures.quoteLeft))}</span>
+                <span className="block text-fg-subtle">{JOURNEY.review.signedFor(spanText(Number(facts.deadline) - facts.requestedAt))}</span>
+              </Fact>
+              <Fact label={JOURNEY.review.network} data="details-network">{chain.name}</Fact>
+              <Fact label={CREATE.amount.slippageLabel} data="details-slippage">{`${figures.request.slippageBps / 100}%`}</Fact>
+              {range && <Fact label={CREATE.review.detailRows.ticks} data="details-ticks">{`${range.lower} to ${range.upper}`}</Fact>}
+              <Fact label={CREATE.review.detailRows.contracts} data="details-tokens">
+                <span className="block">{pool.pool.currency0 === ZERO_ADDRESS ? `ETH (${CREATE.review.detailRows.native})` : pool.pool.currency0}</span>
+                <span className="block">{pool.pool.currency1}</span>
+              </Fact>
+              <Fact label={CREATE.review.detailRows.pool} data="details-pool">{pool.id}</Fact>
+              {/* §8.2 "Criar pool": the starting price's exact tick and sqrt price, with the price itself in view above. */}
+              {facts.initialPrice && <Fact label={JOURNEY.newPool.tick} data="details-start-tick">{String(facts.initialPrice.tick)}</Fact>}
+              {facts.initialPrice && <Fact label={JOURNEY.newPool.sqrt} data="details-start-sqrt">{facts.initialPrice.sqrtPriceX96.toString()}</Fact>}
+            </dl>
+          </div>
         </details>
       )}
     </div>
@@ -321,11 +452,16 @@ function Fact({ label, data, children, attrs }: { label: ReactNode; data: string
   )
 }
 
-/** Why Create position cannot be pressed yet, or what pressing it does (the line under it, today's #create-reason). */
+/**
+ * Why Create position cannot be pressed yet, or what pressing it does (the line under it, today's #create-reason). While
+ * a quote is asked it is the one place that says so (Changed on purpose 2026-10-06, the owner's point 4: once, not three
+ * times), "Getting a fresh quote…" when the same choices are quoted again, whatever the reason (a price that moved, a
+ * quote that ran out, a cancelled signature).
+ */
 function reasonOf(gate: Gate, view: RunView, blockedForPrice: boolean, connected: boolean): string {
   if (gate.mode === 'preview') return gate.lockedCopy
   if (!connected) return JOURNEY.final.reasonNoWallet
-  if (view.stage === 'quoting') return JOURNEY.final.reasonQuote
+  if (view.stage === 'quoting') return view.requoting ? JOURNEY.review.requoting : JOURNEY.final.reasonQuote
   if (view.busy) return JOURNEY.final.reasonBusy
   if (blockedForPrice) return JOURNEY.final.reasonTick
   if (view.error) return JOURNEY.final.reasonAgain
@@ -350,7 +486,10 @@ export function FinalControl({ gate, view, blockedForPrice, connected, onRun, on
   onRejected: () => void
 }) {
   const done = view.receipt !== null
+  // Not while the current step is still being checked (2026-10-06: the review now also reads the later approvals' fees,
+  // ./run.ts): a press then would do nothing.
   const ready = gate.mode === 'live' && view.stage === 'reviewed' && view.reviewed !== null && view.steps.length > 0 && !view.busy && !blockedForPrice && !done && !view.cancel
+    && view.steps[view.current]?.status !== 'preparing'
     && view.steps.some((step) => step.status === 'ready' || step.status === 'waiting') && !view.steps.some((step) => step.status === 'unknown' || (step.status === 'sent' && view.error !== null))
   return (
     <>
@@ -361,14 +500,14 @@ export function FinalControl({ gate, view, blockedForPrice, connected, onRun, on
         className="w-full"
         data-create-position={done ? 'done' : view.busy ? 'running' : gate.mode}
         aria-describedby={done ? 'created-title' : 'create-reason'}
-        aria-busy={view.busy || undefined}
+        aria-busy={view.busy || view.stage === 'quoting' || undefined}
         disabled={!ready}
         onClick={onRun}
       >
         {view.busy ? JOURNEY.final.creating : done ? JOURNEY.final.created : JOURNEY.final.create}
       </Button>
       {!done && (
-        <p id="create-reason" className="dm-flow-reason" data-align="start" data-zap-reason={gate.mode}>
+        <p id="create-reason" className="dm-flow-reason" data-align="start" data-zap-reason={gate.mode} data-zap-quoting={view.stage === 'quoting' ? '' : undefined} aria-live="polite">
           {reasonOf(gate, view, blockedForPrice, connected)}
         </p>
       )}
@@ -400,16 +539,22 @@ export function FinalControl({ gate, view, blockedForPrice, connected, onRun, on
  * its NFT in the wallet, then the receipt read from the zap's own events and matched to the plan by its intentHash (spec
  * §2.11): what was paid in, each swap as measured, the Domino fee as FeeCharged says it, what went into the position,
  * what came back, the network fee from the receipt (Base adds its L1 data fee), and "Included", then "Finalized" (a delay
- * is never a failure). No USD.
+ * is never a failure). No USD. Changed on purpose 2026-10-06 (the owner's point 4): each amount rounded to at most 6
+ * decimals, every digit in its title; FeeCharged's exact amount stays in the fee's title and its data-receipt-fee
+ * (spec L1024), the fee itself rounded up as Review's fee line is (never shown lower than it is), and what was paid in as
+ * Review's "You put in" (the same figure above it). Changed on purpose 2026-10-06 (the review of the owner's point 5):
+ * Auto-exit offered beside the position's link (CreatedExit).
  */
 function Created({ view }: { view: RunView }) {
   const receipt = view.receipt
   const reviewed = view.reviewed
   if (!receipt || !reviewed) return null
   const chainId = reviewed.review.chainId
-  const pool = reviewed.review.plan.plan.intent.pool
+  const intent = reviewed.review.plan.plan.intent
+  const pool = intent.pool
+  const facts = reviewed.reply.facts
   const book = tokenBook(chainId)
-  const amount = (token: Address, raw: bigint) => amountText(book, token, raw, 18)
+  const amount = (token: Address, raw: bigint, round: 'down' | 'up' = 'down'): ReactNode => <span title={amountText(book, token, raw, EXACT_FRACTION)}>{amountText(book, token, raw, SHOWN_FRACTION, round)}</span>
   const read = receipt.read
   const tokenId = read?.summary.tokenId ?? null
   const state = receipt.state === 'finalized' ? JOURNEY.live.finalized : receipt.state === 'included' ? JOURNEY.live.included : JOURNEY.created.pending
@@ -435,7 +580,8 @@ function Created({ view }: { view: RunView }) {
       </dl>
       {tokenId !== null && (
         <nav className="dm-created-choices" aria-labelledby="created-title">
-          <a className="dm-created-choice" href={v2PositionHref({ chainId, dex: pool.dex, tokenId })} aria-label={JOURNEY.created.view} data-created-next="position">
+          {/* The page waits for read-v6 to list the position it opens (lib/automate/autoExitAsk.ts, 2026-10-06). */}
+          <a className="dm-created-choice" href={v2PositionHref({ chainId, dex: pool.dex, tokenId })} onClick={() => expectNewPosition(exitOrderKey(tokenId.toString(), chainId, pool.dex))} aria-label={JOURNEY.created.view} data-created-next="position">
             <span className="dm-created-art" aria-hidden="true">
               <PlainArt />
             </span>
@@ -448,20 +594,68 @@ function Created({ view }: { view: RunView }) {
               <IconChevronRight size={16} />
             </span>
           </a>
+          <CreatedExit chainId={chainId} dex={pool.dex} tokenId={tokenId} offer={exitOffer(intent.tickLower, intent.tickUpper, pool.tickSpacing, facts.pool.tick ?? facts.initialPrice?.tick ?? null)} />
         </nav>
       )}
     </section>
   )
 }
 
-function ReceiptRow({ line, amount }: { line: ReceiptLine; amount: (token: Address, raw: bigint) => string }) {
+/**
+ * Added 2026-10-06 (the review of the owner's point 5; rugged97: "someone makes an LP to buy or sell; when the price hits
+ * the edge of the range we close the position automatically"): Auto-exit beside the position's link, as today's created
+ * view offers it on Robinhood Chain (components/create/CreatedNext.tsx), for every position this view shows (Base, Arbitrum
+ * One, and the zap path's): recommended when the range sits beside the plan's price, never offered for a range that covers
+ * every price (present.ts exitOffer). Only where Auto-exit opens on that network (the vault's and Auto-exit's gates, as the
+ * position's page asks them). It opens the position's page with Auto-exit's dialog asked for (lib/automate/autoExitAsk.ts),
+ * which the page's automation panel opens once it offers it there, by the panel's own key (../autoexit/entry.ts).
+ */
+function CreatedExit({ chainId, dex, tokenId, offer }: { chainId: V2ChainId; dex: Dex; tokenId: bigint; offer: ReturnType<typeof exitOffer> }) {
+  const vault = useGate('vault', chainId)
+  const exit = useGate('autoExit', chainId)
+  if (offer === 'none' || !gateOpen(vault) || !gateOpen(exit)) return null
+  const beside = offer === 'recommended'
+  return (
+    <a
+      className="dm-created-choice"
+      href={v2PositionHref({ chainId, dex, tokenId })}
+      onClick={() => askAutoExitOnArrival(exitOrderKey(tokenId.toString(), chainId, dex))}
+      data-created-next="autoexit"
+      data-created-recommended={beside ? '' : undefined}
+    >
+      <span className="dm-created-art" aria-hidden="true">
+        <ExitThumb />
+      </span>
+      <span className="dm-created-text">
+        <span className="dm-created-name">
+          {AUTO_EXIT_FEATURE.name}
+          <span className="dm-created-fee"> · {AUTO_EXIT_FEATURE.fee}</span>
+          {beside && (
+            <>
+              {' '}
+              <Pill tone="accent" className="dm-created-pill">{JOURNEY.created.recommended}</Pill>
+            </>
+          )}
+        </span>
+        <span className="dm-created-note">{AUTO_EXIT_FEATURE.line}</span>
+      </span>
+      <span className="dm-created-go">
+        <span className="dm-created-go-text">{JOURNEY.created.turnOn}</span>
+        <IconChevronRight size={16} />
+      </span>
+    </a>
+  )
+}
+
+function ReceiptRow({ line, amount }: { line: ReceiptLine; amount: (token: Address, raw: bigint, round?: 'down' | 'up') => ReactNode }) {
   switch (line.kind) {
     case 'paid-in':
-      return <Fact label={JOURNEY.created.paidIn} data="receipt-paid-in">{amount(line.token, line.amount)}</Fact>
+      // What went in, rounded up as Review's "You put in" and each "Allow" write it: one figure on one screen (2026-10-06).
+      return <Fact label={JOURNEY.created.paidIn} data="receipt-paid-in">{amount(line.token, line.amount, 'up')}</Fact>
     case 'swapped':
-      return <Fact label={JOURNEY.created.swapped} data="receipt-swapped">{`${amount(line.tokenIn, line.amountIn)} → ${amount(line.tokenOut, line.amountOut)}`}</Fact>
+      return <Fact label={JOURNEY.created.swapped} data="receipt-swapped">{amount(line.tokenIn, line.amountIn)} → {amount(line.tokenOut, line.amountOut)}</Fact>
     case 'fee':
-      return <Fact label={JOURNEY.created.fee} data="receipt-fee" attrs={{ 'data-receipt-fee': line.amount.toString() }}>{amount(line.token, line.amount)}</Fact>
+      return <Fact label={JOURNEY.created.fee} data="receipt-fee" attrs={{ 'data-receipt-fee': line.amount.toString() }}>{amount(line.token, line.amount, 'up')}</Fact>
     case 'position':
       return (
         <Fact label={JOURNEY.created.added} data={`receipt-position-${line.step}`}>

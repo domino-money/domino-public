@@ -266,6 +266,8 @@ const ENTRIES = [
   ['finance/v2/vault.ts', 'sendWithdrawAllBatch: async (batch: VaultWithdrawBatch,', [], 'refuseUnlessLive(chain.chainId, contracts)'],
   ['finance/v2/vault.ts', 'export async function offerV2Batch(', [], 'refuseUnlessLive(chainId, null)'],
   ['finance/v2/autoExit.ts', 'sendRegisterBatch: async (batch: MandateBatch,', [], 'refuseUnlessLive(chain.chainId, contracts)'],
+  // Added 2026-10-06 (the owner's point 5: Auto-exit as a signature plus ONE batch): the protection-only vault and its order together.
+  ['finance/v2/autoExit.ts', 'sendProtectBatch: async (batch: ProtectBatch,', [], 'refuseUnlessLive(chain.chainId, contracts)'],
   ['finance/v2/autoExit.ts', 'signMandate: (review: MandateReview) => {', ['try {'], 'refuseUnlessLive(chain.chainId, contracts)'],
   ['finance/v2/typedData.ts', 'export async function signV2TypedData(', [], 'refuseUnlessLive(expect.chainId, null)'],
   ['finance/v2/transact.ts', 'function send(prepared: PreparedV2,', ['try {'], 'liveLock()'],
@@ -318,7 +320,9 @@ test('source: the V2 modules invoke a wallet\'s provider in exactly the known pl
   const offers = Object.fromEntries(v2.map((path) => [path, [...read(path).matchAll(/\bofferBatch\(/g)].length]).filter(([, count]) => count > 0));
   // vault.ts: offerV2Batch's one call (the vault's and the auto-exit module's batches); zap.ts: sendBatch's one call.
   assert.deepEqual(offers, { 'finance/v2/vault.ts': 1, 'finance/v2/zap.ts': 1 });
-  assert.equal([...read('finance/v2/autoExit.ts').matchAll(/\bofferV2Batch\(/g)].length, 1, 'auto-exit offers through the vault\'s locked offerV2Batch');
+  // Changed on purpose 2026-10-06 (the owner's point 5): two auto-exit batches, the registration and the one-batch activation
+  // (sendRegisterBatch, sendProtectBatch), both through the vault's locked offerV2Batch.
+  assert.equal([...read('finance/v2/autoExit.ts').matchAll(/\bofferV2Batch\(/g)].length, 2, 'auto-exit offers through the vault\'s locked offerV2Batch');
   for (const path of ['finance/v2/zap.ts', 'finance/v2/vault.ts', 'finance/v2/autoExit.ts', 'finance/v2/direct.ts']) {
     assert.doesNotMatch(read(path), /\b(?:wallet|provider)\.request\(/, `${path} reaches the wallet only through the shared sender`);
   }

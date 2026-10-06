@@ -81,28 +81,47 @@ export const JOURNEY = {
     slippageInvalid: 'Choose between 0.1% and 5%.',
   },
   review: {
-    quoting: 'Getting a quote…',
-    requoting: 'The price moved. Getting a fresh quote…',
+    /**
+     * Said under Create position (FinalControl's line) while the same choices are quoted again; a first quote,
+     * final.reasonQuote. Changed on purpose 2026-10-06 (the review of point 4): no longer "The price moved. …", which
+     * was said of every new quote, also of one that only ran out or followed a cancelled signature.
+     */
+    requoting: 'Getting a fresh quote…',
     network: 'Network',
     pool: 'Pool',
     youPut: 'You put in',
-    goesIn: 'Goes into the position',
     route: 'Swap',
     expected: 'Expected',
     atLeast: 'At least',
     asQuoted: 'as quoted',
+    /**
+     * Changed on purpose 2026-10-06 (the owner's point 4: little text): Review's one fee line, in spec §2.8's words,
+     * "Domino fee: 3.25 USDG (0.65% of 500 USDG swapped)" (ReviewStage.tsx puts the label, the amount and the base
+     * together), or "No Domino fee". The receipt says the exact fee.
+     */
     fee: 'Domino fee',
     feeBase: (swapped: string) => `0.65% of ${swapped} swapped`,
-    feeEstimate: 'As planned; the receipt shows the exact fee.',
     noFee: 'No Domino fee',
     smaller: (percent: string) => `If the price moves within your slippage, your position can be up to ${percent}% smaller. The rest returns to your wallet.`,
     leftovers: 'Comes back to your wallet',
     leftoversNone: 'Nothing',
+    /**
+     * Changed on purpose 2026-10-06 (the owner's point 4): ONE network fee line on Review ("Network fee: about 0.00022
+     * ETH", present.ts networkFeeLine: the plan's cost and the approvals still to send), its ceiling and its L1 data fee
+     * under Details; no fee on each wallet step. Changed on purpose 2026-10-06 (the review of point 4: no jargon and no
+     * bare dash in view): a part that could not be read is `networkMore`, after the figure ("…, plus a little more your
+     * wallet shows before you confirm"); Details' ceiling still names it, "+ other steps —". A fee with no figure at all
+     * (a signature comes first, or nothing may be checked before a box is ticked) is `networkLater`, in words.
+     */
     networkFee: 'Network fee',
-    networkFeeUpTo: (eth: string) => `Up to ${eth}`,
-    networkFeeQuoted: (eth: string) => `About ${eth} (as quoted)`,
-    networkFeeCeiling: (eth: string) => `At most ${eth}`,
-    networkFeeLater: 'Shown before each step',
+    networkAbout: (eth: string) => `about ${eth}`,
+    networkUpTo: (eth: string) => `up to ${eth}`,
+    networkUnknown: 'Your wallet shows it before you confirm',
+    networkLater: 'your wallet shows it before you confirm',
+    networkMore: 'plus a little more your wallet shows before you confirm',
+    networkOthers: 'other steps',
+    /** Base's ceiling, under Details: a label of its own, not a second "Network fee" beside the one in view. */
+    networkCeiling: 'Network fee, at most',
     l1Fee: 'L1 data fee',
     l1Unavailable: 'Not available right now',
     deadline: 'Good for',
@@ -116,13 +135,26 @@ export const JOURNEY = {
     replacesApproval: 'This replaces another app’s permission on this position.',
     planUnavailable: 'The planning service isn’t available yet.',
     planInvalid: 'The quote came back in a form this app does not accept.',
-    walletShort: (have: string, need: string) => `Your wallet has ${have}; this position needs ${need}.`,
+    /**
+     * A wallet short of the amount, said once, in Review's view (Changed on purpose 2026-10-06, the review of point 4: it
+     * was the small line under Create position only): native ETH counted after the network fees Review keeps back, as
+     * today's Review says it, and the two ways on: bringing the token from another network only where Amount's offer can
+     * bring it (`bring`), else adding it to the wallet, today's Review's own words.
+     */
+    walletShort: (have: string, need: string, token: string, afterFees: boolean, bring: boolean) =>
+      `Your wallet has ${have}${afterFees ? ' after network fees' : ''}; this position needs ${need}. Lower the amount, or ${bring ? `bring ${token} from another network` : `add ${token} to your wallet`}.`,
     /** Today's journey on Domino V2 (./JourneyCreateV2.tsx): the plan is asked for the signed-in wallet only. */
     signInForQuote: 'Sign in with your wallet to get the quote. Signing in moves nothing.',
     signIn: 'Sign in',
     custody: 'Your position stays in your wallet. Each action is a single transaction. Domino’s contract keeps nothing afterwards.',
     reviewAgain: 'Review again',
   },
+  /**
+   * The wallet's steps on Review, by their titles. Changed on purpose 2026-10-06 (the owner's point 4: little text): the
+   * line under each step is its live state only once Create position runs ("Confirm in your wallet"); the sentences that
+   * explained each step before (an exact amount, a signature good for 5 minutes, one confirmation for all) are the
+   * wallet's own prompt and the docs' (lib/docs/pages/introduction.ts), no longer a line on every step.
+   */
   steps: {
     resetAllowance: (token: string) => `Reset the ${token} permission to zero`,
     allow: (amount: string) => `Allow ${amount}`,
@@ -130,10 +162,6 @@ export const JOURNEY = {
     signPermit: 'Sign the deposit',
     batch: 'Approve and create the position, all at once',
     create: 'Create the position',
-    detailApprove: 'Lets Domino use this exact amount, never more.',
-    detailSign: 'One signature that carries this plan. It expires in 5 minutes.',
-    detailBatch: 'One confirmation for every step: they run together or not at all.',
-    detailCreate: 'Your position arrives in your wallet. Anything the range doesn’t use comes back to you.',
   },
   live: {
     next: 'Next',
@@ -153,6 +181,8 @@ export const JOURNEY = {
     reasonBusy: 'Confirm in your wallet.',
     reasonAgain: 'Press Create position to try again.',
     reasonQuote: 'Getting a quote…',
+    /** A wallet short of the amount: why Create position waits (Review says what it has and needs, above). */
+    reasonShort: 'Your wallet doesn’t have enough for this amount.',
     reasonTick: 'Tick the box above first.',
     reasonNoWallet: 'Connect a wallet to create this position.',
     permitReverted: 'The transaction failed on the network, so nothing moved. The signature you gave for it can still be used until it expires: cancel it before a new quote.',
@@ -174,5 +204,8 @@ export const JOURNEY = {
     unreadable: 'This receipt can’t be read exactly. Nothing is guessed.',
     positions: 'Your positions',
     view: 'View position',
+    /** Auto-exit beside the position's link (2026-10-06, the review of point 5), in today's created view's words. */
+    recommended: 'Recommended',
+    turnOn: 'Turn on',
   },
 } as const

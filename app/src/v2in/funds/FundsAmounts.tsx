@@ -2,8 +2,9 @@ import { useMemo, useSyncExternalStore } from 'react'
 import { crosschainSessionAccess } from '../../finance/v2/http'
 import type { PairBalancesState } from '../../components/create/usePairBalances'
 import { rawBalances } from '../../components/create/valuation'
+import { wholeFromOther } from '../../lib/create/depositPlan'
 import { candidatesFromPool, takesOnly, type JourneyState } from '../../lib/create/journey'
-import { reviewPlan } from '../../lib/create/reviewPlan'
+import { reviewPlan, reviewTerms } from '../../lib/create/reviewPlan'
 import type { TokenCandidate } from '../../lib/read/screens/tokens'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import { isV2ChainId } from '../../v2/chains'
@@ -11,7 +12,7 @@ import type { V2ChainId } from '../../v2/types'
 import { BringFunds } from './BringFunds'
 import { fundsPage } from './live'
 import { useS2Gate } from './useS2Gate'
-import { lackingTokens } from './model'
+import { keptAmount, lackingTokens } from './model'
 import { fundsServices } from './services'
 
 const ZERO = '0x0000000000000000000000000000000000000000'
@@ -60,21 +61,32 @@ export default function FundsAmounts({
   const planned = reviewPlan(state, raw)
   const typed = state.token ? pool.currencies.findIndex((currency) => currency.address === state.token?.key) : -1
   const independent: 0 | 1 | null = typed === 0 || typed === 1 ? typed : null
+  // Changed on purpose 2026-10-06 (the owner's point 2b): what the other token alone must be for the typed amount
+  // (depositPlan's `whole`, on Review's own terms), so bringing it never means bringing everything held elsewhere.
+  const terms = reviewTerms(state)
+  const wholeOther = planned && terms ? wholeFromOther(terms, planned.independent, planned.need[0], planned.need[1], terms.slippageBps) : null
   const lacks = lackingTokens({
     chainId,
     currencies: [pool.currencies[0], pool.currencies[1]],
     balances: raw,
     plan: planned?.plan ?? null,
-    only: takesOnly(state),
     independent,
+    wholeOther,
   })
   // The amount step's own reading of ETH on the position's chain, when the pool holds ETH.
   const nativeSide = pool.currencies.findIndex((currency) => currency.address === ZERO)
   const nativeOnDestination = raw && (nativeSide === 0 || nativeSide === 1) ? raw[nativeSide] : null
+  // Added 2026-10-06: the amount typed, once the wallet covers it (after an arrival): "Use" keeps it as it is.
+  const keep = keptAmount(planned?.plan ?? null, independent, state.budget, independent !== null ? pool.currencies[independent].symbol : null, independent !== null ? pool.currencies[independent].decimals : null)
+  // Added 2026-10-06 (the integration review): a range beside today's price takes one token alone (the amount step types
+  // the amount in it): the offer brings that one, and never makes the other one the amount's token.
+  const only = takesOnly(state)
+  const takes = only === null ? null : { side: only, symbol: pool.currencies[only].symbol }
 
   const use = (side: 0 | 1, text: string) => {
     if (side === independent) onBudget(text)
-    else onDeposit(candidatesFromPool(pool)[side], text)
+    // The range takes none of that token: the journey's own token stays (the swap pays with what arrived).
+    else if (only === null || side === only) onDeposit(candidatesFromPool(pool)[side], text)
   }
 
   return (
@@ -89,6 +101,10 @@ export default function FundsAmounts({
       lacks={lacks}
       nativeOnDestination={nativeOnDestination}
       poolTokens={[pool.currencies[0].address.toLowerCase(), pool.currencies[1].address.toLowerCase()]}
+      discreet={planned === null}
+      shortSaid
+      keep={keep}
+      takes={takes}
       onUse={use}
       onArrived={onArrived}
     />

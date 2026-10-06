@@ -145,7 +145,8 @@ test('one click on one of Domino\'s networks: switched through wallet/port, read
   const copy = require('../../.test-build/app/src/v2in/funds/copy.js');
   assert.equal(copy.FUNDS_TEXT.youNeed('0.0021 ETH', 'Robinhood Chain'), 'You need 0.0021 ETH more on Robinhood Chain.');
   assert.equal(copy.FUNDS_TEXT.bringFrom, 'Bring it from:');
-  assert.equal(copy.FUNDS_TEXT.howItWorks('Robinhood Chain'), 'Your wallet goes to that network to send it, then comes back to Robinhood Chain. You approve each step in your wallet.');
+  // Changed on purpose 2026-10-06 (the owner's point 4: little text): the how-it-works sentence is gone; one live line says it.
+  assert.equal(copy.FUNDS_TEXT.howItWorks, undefined);
   assert.equal(copy.FUNDS_TEXT.noneThere('ETH, WETH or USDC', 'Base'), 'You have no ETH, WETH or USDC on Base.');
   assert.equal(copy.FUNDS_TEXT.switchingTo('Base'), 'Switching your wallet to Base…');
   assert.equal(copy.FUNDS_TEXT.checking('Base'), 'Checking your balance on Base…');
@@ -156,8 +157,15 @@ test('the decided words: #16\'s discrete line, #29\'s "Get gas on {destination}"
   const copy = require('../../.test-build/app/src/v2in/funds/copy.js');
   assert.equal(copy.bridgeElsewhereLine('0.35%', 'Relay'), 'Domino fee 0.35% · via Relay · you can also bridge with any other service');
   assert.equal(copy.FUNDS_TEXT.gasOffer('Robinhood Chain'), 'Get gas on Robinhood Chain');
-  assert.equal(copy.FUNDS_TEXT.title('USDG', 'Arbitrum'), 'Bring USDG from Arbitrum');
+  // Changed on purpose 2026-10-06 (the integration review: "Bring USDG from Arbitrum One" above "Bring 100 USDC from
+  // Arbitrum One"): once a network is picked, the title names the network alone.
+  assert.equal(copy.FUNDS_TEXT.title('USDG', 'Arbitrum One'), 'Bring funds from Arbitrum One');
   assert.equal(copy.FUNDS_TEXT.title('USDG', null), 'Bring USDG from another network');
+  // The integration review's copy: plain English, the button by its own word.
+  assert.equal(copy.FUNDS_TEXT.allYouHave('Arbitrum One'), "That's all you have on Arbitrum One. It's less than this amount needs.");
+  assert.equal(copy.FUNDS_TEXT.nothingToUse('Robinhood Chain'), 'None of it is in your wallet on Robinhood Chain now.');
+  assert.equal(copy.FUNDS_TEXT.newQuote, 'The quote expired. Here is a new one: press Bring again to continue.');
+  assert.equal(copy.FUNDS_TEXT.newQuoteApproved, 'Your approval went through, but the quote expired. Here is a new one: press Bring again to continue.');
   // Decided [owner, 2026-10-02 evening]: S2's own locked sentence, in place of the gate's about Domino's contracts; said
   // whenever the offer has no service to ask (every gate mode today), on a press of Bring.
   assert.equal(copy.FUNDS_TEXT.locked, "Bringing funds from another network isn't available yet.");
@@ -173,12 +181,59 @@ test('the decided words: #16\'s discrete line, #29\'s "Get gas on {destination}"
 
 
 // Changed on purpose 2026-10-05: the network is the person's one choice; nothing switches the wallet before it.
-test('the offer appears automatically, while wallet network changes wait for the person\'s one choice of network', () => {
+test('the offer appears automatically, while wallet network changes wait for the person\'s one choice of network or of the discreet line', () => {
   const offer = ALL.find(({ path }) => path === 'v2in/funds/BringFunds.tsx').code;
-  assert.match(offer, /const opened = lacks.length > 0/);
+  // Changed on purpose 2026-10-06 (the owner's point 1): or the discreet line's holding, before an amount is typed; the
+  // service's balances are read as the amount step opens, silently, and only the networks it reads are asked.
+  assert.match(offer, /const servedKey = live && \(discreet \|\| lacks\.length > 0 \|\| pick !== null\) \? servedFor : null/, 'read as the step opens, before anything is typed');
+  // Changed on purpose 2026-10-06 (the review): read again, as a new generation, once a deposit or a held step is settled.
+  assert.match(offer, /const servedFor = `\$\{ownKey\}\|\$\{servedGen\}`/);
+  assert.match(offer, /onSettled=\{\(\) => \{\s+setSettled\(\(previous\) => new Set\(previous\)\.add\(d\.record\.depositTxHash\)\)\s+readAgain\(\)/);
+  assert.match(offer, /readChainBalances\(transports\.read, transports\.readRuntime, wallet, balancesRequest\(chainId\)\)/, 'only what model.ts balancesRequest asks');
   assert.doesNotMatch(offer, /setOpened|open=\{opened/);
-  assert.equal([...offer.matchAll(/bringFrom\(/g)].length, 1, 'called from one place only');
-  assert.match(offer, /onClick=\{\(\) => void bringFrom\(id\)\}/, 'from a network button alone');
+  // Changed on purpose 2026-10-06 (the integration review): or the same pick again, from its "Sign in" button once the
+  // person closed the wallet's dialog.
+  assert.deepEqual([...offer.matchAll(/void bringFrom\(([^)]*)\)/g)].map((m) => m[1]).sort(), ['id', 'id as V2ChainId', 'last.origin, last.named', 'line.chainId, line'], 'from a network button, the same network chosen under Change amount, the discreet line, or the same pick again');
+  assert.match(offer, /lastPick\.current = \{ origin, named \}/);
+  assert.match(offer, /onClick=\{\(\) => void bringFrom\(id\)\}/);
+  // Changed on purpose 2026-10-06 (the integration review): usable while a pick waits for a sign-in; never from an origin a
+  // held step keeps closed.
+  assert.match(offer, /const line = discreet && live && lacks\.length === 0 && \(!ownWay \|\| signing\) && !inFlight && servedNow \? bestHolding\(servedNow, chainId, deliverable, closed\) : null/, 'the line only before an amount, only on a live chain, only from what was read, never beside a deposit on its way');
+  // Changed on purpose 2026-10-06 (the integration review): held back as a whole only for a deposit that may still arrive
+  // here; any other held step closes its own origin.
+  assert.match(offer, /const inFlight = holdOffers\(\s+deposits\.map\(\(d\) => \(\{ sentHere: d\.review !== null, hash: d\.record\.depositTxHash \}\)\),\s+settled,\s+held,\s+chainId,\s+\)/);
+  assert.match(offer, /const closed = useMemo\(\(\) => heldOrigins\(held\), \[held\]\)/);
+  assert.match(offer, /const open = sources\.filter\(\(id\) => !closed\.has\(id\)\)/);
+  assert.match(offer, /const networks = open\.map\(/);
+  assert.match(offer, /const showSources = lacks\.length > 0 && !inFlight && /, 'nor the networks');
+  // A deposit this browser follows keeps the box drawn while the balances are read again (its arrival told once).
+  assert.match(offer, /const underWay = ownWay \|\| heldNotice !== null \|\| held\.length > 0 \|\| deposits\.length > 0/);
+  // Never everything held once an amount is typed: a figure, or the amount field for the person.
+  assert.match(offer, /if \(typed && \(needRaw === null \|\| needRaw <= 0n\)\) \{/);
+  assert.match(offer, /await sizeBring\(p, needRaw, latest\.current\.gasFlag, turn, prices\)/);
+  // Changed on purpose 2026-10-06 (the review): the lack and the holding chosen together; the first ask by kind and price,
+  // then sizeStep; a first ask of everything held never stands as the amount; every quote within the cap, let go with the choice.
+  assert.match(offer, /bringChoice\(\{ lacks: latest\.current\.lacks, holdings, destination: chainId, origin, deliverable, prices \}\)/);
+  assert.match(offer, /const first = firstAsk\(\{ need, needDecimals, needKind: kindOf\(chainId, p\.target\), sentDecimals: p\.decimals, sentKind: kindOf\(p\.origin, p\.holding\.token\), available, prices \}\)/);
+  assert.match(offer, /const step = sizeStep\(\{ need, asked: first\.amount, available, minimum: winningMinimum\(probe\.data\.quote\), blind: first\.blind, fee: fixedFeeOf\(probe\.data\.quote\) \}\)/);
+  assert.match(offer, /return services\.client\.quote\(requestFor\(raw\), \{ owner: services\.owner, signal \}\)/, 'a sizing quote stops with its choice');
+  assert.equal([...offer.matchAll(/services\.client\.quote\(/g)].length, 2, 'two places ask a quote: the page\'s own ask and the sizing\'s, both counted');
+  assert.equal([...offer.matchAll(/countQuote\(\)/g)].length, 2);
+  assert.doesNotMatch(offer, /lackFor|firstGuess/);
+  // No Get a quote button and no bridge slippage control (V1's 0.5%); provider names are not listed per token.
+  assert.doesNotMatch(offer, /data-funds-get-quote|data-funds-slippage|providerListed|t\.providers\.join/);
+  assert.match(offer, /slippageBps: FUNDS_DEFAULT_SLIPPAGE_BPS/);
+  const quote = ALL.find(({ path }) => path === 'v2in/funds/QuoteView.tsx').code;
+  assert.doesNotMatch(quote, /\bPill\b|FUNDS_TEXT\.best|quoteTitle|Compare routes/, 'no Quote heading, no Best pill, no second disclosure');
+  assert.equal([...quote.matchAll(/<details/g)].length, 1, 'ONE Details');
+  assert.equal([...quote.matchAll(/data-funds-deposit-button/g)].length, 1, 'ONE button');
+  // The owner's own amount step: the line before an amount, the shortfall said once (PairedAmounts), Use keeping the amount.
+  const amounts = ALL.find(({ path }) => path === 'v2in/funds/FundsAmounts.tsx').code;
+  assert.match(amounts, /discreet=\{planned === null\}/);
+  assert.match(amounts, /\n\s+shortSaid\n/);
+  assert.match(amounts, /wholeFromOther\(terms, planned\.independent, planned\.need\[0\], planned\.need\[1\], terms\.slippageBps\)/, 'on Review\'s own terms');
+  const zap = ALL.find(({ path }) => path === 'v2in/funds/ZapFunds.tsx').code;
+  assert.doesNotMatch(zap, /discreet|shortSaid/, 'the zap path keeps its own sentence and no line');
 });
 
 

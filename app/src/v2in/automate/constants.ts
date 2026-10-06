@@ -28,7 +28,7 @@ export const VAULT_DEFAULT_MODE: 1 | 2 | null = null
 /**
  * Decision #25 (§5.1 "Só proteção"): a protection-only vault starts paused, with Auto-compound and one position recorded
  * because the contract requires a valid mode; nothing is reinvested while it is paused. Turning automation on later asks
- * the mode explicitly (`setPolicy`) before `resume()`. On screen it is "Protection only", never "Paused".
+ * the mode explicitly (`setPolicy`) before `resume()`. On screen it is "Auto-exit" (2026-10-06, the owner's point 5), never "Paused".
  */
 export const VAULT_PROTECTION_ONLY = Object.freeze({ startPaused: true, mode: 1, maxPositions: 1 } as const)
 

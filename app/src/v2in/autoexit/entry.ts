@@ -4,11 +4,11 @@ import { useSyncExternalStore } from 'react'
 export const exitOrderKey = (tokenId: string, chainId = 4663, dex = 4): string => chainId === 4663 && dex === 4 ? tokenId : `${chainId}:${dex}:${tokenId}`
 
 /**
- * A position page's way into its Stop-loss / take-profit from the page's actions row (the owner, 2026-10-04: "it belongs
- * inside the position, as a button there"). The page's automation panel (../automate/PositionAutomation.tsx), which knows
- * whether an order can be set on this position, says so here by NFT id; the "···" menu (../position/MoreActions.tsx)
- * lists the entry only then, and a pick asks that panel to open its order dialog (the same one its own card opens).
- * In this page's memory only: nothing is stored, read or sent here.
+ * A position page's way into its Auto-exit from the page's actions row (the owner, 2026-10-04: "it belongs inside the
+ * position, as a button there"; 2026-10-06, point 5: its name is Auto-exit). The page's automation panel
+ * (../automate/PositionAutomation.tsx), which knows whether Auto-exit can be turned on for this position, says so here by
+ * NFT id; the actions row (../position/MoreActions.tsx) shows the button only then, and a press asks that panel to open
+ * its dialog (the same one its own card opens). In this page's memory only: nothing is stored, read or sent here.
  */
 const offers = new Set<string>()
 const listeners = new Set<() => void>()

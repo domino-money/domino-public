@@ -88,19 +88,22 @@ export function Mark({ chainId, book, token, size = 20 }: { chainId: V2ChainId; 
   return <TokenMark token={markOf(chainId, meta)} size={size} />
 }
 
-/** A raw amount split for a token row: the figure in the token's own units, and its symbol (raw units when unread). */
-export function amountParts(book: TokenBook, token: Address, raw: bigint, maxFraction = 6): { figure: string; symbol: string } {
+/**
+ * A raw amount split for a token row: the figure in the token's own units, and its symbol (raw units when unread).
+ * `round` 'up' for a fee, never shown lower than it is (v2/plan/present.ts formatUnitsText, 2026-10-06).
+ */
+export function amountParts(book: TokenBook, token: Address, raw: bigint, maxFraction = 6, round: 'down' | 'up' = 'down'): { figure: string; symbol: string } {
   const decimals = decimalsOf(book, token)
   const label = labelOf(book, token)
-  return decimals === null ? { figure: formatUnitsText(raw, null), symbol: `${COPY.form.rawUnits} of ${label}` } : { figure: formatUnitsText(raw, decimals, maxFraction), symbol: label }
+  return decimals === null ? { figure: formatUnitsText(raw, null), symbol: `${COPY.form.rawUnits} of ${label}` } : { figure: formatUnitsText(raw, decimals, maxFraction, round), symbol: label }
 }
 
 /** Token amounts as rows: each token's mark, its figure, its symbol; every digit in the row's title. */
-export function Rows({ chainId, book, items, size = 'lg', maxFraction = 6, ...data }: { chainId: V2ChainId; book: TokenBook; items: readonly { token: Address; amount: bigint }[]; size?: 'lg' | 'sm'; maxFraction?: number } & Record<`data-${string}`, string>) {
+export function Rows({ chainId, book, items, size = 'lg', maxFraction = 6, round = 'down', ...data }: { chainId: V2ChainId; book: TokenBook; items: readonly { token: Address; amount: bigint }[]; size?: 'lg' | 'sm'; maxFraction?: number; round?: 'down' | 'up' } & Record<`data-${string}`, string>) {
   return (
     <TokenRows size={size} {...data}>
       {items.map((item, index) => {
-        const parts = amountParts(book, item.token, item.amount, maxFraction)
+        const parts = amountParts(book, item.token, item.amount, maxFraction, round)
         return <TokenRow key={`${item.token}-${index}`} mark={<Mark chainId={chainId} book={book} token={item.token} size={size === 'lg' ? 28 : 16} />} figure={parts.figure} symbol={parts.symbol} title={amountText(book, item.token, item.amount, 18)} />
       })}
     </TokenRows>

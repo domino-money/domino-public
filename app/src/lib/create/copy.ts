@@ -28,18 +28,21 @@ export const CREATE = {
     previewTotal: 'Estimated total',
     stepState: { done: 'done', current: 'current', upcoming: 'not started' },
   },
-  /** The four visual steps of the flow, over the five stages of the state machine. */
+  /**
+   * The four visual steps of the flow, over the five stages of the state machine. Changed on purpose 2026-10-06 (the
+   * owner's point 4: little text, for someone who knows nothing about pools): each lead is one short line.
+   */
   step: {
     // Changed on purpose 2026-10-01 (audit E25): the step asks for a token, then one of its pools, not two tokens.
-    pool: { title: 'Pool', lead: 'Search a token, then pick one of its pools.', caption: 'Choose your tokens' },
-    range: { title: 'Range', lead: 'You earn fees only while the price stays in this range.', caption: 'Set your price window' },
+    pool: { title: 'Pool', lead: 'Search a token, then pick a pool.', caption: 'Choose your tokens' },
+    range: { title: 'Range', lead: 'You earn fees while the price is in your range.', caption: 'Set your price window' },
     // Changed on purpose 2026-10-01 (audit E13, live note L11): a range above or below today's price takes one token
     // alone, so "either token" is said only of a range around the price, and the one-token range has its own lead.
     amount: {
       title: 'Amount',
-      lead: 'Enter an amount in either token; the other fills in.',
+      lead: 'Enter one amount; the other fills in.',
       caption: 'Choose how much',
-      leadOne: (symbol: string) => `This range takes only ${symbol}. Enter how much ${symbol} to put in.`,
+      leadOne: (symbol: string) => `This range takes only ${symbol}. Enter an amount.`,
     },
     review: { title: 'Review', lead: 'Check your position, then confirm in your wallet.', caption: 'Check and confirm' },
   },
@@ -73,7 +76,7 @@ export const CREATE = {
     /** A pool Domino V1's setup contract does not open positions in (DominoSetup.open refuses hooks; a dynamic fee has no fixed key). */
     unsupportedHooks: 'This pool has hooks, and positions can only be created here in pools without hooks. Choose another pool.',
     unsupportedDynamic: 'This pool has a dynamic fee, and positions can only be created here in pools with a fixed fee. Choose another pool.',
-    verifiedAt: (block: number) => `Verified at block ${block}`,
+    // Changed on purpose 2026-10-06 (the owner's point 4): the chosen pool's "Verified at block" tooltip is gone.
     /** The chosen pool's fee, as every fee chip says it (lib/format/fee.ts, audit E21): "Uniswap · 0.30% fee". */
     fee: (fee: string) => feeChipText(fee),
     change: 'Change pool',
@@ -84,9 +87,11 @@ export const CREATE = {
     paired: 'Paired automatically',
     pairGuide: 'These two amounts make up your position. Change either one and the other follows your range.',
     total: 'Estimated total in this position',
-    totalNote: 'Network fees are separate.',
-    totalOneNote: 'Network fees are separate.',
-    totalSwapNote: 'After the estimated swap. Network fees are separate.',
+    // Changed on purpose 2026-10-06 (the owner's point 4: little text): the total's note in a few words. Network fees are
+    // paid in ETH on top, never taken from the position, so they are "extra", not something the total is "before".
+    totalNote: 'Network fees are extra.',
+    totalOneNote: 'Network fees are extra.',
+    totalSwapNote: 'After the swap; network fees are extra.',
     totalUnavailable: 'USD estimate unavailable',
     budgetHint: (decimals: number | null) => (decimals === null ? 'Decimals for this token could not be read.' : `Up to ${decimals} decimal places.`),
     empty: 'Enter an amount to continue.',
@@ -104,9 +109,11 @@ export const CREATE = {
     /** The range step (RangeStep.tsx). */
     now: 'Today’s price',
     widths: 'Range width',
+    // Changed on purpose 2026-10-06 (the owner's point 4: little text): what each width means, in one short line; the
+    // larger window keeps its cost (its fees spread thinner), so it never reads as simply better.
     widthLines: {
-      standard: 'A smaller price window. The price can leave it sooner, so check it more often.',
-      wide: 'A larger price window gives the price more room to move. Fees are spread over a wider range.',
+      standard: 'A smaller window: the price can leave it sooner.',
+      wide: 'A larger window: more room to move, fees spread thinner.',
       custom: 'Set your own lowest and highest price.',
     },
     lowest: 'Lowest price',
@@ -117,9 +124,11 @@ export const CREATE = {
     /** A bound's buttons, for assistive technology. */
     lowerBy: (label: string) => `Lower the ${label.toLowerCase()}`,
     raiseBy: (label: string) => `Raise the ${label.toLowerCase()}`,
+    // Changed on purpose 2026-10-06 (the owner's point 4: little text): what a range beside today's price means, in one
+    // short line; that it takes one token alone is said where the amount is typed (step.amount.leadOne, pairOneSided).
     rangeOut: {
-      below: 'Today’s price is below this range: the position starts with one token only and earns no fees until the price rises into it.',
-      above: 'Today’s price is above this range: the position starts with one token only and earns no fees until the price falls into it.',
+      below: 'No fees until the price rises into this range.',
+      above: 'No fees until the price falls into this range.',
     },
     rangeIn: 'Today’s price is inside this range.',
     /** The preview's calm word for a range beside today's price (PositionPreview.tsx, 2026-09-28, one-sided): no red alarm. */
@@ -147,13 +156,18 @@ export const CREATE = {
     slippageRequired: 'Choose a slippage limit from 0.1% to 5%.',
     slippageExact: 'Exact percentage',
     slippageExactInvalid: 'Enter a percentage from 0.1 to 5, with up to two decimal places.',
-    /** Above 1%: what the tolerance lets the deposit, and any balancing swap, do. Said, never blocked. */
-    slippageWarning: (percent: string) => `${percent} is more than the usual 1%. The deposit can take up to ${percent} more of each token, and a swap can return ${percent} less.`,
+    /**
+     * Above 2% (lib/create/slippage.ts SLIPPAGE_WARN_ABOVE_BPS): said, never blocked, beside the slider, on Setup and on
+     * Review. Changed on purpose 2026-10-06 (the owner's point 4: one rule everywhere): the spec's line and threshold
+     * (F7 §2.9, the owner's decision #29), as Domino V2's journey and position dialogs say it, instead of this flow's own
+     * longer sentence above 1%.
+     */
+    slippageWarning: 'High slippage: you may receive noticeably less than quoted.',
     rangeHeading: 'Price range',
     maxLabel: 'Max',
     connectForBalance: 'Connect a wallet to see your balance.',
+    // Changed on purpose 2026-10-06 (the owner's point 4): the balance line carries no tooltip.
     balanceAt: (block: string | null) => (block ? `Balance at block ${block}:` : 'Balance:'),
-    balanceNote: 'Public chain data at one block. A connection proves nothing about who controls the address.',
     pairUnused: (symbol: string) => `At today’s price this range holds only ${symbol}. Enter the amount in ${symbol}.`,
     pairOneSided: (symbol: string) => `At today’s price this range holds only ${symbol}.`,
     pairUnknown: 'The other amount can’t be worked out right now.',
@@ -256,12 +270,8 @@ export const CREATE = {
     serviceFeeValue: (mode: 'none' | 'compound' | 'domino') => mode === 'none' ? 'No automation service fee' : `${mode === 'domino' ? 4 : 2}% of the fees it uses`,
     /** The slippage row of Review's Details (StageReview.tsx). */
     slippage: (percent: string) => `Slippage tolerance ${percent}`,
-    /**
-     * Above 1%, on Review, where the tolerance itself is inside the closed Details: what the figure is and where it is
-     * changed, then what it allows. Added 2026-09-28 (round 6 review): Review said a bare "3% is more than the usual 1%".
-     */
-    slippageWarning: (percent: string) =>
-      `You let prices move up to ${percent} (Amount › Advanced), more than the usual 1%. The deposit can take up to ${percent} more of each token, and a swap can return ${percent} less.`,
+    // Changed on purpose 2026-10-06 (the owner's point 4): Review warns of a high slippage in the amount step's one line
+    // (amount.slippageWarning, the spec's), no longer a sentence of its own.
     inRange: 'Today’s price is inside this range.',
     outOfRange: 'Today’s price is outside this range, so the position won’t earn fees until the price moves into it.',
     stale: 'The pool price was read more than 5 minutes ago on this page.',

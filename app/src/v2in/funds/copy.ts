@@ -11,11 +11,12 @@ import { DECLINED_COPY } from '../../v2/errors'
 import { FAILURE_COPY, NO_ROUTE } from '../../v2/crosschain/copy'
 
 export const FUNDS_TEXT = {
-  /** The offer's title: the token the position lacks, and the network once one is picked. */
-  title: (token: string, network: string | null) => (network ? `Bring ${token} from ${network}` : `Bring ${token} from another network`),
-  lead: (token: string, destination: string) => `Use your other tokens as ${token} on ${destination}.`,
-  /** What the position lacks of the token Review's plan is short of. */
-  needMore: (amount: string, _destination: string) => `${amount} more needed.`,
+  /**
+   * The offer's title: the token the position lacks, before a network is picked. Changed on purpose 2026-10-06 (the
+   * integration review: "Bring USDG from Arbitrum One" above the button "Bring 100 USDC from Arbitrum One"): once one is
+   * picked, the network alone; the button says what leaves the wallet, and the quote what arrives.
+   */
+  title: (token: string, network: string | null) => (network ? `Bring funds from ${network}` : `Bring ${token} from another network`),
   /** The wallet holds none of the token there. */
   holdsNone: (token: string, destination: string) => `Your wallet has no ${token} on ${destination}.`,
   /** The other token, which helps only through the swap: no figure claimed. */
@@ -24,16 +25,49 @@ export const FUNDS_TEXT = {
   // whoever uses Domino has no experience"): one sentence, one choice of network, the rest done for the person.
   /** What the position lacks, where it is needed: "You need 0.0021 ETH more on Robinhood Chain." */
   youNeed: (amount: string, destination: string) => `You need ${amount} more on ${destination}.`,
+  /** A new deposit in place of the typed one (the zap path): reviewed again. */
+  asNewDeposit: (token: string) => `Use ${token} as a new deposit, then review the swap.`,
   bringFrom: 'Bring it from:',
-  howItWorks: (destination: string) => `Your wallet goes to that network to send it, then comes back to ${destination}. You approve each step in your wallet.`,
+  // Added 2026-10-06 (the owner's point 1: "only before an amount, and only when the person has money on another network";
+  // "a visual sign that she has a token there and that we will bridge it"): the discreet line under the two amounts.
+  /** "You have 100 USDC on Arbitrum One". */
+  youHave: (amount: string, network: string) => `You have ${amount} on ${network}`,
+  bringItHere: 'Bring it here',
+  /** "(about $100.00)": from a qualified price only. */
+  aboutUsd: (usd: string) => `(about ${usd})`,
+  // Added 2026-10-06 (the owner's points 1 and 3): the short box says what each network holds, drops a network read as
+  // empty, and says it once when every network read is empty.
+  checkingNetworks: 'Checking your other networks…',
+  nothingElsewhere: (networks: string) => `Nothing to bring from ${networks}.`,
+  /** Under a network's button: what the service read there, and about how much in USD when it valued all of it. */
+  holdsThere: (amounts: readonly string[], usd: string | null) => (usd === null ? `You have ${amounts.join(' · ')}` : `You have ${amounts.join(' · ')} (about ${usd})`),
+  /** A network holding tokens and no ETH to send them (the owner's point 7: no transaction that cannot go through). */
+  noGasHint: (tokens: string) => `${tokens} there, but no ETH for the network fee`,
+  noGasThere: (tokens: string, network: string) => `You have ${tokens} on ${network}, but no ETH there to pay the network fee.`,
+  otherNetworks: 'Other networks',
+  /** "Base or Arbitrum One", "Robinhood Chain, Base or Arbitrum One". */
+  orList: (names: readonly string[]) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : (names[0] ?? '')),
   signingIn: "Sign in with your wallet to continue. This doesn't move funds.",
   signInFirst: 'Sign in with your wallet to bring funds from another network.',
+  /** Added 2026-10-06 (the integration review: a closed sign-in dialog left nothing to press): opens the wallet's dialog. */
+  signIn: 'Sign in',
   switchingTo: (network: string) => `Switching your wallet to ${network}…`,
   checking: (network: string) => `Checking your balance on ${network}…`,
   finding: 'Finding the best route…',
   noneThere: (tokens: string, network: string) => `You have no ${tokens} on ${network}.`,
   notBridged: (network: string) => `Nothing in your wallet on ${network} can be brought here right now.`,
   readFailed: (network: string) => `Your balance on ${network} couldn't be read. Try again.`,
+  /**
+   * Added 2026-10-06 (the owner's point 2b): the holding is smaller than what the position lacks; it brings all of it.
+   * Changed on purpose 2026-10-06 (the integration review: the sentence was not English).
+   */
+  allYouHave: (network: string) => `That's all you have on ${network}. It's less than this amount needs.`,
+  /** Added 2026-10-06 (the integration review): the quote shown guarantees less than the position lacks. */
+  bringsLess: 'This may bring less than this amount needs.',
+  /** Added 2026-10-06 (the owner's point 2b): no figure can be worked out, so the person says how much. */
+  enterAmount: 'Enter how much to bring.',
+  /** Added 2026-10-06 (the review): the list of what can be brought did not come in time (the balance itself was read). */
+  noRoutes: "Couldn't find a route right now. Try again.",
   changeTransfer: 'Change amount',
   /**
    * Decided [owner, 2026-10-02 evening]: while the crosschain-v1 route is not on (the gate's `preview`: the Worker not
@@ -41,61 +75,29 @@ export const FUNDS_TEXT = {
    * about Domino's contracts, which S2 does not use; that one stays for the zap, the vault and auto-exit).
    */
   locked: "Bringing funds from another network isn't available yet.",
-  // What the wallet holds on other networks (./Holdings.tsx), read through the wallet's own provider: never guessed.
-  holdingsTitle: 'On your other networks',
-  scan: 'Check other networks',
-  scanWhat: (networks: string, home: string) =>
-    `Check ETH, WETH and USDC on ${networks}. Approve network switches in your wallet; return to ${home} afterward. No funds move.`,
-  switching: (network: string) => `Switching to ${network}…`,
-  reading: (network: string) => `Reading ${network}…`,
-  /** "Base: 0.42 ETH · 120 USDC". */
-  holdingsOn: (network: string, amounts: readonly string[]) => `${network}: ${amounts.join(' · ')}`,
-  /** Added 2026-10-06: under a network's button, what Domino's service read there (and about how much, when it could value it all). */
-  holdsThere: (amounts: readonly string[], usd: string | null) => (usd === null ? `You have ${amounts.join(' · ')}` : `You have ${amounts.join(' · ')} (about ${usd})`),
-  nothingThere: 'Nothing to bring from there',
-  bring: (amount: string, network: string) => `Bring ${amount} from ${network}`,
-  nothingFound: (networks: string) => `Nothing to bring: no ETH, WETH or USDC on ${networks}.`,
-  notInWallet: (network: string) => `${network} isn't in your wallet.`,
-  couldNotRead: (network: string) => `${network} couldn't be read.`,
-  scanStopped: 'Your wallet declined the network switch, so the search stopped.',
-  switchBack: (home: string) => `Switch your wallet back to ${home}.`,
-  walletGone: "Your wallet isn't connected any more, so nothing was read.",
-  /** A holding the origins listing does not bridge to the position's chain. */
-  noRoute: (token: string, origin: string, destination: string) => `Relay and Across don't bridge ${token} from ${origin} to ${destination} right now.`,
   which: 'Token to bring',
   network: 'Network',
   chooseNetwork: 'Choose a network',
   token: 'Token to send',
   chooseToken: 'Choose a token',
   loadingNetworks: 'Loading networks…',
-  providerListed: (provider: string) => `${provider} is available.`,
   noTokens: 'Nothing on this network can be bridged here right now.',
-  bridgedBy: (names: string) => `Bridged by ${names}`,
   amount: 'Amount to send',
   rawUnits: "This token's decimals are unknown, so enter the amount in its smallest units.",
   readDecimals: (origin: string) => `Switch to ${origin} to read this token`,
-  slippageTitle: 'Bridge slippage',
-  slippage: 'Slippage tolerance (%)',
-  slippageHelp: 'Between 0.1% and 5%. The least you receive is shown with the quote.',
-  slippageInvalid: 'Enter a slippage tolerance between 0.1% and 5%.',
   amountInvalid: 'Enter an amount above zero.',
   // §3.9 rev2, decision #29: the option's own words, as proposed.
   gasOffer: (destination: string) => `Get gas on ${destination}`,
-  gasWhy: (destination: string) =>
-    `Your wallet has no ETH on ${destination} to pay network fees there. Relay can deliver a little ETH out of this deposit; Across can't.`,
-  gasUnread: (destination: string) => `Relay can deliver a little ETH out of this deposit for network fees on ${destination}; Across can't.`,
-  getQuote: 'Get a quote',
+  // Changed on purpose 2026-10-06 (the owner's point 4: little text): one short clause each.
+  gasWhy: (destination: string) => `You have no ETH on ${destination} for network fees. Relay can add a little from this deposit.`,
+  gasUnread: (destination: string) => `Relay can add a little ETH from this deposit for network fees on ${destination}.`,
   quoting: 'Getting a quote…',
-  quoteTitle: 'Quote',
-  best: 'Best',
   quoteExpired: 'The quote expired.',
-  newQuote: 'The quote expired. Here is a new one. Press Deposit to continue.',
-  newQuoteApproved: 'Your approval went through, but the quote expired. Here is a new one. Press Deposit to continue.',
-  stepsTitle: (origin: string) => `In your wallet, on ${origin}`,
-  stepSwitch: (origin: string) => `Switch to ${origin}`,
-  stepApprove: (amount: string) => `Approve ${amount}`,
-  stepApproveSkipped: (amount: string) => `Approve ${amount}: already approved`,
-  stepDeposit: (amount: string) => `Deposit ${amount}`,
+  /** Added 2026-10-06 (the review: past the automatic new quotes, the expired state had no way out). */
+  renewQuote: 'Get a new quote',
+  // Changed on purpose 2026-10-06 (the integration review: "the button" beside Continue): the button by its own word.
+  newQuote: 'The quote expired. Here is a new one: press Bring again to continue.',
+  newQuoteApproved: 'Your approval went through, but the quote expired. Here is a new one: press Bring again to continue.',
   stepWords: {
     waiting: 'Waiting',
     wallet: 'Confirm in your wallet…',
@@ -104,12 +106,19 @@ export const FUNDS_TEXT = {
     finalized: 'Finalized',
     done: 'Done',
   },
-  deposit: (origin: string) => `Deposit from ${origin}`,
+  /** The quote's one button (Changed on purpose 2026-10-06, the owner's point 4): what leaves the wallet, and from where. */
+  bring: (amount: string, network: string) => `Bring ${amount} from ${network}`,
+  // Added 2026-10-06 (the owner's point 4): what the quote's Details list.
+  youSend: 'You send',
+  chosenRoute: (provider: string) => `${provider} (chosen)`,
+  whyThisRoute: 'Why this route',
   approvalReverted: (origin: string) => `The approval failed on ${origin}. Nothing was deposited.`,
   depositReverted: (origin: string) => `The deposit failed on ${origin}. Nothing was bridged.`,
   notSaved: "This page couldn't save your deposit for later. Keep this page open until it arrives.",
   onTheWay: 'On the way',
-  depositFrom: (origin: string, provider: string) => `From ${origin} with ${provider}`,
+  /** Changed on purpose 2026-10-06 (the owner's point 4): the network alone; the bridge is in Details. */
+  depositFrom: (origin: string) => `Coming from ${origin}`,
+  bridge: 'Bridge',
   arrived: 'Arrived',
   refunded: 'Refunded',
   remove: 'Remove from this list',
@@ -118,14 +127,23 @@ export const FUNDS_TEXT = {
   balanceElsewhere: (destination: string) => `Switch your wallet to ${destination} to see what arrived.`,
   /** §3.9: the same position continues with what arrived, read on the destination through the wallet. */
   continueButton: (amount: string) => `Use ${amount} for this position`,
-  nothingToUse: (destination: string) => `Nothing of it is in your wallet on ${destination} now.`,
+  /** The zap path: what arrived becomes a new deposit, reviewed again. */
+  newDepositHint: 'Use this balance as your new deposit. You will review the swap before confirming.',
+  /**
+   * Added 2026-10-06 (the integration review: a range beside today's price takes one token alone, and "Use" made the
+   * other one the amount's token): the amount is typed in the token the range takes, and the swap pays with what arrived.
+   */
+  takesOnly: (token: string | null) => (token ? `Enter the amount in ${token} above: Domino swaps what arrived for it.` : 'Enter the amount above: Domino swaps what arrived for it.'),
+  // Changed on purpose 2026-10-06 (the integration review: the sentence was not idiomatic).
+  nothingToUse: (destination: string) => `None of it is in your wallet on ${destination} now.`,
   checkHash: 'Deposit transaction',
   details: 'Details',
   viewOnExplorer: 'View on the explorer',
   copyHash: 'Copy transaction hash',
   heldTitle: (step: 'approval' | 'deposit', origin: string) => (step === 'deposit' ? `Deposit from ${origin}` : `Approval on ${origin}`),
+  // Changed on purpose 2026-10-06 (the owner's point 4: little text): the same facts, shorter.
   heldOpen: (step: 'approval' | 'deposit', origin: string) =>
-    `We could not confirm whether your wallet sent this ${step}. Check your wallet activity on ${origin}. No new deposit from ${origin} is offered here until this is clear. If you rejected or closed it in your wallet, say so below.`,
+    `We couldn't confirm whether your wallet sent this ${step}. Check your wallet's activity on ${origin}. Until it is clear, nothing more is sent from ${origin}; if you rejected it, say so below.`,
   rejectedInWallet: 'I rejected it in my wallet',
   forgotten: 'Nothing was sent. You can deposit again.',
   depositHandedOver: 'This deposit was handed to your wallet. It is never sent twice.',

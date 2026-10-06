@@ -11,6 +11,7 @@
 import type { ActivityResponse, ChainStatus, PortfolioResponse, Position as V6Position, S1Action } from 'api-contracts/read-v6/types'
 import type { WalletPosition } from '../../lib/walletPositions'
 import { ZERO_ADDRESS, type Address, type Dex, type PoolRef, type V2ChainId } from '../../v2/types'
+import { protectionStanding } from '../autoexit/standing'
 import { USD_SHOWN } from './constants'
 import { cleanSymbol, type PositionToken } from './tokens'
 
@@ -24,6 +25,12 @@ export interface PositionVault {
   role: 'root' | 'successor'
   /** The root's custody as read-v6 last read it: true armed, false disarmed or lost, null unknown. */
   armed: boolean | null
+  /**
+   * Added 2026-10-06 (the integration review, rugged-literal #1): the vault is Auto-exit's own and its Auto-exit is on or
+   * paused on this root (../autoexit/standing.ts), as read-v6 lists it. Its exit needs the position's approval alone, so
+   * only an action that moves that approval pauses it; one that keeps it (Collect fees, Withdraw to both tokens) does not.
+   */
+  exitLive: boolean
 }
 
 /** One position, as every action takes it. */
@@ -170,14 +177,19 @@ export function chainStatusOf(answer: Pick<PortfolioResponse, 'chains'>, chainId
   return answer.chains.find((chain) => chain.chainId === chainId) ?? null
 }
 
-/** Whether read-v6 last read a vault's root armed (`custody.armed`); null when it does not say. */
-export function vaultArmed(answer: Pick<PortfolioResponse, 'vaults'>, chainId: V2ChainId, vault: Address): boolean | null {
-  const found = answer.vaults.find((one) => one.chainId === chainId && one.address.toLowerCase() === vault)
-  return found ? found.custody.armed : null
+/**
+ * A position's vault as the actions take it, from read-v6: for its root, whether read-v6 last read it armed
+ * (`custody.armed`; null when it does not say) and whether Auto-exit is on or paused on it (`exitLive`).
+ */
+export function positionVault(answer: Pick<PortfolioResponse, 'vaults' | 'mandates'>, chainId: V2ChainId, vault: Pick<PositionVault, 'address' | 'role'> | null): PositionVault | null {
+  if (!vault) return null
+  const found = vault.role === 'root' ? answer.vaults.find((one) => one.chainId === chainId && one.address.toLowerCase() === vault.address) : undefined
+  const exit = found ? protectionStanding(found, answer.mandates ?? []) : null
+  return { ...vault, armed: found ? found.custody.armed : null, exitLive: exit === 'on' || exit === 'paused' }
 }
 
 /** A read-v6 position as the actions take it: live only (anything else is not acted on). */
-export function fromV6(position: V6PositionView, answer: Pick<PortfolioResponse, 'vaults'>): ActionPosition | null {
+export function fromV6(position: V6PositionView, answer: Pick<PortfolioResponse, 'vaults' | 'mandates'>): ActionPosition | null {
   if (!isLive(position)) return null
   return {
     chainId: position.chainId,
@@ -190,7 +202,7 @@ export function fromV6(position: V6PositionView, answer: Pick<PortfolioResponse,
     liquidity: position.liquidity,
     sqrtPriceX96: position.sqrtPriceX96,
     tick: position.tick,
-    vault: position.vault ? { ...position.vault, armed: position.vault.role === 'root' ? vaultArmed(answer, position.chainId, position.vault.address) : null } : null,
+    vault: positionVault(answer, position.chainId, position.vault),
     source: 'read6',
   }
 }

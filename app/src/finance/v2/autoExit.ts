@@ -1,16 +1,19 @@
-import { encodeEventTopics, encodeFunctionData, type Abi } from 'viem'
+import { decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, getContractAddress, keccak256, type Abi } from 'viem'
+import v3PoolAbi from '../../../../api-contracts/v2/abi/IUniswapV3PoolMinimal.json'
+import v4StateViewAbi from '../../../../api-contracts/v2/abi/IV4StateViewMinimal.json'
 import type { V2Chain } from '../../v2/chains'
-import { RECEIVE_MODE, ZERO_ADDRESS, type Address, type Dex, type ExitMandate, type Hex, type PoolRef, type ReceiveMode, type V2ChainId, type V2Component, type V2Contracts } from '../../v2/types'
+import { RECEIVE_MODE, ZERO_ADDRESS, type Address, type Dex, type ExitMandate, type Hex, type ReceiveMode, type V2ChainId, type V2Component, type V2Contracts } from '../../v2/types'
 import { atomicStatus, batchCallsStatus, simulateBatch, type AtomicStatus, type BatchCall } from '../batch'
 import { readAccountCode } from '../delegates'
-import { AUTO_EXIT_ABI, REGISTRY_ABI, VAULT_ABI } from './abi'
-import { AUTO_EXIT_EVENTS_ABI, VAULT_EVENTS_ABI } from './implementations'
+import { AUTO_EXIT_ABI, REGISTRY_ABI, V3_POSITION_MANAGER_ABI, V4_POSITION_MANAGER_ABI, VAULT_ABI, VAULT_FACTORY_ABI } from './abi'
+import { AUTO_EXIT_EVENTS_ABI, VAULT_EVENTS_ABI, VAULT_FACTORY_EVENTS_ABI } from './implementations'
 import { CONTRACTS_NOT_LIVE, refuseUnlessLive } from './liveLock'
 import { createTransactor, quantity, refused, REVIEW_S, revertIn, SIGN_WINDOW_S, WalletNotAsked, type PreparedV2, type Rpc, type SignedNonce, type V2GasBudget, type V2Receipt, type V2Wallet } from './transact'
 import { exitMandateTypedData, mandateId, signV2TypedData, typedDataDigest, type SignatureShape, type V2TypedData } from './typedData'
 import {
-  browserV2BatchLatch, checkBatchBudget, decodeEvents, factoryComponent, managerAbi, managerOf, offerV2Batch, pinBlock, readVaultIdentity, receiptOfBatch, simulateV2Batch,
-  transactionWithLog, v2ContractsFor, V2_BATCH_LATCH_EXPIRY_S, verifyComponents, viewAt, type ReadAt, type V2BatchLatch, type V2BatchReceipt, type V2Event, type V2Snapshot, type VaultIdentity,
+  browserV2BatchLatch, checkBatchBudget, decodeEvents, factoryComponent, factoryOf, managerAbi, managerOf, newVaultRoot, offerV2Batch, pinBlock, readVaultIdentity, receiptOfBatch, settleBatchLatch,
+  simulateV2Batch, transactionWithLog, v2ContractsFor, V2_BATCH_LATCH_EXPIRY_S, vaultBatchKey, vaultCreation, verifyComponents, viewAt, type ReadAt, type V2BatchLatch, type V2BatchReceipt, type V2Event,
+  type V2Snapshot, type VaultCreateRequest, type VaultIdentity, type VaultStepKind,
 } from './vault'
 
 /**
@@ -36,8 +39,21 @@ import {
  *   - the module is only ever set to the manifest's `autoExit`; turning it off is the vault client's
  *     `set-exit-module` to address(0), which pauses the orders and does not cancel them.
  *
- * PHASE A: nothing here is wired to a screen, and no V2 contract is deployed anywhere. The list of an owner's orders
- * needs the V2 read API or `MandateRegistered` logs (spec §6.2): not read here.
+ * Changed on purpose 2026-10-06 (the owner's point 5, rugged97: "it is AUTO-EXIT, separate from the rest, automatic"):
+ * the screens call it Auto-exit (src/v2in/autoexit), and turn it on for a plain position as ONE signature and ONE
+ * EIP-5792 batch, with today's contracts (the study p5-auto-exit.md, "activation"): the order is reviewed and signed for
+ * the vault the wallet's next `createVault` makes (`predictVault(owner, nextNonce(owner))`, `MandateRequest.newVault`),
+ * then `[approve(predicted vault, tokenId), createVault(protection-only Init), setExitModule(autoExit),
+ * registerMandate(mandate, signature)]` goes as one batch (prepareProtectBatch), the approval and the creation derived by
+ * the vault client's own code (./vault.ts vaultCreation). Without batching, the same calls go one by one. The list of an
+ * owner's orders is read-v6's (spec §6.2), not read here.
+ *
+ * Changed on purpose 2026-10-06 (the review of point 5: an edge the price has already crossed fires on the operator's
+ * next pass and closes the position at once, with the 0.2% fee; neither the module nor the backend checks it at
+ * registration): the pool's own price is read on chain (v4 StateView `getSlot0`, v3 the pool's `slot0`), at the review's
+ * block and again right before the signature, the batch and the registration step, and an armed trigger it has reached
+ * (at or below the lower one, at or above the upper one: the module's own rule) is refused, `mandate_trigger_reached`.
+ * `readPoolPrice` gives the screens that price to choose the edges by (src/v2in/autoexit/form.ts exitEdges).
  */
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
@@ -51,15 +67,49 @@ const fail = (code: string): never => { throw new Error(code) }
 const isAddress = (value: unknown): value is Address => typeof value === 'string' && ADDRESS.test(value)
 const lower = (value: string): Address => (isAddress(value) ? (value.toLowerCase() as Address) : fail('invalid_wallet_reply'))
 
+/** Uniswap's two price views (the chain profile's v4 StateView, a v3 pool's own `slot0`), as the zap and direct clients read them. */
+const V3_POOL_ABI = (v3PoolAbi as unknown as { abi: Abi }).abi
+const V4_STATE_VIEW_ABI = (v4StateViewAbi as unknown as { abi: Abi }).abi
+const POOL_KEY = [{ type: 'tuple', components: [
+  { name: 'currency0', type: 'address' }, { name: 'currency1', type: 'address' }, { name: 'fee', type: 'uint24' },
+  { name: 'tickSpacing', type: 'int24' }, { name: 'hooks', type: 'address' },
+] }] as const
+
+/** A pool as its price is read: a v4 pool by its key's id, a v3 pool by its tokens and tier. */
+interface PricedPool {
+  dex: Dex
+  currency0: Address
+  currency1: Address
+  fee: number
+  tickSpacing: number | null
+  hooks: Address
+}
+
+/** A v3 pool's address: CREATE2 of the chain profile's factory with its init code hash, salt keccak256(abi.encode(token0, token1, fee)). */
+const v3PoolAt = (chain: V2Chain, pool: PricedPool): Address =>
+  getContractAddress({ opcode: 'CREATE2', from: chain.uniswap.v3.factory, salt: keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }], [pool.currency0, pool.currency1, pool.fee])), bytecodeHash: chain.uniswap.v3.poolInitCodeHash }).toLowerCase() as Address
+
+/**
+ * Whether the pool's price has reached an armed trigger (Added 2026-10-06, the review of point 5): at or below the lower
+ * one, or at or above a nonzero upper one, exactly the module's rule (DominoAutoExit._authorize) and the backend's
+ * (v2_autoexit.Mandate.triggered). An order registered so fires on the operator's next pass. Pure.
+ */
+export function triggerReached(triggers: { triggerBelowSqrtPriceX96: bigint; triggerAboveSqrtPriceX96: bigint }, sqrtPriceX96: bigint): boolean {
+  return sqrtPriceX96 <= triggers.triggerBelowSqrtPriceX96 || (triggers.triggerAboveSqrtPriceX96 !== 0n && sqrtPriceX96 >= triggers.triggerAboveSqrtPriceX96)
+}
+
 // ---------------------------------------------------------------------------
 // Copy (spec §4.2, §4.5, §4.6, §4.7)
 // ---------------------------------------------------------------------------
 
-/** The {reason} of "This order isn't valid: {reason}." for each closed reason code. */
+/**
+ * The {reason} of "This Auto-exit isn't valid: {reason}." for each closed reason code. Changed on purpose 2026-10-06 (the
+ * owner's point 5: the product is Auto-exit, never an "order" on screen): its prices are the range's edges.
+ */
 export const MANDATE_REASON_TEXT = Object.freeze({
-  mandate_no_trigger: 'set at least one trigger price',
-  mandate_trigger_order: 'the lower trigger price must be below the upper one',
-  mandate_trigger_range: 'a trigger price is out of range',
+  mandate_no_trigger: 'it needs at least one price to close at',
+  mandate_trigger_order: 'its lower price must be below its upper price',
+  mandate_trigger_range: 'a price to close at is outside what the pool can reach',
   mandate_receive_mode: 'choose to receive both tokens or only one of them',
   mandate_convert_to_both: "receiving both tokens can't also name a token to convert to",
   mandate_convert_to_token: "you can only receive one of this pool's two tokens",
@@ -67,20 +117,23 @@ export const MANDATE_REASON_TEXT = Object.freeze({
   mandate_valid_until: 'the end date must be in the future',
   mandate_position: 'the position must be in this automation',
   mandate_warnings: 'confirm you have read the warnings',
+  // Added 2026-10-06 (the review of point 5): an armed edge the pool's price has already reached would close it at once.
+  mandate_trigger_reached: 'the price has already reached the end of the range it would close at',
 } as const)
 export type MandateReason = keyof typeof MANDATE_REASON_TEXT
-export const mandateInvalidText = (reason: MandateReason): string => `This order isn't valid: ${MANDATE_REASON_TEXT[reason]}.`
+export const mandateInvalidText = (reason: MandateReason): string => `This Auto-exit isn't valid: ${MANDATE_REASON_TEXT[reason]}.`
 
 export const AUTO_EXIT_TEXT = Object.freeze({
-  // §4.7, in order (the v3 one only on a v3 vault), then the fee line (§4.6).
-  autoexit_warning_not_guaranteed: 'The trigger price is not guaranteed. In a price gap or a rug, liquidity can disappear before the exit.',
-  autoexit_warning_reference_price: 'The exit runs only after the reference price crosses your trigger and the pool price is within your slippage of it.',
+  // §4.7, in order (the v3 one only on a v3 vault), then the fee line (§4.6). Changed on purpose 2026-10-06 (the owner's
+  // point 5): in Auto-exit's own words, its prices being the range's edges; the meaning of each is the spec's.
+  autoexit_warning_not_guaranteed: "The exit price is not guaranteed. In a sudden gap or a rug, the pool's liquidity can disappear before Domino closes the position.",
+  autoexit_warning_reference_price: 'Domino closes it once the reference price passes the end of your range and the pool price is within the slippage limit of it.',
   autoexit_warning_v3_twap: 'On v3 pools the reference price is a time-weighted average. After a fast move the exit waits for it to catch up, and it may never happen if the pool empties first.',
   autoexit_warning_slippage_on_top: "When converting, your slippage limit comes on top of the pool's own fee.",
-  autoexit_warning_turn_off_pauses: "Turning auto-exit off for your automation pauses your orders; it doesn't cancel them.",
-  autoexit_warning_other_orders: 'If one order fires, your other orders on this position stay active.',
-  autoexit_warning_halt: 'If Domino stops automation for safety, auto-exits stop too. You can still cancel your orders and withdraw at any time.',
-  autoexit_fee_line: "Auto-exit fee: 0.2% of the position's value at exit. It's the only fee, even when converting.",
+  autoexit_warning_turn_off_pauses: "Leave automation pauses Auto-exit; it doesn't turn it off for good.",
+  autoexit_warning_other_orders: 'If one Auto-exit closes the position, any other on it stays active.',
+  autoexit_warning_halt: 'If Domino stops automation for safety, Auto-exit stops too. You can still turn it off and withdraw at any time.',
+  autoexit_fee_line: "Fee: 0.2% of the position's value, only if it closes. It's the only fee.",
   // §4.6: the rule of the chosen way to receive.
   autoexit_fee_converted_charge: '0.2% of what you receive, taken in {token}.',
   autoexit_fee_converted_other: '0.2% of each token withdrawn, taken before converting. What you receive is not charged again.',
@@ -91,12 +144,12 @@ export const AUTO_EXIT_TEXT = Object.freeze({
   mandate_status_expired: 'Expired',
   mandate_status_revoked: 'Cancelled',
   mandate_status_executed: 'Executed',
-  mandate_module_off: 'Paused: auto-exit is turned off for your automation.',
+  mandate_module_off: 'Paused: Auto-exit is turned off for this position.',
   mandate_owner_changed: 'Not valid: the owner of this automation changed.',
   mandate_root_custody_lost: 'Paused: Domino no longer has approval on this position.',
   mandate_successor_inactive: 'This position is no longer in your automation.',
   mandate_halted: 'Paused: Domino stopped automation on {chain} for safety.',
-  mandate_vault_unknown: "This order names an automation Domino didn't set up.",
+  mandate_vault_unknown: "This Auto-exit names an automation Domino didn't set up.",
 } as const)
 export type AutoExitTextKey = keyof typeof AUTO_EXIT_TEXT
 
@@ -153,6 +206,13 @@ export interface MandateRequest {
   validUntil: bigint
   /** The owner ticked that they read the warnings (spec §4.7 recommendation). */
   acknowledgedWarnings: boolean
+  /**
+   * Added 2026-10-06 (the owner's point 5: Auto-exit as one signature and one batch): `vault` is not created yet. It must
+   * be exactly the vault this wallet's next `createVault` on this DEX's factory makes (`predictVault(owner,
+   * nextNonce(owner))`, still free), for `tokenId` as its root, held by the wallet: the order is signed for it, and
+   * registered in the same batch that creates it (prepareProtectBatch). Absent: the vault must already be the wallet's.
+   */
+  newVault?: { dex: Dex }
 }
 
 export interface MandateContext {
@@ -163,6 +223,11 @@ export interface MandateContext {
   maxSlippageBps: number
   /** Whether `tokenId` is the vault's root or an active successor. */
   inVault: boolean
+  /**
+   * Added 2026-10-06 (the review of point 5): the pool's sqrt price at the review's block. An armed trigger it has reached
+   * is `mandate_trigger_reached`. Absent: not checked (the pure table alone).
+   */
+  sqrtPriceX96?: bigint
 }
 
 /** Every term of spec §4.2's table the request breaks, as closed reason codes; empty when the order is valid. Pure. */
@@ -174,6 +239,7 @@ export function mandateProblems(request: MandateRequest, context: MandateContext
   if (!triggersOk) problems.push('mandate_trigger_range')
   else if (below === 0n && above === 0n) problems.push('mandate_no_trigger')
   else if (below > 0n && above > 0n && below >= above) problems.push('mandate_trigger_order')
+  else if (typeof context.sqrtPriceX96 === 'bigint' && triggerReached({ triggerBelowSqrtPriceX96: below, triggerAboveSqrtPriceX96: above }, context.sqrtPriceX96)) problems.push('mandate_trigger_reached')
   const mode: unknown = request.receiveMode
   if (mode !== RECEIVE_MODE.both && mode !== RECEIVE_MODE.converted) problems.push('mandate_receive_mode')
   else if (!isAddress(request.convertTo)) problems.push(mode === RECEIVE_MODE.both ? 'mandate_convert_to_both' : 'mandate_convert_to_token')
@@ -203,8 +269,19 @@ export interface MandateReview {
   autoExit: Address
   vault: Address
   dex: Dex
-  pool: PoolRef
+  /** The vault's pool (a vault not created yet: its root's, read from the position manager; v3's spacing from the profile, null outside its table). */
+  pool: { dex: Dex; currency0: Address; currency1: Address; fee: number; tickSpacing: number | null; hooks: Address }
   role: 'root' | 'successor'
+  /**
+   * Added 2026-10-06 (the owner's point 5): the vault is the one the wallet's next `createVault` makes (its factory and the
+   * factory's nonce for the wallet at the review), not created yet; null for a vault the wallet already owns.
+   */
+  predicted: { factory: Address; nonce: bigint } | null
+  /**
+   * Added 2026-10-06 (the review of point 5): the pool's sqrt price at the review's block, which no armed trigger has
+   * reached (the screens choose the edges against it).
+   */
+  sqrtPriceX96: bigint
   mandate: ExitMandate
   /** The order's id: its EIP-712 struct hash (`mandateStatus`, `mandateOf`, `revokeMandate` take it), not the digest. */
   id: Hex
@@ -278,6 +355,36 @@ export interface MandateBatch {
   /** Unix seconds: good until then (25 s after its simulation). */
   expiresAt: number
 }
+
+/**
+ * Added 2026-10-06 (the owner's point 5: Auto-exit as a signature plus ONE confirmation): a plain position's protection-
+ * only vault and its signed order as ONE EIP-5792 batch, `[approve(predicted vault, tokenId) when missing,
+ * createVault(init, n), setExitModule(autoExit), registerMandate(mandate, signature)]`. The approval and the creation are
+ * derived by the vault client's own code (./vault.ts vaultCreation), for the vault the order was signed for, and the
+ * whole is simulated through the wallet. Latched as the vault's creation batch (vaultBatchKey: one batch per factory
+ * nonce of the owner). Frozen; only the client that prepared it sends it, once.
+ */
+export interface ProtectBatch {
+  chainId: V2ChainId
+  owner: Address
+  /** The latch key: vaultBatchKey(chainId, factory, owner, n). */
+  key: Hex
+  /** The order's id (its EIP-712 struct hash). */
+  id: Hex
+  vault: Address
+  factory: Address
+  nonce: bigint
+  kinds: readonly ('approve-root' | 'create-vault' | 'enable-exit-module' | 'register-mandate')[]
+  calls: readonly BatchCall[]
+  gasUsed: bigint
+  networkFeeWei: bigint
+  /** Unix seconds: good until then (25 s after its simulation). */
+  expiresAt: number
+}
+
+/** What the protection-only vault of a ProtectBatch is (spec F7 §5.1 decision #25): paused, Auto-compound's mode with one position. */
+const protectionOnly = (request: VaultCreateRequest): boolean =>
+  !!request && typeof request === 'object' && request.startPaused === true && request.policy?.mode === 1 && request.policy.maxPositions === 1 && request.consentToUncollectedFees === true
 
 interface ReviewInternal {
   /** The review asked to turn the module on: the registration then waits until it is on. */
@@ -425,6 +532,7 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
     const block = await t.latestBlock(at.rpc)
     if (review.mandate.validUntil <= block.timestamp || review.mandate.validUntil <= nowSeconds()) return fail('mandate_invalid: mandate_valid_until')
     if ((await roleOf(at, identity, review.mandate.tokenId)) === null) return fail('mandate_invalid: mandate_position')
+    await triggersAhead(at, review)
     return [
       Object.freeze({ to: identity.vault, data: encodeFunctionData({ abi: VAULT_ABI, functionName: 'setExitModule', args: [autoExit] }), value: '0x0' as Hex }),
       Object.freeze({ to: autoExit, data: encodeFunctionData({ abi: AUTO_EXIT_ABI, functionName: 'registerMandate', args: [review.mandate, signed.signature] }), value: '0x0' as Hex }),
@@ -432,10 +540,131 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
   }
   const batchComponents = (review: MandateReview): readonly V2Component[] => ['autoExit', 'registry', factoryComponent(review.dex)]
 
+  // ----- Auto-exit in one batch (Added on purpose 2026-10-06, the owner's point 5) -----
+
+  const issuedProtect = new WeakSet<ProtectBatch>()
+  const protectOrigins = new WeakMap<ProtectBatch, { review: MandateReview; create: VaultCreateRequest }>()
+  const offeredProtect = new Map<string, { batch: ProtectBatch; review: MandateReview }>()
+
+  /** Whether the factory of `dex` made `vault`. */
+  const madeBy = (at: ReadAt, dex: Dex, vault: Address) => view<boolean>(at, factoryOf(contracts, dex), VAULT_FACTORY_ABI, 'isVault', [vault])
+
+  // ----- The pool's price (Added on purpose 2026-10-06, the review of point 5) -----
+
+  /** One price view's first word, the sqrt price; a refusal, an address with no code or no price is `mandate_price_unavailable`. */
+  async function sqrtPriceOf(at: ReadAt, to: Address, abi: Abi, functionName: string, args: readonly unknown[]): Promise<bigint> {
+    let data: Hex
+    try {
+      data = await t.call(at.rpc, to, encodeFunctionData({ abi, functionName, args }), at.block)
+    } catch (error) {
+      if (revertIn(error)) return fail('mandate_price_unavailable')
+      throw error
+    }
+    if (data === '0x') return fail('mandate_price_unavailable')
+    const [sqrt] = decodeFunctionResult({ abi, functionName, data }) as readonly unknown[]
+    return typeof sqrt === 'bigint' && sqrt > 0n && sqrt <= MAX_UINT160 ? sqrt : fail('mandate_price_unavailable')
+  }
+
+  /**
+   * The pool's sqrt price at `at`, the spot the module's anchor compares (and, on v4 and young v3 pools, the very price
+   * the publisher signs): v4 by the chain profile's StateView (`getSlot0(poolId)`), v3 by the pool's own `slot0`.
+   */
+  function poolPriceAt(at: ReadAt, pool: PricedPool): Promise<bigint> {
+    if (pool.dex === 3) return sqrtPriceOf(at, v3PoolAt(chain, pool), V3_POOL_ABI, 'slot0', [])
+    if (pool.dex !== 4 || pool.tickSpacing === null) return Promise.reject(new Error('mandate_price_unavailable'))
+    const id = keccak256(encodeAbiParameters(POOL_KEY, [{ currency0: pool.currency0, currency1: pool.currency1, fee: pool.fee, tickSpacing: pool.tickSpacing, hooks: pool.hooks }]))
+    return sqrtPriceOf(at, chain.uniswap.v4.stateView, V4_STATE_VIEW_ABI, 'getSlot0', [id])
+  }
+
+  /** A position's pool as the chain profile's position manager of its DEX says it (v4 its key, v3 its tokens and tier). */
+  async function positionPool(at: ReadAt, dex: Dex, tokenId: bigint): Promise<PricedPool> {
+    if (dex !== 3 && dex !== 4) return fail('vault_invalid_dex')
+    if (typeof tokenId !== 'bigint' || tokenId <= 0n || tokenId > MAX_UINT256) return fail('vault_invalid_token_id')
+    if (dex === 4) {
+      const [key] = await view<readonly [{ currency0: string; currency1: string; fee: number; tickSpacing: number; hooks: string }]>(at, managerOf(chain, 4), V4_POSITION_MANAGER_ABI, 'getPoolAndPositionInfo', [tokenId], 'vault_position_not_found')
+      if (key.tickSpacing === 0) return fail('vault_position_not_found')
+      return { dex, currency0: lower(key.currency0), currency1: lower(key.currency1), fee: key.fee, tickSpacing: key.tickSpacing, hooks: lower(key.hooks) }
+    }
+    const row = await view<readonly unknown[]>(at, managerOf(chain, 3), V3_POSITION_MANAGER_ABI, 'positions', [tokenId], 'vault_position_not_found')
+    return { dex, currency0: lower(row[2] as string), currency1: lower(row[3] as string), fee: Number(row[4]), tickSpacing: null, hooks: ZERO_ADDRESS }
+  }
+
+  /** A review's armed triggers still ahead of the pool's price at `at` (else `mandate_trigger_reached`): right before each send. */
+  async function triggersAhead(at: ReadAt, review: MandateReview): Promise<void> {
+    if (triggerReached(review.mandate, await poolPriceAt(at, review.pool))) fail('mandate_invalid: mandate_trigger_reached')
+  }
+
+  /**
+   * The vault a predicted review was signed for, still as it was: not created yet, the factory's nonce for the wallet
+   * unmoved and its prediction the same (else `vault_nonce_moved`: another vault of this wallet landed first, review
+   * again); or created since by the wallet's own steps, the wallet's, with the order's position as its root.
+   */
+  async function predictedStill(at: ReadAt, review: MandateReview): Promise<'free' | 'created'> {
+    const predicted = review.predicted
+    if (!predicted) return fail('mandate_review_unknown')
+    const nonce = await view<bigint>(at, predicted.factory, VAULT_FACTORY_ABI, 'nextNonce', [owner])
+    const vault = lower(await view<string>(at, predicted.factory, VAULT_FACTORY_ABI, 'predictVault', [owner, nonce]))
+    if (nonce === predicted.nonce && vault === review.vault) return 'free'
+    // The factory moved past the prediction: the wallet's own steps created this very vault, or another one landed first.
+    if (await madeBy(at, review.dex, review.vault)) {
+      const identity = await readVaultIdentity(t, chain, contracts, at, review.vault)
+      if (identity.owner === owner && identity.root.tokenId === review.mandate.tokenId) return 'created'
+    }
+    return fail('vault_nonce_moved')
+  }
+
+  /**
+   * A predicted review's whole activation as one batch's calls, derived at `at`: the protection-only vault's approval
+   * (when missing) and creation exactly as the vault client derives them, for the vault the order was signed for, then
+   * the module and the registration, with every check the registration step makes (the nonce unused, the id unknown,
+   * still valid). A vault created since is `batch_not_needed` (its own module step and registration go instead).
+   */
+  async function protectBatchCalls(at: ReadAt, review: MandateReview, create: VaultCreateRequest): Promise<{ kinds: ProtectBatch['kinds'][number][]; calls: BatchCall[]; vault: Address; factory: Address; nonce: bigint }> {
+    const internal = reviews.get(review)
+    if (!internal) return fail('mandate_review_unknown')
+    const signed = signatures.get(review)
+    if (!signed) return fail('mandate_not_signed')
+    if (!review.predicted) return fail('batch_not_needed')
+    if (!protectionOnly(create) || create.dex !== review.dex || create.tokenId !== review.mandate.tokenId) return fail('vault_invalid_request')
+    if ((await predictedStill(at, review)) === 'created') return fail('batch_not_needed')
+    const creation = await vaultCreation(t, chain, contracts, at, create)
+    if (creation.vault !== review.vault || creation.nonce !== review.predicted.nonce || creation.factory !== review.predicted.factory) return fail('vault_nonce_moved')
+    if (await nonceUsed(at, review.mandate.nonce)) return fail('mandate_nonce_used')
+    if ((await view<number>(at, autoExit, AUTO_EXIT_ABI, 'mandateStatus', [review.id])) !== 0) return fail('mandate_already_registered')
+    const block = await t.latestBlock(at.rpc)
+    if (review.mandate.validUntil <= block.timestamp || review.mandate.validUntil <= nowSeconds()) return fail('mandate_invalid: mandate_valid_until')
+    await triggersAhead(at, review)
+    const kinds: ProtectBatch['kinds'][number][] = []
+    const calls: BatchCall[] = []
+    for (const step of creation.steps) {
+      kinds.push(step.kind as Extract<VaultStepKind, 'approve-root' | 'create-vault'>)
+      calls.push(Object.freeze({ to: step.to, data: step.data, value: '0x0' as Hex }))
+    }
+    kinds.push('enable-exit-module', 'register-mandate')
+    calls.push(
+      Object.freeze({ to: creation.vault, data: encodeFunctionData({ abi: VAULT_ABI, functionName: 'setExitModule', args: [autoExit] }), value: '0x0' as Hex }),
+      Object.freeze({ to: autoExit, data: encodeFunctionData({ abi: AUTO_EXIT_ABI, functionName: 'registerMandate', args: [review.mandate, signed.signature] }), value: '0x0' as Hex }),
+    )
+    return { kinds, calls, vault: creation.vault, factory: creation.factory, nonce: creation.nonce }
+  }
+
   return {
     chain,
     contracts,
     owner,
+
+    /**
+     * Added 2026-10-06 (the review of point 5): where the pool of position `tokenId` stands now, the price an Auto-exit's
+     * edges are chosen against (src/v2in/autoexit/form.ts exitEdges): the position's pool from the chain profile's
+     * position manager of its DEX (v4 `getPoolAndPositionInfo`, v3 `positions`), then its sqrt price (v4 StateView
+     * `getSlot0`, v3 the pool's `slot0`), at one block through the wallet's own provider. Reads only.
+     */
+    readPoolPrice: (dex: Dex, tokenId: bigint) => t.bounded(async (rpc): Promise<V2Snapshot & { sqrtPriceX96: bigint }> => {
+      await t.identity(rpc)
+      const { at, snapshot } = await pinBlock(t, rpc)
+      const pool = await positionPool(at, dex, tokenId)
+      return Object.freeze({ ...snapshot, sqrtPriceX96: await poolPriceAt(at, pool) })
+    }),
 
     /**
      * What the connected wallet can do with an EIP-5792 batch on this chain (finance/batch.ts atomicStatus, through the
@@ -538,10 +767,120 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
     }),
 
     /**
+     * Added 2026-10-06 (the owner's point 5: Auto-exit as a signature plus ONE confirmation). A SIGNED predicted review's
+     * whole activation as ONE batch (ProtectBatch): the protection-only vault (`create`: paused, mode 1, one position, the
+     * consent; anything else is `vault_invalid_request`), derived at the latest block by the vault client's own code for
+     * the vault the order names, then the module and the registration; simulated whole through the wallet's
+     * eth_simulateV1 only (a wallet without it is `batch_simulation_unavailable`: the same calls one by one instead), its
+     * cost checked against the budget and the owner's ETH. Reads only.
+     */
+    prepareProtectBatch: (review: MandateReview, create: VaultCreateRequest, gas: V2GasBudget | null = null) => t.bounded(async (rpc): Promise<ProtectBatch> => {
+      if (!reviews.has(review)) return fail('mandate_review_unknown')
+      if (gas) checkBatchBudget(gas)
+      await t.identity(rpc)
+      // Nothing of this owner in flight on this chain, as before a step (post-B4 review item 3, V1 setup's rule).
+      await t.freeNonce(rpc)
+      await verify(rpc, batchComponents(review))
+      const derived = await protectBatchCalls({ rpc, block: 'latest' }, review, create)
+      // `gas` null: the budget read here, through this bounded port; Base's L1 data fee ceiling in the cost (F8, F5).
+      const { gasUsed, networkFeeWei } = await simulateV2Batch(rpc, chain, owner, derived.calls, gas)
+      const batch: ProtectBatch = Object.freeze({
+        chainId: chain.chainId,
+        owner,
+        key: vaultBatchKey(chain.chainId, derived.factory, owner, derived.nonce),
+        id: review.id,
+        vault: derived.vault,
+        factory: derived.factory,
+        nonce: derived.nonce,
+        kinds: Object.freeze(derived.kinds),
+        calls: Object.freeze(derived.calls),
+        gasUsed,
+        networkFeeWei,
+        expiresAt: now() + REVIEW_S,
+      })
+      issuedProtect.add(batch)
+      protectOrigins.set(batch, { review, create })
+      return batch
+    }),
+
+    /**
+     * Offers a prepared ProtectBatch to the wallet once, behind the page's latch for the owner's factory nonce (the vault
+     * creation batch's key), the latches of earlier nonces let go first as the vault client does: the calls derived again
+     * and simulated again, `eth_chainId` read right before the wallet, never offered twice. The wallet's id for the batch.
+     */
+    sendProtectBatch: async (batch: ProtectBatch, acknowledged: boolean, latchFor: (chainId: V2ChainId, owner: Address) => V2BatchLatch = browserV2BatchLatch): Promise<string> => {
+      refuseUnlessLive(chain.chainId, contracts)
+      const origin = protectOrigins.get(batch)
+      if (!acknowledged || !origin || !issuedProtect.has(batch) || batch.expiresAt <= now() || batch.owner !== owner || batch.chainId !== chain.chainId) return fail('wallet_review_required')
+      const latch = latchFor(chain.chainId, owner)
+      for (let n = batch.nonce > 4n ? batch.nonce - 4n : 0n; n < batch.nonce; n++) await settleBatchLatch(latch, vaultBatchKey(chain.chainId, batch.factory, owner, n))
+      if (latch.batchOffered(batch.key) !== null && !(await latch.expireBatch(batch.key, V2_BATCH_LATCH_EXPIRY_S))) return fail('batch_already_offered')
+      return t.bounded(async (rpc) => {
+        await t.identity(rpc)
+        await t.freeNonce(rpc)
+        await verify(rpc, batchComponents(origin.review))
+        const { calls } = await protectBatchCalls({ rpc, block: 'latest' }, origin.review, origin.create)
+        if (calls.length !== batch.calls.length || calls.some((call, i) => call.to !== batch.calls[i].to || call.data !== batch.calls[i].data)) fail('mandate_review_stale')
+        await simulateBatch((method, params) => rpc(method, params), owner, batch.calls)
+        if (batch.expiresAt <= now()) fail('wallet_review_expired')
+        // Immediately before the wallet is asked: the same chain, still (spec §1.3).
+        if (quantity(await rpc('eth_chainId', [])) !== BigInt(chain.chainId)) fail('wallet_wrong_chain')
+        issuedProtect.delete(batch)
+        const id = await offerV2Batch(rpc, owner, chain.chainId, latch, batch.key, batch.calls, () => wallet.current() && wallet.chainId() === chain.chainId && batch.expiresAt > now())
+        offeredProtect.set(id, { batch, review: origin.review })
+        return id
+      }, SIGN_WINDOW_S)
+    },
+
+    /**
+     * Where a ProtectBatch this client offered stands: the wallet's status while it knows it (100 pending; 400 or 500:
+     * nothing of it ran, its latch let go), then the chain: the one transaction carrying both this owner's
+     * `VaultCreated` for the vault and this order's `MandateRegistered`, from the review's block, "included" then
+     * "finalized", with the factory's, the vault's and the module's events. Once it ran its latch is let go, and once
+     * finalized the order's nonce leaves the journal.
+     */
+    protectBatchReceipt: (id: string, latchFor: (chainId: V2ChainId, owner: Address) => V2BatchLatch = browserV2BatchLatch) => t.bounded(async (rpc): Promise<V2BatchReceipt> => {
+      const known = offeredProtect.get(id)
+      if (!known) return fail('receipt_not_from_this_review')
+      const { batch, review } = known
+      await t.identity(rpc)
+      const latch = latchFor(chain.chainId, owner)
+      const none: readonly V2Event[] = Object.freeze([])
+      const status = await batchCallsStatus((method, params) => rpc(method, params), id)
+      if (status !== null && status >= 100 && status < 200) return { state: 'pending', events: none }
+      if (status === 400 || status === 500) {
+        await latch.releaseBatch(batch.key, id)
+        return { state: status === 400 ? 'not-included' : 'batch-reverted', events: none }
+      }
+      const registered = (encodeEventTopics({ abi: AUTO_EXIT_ABI, eventName: 'MandateRegistered', args: { mandateHash: review.id } } as Parameters<typeof encodeEventTopics>[0]) as (Hex | null)[]).slice(0, 2)
+      const created = (encodeEventTopics({ abi: VAULT_FACTORY_ABI, eventName: 'VaultCreated', args: { owner, vault: batch.vault } } as Parameters<typeof encodeEventTopics>[0]) as (Hex | null)[]).slice(0, 3)
+      const hash = await transactionWithLog(rpc, autoExit, registered, review.snapshot.blockNumber)
+      if (hash === null) return { state: 'pending', events: none }
+      const receipt = await receiptOfBatch(rpc, chain, hash, (logs) =>
+        logs.some((log) => log.address === autoExit && log.topics[0] === registered[0] && log.topics[1] === review.id)
+        && logs.some((log) => log.address === batch.factory && log.topics[0] === created[0] && log.topics[2] === created[2]))
+      if (receipt.state === 'pending' || receipt.state === 'reorged') return { ...receipt, events: none }
+      await latch.releaseBatch(batch.key, id)
+      if (receipt.state === 'reverted') return { ...receipt, events: none }
+      // A finalized registration used the nonce for good: the journal lets it go, as the step path's receipt does.
+      if (receipt.state === 'finalized') await wallet.signatures.forget(entryOf(review.mandate.nonce))
+      return { ...receipt, events: decodeEvents(receipt.logs, [{ address: batch.factory, abi: VAULT_FACTORY_EVENTS_ABI }, { address: batch.vault, abi: VAULT_EVENTS_ABI }, { address: autoExit, abi: AUTO_EXIT_EVENTS_ABI }]) }
+    }),
+
+    /**
      * Reviews an exit order (spec §4.1, §4.2, §4.4): the vault is the factory's and the wallet's, the position its root or
      * an active successor, every term of §4.2 valid, the warnings acknowledged; a fresh random nonce is chosen. The
      * steps: turning the module on (only when the vault's module is not the manifest's auto-exit), the signature, the
      * registration. Reads only, at one block; nothing is signed or recorded yet.
+     *
+     * Changed on purpose 2026-10-06 (the owner's point 5: Auto-exit as one signature and one batch): with
+     * `request.newVault`, the vault may be the one this wallet's next `createVault` makes, not created yet: it must be
+     * exactly `predictVault(owner, nextNonce(owner))` on that DEX's factory, still free, for `tokenId` as its root, held by
+     * the wallet (the vault client's own reads, ./vault.ts newVaultRoot). Its steps are then the signature, the module and
+     * the registration, the last two once the vault exists (or in the same batch that creates it, prepareProtectBatch).
+     *
+     * Changed on purpose 2026-10-06 (the review of point 5): the pool's own price is read at the review's block, and an
+     * armed trigger it has reached is refused (`mandate_trigger_reached`); the review carries that price.
      */
     reviewMandate: (input: MandateRequest) => t.bounded(async (rpc): Promise<MandateReview> => {
       if (!input || typeof input !== 'object') return fail('mandate_invalid_request')
@@ -555,16 +894,31 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
       }
       await t.identity(rpc)
       const { at, snapshot } = await pinBlock(t, rpc)
-      const identity = await ownedVault(at, request.vault)
-      const role = await roleOf(at, identity, request.tokenId)
+      const fresh = request.newVault !== undefined ? request.newVault : null
+      if (fresh !== null && (!fresh || (fresh.dex !== 3 && fresh.dex !== 4))) return fail('vault_invalid_dex')
+      if (!isAddress(request.vault)) return fail('vault_invalid_address')
+      const asked = request.vault.toLowerCase() as Address
+      // A vault not created yet, while it is not: the wallet's next one on that factory, for this position as its root.
+      const root = fresh !== null && !(await madeBy(at, fresh.dex, asked)) ? await newVaultRoot(t, chain, contracts, at, fresh.dex, request.tokenId) : null
+      if (root && root.vault !== asked) return fail('vault_nonce_moved')
+      const identity = root ? null : await ownedVault(at, asked)
+      // Created since: this wallet's vault for this very position, or another of its vaults took the prediction.
+      if (fresh !== null && identity && identity.root.tokenId !== request.tokenId) return fail('vault_nonce_moved')
+      const vault = root ? root.vault : (identity as VaultIdentity).vault
+      const dex = root ? root.dex : (identity as VaultIdentity).dex
+      const pool: MandateReview['pool'] = root ? Object.freeze({ dex: root.dex, ...root.pool }) : (identity as VaultIdentity).pool
+      const role = root ? 'root' as const : await roleOf(at, identity as VaultIdentity, request.tokenId)
       const ceiling = await view<number>(at, autoExit, AUTO_EXIT_ABI, 'MAX_SLIPPAGE_BPS')
       const time = snapshot.blockTimestamp > nowSeconds() ? snapshot.blockTimestamp : nowSeconds()
-      const problems = mandateProblems(request, { now: time, pool: identity.pool, maxSlippageBps: ceiling, inVault: role !== null })
+      // Changed on purpose 2026-10-06 (the review of point 5): the pool's own price at this block, which no armed trigger
+      // may have reached.
+      const sqrtPriceX96 = await poolPriceAt(at, pool)
+      const problems = mandateProblems(request, { now: time, pool, maxSlippageBps: ceiling, inVault: role !== null, sqrtPriceX96 })
       if (problems.length || role === null) return fail(`mandate_invalid: ${problems.join(' ')}`)
       const nonce = await freshNonce(at)
       const mandate: ExitMandate = Object.freeze({
         owner,
-        vault: identity.vault,
+        vault,
         tokenId: request.tokenId,
         triggerBelowSqrtPriceX96: request.triggerBelowSqrtPriceX96,
         triggerAboveSqrtPriceX96: request.triggerAboveSqrtPriceX96,
@@ -575,29 +929,34 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
         nonce,
       })
       const typedData = exitMandateTypedData(chain.chainId, autoExit, mandate)
-      const rank0 = await rankOf(at, identity.pool.currency0)
-      const rank1 = await rankOf(at, identity.pool.currency1)
-      const enable = lower(await view<string>(at, identity.vault, VAULT_ABI, 'exitModule')) !== autoExit
+      const rank0 = await rankOf(at, pool.currency0)
+      const rank1 = await rankOf(at, pool.currency1)
+      // A vault not created yet starts with no module: it is turned on in the batch that creates it, or right after.
+      const enable = root ? true : lower(await view<string>(at, vault, VAULT_ABI, 'exitModule')) !== autoExit
       const steps: { kind: MandateStepKind; summary: readonly string[] }[] = []
-      if (enable) steps.push(Object.freeze({ kind: 'enable-exit-module' as const, summary: Object.freeze(['Turn on auto-exit for this vault.']) }))
-      steps.push(Object.freeze({ kind: 'sign-mandate' as const, summary: Object.freeze(['Sign your exit order in your wallet.']) }))
-      steps.push(Object.freeze({ kind: 'register-mandate' as const, summary: Object.freeze([`Register your exit order for position #${request.tokenId}.`]) }))
+      const enableStep = Object.freeze({ kind: 'enable-exit-module' as const, summary: Object.freeze(['Turn on Auto-exit for this position.']) })
+      if (enable && !root) steps.push(enableStep)
+      steps.push(Object.freeze({ kind: 'sign-mandate' as const, summary: Object.freeze(['Sign your Auto-exit in your wallet.']) }))
+      if (root) steps.push(enableStep)
+      steps.push(Object.freeze({ kind: 'register-mandate' as const, summary: Object.freeze([`Register Auto-exit for position #${request.tokenId}.`]) }))
       const review: MandateReview = Object.freeze({
         kind: 'mandate',
         chainId: chain.chainId,
         owner,
         autoExit,
-        vault: identity.vault,
-        dex: identity.dex,
-        pool: identity.pool,
+        vault,
+        dex,
+        pool,
         role,
+        predicted: root ? Object.freeze({ factory: root.factory, nonce: root.nonce }) : null,
+        sqrtPriceX96,
         mandate,
         id: mandateId(mandate),
         digest: typedDataDigest(typedData),
         typedData,
         receive: mandate.receiveMode === RECEIVE_MODE.converted ? Object.freeze({ mode: 'converted' as const, token: mandate.convertTo }) : Object.freeze({ mode: 'both' as const }),
-        feeRule: Object.freeze(autoExitFeeRule(mandate.receiveMode, mandate.convertTo, identity.pool, rank0, rank1)),
-        warnings: autoExitWarnings(identity.dex),
+        feeRule: Object.freeze(autoExitFeeRule(mandate.receiveMode, mandate.convertTo, pool, rank0, rank1)),
+        warnings: autoExitWarnings(dex),
         steps: Object.freeze(steps),
         snapshot,
       })
@@ -630,9 +989,14 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
       await verify(rpc, ['autoExit', 'registry', factoryComponent(review.dex)])
       const latest: ReadAt = { rpc, block: 'latest' }
       if (await nonceUsed(latest, review.mandate.nonce)) return fail('mandate_nonce_used')
-      await ownedVault(latest, review.vault)
+      // Changed on purpose 2026-10-06 (the owner's point 5): an order signed for the vault the wallet's next createVault
+      // makes needs that prediction to still hold (or the vault created since, the wallet's, with this root).
+      if (review.predicted) await predictedStill(latest, review)
+      else await ownedVault(latest, review.vault)
       const block = await t.latestBlock(rpc)
       if (review.mandate.validUntil <= block.timestamp || review.mandate.validUntil <= nowSeconds()) return fail('mandate_invalid: mandate_valid_until')
+      // Changed on purpose 2026-10-06 (the review of point 5): nothing is signed for an edge the price has reached since.
+      await triggersAhead(latest, review)
       // What is signed is built again from the review's frozen mandate, never taken from an object a caller could change.
       const typedData = exitMandateTypedData(chain.chainId, autoExit, review.mandate)
       if (typedDataDigest(typedData) !== review.digest || mandateId(review.mandate) !== review.id) return fail('mandate_review_stale')
@@ -690,6 +1054,8 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
         const block = await t.latestBlock(at.rpc)
         if (review.mandate.validUntil <= block.timestamp || review.mandate.validUntil <= nowSeconds()) fail('mandate_invalid: mandate_valid_until')
         if ((await roleOf(at, identity, review.mandate.tokenId)) === null) fail('mandate_invalid: mandate_position')
+        // Changed on purpose 2026-10-06 (the review of point 5): at the prepare and again right before the send.
+        await triggersAhead(at, review)
         return {
           to: autoExit,
           data: encodeFunctionData({ abi: AUTO_EXIT_ABI, functionName: 'registerMandate', args: [review.mandate, signed.signature] }),
@@ -813,7 +1179,7 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
         if ((await view<number>(at, autoExit, AUTO_EXIT_ABI, 'mandateStatus', [hash])) !== 1) fail('mandate_not_active')
         const record = await view<MandateRecord>(at, autoExit, AUTO_EXIT_ABI, 'mandateOf', [hash])
         if (lower(record.owner) !== owner) fail('mandate_not_owner')
-        return { to: autoExit, data: encodeFunctionData({ abi: AUTO_EXIT_ABI, functionName: 'revokeMandate', args: [hash] }), summary: ['Cancel this auto-exit order.'], key: `revoke|${hash}` }
+        return { to: autoExit, data: encodeFunctionData({ abi: AUTO_EXIT_ABI, functionName: 'revokeMandate', args: [hash] }), summary: ['Turn off this Auto-exit.'], key: `revoke|${hash}` }
       }, gas)
     }),
 
@@ -831,7 +1197,7 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
           if (await nonceUsed({ rpc: at.rpc, block: 'finalized' as Hex }, nonce)) await wallet.signatures.forget(entry)
           fail('mandate_nonce_used')
         }
-        return { to: autoExit, data: encodeFunctionData({ abi: AUTO_EXIT_ABI, functionName: 'cancelNonce', args: [nonce] }), summary: ['Cancel a signed exit order that was never registered, so it can never be used.'], key: `cancel|${nonce}` }
+        return { to: autoExit, data: encodeFunctionData({ abi: AUTO_EXIT_ABI, functionName: 'cancelNonce', args: [nonce] }), summary: ['Cancel a signed Auto-exit that was never registered, so it can never be used.'], key: `cancel|${nonce}` }
       }, gas)
     }),
 

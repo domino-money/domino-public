@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
@@ -14,11 +15,13 @@ if (!existsSync(join(WALLET_V2_DIST, 'index.html'))) throw new Error('.wallet-te
 if (!existsSync(resolve(APP, '.test-build/app/functions/_middleware.js'))) execFileSync(process.execPath, ['scripts/test.mjs', '--build-only'], { cwd: APP, stdio: 'ignore' });
 const { routeChain } = await import('../support/browser-chain.mjs');
 const { createFakeSession } = await import('../support/fake-session.mjs');
-const { ARTWORK, pressContinue } = await import('../support/new-position.mjs');
+const { ARTWORK, press, pressContinue } = await import('../support/new-position.mjs');
 const { FIXTURE_TOKEN, createReadStub } = await import('../support/read-stub.mjs');
 const { installS2Wallet, S2_ACCOUNT, S2_OWNER } = await import('../support/s2-wallet.mjs');
 const { createWalletServer } = await import('../support/wallet-server.mjs');
 const { createChainReads } = await import('../support/chain-reads.mjs');
+const { quoteFor } = await import('../support/crosschain-quotes.mjs');
+const readV6Runtime = await import('../../../api-contracts/read-v6/runtime.mjs');
 
 const V2_DIST = WALLET_V2_DIST;
 const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
@@ -28,6 +31,10 @@ const READ = resolve(import.meta.dirname, '../../../api-contracts/read-v1/fixtur
 const asUsdg = (name) => readFileSync(resolve(READ, `${name}.json`), 'utf8').replaceAll(FIXTURE_TOKEN, USDG).replaceAll('"TOKEN"', '"USDG"');
 /** What a wallet on Robinhood Chain is never asked by the offer on the preview: no switch, no read, no signature, no send. */
 const NEVER = ['eth_sendTransaction', 'eth_signTypedData_v4', 'wallet_sendCalls', 'wallet_switchEthereumChain', 'wallet_addEthereumChain', 'eth_estimateGas', 'eth_getTransactionCount'];
+/** An amount the bridge stub answers with no route at all (the package's own quote.none). */
+const NO_ROUTE_RAW = '7000000';
+/** ETH sent as USDG through Relay alone (Across bridges one token as itself only): US$4,000 an ETH, in USDG units per wei. */
+const ETH_AS_USDG = { num: 4_000_000_000n, den: 10n ** 18n };
 
 let browser;
 before(async () => {
@@ -59,8 +66,11 @@ function walletAssets(ethWei) {
 /**
  * The build served with the read stub (TOKEN as USDG; no USDG, and `ethWei` of ETH, none unless said) and the test wallet
  * connected on Robinhood Chain, at New position's amount step.
+ * Added 2026-10-06 (the integration review): `range`, a Custom range typed as the page writes prices ("1 ETH = … USDG"),
+ * [lowest, highest]; `relayDown`, the origins listing with Relay busy (only what Across bridges listed); `held`, steps held
+ * unsettled from an earlier visit (finance/v2/crosschain.ts's store, in localStorage).
  */
-async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, bridge = false, switching = false, served = null } = {}) {
+async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, bridge = false, switching = false, served = null, journal = null, clock = false, range = null, relayDown = false, held = null } = {}) {
   const fake = createFakeSession();
   const errors = [];
   // The read stub's own fixture for each read (tests/support/read-stub.mjs), TOKEN as USDG, and the wallet's balances.
@@ -72,6 +82,9 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
   });
 
   const bridgeCalls = [];
+  // Changed on purpose 2026-10-06 (the owner's point 2b): the offer sizes what it brings from the service's own quotes, so
+  // the stub answers whatever amount is asked (../support/crosschain-quotes.mjs, from the package's recorded answers):
+  // with Relay's gas on the destination when asked, and with no route for NO_ROUTE_RAW.
   const bridgeRoute = async (request, url) => {
     if (!bridge || !url.pathname.startsWith('/api/crosschain/v1/')) return undefined;
     const route = url.pathname.split('/').at(-1);
@@ -81,13 +94,22 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
     const session = fake.state.sessions.get(cookie);
     assert.ok(session && !session.revoked, 'private bridge reads use a real test session');
     assert.equal(request.headers.get('X-Domino-CSRF'), session.csrf);
-    const body = await request.json(); bridgeCalls.push({ route, body });
-    const file = route === 'quote' && body.destinationGas ? 'variants/quote.destination-gas' : route === 'quote' && body.slippageBps === 200 ? 'variants/quote.none' : 'responses/' + route;
-    const data = JSON.parse(readFileSync(resolve(APP, '../api-contracts/crosschain-v1/fixtures/' + file + '.json'), 'utf8').replaceAll('0x1111111111111111111111111111111111111111', S2_OWNER));
+    const body = await request.json();
+    bridgeCalls.push({ route, body });
     if (route === 'quote') {
-      data.quote.requestedAt = data.quote.retrievedAt = Math.floor(Date.now() / 1000);
-      data.quote.expiresAt = data.quote.requestedAt + 120;
-      assert.deepEqual(body, Object.fromEntries(Object.entries(data.quote.request).filter(([key]) => key !== 'owner')));
+      // ETH for USDG: at a price, through Relay alone (Added 2026-10-06).
+      const crossKind = body.originToken === ZERO && body.destinationToken === USDG ? { rate: ETH_AS_USDG, relayOnly: true } : {};
+      return Response.json(quoteFor(body, S2_OWNER, body.destinationGas ? 'variants/quote.destination-gas' : body.amountRaw === NO_ROUTE_RAW ? 'variants/quote.none' : 'responses/quote', crossKind), { headers });
+    }
+    const data = JSON.parse(readFileSync(resolve(APP, '../api-contracts/crosschain-v1/fixtures/responses/' + route + '.json'), 'utf8').replaceAll('0x1111111111111111111111111111111111111111', S2_OWNER));
+    // The listing is the recorded one, for the token asked.
+    if (route === 'origins') data.origins.destinationToken = body.destinationToken;
+    // Relay busy: its listing could not be read, so only what Across bridges is listed (the backend drops the rest).
+    if (route === 'origins' && relayDown) {
+      data.origins.providers = data.origins.providers.map((p) => (p.provider === 'relay' ? { provider: 'relay', status: 'rate_limited', reason: 'provider_rate_limited' } : p));
+      data.origins.chains = data.origins.chains
+        .map((chain) => ({ ...chain, tokens: chain.tokens.map((t) => ({ ...t, providers: t.providers.filter((p) => p !== 'relay') })).filter((t) => t.providers.length > 0) }))
+        .filter((chain) => chain.tokens.length > 0);
     }
     return Response.json(data, { headers });
   };
@@ -106,6 +128,8 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
   const origin = `http://127.0.0.1:${server.address().port}`;
   fake.origin = origin;
   const context = await browser.newContext({ viewport: { width: 1320, height: 1100 } });
+  // Added 2026-10-06: the page's clock, to move past a quote's deadline or a sign-in's wait without waiting (Playwright's).
+  if (clock) await context.clock.install();
   await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   const rpc = await routeChain(context);
@@ -125,6 +149,10 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
     });
   }
   const wallet = await installS2Wallet(context, { chainId: 4663, ...balances });
+  // A deposit this browser followed on an earlier visit (finance/v2/crosschain.ts's journal, in localStorage).
+  if (journal) await context.addInitScript(({ key, value }) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, journal);
+  // Steps held unsettled on an earlier visit (finance/v2/crosschain.ts's store, in localStorage).
+  if (held) await context.addInitScript(({ key, value }) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, held);
   // The gate's test-build hook (src/v2/gate.ts): opens V2 options on this server's origin; S2 is then `preview` here.
   if (gateOpen) await context.addInitScript(() => { window.__dominoV2Test = { originOpen: true }; });
   const page = await context.newPage();
@@ -134,6 +162,8 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
     wallet,
     context,
     bridgeCalls,
+    quotes: () => bridgeCalls.filter((c) => c.route === 'quote').map((c) => c.body),
+    walletReads: () => read.requests.filter((r) => r.path.endsWith('/wallet-assets')).length,
     signCalls: () => signCalls,
     async close() {
       await context.close();
@@ -161,6 +191,16 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
     const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
     await pressContinue(current('pool'));
     await current('range').waitFor();
+    if (range) {
+      // As tests/support/new-position.mjs walkToReview types one: Custom, the highest price first.
+      const step = current('range').locator('[data-picker="range"]');
+      await press(step.getByRole('radio', { name: 'Custom' }));
+      for (const [which, price] of [['upper', range[1]], ['lower', range[0]]]) {
+        const field = step.locator(`#range-${which}-price`);
+        await field.fill(price);
+        await field.press('Enter');
+      }
+    }
     await pressContinue(current('range'));
     await current('amount').waitFor();
     // The amount step's own balance read has answered (zero USDG, zero ETH).
@@ -172,22 +212,32 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
   }
 }
 
+/** Types `text` in the USDG field: the amount step's own amount, typed in USDG. */
+const typeUsdg = (s, text) => s.page.locator('li[data-step="amount"] [data-pair-side="1"] input[inputmode="decimal"]').fill(text);
 
 const OUT = process.env.DOMINO_R5_SHOTS;
-async function capture(s, name) {
+async function capture(s, name, selector = '[data-funds-offer]') {
   if (!OUT) return;
   mkdirSync(OUT, { recursive: true });
   for (const width of [1440, 390, 320]) {
     await s.page.setViewportSize({ width, height: 1080 });
-    await s.page.locator('[data-funds-offer]').scrollIntoViewIfNeeded();
+    await s.page.locator(selector).first().scrollIntoViewIfNeeded();
     await s.page.screenshot({ path: resolve(OUT, name + '-' + width + '.png'), fullPage: true });
+    // The part itself, close up, at each width.
+    await s.page.locator(selector).first().screenshot({ path: resolve(OUT, name + '-' + width + '-part.png') });
     assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'no horizontal overflow at ' + width);
   }
+  await s.page.setViewportSize({ width: 1320, height: 1100 });
 }
 
-test('insufficient funds automatically shows the inline offer and its real service state, without wallet prompts', async () => {
+// Changed on purpose 2026-10-06 (the owner's point 1): before an amount, nothing but the discreet line, and only when
+// Domino's service read something to bring; the box comes once an amount the wallet can't fund is typed.
+test('an amount the wallet can\'t fund shows the inline offer and its real service state, without wallet prompts; nothing before it', async () => {
   const s = await openNewPosition();
   try {
+    await s.page.waitForTimeout(500);
+    assert.equal(await s.page.locator('[data-funds-offer], [data-funds-line]').count(), 0, 'nothing before an amount');
+    await typeUsdg(s, '1000');
     const offer = s.page.locator('[data-funds-offer]');
     await offer.waitFor();
     assert.equal(await offer.evaluate((el) => el.tagName), 'SECTION');
@@ -195,6 +245,9 @@ test('insufficient funds automatically shows the inline offer and its real servi
     assert.match(await offer.locator('[data-funds-locked]').innerText(), /isn't available yet/);
     assert.equal(await offer.locator('[data-funds-scan]').count(), 0, 'do not ask the wallet to scan for an unavailable bridge');
     assert.equal(await offer.locator('[data-funds-nothing]').count(), 0, 'an unread wallet is never reported empty');
+    // The amount step says the wallet is short once (PairedAmounts); the offer does not say it again.
+    assert.equal(await s.page.locator('[data-amount-short]').count(), 1);
+    assert.equal(await offer.locator('[data-funds-lack]').count(), 0, 'one sentence, not two');
     await capture(s, 'funds-unavailable-after-local-fixture');
   } finally { await s.close(); }
 });
@@ -210,14 +263,23 @@ const signInFromDialog = async (s) => {
   await s.page.keyboard.press('Escape');
 };
 const switches = (s) => s.wallet.state.log.filter((entry) => entry.method === 'wallet_switchEthereumChain').map((entry) => entry.params[0].chainId);
+const ARB_USDC = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
+const ARB_WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
+/** 100 USDC and 0.01 ETH (for the approval's and the deposit's gas) on Arbitrum One, as the wallet's own read gives them. */
+const ARB_WALLET = { tokens: { [`42161:${ARB_USDC}`]: { balance: 100_000_000n, decimals: 6 } }, native: { 42161: 10n ** 16n } };
 
-test('one click on a network: signed in once, the wallet moved there once, its balance read, the token and the amount chosen, the quote asked', async () => {
-  const s = await openNewPosition({ bridge: true, switching: true, balances: { tokens: { '42161:0xaf88d065e77c8cc2239327c5edb3a432268e5831': { balance: 100_000_000n, decimals: 6 } } } });
+// Changed on purpose 2026-10-06 (the owner's point 2b: a US$16 position asked for US$270): the amount brought is what the
+// position lacks, sized from the service's own quote, never everything held there.
+test('one click on a network: signed in once, the wallet moved there once, its balance read, the token and the amount the position lacks, one quote', async () => {
+  const s = await openNewPosition({ bridge: true, switching: true, balances: ARB_WALLET });
   try {
+    await typeUsdg(s, '50');
     const offer = s.page.locator('[data-funds-offer]');
     await offer.locator('[data-funds-sources]').waitFor();
-    assert.deepEqual(await offer.locator('[data-funds-network]').evaluateAll((els) => els.map((el) => [el.getAttribute('data-funds-network'), el.textContent.trim()])), [['8453', 'Base'], ['42161', 'Arbitrum One']], 'Domino\'s other networks, never the destination, never Ethereum or OP Mainnet');
+    await offer.locator('[data-funds-network]').first().waitFor();
+    assert.deepEqual(await offer.locator('[data-funds-network]').evaluateAll((els) => els.map((el) => [el.getAttribute('data-funds-network'), el.textContent.trim()])), [['8453', 'Base'], ['42161', 'Arbitrum One']], 'Domino\'s other networks, never the destination');
     assert.equal(await offer.locator('[data-funds-scan], #funds-origin-chain, [data-funds-signin], .dm-funds-route').count(), 0, 'no scan, no list of networks, no separate sign-in, no route steps');
+    assert.equal(await offer.locator('[data-funds-other]').count(), 1, 'one discreet way to the other networks');
     assert.equal(s.bridgeCalls.length, 0, 'nothing asked before the choice');
     assert.deepEqual(switches(s), []);
     await capture(s, 'funds-choice');
@@ -226,12 +288,50 @@ test('one click on a network: signed in once, the wallet moved there once, its b
     const quote = offer.locator('[data-funds-quote]');
     await quote.waitFor({ timeout: 30_000 });
     assert.equal(s.signCalls(), 1, 'signed once');
-    assert.deepEqual(switches(s), ['0xa4b1'], 'the wallet moved to Arbitrum One once');
-    // The stub holds the quote's body to the fixture's request: Arbitrum's USDC, all 100 of it, to USDG on Robinhood Chain.
-    assert.equal(s.bridgeCalls.filter((c) => c.route === 'quote').length, 1, 'one quote, for what was chosen');
-    assert.match(await offer.locator('[data-funds-title]').innerText(), /^Bring USDG from Arbitrum/);
+    assert.deepEqual(switches(s), ['0xa4b1'], 'the wallet moved to Arbitrum One once, to read it (the service read nothing)');
+    // 50 USDG lacking, sent as USDC: 50 plus room for the fees; the first quote's minimum covers it, so it is the only one.
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountRaw, q.destinationToken, q.destinationGas]), [[42161, ARB_USDC, '51000000', USDG, false]], 'one quote, for what the position lacks');
+    // Changed on purpose 2026-10-06 (the integration review): the title names the network alone once it is picked; the
+    // button says what leaves the wallet (USDC), the card what arrives (USDG).
+    assert.match(await offer.locator('[data-funds-title]').innerText(), /^Bring funds from Arbitrum One$/);
     assert.equal(await offer.locator('[data-funds-sources]').count(), 0, 'the choice made, the quote is the screen');
+    // The card: what arrives and when, one button, the discrete line; the rest folded under one Details.
+    assert.equal((await quote.locator('[data-funds-receive] .dm-funds-delivery').innerText()).trim(), 'You receive about 50.781437 USDG on Robinhood Chain (at least 50.52753 USDG)');
+    assert.equal((await quote.locator('[data-funds-eta]').innerText()).trim(), 'Arrives in about 1 s');
+    assert.equal((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), 'Bring 51 USDC from Arbitrum One');
+    assert.match(await quote.locator('[data-funds-bridge-elsewhere]').innerText(), /^Domino fee 0\.35% · via Relay · you can also bridge with any other service$/);
+    assert.equal(await quote.locator('details').count(), 1, 'ONE Details');
+    assert.equal(await quote.locator('[data-funds-quote-details]').getAttribute('open'), null, 'closed');
+    assert.equal(await quote.locator('[data-funds-candidate="relay"]').isVisible(), false, 'the fees are in Details');
+    assert.equal(await offer.getByText('Quote', { exact: true }).count(), 0, 'no "Quote" heading');
+    assert.equal(await offer.locator('.dm-pill').count(), 0, 'no "Best" pill');
     await capture(s, 'funds-one-click');
+    await quote.locator('[data-funds-quote-details] > summary').click();
+    assert.match(await quote.locator('[data-funds-candidate="relay"][data-funds-winner] [data-funds-lines]').innerText(), /Domino fee \(0\.35%\): 0\.1785 USDC, charged by Relay on Arbitrum One/);
+    assert.equal(await quote.locator('[data-funds-candidate="across"]').isVisible(), true, 'the other route, in the same Details');
+    assert.match(await quote.locator('[data-funds-send]').innerText(), /51 USDC/);
+    await capture(s, 'funds-one-click-details');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the owner's point 2b): the quote follows the amount typed in the step: sized again after a pause when
+// it changes, and gone once nothing is lacking.
+test('the quote follows the amount typed: sized again when it changes, gone when nothing is lacking', async () => {
+  const s = await openNewPosition({ bridge: true, switching: true, balances: ARB_WALLET });
+  try {
+    await typeUsdg(s, '50');
+    const offer = s.page.locator('[data-funds-offer]');
+    await offer.locator('[data-funds-network="42161"]').click();
+    await signInFromDialog(s);
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.textContent?.trim() === 'Bring 51 USDC from Arbitrum One', null, { timeout: 30_000 });
+    await typeUsdg(s, '80');
+    // Changed on purpose 2026-10-06 (the review): the quote for 50 is greyed and closed at once, not only once its new size is asked.
+    assert.equal(await s.page.evaluate(() => document.querySelector('[data-funds-quote-stale]') !== null && document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.disabled === true), true, 'never sendable for the old amount');
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.textContent?.trim() === 'Bring 81.6 USDC from Arbitrum One' && !document.querySelector('[data-funds-quote-stale]'), null, { timeout: 30_000 });
+    assert.deepEqual(s.quotes().map((q) => q.amountRaw), ['51000000', '81600000'], 'one quote each, the second for the new amount');
+    await typeUsdg(s, '');
+    await offer.waitFor({ state: 'detached' });
+    assert.equal(s.quotes().length, 2, 'nothing asked for an amount no longer lacking');
   } finally { await s.close(); }
 });
 
@@ -241,6 +341,7 @@ test('a network with nothing to bring says so; one whose balance could not be re
     '8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': { balance: 0n, decimals: 6 },
   } } });
   try {
+    await typeUsdg(s, '50');
     const offer = s.page.locator('[data-funds-offer]');
     await offer.locator('[data-funds-network="8453"]').click();
     await signInFromDialog(s);
@@ -252,8 +353,23 @@ test('a network with nothing to bring says so; one whose balance could not be re
     const unread = offer.locator('[data-funds-pick="failed"][data-error-code="read_partial"]');
     await unread.waitFor({ timeout: 30_000 });
     assert.match(await unread.innerText(), /Arbitrum One couldn't be read/);
-    assert.equal(s.bridgeCalls.filter((c) => c.route === 'quote').length, 0, 'no quote without something to send');
+    assert.equal(s.quotes().length, 0, 'no quote without something to send');
     assert.deepEqual(switches(s), ['0x2105', '0xa4b1']);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the owner's point 7: no transaction that cannot go through): a token on a network with no ETH there.
+test('a token on a network with no ETH to send it is not brought: said in one line, nothing asked of the bridge', async () => {
+  const s = await openNewPosition({ bridge: true, switching: true, balances: { tokens: { [`42161:${ARB_USDC}`]: { balance: 100_000_000n, decimals: 6 }, [`42161:${ARB_WETH}`]: { balance: 0n, decimals: 18 } } } });
+  try {
+    await typeUsdg(s, '50');
+    const offer = s.page.locator('[data-funds-offer]');
+    await offer.locator('[data-funds-network="42161"]').click();
+    await signInFromDialog(s);
+    const said = offer.locator('[data-funds-pick="empty"][data-funds-pick-network="42161"]');
+    await said.waitFor({ timeout: 30_000 });
+    assert.equal((await said.innerText()).trim(), 'You have 100 USDC on Arbitrum One, but no ETH there to pay the network fee.');
+    assert.equal(s.quotes().length, 0);
   } finally { await s.close(); }
 });
 
@@ -262,10 +378,10 @@ test('a pool covered by the existing one-token swap keeps the cross-network offe
   try {
     await s.page.waitForTimeout(500);
     assert.equal(await s.page.locator('[data-funds-offer]').count(), 0);
-    await s.page.locator('[data-pair-side="1"] input[inputmode="decimal"]').fill('1000');
+    await typeUsdg(s, '1000');
     await s.page.locator('[data-funds-offer]').waitFor();
-    assert.equal(await s.page.locator('[data-funds-lack]').getAttribute('data-funds-lack'), 'short');
-    await s.page.locator('[data-pair-side="1"] input[inputmode="decimal"]').fill('0.1');
+    assert.equal(await s.page.locator('[data-amount-short]').count(), 1, 'the amount step\'s own line says it is short');
+    await typeUsdg(s, '0.1');
     await s.page.locator('[data-funds-offer]').waitFor({ state: 'detached' });
   } finally { await s.close(); }
 });
@@ -274,81 +390,254 @@ test('the closed V2 gate retains the original amount step without funds discover
   const s = await openNewPosition({ gateOpen: false });
   try {
     await s.page.waitForTimeout(500);
-    assert.equal(await s.page.locator('[data-funds-offer]').count(), 0);
+    assert.equal(await s.page.locator('[data-funds-offer], [data-funds-line]').count(), 0);
+    await typeUsdg(s, '1000');
+    await s.page.waitForTimeout(500);
+    assert.equal(await s.page.locator('[data-funds-offer], [data-funds-line]').count(), 0);
   } finally { await s.close(); }
 });
 
-
-test('the quote under the one click: fees, the least received, gas on the destination and slippage under Change amount', async () => {
-  const s = await openNewPosition({ bridge: true, switching: true, balances: { tokens: { '42161:0xaf88d065e77c8cc2239327c5edb3a432268e5831': { balance: 100_000_000n, decimals: 6 } } } });
+// Changed on purpose 2026-10-06 (the owner's point 4): "Get gas on {destination}" in the card when the destination's ETH
+// reads as none (never pre-chosen), the quote sized again with it; Change amount keeps the amount (a new quote by itself
+// after a pause), the network and the token; no bridge slippage, no provider names, no "Get a quote".
+test('the quote card: gas on the destination in the card, sized again; Change amount re-quotes by itself; no route says so', async () => {
+  const s = await openNewPosition({ bridge: true, switching: true, balances: ARB_WALLET });
   try {
+    await typeUsdg(s, '50');
     const offer = s.page.locator('[data-funds-offer]');
     await offer.locator('[data-funds-network="42161"]').click();
     await signInFromDialog(s);
     const quote = offer.locator('[data-funds-quote]');
     await quote.waitFor({ timeout: 30_000 });
     assert.equal(await quote.getAttribute('data-funds-decision'), 'relay');
-    assert.match(await quote.locator('[data-funds-bridge-elsewhere]').innerText(), /Domino fee 0.35% · via Relay/);
-    assert.ok(await quote.locator('[data-funds-deposit-button]').count() >= 1, 'one button to bring it');
-    // The rest is under Change amount: gas delivered on the destination, the person's choice, never pre-chosen.
-    await offer.locator('[data-funds-edit] > summary').click();
-    const gas = offer.locator('[data-funds-destination-gas]');
-    assert.equal(await gas.locator('input').isChecked(), false, 'gas delivery is the person\'s choice');
-    await gas.locator('input').check();
-    await offer.locator('[data-funds-get-quote]').click();
-    await s.page.waitForFunction(() => /at least 97\.046108 USDG/.test(document.querySelector('[data-funds-quote] [data-funds-candidate="relay"] [data-funds-lines]')?.textContent ?? ''));
+    // The wallet has no ETH on Robinhood Chain (the amount step read it): the option is in the card, not chosen.
+    const gas = quote.locator('[data-funds-gas-card] input');
+    assert.equal(await gas.isChecked(), false, 'gas delivery is the person\'s choice');
+    await capture(s, 'funds-gas-option');
+    await gas.check();
+    await s.page.waitForFunction(() => !document.querySelector('[data-funds-quote-stale]') && /Includes 0\.\d+ ETH for network fees on Robinhood Chain/.test(document.querySelector('[data-funds-quote] [data-funds-candidate="relay"] [data-funds-lines]')?.textContent ?? ''), null, { timeout: 30_000 });
     assert.equal(await quote.locator('[data-funds-candidate="across"]').getAttribute('data-funds-status'), 'destination_gas_unsupported');
-    assert.equal(await quote.locator('[data-funds-candidate="across"]').isVisible(), false, 'alternative is initially folded');
-    await quote.locator('[data-funds-alternatives] > summary').click();
-    assert.equal(await quote.locator('[data-funds-candidate="across"]').isVisible(), true, 'the alternative and its refusal reason remain accessible');
-    // Change amount stays open while the person changes the transfer.
-    await gas.locator('input').uncheck();
-    await offer.locator('[data-funds-slippage] > summary').click();
-    await offer.locator('[data-funds-slippage-input]').fill('2');
-    await offer.locator('[data-funds-get-quote]').click();
-    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote]')?.getAttribute('data-funds-decision') === 'none');
+    assert.equal(await quote.locator('[data-funds-candidate="across"]').isVisible(), false, 'the other route is folded');
+    await quote.locator('[data-funds-quote-details] > summary').click();
+    assert.equal(await quote.locator('[data-funds-candidate="across"]').isVisible(), true, 'the other route and why it has no price stay one click away');
+    // Sized again with the gas: what arrives with Relay's top-up taken out still covers the position.
+    const sized = s.quotes().filter((q) => q.destinationGas);
+    assert.ok(sized.length >= 1 && sized.length <= 2, `${sized.length} quotes with the gas: at most one more`);
+    assert.ok(BigInt(sized.at(-1).amountRaw) > 51_000_000n, 'more sent, so what arrives still covers the position');
+    await gas.uncheck();
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote]:not([aria-busy]) [data-funds-deposit-button]')?.textContent?.trim() === 'Bring 51 USDC from Arbitrum One' && !document.querySelector('[data-funds-quote-stale]'), null, { timeout: 30_000 });
+    // Change amount: the amount, the network and the token; nothing else.
+    await offer.locator('[data-funds-edit] > summary').click();
+    const edit = offer.locator('[data-funds-edit]');
+    assert.equal(await edit.locator('#funds-amount').inputValue(), '51');
+    assert.equal(await edit.locator('[data-funds-slippage], [data-funds-get-quote], [data-funds-providers]').count(), 0, 'no bridge slippage, no Get a quote, no provider list');
+    assert.equal(await edit.getByText(/Relay|Across/).count(), 0, 'no provider names');
+    const before = s.quotes().length;
+    await edit.locator('#funds-amount').fill('3');
+    await edit.locator('#funds-amount').fill('30');
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.textContent?.trim() === 'Bring 30 USDC from Arbitrum One' && !document.querySelector('[data-funds-quote-stale]'), null, { timeout: 30_000 });
+    assert.deepEqual(s.quotes().slice(before).map((q) => q.amountRaw), ['30000000'], 'asked once, after the pause, for what was typed last');
+    await edit.locator('#funds-amount').fill('7');
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote]')?.getAttribute('data-funds-decision') === 'none' && !document.querySelector('[data-funds-quote-stale]'), null, { timeout: 30_000 });
     assert.equal(await quote.locator('[data-funds-deposit-button]').count(), 0, 'no send control for a plan with no route');
-    assert.deepEqual(s.bridgeCalls.filter((entry) => entry.route === 'quote').map((entry) => [entry.body.destinationGas, entry.body.slippageBps]), [[false, 50], [true, 50], [false, 200]]);
+    assert.match(await quote.locator('[data-funds-no-route]').innerText(), /No route available right now\./);
+    await capture(s, 'funds-no-route');
   } finally { await s.close(); }
 });
 
 // Added 2026-10-06 (rugged97's delta of 5 Oct, item 3: read-v6's chain-balances): Domino's service reads the balances on the
-// other networks, said under each network's button before anything is chosen; the one click then asks the quote with the
-// wallet where it is, and the wallet moves to that network only when the person presses the button that sends.
-const ARB_USDC = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
-const ARB_WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
-const arbitrumHoldings = () => createChainReads({
+// other networks; the one click then asks the quote with the wallet where it is, and the wallet moves to that network only
+// when the person presses the button that sends.
+const arbitrumHoldings = (balances = { [ARB_USDC]: 100_000_000n, [ZERO]: 10n ** 16n }) => createChainReads({
   chainId: 42161,
   tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: ARB_WETH, symbol: 'WETH', decimals: 18 }, { address: ARB_USDC, symbol: 'USDC', name: 'USD Coin', decimals: 6 }],
-  balances: { [ARB_USDC]: 100_000_000n },
+  balances,
 });
 
-test("the service's balances under each network; one click quotes them with the wallet where it is", async () => {
+// Added 2026-10-06 (the owner's point 1: "only before an amount, only when the person has money on another network ... a
+// visual sign that she has a token there and that we will bridge it"; clicking brings everything held there, less the gas).
+test('before an amount, ONE discreet line names what the service read on another network; one click quotes all of it, the wallet staying where it is', async () => {
   const reads = arbitrumHoldings();
   const s = await openNewPosition({ bridge: true, served: reads });
   try {
+    const line = s.page.locator('[data-funds-line]');
+    await line.waitFor({ timeout: 30_000 });
+    assert.equal(await s.page.locator('[data-funds-line]').count(), 1, 'one line');
+    assert.equal(await line.getAttribute('data-funds-line'), '42161');
+    assert.equal((await line.locator('.dm-funds-line-text').innerText()).trim(), 'You have 100 USDC on Arbitrum One (about $100.00)');
+    assert.equal((await line.locator('.dm-funds-line-action').innerText()).trim(), 'Bring it here');
+    assert.equal(await s.page.locator('[data-funds-offer]').count(), 0, 'the line alone, no box');
+    // Under the two amounts, before Advanced.
+    assert.equal(await s.page.evaluate(() => {
+      const line = document.querySelector('[data-funds-line]');
+      const advanced = document.querySelector('li[data-step="amount"] [data-flow-advanced]');
+      const amounts = document.querySelector('li[data-step="amount"] [data-paired-amounts]');
+      return !!(line && advanced && amounts && amounts.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING && line.compareDocumentPosition(advanced) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }), true);
+    assert.deepEqual(reads.calls[0].request.tokens.map((t) => t.chainId), [8453, 8453, 8453, 42161, 42161, 42161, 4663], 'the other networks\' ETH, WETH and USDC, then the destination\'s ETH');
+    assert.equal(s.bridgeCalls.length, 0, 'no sign-in, no quote before the click');
+    assert.deepEqual(switches(s), []);
+    await capture(s, 'funds-discreet-line', '[data-funds-line]');
+    await line.click();
+    await signInFromDialog(s);
+    const quote = s.page.locator('[data-funds-offer] [data-funds-quote]');
+    await quote.waitFor({ timeout: 30_000 });
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountRaw, q.destinationToken]), [[42161, ARB_USDC, '100000000', USDG]], 'all of it, brought as USDG (the same kind)');
+    assert.equal((await s.page.locator('[data-funds-title]').innerText()).trim(), 'Bring funds from Arbitrum One', 'never a token beside the button\'s other one');
+    assert.deepEqual(switches(s), [], 'the wallet stays on Robinhood Chain for the quote');
+    assert.equal(await s.page.locator('[data-funds-line]').count(), 0, 'the line gives way to the offer');
+    await capture(s, 'funds-discreet-line-quote');
+  } finally { await s.close(); }
+});
+
+test('no line when every network the service read holds nothing to bring', async () => {
+  const reads = arbitrumHoldings({});
+  const s = await openNewPosition({ bridge: true, served: reads });
+  try {
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-line]') === null);
+    await s.page.waitForTimeout(800);
+    assert.ok(reads.calls.some((c) => c.route === 'chain-balances'), 'read');
+    assert.equal(await s.page.locator('[data-funds-line], [data-funds-offer]').count(), 0);
+  } finally { await s.close(); }
+});
+
+test("after an amount, the service's balances under each network; one click quotes what the position lacks with the wallet where it is", async () => {
+  const reads = arbitrumHoldings();
+  const s = await openNewPosition({ bridge: true, served: reads });
+  try {
+    await s.page.locator('[data-funds-line]').waitFor({ timeout: 30_000 });
+    await typeUsdg(s, '50');
     const offer = s.page.locator('[data-funds-offer]');
     const holds = offer.locator('[data-funds-network-holds="42161"]');
     await holds.waitFor({ timeout: 30_000 });
-    assert.equal((await holds.innerText()).trim(), 'You have 100 USDC (about $100.00)');
+    // Changed on purpose 2026-10-06 (the integration review): what can be sent, ETH less the gas Review keeps.
+    assert.equal((await holds.innerText()).trim(), 'You have 0.0095 ETH · 100 USDC', 'no USD: Arbitrum One\'s ETH has no price in this read');
     assert.equal(await offer.locator('[data-funds-network-holds="8453"]').count(), 0, 'Base not read by the service: nothing said, never a zero');
+    assert.equal(await offer.locator('[data-funds-network="8453"]').count(), 1, 'its button stays: the wallet\'s own read there');
+    assert.equal(await s.page.locator('[data-funds-line]').count(), 0, 'the line is for before an amount only');
     assert.deepEqual(switches(s), [], 'nothing asked of the wallet to know it');
     await shot(s.page, 'funds-served-networks.png');
     await offer.locator('[data-funds-network="42161"]').click();
     await signInFromDialog(s);
     const quote = offer.locator('[data-funds-quote]');
     await quote.waitFor({ timeout: 30_000 });
-    assert.equal(s.bridgeCalls.filter((c) => c.route === 'quote').length, 1, "the quote for Arbitrum One's 100 USDC (the stub holds its body to the fixture's)");
+    assert.deepEqual(s.quotes().map((q) => q.amountRaw), ['51000000'], 'what the position lacks, sized: one quote');
     assert.deepEqual(switches(s), [], 'the wallet stays on Robinhood Chain for the quote');
-    assert.ok(reads.calls.filter((c) => c.route === 'chain-balances').length >= 2, 'read when the offer opened, and again for the choice');
-    assert.deepEqual(reads.calls[0].request.tokens.map((t) => t.chainId), [8453, 8453, 8453, 42161, 42161, 42161], "Base's and Arbitrum One's ETH, WETH and USDC, never the destination's");
+    assert.ok(reads.calls.filter((c) => c.route === 'chain-balances').length >= 2, 'read when the step opened, and again for the choice');
     await shot(s.page, 'funds-served-balances.png');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the owner's point 3): a network read as empty is gone; when every network read is empty, one sentence.
+test('every network read is empty: one sentence instead of empty buttons, and the other networks one click away', async () => {
+  const empty = (chainId, stable, wrapped) => createChainReads({ chainId, tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: wrapped, symbol: 'WETH', decimals: 18 }, { address: stable, symbol: 'USDC', decimals: 6 }] });
+  const base = empty(8453, '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', '0x4200000000000000000000000000000000000006');
+  const arbitrum = empty(42161, ARB_USDC, ARB_WETH);
+  // Both networks read (each stub reads its own): one answer, as the service gives it.
+  const served = {
+    calls: [],
+    answer(route, request) {
+      served.calls.push({ route, request });
+      if (route !== 'chain-balances') return undefined;
+      const a = arbitrum.answer(route, request).body;
+      const b = base.answer(route, request).body;
+      const chains = a.chains.map((chain) => (chain.chainId === 8453 ? b.chains.find((c) => c.chainId === 8453) : chain));
+      const body = { ...a, chains, coverage: chains.every((c) => c.status === 'current') ? 'complete' : 'partial', totalUsd: null };
+      assert.ok(readV6Runtime.validateResponse(route, body) && readV6Runtime.validateExchange(route, request, body), 'the merged answer keeps the contract');
+      return { status: 200, body };
+    },
+  };
+  const s = await openNewPosition({ bridge: true, served });
+  try {
+    await s.page.waitForTimeout(800);
+    assert.equal(await s.page.locator('[data-funds-line]').count(), 0, 'nothing before an amount');
+    await typeUsdg(s, '50');
+    const offer = s.page.locator('[data-funds-offer]');
+    const nothing = offer.locator('[data-funds-nothing]');
+    await nothing.waitFor({ timeout: 30_000 });
+    assert.equal((await nothing.innerText()).trim(), 'Nothing to bring from Base or Arbitrum One.');
+    assert.equal(await offer.locator('[data-funds-network]').count(), 0, 'no empty buttons');
+    assert.equal(await offer.locator('[data-funds-other]').count(), 1);
+    await capture(s, 'funds-nothing-elsewhere');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the owner's point 2a: "let it fetch from more chains, not only these"): the listing's other networks
+// with both Relay and Across, behind ONE discreet entry; the person picks the network and the token and types the amount
+// (the service reads no balance there yet); one quote, one button; the wallet moves only to send.
+test('Other networks: pick Ethereum and its USDC, type the amount; one quote after the pause, one button, the wallet not moved', async () => {
+  const s = await openNewPosition({ bridge: true, served: arbitrumHoldings() });
+  try {
+    await s.page.locator('[data-funds-line]').waitFor({ timeout: 30_000 });
+    await typeUsdg(s, '50');
+    const offer = s.page.locator('[data-funds-offer]');
+    await offer.locator('[data-funds-other]').click();
+    await signInFromDialog(s);
+    const form = offer.locator('[data-funds-others]');
+    await form.locator('#funds-origin-chain').waitFor({ timeout: 30_000 });
+    await form.locator('#funds-origin-chain').click();
+    const names = await s.page.locator('[data-funds-origin-chain]').evaluateAll((els) => els.map((el) => el.textContent.trim()));
+    assert.deepEqual(names, ['Base', 'Arbitrum One', 'Ethereum', 'OP Mainnet', 'Linea'], 'Domino\'s own, then the others with both bridges; one name each');
+    await s.page.locator('[data-funds-origin-chain="1"]').click();
+    await form.locator('#funds-origin-token').click();
+    // Changed on purpose 2026-10-06 (the review: Relay lists sixteen tokens on Ethereum here, SOMI, PLUME, APE...): the
+    // network's own currency, WETH, USDC and USDT, and what both bridges list.
+    assert.deepEqual(await s.page.locator('[data-funds-origin-token]').evaluateAll((els) => els.map((el) => el.textContent.trim())), ['ETH', 'WETH', 'USDC', 'USDT', 'USDG']);
+    await s.page.locator('[data-funds-origin-token="0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]').click();
+    await form.locator('#funds-amount').fill('25');
+    const quote = offer.locator('[data-funds-quote]');
+    await quote.waitFor({ timeout: 30_000 });
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountRaw]), [[1, '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '25000000']]);
+    assert.equal((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), 'Bring 25 USDC from Ethereum');
+    assert.deepEqual(switches(s), [], 'the wallet moves only to send');
+    await capture(s, 'funds-other-networks');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the owner's point 4): a deposit followed from an earlier visit, as its card reads once it arrived:
+// where it came from in one line (the bridge in Details), the amounts rounded, and Use for what is in the wallet now.
+test('a deposit followed after a reload: arrived, coming from Arbitrum One, the bridge in Details, Use for what is there now', async () => {
+  const { depositJournalKey } = createRequire(import.meta.url)('../../.test-build/app/src/finance/v2/crosschain.js');
+  const record = { provider: 'across', originChainId: 42161, destinationChainId: 4663, depositTxHash: `0x${'d1'.repeat(32)}`, requestId: null, lastState: 'pending' };
+  const s = await openNewPosition({ bridge: true, balances: { tokens: { [`4663:${USDG}`]: { balance: 99_563_269n, decimals: 6 } } }, journal: { key: depositJournalKey(4663, S2_OWNER), value: JSON.stringify([record]) } });
+  try {
+    await typeUsdg(s, '50');
+    const card = s.page.locator(`[data-funds-deposit="${record.depositTxHash}"]`);
+    await card.waitFor({ timeout: 30_000 });
+    // Changed on purpose 2026-10-06 (the integration review): "On the way" only while it is on its way.
+    const heading = s.page.locator('[data-funds-deposits] > h4');
+    assert.equal(await heading.innerText(), 'On the way');
+    // Followed once signed in (the status route is private).
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await signInFromDialog(s);
+    await s.page.locator(`[data-funds-deposit="${record.depositTxHash}"][data-funds-state="filled"]`).waitFor({ timeout: 30_000 });
+    await heading.waitFor({ state: 'detached', timeout: 5_000 });
+    assert.equal((await card.locator('.dm-subtitle').first().innerText()).trim(), 'Coming from Arbitrum One');
+    assert.match(await card.locator('[data-funds-state-text]').innerText(), /Arrived in your wallet on Robinhood Chain\./);
+    await card.locator(`[data-funds-balance="${USDG}"]`).waitFor({ timeout: 30_000 });
+    assert.match(await card.locator(`[data-funds-balance="${USDG}"]`).innerText(), /99\.563269 USDG/);
+    await card.locator(`[data-funds-balance="${USDG}"] input`).check();
+    assert.equal((await card.locator('[data-funds-use]').innerText()).trim(), 'Use 99.563269 USDG for this position');
+    await card.locator('details > summary').click();
+    assert.match(await card.locator('details').innerText(), /Bridge\s+Across/);
+    // Its arrival told once: the amount step read its balances again once, not over and over.
+    const reads = s.walletReads();
+    await s.page.waitForTimeout(2500);
+    assert.equal(s.walletReads(), reads, 'no balance read after the one the arrival asked for');
+    await capture(s, 'funds-deposit-arrived', `[data-funds-deposit="${record.depositTxHash}"]`);
+    // Changed on purpose 2026-10-06 (the integration review: Use left the card, and pressing it again did nothing): the
+    // amount is what arrived, and the card is done.
+    await card.locator('[data-funds-use="balance"]').click();
+    await card.waitFor({ state: 'detached', timeout: 5_000 });
+    assert.equal(await s.page.locator('li[data-step="amount"] [data-pair-side="1"] input[inputmode="decimal"]').inputValue(), '99.563269');
   } finally { await s.close(); }
 });
 
 test('the send moves the wallet to that network once; what the run says stays on screen with its quote', async () => {
   const s = await openNewPosition({ bridge: true, switching: true, served: arbitrumHoldings() });
   try {
+    await s.page.locator('[data-funds-line]').waitFor({ timeout: 30_000 });
+    await typeUsdg(s, '50');
     const offer = s.page.locator('[data-funds-offer]');
     await offer.locator('[data-funds-network-holds="42161"]').waitFor({ timeout: 30_000 });
     await offer.locator('[data-funds-network="42161"]').click();
@@ -356,12 +645,258 @@ test('the send moves the wallet to that network once; what the run says stays on
     const quote = offer.locator('[data-funds-quote]');
     await quote.waitFor({ timeout: 30_000 });
     assert.deepEqual(switches(s), []);
-    await quote.locator('[data-funds-deposit-button]').first().click();
+    // Changed on purpose 2026-10-06 (the review: the card and the run's notice vanished while the moved session asked the
+    // listing again): from the notice on, the quote card never leaves the page.
+    await s.page.evaluate(() => {
+      window.__fundsQuoteGone = false;
+      new MutationObserver(() => {
+        if (document.querySelector('[data-funds-run-notice]')) window.__fundsNoticeSeen = true;
+        if (window.__fundsNoticeSeen && !document.querySelector('[data-funds-quote]')) window.__fundsQuoteGone = true;
+      }).observe(document.body, { subtree: true, childList: true, attributes: true });
+    });
+    await quote.locator('[data-funds-deposit-button]').click();
     // The test wallet holds nothing there, so the review on Arbitrum One stops: nothing is sent.
     const notice = offer.locator('[data-funds-run-notice]');
     await notice.waitFor({ timeout: 30_000 });
+    await s.page.waitForTimeout(2500);
+    assert.equal(await s.page.evaluate(() => window.__fundsQuoteGone), false, 'the card stayed, with its notice');
+    assert.equal(await notice.isVisible(), true);
     assert.deepEqual(switches(s), ['0xa4b1'], 'moved to Arbitrum One once, by the send');
     assert.equal(await quote.isVisible(), true, 'the quote stays, its session having moved with the wallet');
     assert.equal(await offer.locator('[data-funds-pick]').count(), 0, 'no pick left waiting');
+    await capture(s, 'funds-run-notice');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the review of 2026-10-06: after a deposit, the line named the funds just bridged once more): once a
+// deposit is settled, Domino's service is asked again and the line names only what is still there. A deposit this page
+// sent holds the line back until then (model.ts holdOffers, tested there: the test wallet never sends); one followed since
+// a reload does not, since the balances were read after it left.
+test('a deposit followed since a reload: the line names what was read after it left; once it arrived, the balances are read again', async () => {
+  const { depositJournalKey } = createRequire(import.meta.url)('../../.test-build/app/src/finance/v2/crosschain.js');
+  const record = { provider: 'across', originChainId: 42161, destinationChainId: 4663, depositTxHash: `0x${'d1'.repeat(32)}`, requestId: null, lastState: 'pending' };
+  const held = { [ARB_USDC]: 100_000_000n, [ZERO]: 10n ** 16n };
+  const reads = arbitrumHoldings(held);
+  const balanceReads = () => reads.calls.filter((c) => c.route === 'chain-balances').length;
+  const s = await openNewPosition({ bridge: true, served: reads, journal: { key: depositJournalKey(4663, S2_OWNER), value: JSON.stringify([record]) } });
+  try {
+    await s.page.locator(`[data-funds-deposit="${record.depositTxHash}"]`).waitFor({ timeout: 30_000 });
+    const text = s.page.locator('[data-funds-line] .dm-funds-line-text');
+    await text.waitFor({ timeout: 30_000 });
+    assert.equal((await text.innerText()).trim(), 'You have 100 USDC on Arbitrum One (about $100.00)', 'read after that deposit left');
+    // Meanwhile 70 of them were bridged elsewhere; the deposit arrives once the person is signed in (the status route is private).
+    held[ARB_USDC] = 30_000_000n;
+    const before = balanceReads();
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await signInFromDialog(s);
+    await s.page.locator(`[data-funds-deposit="${record.depositTxHash}"][data-funds-state="filled"]`).waitFor({ timeout: 30_000 });
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-line] .dm-funds-line-text')?.textContent?.trim() === 'You have 30 USDC on Arbitrum One (about $30.00)', null, { timeout: 30_000 });
+    assert.ok(balanceReads() > before, 'read again once it arrived');
+    await capture(s, 'funds-line-after-arrival');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the review: past the automatic new quotes, "The quote expired." had no way out).
+test('past its automatic new quotes, an expired quote says so with one button that gets a new one', async () => {
+  const s = await openNewPosition({ bridge: true, switching: true, balances: ARB_WALLET, clock: true });
+  try {
+    await typeUsdg(s, '50');
+    const offer = s.page.locator('[data-funds-offer]');
+    await offer.locator('[data-funds-network="42161"]').click();
+    await signInFromDialog(s);
+    await offer.locator('[data-funds-quote] [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+    assert.equal(s.quotes().length, 1);
+    // Each deadline (2 minutes, less the margin to send) asks a new one by itself, three times in a row.
+    for (let n = 2; n <= 4; n += 1) {
+      await s.page.clock.fastForward('01:55');
+      for (let i = 0; i < 100 && s.quotes().length < n; i += 1) await s.page.waitForTimeout(100);
+      assert.equal(s.quotes().length, n, `new quote ${n - 1} asked by itself`);
+      await offer.locator('[data-funds-quote]:not([aria-busy]) [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+    }
+    await s.page.clock.fastForward('01:55');
+    const expired = offer.locator('[data-funds-quote-expired]');
+    await expired.waitFor({ timeout: 30_000 });
+    assert.equal(s.quotes().length, 4, 'no more by itself');
+    assert.equal(await offer.locator('[data-funds-quote]').count(), 0, 'nothing sendable');
+    assert.equal((await expired.locator('[data-funds-renew]').innerText()).trim(), 'Get a new quote');
+    await capture(s, 'funds-quote-expired');
+    await expired.locator('[data-funds-renew]').click();
+    await offer.locator('[data-funds-quote] [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+    assert.equal(s.quotes().length, 5, 'one new quote, for the same amount');
+    assert.equal(s.quotes()[4].amountRaw, s.quotes()[0].amountRaw);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the review: a line pick that came to nothing left no way to try again before an amount). Changed on
+// purpose 2026-10-06 (the integration review: a beginner who closed the sign-in dialog met three minutes of a box with
+// nothing to press, then a red error): while the dialog is open the pick waits with its own "Sign in" button and the line
+// stays; once it is closed without signing in, it is said within a moment, calmly, with a "Sign in" that runs the same pick.
+test('a sign-in closed without signing: said within a moment and calmly under the line, whose Sign in runs the same pick again', async () => {
+  const s = await openNewPosition({ bridge: true, served: arbitrumHoldings() });
+  try {
+    const line = s.page.locator('[data-funds-line]');
+    await line.waitFor({ timeout: 30_000 });
+    await line.click();
+    const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+    await dialog.waitFor();
+    // Waiting for the sign-in: one calm line with its own Sign in, and the line itself still there.
+    await s.page.locator('[data-funds-pick="signing"]').waitFor({ timeout: 30_000 });
+    assert.equal(await s.page.locator('[data-funds-pick-sign-in="signing"]').count(), 1);
+    assert.equal(await line.count(), 1, 'the line stays usable');
+    await s.page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    // Closed without signing in: said within a moment (the second the dialog has to open, never three minutes), never as an
+    // error.
+    const said = s.page.locator('[data-funds-pick="failed"][data-error-code="signed_out"]');
+    await said.waitFor({ timeout: 5_000 });
+    assert.equal((await said.innerText()).trim(), 'Sign in with your wallet to bring funds from another network.');
+    assert.equal(await said.getAttribute('class'), 'dm-hint', 'calm: no red');
+    assert.equal(await line.isVisible(), true, 'the line is back, to try again');
+    assert.equal(await s.page.locator('[data-funds-offer]').count(), 0, 'no box for it');
+    assert.equal(s.quotes().length, 0);
+    await capture(s, 'funds-line-pick-failed', '.dm-funds-pick-row');
+    // Its Sign in runs the same pick: the dialog, the sign-in, then the quote.
+    await s.page.locator('[data-funds-pick-sign-in="failed"]').click();
+    await signInFromDialog(s);
+    await s.page.locator('[data-funds-offer] [data-funds-quote]').waitFor({ timeout: 30_000 });
+    assert.equal(await said.count(), 0, 'the new pick took its place');
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken]), [[42161, ARB_USDC]], 'the same holding');
+  } finally { await s.close(); }
+});
+
+// ---- Added 2026-10-06: the integration review (C:/dwt/v2/estudo-2026-10-06/integration-findings.md) -------------------
+
+/** A step held unsettled from an earlier visit (finance/v2/crosschain.ts UnsettledOffer), from `originChainId` to `destinationChainId`. */
+const heldStep = (originChainId, kind, destinationChainId = 4663) => ({ originChainId, nonce: '7', kind, quote: `${'ab'.repeat(32)}:1`, provider: 'relay', destinationChainId, at: Math.floor(Date.now() / 1000), state: 'open' });
+const heldStore = (...steps) => {
+  const { unsettledKey } = createRequire(import.meta.url)('../../.test-build/app/src/finance/v2/crosschain.js');
+  return { key: unsettledKey(S2_OWNER), value: JSON.stringify(steps) };
+};
+
+// Regressions #2: one approval left unanswered on Base used to hide every way to bring funds, for every position.
+test('a step held on one network closes that network alone: the line and the other networks stay, with Other networks', async () => {
+  const s = await openNewPosition({ bridge: true, served: arbitrumHoldings(), held: heldStore(heldStep(8453, 'approval')) });
+  try {
+    await s.page.locator('[data-funds-held="8453"]').waitFor({ timeout: 30_000 });
+    const line = s.page.locator('[data-funds-line]');
+    await line.waitFor({ timeout: 30_000 });
+    assert.equal(await line.getAttribute('data-funds-line'), '42161', 'what Arbitrum One holds, beside the approval held on Base');
+    await typeUsdg(s, '50');
+    const offer = s.page.locator('[data-funds-offer]');
+    await offer.locator('[data-funds-network="42161"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(await offer.locator('[data-funds-network]').evaluateAll((els) => els.map((el) => el.getAttribute('data-funds-network'))), ['42161'], 'Base, held, is not offered');
+    assert.equal(await offer.locator('[data-funds-other]').count(), 1, 'Other networks stays');
+    assert.equal(await offer.locator('[data-funds-held="8453"]').count(), 1, 'the held approval keeps its card and its way out');
+    await capture(s, 'funds-held-one-origin');
+  } finally { await s.close(); }
+});
+
+test('a deposit held for this network holds every offer back (no second bridge while it may arrive); one held for another network does not', async () => {
+  const here = await openNewPosition({ bridge: true, served: arbitrumHoldings(), held: heldStore(heldStep(8453, 'deposit', 4663)) });
+  try {
+    await here.page.locator('[data-funds-held="8453"]').waitFor({ timeout: 30_000 });
+    assert.equal(await here.page.locator('[data-funds-deposits] > h4').innerText(), 'On the way', 'it may arrive here');
+    await here.page.waitForTimeout(800);
+    assert.equal(await here.page.locator('[data-funds-line]').count(), 0, 'no line while it may arrive');
+    await typeUsdg(here, '50');
+    await here.page.locator('[data-funds-offer]').waitFor();
+    await here.page.waitForTimeout(800);
+    assert.equal(await here.page.locator('[data-funds-sources]').count(), 0, 'no networks either');
+  } finally { await here.close(); }
+  const elsewhere = await openNewPosition({ bridge: true, served: arbitrumHoldings(), held: heldStore(heldStep(8453, 'deposit', 42161)) });
+  try {
+    await elsewhere.page.locator('[data-funds-held="8453"]').waitFor({ timeout: 30_000 });
+    await elsewhere.page.locator('[data-funds-line="42161"]').waitFor({ timeout: 30_000 });
+    assert.equal(await elsewhere.page.locator('[data-funds-deposits] > h4').count(), 0, 'not "On the way" here: it goes to another network');
+  } finally { await elsewhere.close(); }
+});
+
+// Changed on purpose 2026-10-06 (the integration review's second pass: any held step brought "On the way" back above an
+// arrived card): only what may still arrive here is on its way; a held approval, where nothing moves, is not.
+test('"On the way" only while something may still arrive here: a held approval beside a deposit that arrived leaves no heading', async () => {
+  const { depositJournalKey } = createRequire(import.meta.url)('../../.test-build/app/src/finance/v2/crosschain.js');
+  const record = { provider: 'across', originChainId: 42161, destinationChainId: 4663, depositTxHash: `0x${'d1'.repeat(32)}`, requestId: null, lastState: 'pending' };
+  const s = await openNewPosition({ bridge: true, held: heldStore(heldStep(8453, 'approval')), journal: { key: depositJournalKey(4663, S2_OWNER), value: JSON.stringify([record]) } });
+  try {
+    const heading = s.page.locator('[data-funds-deposits] > h4');
+    await s.page.locator(`[data-funds-deposit="${record.depositTxHash}"]`).waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-funds-held="8453"]').waitFor({ timeout: 30_000 });
+    assert.equal(await heading.innerText(), 'On the way', 'the deposit is on its way');
+    // Followed once signed in (the status route is private): it arrives.
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await signInFromDialog(s);
+    await s.page.locator(`[data-funds-deposit="${record.depositTxHash}"][data-funds-state="filled"]`).waitFor({ timeout: 30_000 });
+    await heading.waitFor({ state: 'detached', timeout: 5_000 });
+    assert.equal(await s.page.locator('[data-funds-held="8453"]').count(), 1, 'the held approval keeps its card and its way out');
+    await capture(s, 'funds-held-approval-arrived', '[data-funds-deposits]');
+  } finally { await s.close(); }
+});
+
+// Rugged-literal #4 (spec F7 §3.3, "each provider's availability"): Relay's listing busy, so what only Relay bridges (ETH
+// on Arbitrum One here) is missing from it; the page says why, once, and nothing while both bridges are listed.
+test('a bridge the listing could not list says so: in what a pick came to, and once beside the networks', async () => {
+  const s = await openNewPosition({ bridge: true, served: arbitrumHoldings({ [ZERO]: 10n ** 16n }), relayDown: true });
+  try {
+    const line = s.page.locator('[data-funds-line="42161"]');
+    await line.waitFor({ timeout: 30_000 });
+    await line.click();
+    await signInFromDialog(s);
+    const said = s.page.locator('[data-funds-pick="empty"][data-funds-pick-network="42161"]');
+    await said.waitFor({ timeout: 30_000 });
+    assert.equal((await said.innerText()).trim(), 'Nothing in your wallet on Arbitrum One can be brought here right now. Relay is busy. Try again shortly.');
+    assert.equal(s.quotes().length, 0, 'nothing asked of a bridge that does not list it');
+    await capture(s, 'funds-provider-busy-line', '.dm-funds-pick-row');
+    await typeUsdg(s, '50');
+    const offer = s.page.locator('[data-funds-offer]');
+    const providers = offer.locator('[data-funds-providers]');
+    await providers.waitFor({ timeout: 30_000 });
+    assert.equal((await providers.innerText()).trim(), 'Relay is busy. Try again shortly.');
+    assert.equal(await providers.count(), 1, 'said once');
+    assert.equal(await offer.locator('[data-funds-other]').count(), 1);
+    await capture(s, 'funds-provider-busy');
+  } finally { await s.close(); }
+});
+
+// Integration #2: a range below today's price takes USDG alone ("1 ETH = 1,000,000,000,000 USDG" here). ETH held elsewhere
+// is brought as USDG, and ETH that arrives never becomes the amount's token (the range could take none of it).
+test('a range that takes USDG alone: the line brings ETH held elsewhere as USDG', async () => {
+  const s = await openNewPosition({ bridge: true, served: arbitrumHoldings({ [ZERO]: 10n ** 17n }), range: ['500000000000', '900000000000'] });
+  try {
+    const line = s.page.locator('[data-funds-line="42161"]');
+    await line.waitFor({ timeout: 30_000 });
+    assert.equal(await line.getAttribute('data-funds-line-token'), ZERO);
+    assert.equal(await line.getAttribute('data-funds-line-target'), USDG, 'the token the range takes, never ETH');
+    assert.equal((await line.locator('.dm-funds-line-text').innerText()).trim(), 'You have 0.0995 ETH on Arbitrum One', 'what can be sent: the gas Review keeps stays');
+    await line.click();
+    await signInFromDialog(s);
+    await s.page.locator('[data-funds-offer] [data-funds-quote] [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.destinationToken, q.amountRaw]), [[42161, ZERO, USDG, '99500000000000000']]);
+    await capture(s, 'funds-takes-only-quote');
+  } finally { await s.close(); }
+});
+
+test('a range that takes USDG alone: ETH that arrived is never made the amount token; a hint says to enter the amount in USDG', async () => {
+  const { depositJournalKey } = createRequire(import.meta.url)('../../.test-build/app/src/finance/v2/crosschain.js');
+  const record = { provider: 'across', originChainId: 42161, destinationChainId: 4663, depositTxHash: `0x${'d1'.repeat(32)}`, requestId: null, lastState: 'pending' };
+  const s = await openNewPosition({
+    bridge: true,
+    range: ['500000000000', '900000000000'],
+    balances: { native: { 4663: 10n ** 16n }, tokens: { [`4663:${USDG}`]: { balance: 0n, decimals: 6 } } },
+    journal: { key: depositJournalKey(4663, S2_OWNER), value: JSON.stringify([record]) },
+  });
+  try {
+    await typeUsdg(s, '50');
+    const card = s.page.locator(`[data-funds-deposit="${record.depositTxHash}"]`);
+    await card.waitFor({ timeout: 30_000 });
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await signInFromDialog(s);
+    await s.page.locator(`[data-funds-deposit="${record.depositTxHash}"][data-funds-state="filled"]`).waitFor({ timeout: 30_000 });
+    // After a reload the journal does not say which token arrived: the person picks ETH, the one there is something of.
+    await card.locator(`[data-funds-balance="${ZERO}"] input`).check({ timeout: 30_000 });
+    const hint = card.locator('[data-funds-takes-only]');
+    await hint.waitFor({ timeout: 5_000 });
+    assert.equal((await hint.innerText()).trim(), 'Enter the amount in USDG above: Domino swaps what arrived for it.');
+    assert.equal(await card.locator('[data-funds-use]').count(), 0, 'no Use for a token the range takes none of');
+    await capture(s, 'funds-takes-only-arrived', `[data-funds-deposit="${record.depositTxHash}"]`);
   } finally { await s.close(); }
 });

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { CREATE } from '../../lib/create/copy'
-import { slippageBpsFrom, slippageFromPercent, slippagePercent, slippageWarns, slippageWritten } from '../../lib/create/slippage'
+import { slippageBpsFrom, slippageFromPercent, slippagePercent, slippageWarns } from '../../lib/create/slippage'
 import { SlippagePresets } from './SlippagePresets'
 
 /**
@@ -11,7 +11,9 @@ import { SlippagePresets } from './SlippagePresets'
  * whole basis points, or '' once something outside the bound was typed, so a
  * form never carries a number it cannot send: `onChange` gets the basis
  * points of a valid choice and '' for anything else, and the reason stays on
- * the box. Above 1% a line says what the limit allows.
+ * the box. Above 2% a line warns (create/slippage.ts SLIPPAGE_WARN_ABOVE_BPS;
+ * Changed on purpose 2026-10-06, the owner's point 4: one rule and one
+ * sentence everywhere, here too: Setup, its swap and V1's Close position).
  */
 export function SlippageChoice({ id, label, bps, onChange, disabled }: { id: string; label: string; bps: string; onChange: (text: string) => void; disabled?: boolean }) {
   // The percentage while it is being typed, against the value it was typed
@@ -63,7 +65,7 @@ export function SlippageChoice({ id, label, bps, onChange, disabled }: { id: str
       )}
       {warns && (
         <p id={warningId} role="status" className="dm-hint" data-slippage-warning="">
-          {CREATE.amount.slippageWarning(slippageWritten(value))}
+          {CREATE.amount.slippageWarning}
         </p>
       )}
     </div>

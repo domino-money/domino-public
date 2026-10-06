@@ -5,8 +5,10 @@
  * (config/chainIdentity.ts, no import of its own), so the wallet's chunk takes nothing else with it.
  * Changed on purpose 2026-10-01 (integration pass 3, after the chain2 workstream's G3): Robinhood Chain's id and name are
  * the registry's, not one more copy. The section's testnet is not named here: on domino.money it is off.
+ * Changed on purpose 2026-10-06 (the owner: one name for one network, never two on one screen): Base and Arbitrum One are
+ * the registry's too, so the wallet dialog says "Arbitrum One" as New position, Positions and the bring card do.
  */
-import { ROBINHOOD_ID, ROBINHOOD_NAME } from '../config/chainIdentity'
+import { ARBITRUM_ID, ARBITRUM_NAME, BASE_ID, BASE_NAME, ROBINHOOD_ID, ROBINHOOD_NAME } from '../config/chainIdentity'
 
 const NAMES: Readonly<Record<number, string>> = Object.freeze({
   1: 'Ethereum',
@@ -14,8 +16,8 @@ const NAMES: Readonly<Record<number, string>> = Object.freeze({
   56: 'BNB Chain',
   137: 'Polygon',
   [ROBINHOOD_ID]: ROBINHOOD_NAME,
-  8453: 'Base',
-  42161: 'Arbitrum',
+  [BASE_ID]: BASE_NAME,
+  [ARBITRUM_ID]: ARBITRUM_NAME,
   43114: 'Avalanche',
   59144: 'Linea',
 })

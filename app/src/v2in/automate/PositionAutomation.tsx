@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PortfolioResponse } from 'api-contracts/read-v6/types'
-import { Button } from '../../components/ui'
+import { askAutoExitOnArrival, takeAutoExitAsk } from '../../lib/automate/autoExitAsk'
 import { useAutomation } from '../../lib/automationState'
 import type { WalletPosition } from '../../lib/walletPositions'
 import type { VaultSnapshot } from '../../finance/v2/vault'
@@ -8,20 +8,23 @@ import { useWalletIdentity } from '../../lib/walletIdentity'
 import { v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
 import { ZERO_ADDRESS, type Address, type Dex, type V2ChainId } from '../../v2/types'
+import { exitCardState } from '../autoexit/card'
 import { exitOrderKey, offerExitOrder, onExitOrderAsked } from '../autoexit/entry'
+import { fullRange } from '../autoexit/form'
 import { MandateDialog, type ExitTarget } from '../autoexit/MandateDialog'
 import { defaultOrientation } from '../autoexit/orientation'
 import { exitTokenMeta, positionExitPrice, type ExitPriceSnapshot } from '../autoexit/priceContext'
-import { ExitOrders, useUnclaimed } from '../autoexit/Orders'
+import { AutoExitCard, sessionExits, useUnclaimed } from '../autoexit/Orders'
 import { gateOpen, useGate } from './gate'
 import { onVaultOffered, takeVault } from './handoff'
 import { IndexStatus } from './IndexStatus'
 import { chainView, creditsOn, mandatesOf, mergeCredits, tokenMetaOf, vaultsOfPosition } from './portfolio'
 import { routeQuiet, usePortfolio } from './read6'
+import { automationState, sessionMandates, sessionRevoked, subscribeAutomation } from './store'
 import { poolTokens, walletTokenMeta } from './tokens'
 import { VaultCard } from './VaultCard'
 import { VaultDialog, type VaultDialogKind, type VaultDialogSubject } from './VaultDialog'
-import { reservesOffer, shownVaultView, type VaultView } from './vaultView'
+import { protectionVault, reservesOffer, shownVaultView, type VaultView } from './vaultView'
 
 /**
  * A position's automation on its own page (Domino V2 integration; spec F7 rev3/rev4 §2.13, §4, §5): mounted once from
@@ -31,9 +34,13 @@ import { reservesOffer, shownVaultView, type VaultView } from './vaultView'
  *   - The wallet's vaults this position belongs to, from read-v6's `portfolio.vaults` (rev3: never from the NFT): the
  *     vault whose root it is, in any state of that root, or the one that holds it as an active successor. Each as a card
  *     with its state, why it waits, what it holds and the owner's actions (./VaultCard.tsx, ./VaultDialog.tsx).
- *   - "Stop-loss / take-profit": the position's exit orders (../autoexit/Orders.tsx) and a new one
- *     (../autoexit/MandateDialog.tsx): for a member of the wallet's vault (its armed root or an active successor), or, for
- *     a plain position the connected wallet holds, through a protection-only vault first (decisions #18, #25).
+ *   - Auto-exit (Changed on purpose 2026-10-06, the owner's point 5; rugged97: "it is AUTO-EXIT, separate from the rest.
+ *     Auto-exit has no fee compounding"): ONE card (../autoexit/Orders.tsx) with where it stands and its one control, and
+ *     its dialog (../autoexit/MandateDialog.tsx), offered only on a plain position the connected wallet holds (its
+ *     protection-only vault made in the same batch, decisions #18, #25) or in the position's own protection-only vault, and
+ *     only while none is on: never on a running Auto-compound or Domino-compound automation, never on a successor, never a
+ *     second one. That card takes the protection-only vault's own place (one card, not two); orders on other vaults
+ *     still show in it, and can be turned off.
  *   - The hand-over of §2.13 (./handoff.ts): after a manual action on this position (decision #5's rearm, rev3's reserves
  *     after an S1 exit, "Leave automation"), the matching dialog opens by itself, for the person to confirm.
  *
@@ -88,6 +95,9 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   const answer = usePortfolio(indexed ? null : connected, readGate, version)
   const [now] = useState(() => Math.floor(Date.now() / 1000))
   const [open, setOpen] = useState<Open>(null)
+  // Added 2026-10-06 (the integration review, money #4): "Turn off instead" in the automation's own dialog opens the
+  // Auto-exit card's Turn off.
+  const [turnOff, setTurnOff] = useState(0)
   // The vaults this page acted on, as read on chain right after (./vaultView.ts shownVaultView), by address.
   const [fresh, setFresh] = useState<ReadonlyMap<string, VaultSnapshot>>(() => new Map())
   // V1's own reading of the NFT's subscriber: a plain position is offered the protection-only path; one in V1's
@@ -137,37 +147,54 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
 
   const rootView = views.find((entry) => entry.role === 'root')?.view ?? null
   const memberView = views.find((entry) => entry.role === 'successor')?.view ?? null
-  // §4.4: a new order only for a member of the wallet's vault: its armed root, or an active successor.
-  const member = rootView && rootView.armed === true && rootView.ownedByWallet ? { view: rootView, role: 'root' as const } : memberView && memberView.ownedByWallet ? { view: memberView, role: 'successor' as const } : null
+  // The orders already on this position, in whichever of its vaults holds them, and the ones this page registered that
+  // the index does not list yet.
+  const ordersVault = rootView ?? memberView
+  const orders = body && ordersVault ? mandatesOf(body, chainId, ordersVault.vault).filter((order) => order.tokenId === tokenId) : []
+  const store = useSyncExternalStore(subscribeAutomation, automationState, automationState)
+  const mine = connected ? sessionExits(sessionMandates(store, chainId, connected), orders, idOf(tokenId)) : []
+  const exitState = exitCardState(orders, mine, sessionRevoked(store, chainId))
+  // Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "auto-exit has no fee compounding"; one Auto-exit per
+  // position): offered only while none is on, and only on the position's own protection-only vault (paused, auto-exit on),
+  // never on a running Auto-compound or Domino-compound automation and never on a successor.
+  const exitOn = exitState.kind === 'on' || exitState.kind === 'paused'
+  // Added 2026-10-06 (the integration review): the Auto-exit on or paused, for its own automation's dialogs (an approval
+  // put back puts it in force again: VaultDialog reads the price first); null while none is on.
+  const activeExit = exitState.kind === 'on' || exitState.kind === 'paused' ? { id: exitState.id, triggers: exitState.triggers } : null
+  const protection = rootView && protectionVault(rootView) ? rootView : null
+  const member = protection && protection.armed === true && protection.ownedByWallet ? protection : null
   const liquid = position !== null && position.liquidity !== '0'
   const holds = connected !== null && holder !== null && holder.toLowerCase() === connected
   const plainCustody = indexed ? indexed.subscriber === null || indexed.subscriber === ZERO_ADDRESS : v1.phase === 'ready' && v1.state.automation === 'plain'
-  const plain = !rootView && !memberView && holds && liquid && pagePool !== null && pagePool.hooks === ZERO_ADDRESS && plainCustody
+  // A vault made from this page that the index does not list yet is no plain position any more.
+  const madeHere = mine.length > 0
+  const plain = !rootView && !memberView && !madeHere && holds && liquid && pagePool !== null && pagePool.hooks === ZERO_ADDRESS && plainCustody
   // Under V1's own automation (its vault holds the NFT's one individual approval, §1.5): the option is said, not offered;
   // Domino's new vault takes a position over once the person leaves V1's automation (spec §1.1: no migration flow).
   const v1Automated = !indexed && !rootView && !memberView && holds && liquid && pagePool !== null && v1.phase === 'ready' && v1.state.automation !== 'plain'
   const orderGate = member ? (gateOpen(exitGate) ? exitGate : null) : joined(vaultGate, exitGate)
   const pagePrice = positionExitPrice(position, priceContext)
-  const target: ExitTarget | null = orderGate && pagePool && pageTokens && (member || plain)
-    ? { chainId, dex, tokenId: idOf(tokenId), pool: pagePool, tokens: pageTokens, price: pagePrice, vault: member ? { address: member.view.vault, role: member.role, autoExitEnabled: member.view.autoExitEnabled } : null }
+  // Added 2026-10-06 (the owner's point 5): the range is Auto-exit's edges.
+  const range = position ? { tickLower: position.tickLower, tickUpper: position.tickUpper } : null
+  // Changed on purpose 2026-10-06 (the review of point 5): a range that covers every price the pool allows never reaches
+  // an end, so Auto-exit is not offered on it.
+  const closable = pagePool !== null && !fullRange(range, pagePool.tickSpacing)
+  const target: ExitTarget | null = !exitOn && orderGate && pagePool && pageTokens && liquid && closable && (member || plain)
+    ? { chainId, dex, tokenId: idOf(tokenId), pool: pagePool, tokens: pageTokens, range, price: pagePrice, vault: member ? { address: member.vault, role: 'root', autoExitEnabled: member.autoExitEnabled } : null }
     : null
-  // The orders already on this position, in whichever of its vaults holds them.
-  const ordersVault = member?.view ?? rootView ?? memberView
-  const orders = body && ordersVault ? mandatesOf(body, chainId, ordersVault.vault).filter((order) => order.tokenId === tokenId) : []
   // §4.8: what exits could not deliver, from the index, joined with the chain's own figures for the pool's two tokens (the
   // index off or behind lists none): the chain's figure wins for a token it was read for.
   const indexCredits = body && gateOpen(exitGate) ? creditsOn(body, chainId, exitGate.contracts.addresses.autoExit) : []
   const credits = mergeCredits(indexCredits, liveCredits)
-  const ordersTarget: ExitTarget | null = target?.vault
-    ? target
-    : ordersVault && pagePool && pageTokens
-      ? { chainId, dex, tokenId: idOf(tokenId), pool: pagePool, tokens: pageTokens, vault: { address: ordersVault.vault, role: rootView ? 'root' : 'successor', autoExitEnabled: ordersVault.autoExitEnabled } }
-      // A credit with no vault of this position known (the index off): the claim alone, on this position's pool.
-      : credits.length > 0 && pagePool && pageTokens
-        ? { chainId, dex, tokenId: idOf(tokenId), pool: pagePool, tokens: pageTokens, vault: null }
-        : null
+  // The card names the position with the page's own read; the vault its orders are in (or the one made here).
+  const cardVault: ExitTarget['vault'] = ordersVault
+    ? { address: ordersVault.vault, role: rootView ? 'root' : 'successor', autoExitEnabled: ordersVault.autoExitEnabled }
+    : mine[0] ? { address: mine[0].vault, role: 'root', autoExitEnabled: true } : null
+  const cardTarget: ExitTarget | null = pagePool && pageTokens ? { chainId, dex, tokenId: idOf(tokenId), pool: pagePool, tokens: pageTokens, range, price: pagePrice, vault: cardVault } : null
   const chainState = body ? chainView(body.chains, chainId) : null
-  const showExit = gateOpen(exitGate) && (target !== null || orders.length > 0 || credits.length > 0 || v1Automated)
+  const showExit = gateOpen(exitGate) && cardTarget !== null
+  // The protection-only vault's place is the Auto-exit card's (one card for one product, not two).
+  const cardHolds = (view: VaultView) => showExit && protection !== null && view.vault === protection.vault
   const changed = (snapshot?: VaultSnapshot) => {
     if (snapshot) setFresh((old) => new Map(old).set(snapshot.vault, snapshot))
     setVersion((n) => n + 1)
@@ -177,8 +204,8 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   // automation". A route simply not on yet (before the deploy) is nothing to say: the page is V1's.
   const unread = connected !== null && answer !== null && answer.reply.kind !== 'ok' && !routeQuiet(answer)
 
-  // The page's actions row offers "Stop-loss / take-profit" while an order can be set here, and a pick there opens this
-  // panel's own order dialog (../autoexit/entry.ts; the owner, 2026-10-04: inside the position, as a button there).
+  // The page's actions row offers "Auto-exit" while it can be turned on here, and a press there opens this panel's own
+  // dialog (../autoexit/entry.ts; the owner, 2026-10-04: inside the position, as a button there).
   const offered = gateOpen(exitGate) && target !== null
   const entryKey = exitOrderKey(tokenId, chainId, dex)
   // The latest target, for an ask that comes between renders (the target is drawn anew on every render).
@@ -188,6 +215,10 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   })
   useEffect(() => {
     offerExitOrder(entryKey, offered)
+    // Added 2026-10-06 (the review of point 5): New position's success asked for Auto-exit on its way here
+    // (lib/automate/autoExitAsk.ts): its dialog opens by itself once it is offered.
+    const at = latestTarget.current
+    if (offered && at && takeAutoExitAsk(entryKey)) setOpen({ kind: 'mandate', target: at })
     return () => offerExitOrder(entryKey, false)
   }, [entryKey, offered])
   useEffect(
@@ -206,38 +237,51 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
       {/* The chain's status before any figure of it: behind or unavailable, and §5.3's halt banner (the owner's actions stay). */}
       {body && views.length > 0 && chainState && (chainState.state !== 'current' || chainState.halted === true) && <IndexStatus chains={body.chains} chainId={chainId} what="Your automation" />}
       {unread && answer && answer.reply.kind !== 'ok' && <IndexStatus failed={answer.reply} chainId={chainId} what="Your automation" />}
-      {views.map(({ view }) => (
+      {views.filter(({ view }) => !cardHolds(view)).map(({ view }) => (
         <VaultCard key={view.vault} view={view} tokens={tokensOfView(view)} variant="page" nowSeconds={now} onAction={(kind, subject) => setOpen({ kind, vault: view, subject: subject ?? null })} />
       ))}
-      {showExit && gateOpen(exitGate) && (
-        // One title, one line, one button (the owner, 2026-10-03: few words, the detail inside the dialog, which says what
-        // an order can and cannot do and the eight warnings before anything is signed).
-        <section hidden={orders.length === 0 && credits.length === 0 && !v1Automated} className="dm-card dm-pos-card" aria-labelledby={`v2in-exit-${tokenId}`} data-v2in-exit={target ? (target.vault ? 'member' : 'plain') : 'orders'}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id={`v2in-exit-${tokenId}`} className="dm-title">
-              Stop-loss / take-profit
-            </h2>
-            {target && (
-              <Button type="button" variant={target.vault || orders.length > 0 ? 'outline' : 'primary'} size="sm" onClick={() => setOpen({ kind: 'mandate', target })} data-v2in-open="mandate">
-                {target.vault || orders.length > 0 ? 'New order' : 'Set up'}
-              </Button>
-            )}
-          </div>
-          <p className="text-body text-fg-muted" data-v2in-exit-line={target ? 'open' : v1Automated ? 'v1' : 'orders'}>
-            {target
-              ? 'Withdraw this position by itself when the price falls or rises to a level you set. Cancel at any time.'
-              : v1Automated
-                ? 'Available once this position leaves its current automation.'
-                : 'Your orders on this position.'}
-          </p>
-          {ordersTarget && (orders.length > 0 || credits.length > 0 || target?.vault) && (
-            <ExitOrders target={ordersTarget} orders={orders} credits={credits} gate={exitGate} owner={connected} orientation={defaultOrientation(chainId, ordersTarget.pool)} nowSeconds={now} onChanged={changed} />
-          )}
-        </section>
+      {showExit && cardTarget && gateOpen(exitGate) && (
+        <AutoExitCard
+          target={cardTarget}
+          orders={orders}
+          mine={mine}
+          credits={credits}
+          gate={exitGate}
+          owner={connected}
+          orientation={defaultOrientation(chainId, cardTarget.pool)}
+          nowSeconds={now}
+          offer={target ? (target.vault ? 'member' : 'plain') : null}
+          protection={protection}
+          v1Automated={v1Automated}
+          turnOff={turnOff}
+          onTurnOn={() => {
+            if (target) setOpen({ kind: 'mandate', target })
+          }}
+          onVaultAction={(kind) => {
+            if (protection) setOpen({ kind, vault: protection, subject: null })
+          }}
+          onChanged={changed}
+        />
       )}
       {open?.kind === 'mandate' && orderGate && <MandateDialog target={{ ...open.target, tokens: pageTokens ?? open.target.tokens, price: pagePrice }} gate={orderGate} onClose={() => setOpen(null)} onChanged={changed} />}
       {open && open.kind !== 'mandate' && gateOpen(vaultGate) && (
-        <VaultDialog kind={open.kind} view={open.vault} tokens={tokensOfView(open.vault)} gate={vaultGate} subject={open.subject} onClose={() => setOpen(null)} onChanged={changed} />
+        <VaultDialog
+          kind={open.kind}
+          view={open.vault}
+          tokens={tokensOfView(open.vault)}
+          gate={vaultGate}
+          subject={open.subject}
+          // Auto-exit's own automation (Changed on purpose 2026-10-06, the integration review, rugged-literal #1, money #4):
+          // its rearm is said by what it does for the Auto-exit on its root, and "Turn off instead" opens the card's Turn off.
+          {...(protectionVault(open.vault) ? { exit: activeExit, onTurnOff: activeExit ? () => { setOpen(null); setTurnOff((n) => n + 1) } : undefined } : {})}
+          onClose={() => setOpen(null)}
+          onChanged={(snapshot) => {
+            // With none on, that rearm was the first part of turning Auto-exit on: its own dialog opens next, by itself, once
+            // the page offers it (the automation's root read back armed).
+            if (open.kind === 'rearm' && protectionVault(open.vault) && activeExit === null) askAutoExitOnArrival(entryKey)
+            changed(snapshot)
+          }}
+        />
       )}
     </div>
   )

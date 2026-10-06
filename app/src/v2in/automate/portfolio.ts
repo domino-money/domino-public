@@ -19,7 +19,7 @@ import { amountWords, tokenView, type TokenMeta, type TokenView } from './tokens
  *
  * - The chain's status comes before any value of it (§8.2): `current` as is; `stale` with the stale badge and its age;
  *   `unavailable` is a dash with its reason, never zeros, and never empties the other chains (§6.3's partial sentence).
- * - A vault's state: "Protection only" for a paused vault whose auto-exit is on (decision #25: never "Paused"); who
+ * - A vault's state: "Auto-exit" for a paused vault whose auto-exit is on (decision #25: never "Paused"); who
  *   paused it (`pausedBy`); why its root is disarmed (`custody.reason`, with `source` and `since`).
  * - Why a vault or an order waits (decision #24): "Waiting: {copy} · since {relative time}", the copy from
  *   `waiting.error` (§4.9's table) or, for the automation's own codes, `waiting.reason` (§6.2's suggested texts).
@@ -187,7 +187,7 @@ export const listedPaused = (vault: Vault): boolean => (vault.state.status === '
 
 /**
  * A listed vault's status (§5.1, §5.3, §5.4): a paused vault whose auto-exit is on is the protection-only vault (decision
- * #25: "Protection only", never "Paused"); a root that is not armed is "Automation off"; then paused or on.
+ * #25: "Auto-exit", never "Paused"; 2026-10-06, the owner's point 5); a root that is not armed is "Automation off"; then paused or on.
  */
 export function vaultStatus(vault: Vault): VaultStatus {
   // Off first: the root disarmed (read live, or the index's reason while live custody is unread). A protection-only
@@ -199,7 +199,7 @@ export function vaultStatus(vault: Vault): VaultStatus {
 
 /** What a status says on screen; a paused vault says who paused it when the index knows (§5.3). */
 export function statusWords(status: VaultStatus, pausedBy: Vault['pausedBy'] = null): string {
-  if (status === 'protection') return 'Protection only'
+  if (status === 'protection') return 'Auto-exit'
   if (status === 'off') return 'Automation off'
   if (status === 'on') return 'Automation on'
   return pausedBy === 'owner' ? 'Paused by you' : pausedBy === 'operator' ? 'Paused by Domino' : 'Paused'
@@ -389,9 +389,10 @@ const SAID_ELSEWHERE = new Set(['vault_paused', 'root_disarmed'])
  * there is nothing to say: no record (`null`), a code the screen already shows (paused, disarmed), or the planner's own
  * `InvalidExecution` (§4.9: never shown). A closed root's reserves (RESERVES_WAITING_TEXT) are said first; then the copy
  * is §4.9's for `waiting.error` (its own words: "Waiting …", "Paused: …", "Not valid: …", "Blocked: …"), else §6.2's for
- * `waiting.reason`, else plainly "Waiting". `code` is for a data attribute.
+ * `waiting.reason`, else plainly "Waiting". `code` is for a data attribute. `own`: a screen's own words for some of those
+ * errors or reasons, by name (Added 2026-10-06, the review of point 5: Auto-exit's, ./copy.ts AUTO_EXIT_WAITING_TEXT).
  */
-export function waitingWords(waiting: Waiting | null, chainId: V2ChainId, nowSeconds: number, vault: { maxPositions: number | null } | null = null): { text: string; code: string } | null {
+export function waitingWords(waiting: Waiting | null, chainId: V2ChainId, nowSeconds: number, vault: { maxPositions: number | null } | null = null, own: Readonly<Record<string, string>> | null = null): { text: string; code: string } | null {
   if (!waiting) return null
   // Changed on purpose 2026-10-04 (rugged97's delta of 4 Oct §2 item 5, #311): RootOpen and SuccessorActive are the
   // automatic reserves return waiting its turn (it runs only with the root closed and no active successor): the normal
@@ -399,6 +400,8 @@ export function waitingWords(waiting: Waiting | null, chainId: V2ChainId, nowSec
   if (waiting.error === 'RootOpen' || waiting.error === 'SuccessorActive') return null
   const reserves = Object.hasOwn(RESERVES_WAITING_TEXT, waiting.reason) ? RESERVES_WAITING_TEXT[waiting.reason] : null
   if (reserves !== null) return { text: `${reserves} · since ${agoWords(waiting.since, nowSeconds)}`, code: waiting.reason }
+  const named = own ? (waiting.error && Object.hasOwn(own, waiting.error) ? own[waiting.error] : !waiting.error && Object.hasOwn(own, waiting.reason) ? own[waiting.reason] : null) : null
+  if (named) return { text: `${named} · since ${agoWords(waiting.since, nowSeconds)}`, code: waiting.error ?? waiting.reason }
   let copy: string | null = null
   if (waiting.error) {
     const row = AUTO_EXIT_WAITING.find((r) => r.signature.startsWith(`${waiting.error}(`))
@@ -531,9 +534,10 @@ export function historyWords(item: HistoryItem, ctx: HistoryContext): HistoryWor
       return { ...base, title: said[0], lines: said.slice(1).map((value) => ({ label: '', value })) }
     }
     case 'auto_exit_event': {
-      if (item.event === 'MandateRegistered') return { ...base, title: `Exit order registered${item.tokenId ? ` for position #${item.tokenId}` : ''}`, lines: [] }
-      if (item.event === 'MandateRevoked') return { ...base, title: 'Exit order cancelled', lines: [] }
-      if (item.event === 'NonceCancelled') return { ...base, title: 'Signed order cancelled', lines: [] }
+      // Changed on purpose 2026-10-06 (the owner's point 5): Auto-exit's own words, never an "order".
+      if (item.event === 'MandateRegistered') return { ...base, title: `Auto-exit turned on${item.tokenId ? ` for position #${item.tokenId}` : ''}`, lines: [] }
+      if (item.event === 'MandateRevoked') return { ...base, title: 'Auto-exit turned off', lines: [] }
+      if (item.event === 'NonceCancelled') return { ...base, title: 'Auto-exit signature cancelled', lines: [] }
       return { ...base, title: item.token && item.amount ? `Claimed: ${amountOf(ctx, item.token, item.amount)}` : 'Claimed', lines: [] }
     }
   }

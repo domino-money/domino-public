@@ -17,20 +17,35 @@ export function groupDigits(digits: string): string {
 }
 
 /**
+ * Added 2026-10-06 (the owner's point 4: no 18-digit amounts on screen): the most fraction digits a token amount shows
+ * (formatUnitsText's default), and the cap that writes one exactly, for its title or its data-exact (a token has at most
+ * 77 decimals). Rounding happens only where an amount is drawn: what is sent or signed is always the raw amount.
+ */
+export const SHOWN_FRACTION = 6
+export const EXACT_FRACTION = 77
+
+/**
  * A raw amount in a token's units: "1,234.5678" with at most `maxFraction` decimals, ROUNDED DOWN (a shown amount is
  * never more than the raw one), trailing zeros dropped. `decimals` null: the raw integer, said by the caller as raw units.
  * A non-zero amount too small to show at `maxFraction` is "<0.000001" (never "0").
+ *
+ * `round` 'up' (added 2026-10-06, the owner's point 4, with the study's correction: rounding down suits "about" and "at
+ * least", never a fee or an approval): raised to the next digit shown whenever a digit is dropped, so a Domino fee or an
+ * amount the wallet is asked to allow is never shown lower than it is ("0.0080246907" is "0.008025").
  */
-export function formatUnitsText(raw: bigint, decimals: number | null, maxFraction = 6): string {
+export function formatUnitsText(raw: bigint, decimals: number | null, maxFraction = SHOWN_FRACTION, round: 'down' | 'up' = 'down'): string {
   const negative = raw < 0n
   const value = negative ? -raw : raw
   if (decimals === null) return `${negative ? '−' : ''}${groupDigits(value.toString(10))}`
   if (!Number.isSafeInteger(decimals) || decimals < 0 || decimals > 77) throw new Error('invalid_decimals')
+  const keep = Math.max(0, Math.min(Math.trunc(maxFraction), decimals))
+  const dropped = 10n ** BigInt(decimals - keep)
+  const shown = round === 'up' && value % dropped !== 0n ? value - (value % dropped) + dropped : value
   const base = 10n ** BigInt(decimals)
-  const whole = value / base
-  const fraction = (value % base).toString(10).padStart(decimals, '0')
-  const cut = fraction.slice(0, Math.max(0, Math.min(maxFraction, decimals))).replace(/0+$/, '')
-  if (whole === 0n && cut === '' && value !== 0n) return `${negative ? '−' : ''}<0.${'0'.repeat(Math.max(0, Math.min(maxFraction, decimals) - 1))}1`
+  const whole = shown / base
+  const fraction = (shown % base).toString(10).padStart(decimals, '0')
+  const cut = fraction.slice(0, keep).replace(/0+$/, '')
+  if (whole === 0n && cut === '' && value !== 0n) return `${negative ? '−' : ''}<0.${'0'.repeat(Math.max(0, keep - 1))}1`
   return `${negative ? '−' : ''}${groupDigits(whole.toString(10))}${cut ? `.${cut}` : ''}`
 }
 
@@ -133,6 +148,18 @@ export function rangeAround(tick: number, spacing: number, percent: number): { t
   return { tickLower, tickUpper }
 }
 
+/**
+ * Added 2026-10-06 (the review of the owner's point 5; rugged97: "someone makes an LP to buy or sell; when the price hits
+ * the edge of the range we close the position automatically"): how New position's success offers Auto-exit for the range
+ * it just opened. `none` for a range that covers every price the pool allows (no end to close it at); `recommended` when
+ * today's price sits beside the range (a buy or a sell: tick < lower, or tick >= upper, as v3 and v4 count it), else
+ * `offered`. An unknown price (`tick` null) is offered without the recommendation.
+ */
+export function exitOffer(tickLower: number, tickUpper: number, tickSpacing: number, tick: number | null): 'none' | 'offered' | 'recommended' {
+  if (tickLower <= Math.ceil(MIN_TICK / tickSpacing) * tickSpacing && tickUpper >= Math.floor(MAX_TICK / tickSpacing) * tickSpacing) return 'none'
+  return tick !== null && (tick < tickLower || tick >= tickUpper) ? 'recommended' : 'offered'
+}
+
 /** Whether a range is valid for a pool: ordered, on its spacing, inside TickMath's bounds (spec §2.6.1). */
 export function rangeValid(tickLower: number, tickUpper: number, spacing: number): boolean {
   return Number.isSafeInteger(tickLower) && Number.isSafeInteger(tickUpper) && tickLower < tickUpper && tickLower >= MIN_TICK && tickUpper <= MAX_TICK
@@ -213,6 +240,19 @@ export function ethText(wei: bigint): string {
 }
 
 /**
+ * Added 2026-10-06 (the owner's point 4: little text): wei as ETH for an estimate said "about" (Review's one network fee
+ * line): three significant digits, rounded to the nearest ("about 0.0001 ETH", not "0.00010002"). A ceiling keeps
+ * ethText, which is never shown lower.
+ */
+export function ethAboutText(wei: bigint): string {
+  if (wei <= 0n) return '0 ETH'
+  const drop = wei.toString(10).length - 3
+  if (drop <= 0) return `${formatUnitsText(wei, 18, EXACT_FRACTION)} ETH`
+  const unit = 10n ** BigInt(drop)
+  return `${formatUnitsText(((wei + unit / 2n) / unit) * unit, 18, EXACT_FRACTION)} ETH`
+}
+
+/**
  * A raw amount as an amount field's text, EXACTLY (spec §3.9: a finished deposit handed to New position fills its
  * amount): every decimal kept, no grouping, trailing zeros dropped; the raw digits when the decimals are unknown.
  * parseUnitsText reads it back to the same raw amount.
@@ -271,6 +311,79 @@ export function planNetworkCost(args: {
     return { l2, l1, total: l2 + l1, ceiling: null }
   }
   return { l2, l1: args.l1.wei, total: l2 + args.l1.wei, ceiling: args.l1.upperBoundWei === null ? null : l2 + args.l1.upperBoundWei }
+}
+
+/**
+ * Added 2026-10-06 (the owner's point 4: a small cue, never a blank): what a review draws while the same choices are
+ * quoted again (the price moved, or the quote ran out): the last review, `stale` (greyed and busy on screen), until the
+ * new one replaces it. A first quote, or one for new choices, has nothing to keep and draws nothing.
+ */
+export function keptWhileRequoting<T>(now: T | null, requoting: boolean, last: T | null): { shown: T | null; stale: boolean } {
+  if (now !== null) return { shown: now, stale: false }
+  return requoting && last !== null ? { shown: last, stale: true } : { shown: null, stale: false }
+}
+
+/**
+ * Added 2026-10-06 (the owner's point 4: Review shows ONE network fee line, its detail under Details): what that line
+ * says.
+ *   - `about` the plan's own cost (rev2 §2.4, planNetworkCost's total) once the wallet's fee per gas is known, plus the
+ *     wallet's other transactions still to come (`others`, ./feesToCome: an approval is a transaction of its own). Each
+ *     of those counts at its own prepared figure, a ceiling, so the sum can come out a little high, never low; one not
+ *     prepared yet is `othersMissing`, for the screen to say as a dash next to the figure, never left out. When the
+ *     plan's L1 data fee is unavailable the plan's part is the L2 part alone, and `l1Missing` asks the screen to say the
+ *     L1 part as a dash next to it, never to let it pass for the whole (§2.4: never 0). Robinhood's measured zero is a
+ *     figure like any other. `ceiling` (Base's, under Details): the plan's own ceiling with the same approvals added, so
+ *     it is never below the figure in view; null where the plan has none.
+ *   - else `upTo` a batch's own ceiling, once it is prepared: its calls together (the approvals in it), the L1 data fee
+ *     ceiling included.
+ *   - else `unknown`: nothing is known yet, and the screen draws a dash (never a zero).
+ * One step's ceiling is never the line's figure alone: the approval's alone would understate the action's.
+ */
+export function networkFeeLine(args: { cost: { total: bigint; ceiling?: bigint | null } | null; l1Available: boolean; batchFee: bigint | null; others?: readonly (bigint | null)[] }):
+  | { kind: 'about'; wei: bigint; ceiling: bigint | null; l1Missing: boolean; othersMissing: boolean }
+  | { kind: 'upTo'; wei: bigint; ceiling: null; l1Missing: false; othersMissing: false }
+  | { kind: 'unknown' } {
+  if (args.cost) {
+    const others = args.others ?? []
+    const known = others.reduce<bigint>((sum, fee) => sum + (fee ?? 0n), 0n)
+    const ceiling = args.cost.ceiling === undefined || args.cost.ceiling === null ? null : args.cost.ceiling + known
+    return { kind: 'about', wei: args.cost.total + known, ceiling, l1Missing: !args.l1Available, othersMissing: others.some((fee) => fee === null) }
+  }
+  if (args.batchFee !== null) return { kind: 'upTo', wei: args.batchFee, ceiling: null, l1Missing: false, othersMissing: false }
+  return { kind: 'unknown' }
+}
+
+/** The wallet transactions of a review other than its action: an approval, a reset to zero, the position's approval. */
+const APPROVALS: ReadonlySet<string> = new Set(['approve', 'approve-reset', 'approve-nft'])
+
+/**
+ * Added 2026-10-06 (the owner's point 4, for networkFeeLine's `others`): the fees of a review's wallet transactions other
+ * than its action that are still to be paid (an approval, a reset to zero, the position's approval; one the network has
+ * not included yet), each at its prepared figure, null for one not read yet (./readFeesToCome reads them at the review).
+ * A signature costs no network fee, the action is the plan's own cost, and a batch is its own figure.
+ */
+export function feesToCome(steps: readonly { kind: string; status: string; feeWei: bigint | null }[]): (bigint | null)[] {
+  return steps.filter((step) => APPROVALS.has(step.kind) && step.status !== 'included' && step.status !== 'finalized').map((step) => step.feeWei)
+}
+
+/**
+ * Added 2026-10-06 (the review of the owner's point 4: one network fee line, never "+ other steps —"): the fees of the
+ * approvals still to come after step `current`, read at the review (one after another), so feesToCome has a figure for
+ * each. `read(index)` prepares one for its fee only (reads only: the run prepares it again, for the wallet, when it becomes
+ * current); `alive()` false stops it (a new quote). One that cannot be read yet (an approval that follows a reset to zero)
+ * stays null, for the screen to say in words. Never throws.
+ */
+export async function readFeesToCome(steps: readonly { kind: string; index: number; status: string; feeWei: bigint | null }[], current: number, read: (index: number) => Promise<bigint>, alive: () => boolean): Promise<void> {
+  for (const step of steps.slice(current + 1)) {
+    if (step.status !== 'waiting' || step.feeWei !== null || !APPROVALS.has(step.kind)) continue
+    try {
+      const fee = await read(step.index)
+      if (!alive()) return
+      step.feeWei = fee
+    } catch {
+      if (!alive()) return
+    }
+  }
 }
 
 /**

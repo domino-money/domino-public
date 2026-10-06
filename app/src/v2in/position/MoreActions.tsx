@@ -19,8 +19,9 @@ export interface MoreAction {
  * [#6]; an armed root blocks Change range [#5]. A vault's successor has none: its sentence stands where the menu would.
  *
  * Changed on purpose 2026-10-04 (the owner: stop-loss and take-profit belong inside the position, as a button there):
- * "Stop-loss / take-profit" ends the list whenever the page's automation panel can set an order on this position
- * (`protect`, ../autoexit/entry.ts); the pick opens the same order dialog as the panel's own card.
+ * the protection ends the list whenever the page's automation panel can turn it on for this position (`protect`,
+ * ../autoexit/entry.ts); the pick opens the same dialog as the panel's own card. 2026-10-06 (the owner's point 5): its name
+ * is Auto-exit, and it is offered only while none is on.
  */
 export function positionMenuItems(action: ActionPosition, protect = false): MoreAction[] {
   if (action.vault?.role === 'successor') return []

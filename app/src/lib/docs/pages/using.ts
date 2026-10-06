@@ -190,10 +190,10 @@ export const BRING_FUNDS: DocPage = {
       id: 'where',
       title: 'Where it appears',
       blocks: [
-        p('When your wallet can’t fund the Amount step, even with a swap, an offer to bring funds appears automatically.'),
-        // Changed on purpose 2026-10-05 (the owner: "it has to happen behind the scenes"): one choice, the rest done for you.
-        // 2026-10-06: balances read by Domino; the wallet moves only to send.
-        p('Each network shows what you hold there. Pick the one to bring it from: Robinhood Chain, Base or Arbitrum One. Domino does the rest: you sign in once, and Domino picks the token and the amount. Nothing is sent until you confirm.'),
+        // Changed on purpose 2026-10-06 (the owner's points 1 and 2): one line before an amount; after one the wallet can't
+        // fund, the networks holding something, and Other networks.
+        p('Before you type an amount, one line under the amounts shows what you hold on another network; select it to bring it all (a little ETH stays for fees). Once your wallet can’t fund the amount, even with a swap, the networks holding something are listed, and ', b('Other networks'), ' reaches more, such as Ethereum.'),
+        p('Domino reads your balances on Robinhood Chain, Base and Arbitrum One without your wallet, and picks the token and the amount. You sign in once; nothing is sent until you confirm.'),
       ],
     },
     {
@@ -203,13 +203,13 @@ export const BRING_FUNDS: DocPage = {
         {
           kind: 'steps',
           items: [
-            { title: 'Choose', body: ['The network. Domino picks the token there and the amount: what the position lacks, 1% more for the bridges’ fees, never more than you hold. Change amount lets you set it yourself.'] },
-            { title: 'Get a quote', body: ['Domino’s service asks two bridges, Relay and Across, and offers the one that delivers more after every fee. The quote shows Domino’s fee, the bridge’s fee, what you receive and the least you receive, and about how long it takes.'] },
+            { title: 'Choose', body: ['The network. The amount is what the position lacks, worked out from the bridge’s own quote, never more than you hold. Change amount lets you set it yourself.'] },
+            { title: 'Get a quote', body: ['Domino’s service asks two bridges, Relay and Across, and offers the one that delivers more after every fee. The quote shows what you receive, the least you receive and about how long it takes; its Details, every fee.'] },
             { title: 'Deposit', body: ['Your wallet switches to that network and sends it: a token takes two transactions, an approval of the exact amount and then the deposit; ETH takes one.'] },
             { title: 'Use it', body: ['It arrives in your own wallet on the position’s network, your wallet goes back there, and the same position continues with it.'] },
           ],
         },
-        p('A quote lasts 2 minutes; past it, the step asks for a new one. The step follows your deposit until it arrives, even after a reload. With no ETH on Robinhood Chain for network fees, ', b('Get gas on Robinhood Chain'), ' lets Relay deliver a little ETH out of the deposit; Across can’t.'),
+        p('A quote lasts 2 minutes; past it, the step asks for a new one. The step follows your deposit until it arrives, even after a reload. With no ETH on the position’s network for fees, ', b('Get gas'), ' lets Relay deliver a little ETH out of the deposit; Across can’t.'),
       ],
     },
     {
@@ -267,7 +267,7 @@ export const POSITIONS: DocPage = {
           [b('Fees ready to collect'), ': earned and not yet collected.'],
           [b('Your APR'), ': this position’s own fees as a yearly rate, from its history. Not the pool’s APR, and not a promise.'],
           [b('Current price'), ': the pool’s price now, on a bar between your range’s two ends.'],
-          ['Below: price and fee charts, activity, automation, any existing exit orders, and technical details.'],
+          ['Below: price and fee charts, activity, automation, Auto-exit, and technical details.'],
         ),
         p('The page updates every minute; everything on it is public chain data.'),
       ],
@@ -318,7 +318,7 @@ export const MANAGE_POSITION: DocPage = {
       id: 'from-its-page',
       title: 'From a position’s page',
       blocks: [
-        p('The available actions are shown below the position’s title: ', b('Collect fees'), ', ', b('Add liquidity'), ', ', b('Change range'), ', ', b('Withdraw'), ' and ', doc('Stop-loss / take-profit', 'stop-loss'), '. Robinhood Chain’s Uniswap v4 positions also offer ', b('Close position'), '.'),
+        p('The available actions are shown below the position’s title: ', b('Collect fees'), ', ', b('Add liquidity'), ', ', b('Change range'), ', ', b('Withdraw'), ' and ', doc('Auto-exit', 'auto-exit'), '. Robinhood Chain’s Uniswap v4 positions also offer ', b('Close position'), '.'),
         p('Each opens a dialog: your choice, then Review with what you receive, then your wallet. Each action is a single transaction, and Domino’s contract keeps nothing afterwards. No Domino fee unless it needs a swap: then 0.65% of the amount swapped. A quote needs sign-in and lasts 3 minutes.'),
       ],
     },

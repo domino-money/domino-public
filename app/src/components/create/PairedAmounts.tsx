@@ -176,7 +176,7 @@ export function PairedAmounts({
                   footer={
                     disconnected ? null : (
                       <div className="dm-flow-balance" data-pair-balance={balances.status}>
-                        <p className="dm-flow-balance-line" title={CREATE.amount.balanceNote}>
+                        <p className="dm-flow-balance-line">
                           <span className="text-fg-subtle">
                             {balances.status !== 'ready'
                               ? CREATE.amount.pairReading
@@ -221,22 +221,21 @@ export function PairedAmounts({
             // The swap buys the typed token: the wallet's other token pays for all of it, more than its own panel shows.
             whole ? (
               <span>
-                You don’t have enough <SymbolText token={pool.currencies[swapped]} />, so <AmountText text={unitsOf(swap.deposit, pool.currencies[swap.from].decimals)} />{' '}
-                <SymbolText token={pool.currencies[swap.from]} /> will come from your wallet. All of it will be swapped for <SymbolText token={pool.currencies[swapped]} /> when
-                you create the position.
+                {/* Changed on purpose 2026-10-06 (the owner's point 4: little text): what Domino swaps, in one short sentence. */}
+                Domino swaps <AmountText text={unitsOf(swap.deposit, pool.currencies[swap.from].decimals)} /> <SymbolText token={pool.currencies[swap.from]} /> from your
+                wallet for <SymbolText token={pool.currencies[swapped]} />.
               </span>
             ) : (
               <span>
-                You don’t have enough <SymbolText token={pool.currencies[swapped]} />, so <AmountText text={unitsOf(swap.deposit, pool.currencies[swap.from].decimals)} />{' '}
-                <SymbolText token={pool.currencies[swap.from]} /> will come from your wallet. About <AmountText text={unitsOf(swap.swap, pool.currencies[swap.from].decimals)} />{' '}
-                <SymbolText token={pool.currencies[swap.from]} /> of it will be swapped for <SymbolText token={pool.currencies[swapped]} /> when you create the position.
+                Domino swaps about <AmountText text={unitsOf(swap.swap, pool.currencies[swap.from].decimals)} /> <SymbolText token={pool.currencies[swap.from]} /> for{' '}
+                <SymbolText token={pool.currencies[swapped]} /> for you, so <AmountText text={unitsOf(swap.deposit, pool.currencies[swap.from].decimals)} />{' '}
+                <SymbolText token={pool.currencies[swap.from]} /> comes from your wallet.
               </span>
             )
           ) : (
             <span>
-              You don’t have enough <SymbolText token={pool.currencies[swapped]} />, so about <AmountText text={unitsOf(swap.swap, pool.currencies[swap.from].decimals)} /> of your{' '}
-              <AmountText text={unitsOf(swap.deposit, pool.currencies[swap.from].decimals)} /> <SymbolText token={pool.currencies[swap.from]} /> will be swapped for it when you create
-              the position.
+              Domino swaps about <AmountText text={unitsOf(swap.swap, pool.currencies[swap.from].decimals)} /> <SymbolText token={pool.currencies[swap.from]} /> for{' '}
+              <SymbolText token={pool.currencies[swapped]} /> for you.
             </span>
           )}
         </p>

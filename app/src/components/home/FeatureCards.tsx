@@ -1,7 +1,7 @@
 import type { ComponentType, CSSProperties } from 'react'
 import { IconChevronRight } from '../icons'
 import { cx } from '../ui'
-import { VignetteCompound, VignetteSequence, VignetteWallet, type VignetteProps } from './Vignettes'
+import { VignetteCompound, VignetteExit, VignetteSequence, type VignetteProps } from './Vignettes'
 
 const FEATURES: ReadonlyArray<{
   key: string
@@ -30,15 +30,16 @@ const FEATURES: ReadonlyArray<{
     link: 'Explore Domino-compound',
     Art: VignetteSequence,
   },
+  // Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "it goes in the home page cards, in place of
+  // Non-custodial"): Auto-exit, with its own drawing, and its page of the docs. Non-custodial stays in the docs' start.
   {
-    key: 'custody',
-    title: 'Non-custodial',
-    outcome: 'Your wallet. Your permission.',
-    body: 'Domino never holds your wallet keys. You approve automation for each position and can pause or revoke that permission.',
-    // The Non-custodial page of the docs; its route is added alongside the docs.
-    href: '#/docs/non-custodial',
+    key: 'autoexit',
+    title: 'Auto-exit',
+    outcome: 'Close at the edge.',
+    body: 'When the price reaches the end of your range, Domino closes the position and sends the tokens to your wallet.',
+    href: '#/docs/auto-exit',
     link: 'How it works',
-    Art: VignetteWallet,
+    Art: VignetteExit,
   },
 ]
 

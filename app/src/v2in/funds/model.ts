@@ -12,20 +12,25 @@
 import type { ChainBalancesResponse } from 'api-contracts/read-v6/types'
 import type { DepositPlan } from '../../lib/create/depositPlan'
 import { CANDIDATE_ORIGINS, type Holding, type HoldingsReport, type OriginCandidate } from '../../finance/v2/holdings'
-import { maxSpend } from '../../lib/create/reviewPlan'
-import { amountText, formatUnitsExact, knownDecimals } from '../../v2/crosschain/amounts'
+import { maxSpend, REVIEW_GAS_RESERVE_WEI } from '../../lib/create/reviewPlan'
+import { formatUnitsExact, knownDecimals, tokenLabel } from '../../v2/crosschain/amounts'
 import type { CrosschainFailure } from '../../v2/crosschain/client'
 import { FAILURE_COPY, PROVIDER_NAME } from '../../v2/crosschain/copy'
 import { errorDisposition } from '../../v2/crosschain/errors'
-import { destinationChoices, type Naming } from '../../v2/crosschain/present'
+import { destinationChoices, networkName, roundedUnits, shortAmountText, type Naming } from '../../v2/crosschain/present'
 import type { CrosschainRequests, OriginsList, OriginToken, QuotePlan } from '../../v2/crosschain/types'
-import { v2Chain } from '../../v2/chains'
+import { isV2ChainId, v2Chain } from '../../v2/chains'
 import type { V2ChainId } from '../../v2/types'
 import {
+  FUNDS_FIRST_GUESS_ROOM_BPS,
+  FUNDS_LINE_MIN_USD,
   FUNDS_MAX_SLIPPAGE_BPS,
   FUNDS_MIN_SLIPPAGE_BPS,
   FUNDS_REQUEST_RETRY_MS,
+  FUNDS_SIZE_SLACK_BPS,
   FUNDS_SUGGEST_DESTINATION_GAS_AT_OR_BELOW_WEI,
+  FUNDS_TYPED_QUOTE_DEBOUNCE_MS,
+  FUNDS_TYPED_QUOTES_PER_MINUTE,
 } from './constants'
 
 const ZERO = '0x0000000000000000000000000000000000000000'
@@ -74,10 +79,23 @@ export interface Lack {
   /** What the wallet has of it there, raw; native ETH after Review's gas allowance (lib/create/reviewPlan.ts). */
   haveRaw: bigint
   /**
-   * How much more of it the position needs, raw, when Review's plan says it is the token the wallet is short of; null
-   * otherwise (before an amount is typed, or for the other token, which helps only through the swap: no figure claimed).
+   * How much more of it the wallet needs there, raw, for the typed amount: for the token Review's plan is short of, what
+   * the plan needs of it; for the other one (Changed on purpose 2026-10-06, the owner's point 2b), what it alone needs to
+   * fund the whole position through the swap (lib/create/depositPlan.ts wholeFromOther), so a deposit of it never brings
+   * everything held elsewhere. Both against the balance read, native ETH keeping Review's gas allowance. Null when no
+   * figure can be worked out (no price for the swap; the zap path's alternatives): the person then types the amount.
    */
   shortRaw: bigint | null
+}
+
+/**
+ * What the wallet must still receive of a token so that `need` of it can be spent: the need, plus Review's gas allowance
+ * for native ETH, less the balance read (pure; never below zero). Against the raw balance, not the spendable one, so the
+ * allowance is counted once (the 2026-10-06 study's correction).
+ */
+export function stillNeeded(need: bigint, balanceRaw: bigint, native: boolean): bigint {
+  const short = need + (native ? REVIEW_GAS_RESERVE_WEI : 0n) - balanceRaw
+  return short > 0n ? short : 0n
 }
 
 /**
@@ -87,14 +105,12 @@ export interface Lack {
  *   - An amount typed: only when Review's own plan for it (lib/create/depositPlan.ts, from the amount step's balances)
  *     is `short`: neither both tokens, nor the typed one alone, nor the other one through the swap covers it. The token
  *     the plan is short of comes first, with how much more it needs (V1's Review says the same: "add {token} to your
- *     wallet"); the other token after it when a deposit can deliver it, since bringing it lets the swap cover.
- *   - Before an amount: only when the wallet holds none of either token there (native ETH after Review's gas
- *     allowance): nothing could fund any amount, swap or not. The token a one-sided range takes first, else the typed one.
+ *     wallet"); the other token after it when a deposit can deliver it, with what it alone needs (`wholeOther`), since
+ *     bringing that much lets the swap cover.
+ *   - Changed on purpose 2026-10-06 (the owner's point 1): before an amount, nothing. The discreet line under the amounts
+ *     names a holding on another network instead (./BringFunds.tsx, bestHolding below).
  *   - Only a token a deposit may deliver to this chain (§3.3: its stable, ETH or WETH, from the build's chain profiles).
  *   - Only with both balances read: an unread balance offers nothing, never as if it were zero.
- * Neither crosschain-v1 nor read-v6 says what the wallet holds on other networks (read-v6: "Balances per owner × chain:
- * not an index read"), so whether it holds the token elsewhere is never claimed here: the offer reads it through the
- * wallet's own provider, after the wallet switches there (finance/v2/holdings.ts; the owner's decision #9).
  */
 export function lackingTokens(input: {
   chainId: number
@@ -103,26 +119,25 @@ export function lackingTokens(input: {
   balances: readonly [string | null, string | null] | null
   /** Review's plan for the typed amount, from those balances; null before an amount is typed (or while none can be planned). */
   plan: DepositPlan | null
-  /** The one token a one-sided range takes, or null. */
-  only: 0 | 1 | null
   /** The token the amount is typed in, or null. */
   independent: 0 | 1 | null
+  /**
+   * Added 2026-10-06: what the token the amount is NOT typed in must be, alone, to fund the typed amount through the swap
+   * (lib/create/depositPlan.ts wholeFromOther, on Review's terms); null when it cannot be worked out.
+   */
+  wholeOther?: bigint | null
 }): Lack[] {
   const raw = input.balances
-  if (!raw || raw[0] === null || raw[1] === null || !RAW.test(raw[0]) || !RAW.test(raw[1])) return []
-  const spendable = [0, 1].map((side) => maxSpend(BigInt(raw[side] as string), lower(input.currencies[side].address) === ZERO))
   const { plan } = input
-  let first: 0 | 1
-  let shortRaw: bigint | null = null
-  if (plan) {
-    // Fundable as it is, or through the swap from either token: nothing to bring.
-    if (plan.kind !== 'short') return []
-    first = plan.token
-    shortRaw = plan.need > plan.have ? plan.need - plan.have : null
-  } else {
-    // Something to fund with is there: the swap can make the position from it.
-    if (spendable[0] > 0n || spendable[1] > 0n) return []
-    first = input.only ?? input.independent ?? 0
+  if (!plan || plan.kind !== 'short') return []
+  if (!raw || raw[0] === null || raw[1] === null || !RAW.test(raw[0]) || !RAW.test(raw[1])) return []
+  const held = [BigInt(raw[0]), BigInt(raw[1])] as const
+  const native = (side: 0 | 1) => lower(input.currencies[side].address) === ZERO
+  const first = plan.token
+  const figure = (side: 0 | 1): bigint | null => {
+    if (side === first) return stillNeeded(plan.need, held[side], native(side))
+    const whole = input.independent !== null && side !== input.independent ? (input.wholeOther ?? null) : null
+    return whole === null ? null : stillNeeded(whole, held[side], native(side))
   }
   const choices = new Map((destinationChoices().find((d) => d.chainId === input.chainId)?.tokens ?? []).map((t) => [lower(t.address), t]))
   const lacks: Lack[] = []
@@ -130,14 +145,16 @@ export function lackingTokens(input: {
     const address = lower(input.currencies[side].address)
     const choice = choices.get(address)
     if (!choice) continue
-    lacks.push({ side, token: address, symbol: choice.symbol, decimals: choice.decimals, haveRaw: spendable[side], shortRaw: side === first ? shortRaw : null })
+    lacks.push({ side, token: address, symbol: choice.symbol, decimals: choice.decimals, haveRaw: maxSpend(held[side], native(side)), shortRaw: figure(side) })
   }
   return lacks
 }
 
 /** V2 spends the exact inputs selected on Amount, not V1's derived paired amount. No exchange rate is inferred.
  * Only complete balance reads may establish a shortfall. An alternative delivered token has no claimed equivalent
- * amount: after arrival the person explicitly chooses it as a new input and reviews a new S1 plan. */
+ * amount: after arrival the person explicitly chooses it as a new input and reviews a new S1 plan. Changed on purpose
+ * 2026-10-06 (the owner's point 2b): with no figure, the offer never brings everything held elsewhere; it opens the
+ * amount to send for the person to type (./BringFunds.tsx). */
 export function lackingZapTokens(input: {
   chainId: number
   inputs: readonly { token: string; amount: bigint }[] | null
@@ -153,8 +170,30 @@ export function lackingZapTokens(input: {
     .map((token, index) => {
       const wanted = short.find((i) => lower(i.token) === lower(token.address))
       const haveRaw = spend(token.address)
-      return { side: index === 1 ? 1 : 0, token: lower(token.address), symbol: token.symbol, decimals: token.decimals, haveRaw, shortRaw: wanted ? wanted.amount - haveRaw : null }
+      const balance = input.balances!.get(lower(token.address)) ?? 0n
+      return { side: index === 1 ? 1 : 0, token: lower(token.address), symbol: token.symbol, decimals: token.decimals, haveRaw, shortRaw: wanted ? stillNeeded(wanted.amount, balance, lower(token.address) === ZERO) : null }
     })
+}
+
+/**
+ * Added 2026-10-06 (the 2026-10-06 study: "Use" resized the position to the whole balance): the amount typed in the step,
+ * once Review's plan for it (from the balances read again after an arrival) is no longer short: "Use" then keeps it as
+ * it is. Null while the plan is short or unknown, or nothing is typed: "Use" then takes the balance read (continueWith).
+ * Changed on purpose 2026-10-06 (the integration review: "Use 0.012649318273645123 ETH"): the label shows the amount as
+ * the screen writes amounts (at most six decimals, `decimals` the typed token's); `text` stays exact.
+ */
+export function keptAmount(
+  plan: DepositPlan | null,
+  independent: 0 | 1 | null,
+  typed: string,
+  symbol: string | null,
+  decimals: number | null = null,
+): { side: 0 | 1; text: string; label: string } | null {
+  const text = typed.trim()
+  if (plan === null || plan.kind === 'short' || independent === null || text === '') return null
+  const raw = knownDecimals(decimals) ? amountRawOf(text, decimals) : null
+  const shown = raw !== null && knownDecimals(decimals) ? (roundedUnits(raw, decimals) ?? text) : text
+  return { side: independent, text, label: symbol ? `${shown} ${symbol}` : shown }
 }
 
 /**
@@ -255,12 +294,46 @@ export function quoteRequestOf(input: {
   }
 }
 
-/** The wallet steps of a quote in words (§3.6): the switch, the approval (ERC-20 only) and the deposit, with the amount. */
-export function stepWords(quote: QuotePlan, name: Naming): { origin: string; amount: string; approval: boolean } {
+/**
+ * The wallet steps of a quote in words (§3.6): the switch, the approval (ERC-20 only) and the deposit, with the amount
+ * sent, rounded for the screen and exact (Changed on purpose 2026-10-06, the owner's point 4). Changed on purpose
+ * 2026-10-06 (the integration review): rounded UP, since it is what the wallet is asked to approve and send, so the
+ * button never says less than leaves the wallet.
+ */
+export function stepWords(quote: QuotePlan, name: Naming): { origin: string; amount: string; exact: string; approval: boolean } {
   const { request } = quote
   const origin = name.origin(request.originChainId) ?? `network ${request.originChainId}`
-  const amount = amountText(request.amountRaw, request.originToken, name.book(request.originChainId, request.originToken))
-  return { origin, amount, approval: lower(request.originToken) !== ZERO }
+  const info = name.book(request.originChainId, request.originToken)
+  const exact = info !== null && knownDecimals(info.decimals) ? `${formatUnitsExact(request.amountRaw, info.decimals) ?? request.amountRaw} ${tokenLabel(request.originToken, info.symbol)}` : shortAmountText(request.amountRaw, request.originToken, info)
+  return { origin, amount: shortAmountText(request.amountRaw, request.originToken, info, 'up'), exact, approval: lower(request.originToken) !== ZERO }
+}
+
+/**
+ * Added 2026-10-06 (the owner's point 4: one live status line while the wallet works): where the deposit's wallet steps
+ * stand, as one short line: "Step 1 of 2 · approve in your wallet". `approval`: the quote's token is an ERC-20 whose
+ * approval is not known to be covered yet. Null before the first step.
+ */
+export type RunStage = 'switching' | 'reviewing' | 'approval_wallet' | 'approval_sent' | 'approval_done' | 'approval_skipped' | 'deposit_wallet'
+export function runLine(stage: RunStage | null, approval: boolean, origin: string): string | null {
+  if (stage === null) return null
+  const total = approval ? 2 : 1
+  // One step alone (ETH, or an approval already there) is a sentence of its own (Changed on purpose 2026-10-06, the review).
+  const step = (index: number, words: string) => (total > 1 ? `Step ${index} of ${total} · ${words}` : `${words.charAt(0).toUpperCase()}${words.slice(1)}`)
+  switch (stage) {
+    case 'switching':
+      return `Switching to ${origin} · confirm in your wallet`
+    case 'reviewing':
+      return `Checking your wallet on ${origin}…`
+    case 'approval_wallet':
+      return step(1, 'approve in your wallet')
+    case 'approval_sent':
+      return step(1, 'waiting for the approval…')
+    case 'approval_done':
+    case 'approval_skipped':
+      return step(total, 'getting the deposit ready…')
+    case 'deposit_wallet':
+      return step(total, 'confirm in your wallet')
+  }
 }
 
 /** "Relay, Across": the providers that bridge a token, by name. */
@@ -340,19 +413,61 @@ export function requestFailure(failure: CrosschainFailure, attempt: number): Req
 
 // ---- the one click "Bring it from {network}" (Changed on purpose 2026-10-05, ./BringFunds.tsx bringFrom) ----------------
 
+/** Ether (ETH or WETH) or a dollar (the chain's stable): the two kinds of token a deposit delivers (§3.3). */
+export type Kind = 'ether' | 'dollar'
+
+/**
+ * A token's kind on one of Domino's networks, by its profile: ETH and WETH are ether, the stable (its rank-1 charge
+ * currency) a dollar; anything else, and any token of another network, null (pure). Added 2026-10-06.
+ */
+export function kindOf(chainId: number, token: string): Kind | null {
+  if (!isV2ChainId(chainId)) return null
+  const chain = v2Chain(chainId)
+  const address = lower(token)
+  if (address === ZERO || address === lower(chain.wrappedNative.address)) return 'ether'
+  return chain.chargeCurrencies.some((c) => c.rank === 1 && lower(c.address) === address) ? 'dollar' : null
+}
+
+/** What can be sent of a holding: all of a token; native ETH less the gas Review keeps (lib/create/reviewPlan.ts maxSpend). */
+export const sendable = (holding: Pick<Holding, 'token' | 'raw'>): bigint => maxSpend(holding.raw, holding.token === ZERO)
+
 /**
  * The holding to send for `target` on `destination` (pure): one the listing bridges from that network, the same kind of
  * token first (ETH or WETH for ether, the dollar for a dollar), native ETH before WETH; else the other kind.
+ * Changed on purpose 2026-10-06 (the owner's point 2b): with `need` (the target's shortfall), a holding of the same kind
+ * that covers it comes before one that does not, so a little ETH never stands in for the WETH that covers the position.
  */
-export function holdingFor(holdings: readonly Holding[], target: string, destination: V2ChainId, origin: V2ChainId, list: OriginsList): Holding | null {
-  const etherAt = (chain: V2ChainId, token: string) => token === ZERO || token === v2Chain(chain).wrappedNative.address
-  const wantsEther = etherAt(destination, target)
+export function holdingFor(
+  holdings: readonly Holding[],
+  target: string,
+  destination: V2ChainId,
+  origin: V2ChainId,
+  list: OriginsList,
+  need: { raw: bigint; decimals: number } | null = null,
+): Holding | null {
+  const wanted = kindOf(destination, target)
+  const covers = (holding: Holding) => need === null || sendable(holding) >= convertUnits(need.raw, need.decimals, holding.decimals)
   const rank = (holding: Holding) => {
-    const ether = etherAt(origin, holding.token)
-    const kind = ether === wantsEther ? 0 : 2
-    return kind + (ether && holding.token !== ZERO ? 1 : 0)
+    const kind = kindOf(origin, holding.token)
+    const same = kind !== null && kind === wanted
+    return (same ? 0 : 4) + (same && !covers(holding) ? 2 : 0) + (kind === 'ether' && holding.token !== ZERO ? 1 : 0)
   }
   return holdings.filter((holding) => holding.raw > 0n && originToken(list, origin, holding.token) !== null).sort((a, b) => rank(a) - rank(b))[0] ?? null
+}
+
+/**
+ * The pool token a holding of `kind` is brought as (the owner's target rule, 2026-10-06): the one of the same kind
+ * (a dollar to the stable, ether to ETH or WETH), else the other one a deposit can deliver. `deliverable`: the
+ * position's tokens a deposit can deliver to `destination`, in pool order. Null when there is none (pure).
+ */
+export function targetFor(kind: Kind | null, deliverable: readonly string[], destination: number): string | null {
+  return deliverable.find((token) => kind !== null && kindOf(destination, token) === kind) ?? deliverable[0] ?? null
+}
+
+/** The position's tokens a deposit can deliver to `destination` (§3.3: its stable, ETH or WETH), lowercase, in pool order. */
+export function deliverableTokens(destination: number, poolTokens: readonly string[]): string[] {
+  const choices = destinationChoices().find((d) => d.chainId === destination)?.tokens ?? []
+  return poolTokens.map(lower).filter((token) => choices.some((c) => lower(c.address) === token))
 }
 
 /** `raw` in `from` decimals as `to` decimals (pure; rounding up, so a converted need is never short). */
@@ -362,18 +477,503 @@ export function convertUnits(raw: bigint, from: number, to: number): bigint {
   return (raw + scale - 1n) / scale
 }
 
-/** A need with 1% more for the bridge's own fees (0.35% Domino's, the provider's), rounded up (pure). */
+/** A need with 1% more, rounded up (pure). */
 export const withMargin = (raw: bigint): bigint => (raw * 101n + 99n) / 100n
+
+/** An amount with FUNDS_FIRST_GUESS_ROOM_BPS more for the fees and the slippage, rounded up (pure). */
+function withFeeRoom(raw: bigint): bigint {
+  return (raw * (10_000n + BigInt(FUNDS_FIRST_GUESS_ROOM_BPS)) + 9_999n) / 10_000n
+}
+
+/**
+ * Added 2026-10-06 (the owner's point 2b, spec §3.4): the amount to send so the quote's guaranteed minimum covers `need`,
+ * from a quote of `asked` whose minimum was `minimum`: the need at that quote's own rate, rounded up, plus 1% for a
+ * bridge's fixed costs at another size. Null when the quote says nothing (pure).
+ */
+export function sizeFromQuote(need: bigint, asked: bigint, minimum: bigint): bigint | null {
+  if (need <= 0n || asked <= 0n || minimum <= 0n) return null
+  return withMargin((need * asked + minimum - 1n) / minimum)
+}
+
+/** The winning candidate's guaranteed minimum, raw; null without a decision or a minimum (pure). */
+export function winningMinimum(quote: QuotePlan): bigint | null {
+  const winner = quote.candidates.find((c) => c.provider === quote.decision)
+  return winner?.minimumOutputRaw && RAW.test(winner.minimumOutputRaw) ? BigInt(winner.minimumOutputRaw) : null
+}
+
+/**
+ * Added 2026-10-06 (the integration review: with "Get gas on {destination}", a quote sized down from a larger one lost
+ * Relay's gas top-up, about US$2 whatever the amount): the part of the winner's quote that does not shrink with the
+ * amount, in the token sent: its provider fee, when it carries gas delivered on the destination and is taken from what
+ * is sent (on the origin, in the token sent: Relay's is). Without gas the provider's own fixed cost fits in the 1% the
+ * sizing adds (sizeFromQuote). Zero otherwise (pure).
+ */
+export function fixedFeeOf(quote: QuotePlan): bigint {
+  const winner = quote.candidates.find((c) => c.provider === quote.decision)
+  const fee = winner?.providerFee ?? null
+  if (!winner || winner.destinationGas === null || fee === null || !RAW.test(fee.amountRaw)) return 0n
+  return fee.chainId === quote.request.originChainId && lower(fee.token) === lower(quote.request.originToken) ? BigInt(fee.amountRaw) : 0n
+}
+
+/**
+ * Added 2026-10-06 (the review of 2026-10-06: the cap bounded only typed changes): how long one more quote must wait, from
+ * when the page asked its quotes (`asked`, ms on the page clock): none while fewer than FUNDS_TYPED_QUOTES_PER_MINUTE were
+ * asked in the last minute; else until the oldest of them drops out (pure).
+ */
+export function quoteBudgetWait(asked: readonly number[], now: number): number {
+  const recent = asked.filter((at) => now - at < 60_000)
+  if (recent.length < FUNDS_TYPED_QUOTES_PER_MINUTE) return 0
+  return Math.max(0, Math.min(...recent) + 60_000 - now)
+}
+
+/**
+ * Added 2026-10-06 (the owner's point 4: the amount re-quotes by itself): how long to wait before asking a change's quote
+ * (a typed amount, a re-size, "Get gas"): the debounce, or longer while the cap holds every quote back (pure).
+ */
+export function typedQuoteWait(asked: readonly number[], now: number): number {
+  return Math.max(FUNDS_TYPED_QUOTE_DEBOUNCE_MS, quoteBudgetWait(asked, now))
+}
+
+/**
+ * The USD price, in micro-dollars per whole token, of each kind of token a chain-balances answer priced (Added 2026-10-06,
+ * the review of 2026-10-06): ether from any network's ETH or WETH, a dollar from any network's stable (read-v6 prices from
+ * qualified sources only). Used only to size a first quote of another kind of token; never shown (pure).
+ */
+export interface KindPrices {
+  ether: bigint | null
+  dollar: bigint | null
+}
+
+export function kindPrices(answer: ChainBalancesResponse | null): KindPrices {
+  const found: KindPrices = { ether: null, dollar: null }
+  for (const chain of answer?.chains ?? []) {
+    if (chain.status !== 'current') continue
+    for (const balance of chain.balances) {
+      const kind = kindOf(chain.chainId, balance.address)
+      const usd = balance.price ? microUsd(balance.price.usd) : null
+      if (kind !== null && found[kind] === null && usd !== null && usd > 0n) found[kind] = usd
+    }
+  }
+  return found
+}
+
+/** About how much of a token worth `sentUsd` is worth `need` of one worth `needUsd` (micro-dollars per whole token), rounded up; null without both prices (pure). */
+export function worthIn(need: bigint, needDecimals: number, needUsd: bigint | null, sentDecimals: number, sentUsd: bigint | null): bigint | null {
+  if (needUsd === null || sentUsd === null || needUsd <= 0n || sentUsd <= 0n || need <= 0n) return null
+  const num = need * needUsd * 10n ** BigInt(sentDecimals)
+  const den = 10n ** BigInt(needDecimals) * sentUsd
+  return (num + den - 1n) / den
+}
+
+/**
+ * Added 2026-10-06 (the review of 2026-10-06: for another kind of token the first quote was of everything held, and it
+ * stood): the first amount quoted for `need` of a target, sent as a token of `sentKind`: the need in the token sent (by
+ * decimals for the same kind; at the prices Domino's service read, for another kind), with room for the fees, never more
+ * than `available`. `blind`: another kind with no price read, so the first quote is of all that can be sent and only its
+ * own rate sizes the amount (sizeStep). `short`: what can be sent is less than the need itself, by that estimate (pure).
+ */
+export function firstAsk(input: {
+  need: bigint
+  needDecimals: number
+  needKind: Kind | null
+  sentDecimals: number
+  sentKind: Kind | null
+  available: bigint
+  prices: KindPrices
+}): { amount: bigint; blind: boolean; short: boolean } {
+  const { need, needDecimals, needKind, sentDecimals, sentKind, available, prices } = input
+  const same = needKind !== null && needKind === sentKind
+  const estimate = same
+    ? convertUnits(need, needDecimals, sentDecimals)
+    : needKind !== null && sentKind !== null
+      ? worthIn(need, needDecimals, prices[needKind], sentDecimals, prices[sentKind])
+      : null
+  if (estimate === null) return { amount: available, blind: true, short: false }
+  const room = withFeeRoom(estimate)
+  return { amount: room < available ? room : available, blind: false, short: available < estimate }
+}
+
+/**
+ * What the sizing does once its first quote is back (Added 2026-10-06, the review of 2026-10-06; spec §3.4). `asked` was
+ * quoted with the guaranteed minimum `minimum` (null: no route, or no decision); `available` is all that can be sent.
+ *   - no minimum: that quote is shown as the service said it; but a blind first ask (everything held, for another kind)
+ *     never stands as the amount: the person types it (`enter`);
+ *   - covered: that quote, unless its own rate says FUNDS_SIZE_SLACK_BPS less would cover the need too: then once more,
+ *     for the need at that rate; Changed on purpose 2026-10-06 (the integration review): `fee`, the quote's part that
+ *     does not shrink with the amount (fixedFeeOf), is kept whole and only the rest is scaled, so a smaller quote still
+ *     pays it (when it does shrink after all, this only brings a little more);
+ *   - short: once more, for the need at that rate, never more than `available`; when `asked` was all of it already, that
+ *     quote, said to be all there is (`short`).
+ * Never a third quote (pure).
+ */
+export type SizeStep = { step: 'show'; short: boolean } | { step: 'again'; amount: bigint; short: boolean } | { step: 'enter' }
+
+export function sizeStep(input: { need: bigint; asked: bigint; available: bigint; minimum: bigint | null; blind: boolean; fee?: bigint }): SizeStep {
+  const { need, asked, available, minimum, blind } = input
+  const scaled = minimum === null ? null : sizeFromQuote(need, asked, minimum)
+  if (scaled === null) return blind ? { step: 'enter' } : { step: 'show', short: false }
+  if (minimum !== null && minimum >= need) {
+    const fee = input.fee ?? 0n
+    const kept = fee > 0n && fee < asked ? sizeFromQuote(need, asked - fee, minimum) : null
+    const sized = kept === null ? scaled : kept + fee
+    const next = sized < available ? sized : available
+    return asked - next > (next * BigInt(FUNDS_SIZE_SLACK_BPS)) / 10_000n ? { step: 'again', amount: next, short: false } : { step: 'show', short: false }
+  }
+  const next = scaled < available ? scaled : available
+  return next > asked ? { step: 'again', amount: next, short: scaled > available } : { step: 'show', short: true }
+}
+
+/** A holding's worth in micro-dollars at its kind's price; null without one (pure). */
+const worthOf = (holding: Holding, origin: number, prices: KindPrices): bigint | null => {
+  const kind = kindOf(origin, holding.token)
+  const usd = kind === null ? null : prices[kind]
+  return usd === null ? null : (holding.raw * usd) / 10n ** BigInt(holding.decimals)
+}
+
+/** What one network's holdings bring (Added 2026-10-06): the lack served (null before an amount), the holding, and the pool token it arrives as. */
+export interface BringChoice {
+  lack: Lack | null
+  holding: Holding
+  target: string
+}
+
+/**
+ * The lack and the holding to bring for it from one network, chosen together (Added 2026-10-06, the review of 2026-10-06:
+ * a little ETH there was brought for the ETH the position lacks while 1,000 USDC there covered the USDC it lacks). In order:
+ *   1. a lack with a figure (one with none opens the amount field for the person);
+ *   2. a holding that covers that figure, with room for the fees: the same kind by decimals, another kind at the prices
+ *      Domino's service read (with no price, not known to cover);
+ *   3. the same kind (a plain bridge, which Relay and Across both quote; Across admits no other);
+ *   4. among those that cover, the lacks' order (the token Review's plan is short of first), then native ETH (one
+ *      transaction, a token's approval being the other); among those that don't, the one worth more (the larger
+ *      position), then native ETH, then the lacks' order.
+ * Before an amount (no lacks): the holding of a kind a pool token shares first, then the one worth more, then native ETH;
+ * brought as that kind (targetFor). Null when no holding can be brought (pure).
+ */
+export function bringChoice(input: {
+  lacks: readonly Lack[]
+  holdings: readonly Holding[]
+  destination: number
+  origin: number
+  deliverable: readonly string[]
+  prices: KindPrices
+}): BringChoice | null {
+  const { lacks, holdings, destination, origin, deliverable, prices } = input
+  type Ranked = BringChoice & { key: readonly bigint[] }
+  const ranked: Ranked[] = []
+  const usable = holdings.filter((holding) => holding.raw > 0n && sendable(holding) > 0n)
+  const native = (holding: Holding) => (holding.token === ZERO ? 0n : 1n)
+  // Worth more first: larger worths make smaller keys; an unknown worth after every known one.
+  const rich = (holding: Holding) => {
+    const worth = worthOf(holding, origin, prices)
+    return worth === null ? 1n : -1n - worth
+  }
+  if (lacks.length === 0) {
+    for (const holding of usable) {
+      const kind = kindOf(origin, holding.token)
+      const target = targetFor(kind, deliverable, destination)
+      if (target === null) continue
+      const same = kind !== null && kind === kindOf(destination, target) ? 0n : 1n
+      ranked.push({ lack: null, holding, target, key: [same, rich(holding), native(holding)] })
+    }
+  } else {
+    lacks.forEach((lack, index) => {
+      const wanted = kindOf(destination, lack.token)
+      for (const holding of usable) {
+        const kind = kindOf(origin, holding.token)
+        const same = wanted !== null && kind === wanted
+        const figure = lack.shortRaw !== null && lack.shortRaw > 0n ? lack.shortRaw : null
+        const need =
+          figure === null ? null : same ? convertUnits(figure, lack.decimals, holding.decimals) : wanted !== null && kind !== null ? worthIn(figure, lack.decimals, prices[wanted], holding.decimals, prices[kind]) : null
+        const covers = need !== null && sendable(holding) >= withFeeRoom(need)
+        const order = covers ? [BigInt(index), native(holding)] : [rich(holding), native(holding), BigInt(index)]
+        ranked.push({ lack, holding, target: lack.token, key: [figure === null ? 1n : 0n, covers ? 0n : 1n, same ? 0n : 1n, ...order] })
+      }
+    })
+  }
+  const first = (a: Ranked, b: Ranked): number => {
+    for (let i = 0; i < Math.max(a.key.length, b.key.length); i += 1) {
+      const x = a.key[i] ?? 0n
+      const y = b.key[i] ?? 0n
+      if (x !== y) return x < y ? -1 : 1
+    }
+    return 0
+  }
+  const best = ranked.sort(first)[0]
+  return best ? { lack: best.lack, holding: best.holding, target: best.target } : null
+}
+
+/** A step held unsettled (finance/v2/crosschain.ts UnsettledOffer), as much of it as the offer's choices read. */
+export interface HeldStep {
+  originChainId: number
+  kind: 'approval' | 'deposit'
+  destinationChainId: number
+}
+
+/**
+ * Whether the line and the networks are held back (Added 2026-10-06, the review: after a deposit, the line offered the
+ * funds just bridged once more): while what the position lacks here may still change by itself, so a second bridge is
+ * never offered while the first may be on its way: a deposit this page sent and not yet settled (the balances read are
+ * from before it left; they are read again once it is settled), or a deposit held unsettled for this destination.
+ * A deposit followed since a reload holds nothing back: the balances were read after it left. Changed on purpose
+ * 2026-10-06 (the integration review: one approval left unanswered on Base hid every network, for every position): any
+ * other held step holds back only its own origin (heldOrigins), as the sender refuses only that origin (pure).
+ */
+export function holdOffers(deposits: readonly { sentHere: boolean; hash: string }[], settled: ReadonlySet<string>, held: readonly HeldStep[], destination: number): boolean {
+  return deposits.some((d) => d.sentHere && !settled.has(d.hash)) || heldMayArrive(held, destination)
+}
+
+/**
+ * Whether a step held unsettled may still arrive at `destination`: a deposit held for it, never an approval (nothing moves)
+ * nor a deposit held for another network (Added 2026-10-06, the integration review: holdOffers and the offer's "On the
+ * way" read the same rule) (pure).
+ */
+export const heldMayArrive = (held: readonly HeldStep[], destination: number): boolean => held.some((step) => step.kind === 'deposit' && step.destinationChainId === destination)
+
+/** The origins a held step keeps closed: nothing more is offered from them until it is settled (Added 2026-10-06, pure). */
+export const heldOrigins = (held: readonly HeldStep[]): ReadonlySet<number> => new Set(held.map((step) => step.originChainId))
+
+/**
+ * The bundled mark of a holding on one of Domino's networks, by its address only (Added 2026-10-06, the review: the line
+ * asked for a symbol's file that is not there): its ETH, its WETH, Robinhood Chain's USDG; else none (a plain disc).
+ */
+export function holdingArtwork(chainId: number, token: string): 'ETH' | 'WETH' | 'USDG' | null {
+  if (!isV2ChainId(chainId)) return null
+  const address = lower(token)
+  const chain = v2Chain(chainId)
+  if (address === ZERO) return 'ETH'
+  if (address === lower(chain.wrappedNative.address)) return 'WETH'
+  return chainId === 4663 && chain.chargeCurrencies.some((c) => c.rank === 1 && lower(c.address) === address) ? 'USDG' : null
+}
+
+/**
+ * The networks read-v6's chain-balances reads (its BalanceTokenRef chainId: Domino's three). A request that names any
+ * other network is refused whole (src/v2/read/v6.ts checks the request first), so nothing else is ever asked.
+ */
+export const SERVED_BALANCE_CHAINS: readonly number[] = Object.freeze([4663, 8453, 42161])
 
 /**
  * Added 2026-10-06 (rugged97's delta of 5 Oct, item 3: read-v6's chain-balances): the tokens to ask Domino's service about
- * for the offer, every source network's ETH, WETH and stable (finance/v2/holdings.ts CANDIDATE_ORIGINS), never the
- * destination's, in that order.
+ * for the offer: every other network's ETH, WETH and stable that the service reads (finance/v2/holdings.ts
+ * CANDIDATE_ORIGINS within SERVED_BALANCE_CHAINS), in that order; then, Changed on purpose 2026-10-06 (the owner's point
+ * 1), the destination's own ETH, for "Get gas on {destination}" (§3.9). Seven tokens, within the service's 24.
  */
-export function balancesRequest(destination: number, sources: readonly number[]): { chainId: number; address: string }[] {
-  return CANDIDATE_ORIGINS.filter((candidate) => sources.includes(candidate.chainId) && candidate.chainId !== destination).flatMap((candidate) =>
+export function balancesRequest(destination: number): { chainId: number; address: string }[] {
+  const others = CANDIDATE_ORIGINS.filter((candidate) => SERVED_BALANCE_CHAINS.includes(candidate.chainId) && candidate.chainId !== destination).flatMap((candidate) =>
     candidate.tokens.map((token) => ({ chainId: candidate.chainId, address: token.address.toLowerCase() })),
   )
+  return SERVED_BALANCE_CHAINS.includes(destination) ? [...others, { chainId: destination, address: ZERO }] : others
+}
+
+/** A network's ETH as a chain-balances answer read it, raw; null when that network or that balance was not read (pure). */
+export function nativeOn(answer: ChainBalancesResponse, chainId: number): bigint | null {
+  const chain = answer.chains.find((entry) => entry.chainId === chainId)
+  if (!chain || chain.status !== 'current') return null
+  const read = chain.balances.find((entry) => entry.address.toLowerCase() === ZERO)
+  return read && read.status === 'read' && read.balanceRaw !== null && /^\d+$/.test(read.balanceRaw) ? BigInt(read.balanceRaw) : null
+}
+
+/** One balance's value in USD as the answer gives it (a qualified price only, read-v6 1.1.0-rc.1); null without one (pure). */
+export function valueUsdOf(answer: ChainBalancesResponse, chainId: number, token: string): string | null {
+  const chain = answer.chains.find((entry) => entry.chainId === chainId)
+  if (!chain || chain.status !== 'current') return null
+  return chain.balances.find((entry) => entry.address.toLowerCase() === lower(token))?.valueUsd ?? null
+}
+
+/** A USD decimal ("100.5") in micro-dollars; null for anything else. */
+const microUsd = (value: string): bigint | null => {
+  const match = /^(\d{1,30})(?:\.(\d{1,18}))?$/.exec(value)
+  return match ? BigInt(match[1]) * 1_000_000n + BigInt((match[2] ?? '').padEnd(6, '0').slice(0, 6)) : null
+}
+
+/** Micro-dollars as a USD decimal ("1900.5"). */
+const usdText = (micro: bigint): string => {
+  const fraction = String(micro % 1_000_000n).padStart(6, '0').replace(/0+$/, '')
+  return fraction ? `${micro / 1_000_000n}.${fraction}` : String(micro / 1_000_000n)
+}
+
+/** USD values summed, as micro-dollars written back ("1900.5"); null when any is missing or unreadable (pure). */
+export function sumUsd(values: readonly (string | null)[]): string | null {
+  let total = 0n
+  for (const value of values) {
+    const micro = value === null ? null : microUsd(value)
+    if (micro === null) return null
+    total += micro
+  }
+  return usdText(total)
+}
+
+/**
+ * What can be sent of a holding (sendable) in micro-dollars, from its balance's USD as the answer gives it; null without
+ * one (Added 2026-10-06, the integration review: native ETH keeps the gas Review keeps, so the value of its whole balance
+ * overstated what is brought, by about the reserve's worth) (pure).
+ */
+function sendableMicroUsd(answer: ChainBalancesResponse, chainId: number, holding: Holding): bigint | null {
+  const value = valueUsdOf(answer, chainId, holding.token)
+  const micro = value === null ? null : microUsd(value)
+  return micro === null || holding.raw <= 0n ? null : (micro * sendable(holding)) / holding.raw
+}
+
+/**
+ * The holdings that can be brought from a network (Added 2026-10-06, the owner's point 7: no transaction that cannot go
+ * through): native ETH above the gas Review keeps; a token only where that network's ETH was not read as zero, since the
+ * ETH pays the approval and the deposit there. `gasless`: the tokens left out for that reason (pure).
+ */
+export function usableHoldings(holdings: readonly Holding[], nativeRaw: bigint | null): { usable: Holding[]; gasless: Holding[] } {
+  const usable: Holding[] = []
+  const gasless: Holding[] = []
+  for (const holding of holdings) {
+    if (holding.token === ZERO) {
+      if (sendable(holding) > 0n) usable.push(holding)
+    } else if (nativeRaw === 0n) gasless.push(holding)
+    else usable.push(holding)
+  }
+  return { usable, gasless }
+}
+
+/**
+ * What the service read on one of Domino's other networks, for its button in the short box (Added 2026-10-06, the
+ * owner's points 1 and 3): `holds` what can be brought, with about how much in USD when every one of them is valued;
+ * `no_gas` only tokens, with no ETH there to send them; `empty` nothing (the button goes); `unread` not read, or read in
+ * part with nothing found: the button stays, and the wallet's own read there is the way (never a zero). Changed on
+ * purpose 2026-10-06 (the integration review): the USD is of what can be sent (native ETH less the gas Review keeps),
+ * and the box names those amounts (sendable).
+ */
+export type NetworkHolds =
+  | { state: 'holds'; holdings: Holding[]; usd: string | null }
+  | { state: 'no_gas'; holdings: Holding[] }
+  | { state: 'empty' }
+  | { state: 'unread' }
+
+export function networkHolds(answer: ChainBalancesResponse | null, candidate: OriginCandidate): NetworkHolds {
+  const report = answer ? holdingsFromChainBalances(answer, candidate) : null
+  if (answer === null || report === null) return { state: 'unread' }
+  const { usable, gasless } = usableHoldings(report.holdings, nativeOn(answer, candidate.chainId))
+  if (usable.length > 0) {
+    const values = usable.map((holding) => sendableMicroUsd(answer, candidate.chainId, holding))
+    return { state: 'holds', holdings: usable, usd: values.every((micro) => micro !== null) ? usdText(values.reduce<bigint>((total, micro) => total + (micro ?? 0n), 0n)) : null }
+  }
+  if (report.unread.length > 0) return { state: 'unread' }
+  if (gasless.length > 0) return { state: 'no_gas', holdings: gasless }
+  return { state: 'empty' }
+}
+
+/** "100 USDC" for the screen (at most six decimals, rounded down), from a holding's trusted symbol and decimals. */
+export const holdingText = (holding: Pick<Holding, 'raw' | 'token' | 'symbol' | 'decimals'>): string =>
+  shortAmountText(holding.raw.toString(), holding.token, { symbol: holding.symbol, decimals: holding.decimals })
+
+/**
+ * The least of a kind of token the discreet line names when no price for it was read anywhere (Added 2026-10-06, the
+ * integration review's second pass: unpriced, 0.0006 ETH on Base was named by its dust, "You have 0.0001 ETH on Base",
+ * and quoting it reached no route): of ether, as much as the gas Review keeps (0.0005 ETH, worth FUNDS_LINE_MIN_USD or
+ * more at any ether price above US$2,000); of a dollar, FUNDS_LINE_MIN_USD of it. Never shown (pure).
+ */
+function unpricedFloor(kind: Kind | null, decimals: number): bigint {
+  if (kind === 'ether') return convertUnits(REVIEW_GAS_RESERVE_WEI, 18, decimals)
+  return kind === 'dollar' ? BigInt(FUNDS_LINE_MIN_USD) * 10n ** BigInt(decimals) : 0n
+}
+
+/** A holding the discreet line names (Added 2026-10-06, the owner's point 1). */
+export interface LineHolding {
+  chainId: V2ChainId
+  network: string
+  /** As read (the whole balance); the line names what can be sent of it (sendable). */
+  holding: Holding
+  /** About how much what can be sent of it is worth, from a qualified price; null without one. */
+  valueUsd: string | null
+  /** The pool token it is brought as (targetFor). */
+  target: string
+}
+
+/**
+ * The one holding the discreet line under the amounts names, before an amount is typed (Added 2026-10-06, the owner's
+ * point 1): on Domino's other networks as the service read them, only what can be brought (usableHoldings) and is worth
+ * at least FUNDS_LINE_MIN_USD where valued, and only when the position has a token a deposit can deliver. A holding of
+ * the same kind as a pool token first (a plain bridge), then the most valuable, then native ETH before WETH. Null when
+ * every network read holds nothing to bring (pure).
+ * Changed on purpose 2026-10-06 (the integration review: "You have 0.0006 ETH on Base (about $1.62)" brought 0.0001 ETH):
+ * the value, the floor and `valueUsd` are of what can be sent (native ETH less the gas Review keeps); a holding with no
+ * value of its own is weighed at its kind's price read elsewhere, only to leave out what is too little; with no price read
+ * at all, against its kind's own floor (unpricedFloor). `except`: the origins a held step keeps closed (heldOrigins).
+ */
+export function bestHolding(answer: ChainBalancesResponse, destination: number, deliverable: readonly string[], except: ReadonlySet<number> = new Set()): LineHolding | null {
+  if (deliverable.length === 0) return null
+  const prices = kindPrices(answer)
+  const floor = BigInt(FUNDS_LINE_MIN_USD) * 1_000_000n
+  const found: (LineHolding & { same: boolean; micro: bigint | null })[] = []
+  for (const candidate of CANDIDATE_ORIGINS) {
+    if (!SERVED_BALANCE_CHAINS.includes(candidate.chainId) || candidate.chainId === destination || !isV2ChainId(candidate.chainId) || except.has(candidate.chainId)) continue
+    const report = holdingsFromChainBalances(answer, candidate)
+    if (!report) continue
+    for (const holding of usableHoldings(report.holdings, nativeOn(answer, candidate.chainId)).usable) {
+      const kind = kindOf(candidate.chainId, holding.token)
+      const micro = sendableMicroUsd(answer, candidate.chainId, holding)
+      const weighed = micro ?? worthOf({ ...holding, raw: sendable(holding) }, candidate.chainId, prices)
+      if (weighed !== null ? weighed < floor : sendable(holding) < unpricedFloor(kind, holding.decimals)) continue
+      const target = targetFor(kind, deliverable, destination)
+      if (target === null) continue
+      found.push({ chainId: candidate.chainId, network: candidate.name, holding, valueUsd: micro === null ? null : usdText(micro), target, same: kind !== null && kind === kindOf(destination, target), micro })
+    }
+  }
+  const order = (a: (typeof found)[number], b: (typeof found)[number]): number => {
+    if (a.same !== b.same) return a.same ? -1 : 1
+    if (a.micro !== b.micro) {
+      if (a.micro === null) return 1
+      if (b.micro === null) return -1
+      return a.micro > b.micro ? -1 : 1
+    }
+    return Number(a.holding.token !== ZERO) - Number(b.holding.token !== ZERO)
+  }
+  const best = found.sort(order)[0]
+  return best ? { chainId: best.chainId, network: best.network, holding: best.holding, valueUsd: best.valueUsd, target: best.target } : null
+}
+
+/**
+ * The networks crosschain-v1 pins both Relay and Across on (api-contracts/crosschain-v1 CONSTANTS.chains;
+ * tests/v2/funds-model.test.mjs holds this copy to them), less Domino's own three: the short list "Other networks" offers.
+ */
+export const BOTH_PINNED_ORIGINS: readonly number[] = Object.freeze([1, 10, 56, 130, 137, 143, 324, 480, 999, 1868, 4217, 4326, 5042, 9745, 43114, 57073, 59144])
+
+/** One of the "Other networks" and the tokens to send from it. */
+export interface OtherNetwork {
+  chainId: number
+  name: string
+  tokens: { address: string; label: string; decimals: number }[]
+}
+
+/** The tokens "Other networks" offers besides a network's own currency and what both bridges list, in this order. */
+const OTHER_NETWORK_SYMBOLS: readonly string[] = ['WETH', 'USDC', 'USDT']
+
+/**
+ * "Other networks" (Added 2026-10-06, the owner's point 2a): the listing's networks among BOTH_PINNED_ORIGINS, never
+ * Domino's own or the destination, each named once (v2/crosschain/present.ts networkName), Ethereum and OP Mainnet first,
+ * then by name; with the listing's tokens whose decimals it says (an amount is typed there, never in raw units). Changed
+ * on purpose 2026-10-06 (the review of 2026-10-06: Relay lists up to 32 tokens a network, SOMI, PLUME, APE...; the owner's
+ * "few functions"): only the network's own currency, WETH, USDC and USDT, and any token both Relay and Across list; the
+ * network's own currency first, then in that order, then by symbol (pure).
+ */
+export function otherNetworks(list: OriginsList, destination: number): OtherNetwork[] {
+  const first = [1, 10]
+  const rank = (token: { address: string; label: string }) => (token.address === ZERO ? -1 : OTHER_NETWORK_SYMBOLS.indexOf(token.label.toUpperCase()) + 1 || 99)
+  return list.chains
+    .filter((chain) => BOTH_PINNED_ORIGINS.includes(chain.chainId) && chain.chainId !== destination && !isV2ChainId(chain.chainId))
+    .map((chain) => ({
+      chainId: chain.chainId,
+      name: networkName(chain.chainId, chain.name) ?? chain.name,
+      tokens: chain.tokens
+        .filter((token) => knownDecimals(token.decimals))
+        .map((token) => ({ address: lower(token.address), label: tokenLabel(token.address, token.symbol), decimals: token.decimals as number, both: token.providers.includes('relay') && token.providers.includes('across') }))
+        .filter((token) => token.address === ZERO || token.both || OTHER_NETWORK_SYMBOLS.includes(token.label.toUpperCase()))
+        .map(({ address, label, decimals }) => ({ address, label, decimals }))
+        .sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label)),
+    }))
+    .filter((chain) => chain.tokens.length > 0)
+    .sort((a, b) => {
+      const ra = first.indexOf(a.chainId)
+      const rb = first.indexOf(b.chainId)
+      if (ra !== rb) return (ra === -1 ? 99 : ra) - (rb === -1 ? 99 : rb)
+      return a.name.localeCompare(b.name)
+    })
 }
 
 /**

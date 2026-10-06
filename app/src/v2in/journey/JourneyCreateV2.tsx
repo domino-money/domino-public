@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore, type ReactElement } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
 import { CreatedNext } from '../../components/create/CreatedNext'
 import type { PairBalancesState } from '../../components/create/usePairBalances'
 import { rawBalances } from '../../components/create/valuation'
@@ -10,16 +10,17 @@ import type { JourneyState as V1JourneyState } from '../../lib/create/journey'
 import { reviewPlan } from '../../lib/create/reviewPlan'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import { v2Chain } from '../../v2/chains'
-import type { V2Gate } from '../../v2/gate'
-import type { V2ChainId } from '../../v2/types'
+import { s2Gate, type V2Gate } from '../../v2/gate'
+import type { Address, V2ChainId } from '../../v2/types'
+import { v2PageProbe } from '../transports'
 import { useJourneyNetwork } from './context'
 import { JOURNEY } from './copy'
-import { inputsFromV1, requestFromV1, zapStateFromV1, type V1Funding } from './model/fromV1'
+import { inputsFromV1, requestFromV1, zapStateFromV1 } from './model/fromV1'
 import { journeyPrice } from './model/state'
 import { FinalControl, ReviewStage } from './ReviewStage'
 import { testPlannerOn } from './source'
 import { useJourneyRun, type RunView } from './run'
-import { amountText, labelOf, tokenBook } from './tokens'
+import { labelOf, tokenBook } from './tokens'
 
 /**
  * The owner's New position on Domino V2 (2026-10-05: "my screens, with everything connected"): today's journey
@@ -68,11 +69,6 @@ function useLiveGate(chainId: V2ChainId): Gate | 'outside' | 'reading' | 'not-li
   const gate = chainId === 4663 ? network.s1 : network.gates?.[chainId]
   if (gate === undefined) return 'reading'
   return gate.mode === 'live' ? gate : 'not-live'
-}
-
-/** What a short wallet lacks, in today's words for the zap path ("Your wallet has X; this position needs Y."). */
-function shortCopy(funding: Extract<V1Funding, { kind: 'short' }>, book: ReturnType<typeof tokenBook>): string {
-  return JOURNEY.review.walletShort(amountText(book, funding.token, funding.have), amountText(book, funding.token, funding.need))
 }
 
 type CreateProps = { state: V1JourneyState; balances: PairBalancesState; onBusy?: (busy: boolean) => void; v1: ReactElement }
@@ -164,7 +160,7 @@ function LiveCreate({ state, balances, onBusy, gate, chainId }: Omit<CreateProps
     if (home && tokenId !== null) publishCreated(tokenId.toString(), owner)
   }, [home, tokenId, owner])
 
-  if (home && tokenId !== null) return <CreatedNext tokenId={tokenId.toString()} />
+  if (home && tokenId !== null) return <CreatedNext tokenId={tokenId.toString()} state={state} />
   if (connected && !signedIn) {
     return (
       <>
@@ -178,13 +174,15 @@ function LiveCreate({ state, balances, onBusy, gate, chainId }: Omit<CreateProps
     )
   }
   if (funding.kind === 'short') {
+    // Changed on purpose 2026-10-06 (the review of the owner's point 4): what the wallet has and needs is said once, in
+    // Review's view (ReviewV2 below); this line only says why Create position waits.
     return (
       <>
         <Button type="button" variant="primary" size="xl" className="w-full" disabled data-create-position="short" aria-describedby="create-reason">
           {JOURNEY.final.create}
         </Button>
         <p id="create-reason" className="dm-flow-reason" data-align="start" data-zap-reason="short">
-          {shortCopy(funding, book)}
+          {JOURNEY.final.reasonShort}
         </p>
       </>
     )
@@ -205,19 +203,39 @@ function LiveCreate({ state, balances, onBusy, gate, chainId }: Omit<CreateProps
 
 type ReviewProps = { state: V1JourneyState; now: number; balances: PairBalancesState; v1: ReactElement }
 
+/**
+ * Whether a deposit from another network can bring `token` to `chainId` now (Added 2026-10-06, the review of point 4: the
+ * short wallet's sentence offers it only then): Amount's offer is open there (S2 `live`, the crosschain route's own word,
+ * as ../funds/useS2Gate.ts asks it) and the token is one a deposit delivers (the chain's stable, ETH or WETH: its charge
+ * currencies, ../funds/model.ts deliverableTokens). False until known, and for any other token.
+ */
+function useBringable(chainId: V2ChainId, token: Address | null): boolean {
+  const [live, setLive] = useState<V2ChainId | null>(null)
+  const asked = token !== null
+  useEffect(() => {
+    // Kept by the chain it is for: an answer for another chain never stands for this one.
+    if (asked) void s2Gate(chainId, v2PageProbe).then((gate) => gate.mode === 'live' && setLive(chainId), () => undefined)
+  }, [chainId, asked])
+  return live === chainId && v2Chain(chainId).chargeCurrencies.some((currency) => currency.address.toLowerCase() === token?.toLowerCase())
+}
+
 /** Review's body: the plan's review once the gate is live, else today's own Review (`v1`). */
 export function ReviewV2({ state, now, balances, v1 }: ReviewProps) {
   const chainId = chainOf(state)
   const gate = useLiveGate(chainId)
   const run = useSyncExternalStore(subscribeShared, sharedNow, () => null)
   const zap = zapStateFromV1(state)
+  const planned = zap ? reviewPlan(state, rawBalances(balances)) : null
+  const funding = inputsFromV1(zap, planned)
+  const bring = useBringable(chainId, funding.kind === 'short' ? funding.token : null)
   if (gate === 'outside' || gate === 'not-live' || !zap) return v1
   if (gate === 'reading') return null
-  const funding = inputsFromV1(zap, reviewPlan(state, rawBalances(balances)))
-  const book = tokenBook(chainId, zap.pool ? [...zap.pool.tokens] : [])
-  // A short wallet asks no quote: said where the review's notes stand.
-  const view: RunView =
-    funding.kind === 'short' ? { ...IDLE, stage: 'failed', error: { copy: shortCopy(funding, book), code: 'wallet_short', recovery: 'none' } } : (run?.view ?? IDLE)
+  // A short wallet asks no quote, and an earlier review is not for these amounts: nothing of it is drawn. Changed on
+  // purpose 2026-10-06 (the review of the owner's point 4: one sentence, in view): the review shows what the position
+  // needs and says once, in its body, what the wallet has and the ways on, as today's Review does; Create position's
+  // line only says why it waits.
+  const short = funding.kind === 'short' && planned ? { amounts: planned.need, token: funding.token, have: funding.have, need: funding.need, bring } : null
+  const view: RunView = short ? IDLE : (run?.view ?? IDLE)
   return (
     <ReviewStage
       state={zap}
@@ -229,6 +247,7 @@ export function ReviewV2({ state, now, balances, v1 }: ReviewProps) {
       onRejected={() => run?.forgetUnsettled()}
       onNewPool={() => undefined}
       onPoolRace={() => undefined}
+      short={short}
     />
   )
 }

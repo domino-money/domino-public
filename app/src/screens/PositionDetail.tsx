@@ -96,8 +96,8 @@ interface ReservesProps {
 const FeeReserves = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<ReservesProps>>(recovering(() => import('../components/positions/FeeReserves'), () => ({ default: () => null }))) : null
 
 // Domino V2 (integration, 2026-10-02): the position's automation (its vault's reserves, Leave automation, the rearm) and
-// its Stop-loss / take-profit, under the page's cards in every phase, only in a build that carries V2 (the define is false
-// in both deployable builds, so this is null there and nothing of it is bundled).
+// its Auto-exit (the owner's point 5, 2026-10-06), under the page's cards in every phase, only in a build that carries V2
+// (production and development do since 2026-10-05; a build without it has this null, and nothing of it is bundled).
 const V2Position = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/automate/PositionAutomation'), () => ({ default: () => null }))) : null
 
 /**

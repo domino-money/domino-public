@@ -5,7 +5,7 @@ import { OriginStepError, type DepositJournal, type OriginReview, type OriginSen
 import { amountText } from '../../v2/crosschain/amounts'
 import { PROVIDER_NAME } from '../../v2/crosschain/copy'
 import { createStatusPoller, type PollState } from '../../v2/crosschain/polling'
-import { presentStatus, type Naming } from '../../v2/crosschain/present'
+import { presentStatus, shortAmountText, type Naming } from '../../v2/crosschain/present'
 import type { CrosschainJournalRecord } from '../../v2/crosschain/steps'
 import { v2TxUrl } from '../../v2/explorers'
 import { switchToChain, v2SwitchNotice } from '../../wallet/port'
@@ -73,9 +73,12 @@ export function DepositStatus({
   onArrived,
   sender,
   poolTokens,
+  keep = null,
+  takes = null,
   onUse,
   onUseToken,
   onRemove,
+  onSettled,
 }: {
   deposit: TrackedDeposit
   services: FundsServices
@@ -94,9 +97,24 @@ export function DepositStatus({
   sender: () => Promise<OriginSender>
   /** The position's two tokens (lowercase), in pool order: what arrived continues the same position on its side. */
   poolTokens: readonly string[]
+  /**
+   * Added 2026-10-06 (the 2026-10-06 study: Use resized the position to the whole balance): the amount typed in the step,
+   * once the wallet covers it with what arrived; Use then keeps it, and the card is done. Null: Use takes the balance.
+   */
+  keep?: { side: 0 | 1; text: string; label: string } | null
+  /**
+   * Added 2026-10-06 (the integration review): the one pool token a range beside today's price takes. What arrived of the
+   * other one is never made the amount's token (the range could take none of it): a hint says to type the amount instead.
+   */
+  takes?: { side: 0 | 1; symbol: string | null } | null
   onUse: (side: 0 | 1, text: string) => void
   onUseToken?: (token: string, text: string) => void
   onRemove: () => void
+  /**
+   * Added 2026-10-06 (the review: the line offered funds just bridged a second time): called once, when nothing more will
+   * come of this deposit here (arrived, refunded, or stopped for good); the offer reads the balances again then.
+   */
+  onSettled?: () => void
 }) {
   const { record } = deposit
   const [poll, setPoll] = useState<PollState | null>(null)
@@ -230,22 +248,36 @@ export function DepositStatus({
 
   // What the same position continues with: the delivered token when this page sent the deposit, else the person's pick.
   const startToken = deposit.destinationToken ?? picked
+  // After a reload, the tokens to pick from: only those there is something of (Changed on purpose 2026-10-06).
+  const pickable = (balances ?? []).filter(({ raw }) => raw !== '0')
   const startRaw = startToken !== null ? (balances?.find((b) => b.token === startToken)?.raw ?? null) : null
   const startInfo = startToken !== null ? name.book(record.destinationChainId, startToken) : null
   const found = startToken !== null ? poolTokens.indexOf(startToken) : -1
   const side: 0 | 1 | null = found === 0 || found === 1 ? found : null
   const amount = startToken !== null && (side !== null || onUseToken) ? continueWith(startRaw, startInfo?.decimals ?? null, startToken === ZERO) : null
+  // A token the range does not take: no "Use" for it (Changed on purpose 2026-10-06, the integration review).
+  const untaken = !onUseToken && takes !== null && side !== null && side !== takes.side
 
   const notice = poll?.notice ?? null
   const stopped = poll?.stopped ?? null
   // Removable once nothing more will come of it here: terminal, or stopped for good. A deposit stopped for the session
   // (or the gate, or the route) stays: tracking resumes from the journal once that is back.
   const done = view.terminal || stopped === 'not_found' || stopped === 'account' || stopped === 'unexpected' || stopped === 'bug'
+  const settled = useRef(onSettled)
+  useEffect(() => {
+    settled.current = onSettled
+  })
+  const saidSettled = useRef(false)
+  useEffect(() => {
+    if (!done || saidSettled.current) return
+    saidSettled.current = true
+    settled.current?.()
+  }, [done])
   const fee = view.feeDetail
   return (
     <Card level={2} className="p-4" data-funds-deposit={record.depositTxHash} data-funds-state={view.state ?? 'none'} data-funds-stopped={stopped ?? undefined} data-funds-transition={poll?.report?.transition ?? undefined}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="dm-subtitle">{FUNDS_TEXT.depositFrom(origin, PROVIDER_NAME[record.provider])}</span>
+        <span className="dm-subtitle">{FUNDS_TEXT.depositFrom(origin)}</span>
         {view.terminal && (
           <Pill tone={view.state === 'filled' ? 'in' : 'wait'} dot>
             {view.state === 'filled' ? FUNDS_TEXT.arrived : FUNDS_TEXT.refunded}
@@ -288,24 +320,25 @@ export function DepositStatus({
         <div className="mt-3 grid gap-2" data-funds-after-fill="">
           {onDestination ? (
             balances !== null &&
-            balances.length > 0 && (
+            (deposit.destinationToken ? balances.length > 0 : pickable.length > 0) && (
               <div data-funds-balances="">
                 <p className="text-caption text-fg-muted">{FUNDS_TEXT.balanceTitle(destination)}</p>
                 {deposit.destinationToken ? (
                   <ul className="mt-1 grid gap-1 text-body">
                     {balances.map(({ token, raw }) => (
-                      <li key={token} data-funds-balance={token}>
-                        {amountText(raw, token, name.book(record.destinationChainId, token))}
+                      <li key={token} data-funds-balance={token} title={amountText(raw, token, name.book(record.destinationChainId, token))}>
+                        {shortAmountText(raw, token, name.book(record.destinationChainId, token))}
                       </li>
                     ))}
                   </ul>
                 ) : (
                   // After a reload the journal does not say which token arrived: the person picks the one to continue with.
+                  // Changed on purpose 2026-10-06 (the owner's point 4): only a token there is something of is offered.
                   <div role="radiogroup" aria-label={FUNDS_TEXT.which} className="mt-1 grid gap-1 text-body" data-funds-pick="">
-                    {balances.map(({ token, raw }) => (
-                      <label key={token} className="dm-acct-check" data-funds-balance={token}>
+                    {pickable.map(({ token, raw }) => (
+                      <label key={token} className="dm-acct-check" data-funds-balance={token} title={amountText(raw, token, name.book(record.destinationChainId, token))}>
                         <input type="radio" name={`funds-pick-${record.depositTxHash}`} value={token} checked={picked === token} onChange={() => setPicked(token)} />
-                        {amountText(raw, token, name.book(record.destinationChainId, token))}
+                        {shortAmountText(raw, token, name.book(record.destinationChainId, token))}
                       </label>
                     ))}
                   </div>
@@ -334,12 +367,40 @@ export function DepositStatus({
               {switchNote}
             </p>
           )}
-          {onDestination && balances !== null && startToken !== null && (amount !== null && (side !== null || onUseToken) ? (
-            // §3.9: the same position continues with what is in the wallet now; nothing is signed here.
+          {onDestination && keep !== null && !onUseToken ? (
+            // Changed on purpose 2026-10-06 (the 2026-10-06 study): the wallet now covers the amount typed in the step, so
+            // the same position continues with it, unchanged; the card is done.
+            <Button
+              className="justify-self-start"
+              onClick={() => {
+                onUse(keep.side, keep.text)
+                onRemove()
+              }}
+              data-funds-use="keep"
+            >
+              {FUNDS_TEXT.continueButton(keep.label)}
+            </Button>
+          ) : onDestination && balances !== null && (startToken !== null || pickable.length === 0) && (startToken !== null && amount !== null && untaken ? (
+            <p className="dm-hint" data-funds-takes-only="">
+              {FUNDS_TEXT.takesOnly(takes?.symbol ?? null)}
+            </p>
+          ) : startToken !== null && amount !== null && (side !== null || onUseToken) ? (
+            // §3.9: the same position continues with what is in the wallet now (still short of the amount typed); nothing is signed here.
+            // Changed on purpose 2026-10-06 (the integration review: Use left the card, and its second press did nothing): the
+            // card is done once used, as with the amount kept.
             <div className="grid gap-2">
-              {onUseToken && <p className="dm-hint">Use this balance as your new deposit. You will review the swap before confirming.</p>}
-              <Button className="justify-self-start" onClick={() => onUseToken ? onUseToken(startToken, amount.text) : side !== null && onUse(side, amount.text)} data-funds-use="">
-                {FUNDS_TEXT.continueButton(amountText(amount.raw, startToken, startInfo))}
+              {onUseToken && <p className="dm-hint">{FUNDS_TEXT.newDepositHint}</p>}
+              <Button
+                className="justify-self-start"
+                onClick={() => {
+                  if (onUseToken) onUseToken(startToken, amount.text)
+                  else if (side !== null) onUse(side, amount.text)
+                  onRemove()
+                }}
+                data-funds-use="balance"
+                title={FUNDS_TEXT.continueButton(amountText(amount.raw, startToken, startInfo))}
+              >
+                {FUNDS_TEXT.continueButton(shortAmountText(amount.raw, startToken, startInfo))}
               </Button>
             </div>
           ) : (
@@ -353,6 +414,7 @@ export function DepositStatus({
         <summary>{FUNDS_TEXT.details}</summary>
         <KeyValueList>
           <HashLine chainId={record.originChainId} hash={record.depositTxHash} label={FUNDS_TEXT.checkHash} />
+          <KeyValue label={FUNDS_TEXT.bridge}>{PROVIDER_NAME[record.provider]}</KeyValue>
           {receipt && receipt !== 'reverted' && <KeyValue label={`On ${origin}`}>{receipt === 'pending' ? FUNDS_TEXT.stepWords.sent : FUNDS_TEXT.stepWords[receipt]}</KeyValue>}
           {record.requestId && (
             <KeyValue label="Relay request" mono>

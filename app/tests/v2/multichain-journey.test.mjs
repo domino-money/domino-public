@@ -92,8 +92,10 @@ test('the networks offered are the ones whose S1 gate is live; the search names 
   assert.ok(usd.every((row) => row.unread === false && row.token.readStatus === 'available' && row.token.origin === 'read'));
   assert.deepEqual(networks.networkTokens('usdg', both), [], 'Robinhood Chain\'s dollar is not on those networks');
   assert.deepEqual(networks.networkTokens('weth', both).map((row) => row.token.artwork), ['WETH', 'WETH'], 'the network\'s own WETH, by address');
+  // Added 2026-10-06 (the review of the next update): each is the network's own currency, for Enter's choice (preselectOf).
+  assert.ok(networks.networkTokens('eth', both).every((row) => row.own === true));
   // An address: a profile token as it is named there, any other to read once chosen.
-  assert.deepEqual(networks.networkTokens(USDC_BASE.toUpperCase().replace('0X', '0x'), both).map((row) => [row.chainId, row.unread, row.token.symbol]), [[8453, false, 'USDC'], [42161, true, null]]);
+  assert.deepEqual(networks.networkTokens(USDC_BASE.toUpperCase().replace('0X', '0x'), both).map((row) => [row.chainId, row.unread, row.token.symbol, row.own ?? null]), [[8453, false, 'USDC', true], [42161, true, null, null]]);
   assert.deepEqual(networks.networkTokens(TOKEN, [8453]).map((row) => [row.chainId, row.unread, row.token.address]), [[8453, true, TOKEN]]);
   assert.deepEqual(networks.networkTokens('0x1234', both), [], 'half an address names nothing');
 });
@@ -188,4 +190,168 @@ test('Base\'s and Arbitrum One\'s USDC and WETH are quotes, so their pools read 
   assert.equal(orientation.priceInverted(USDC_ARB, TOKEN), true, 'USDC/TOKEN: 1 TOKEN = X USDC');
   assert.equal(orientation.priceInverted(ZERO, USDG), false);
   assert.equal(orientation.quoteRank(TOKEN), 0);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-06, the owner's point 3: Base and Arbitrum One in New position "like Robinhood Chain"
+// ---------------------------------------------------------------------------
+
+const rowApr = require(`${BUILD}lib/read/screens/rowApr.js`);
+
+test('the gates read again: a network once live stays live; one that says the same keeps its gate, so nothing starts over', () => {
+  const preview = (chainId) => ({ mode: 'preview', chainId, locked: true, lockedCopy: 'later' });
+  const held = Object.freeze({ 4663: LIVE(4663), 8453: preview(8453), 42161: preview(42161) });
+  assert.equal(networks.mergeGates(null, held), held);
+  assert.equal(networks.mergeGates(held, { 4663: LIVE(4663), 8453: preview(8453), 42161: preview(42161) }), held, 'nothing changed: the very gates held');
+  const next = { 4663: preview(4663), 8453: LIVE(8453), 42161: preview(42161) };
+  const merged = networks.mergeGates(held, next);
+  assert.equal(merged[4663], held[4663], 'live stays live, its own gate');
+  assert.equal(merged[8453], next[8453], 'Base live now');
+  assert.equal(merged[42161], held[42161], 'the same word: the gate held');
+  assert.deepEqual(networks.offeredNetworks(merged), [8453]);
+  assert.ok(Object.isFrozen(merged));
+});
+
+test('a pool read through the wallet has no protocol fee read, so no APR is worked out for it; its facts are its active liquidity', () => {
+  const token = networks.displayOf(8453, { address: USDC_BASE, symbol: 'USDC', decimals: 6 });
+  const found = [{ pool: ETH_USDC_V4, id: poolIdOf(ETH_USDC_V4), exists: true, initialized: true, sqrtPriceX96: SQRT, tick: -197_000, liquidity: 10n ** 15n, block: 31_000_000n, spacingOk: true }];
+  const [row] = networks.listedPools(8453, token, found, 1);
+  assert.equal(row.protocolFeeRaw, otherChains.PROTOCOL_FEE_UNDESCRIBED);
+  assert.deepEqual(networks.factsOfFound(found), { [poolIdOf(ETH_USDC_V4)]: { depthUsd: null, liquidity: String(10n ** 15n) } });
+});
+
+/** DEX Screener's figures as the store gives them, by chain and name. */
+const dexOf = (entries) => (chainId, name) => entries.find((entry) => entry.chainId === chainId && entry.poolId === name.toLowerCase()) ?? null;
+const figuresOf = (chainId, poolId, base, quote, liquidityUsd, volume24hUsd = '1000.00') => ({ chainId, poolId, base, quote, liquidityUsd, volume24hUsd, retrievedAt: 1_790_000_000 });
+const V3_ADDRESS = '0x00000000000000000000000000000000000c0ffe';
+const onChain = (pool, fields = {}) => ({ pool, id: pool.dex === 4 ? poolIdOf(pool) : V3_ADDRESS, exists: true, initialized: true, sqrtPriceX96: SQRT, tick: 0, liquidity: 10n, block: 1n, spacingOk: true, ...fields });
+
+test('networkRows: DEX Screener’s TVL and 24h volume on the very pool (its v4 id or v3 address, both currencies its own), attributed and dated; the APR follows; anything else keeps its dash', () => {
+  const token = networks.displayOf(8453, { address: TOKEN, symbol: 'TOKEN', decimals: 18 });
+  const V4_ETH = { dex: 4, currency0: ZERO, currency1: TOKEN, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const V3_WETH = { dex: 3, currency0: TOKEN, currency1: WETH_BASE, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const V4_USDC = { dex: 4, currency0: TOKEN, currency1: USDC_BASE, fee: 500, tickSpacing: 10, hooks: ZERO };
+  // Through the wallet, then given chain-pools' protocol fees (none here) as the service's rows carry them.
+  const rows = networks.listedPools(8453, token, [onChain(V4_ETH), onChain(V3_WETH), onChain(V4_USDC)], 1).map((row) => ({ ...row, protocolFeeRaw: 0 }));
+  const shown = otherChains.networkRows(rows, dexOf([
+    figuresOf(8453, poolIdOf(V4_ETH), TOKEN, ZERO, '35138.92', '8844.96'),
+    figuresOf(8453, V3_ADDRESS, TOKEN, WETH_BASE, '166296.81', '21085.45'),
+    // The name of Base's v4 TOKEN/USDC pool, but another pair: never taken.
+    figuresOf(8453, poolIdOf(V4_USDC), TOKEN, WETH_BASE, '1.00'),
+  ]));
+  assert.deepEqual(shown.map((row) => [row.dex, row.feePips, row.liquidity.state === 'attributed' ? row.liquidity.raw : row.liquidity.state]), [[3, 3000, '166296.81'], [4, 3000, '35138.92'], [4, 500, 'unavailable']], 'the largest reported TVL first, a pool with none last');
+  const [v3, v4, usdc] = shown;
+  assert.deepEqual(v3.liquidity, { state: 'attributed', value: '$166.3K', raw: '166296.81', zero: false, provider: 'dexscreener', retrievedAt: 1_790_000_000, cacheAgeSeconds: null }, 'the same figure a Robinhood Chain row’s stand-in is');
+  assert.equal(v4.volume.raw, '8844.96');
+  assert.match(v4.providerNote, /^Provider figures retrieved \d\d:\d\d:\d\d UTC/);
+  const apr = rowApr.rowApr({ integration: v4.integration, currentLpFeePips: v4.feePips, protocolFeeRaw: v4.protocolFeeRaw, liquidity: v4.liquidity, volume: v4.volume });
+  assert.deepEqual(apr, { kind: 'estimate', text: '27.56', stale: false }, '0.30% of $8,844.96 a day over $35,138.92, a year of days');
+  assert.equal(usdc.liquidity.state, 'unavailable', 'a pair that is not the pool’s keeps its dash');
+  // Another chain's figures under the same name are never this chain's.
+  assert.ok(otherChains.networkRows(rows, dexOf([figuresOf(42161, poolIdOf(V4_ETH), TOKEN, ZERO, '9.00')])).every((row) => row.liquidity.state === 'unavailable'));
+  // A volume the provider did not report: the TVL shows, the volume is "not reported", and the APR a dash.
+  const [lone] = otherChains.networkRows([rows[0]], dexOf([figuresOf(8453, poolIdOf(V4_ETH), ZERO, TOKEN, '10.00', null)]));
+  assert.deepEqual([lone.liquidity.state, lone.volume.state], ['attributed', 'not_reported']);
+});
+
+test('networkRows: a v3 and a v4 pool of one pair and fee are one row: the larger DEX Screener TVL, else the deeper, else the more liquid; the chosen one stays', () => {
+  const token = networks.displayOf(8453, { address: TOKEN, symbol: 'TOKEN', decimals: 18 });
+  const V4 = { dex: 4, currency0: TOKEN, currency1: WETH_BASE, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const V3 = { dex: 3, currency0: TOKEN, currency1: WETH_BASE, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const OTHER_FEE = { ...V4, fee: 10_000, tickSpacing: 200 };
+  const rows = networks.listedPools(8453, token, [onChain(V4), onChain(V3), onChain(OTHER_FEE)], 1);
+  const [v4Key, v3Key, otherKey] = [poolIdOf(V4), `0x${'0'.repeat(24)}${V3_ADDRESS.slice(2)}`, poolIdOf(OTHER_FEE)];
+  const kept = (shown) => shown.map((row) => row.key).sort();
+  const none = dexOf([]);
+  // By DEX Screener's TVL when both pools have one.
+  assert.deepEqual(kept(otherChains.networkRows(rows, dexOf([figuresOf(8453, V3_ADDRESS, TOKEN, WETH_BASE, '500.00'), figuresOf(8453, v4Key, TOKEN, WETH_BASE, '20.00')]))), [v3Key, otherKey].sort());
+  // Changed on purpose 2026-10-06 (review): a TVL on one side alone decides nothing (DEX Screener lists no v4 pool on
+  // Arbitrum One): the depth both have, else the liquidity both have, else the first (the service's more liquid one).
+  assert.deepEqual(kept(otherChains.networkRows(rows, dexOf([figuresOf(8453, V3_ADDRESS, TOKEN, WETH_BASE, '500.00')]), { [v4Key]: { depthUsd: '900.0', liquidity: '1' }, [v3Key]: { depthUsd: '10.0', liquidity: '1' } })), [v4Key, otherKey].sort(), 'the v4 twin measured deeper, though only the v3 one has a TVL');
+  assert.deepEqual(kept(otherChains.networkRows(rows, dexOf([figuresOf(8453, V3_ADDRESS, TOKEN, WETH_BASE, '500.00')]), { [v4Key]: { depthUsd: null, liquidity: '5' }, [v3Key]: { depthUsd: '10.0', liquidity: '9' } })), [v3Key, otherKey].sort(), 'no depth both have: the liquidity');
+  assert.deepEqual(kept(otherChains.networkRows(rows, dexOf([figuresOf(8453, v4Key, TOKEN, WETH_BASE, '20.00')]))), [v4Key, otherKey].sort(), 'nothing both have: the first stays');
+  assert.deepEqual(kept(otherChains.networkRows(rows, dexOf([figuresOf(8453, V3_ADDRESS, TOKEN, WETH_BASE, '500.00')]))), [v4Key, otherKey].sort(), 'the same the other way round');
+  // Else by the depth chain-pools measured, else by active liquidity.
+  assert.deepEqual(kept(otherChains.networkRows(rows, none, { [v4Key]: { depthUsd: '10.5', liquidity: '9' }, [v3Key]: { depthUsd: '99.0', liquidity: '1' } })), [v3Key, otherKey].sort());
+  assert.deepEqual(kept(otherChains.networkRows(rows, none, { [v4Key]: { depthUsd: null, liquidity: '900' }, [v3Key]: { depthUsd: null, liquidity: '1000' } })), [v3Key, otherKey].sort());
+  assert.deepEqual(kept(otherChains.networkRows(rows, none, { [v4Key]: { depthUsd: null, liquidity: '1000' }, [v3Key]: { depthUsd: null, liquidity: '900' } })), [v4Key, otherKey].sort());
+  // The row already chosen stays, whatever the figures say.
+  assert.deepEqual(kept(otherChains.networkRows(rows, dexOf([figuresOf(8453, V3_ADDRESS, TOKEN, WETH_BASE, '500.00')]), {}, v4Key)), [v4Key, otherKey].sort());
+  // ETH and WETH are two partners a beginner tells apart by name: never collapsed.
+  const ETH = { dex: 4, currency0: ZERO, currency1: TOKEN, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  assert.equal(otherChains.networkRows(networks.listedPools(8453, token, [onChain(ETH), onChain(V3)], 1), none).length, 2);
+  assert.equal(otherChains.dexNameOf(rows.find((row) => row.dex === 3)), V3_ADDRESS, 'a v3 pool is named by its address');
+});
+
+// Added 2026-10-06 (review): byTvl's fallback (fee tier, then id) put a near-empty 0.01% pool first whenever DEX Screener
+// had no figure (every Arbitrum One v4 row, every list before the provider answers).
+test('networkRows: rows without figures keep the order they came in (ETH and WETH partners, the most liquidity first), never the fee tier’s; their depths order them only when every one has one', () => {
+  const token = networks.displayOf(8453, { address: TOKEN, symbol: 'TOKEN', decimals: 18 });
+  const ETH_30 = { dex: 4, currency0: ZERO, currency1: TOKEN, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const WETH_100 = { dex: 4, currency0: TOKEN, currency1: WETH_BASE, fee: 10_000, tickSpacing: 200, hooks: ZERO };
+  const USDC_1 = { dex: 4, currency0: TOKEN, currency1: USDC_BASE, fee: 100, tickSpacing: 1, hooks: ZERO };
+  const rows = networks.listedPools(8453, token, [onChain(USDC_1, { liquidity: 10n }), onChain(WETH_100, { liquidity: 10n ** 20n }), onChain(ETH_30, { liquidity: 10n ** 24n })], 1);
+  const order = (shown) => shown.map((row) => row.key);
+  const listed = [poolIdOf(ETH_30), poolIdOf(WETH_100), poolIdOf(USDC_1)];
+  assert.deepEqual(order(rows), listed, 'as they come: ETH and WETH partners first, the most liquid first');
+  const none = dexOf([]);
+  assert.deepEqual(order(otherChains.networkRows(rows, none)), listed, 'no figures: as they came, never the 0.01% pool first');
+  // Every one measured (qualified USD): the deepest first.
+  const depths = { [poolIdOf(ETH_30)]: { depthUsd: '50.0', liquidity: '1' }, [poolIdOf(WETH_100)]: { depthUsd: '10.0', liquidity: '1' }, [poolIdOf(USDC_1)]: { depthUsd: '900.0', liquidity: '1' } };
+  assert.deepEqual(order(otherChains.networkRows(rows, none, depths)), [poolIdOf(USDC_1), poolIdOf(ETH_30), poolIdOf(WETH_100)]);
+  // One not measured, which may be the deepest: as they came.
+  assert.deepEqual(order(otherChains.networkRows(rows, none, { ...depths, [poolIdOf(ETH_30)]: { depthUsd: null, liquidity: '1' } })), listed);
+  // A reported TVL first, as Robinhood Chain's list; the rest after it as they came.
+  assert.deepEqual(order(otherChains.networkRows(rows, dexOf([figuresOf(8453, poolIdOf(WETH_100), TOKEN, WETH_BASE, '12.00')]))), [poolIdOf(WETH_100), poolIdOf(ETH_30), poolIdOf(USDC_1)]);
+});
+
+test('mergeHits: every network’s hits by match quality, exact first, today’s first between two of one quality, each list in its own order', () => {
+  const home = [{ name: 'VIRTUAL', rank: 0 }, { name: 'VIRTUAL', rank: 0 }, { name: 'VIRTUALS', rank: 1 }, { name: 'XVIRTUAL', rank: 2 }];
+  const network = [{ token: { symbol: 'VIRTUAL' }, chainId: 8453 }, { token: { symbol: 'VIRTUALX' }, chainId: 8453 }, { token: { symbol: 'Wrapped Virtual' }, chainId: 42161 }];
+  const named = (merged) => merged.map((entry) => ('home' in entry ? `rh:${entry.home.name}` : `${entry.network.chainId}:${entry.network.token.symbol}`));
+  const merged = otherChains.mergeHits(home, (hit) => hit.rank, network, 'virtual');
+  assert.deepEqual(named(merged), ['rh:VIRTUAL', 'rh:VIRTUAL', '8453:VIRTUAL', 'rh:VIRTUALS', '8453:VIRTUALX', 'rh:XVIRTUAL', '42161:Wrapped Virtual']);
+  // An exact match on Base is not buried under twenty prefix matches on Robinhood Chain.
+  const many = Array.from({ length: 20 }, (_, i) => ({ name: `USDC${i}`, rank: 1 }));
+  assert.deepEqual(otherChains.mergeHits(many, (hit) => hit.rank, [{ token: { symbol: 'USDC' } }], 'usdc')[0], { network: { token: { symbol: 'USDC' } } });
+  assert.deepEqual(otherChains.mergeHits(home, (hit) => hit.rank, [], 'virtual').map((entry) => entry.home), home, 'without other networks, today’s list exactly');
+  assert.deepEqual(['usdc', 'us', 'sd', 'eth', ''].map((query) => otherChains.hitRank('USDC', query)), [0, 1, 2, 3, 3]);
+  assert.equal(otherChains.hitRank(null, 'usdc'), 3);
+  // Added 2026-10-06 (review: rugged's "virtual"): Robinhood Chain's two copies with no liquidity after Base's real token,
+  // and after every hit of their quality that may have some, whatever its network; still before the next quality.
+  const copies = [{ name: 'VIRTUAL', rank: 0, empty: true }, { name: 'VIRTUAL', rank: 0, empty: true }, { name: 'VIRTUALS', rank: 1 }];
+  const real = [{ token: { symbol: 'VIRTUAL' }, chainId: 8453 }, { token: { symbol: 'VIRTUAL' }, chainId: 42161, empty: true }];
+  const sorted = otherChains.mergeHits(copies, (hit) => hit.rank, real, 'virtual', { home: (hit) => hit.empty === true, network: (row) => row.empty === true });
+  assert.deepEqual(named(sorted), ['8453:VIRTUAL', 'rh:VIRTUAL', 'rh:VIRTUAL', '42161:VIRTUAL', 'rh:VIRTUALS']);
+});
+
+// Added 2026-10-06 (review): audit V3's rule ("UFG": Enter chose the copy without a logo) across networks.
+test('preselectOf: Enter takes the first hit only when no other hit of any network has its name, or it is clearly the real one; never a warned one', () => {
+  const hit = (name, facts = {}) => ({ name, liquidityUsd: null, artwork: null, warned: false, ...facts });
+  const pick = (entries) => otherChains.preselectOf(entries, (entry) => entry);
+  assert.equal(pick([]), -1);
+  assert.equal(pick([hit('VIRTUAL'), hit('VIRTUALS')]), 0, 'no other hit of its name');
+  assert.equal(pick([hit(null)]), 0, 'an address');
+  assert.equal(pick([hit(null), hit(null)]), -1, 'one address no network could read, on two networks: the person chooses where');
+  assert.equal(pick([hit(null), hit('VIRTUAL')]), 0);
+  assert.equal(pick([hit('USDC', { warned: true }), hit('USDC2')]), -1, 'a look-alike is never chosen');
+  // Base's real VIRTUAL over Robinhood Chain's two copies with no liquidity: clearly the real one.
+  const base = hit('VIRTUAL', { liquidityUsd: 5_000_000, artwork: true });
+  const copy = hit('VIRTUAL', { liquidityUsd: 0, artwork: false });
+  assert.equal(pick([base, copy, copy]), 0);
+  // Not while a rival's liquidity is unknown, nor without a logo, nor when a rival is a tenth as liquid or more.
+  assert.equal(pick([base, hit('VIRTUAL')]), -1);
+  assert.equal(pick([{ ...base, artwork: null }, copy]), -1);
+  assert.equal(pick([base, hit('VIRTUAL', { liquidityUsd: 500_000 })]), -1);
+  // USDC on Base and on Arbitrum One: one name on two networks, so Enter waits for the person's choice.
+  assert.equal(pick([hit('USDC', { artwork: true }), hit('USDC', { artwork: true }), hit('USDCE')]), -1);
+  // Added 2026-10-06 (the review of the next update: "eth" highlighted nothing, where Robinhood Chain's ETH was taken):
+  // Base's and Arbitrum One's own ETH are not rivals of Robinhood Chain's own ETH, whatever their figures.
+  const homeEth = hit('ETH', { home: true, own: true, artwork: true });
+  const theirEth = hit('ETH', { own: true, artwork: true });
+  assert.equal(pick([homeEth, theirEth, theirEth, hit('WETH', { own: true })]), 0);
+  assert.equal(pick([homeEth, theirEth, hit('ETH')]), -1, 'a copy named ETH still is one, as before');
+  assert.equal(pick([homeEth, theirEth, hit('ETH', { home: true })]), -1, 'and so is a copy on Robinhood Chain');
+  assert.equal(pick([{ ...homeEth, own: false }, theirEth]), -1, 'only Robinhood Chain\'s own main token is spared the rule');
+  assert.equal(pick([hit('USDC', { own: true }), hit('USDC', { own: true })]), -1, 'Base\'s and Arbitrum One\'s own USDC: the person still chooses');
 });

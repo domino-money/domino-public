@@ -6,7 +6,7 @@ import { recovering } from '../lib/staleRelease'
 import PortfolioBody from '../components/portfolio/PortfolioBody'
 import { automateHref, marketsHref, newPositionHref } from '../components/explore/routes'
 import { IconTile } from '../components/figures'
-import { IconAutomate, IconChevronLeft, IconPositions, IconWallet } from '../components/icons'
+import { IconAutomate, IconChevronLeft, IconPositions, IconRange, IconWallet } from '../components/icons'
 import type { DepositsSlot, OwnedPositionsProps } from '../components/positions/OwnedPositions'
 import { PendingRows, PendingSummary } from '../components/positions/PositionRow'
 import { AutomationFrame } from '../components/positions/visual/AutomationFrame'
@@ -19,7 +19,7 @@ import { warmState } from '../lib/fees/client'
 import { parseAddressInput, shortAddress } from '../lib/read/screens/identity'
 import { portfolioRoute, positionDetailId } from '../lib/read/screens/positions'
 import { useWalletIdentity, walletKey, type WalletIdentityView } from '../lib/walletIdentity'
-import { FEATURES } from '../lib/automate/features'
+import { AUTO_EXIT_FEATURE, FEATURES } from '../lib/automate/features'
 import { useRouteTitle } from '../lib/routeTitle'
 
 type Connected = Extract<WalletIdentityView, { kind: 'connected' }>
@@ -277,7 +277,11 @@ function ReceiptsPage() {
   )
 }
 
-/** A short introduction to both modes. Actual automation status belongs to each position. */
+/**
+ * A short introduction to both modes. Actual automation status belongs to each position. Changed on purpose 2026-10-06
+ * (the integration review, ux #9): in a build that carries V2, Auto-exit too, by its own name and line, so Automate's
+ * "Choose a position" lands where Auto-exit is named (each position's own page turns it on).
+ */
 function AutomationCard() {
   return (
     <section className="dm-card dm-acct-rail dm-acct-auto dm-acct-o6" aria-labelledby="automation-title">
@@ -303,6 +307,17 @@ function AutomationCard() {
             <p className="dm-acct-auto-text">{FEATURES.domino.line}</p>
           </div>
         </li>
+        {__DOMINO_V2__ && (
+          <li data-automation-feature="auto-exit">
+            <IconTile icon={<IconRange />} />
+            <div className="min-w-0">
+              <p className="dm-acct-auto-name">
+                <span>{AUTO_EXIT_FEATURE.name}</span>
+              </p>
+              <p className="dm-acct-auto-text">{AUTO_EXIT_FEATURE.line}</p>
+            </div>
+          </li>
+        )}
       </ul>
       <LinkButton href={automateHref} variant="outline" size="sm" className="justify-self-start">
         Open Automate

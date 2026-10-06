@@ -18,7 +18,7 @@ const require = createRequire(import.meta.url);
 const { answerFeatured, cacheKey, FEATURED_PATH, LIST_SECONDS, WAIT_AFTER_SECONDS, REFRESH_WAIT_MS, featuredEvidence } = require('../.test-build/app/functions/_lib/featuredEdge.js');
 const { FOLLOW_WAIT_MS } = require('../.test-build/app/functions/_lib/publicEdge.js');
 const { answerOverview, overviewKey, OVERVIEW_PATH, OVERVIEW_SECONDS, OVERVIEW_STALE_SECONDS, settledOverview } = require('../.test-build/app/functions/_lib/overviewEdge.js');
-const { answerDex, dexAsk, trimPair, pairsForPrice, DEX_FRESH_SECONDS, DEX_STALE_SECONDS } = require('../.test-build/app/functions/_lib/dexEdge.js');
+const { answerDex, dexAsk, trimPair, trimPairOn, pairsForPrice, DEX_FRESH_SECONDS, DEX_STALE_SECONDS } = require('../.test-build/app/functions/_lib/dexEdge.js');
 
 const ORIGIN = 'https://domino.money';
 const FEATURED = { CONTRACT_VERSION: v5.CONTRACT_VERSION, CONTRACT_VERSIONS: v5.CONTRACT_VERSIONS, validateRequest: v5.validateRequest, validateResponse: v5.validateResponse };
@@ -351,4 +351,42 @@ test('I3 (2026-10-03): an ask answers before the page gives up on it: a token no
   const hit = await answerDex(getAsk(`token-pairs/${TOKEN}`), { ...runtime, waitUntil: undefined });
   assert.equal(hit.status, 200, 'what the read brought back is kept');
   assert.equal(slow.calls.length, 1, 'and nothing more is asked upstream');
+});
+
+// Added 2026-10-06 (the owner's point 3: Base's and Arbitrum One's pools in New position with TVL, 24h volume and APR
+// "like Robinhood Chain", from the same provider): token-pairs for a token on Base or Arbitrum One, by the provider's
+// own name for the chain, asked and kept the same way, under that chain's own key.
+test('I3 (2026-10-06): token-pairs/<base|arbitrum>/<token> asks the provider about that chain, passes on that chain’s pairs only, and keeps them apart from Robinhood Chain’s', async () => {
+  assert.deepEqual(dexAsk(getAsk(`token-pairs/base/${TOKEN}`)), { kind: 'token-pairs', chain: 'base', tokens: [TOKEN], origin: ORIGIN });
+  assert.equal(dexAsk(getAsk(`token-pairs/arbitrum/${TOKEN.toUpperCase().replace('0X', '0x')}`))?.chain, 'arbitrum');
+  assert.equal(dexAsk(getAsk(`token-pairs/${TOKEN}`))?.chain, 'robinhood', 'Robinhood Chain keeps its path');
+  for (const bad of [`token-pairs/robinhood/${TOKEN}`, `token-pairs/ethereum/${TOKEN}`, `tokens/base/${TOKEN}`, `token-pairs/base/${TOKEN},${OTHER}`, `token-pairs/base/0x123`, `token-pairs/base/${TOKEN}/x`, 'token-pairs/base/']) {
+    assert.equal(dexAsk(getAsk(bad)), null, bad);
+  }
+  const V4_ID = `0x${'af'.repeat(32)}`;
+  const V3_POOL = '0x529d2863a1521d0b57db028168fde2e97120017c';
+  const body = [
+    pair(V4_ID, TOKEN, OTHER, 136159, { chainId: 'base' }),
+    pair(V3_POOL, TOKEN, OTHER, 939056, { chainId: 'base', labels: ['v3'] }),
+    pair(`0x${'31'.repeat(32)}`, TOKEN, OTHER, 5),
+  ];
+  const dex = upstream(() => json(body));
+  const cache = memoryCache(), time = clock();
+  const response = await answerDex(getAsk(`token-pairs/base/${TOKEN}`), { cache, now: time.now, fetch: dex.fetch, inflight: new Map(), refreshing: new Map() });
+  assert.equal(response.status, 200);
+  assert.equal(dex.calls[0].url, `https://api.dexscreener.com/token-pairs/v1/base/${TOKEN}`);
+  const pairs = await response.json();
+  assert.deepEqual(pairs.map((p) => [p.chainId, p.pairAddress]), [['base', V4_ID], ['base', V3_POOL]], 'Base’s pairs only, v4 ids and v3 addresses both, named as the provider names them');
+  assert.deepEqual(cache.puts, [`${ORIGIN}/api/read/dex/cache/v1/base/token-pairs/${TOKEN}`], 'kept under Base’s own key');
+  // The same address on Robinhood Chain is another token: its own read, its own key.
+  const home = upstream(() => json(body));
+  const robinhood = await answerDex(getAsk(`token-pairs/${TOKEN}`), { cache, now: time.now, fetch: home.fetch, inflight: new Map(), refreshing: new Map() });
+  assert.deepEqual((await robinhood.json()).map((p) => p.chainId), ['robinhood']);
+  assert.equal(home.calls[0].url, `https://api.dexscreener.com/token-pairs/v1/robinhood/${TOKEN}`);
+  assert.equal(cache.puts[1], `${ORIGIN}/api/read/dex/cache/v1/token-pairs/${TOKEN}`, 'Robinhood Chain’s key as it always was');
+  // Kept: Base's next ask within 30 s reads nothing upstream.
+  const again = await answerDex(getAsk(`token-pairs/base/${TOKEN}`), { cache, now: time.now, fetch: dex.fetch, inflight: new Map(), refreshing: new Map() });
+  assert.equal(again.headers.get('Server-Timing'), 'edge;desc="hit"');
+  assert.equal(dex.calls.length, 1);
+  assert.equal(trimPairOn('arbitrum')({ ...pair(V3_POOL, TOKEN, OTHER, 1), chainId: 'base' }), null, 'another chain’s pair is never passed on');
 });

@@ -1,5 +1,5 @@
 import type {
-  ActivityResponse, ChainStatus, IndexedToken, PortfolioResponse, Position as V6Position, Tariff, Vault, VaultEvent,
+  ActivityResponse, ChainStatus, IndexedToken, Mandate, PortfolioResponse, Position as V6Position, Tariff, Vault, VaultEvent,
 } from 'api-contracts/read-v6/types'
 import { amountText } from '../../components/positions/walletSteps'
 import { feeFromPips } from '../../lib/read/screens/fee'
@@ -8,6 +8,7 @@ import { formatUnitsText, groupDigits, shortAddress } from '../../v2/plan/presen
 import { coverageNote } from '../../v2/read/v6'
 import { ZERO_ADDRESS, type Address, type V2ChainId } from '../../v2/types'
 import { USD_SHOWN } from '../position/constants'
+import { protectionStanding, type ProtectionStanding } from '../autoexit/standing'
 import { v2PositionHref } from '../route'
 import { rawAmounts, usdOfRaw } from '../usd'
 
@@ -182,7 +183,7 @@ export interface VaultBadge {
   role: 'root' | 'successor'
   /** The automation's name, when the vault's state was read: "Auto-compound" or "Domino-compound". */
   name: string | null
-  /** Under the name when it does not run: "Paused", "Protection only", "Automation off"; null while it runs. */
+  /** Under the name when it does not run: "Paused", "Automation off"; null while it runs. */
   word: string | null
   running: boolean
 }
@@ -223,21 +224,34 @@ export interface PositionRowView {
 const UNREADABLE = 'This position can’t be read right now.'
 const NOT_READ = 'This position hasn’t been read yet.'
 
-/** A vault's automation as a row's badge (§5.1, §5.3, §5.4; decision #25: a paused vault with auto-exit on is "Protection only"). */
-function vaultBadge(position: V6Position, vaults: readonly Vault[]): VaultBadge | null {
+/** What the badge of Auto-exit's own vault adds to its name, by where its Auto-exit stands (nothing while it is on). */
+const EXIT_WORD: Readonly<Record<ProtectionStanding, string | null>> = { on: null, paused: 'Paused', off: 'Off', closed: 'Closed the position' }
+
+/**
+ * A vault's automation as a row's badge (§5.1, §5.3, §5.4; decision #25: a paused vault with auto-exit on is the
+ * protection-only one). Changed on purpose 2026-10-06 (the owner's point 5): it is Auto-exit's, and named so. Changed on
+ * purpose 2026-10-06 (the review of point 5): said by its root's orders (../autoexit/standing.ts), before its custody,
+ * which an exit disarms: "Auto-exit" while one is on, else "Auto-exit · Off", "· Paused" or "· Closed the position",
+ * never a compounding name (it records Auto-compound's mode with one position). Changed on purpose 2026-10-06 (the
+ * integration review, rugged-literal #1 and #2): "Paused" only when its order is blocked (§4.5's `blockedBy`), never for a
+ * root a Collect fees or an Add liquidity disarmed while the exit can still fire; and still Auto-exit's after Leave
+ * automation turned its module off ("Auto-exit · Paused"), never "Auto-compound · Automation off".
+ */
+function vaultBadge(position: V6Position, vaults: readonly Vault[], mandates: readonly Mandate[]): VaultBadge | null {
   if (!position.vault) return null
   const vault = vaults.find((v) => v.chainId === position.chainId && v.address.toLowerCase() === position.vault!.address.toLowerCase()) ?? null
   const role = position.vault.role
   if (!vault) return { role, name: null, word: null, running: false }
+  const exit = protectionStanding(vault, mandates)
+  if (exit !== null) return { role, name: 'Auto-exit', word: EXIT_WORD[exit], running: exit === 'on' }
   const name = vault.state.status === 'read' ? (vault.state.policy.mode === 'domino' ? 'Domino-compound' : 'Auto-compound') : null
   const paused = vault.state.status === 'read' ? vault.state.paused : vault.pausedBy !== null
-  if (paused && vault.autoExitEnabled) return { role, name: 'Protection only', word: null, running: false }
   if (role === 'root' && vault.custody.armed === false) return { role, name, word: 'Automation off', running: false }
   if (paused) return { role, name, word: vault.pausedBy === 'owner' ? 'Paused by you' : vault.pausedBy === 'operator' ? 'Paused by Domino' : 'Paused', running: false }
   return { role, name, word: null, running: name !== null }
 }
 
-function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'servedAt'>, name: ReturnType<typeof tokenNamer>): PositionRowView | null {
+function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'servedAt'> & Partial<Pick<PortfolioResponse, 'mandates'>>, name: ReturnType<typeof tokenNamer>): PositionRowView | null {
   if (!isV2ChainId(position.chainId)) return null
   const chainId = position.chainId
   const chain = answer.chains.find((c) => c.chainId === chainId)
@@ -251,7 +265,7 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
     dexName: dexName(position.dex),
     tokenId,
     href: v2PositionHref({ chainId, dex: position.dex, tokenId: BigInt(tokenId) }),
-    vault: vaultBadge(position, answer.vaults),
+    vault: vaultBadge(position, answer.vaults, answer.mandates ?? []),
   }
   const state = position.state
   if (state.status !== 'live') {
@@ -304,7 +318,7 @@ const ROBINHOOD_V4_MANAGER = (): string => v2Chain(4663).uniswap.v4.positionMana
  * The rows of an answer's positions, in the order listed, on the chains `open` admits (the gate). `v1Ids`: the NFT ids
  * V1's own list shows; a read-v6 Robinhood Chain v4 position with one of them is the same NFT, shown once, as V1's row.
  */
-export function positionRows(answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'positions' | 'servedAt'>, open: (chainId: V2ChainId) => boolean, v1Ids: readonly string[] = []): PositionRowView[] {
+export function positionRows(answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'positions' | 'servedAt'> & Partial<Pick<PortfolioResponse, 'mandates'>>, open: (chainId: V2ChainId) => boolean, v1Ids: readonly string[] = []): PositionRowView[] {
   const name = tokenNamer(answer.tokens)
   const v1 = new Set(v1Ids)
   const manager = ROBINHOOD_V4_MANAGER()
@@ -530,9 +544,11 @@ function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer
       return { ...base, what: said[0], amount: null, lines: said.slice(1).map((value) => ({ label: 'Also', value, data: 'event' })), fees: [] }
     }
     case 'auto_exit_event': {
-      if (item.event === 'MandateRegistered') return { ...base, what: `Exit order registered${item.tokenId ? ` for position #${item.tokenId}` : ''}`, amount: null, lines: [], fees: [] }
-      if (item.event === 'MandateRevoked') return { ...base, what: 'Exit order cancelled', amount: null, lines: [], fees: [] }
-      if (item.event === 'NonceCancelled') return { ...base, what: 'Signed order cancelled', amount: null, lines: [], fees: [] }
+      // Changed on purpose 2026-10-06 (the owner's point 5; the review): Auto-exit's own words, never an "order", as
+      // Automate's history says them (../automate/portfolio.ts historyWords).
+      if (item.event === 'MandateRegistered') return { ...base, what: `Auto-exit turned on${item.tokenId ? ` for position #${item.tokenId}` : ''}`, amount: null, lines: [], fees: [] }
+      if (item.event === 'MandateRevoked') return { ...base, what: 'Auto-exit turned off', amount: null, lines: [], fees: [] }
+      if (item.event === 'NonceCancelled') return { ...base, what: 'Auto-exit signature cancelled', amount: null, lines: [], fees: [] }
       const claimed = item.token && item.amount ? amountWords(item.amount, token(item.token)) : null
       return { ...base, what: 'Claimed', amount: claimed, lines: item.recipient ? [{ label: 'Sent to', value: shortAddress(item.recipient), data: 'recipient' }] : [], fees: [] }
     }

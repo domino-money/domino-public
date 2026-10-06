@@ -294,6 +294,20 @@ export type DepositPlan =
   /** The wallet cannot fund this position either way: short of `token` by `need − have`. */
   | { kind: 'short'; token: Side; have: bigint; need: bigint }
 
+/**
+ * The other token alone, enough for the whole position through the swap: its own share of the range and what buys the
+ * typed amount, with the slippage room (depositPlan's `whole`). Null when nothing can buy the typed token (a fee that
+ * takes everything, or no price). Exported 2026-10-06 (no change of behaviour) for the bring-funds offer's figure
+ * (src/v2in/funds/model.ts lackingTokens), so the amount brought and the plan that receives it never drift apart.
+ */
+export function wholeFromOther(terms: PoolTerms, independent: Side, need0: bigint, need1: bigint, slippageBps: number): bigint | null {
+  const other: Side = independent === 0 ? 1 : 0
+  const needOther = other === 0 ? need0 : need1
+  const typedNeed = independent === 0 ? need0 : need1
+  const whole = withRoom(needOther + costOf(typedNeed, other, terms), slippageBps)
+  return whole < UNREACHABLE ? whole : null
+}
+
 export interface PlanInput {
   terms: PoolTerms
   /** The token the amount was typed in, and that amount, raw. */
@@ -338,10 +352,8 @@ export function depositPlan(input: PlanInput): DepositPlan {
     const swap = splitFor(typedRaw, independent, terms)
     return { kind: 'swap', from: independent, deposit: typedRaw, swap, receive: proceedsOf(swap, independent, terms) }
   }
-  const needOther = other === 0 ? need0 : need1
-  const typedNeed = independent === 0 ? need0 : need1
-  const whole = withRoom(needOther + costOf(typedNeed, other, terms), slippageBps)
-  if (whole < UNREACHABLE && balances[other] >= whole) {
+  const whole = wholeFromOther(terms, independent, need0, need1, slippageBps)
+  if (whole !== null && balances[other] >= whole) {
     const swap = splitFor(whole, other, terms)
     return { kind: 'swap', from: other, deposit: whole, swap, receive: proceedsOf(swap, other, terms) }
   }

@@ -88,14 +88,15 @@ test('the gate decides the chains, and a Robinhood Chain v4 NFT V1 already lists
 
 test('§6.3: a chain out is the partial sentence and never empties the others; each chain’s state before its values', () => {
   const body = valid('portfolio', fixture('portfolio.json'));
-  assert.equal(model.partialSentence(body.chains), 'Showing Robinhood Chain and Base. Arbitrum is unavailable right now.');
+  // Changed on purpose 2026-10-06 (the owner: one name for one network): Arbitrum One, as every other screen names it.
+  assert.equal(model.partialSentence(body.chains), 'Showing Robinhood Chain and Base. Arbitrum One is unavailable right now.');
   const notes = model.chainNotes(body);
   assert.deepEqual(notes.map((note) => [note.chainId, note.state, note.age]), [[4663, 'current', null], [8453, 'stale', 'updated 6 min ago'], [42161, 'unavailable', null]]);
   assert.equal(model.positionRows(body, ALL).length, 5, 'Arbitrum out leaves Robinhood Chain’s rows');
   const behind = valid('portfolio', fixture('portfolio-behind.json'));
-  assert.equal(model.partialSentence(behind.chains), 'Showing Robinhood Chain. Base and Arbitrum are unavailable right now.');
+  assert.equal(model.partialSentence(behind.chains), 'Showing Robinhood Chain. Base and Arbitrum One are unavailable right now.');
   const empty = valid('portfolio', fixture('portfolio-empty.json'));
-  assert.equal(model.partialSentence(empty.chains), 'Robinhood Chain, Base and Arbitrum are unavailable right now.');
+  assert.equal(model.partialSentence(empty.chains), 'Robinhood Chain, Base and Arbitrum One are unavailable right now.');
   assert.deepEqual(model.positionRows(empty, ALL), []);
   const complete = valid('portfolio', fixture('portfolio-complete.json'));
   assert.equal(model.partialSentence(complete.chains), null);
@@ -128,11 +129,12 @@ test('receipts: what moved, the fee with its kind, rate, token, amount and defer
     ['reserves_returned', 'Returned to your wallet: 0.0012 USDG'],
     ['vault_event', 'Withdrawn to your wallet: 5,000 raw units of MANY'],
     ['zap_event', 'Unused signatures cancelled'],
-    ['auto_exit_event', 'Signed order cancelled'],
-    ['auto_exit_event', 'Exit order cancelled'],
+    // Changed on purpose 2026-10-06 (the owner's point 5, its review): Auto-exit's own words, as Automate's history says them.
+    ['auto_exit_event', 'Auto-exit signature cancelled'],
+    ['auto_exit_event', 'Auto-exit turned off'],
     ['auto_exit_event', 'Claimed'],
     ['auto_exit', 'Auto-exit: position #8 withdrawn'],
-    ['auto_exit_event', 'Exit order registered for position #8'],
+    ['auto_exit_event', 'Auto-exit turned on for position #8'],
     ['vault_event', 'This position was changed outside Domino. Automation stopped for it.'],
     ['vault_event', 'Automation settings saved: Domino-compound'],
     ['vault_execution', 'Automated run: position #8 opened'],
@@ -199,4 +201,40 @@ test('rev4 §2.13: a reserves return the automation sent is "Returned to your wa
   valid('activity', activity);
   // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation").
   assert.equal(model.receiptViews(activity, ALL).find((view) => view.id === item.id).what, 'Sent to your wallet from your automation: 5 USDG');
+});
+
+// Added 2026-10-06 (the review of the owner's point 5): Auto-exit's own vault (paused, its module on) is said by its root's
+// orders, before its custody (an exit disarms the root), and never by a compounding name.
+test('a row in Auto-exit\'s own vault: "Auto-exit" while one is on, else Off, Paused or Closed the position', () => {
+  const base = valid('portfolio', fixture('portfolio.json'));
+  const vaultAt = base.vaults.findIndex((vault) => vault.rootTokenId === '7');
+  const rowOf = (vaultFields, mandates) => {
+    const body = structuredClone(base);
+    const vault = body.vaults[vaultAt];
+    Object.assign(vault, { autoExitEnabled: true, pausedBy: 'owner' }, vaultFields);
+    if (vault.state.status === 'read') vault.state.paused = true;
+    body.mandates = mandates(vault);
+    return model.positionRows(body, ALL).find((row) => row.tokenId === '7').vault;
+  };
+  const order = (vault, fields = {}) => ({ ...structuredClone(base.mandates[0] ?? {}), chainId: vault.chainId, vault: vault.address.toLowerCase(), tokenId: '7', status: 'active', expired: false, blockedBy: [], ...fields });
+  assert.ok(base.mandates.length > 0, 'the fixture lists an order to start from');
+  assert.deepEqual(rowOf({}, (vault) => [order(vault)]), { role: 'root', name: 'Auto-exit', word: null, running: true });
+  assert.deepEqual(rowOf({}, () => []), { role: 'root', name: 'Auto-exit', word: 'Off', running: false }, 'turned off, or none: the vault stays paused with its module on');
+  assert.deepEqual(rowOf({}, (vault) => [order(vault, { expired: true })]), { role: 'root', name: 'Auto-exit', word: 'Off', running: false }, 'expired');
+  assert.deepEqual(rowOf({}, (vault) => [order(vault, { blockedBy: ['module_disabled'] })]), { role: 'root', name: 'Auto-exit', word: 'Paused', running: false });
+  assert.deepEqual(rowOf({ custody: { ...base.vaults[vaultAt].custody, armed: false, reason: 'auto_exit' } }, (vault) => [order(vault, { status: 'executed' })]), { role: 'root', name: 'Auto-exit', word: 'Closed the position', running: false }, 'closed by it: never "Automation off" or a compounding name');
+  // Changed on purpose 2026-10-06 (the integration review, rugged-literal #1): a root a Collect fees or an Add liquidity
+  // disarmed (read-v6's custody.armed false) with its order unblocked still closes at its range's end: "Auto-exit".
+  const disarmed = (reason) => ({ custody: { ...base.vaults[vaultAt].custody, armed: false, reason } });
+  for (const reason of ['changed_outside_domino', 'v3_checkpoint_mismatch', 'custody_lost']) {
+    assert.deepEqual(rowOf(disarmed(reason), (vault) => [order(vault)]), { role: 'root', name: 'Auto-exit', word: null, running: true }, reason);
+  }
+  assert.deepEqual(rowOf({}, (vault) => [order(vault, { blockedBy: ['custody_lost'] })]), { role: 'root', name: 'Auto-exit', word: 'Paused', running: false }, 'its approval moved: its order says so');
+  // Changed on purpose 2026-10-06 (the integration review, rugged-literal #2): Leave automation (exitAll) pauses the vault,
+  // turns its module off and disarms its root (reason 7); it stays Auto-exit's, never "Auto-compound · Automation off".
+  const left = { autoExitEnabled: false, pausedBy: 'unknown', ...disarmed('exit_all') };
+  assert.deepEqual(rowOf(left, (vault) => [order(vault, { blockedBy: ['module_disabled'] })]), { role: 'root', name: 'Auto-exit', word: 'Paused', running: false });
+  assert.deepEqual(rowOf(left, (vault) => [order(vault, { status: 'revoked' })]), { role: 'root', name: 'Auto-exit', word: 'Off', running: false }, 'then turned off');
+  // A compounding automation Leave automation ended, with nothing of Auto-exit ever on it, keeps its own name.
+  assert.notEqual(rowOf(left, () => []).name, 'Auto-exit');
 });

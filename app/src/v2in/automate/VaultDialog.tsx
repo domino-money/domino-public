@@ -1,16 +1,19 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button, KeyValue, KeyValueList, Skeleton } from '../../components/ui'
 import { automationFeeText, VAULT_TEXT, type VaultAction, type VaultActionReview, type VaultSnapshot, type VaultStepKind, type VaultWithdrawBatch } from '../../finance/v2/vault'
 import { v2ContractUrl } from '../../v2/explorers'
 import type { V2Gate } from '../../v2/gate'
-import type { V2ChainId, V2Contracts } from '../../v2/types'
+import type { Hex, V2ChainId, V2Contracts } from '../../v2/types'
+import type { ExitTriggers } from '../autoexit/card'
+import { PastEdge } from '../autoexit/PastEdge'
+import { EDGE_PASSED, edgePassed } from '../autoexit/turnBackOn'
 import { CLOSED_TEXT, describeError, errorLabels, PROTECTION_CONSENT_TEXT, RESERVES_TEXT, STEPS_INSTEAD, type ErrorView } from './copy'
 import { openAutomation, type AutomationSession } from './session'
 import { recordVaultEvents } from './store'
 import { useStepsRun, WalletSteps, type StepOutcome, type WalletStep } from './steps'
 import { amountWords, shortAddress, type TokenView } from './tokens'
 import { Check, Details, ErrorLine, Fact, FlowDialog, LockedNote } from './ui'
-import { recoverPositionInput, recoverTokenInput, withdrawRecipientInput, type VaultActionKind, type VaultReserve, type VaultView } from './vaultView'
+import { protectionVault, recoverPositionInput, recoverTokenInput, withdrawRecipientInput, type VaultActionKind, type VaultReserve, type VaultView } from './vaultView'
 
 /**
  * A vault's owner actions as the position page's action dialogs (spec F7 rev3/rev4 §2.13, §5.3, §5.5, §5.6): "Withdraw
@@ -90,6 +93,33 @@ const REVIEW_AGAIN = new Set(['vault_review_stale', 'vault_step_out_of_order', '
 const ALREADY_RETURNED = 'Already returned to your wallet.'
 const CHANGED = 'The amounts changed since you opened this. Check them, then press again.'
 const LEAVE_TEXT = (root: bigint) => `Your next positions and everything your automation can pay go to your wallet in one action, and position #${root} stops being automated. No fee.`
+/**
+ * Auto-exit's own vault (decision #25: paused, its module on), said in Auto-exit's words, never in compounding's
+ * (Changed on purpose 2026-10-06, the review of point 5; rugged97: "auto-exit has no fee compounding"): whatever its root's
+ * state, so a root whose approval moved (Add liquidity on v4 moves it to the zap) is turned back on as Auto-exit.
+ *
+ * Changed on purpose 2026-10-06 (the integration review, rugged-literal #1 and #2, money #4): its rearm is said by what it
+ * does. An exit needs the position's approval alone (DominoV2VaultExecutor.executeExit), so for an Auto-exit that is on or
+ * paused (`exit`) it is "approve this position again so Auto-exit can close it", with nothing to do when the approval is
+ * still there (no rearm(true) the exit does not need), and the pool's price read before the approval goes back: that puts
+ * the signed order in force again, and an end the price already passed closes the position at once (../autoexit/
+ * turnBackOn.ts). With none on, it is the first part of turning Auto-exit on, whose own dialog the page opens right after.
+ * Never "Auto-exit works again". Leave automation (exitAll) turns its module off: Auto-exit pauses, it does not end; with
+ * none on (turned off, expired, or it closed the position), the automation simply stops for the position (`stops`).
+ */
+const PROTECTION_TITLE = { approve: 'Auto-exit', 'turn-on': 'Turn on Auto-exit' } as const
+const PROTECTION_STEP: Readonly<Partial<Record<VaultStepKind, string>>> = {
+  'approve-root': 'Approve this position for Auto-exit',
+  rearm: 'Reconnect it to your automation',
+}
+const PROTECTION_LEDE = {
+  approve: 'Approve this position again so Auto-exit can close it at the end of its range.',
+  kept: 'Auto-exit still has its approval on this position: nothing to do here.',
+  'turn-on': 'First, reconnect this position to your automation. Then you turn Auto-exit on.',
+  leave: (root: bigint) => `Auto-exit pauses for position #${root}, and anything your automation holds goes to your wallet. No fee. Turn off ends it for good.`,
+  stops: (root: bigint) => `Your Auto-exit automation stops for position #${root}, and anything it holds goes to your wallet. No fee.`,
+  withdraw: "Amounts your Auto-exit automation holds for this position. They're yours: no Domino fee to withdraw them.",
+} as const
 const RETURN_TEXT = 'Your position is closed, so everything your automation holds can go back to your wallet in one transaction.'
 const LEAVE_IT = 'Or leave it: Domino returns it to your wallet on its next pass.'
 const CHILD_TEXT = (id: bigint) => `Position #${id} goes to your wallet as a plain position, with no automation. Fees it left behind can be withdrawn here, and Domino may open a new position in its place. No fee.`
@@ -142,6 +172,9 @@ function useLiveSession(enabled: boolean, chainId: V2ChainId, contracts: V2Contr
   return state
 }
 
+/** A step's line: Auto-exit's own words for its own vault's approval and rearm, else the vault's. */
+const stepTitle = (kind: VaultStepKind, protection: boolean): string => (protection ? PROTECTION_STEP[kind] : undefined) ?? STEP_TITLE[kind] ?? 'Confirm in your wallet'
+
 /** The steps a preview shows for each action (nothing pressed: the review stops before the wallet). */
 function previewSteps(kind: VaultDialogKind, view: VaultView, tokens: readonly [TokenView, TokenView] | null, subject: VaultDialogSubject | null): WalletStep[] {
   const held = view.reserves.known ? view.reserves.list.filter((r) => r.total > 0n) : []
@@ -157,8 +190,8 @@ function previewSteps(kind: VaultDialogKind, view: VaultView, tokens: readonly [
       return [{ key: 'exit-all', title: STEP_TITLE['exit-all'] as string }]
     case 'rearm':
       return [
-        { key: 'approve-root', title: STEP_TITLE['approve-root'] as string, note: 'Only if your wallet no longer approves your automation.' },
-        { key: 'rearm', title: STEP_TITLE.rearm as string },
+        { key: 'approve-root', title: stepTitle('approve-root', protectionVault(view)), note: 'Only if your wallet no longer approves your automation.' },
+        { key: 'rearm', title: stepTitle('rearm', protectionVault(view)) },
       ]
     case 'pause':
       return [{ key: 'pause', title: STEP_TITLE.pause as string }]
@@ -201,6 +234,14 @@ export interface VaultDialogProps {
   gate: Exclude<V2Gate, { mode: 'off' }>
   /** The successor a "Withdraw from the vault" is about; nothing for the other kinds. */
   subject?: VaultDialogSubject | null
+  /**
+   * Added 2026-10-06 (the integration review): for Auto-exit's own vault, the Auto-exit on its root as the position's card
+   * has it: the one on or paused (its id and its ends as listed), which an approval put back puts in force again, or null
+   * when none is on (the rearm is then the first part of turning Auto-exit on). Absent elsewhere.
+   */
+  exit?: { id: Hex; triggers: ExitTriggers | null } | null
+  /** Added 2026-10-06 (the integration review, money #4): "Turn off instead", where the page has Auto-exit's own Turn off. */
+  onTurnOff?: () => void
   onClose: () => void
   /**
    * Something changed on chain: the caller reads again. `snapshot`: the vault as read right after (live), for the caller
@@ -209,11 +250,20 @@ export interface VaultDialogProps {
   onChanged: (snapshot?: VaultSnapshot) => void
 }
 
-export function VaultDialog({ kind, view, tokens, gate, subject = null, onClose, onChanged }: VaultDialogProps) {
+export function VaultDialog({ kind, view, tokens, gate, subject = null, exit, onTurnOff, onClose, onChanged }: VaultDialogProps) {
   const locked = gate.mode === 'preview'
   const live = useLiveSession(!locked, view.chainId, gate.contracts)
   const session = live.session
   const [consent, setConsent] = useState(false)
+  // Money #4 (the integration review): the price is past an end of the Auto-exit an approval would put back in force
+  // (null until read, or where it does not apply), and the person's tick to go on anyway.
+  const [past, setPast] = useState<boolean | null>(null)
+  const [acknowledged, setAcknowledged] = useState(false)
+  const acknowledgedNow = useRef(false)
+  const exitNow = useRef(exit)
+  useEffect(() => {
+    exitNow.current = exit
+  })
   const [round, setRound] = useState(0)
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null)
   const [review, setReview] = useState<VaultActionReview | null>(null)
@@ -296,6 +346,37 @@ export function VaultDialog({ kind, view, tokens, gate, subject = null, onClose,
     }
   }, [locked, session, view.vault, kind, action, round, follow, labels])
 
+  // Changed on purpose 2026-10-06 (the review of point 5): from the vault itself (paused, its auto-exit on), not from its
+  // status, which says 'off' once its root lost its approval: that rearm is Auto-exit's, and reinvests nothing.
+  const protection = protectionVault(view)
+  // Changed on purpose 2026-10-06 (the integration review, rugged-literal #1): Auto-exit's own rearm by what it does, the
+  // approval back for an Auto-exit that is on or paused ('approve'), or the first part of turning one on ('turn-on').
+  const exitRearm = protection && kind === 'rearm' ? (exit === null ? 'turn-on' : 'approve') : null
+  // Auto-exit on or paused on this root, as the position's card has it (`exit`; as listed where no card says): while it
+  // is, Leave automation only pauses it, and nothing here cuts the position from its automation (an exit needs the
+  // approval). Changed on purpose 2026-10-06 (the integration review's second pass).
+  const exitLive = protection && (exit === undefined ? view.exit === 'on' || view.exit === 'paused' : exit !== null)
+  // The approval still there, as the chain reads it now: an Auto-exit that is on or paused can close the position already,
+  // and nothing is asked of the wallet (never a rearm(true) the exit does not need).
+  const approvalKept = snapshot !== null && snapshot.custody.holder === snapshot.owner && snapshot.custody.approved === snapshot.vault
+  const nothingToDo = exitRearm === 'approve' && !!exit && approvalKept
+  // Money #4: the approval put back puts the signed order in force again, so the pool's price is read first.
+  const guarded = exitRearm === 'approve' && !!exit && !approvalKept
+  const exitKey = exit ? `${exit.id}|${exit.triggers?.below ?? ''}|${exit.triggers?.above ?? ''}` : null
+  useEffect(() => {
+    const order = exitNow.current
+    if (locked || !session || !snapshot || !guarded || !order) return
+    let alive = true
+    void session.serial(() => edgePassed(session, order, view.dex, view.rootTokenId)).then(
+      (passed) => { if (alive) setPast(passed) },
+      // Unread: nothing is said here; the step reads it again right before the wallet, and says a failure there.
+      () => { if (alive) setPast(null) },
+    )
+    return () => {
+      alive = false
+    }
+  }, [locked, session, snapshot, guarded, exitKey, view.dex, view.rootTokenId])
+
   const liveSteps = useMemo<readonly WalletStep[]>(() => {
     if (locked || !session) return []
     if (kind === 'withdraw' && !follow) {
@@ -330,10 +411,19 @@ export function VaultDialog({ kind, view, tokens, gate, subject = null, onClose,
     if (!review) return []
     return review.steps.map((step, index) => ({
       key: step.kind,
-      title: STEP_TITLE[step.kind] ?? 'Confirm in your wallet',
-      tx: { client: session.vault, prepare: () => session.vault.prepareStep(review, index, null) },
+      title: stepTitle(step.kind, protection),
+      tx: {
+        client: session.vault,
+        prepare: async () => {
+          // Money #4: right before the approval goes back (already in the session's queue), the price again, unless the
+          // person ticked to go on anyway: an end it reached since the dialog opened is said first, never sent unseen.
+          const order = exitNow.current
+          if (guarded && step.kind === 'approve-root' && !acknowledgedNow.current && order && (await edgePassed(session, order, view.dex, view.rootTokenId))) throw new Error(EDGE_PASSED)
+          return session.vault.prepareStep(review, index, null)
+        },
+      },
     }))
-  }, [locked, session, kind, follow, snapshot, path, review, view.vault, tokens, elsewhere, recipient])
+  }, [locked, session, kind, follow, snapshot, path, review, view.vault, view.dex, view.rootTokenId, tokens, elsewhere, recipient, protection, guarded])
 
   /**
    * The vault read again from the chain (after the steps, or a race), or null when the read failed. The amounts the
@@ -361,7 +451,12 @@ export function VaultDialog({ kind, view, tokens, gate, subject = null, onClose,
       if (follow) setFollowed((old) => [...old, follow])
       void rereadVault().then((snap) => onChanged(snap ?? undefined))
     },
-    onError: (error) => {
+    onError: (error, _raw, at) => {
+      if (error.code === EDGE_PASSED) {
+        // Money #4: the price reached an end since the dialog opened: the warning says it, before anything is sent.
+        setPast(true)
+        return true
+      }
       if (STEPS_INSTEAD.has(error.code) && path === 'batch') {
         // The wallet cannot batch these calls: one reviewed withdrawal per token instead.
         setPath('steps')
@@ -384,25 +479,35 @@ export function VaultDialog({ kind, view, tokens, gate, subject = null, onClose,
         setRound((n) => n + 1)
         return true
       }
+      if (error.code === 'vault_step_not_needed' && at.index > 0 && at.index === liveSteps.length - 1) {
+        // Changed on purpose 2026-10-06 (the review of point 5): a later step the earlier ones made unnecessary is done.
+        // On v4 a moved approval never disarms the root (the position manager tells no one), so once the approval is back
+        // the rearm has nothing left to do: the action is complete, never "This step is already done." with no way on.
+        setFinished(true)
+        if (follow) setFollowed((old) => [...old, follow])
+        void rereadVault().then((snap) => onChanged(snap ?? undefined))
+        return true
+      }
       return false
     },
   })
 
   const root = view.rootTokenId
   const shownReserves: readonly VaultReserve[] = snapshot ? snapshot.reserves.map((r) => ({ token: r.token, total: r.total, idle: r.idle })) : view.reserves.known ? view.reserves.list : []
-  const protection = view.status === 'protection'
   const consentText = protection ? PROTECTION_CONSENT_TEXT : VAULT_TEXT.vault_consent_uncollected_fees.replace('{fee}', view.mode === 2 ? automationFeeText(2) : automationFeeText(1))
   const steps = locked ? previewSteps(kind, view, tokens, subject) : liveSteps
   // Something whole to review: a withdrawal always; otherwise the action (the consent given, the fields typed).
   const reviewable = kind === 'withdraw' || follow !== null || action !== null
   const waitingForReview = !locked && steps.length === 0 && !reviewError && !live.error && reviewable && !finished
-  const canPress = !locked && !finished && !run.running && steps.length > 0 && (kind !== 'rearm' || consent) && !run.complete
+  // Money #4: past an end, only once the person ticked to go on anyway.
+  const heldBack = guarded && past === true && !acknowledged
+  const canPress = !locked && !finished && !run.running && steps.length > 0 && (kind !== 'rearm' || consent) && !run.complete && !heldBack && !nothingToDo
   const typing = run.running || finished
 
   // A follow-up of Leave automation is said as its own action.
   const shown: VaultDialogKind = follow === 'unsubscribe' ? 'unsubscribe' : follow === 'revoke-approval' ? 'revoke' : kind
-  // v4's follow-ups still open after Leave automation (each offered until done).
-  const followUps = finished && kind === 'leave' && view.dex === 4 && !locked ? (['unsubscribe', 'revoke-approval'] as const).filter((next) => !followed.includes(next)) : []
+  // v4's follow-ups still open after Leave automation (each offered until done); none while Auto-exit is on or paused.
+  const followUps = finished && kind === 'leave' && view.dex === 4 && !locked && !exitLive ? (['unsubscribe', 'revoke-approval'] as const).filter((next) => !followed.includes(next)) : []
   // A transfer to the wallet failed (TokenCallFailed, `send-elsewhere`): the owner may name another address of theirs.
   const offerElsewhere = kind === 'withdraw' && !locked && !elsewhere && !finished && !run.running && (run.notice?.recovery === 'send-elsewhere' || reviewError?.recovery === 'send-elsewhere')
   const recipientProblem = typedRecipient && !typedRecipient.ok && typedRecipient.problem !== 'empty' ? RECIPIENT_PROBLEM[typedRecipient.problem] : null
@@ -411,16 +516,20 @@ export function VaultDialog({ kind, view, tokens, gate, subject = null, onClose,
   let lede: ReactNode
   switch (shown) {
     case 'withdraw':
-      lede = RESERVES_TEXT
+      lede = protection ? PROTECTION_LEDE.withdraw : RESERVES_TEXT
       break
     case 'return':
       lede = `${RETURN_TEXT} ${VAULT_TEXT.vault_returns_to_owner}`
       break
     case 'leave':
-      lede = LEAVE_TEXT(root)
+      lede = exitLive ? PROTECTION_LEDE.leave(root) : protection ? PROTECTION_LEDE.stops(root) : LEAVE_TEXT(root)
       break
     case 'rearm':
-      lede = 'Automation starts again for this position. Your wallet may first ask you to approve it again.'
+      lede = exitRearm === 'turn-on'
+        ? PROTECTION_LEDE['turn-on']
+        : exitRearm === 'approve'
+          ? (nothingToDo ? PROTECTION_LEDE.kept : PROTECTION_LEDE.approve)
+          : 'Automation starts again for this position. Your wallet may first ask you to approve it again.'
       break
     case 'pause':
       lede = VAULT_TEXT.vault_pause_keeps_auto_exit
@@ -455,7 +564,7 @@ export function VaultDialog({ kind, view, tokens, gate, subject = null, onClose,
     ? (typedToken.token.decimals === null ? `In raw units: ${typedToken.token.label}'s decimals aren't known.` : `In ${typedToken.token.label}.`)
     : "In the token's units, once its address is entered."
 
-  const footer = finished ? (
+  const footer = finished || nothingToDo ? (
     <Button type="button" variant="outline" size="lg" className="w-full" onClick={onClose} data-v2in-close="">
       Back to position
     </Button>
@@ -469,8 +578,8 @@ export function VaultDialog({ kind, view, tokens, gate, subject = null, onClose,
   )
 
   return (
-    <FlowDialog name={`vault-${kind}`} title={follow ? (STEP_TITLE[follow] as string) : TITLE[kind]} onClose={onClose} footer={footer}>
-      <p className="dm-receipt-lede" data-vault-lede={shown}>
+    <FlowDialog name={`vault-${kind}`} title={follow ? (STEP_TITLE[follow] as string) : exitRearm ? PROTECTION_TITLE[exitRearm] : TITLE[kind]} onClose={onClose} footer={footer}>
+      <p className="dm-receipt-lede" data-vault-lede={shown} data-vault-exit-rearm={exitRearm ? (nothingToDo ? 'kept' : exitRearm) : undefined}>
         {lede}
       </p>
       {(kind === 'withdraw' || kind === 'return' || kind === 'leave') && !follow && (
@@ -534,24 +643,37 @@ export function VaultDialog({ kind, view, tokens, gate, subject = null, onClose,
         </div>
       )}
       {kind === 'return' && <p className="text-body text-fg-muted">{LEAVE_IT}</p>}
-      {kind === 'leave' && view.dex === 4 && !follow && (
+      {kind === 'leave' && view.dex === 4 && !follow && !exitLive && (
         <p className="text-body text-fg-muted" data-leave-v4="">
           Afterwards you can remove Domino from position #{root.toString()} and revoke your automation's approval on it.
         </p>
       )}
-      {kind === 'rearm' && (
+      {/* Money #4: said first, before anything else is asked of the person. */}
+      {guarded && past === true && !finished && (
+        <PastEdge
+          acknowledged={acknowledged}
+          onAcknowledge={(next) => {
+            acknowledgedNow.current = next
+            setAcknowledged(next)
+          }}
+          disabled={run.running}
+          onTurnOff={onTurnOff}
+        />
+      )}
+      {kind === 'rearm' && !nothingToDo && (
         <Check checked={consent} onChange={setConsent} disabled={run.running || finished} data-rearm-consent="">
           {consentText}
         </Check>
       )}
-      {/* The consent is the box above; the return's note is already in its lede. */}
-      {review?.notes.filter((key) => key !== 'vault_consent_uncollected_fees' && key !== 'vault_returns_to_owner').map((key) => (
+      {/* The consent is the box above; the return's note is already in its lede, and so is Auto-exit's pause in its own
+          automation's Leave automation (Changed on purpose 2026-10-06, the integration review, rugged-literal #2). */}
+      {review?.notes.filter((key) => key !== 'vault_consent_uncollected_fees' && key !== 'vault_returns_to_owner' && !(protection && key === 'vault_exit_all_pauses_orders')).map((key) => (
         <p key={key} className="text-body text-fg-muted" data-vault-note={key}>
           {VAULT_TEXT[key].replace('{fee}', view.mode === 2 ? automationFeeText(2) : automationFeeText(1))}
         </p>
       ))}
-      {steps.length > 0 && <WalletSteps steps={steps} phases={locked ? undefined : run.phases} name={`vault-${kind}`} />}
-      {waitingForReview && (
+      {steps.length > 0 && !nothingToDo && <WalletSteps steps={steps} phases={locked ? undefined : run.phases} name={`vault-${kind}`} />}
+      {waitingForReview && !nothingToDo && (
         <p role="status" className="text-body text-fg-muted">
           Checking…
         </p>
@@ -566,7 +688,9 @@ export function VaultDialog({ kind, view, tokens, gate, subject = null, onClose,
           {info}
         </p>
       )}
-      <ErrorLine error={live.error ?? reviewError ?? run.notice} />
+      {/* Changed on purpose 2026-10-06 (the review of point 5): once the action is done, a review made again after it (the
+          page reads again) has nothing to say: "This step is already done." would stand under a finished dialog. */}
+      <ErrorLine error={live.error ?? (finished ? null : reviewError) ?? run.notice} />
       {offerElsewhere && (
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => { setElsewhere(true); setRound((n) => n + 1) }} data-v2in-send-elsewhere="">

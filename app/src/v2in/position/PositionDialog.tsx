@@ -4,11 +4,11 @@ import { SheetCard, SheetFact, SheetFacts, SheetMore, TokenRow, TokenRows } from
 import { Button, FigureDash, LinkButton, Skeleton } from '../../components/ui'
 import { slippageBpsFrom } from '../../lib/create/slippage'
 import { useWalletIdentity } from '../../lib/walletIdentity'
-import { ethText, priceText, rangeBothWays } from '../../v2/plan/present'
+import { ethText, keptWhileRequoting, priceText, rangeBothWays } from '../../v2/plan/present'
 import type { S1PlanRequest } from '../../v2/plan/types'
 import type { ActionName, Address } from '../../v2/types'
 import { v2PositionHref } from '../route'
-import { CHANGE_RANGE_BURNS_WHEN_ALL, EXIT_BURNS, POSITION_SLIPPAGE_DEFAULT_BPS, POSITION_SLIPPAGE_MIN_BPS, ROOT_PAUSE_COPY, type Share } from './constants'
+import { CHANGE_RANGE_BURNS_WHEN_ALL, EXIT_BURNS, EXIT_PAUSE_COPY, EXIT_REARM_COPY, POSITION_SLIPPAGE_DEFAULT_BPS, POSITION_SLIPPAGE_MIN_BPS, ROOT_PAUSE_COPY, type Share } from './constants'
 import { COPY } from './copy'
 import { useDirectExit } from './directRun'
 import { AmountsField, RangeField, RangePicture, ReceiveField, ShareField } from './Fields'
@@ -16,7 +16,7 @@ import { initialAmounts, initialRange, inputsOf, shareOf, ticksOf, type AmountsV
 import type { ActionPosition, VaultReserves } from './model'
 import { DirectReceiptView, ZapReceiptView } from './Receipt'
 import { Review } from './Review'
-import { useActionRun } from './run'
+import { useActionRun, type RunView } from './run'
 import { Slippage } from './Slippage'
 import { StepButton, StepsList, stepsDone } from './Steps'
 import { amountText, decimalsOf, labelOf, type TokenBook } from './tokens'
@@ -26,6 +26,31 @@ import type { OpenGate } from './wallet'
 
 export type PositionMode = 'increase' | 'changeRange' | 'exit' | 'collect'
 type ExitWay = 'both' | 'convert'
+
+/** What the last review drew, kept for the next quote of the same choices. */
+interface KeptReview {
+  reviewed: NonNullable<RunView['reviewed']>
+  feePerGas: bigint | null
+  /**
+   * Its steps as they last stood (the run's own list, which a new quote replaces rather than changes): the review's one
+   * network fee line reads a batch's own ceiling and the approvals still to send from them (present.ts networkFeeLine).
+   */
+  steps: RunView['steps']
+}
+
+/**
+ * Changed on purpose 2026-10-06 (the owner's point 4: a small cue, never a blank): while the same choices are quoted
+ * again (the price moved, the quote ran out, or a signature was cancelled; ./run.ts clears its review for it), the dialog
+ * keeps drawing the last review, greyed and marked busy, under "Getting a fresh quote…", until the new one replaces it
+ * (present.ts keptWhileRequoting). Forgotten when a quote for new choices starts or the run is reset.
+ */
+function useKeptReview(view: RunView): KeptReview | null {
+  const [last, setLast] = useState<KeptReview | null>(null)
+  const now: KeptReview | null = view.reviewed ? { reviewed: view.reviewed, feePerGas: view.feePerGas, steps: view.steps } : null
+  if (now && (last === null || last.reviewed !== now.reviewed || last.feePerGas !== now.feePerGas || last.steps !== now.steps)) setLast(now)
+  else if (!now && last !== null && (view.stage === 'idle' || view.stage === 'preview' || (view.stage === 'quoting' && !view.requoting))) setLast(null)
+  return keptWhileRequoting(now, view.stage === 'quoting' && view.requoting, last).stale ? last : null
+}
 
 /** "1.5 USDG + 0.001 ETH": a vault's reserves above zero, in their tokens' own units; null when none is. */
 export function reservesText(book: TokenBook, reserves: VaultReserves): string | null {
@@ -75,6 +100,8 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   const [way, setWay] = useState<ExitWay>('both')
   const [share, setShare] = useState<Share>('100')
   const [convertTo, setConvertTo] = useState<Address>(pool.currency1)
+  // The person's tick that this action pauses Auto-exit, where the zap client asks for none (below, `ownTick`).
+  const [exitTicked, setExitTicked] = useState(false)
   const bps = slippageBpsFrom(slippage)
   const inputs = mode === 'increase' ? inputsOf(amounts, pool, book) : null
   const ticks = mode === 'changeRange' && position.tick !== null ? ticksOf(range, pool, position.tick, book) : null
@@ -82,11 +109,13 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   const removing = shareOf(position.liquidity, share)
   const action: ActionName = mode === 'collect' ? 'exit' : mode
   const label = (token: Address) => labelOf(book, token)
+  const exitLive = position.vault?.exitLive === true
   const run = useActionRun({
     gate,
     action,
     inputs: inputs ?? [],
     label,
+    exitLive,
     request: (consent): S1PlanRequest => {
       const base = { chainId, consent, position: { dex: position.dex, tokenId: position.tokenId }, slippageBps: bps ?? POSITION_SLIPPAGE_DEFAULT_BPS }
       const liquidityToRemove = share === '100' ? ('all' as const) : removing
@@ -104,6 +133,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   const directReads = gate.mode === 'live' || (identity.kind === 'connected' && identity.chainId === chainId)
   const view = run.view
   const reviewed = view.reviewed
+  const kept = useKeptReview(view)
   const ready = bps !== null && (mode === 'increase' ? inputs !== null : mode === 'changeRange' ? ticks !== null && !sameRange && position.liquidity > 0n : position.liquidity > 0n)
   // What a waiting Review button says is missing (Changed on purpose 2026-10-03: never a dead grey bar).
   const missing = bps === null ? COPY.form.checkSlippage : mode === 'increase' && inputs === null ? COPY.form.enterAmount : mode === 'changeRange' && ticks === null ? COPY.form.enterPrices : mode === 'changeRange' && sameRange ? COPY.form.differentRange : COPY.form.review
@@ -149,10 +179,21 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
         ? (reservesText(book, reserves) ? COPY.reserves.exitWarning(reservesText(book, reserves) as string) : null)
         : COPY.reserves.exitWarningUnread)
     : null
+  // Changed on purpose 2026-10-06 (the integration review, rugged-literal #1): on the root of Auto-exit's own automation,
+  // its Auto-exit on or paused, only the zap's approval step pauses anything (an exit needs the approval alone): an action
+  // that keeps the approval (Collect fees, Withdraw to both tokens, Add liquidity on v3) asks for no tick and offers
+  // nothing after; one that moves it says so in Auto-exit's words, and offers to approve the position again.
+  const quiet = exitLive && (usesDirect || reviewed?.review.replacesApproval === null)
+  const pauseCopy = exitLive ? EXIT_PAUSE_COPY : ROOT_PAUSE_COPY
+  // The same where the root reads disarmed (an earlier Collect fees on v4 disarms it): the zap client then asks for no
+  // pause, yet its approval still replaces the one Auto-exit's exit needs, so this dialog asks for the tick itself.
+  const ownTick = exitLive && !usesDirect && reviewed !== null && reviewed.review.replacesApproval !== null && reviewed.review.pausesAutomation === null
+  const pauseTick = reviewed !== null && (reviewed.review.pausesAutomation !== null ? !quiet : ownTick)
+  const pauseTicked = ownTick ? exitTicked : view.pauseAcknowledged
   // Decision #5: at the end of an armed root's add, withdrawal or collect, the page offers to turn automation back on (the
   // automation panel does it); not after a withdrawal of everything, which leaves the root empty (its reserves go first).
-  const pausedVault = zapDone ? view.rearm : directDone ? direct.prepared?.pausesAutomation ?? null : null
-  const rearmVault = pausedVault !== null && !(mode === 'exit' && share === '100') ? pausedVault : null
+  const pausedVault = zapDone ? view.rearm ?? (ownTick ? position.vault?.address ?? null : null) : directDone ? direct.prepared?.pausesAutomation ?? null : null
+  const rearmVault = pausedVault !== null && !(mode === 'exit' && share === '100') && !quiet ? pausedVault : null
 
   const review = () => {
     setPhase('review')
@@ -185,7 +226,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
       <>
         {rearmVault && (
           <Button type="button" variant="primary" size="lg" data-position-rearm={rearmVault} onClick={() => { offerVault({ chainId, vault: rearmVault, focus: 'rearm' }); onClose() }}>
-            {COPY.wallet.rearm}
+            {exitLive ? EXIT_REARM_COPY : COPY.wallet.rearm}
           </Button>
         )}
         <Button type="button" variant="secondary" size="lg" onClick={onClose} data-position-back="">
@@ -202,7 +243,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   } else if (gate.mode === 'preview') {
     footer = <Locked copy={gate.lockedCopy} />
   } else if (usesDirect) {
-    const blocked = direct.prepared?.pausesAutomation != null && !direct.ticked
+    const blocked = direct.prepared?.pausesAutomation != null && !direct.ticked && !quiet
     const offer = direct.stage === 'ready' || (direct.stage === 'failed' && direct.retry)
     footer = (
       <Button type="button" variant="primary" size="lg" disabled={!offer || blocked} aria-busy={direct.stage === 'reading' || direct.stage === 'wallet' || direct.stage === 'sent' || undefined} onClick={() => void direct.send()} data-position-send={mode === 'collect' ? 'collect' : 'close'}>
@@ -210,14 +251,14 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
       </Button>
     )
   } else {
-    footer = <StepButton view={view} onConfirm={run.confirm} blocked={reviewed !== null && reviewed.review.pausesAutomation !== null && !view.pauseAcknowledged} />
+    footer = <StepButton view={view} onConfirm={run.confirm} blocked={pauseTick && !pauseTicked} />
   }
   // The review's way back to the form: a chevron left of the title (not on Collect fees, which has no form, nor once done).
   const backTo = phase === 'review' && !done && mode !== 'collect' ? { onClick: back, disabled: view.busy || direct.stage === 'wallet' || direct.stage === 'sent', 'data-position-review-back': '' } : null
 
   return (
     <ActionDialog id={mode} title={COPY.title[mode]} lede={COPY.lede[mode]} back={backTo} onClose={onClose} footer={footer} data-position-dialog={`v2-${mode}`} data-position-gate={gate.mode}>
-      {position.vault?.role === 'root' && position.vault.armed === true && !done && <Note tone="warn" data-position-root-note="">{ROOT_PAUSE_COPY}</Note>}
+      {position.vault?.role === 'root' && position.vault.armed === true && !done && !exitLive && <Note tone="warn" data-position-root-note="">{ROOT_PAUSE_COPY}</Note>}
 
       {phase === 'form' && mode === 'increase' && <AmountsField chainId={chainId} position={position} book={book} value={amounts} onChange={setAmounts} />}
       {phase === 'form' && mode === 'changeRange' && <RangeField position={position} book={book} value={range} onChange={setRange} ticks={ticks} sameRange={sameRange} />}
@@ -242,15 +283,21 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
           {view.stage === 'preview' && (
             <RequestSummary chainId={chainId} mode={mode} position={position} book={book} inputs={inputs ?? []} ticks={ticks} share={share} way={way} convertTo={convertTo} bps={bps ?? POSITION_SLIPPAGE_DEFAULT_BPS} />
           )}
+          {/* The last review, greyed, while the same choices are quoted again (2026-10-06, the owner's point 4: never a blank). */}
+          {!reviewed && kept && !view.receipt && (
+            <Review chainId={chainId} book={book} reply={kept.reviewed.reply} request={kept.reviewed.request} review={kept.reviewed.review} steps={kept.steps} feePerGas={kept.feePerGas} at={kept.reviewed.at} stale>
+              {reservesWarning && <Note tone="warn" data-position-reserves-stay="">{reservesWarning}</Note>}
+            </Review>
+          )}
           {reviewed && !view.receipt && (
             <>
               <Review chainId={chainId} book={book} reply={reviewed.reply} request={reviewed.request} review={reviewed.review} steps={view.steps} feePerGas={view.feePerGas} at={reviewed.at} onLowerSlippage={lowerSlippage} onReceiveBoth={receiveBoth}>
                 {reservesWarning && <Note tone="warn" data-position-reserves-stay="">{reservesWarning}</Note>}
-                {reviewed.review.pausesAutomation !== null && (
-                  <Tick checked={view.pauseAcknowledged} disabled={view.pauseAcknowledged} onChange={(next) => next && run.acknowledgePause()} data-position-pause-confirm="">{ROOT_PAUSE_COPY}</Tick>
+                {pauseTick && (
+                  <Tick checked={pauseTicked} disabled={pauseTicked} onChange={(next) => next && (ownTick ? setExitTicked(true) : run.acknowledgePause())} data-position-pause-confirm="">{pauseCopy}</Tick>
                 )}
                 <StepsList chainId={chainId} view={view} action={action} book={book} onCancelSignature={run.cancelSignature} onKeepSignature={run.keepSignature} onRejected={run.forgetUnsettled} />
-                {!stepsDone(view) && reviewed.review.pausesAutomation !== null && !view.pauseAcknowledged && <Note data-position-tick-first="">{COPY.wallet.tickFirst}</Note>}
+                {!stepsDone(view) && pauseTick && !pauseTicked && <Note data-position-tick-first="">{COPY.wallet.tickFirst}</Note>}
               </Review>
             </>
           )}
@@ -300,11 +347,11 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
               </SheetFacts>
             </div>
           )}
-          {direct.prepared && direct.prepared.pausesAutomation === null && direct.prepared.state.subscriber !== null && direct.prepared.state.subscriber !== '0x0000000000000000000000000000000000000000' && !done && (
+          {direct.prepared && direct.prepared.pausesAutomation === null && direct.prepared.state.subscriber !== null && direct.prepared.state.subscriber !== '0x0000000000000000000000000000000000000000' && !done && !quiet && (
             <Note tone="warn" data-position-warning="automation">{COPY.review.stopsAutomation}</Note>
           )}
           {reservesWarning && !done && <Note tone="warn" data-position-reserves-stay="">{reservesWarning}</Note>}
-          {direct.prepared?.pausesAutomation != null && !done && gate.mode === 'live' && (
+          {direct.prepared?.pausesAutomation != null && !done && gate.mode === 'live' && !quiet && (
             <Tick checked={direct.ticked} disabled={direct.ticked} onChange={(next) => next && direct.tick()} data-position-pause-confirm="">{ROOT_PAUSE_COPY}</Tick>
           )}
           <ErrorLine error={direct.error} />

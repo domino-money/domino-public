@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { CompoundPreview } from '../../components/automate/CompoundPreview'
-import { ModeArt, PlainArt } from '../../components/automate/ModeArt'
+import { ModeArt } from '../../components/automate/ModeArt'
 import { ModeSummary } from '../../components/automate/ModeSummary'
+import { ExitThumb } from '../../components/home/Vignettes'
 import { PositionPicker } from '../../components/automate/PositionPicker'
 import { SuccessorAxis } from '../../components/automate/SuccessorAxis'
 import { positionHref } from '../../components/explore/routes'
@@ -9,20 +10,25 @@ import { Button, Card, LinkButton } from '../../components/ui'
 import { automationFeeText, VAULT_TEXT, type VaultCreateBatch, type VaultCreateReview } from '../../finance/v2/vault'
 import { preselected } from '../../lib/automate/picker'
 import { useAutomation } from '../../lib/automationState'
+import { useWalletIdentity } from '../../lib/walletIdentity'
 import { CREATE } from '../../lib/create/copy'
 import { SEQUENCE_DEFAULTS, type SequenceForm } from '../../lib/create/sequenceDefaults'
 import type { WalletPosition } from '../../lib/walletPositions'
 import { v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
 import { ZERO_ADDRESS, type Address } from '../../v2/types'
+import { autoExitStanding, type AutoExitStanding } from '../autoexit/card'
+import { fullRange } from '../autoexit/form'
 import { MandateDialog, type ExitTarget } from '../autoexit/MandateDialog'
+import { positionExitPrice } from '../autoexit/priceContext'
 import { VAULT_AUTOMATION_START_PAUSED } from './constants'
 import { describeError, errorLabels, STEPS_INSTEAD, type ErrorView } from './copy'
 import { bpsText, defaultSettingsForm, intervalWords, observationAgeWords, settingsFrom, type VaultSettingsForm } from './form'
 import { gateOpen } from './gate'
 import { LimitsFields } from './LimitsFields'
+import { usePortfolio } from './read6'
 import { openAutomation, type AutomationSession } from './session'
-import { recordVaultEvents, rememberVault } from './store'
+import { automationState, recordVaultEvents, rememberVault, sessionMandates, sessionRevoked, subscribeAutomation } from './store'
 import { useStepsRun, WalletSteps, type WalletStep } from './steps'
 import { poolTokens, shortAddress, walletTokenMeta } from './tokens'
 import { ErrorLine, LockedNote } from './ui'
@@ -31,16 +37,17 @@ import type { SetupMode } from './intent'
 /**
  * Set up automation with Domino's vault (spec F7 rev2/rev3 §5.1, §5.2, §4; decisions #12, #18, #25, #27): the same
  * page, steps and look as V1's (screens/SequenceCreate.tsx), its choices the vault's: Auto-compound (2%),
- * Domino-compound (4%) and Protection only, with no default (#12: nothing is chosen for the person; a link the person
- * followed from Automate names their own choice).
+ * Domino-compound (4%) and Auto-exit, with no default (#12: nothing is chosen for the person; a link the person
+ * followed from Automate or from New position's success names their own choice).
  *
  *   - Auto-compound / Domino-compound: the limits of §5.2 (slippage and band up to 5%, the band's growing warnings, the
  *     reference age and the minimum interval fixed at 300 s and 600 s and said, never edited), the consent on earned fees
  *     in the mode's own words; then `predictVault` → the individual approval → `createVault`, one EIP-5792 batch when the
  *     wallet has it; the vault starts running (#12: startPaused false).
- *   - Protection only (#18, #25): a vault created paused, Auto-compound with one position recorded (nothing is ever
- *     reinvested while paused), its auto-exit module turned on with the person's stop-loss / take-profit order: the order's
- *     own dialog (../autoexit/MandateDialog.tsx) runs the whole of it.
+ *   - Auto-exit (#18, #25; Changed on purpose 2026-10-06, the owner's point 5: rugged97's name for it, its prices the
+ *     range's edges): a vault created paused, Auto-compound with one position recorded (nothing is ever reinvested while
+ *     paused), its auto-exit module on and its order registered, all in Auto-exit's own dialog
+ *     (../autoexit/MandateDialog.tsx): one signature, then one confirmation when the wallet batches.
  *
  * All three are the vault's under `preview` (the preview alias, the development server: each runs up to its review and
  * the locked sentence; the owner, 2026-10-02 night) and under `live` (through the closed vault client). V1's own sequence
@@ -51,7 +58,8 @@ import type { SetupMode } from './intent'
 const MODES: readonly { key: SetupMode; title: string; line: string; fee: string | null }[] = [
   { key: 'compound', title: CREATE.automation.options.compound.title, line: CREATE.automation.options.compound.line, fee: automationFeeText(1) },
   { key: 'domino', title: CREATE.automation.options.domino.title, line: CREATE.automation.options.domino.line, fee: automationFeeText(2) },
-  { key: 'protection', title: 'Protection only', line: "Domino doesn't reinvest this position. It only watches your stop-loss and take-profit. 0.2% only if an exit runs.", fee: null },
+  // Changed on purpose 2026-10-06 (the owner's point 5): Auto-exit, by rugged97's name for it.
+  { key: 'protection', title: 'Auto-exit', line: 'Domino closes this position at the end of its range and sends the tokens to your wallet. 0.2% only if it closes.', fee: null },
 ]
 
 /** The pool of a V1 position, in pool order (by address, whichever way V1's read lists the pair); null when the read is not one. */
@@ -82,7 +90,7 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
   intent: { mode: SetupMode | null; tokenId: string | null }
   /** The vault's gate on Robinhood Chain (V1's positions are there). */
   gate: Exclude<V2Gate, { mode: 'off' }>
-  /** The auto-exit's gate there (Protection only needs both). */
+  /** The auto-exit's gate there (Auto-exit needs both). */
   exitGate: V2Gate | null
 }) {
   const [tokenId, setTokenId] = useState(() => preselected(positions, intent.tokenId))
@@ -100,6 +108,17 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
   // A position already automated (V1's sequence) or tied to another app cannot take a vault: said before anything else.
   const taken = automation.phase === 'ready' && automation.state.automation !== 'plain'
   const usable = taken ? null : position
+  // Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "auto-exit has no fee compounding"): a position with
+  // Auto-exit (read-v6's word, or turned on or off in this tab) is offered no compounding, and no second Auto-exit; one
+  // whose Auto-exit is off but whose protection-only vault stays is turned back on from its own page (in that vault).
+  const identity = useWalletIdentity()
+  const connected = identity.kind === 'connected' ? (identity.address.toLowerCase() as Address) : null
+  const indexed = usePortfolio(connected, gate)
+  const store = useSyncExternalStore(subscribeAutomation, automationState, automationState)
+  const revoked = sessionRevoked(store, 4663)
+  const turnedOnHere = usable !== null && connected !== null && sessionMandates(store, 4663, connected).some((m) => m.registered && m.tokenId === BigInt(usable.tokenId) && !revoked.has(m.id))
+  const exitStanding: AutoExitStanding = turnedOnHere ? 'on' : usable !== null && indexed?.reply.kind === 'ok' ? autoExitStanding(indexed.reply.body, 4663, usable.tokenId, 4, revoked) : null
+  const exitHeld = exitStanding !== null
   const pool = usable ? poolOf(usable) : null
   const tokens = useMemo(() => (pool && usable ? poolTokens(chain, pool, walletTokenMeta(usable.currencies)) : null), [pool, usable, chain])
   const compounding = mode === 'compound' || mode === 'domino'
@@ -116,7 +135,7 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
   const [reviewError, setReviewError] = useState<ErrorView | null>(null)
   const [path, setPath] = useState<'batch' | 'steps'>('steps')
   const [round, setRound] = useState(0)
-  const ready = !!usable && compounding && check.ok && consent
+  const ready = !!usable && compounding && !exitHeld && check.ok && consent
   // Changed on purpose 2026-10-05 (the owner: "I approved the first transaction and now the set up automation transaction
   // doesn't show, it keeps loading"). The positions list is read again after every wallet action, and each read gives new
   // position objects; this review followed those objects, so the approval's own re-read made a new review in the middle
@@ -250,7 +269,13 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
       {text}
     </legend>
   )
-  const target: ExitTarget | null = usable && pool && tokens && pool.hooks === ZERO_ADDRESS ? { chainId: 4663, dex: 4, tokenId: idOf(usable.tokenId), pool, tokens, vault: null } : null
+  // Added 2026-10-06 (the owner's point 5): the position's range is Auto-exit's edges. Changed on purpose 2026-10-06 (the
+  // review of point 5): the wallet list's price is a saved copy (read once, never refreshed here): the dialog chooses the
+  // edges against the pool's own price, read through the wallet; a range that covers every price has no edge.
+  const covers = usable !== null && fullRange({ tickLower: usable.tickLower, tickUpper: usable.tickUpper }, usable.tickSpacing)
+  const target: ExitTarget | null = usable && pool && tokens && pool.hooks === ZERO_ADDRESS && !covers
+    ? { chainId: 4663, dex: 4, tokenId: idOf(usable.tokenId), pool, tokens, range: { tickLower: usable.tickLower, tickUpper: usable.tickUpper }, price: positionExitPrice(usable, { block: null, saved: true }), vault: null }
+    : null
   const previewSteps: WalletStep[] = [
     { key: 'create-batch', title: usable ? `Approve position #${usable.tokenId} and set up your automation` : 'Approve your position and set up your automation', note: 'One confirmation when your wallet can send both together; otherwise two.' },
   ]
@@ -262,8 +287,15 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
       ? 'This position already has automation. Choose another one.'
       : !chosen
         ? 'Choose what Domino does for it.'
+        : exitStanding !== null
+          ? mode !== 'protection'
+            ? 'This position is set up for Auto-exit, which never reinvests its fees. Choose another position.'
+            : exitStanding === 'on' ? 'Auto-exit is already on for this position.' : "Auto-exit is off for this position. Turn it back on from the position's page."
         : mode === 'protection'
-          ? protectionGate ? 'Set your stop-loss and take-profit. Your wallet confirms once.' : 'Protection only is not available on this network yet.'
+          // Changed on purpose 2026-10-06 (the review of point 5): one confirmation only where the wallet batches.
+          ? !protectionGate ? 'Auto-exit is not available on this network yet.'
+            : covers ? 'This position covers every price the pool allows, so Auto-exit could never close it. Choose another position.'
+              : 'Turn on Auto-exit: one signature, then one confirmation when your wallet can send the calls together.'
           : !check.ok
             ? 'Check the limits.'
             : !consent
@@ -295,7 +327,7 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
               <div className="dm-acct-choices dm-seq-modes" role="radiogroup" aria-label="Automation">
                 {MODES.map((entry) => (
                   <Button key={entry.key} type="button" role="radio" aria-checked={mode === entry.key} variant="outline" className="dm-seq-mode" disabled={busy} onClick={() => chooseMode(entry.key)} data-sequence-mode={entry.key}>
-                    {entry.key === 'protection' ? <PlainArt /> : <ModeArt mode={entry.key} size="card" play={mode === entry.key ? 'once' : 'none'} />}
+                    {entry.key === 'protection' ? <ExitThumb className="dm-mode-art" /> : <ModeArt mode={entry.key} size="card" play={mode === entry.key ? 'once' : 'none'} />}
                     <ModeSummary mode={entry.key} title={entry.title} fee={entry.fee} />
                   </Button>
                 ))}
@@ -305,11 +337,12 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
           )}
           {usable && mode === 'protection' && (
             <fieldset className="dm-acct-fieldset" data-state="current">
-              {legend(3, false, 'Stop-loss and take-profit')}
-              <p className="dm-seq-hint">Your order says at which prices this position leaves the pool, and what you receive. It fires once; cancel it at any time.</p>
+              {legend(3, false, 'Auto-exit')}
+              <p className="dm-seq-hint">When the price reaches the end of this position's range, Domino closes it and sends the tokens to your wallet. Turn it off at any time.</p>
             </fieldset>
           )}
-          {usable && compounding && (
+          {/* A position set up for Auto-exit is offered no compounding: no limits to set, nothing to consent to. */}
+          {usable && compounding && !exitHeld && (
             <fieldset disabled={busy} className="dm-acct-fieldset" data-state={consent ? 'done' : 'current'}>
               {legend(3, consent, 'Limits')}
               <LimitsFields form={settings} onChange={(next) => { setSettings(next); setConsent(false); setReviewing(false) }} problems={check.ok ? [] : check.problems} dex={4} disabled={busy} />
@@ -324,12 +357,12 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
         </div>
         <aside className="dm-seq-aside" aria-label="Wallet steps">
           <div className="dm-auto-aside-heading"><h2>Your automation</h2></div>
-          {usable && mode === 'domino' && pool && <SuccessorAxis root={{ tokenId: usable.tokenId, lower: usable.tickLower, upper: usable.tickUpper, spacing: usable.tickSpacing }} inverse={quoteIsCurrency0(pool)} form={axisForm(settings)} />}
-          {usable && mode === 'compound' && <CompoundPreview />}
-          {usable && compounding && (live ? steps.length > 0 && <WalletSteps steps={steps} phases={run.phases} name="setup" /> : <WalletSteps steps={previewSteps} name="setup-preview" />)}
+          {usable && mode === 'domino' && pool && !exitHeld && <SuccessorAxis root={{ tokenId: usable.tokenId, lower: usable.tickLower, upper: usable.tickUpper, spacing: usable.tickSpacing }} inverse={quoteIsCurrency0(pool)} form={axisForm(settings)} />}
+          {usable && mode === 'compound' && !exitHeld && <CompoundPreview />}
+          {usable && compounding && !exitHeld && (live ? steps.length > 0 && <WalletSteps steps={steps} phases={run.phases} name="setup" /> : <WalletSteps steps={previewSteps} name="setup-preview" />)}
           {mode === 'protection' ? (
-            <Button type="button" variant="primary" size="xl" className="w-full" disabled={!target || !protectionGate} onClick={() => setOrderOpen(true)} data-sequence-action="protection">
-              Set stop-loss / take-profit
+            <Button type="button" variant="primary" size="xl" className="w-full" disabled={!target || !protectionGate || exitHeld} onClick={() => setOrderOpen(true)} data-sequence-action="protection">
+              Turn on Auto-exit
             </Button>
           ) : (
             <Button
@@ -366,7 +399,8 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
           <ErrorLine error={reviewError ?? run.notice} />
         </aside>
       </div>
-      {orderOpen && target && protectionGate && <MandateDialog target={target} gate={protectionGate} onClose={() => setOrderOpen(false)} onChanged={() => undefined} />}
+      {/* Changed on purpose 2026-10-06 (the review of point 5): once on, its button opens the position's page. */}
+      {orderOpen && target && protectionGate && <MandateDialog target={target} gate={protectionGate} onClose={() => setOrderOpen(false)} onChanged={() => undefined} done={{ label: 'View position', href: positionHref(target.tokenId.toString()) }} />}
     </Card>
   )
 }

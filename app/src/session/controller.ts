@@ -81,7 +81,8 @@ export interface Snapshot {
   busy: boolean
   /**
    * Added 2026-10-05: the signed-in session is held while the account's wallet is on Base or Arbitrum One (machine.ts
-   * heldAway), where the view says wrong_network; Domino V2's private routes may use it there.
+   * heldAway), where the view says wrong_network; Domino V2's private routes may use it there. Changed on purpose
+   * 2026-10-06 (the owner's point 2a): and while it is on a network a deposit may come from (CROSSCHAIN_ORIGIN_CHAIN_IDS).
    */
   away: boolean
 }
@@ -481,7 +482,8 @@ export function createSessionController(ports: ControllerPorts): SessionControll
     getSnapshot: () => snapshot,
     withSessionCsrf(epoch, fn) {
       const held = machine.session
-      // Changed on purpose 2026-10-05: signed in, or the same session held on Base or Arbitrum One (machine.ts heldAway).
+      // Changed on purpose 2026-10-05: signed in, or the same session held on Base or Arbitrum One (machine.ts heldAway);
+      // since 2026-10-06 also on a network a deposit may come from.
       if (machine.epoch !== epoch || held === null || (machine.view.status !== 'signed_in' && !heldAway(machine, env))) return Promise.resolve(NO_SESSION)
       return fn(held.csrf)
     },

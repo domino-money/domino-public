@@ -8,8 +8,8 @@ import type { Block, DocPage } from '../types'
  * little or nothing about liquidity pools): short sentences, and each new word explained where it first appears.
  *
  * Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Domino's new contracts run on three networks, a
- * position's page manages it, a stop-loss or take-profit can protect it, and automation is set up on the position and
- * starts at once. The machinery behind Auto-compound, Domino-compound and Protection only is "your automation" (the
+ * position's page manages it, Auto-exit can close it at its range's end (2026-10-06), and automation is set up on the
+ * position and starts at once. The machinery behind Auto-compound, Domino-compound and Auto-exit is "your automation" (the
  * owner, 2026-10-04): the reader meets those names, never the contract's.
  */
 export const WHAT_IS_DOMINO: DocPage = {
@@ -37,7 +37,7 @@ export const WHAT_IS_DOMINO: DocPage = {
           [doc('Domino-compound', 'domino-compound'), ': near the top of its range, its fees open the next position one step higher.'],
         ),
         p('Every position starts plain; you choose what its fees do later, with ', b('Automate'), '.'),
-        p('A ', doc('stop-loss or take-profit', 'stop-loss'), ' can also withdraw a position by itself at a price you set.'),
+        p(doc('Auto-exit', 'auto-exit'), ' can also close a position by itself when the price reaches the end of its range.'),
       ],
     },
     {
@@ -48,7 +48,7 @@ export const WHAT_IS_DOMINO: DocPage = {
           [doc('Markets', 'markets'), ': the pools you can use on Robinhood Chain, with a page for each.'],
           [doc('New position', 'new-position'), ': four steps on Robinhood Chain, Base or Arbitrum One, then your wallet creates the position. Tokens on another network can be ', doc('brought over first', 'bring-funds'), '.'],
           [doc('Positions', 'positions'), ': your positions on Robinhood Chain, Base and Arbitrum One, each with a page where you ', doc('manage it', 'manage-position'), '.'],
-          [b('Automate'), ': the three ways and a stop-loss side by side, and where ', doc('Auto-compound', 'auto-compound'), ' and ', doc('Domino-compound', 'domino-compound'), ' are set up.'],
+          [b('Automate'), ': the three ways and Auto-exit side by side, and where ', doc('Auto-compound', 'auto-compound'), ' and ', doc('Domino-compound', 'domino-compound'), ' are set up.'],
         ),
       ],
     },
@@ -68,7 +68,7 @@ export const WHAT_IS_DOMINO: DocPage = {
       title: 'Built on Uniswap',
       blocks: [
         p('Uniswap is an exchange made of smart contracts: programs on the chain that anyone can read. Every Domino position is a standard Uniswap position NFT, a token in your wallet that stands for your position. Domino works with Uniswap v3 and v4 pools.'),
-        p('Domino’s own contracts run beside them on each of its three networks: one acts on your positions, one runs your automation, one carries out stop-loss and take-profit orders. See ', doc('Contracts', 'contracts'), '.'),
+        p('Domino’s own contracts run beside them on each of its three networks: one acts on your positions, one runs your automation, one carries out Auto-exit. See ', doc('Contracts', 'contracts'), '.'),
       ],
     },
   ],
@@ -122,7 +122,7 @@ export const WALLET: DocPage = {
             { label: 'Block explorer', value: 'https://robinhoodchain.blockscout.com' },
           ],
         },
-        p('If your wallet lacks Base or Arbitrum One, Domino says so: add it there, then try again. Each transaction pays a small network fee, called gas, in ETH: keep a little on each network you use.'),
+        p('If your wallet lacks Base or Arbitrum One, add it there, then try again. Each transaction pays a small network fee, called gas, in ETH: keep a little on each network you use.'),
       ],
     },
     {
@@ -139,9 +139,9 @@ export const WALLET: DocPage = {
       id: 'session',
       title: 'Sessions and signing out',
       blocks: [
-        p('Signing in starts a session. The wallet control shows when it ends at the latest, and it ends sooner after 30 minutes idle. ', b('Sign out'), ' ends it.'),
-        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the session is kept across the three networks (session/machine.ts keptChains).
-        p('Moving between Domino’s three networks keeps the session; changing account, or moving elsewhere, signs it out.'),
+        p('Signing in starts a session. The wallet control shows when it ends at the latest; 30 minutes idle ends it sooner. ', b('Sign out'), ' ends it.'),
+        // Changed on purpose 2026-10-06 (review): kept across session/machine.ts keptChains; any other network signs it out.
+        p('Moving between networks Domino uses or brings funds from keeps the session; changing account, or moving to any other network, signs it out.'),
       ],
     },
     {
@@ -155,7 +155,7 @@ export const WALLET: DocPage = {
           [doc('Bringing funds from another network', 'bring-funds'), '.'],
           ['What Domino V1’s automation did, in Managed positions and Receipts on ', doc('Positions', 'positions', 'managed-positions'), '.'],
         ),
-        p('Public pages need no sign-in, and neither does a step without a quote, such as collecting fees, closing a position, or setting up automation or a stop-loss.'),
+        p('Public pages need no sign-in, and neither does a step without a quote, such as collecting fees, closing a position, or setting up automation or Auto-exit.'),
       ],
     },
   ],
@@ -181,7 +181,7 @@ export const WALLET_REQUESTS: DocPage = {
       id: 'signatures',
       title: 'Signatures',
       blocks: [
-        p('Some steps are a signature instead of a transaction. ', b('Sign the deposit'), ' signs one message that carries the whole plan, valid for 5 minutes; the transaction after it uses it. An exit order is a signature too: see ', doc('Stop-loss / take-profit', 'stop-loss'), '.'),
+        p('Some steps are a signature instead of a transaction. ', b('Sign the deposit'), ' signs one message that carries the whole plan, valid for 5 minutes; the transaction after it uses it. Turning on Auto-exit is a signature too: see ', doc('Auto-exit', 'auto-exit'), '.'),
         p('A signature does only what it says, and only until it expires. If the transaction that used one fails, Domino offers ', b('Cancel the signature'), ' before a new quote.'),
       ],
     },

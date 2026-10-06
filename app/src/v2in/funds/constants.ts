@@ -45,6 +45,39 @@ export const FUNDS_DESTINATION_GAS_DEFAULT_ON = false
 
 /** After a quote passes its deadline the offer asks for a new one by itself, at most this many times in a row. */
 export const FUNDS_AUTO_REQUOTES = 3
+
+/**
+ * Added 2026-10-06 (the owner's point 2b: a US$16 position asked for US$270): the amount brought is sized from the
+ * service's own quote, so its guaranteed minimum covers what the position lacks. The first quote asks for the need in the
+ * token sent (by decimals for the same kind; at the USD prices Domino's service read, for another kind) plus this much
+ * (Domino's 0.35%, the bridge's own fee and the 0.5% slippage, with room); when its minimum falls short, or its rate says
+ * much less would do, one more quote asks for the need at the first one's rate, plus 1% (model.ts sizeStep,
+ * sizeFromQuote). At most two quotes per choice: the service's quote budget is shared by every visitor.
+ */
+export const FUNDS_FIRST_GUESS_ROOM_BPS = 200
+
+/**
+ * Added 2026-10-06 (the review of 2026-10-06: a US$100 position offered to bring 0.4995 ETH): a first quote that covers
+ * the need while its own rate says this much less would too (a first ask of everything held, for another kind of token
+ * with no price read; a price that was off) is asked once more, smaller (model.ts sizeStep).
+ */
+export const FUNDS_SIZE_SLACK_BPS = 300
+
+/**
+ * Added 2026-10-06 (the owner's point 4: no "Get a quote" button): a change under "Change amount" asks for a new quote by
+ * itself, once the person stops typing for this long. Changed on purpose 2026-10-06 (the review of 2026-10-06): every
+ * quote the page asks counts (a one click's two, a re-size, "Get gas", a change, a new one past the deadline), and none is
+ * asked past FUNDS_TYPED_QUOTES_PER_MINUTE in a minute (the crosschain service runs one quote budget per provider for
+ * every visitor: backend/crosschain_config.py).
+ */
+export const FUNDS_TYPED_QUOTE_DEBOUNCE_MS = 900
+export const FUNDS_TYPED_QUOTES_PER_MINUTE = 6
+
+/**
+ * Added 2026-10-06 (the owner's point 1): a holding the read values below this many US dollars is too little to bring
+ * (about a bridge's own minimum), so the discreet line before an amount does not name it.
+ */
+export const FUNDS_LINE_MIN_USD = 1
 /** How often a sent step's receipt is read while waiting for it. */
 export const FUNDS_RECEIPT_POLL_MS = 3_000
 /** How long the deposit's receipt is watched for "Finalized" once included; past it the step stays "Included". */

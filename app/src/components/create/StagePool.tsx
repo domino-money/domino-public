@@ -10,9 +10,10 @@ import { TokenMarkPair } from '../TokenIcon'
 import { Button, Chip } from '../ui'
 
 /**
- * The chosen pool: its pair and fee, with where it was verified in the chip's
- * title rather than a line under the name. The same panel whichever way the
- * pool came: from the list, or from a pool page's link.
+ * The chosen pool: its pair and fee. The same panel whichever way the pool
+ * came: from the list, or from a pool page's link. Changed on purpose
+ * 2026-10-06 (the owner's point 4: nothing technical in the way): the fee
+ * chip no longer carries the block the pool was verified at as its title.
  *
  * There is no choice of what to deposit here. A position holds both of the
  * pool's currencies, so the amount step shows a row for each and the token an
@@ -36,7 +37,7 @@ export function ChosenPool({ option, onChange, network = null }: { option: PoolO
             {/* 2026-10-05 (New position on Base and Arbitrum One): the pool's network, once other networks are offered. */}
             {network !== null && <Chip data-chain-chip={option.currencies[0].chainId}>{network}</Chip>}
             {/* Changed on purpose (round 6, 2026-09-27): the fee in plain words, "0.30% fee"; Uniswap is every pool's. */}
-            <Chip title={CREATE.pool.verifiedAt(option.block)}>{CREATE.pool.fee(option.fee)}</Chip>
+            <Chip>{CREATE.pool.fee(option.fee)}</Chip>
           </p>
         </div>
         <Button type="button" variant="ghost" size="sm" onClick={onChange}>

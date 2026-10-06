@@ -153,19 +153,49 @@
   .dm-flow-pool-rows > li:nth-child(3) { animation-delay: calc(var(--stagger) * 2); }
   .dm-flow-pool-rows > li:nth-child(4) { animation-delay: calc(var(--stagger) * 3); }
   .dm-flow-pool-rows > li:nth-child(n + 5) { animation-delay: calc(var(--stagger) * 4); }
-  [data-picker-variant="create"] .dm-mkt-option { display: grid; grid-template-columns: minmax(0, 1fr) 17.5rem; align-items: center; column-gap: 1rem; min-height: 4rem; padding: 0 1rem 0 0; border-radius: var(--radius); background: transparent; box-shadow: none; transition: background-color 100ms ease-in-out, box-shadow 100ms ease-in-out; }
+  /* Changed on purpose 2026-10-06 (the review of the next update: from 900 to 1023 px, and on a tablet held wide, the
+     list sits beside the preview at a phone's width, and its chips lay over the figures): a row follows its list's width,
+     not the screen's. A list no wider than 34rem stacks its rows as a phone does (the figures under the pair, the fee chip
+     in the corner); a wider one keeps the figures beside the pair. */
+  [data-picker="pool"][data-picker-variant="create"] { container: dm-pools / inline-size; }
+  /* Changed on purpose 2026-10-06 (the review of the next update: "Robinhood Chain" and the fee chip, side by side under
+     the pair, ran 18px past the pair's column at 1280): the pair's column takes the room the TVL column and the gap
+     before it left empty (each figure is set right, so none moves): the gap 1rem to 0.25rem, the TVL column 5.5rem to
+     4.5rem, still wider than "$999.9K". */
+  [data-picker-variant="create"] .dm-mkt-option { display: grid; grid-template-columns: minmax(0, 1fr) 16.5rem; align-items: center; column-gap: 0.25rem; min-height: 4rem; padding: 0 1rem 0 0; border-radius: var(--radius); background: transparent; box-shadow: none; transition: background-color 100ms ease-in-out, box-shadow 100ms ease-in-out; }
   [data-picker-variant="create"] li.dm-mkt-option:hover { background: var(--row-hover); }
   [data-picker-variant="create"] .dm-mkt-option:has(input:checked) { background: var(--primary-wash); box-shadow: inset 0 0 0 2px var(--primary-line); }
   [data-picker-variant="create"] .dm-mkt-option-head { min-height: 4rem; gap: 0.75rem; padding: 0 0 0 1rem; border-radius: var(--radius); background: none; }
   [data-picker-variant="create"] .dm-mkt-option-head:hover { background: none; }
   .dm-flow-pool-id { display: grid; flex: 0 1 auto; gap: 2px; min-width: 0; text-align: left; }
-  .dm-flow-pool-pair { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
-  /* 2026-10-05: a pool's network (New position on Base and Arbitrum One), a small chip under its pair. */
-  .dm-flow-pool-net { justify-self: start; }
+  /* Changed on purpose 2026-10-06 (the owner's point 3: "VIRTUAL /…" cut on a narrow row): the pair wraps onto a second
+     line between its symbols rather than losing its quote; each symbol keeps its own cut (SymbolText): 24 characters, or
+     the pair's width where that is narrower, so a long symbol ends in "…" instead of being clipped mid-letter (the
+     !important: SymbolText's 24ch is a utility, which wins over this layer). */
+  .dm-flow-pool-pair { overflow: hidden; font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-flow-pool-pair bdi { max-width: min(24ch, 100%) !important; }
+  /* 2026-10-05: a pool's network (New position on Base and Arbitrum One), a small chip under its pair. Changed on purpose
+     2026-10-06 (the review of the next update: a Base row read "VIRTUAL /", "WETH", "Base" at 1280, one line on a phone):
+     the fee chip sits beside it on that line, as the chosen pool's do, so the pair has the row's whole width; where the
+     two do not fit side by side the fee chip goes under the network's, never past the row (PoolRow's .dm-flow-pool-chips).
+     A row without a network chip is as it was. */
+  .dm-flow-pool-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0.375rem; min-width: 0; }
   /* The fee is a fee-tier chip, as in every table and list (§3.4): radius 8 on surface-3. */
   /* Changed on purpose (round 6, 2026-09-27): the row names its pair and fee only, one line, so the chip centres on it. */
-  [data-picker-variant="create"] .dm-mkt-option-head > .dm-chip { align-self: center; margin-top: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-muted); }
-  .dm-mkt-option-figures.dm-flow-pool-figures { display: grid; grid-template-columns: 5.5rem 6rem 6rem; gap: 0; padding: 0; }
+  [data-picker-variant="create"] .dm-mkt-option-head > .dm-chip,
+  [data-picker-variant="create"] .dm-flow-pool-chips > [data-fee] { align-self: center; margin-top: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-muted); }
+  /* A desktop row's pair column was narrow (65px at 1280): "ETH / USDG" missed it by under half a pixel, which the one cut
+     line hid and a wrap would show as two lines. The pair may take a hair of the gap before the fee chip first (a width
+     the column's own size never counts, so nothing else moves): a pair that fit before stays on one line, and only one
+     that was cut wraps. Since 2026-10-06 (the same review) this holds where the figures sit beside the pair, and there
+     the network chip has the fee chip's look. */
+  @media (min-width: 768px) {
+    @container dm-pools (width > 34rem) {
+      [data-picker-variant="create"] .dm-flow-pool-pair { width: calc(100% + 0.25rem); }
+      [data-picker-variant="create"] .dm-flow-pool-net { border-radius: var(--radius-sm); background: var(--surface-3); }
+    }
+  }
+  .dm-mkt-option-figures.dm-flow-pool-figures { display: grid; grid-template-columns: 4.5rem 6rem 6rem; gap: 0; padding: 0; }
   .dm-flow-pool-figures > * { min-width: 0; text-align: right; }
   .dm-flow-pool-figures > [data-provider-figure] { gap: 0 !important; }
   .dm-flow-pool-figures > [data-provider-figure] > div { flex-direction: column; flex-wrap: nowrap !important; align-items: flex-end !important; gap: 2px !important; }
@@ -177,11 +207,26 @@
   /* The APR is yield, so it takes the in-the-money ink (§2.4); a dash keeps its own. */
   .dm-flow-pool-figures > .dm-mkt-option-apr[data-row-apr="estimate"] > span:last-child,
   .dm-flow-pool-figures > .dm-mkt-option-apr[data-row-apr="stale"] > span:last-child { color: var(--money-in) !important; }
+  /* A phone's rows, and (2026-10-06, the same review) the rows of a list as narrow as a phone's: the two blocks are one
+     layout and change together. */
   @media (max-width: 767px) {
     [data-picker-variant="create"] .dm-mkt-option { position: relative; grid-template-columns: minmax(0, 1fr); row-gap: 0; min-height: 0; padding: 0 0.75rem 0.625rem 0; }
     [data-picker-variant="create"] .dm-mkt-option-head { min-height: 3rem; padding-left: 0.75rem; }
     /* The fee chip sits in the row's corner, and the pair's name makes room for it. */
-    [data-picker-variant="create"] .dm-mkt-option-head > .dm-chip { position: absolute; top: 0.625rem; right: 0.75rem; margin: 0; }
+    [data-picker-variant="create"] .dm-mkt-option-head > .dm-chip,
+    [data-picker-variant="create"] .dm-flow-pool-chips > [data-fee] { position: absolute; top: 0.625rem; right: 0.75rem; margin: 0; }
+    [data-picker-variant="create"] .dm-flow-pool-id { flex: 1 1 auto; }
+    [data-picker-variant="create"] .dm-flow-pool-pair { padding-right: 4.75rem; }
+    .dm-mkt-option-figures.dm-flow-pool-figures { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 0.5rem; padding-left: 2.625rem; }
+    .dm-flow-pool-figures > * { text-align: left; }
+    .dm-flow-pool-figures > [data-provider-figure] > div,
+    .dm-flow-pool-figures > .dm-mkt-option-apr { align-items: flex-start !important; }
+  }
+  @container dm-pools (width <= 34rem) {
+    [data-picker-variant="create"] .dm-mkt-option { position: relative; grid-template-columns: minmax(0, 1fr); row-gap: 0; min-height: 0; padding: 0 0.75rem 0.625rem 0; }
+    [data-picker-variant="create"] .dm-mkt-option-head { min-height: 3rem; padding-left: 0.75rem; }
+    [data-picker-variant="create"] .dm-mkt-option-head > .dm-chip,
+    [data-picker-variant="create"] .dm-flow-pool-chips > [data-fee] { position: absolute; top: 0.625rem; right: 0.75rem; margin: 0; }
     [data-picker-variant="create"] .dm-flow-pool-id { flex: 1 1 auto; }
     [data-picker-variant="create"] .dm-flow-pool-pair { padding-right: 4.75rem; }
     .dm-mkt-option-figures.dm-flow-pool-figures { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 0.5rem; padding-left: 2.625rem; }
@@ -312,7 +357,7 @@
   .dm-np .dm-flow-headline-range { display: none; }
 
   /* Lines that appear only when there is something to say: a range that does not hold the price, a slippage
-     above 1%, a wallet that does not cover the deposit. The dot is always the neutral one. */
+     above 2%, a wallet that does not cover the deposit. The dot is always the neutral one. */
   .dm-flow-position, .dm-flow-short { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
   .dm-flow-position::before, .dm-flow-short::before { content: ''; flex-shrink: 0; width: 0.375rem; height: 0.375rem; margin-top: 0.375rem; border-radius: var(--radius-pill); background: var(--fg-faint); }
   /* A wallet that cannot cover the amount (audit E9, 2026-10-01) is a warning, not a note: the text in full ink and the

@@ -25,6 +25,11 @@ export interface WalletStep {
   batch?: BatchClient<unknown>
   /** A signature through the client's own signer. */
   sign?: () => Promise<unknown>
+  /**
+   * The contract this step talks to, for its failure's words, when it is not the run's (Added 2026-10-06, the owner's
+   * point 5: Auto-exit's one run holds the vault's approval and creation beside the module's registration).
+   */
+  context?: 'vault' | 'autoExit'
 }
 
 export interface StepOutcome {
@@ -66,7 +71,8 @@ export function useStepsRun({ session, steps, context, labels, onStepDone, onAll
   labels: ErrorLabels
   onStepDone?: (outcome: StepOutcome) => void
   onAllDone?: (outcomes: readonly StepOutcome[]) => void
-  onError?: (error: ErrorView, raw: unknown) => boolean
+  /** `at`: the step that failed, by its place in the list and its key (Added 2026-10-06: a later step found unnecessary is the caller's to call done). */
+  onError?: (error: ErrorView, raw: unknown, at: { index: number; key: string }) => boolean
   done?: readonly string[]
 }): StepsRun {
   const start = (list: readonly WalletStep[]): StepPhase[] => list.map((step) => (before.includes(step.key) ? { phase: 'signed' } : IDLE))
@@ -150,8 +156,8 @@ export function useStepsRun({ session, steps, context, labels, onStepDone, onAll
           receipt = await runOne(index, step, alive, set)
         } catch (error) {
           if (!alive()) return
-          const view = describeError(error, context, labels)
-          if (onError?.(view, error)) {
+          const view = describeError(error, step.context ?? context, labels)
+          if (onError?.(view, error, { index, key: step.key })) {
             set(IDLE)
             return
           }

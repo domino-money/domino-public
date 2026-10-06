@@ -86,14 +86,20 @@ export function shortAddress(address: string): string {
   return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
 }
 
-/** One sentence for the current state, used by the dialog and the live region. */
-export function describe(view: View): string {
+/**
+ * One sentence for the current state, used by the dialog and the live region. `away` is the snapshot's: the session held
+ * while the wallet is on another network Domino uses or brings funds from (session/machine.ts heldAway).
+ */
+export function describe(view: View, away = false): string {
   switch (view.status) {
     case 'starting':
       return 'Looking for your wallet…'
     case 'no_wallet':
       return ''
     case 'wrong_network':
+      // Changed on purpose 2026-10-06 (the review of the next update): a session held there is signed in, and Domino works
+      // there too (Base, Arbitrum One, a deposit's network), so nothing asks to switch to Robinhood Chain.
+      if (away) return `Signed in. Your wallet is on ${networkName(view.chainId)}.`
       // Changed on purpose 2026-10-01 (audit E6): the network by its name, never its number, and what Domino needs.
       return `Your wallet is on ${networkName(view.chainId)}. Domino works on Robinhood Chain. Switch to continue.`
     case 'checking':
@@ -116,6 +122,6 @@ export function describe(view: View): string {
 }
 
 /** What the header's live region says. Silent while the wallet is still being found. */
-export function announcement({ view }: Snapshot): string {
-  return view.status === 'starting' ? '' : describe(view)
+export function announcement({ view, away }: Snapshot): string {
+  return view.status === 'starting' ? '' : describe(view, away)
 }

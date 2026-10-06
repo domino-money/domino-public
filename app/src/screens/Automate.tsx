@@ -14,8 +14,9 @@ import { recovering } from '../lib/staleRelease'
 
 const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSProperties
 
-// Domino V2 (integration, 2026-10-02): the vault's Protection only beside the plain position, only in a build that carries
-// V2 (the define is false in both deployable builds, so this is null there and nothing of it is bundled).
+// Domino V2 (integration, 2026-10-02): Auto-exit (the owner's point 5, 2026-10-06; once "Protection only") beside the plain
+// position, only in a build that carries V2 (production and development do since 2026-10-05; a build without it has this
+// null, and nothing of it is bundled).
 const V2Protection = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/automate/AutomateProtection'), () => ({ default: () => null }))) : null
 
 /** One way to put fees to work: a moving picture, what it does, what it costs and where it starts. */
@@ -111,7 +112,9 @@ export function Automate() {
       <PageHeader
         className="animate-rise"
         title="Automate"
-        description="Choose how to use your earned fees."
+        // Changed on purpose 2026-10-06 (the integration review, ux #9): beside Auto-exit, which is not about fees, the
+        // words Set up automation's own lede uses (screens/Sequence.tsx); a build without V2 keeps the fees' words.
+        description={V2Protection ? 'Choose what Domino does for your position.' : 'Choose how to use your earned fees.'}
       />
 
       {V2Protection ? (

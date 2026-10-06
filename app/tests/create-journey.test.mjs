@@ -231,8 +231,11 @@ test('the retired single-token balance line left no copy behind', () => {
   for (const key of ['balanceFromListing', 'balanceReading', 'balanceWaiting', 'balanceNotReturned',
     'balanceInvalidAddress', 'balanceRaw', 'balanceZero', 'balanceUnreadable', 'balanceNoDecimals', 'balanceFailed'])
     assert.equal(CREATE.amount[key], undefined, key);
-  for (const key of ['maxLabel', 'connectForBalance', 'balanceAt', 'balanceNote'])
+  for (const key of ['maxLabel', 'connectForBalance', 'balanceAt'])
     assert.notEqual(CREATE.amount[key], undefined, `${key} is still drawn by PairedAmounts.tsx`);
+  // Changed on purpose 2026-10-06 (the owner's point 4): the balance line's tooltip went, and its words with it.
+  assert.equal(CREATE.amount.balanceNote, undefined);
+  assert.doesNotMatch(readFileSync(new URL('../src/components/create/PairedAmounts.tsx', import.meta.url), 'utf8'), /dm-flow-balance-line" title=/);
 });
 
 test('slippage is a whole number of basis points inside the product’s bound: 10 to 500, 0.1% to 5%', () => {
@@ -259,9 +262,17 @@ test('the bound, its presets, default and warning line are one set of numbers, a
   assert.equal(slippage.SLIPPAGE_MARKS, slippage.SLIPPAGE_PRESETS, 'the marks on the track are the presets');
   assert.equal(slippage.SLIPPAGE_DEFAULT_BPS, 50);
   assert.equal(journey.DEFAULT_SLIPPAGE_BPS, '50', 'the journey starts at the default');
-  assert.equal(slippage.SLIPPAGE_WARN_ABOVE_BPS, 100);
-  assert.equal(slippage.slippageWarns(100), false, '1% itself is not warned about');
-  assert.equal(slippage.slippageWarns(105), true);
+  // Changed on purpose 2026-10-06 (the owner's point 4: one rule everywhere): the spec's 2% (F7 §2.9, decision #2), as
+  // Domino V2's journey and position dialogs warn.
+  assert.equal(slippage.SLIPPAGE_WARN_ABOVE_BPS, 200);
+  assert.equal(slippage.slippageWarns(200), false, '2% itself is not warned about');
+  assert.equal(slippage.slippageWarns(205), true);
+  assert.equal(slippage.slippageWarns(150), false, '1.5% is no longer warned about');
+  const v2Journey = require('../.test-build/app/src/v2in/journey/constants.js');
+  const v2Position = require('../.test-build/app/src/v2in/position/constants.js');
+  assert.deepEqual([v2Journey.JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS, v2Position.POSITION_SLIPPAGE_WARN_ABOVE_BPS], [slippage.SLIPPAGE_WARN_ABOVE_BPS, slippage.SLIPPAGE_WARN_ABOVE_BPS], 'one line everywhere');
+  assert.equal(CREATE.amount.slippageWarning, v2Journey.JOURNEY_HIGH_SLIPPAGE_COPY, 'and one sentence (decision #29)');
+  assert.equal(CREATE.amount.slippageWarning, v2Position.HIGH_SLIPPAGE_COPY);
   for (const text of ['10', '250', '500']) assert.equal(slippage.slippageBpsFrom(text), Number(text), text);
   for (const text of ['9', '501', '0', '05', '5.0', '', '+50']) assert.equal(slippage.slippageBpsFrom(text), null, text);
   // The backend's request models and the generated contracts check exactly these ends (backend/onboarding_models.py, Slippage).
@@ -329,30 +340,28 @@ test('the thumb settles on a mark only when it is let go beside one', () => {
 
 // Changed on purpose (round 6, 2026-09-27, the owner: the technical parts of New position go in a collapsed Advanced):
 // the slider, its presets and its exact box are under the amount step's Advanced, closed, with the tolerance in its
-// summary (it opens by itself only when the tolerance is already above 1%); Review says the tolerance under its closed
-// Details, and the done Amount row says the amounts instead.
+// summary (it opens by itself only when the tolerance is already above 2%, since 2026-10-06); Review says the tolerance
+// under its closed Details, and the done Amount row says the amounts instead.
 test('the amount step chooses slippage by a preset, by dragging or by an exact percent, under a closed Advanced, and the choice is shown again in Review', () => {
   const stage = readFileSync(new URL('../src/components/create/StageAmount.tsx', import.meta.url), 'utf8');
   const slider = readFileSync(new URL('../src/components/create/SlippageSlider.tsx', import.meta.url), 'utf8');
   assert.match(stage, /<details className="dm-details dm-flow-advanced" data-flow-advanced="" open=\{opened \|\| undefined\}>/, 'the slider is behind Advanced');
-  assert.match(stage, /const \[opened\] = useState\(\(\) => slippageWarns\(value\)\)/, 'open by itself only above 1%, read once');
+  assert.match(stage, /const \[opened\] = useState\(\(\) => slippageWarns\(value\)\)/, 'open by itself only above 2%, read once');
   assert.match(stage, /\{CREATE\.amount\.slippageLabel\} \{slippageWritten\(value\)\}/, 'the summary says the tolerance');
   assert.match(stage, /<SlippageSlider/);
   assert.match(slider, /type="range"/, 'a real range input: the keyboard, touch and assistive technology all work');
   assert.match(slider, /aria-valuetext/, 'the position says nothing out loud, so the percentage does');
   assert.match(slider, /<SlippagePresets/, 'the presets are buttons on the step');
-  assert.match(slider, /data-slippage-warning/, 'above 1% the step says what that allows');
+  assert.match(slider, /data-slippage-warning/, 'above 2% the step warns');
   const presets = readFileSync(new URL('../src/components/create/SlippagePresets.tsx', import.meta.url), 'utf8');
   assert.match(presets, /aria-pressed=\{preset === value\}/, 'toggle buttons: a value between the presets leaves none pressed');
   const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
   assert.match(review, /<details className="dm-details dm-flow-advanced" data-review-details="">[\s\S]*data-review-slippage=/, 'Review shows the tolerance under its Details before the wallet is asked for anything');
-  assert.match(review, /data-review-slippage-warning/, 'and says, in view, what more than 1% allows');
-  // Changed on purpose (2026-09-28, round 6 review): with the tolerance inside Review's closed Details, Review's warning
-  // names what the figure is and where it is changed; the amount step keeps its own wording beside its slider.
-  assert.match(review, /CREATE\.review\.slippageWarning\(slippageWritten\(slippage\.bps\)\)/);
-  assert.doesNotMatch(review, /CREATE\.amount\.slippageWarning/);
-  assert.equal(CREATE.review.slippageWarning('3%'),
-    'You let prices move up to 3% (Amount › Advanced), more than the usual 1%. The deposit can take up to 3% more of each token, and a swap can return 3% less.');
+  assert.match(review, /data-review-slippage-warning/, 'and warns, in view, above 2%');
+  // Changed on purpose 2026-10-06 (the owner's point 4: one rule everywhere): the step, Setup and Review warn in the
+  // spec's one line (decision #29), not each in its own sentence.
+  assert.match(review, /\{CREATE\.amount\.slippageWarning\}/);
+  assert.equal(CREATE.review.slippageWarning, undefined);
   const rail = readFileSync(new URL('../src/components/create/StepList.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(rail, /summary\.slippage\(/, 'the done Amount row says the amounts, not the tolerance');
   assert.equal(CREATE.review.slippage('0.5%'), 'Slippage tolerance 0.5%');
@@ -370,7 +379,7 @@ test('the amount step chooses slippage by a preset, by dragging or by an exact p
   for (const [name, text] of [['Setup.tsx', setup], ['AdvancedSetup.tsx', advanced], ['finance/setup.ts', finance], ['onboarding/inputs.ts', readFileSync(new URL('../src/onboarding/inputs.ts', import.meta.url), 'utf8')], ['onboarding/swap.ts', readFileSync(new URL('../src/onboarding/swap.ts', import.meta.url), 'utf8')]]) {
     assert.doesNotMatch(text, /9999|slippageBps > 1000|\b1000 basis/, `${name} applies the product’s bound, not the provider’s`);
   }
-  assert.match(CREATE.amount.slippageWarning('2%'), /^2% is more than the usual 1%\. The deposit can take up to 2% more of each token/);
+  assert.equal(CREATE.amount.slippageWarning, 'High slippage: you may receive noticeably less than quoted.');
   assert.equal(CREATE.amount.advanced, 'Advanced');
   // The basis-point field's string is gone with it.
   assert.equal(CREATE.amount.slippageValue, undefined);
@@ -552,7 +561,9 @@ test('Review ends on Create position, made in place: no hand-off to Setup, and t
   const next = readFileSync(new URL('../src/components/create/CreatedNext.tsx', import.meta.url), 'utf8');
   assert.match(next, /positionHref\(tokenId\)/, 'the position’s own page (screens/PositionDetail.tsx)');
   assert.match(next, /sequenceHref\(tokenId, key\)/, 'or the automation page with this position and the mode chosen');
-  assert.match(review, /\{created && <CreatedNext tokenId=\{created\} \/>\}/);
+  // Changed on purpose 2026-10-06 (the owner's point 5): the journey that made it goes along, for Auto-exit's
+  // recommendation (a range beside today's price).
+  assert.match(review, /\{created && <CreatedNext tokenId=\{created\} state=\{state\} \/>\}/);
   // Review of 2026-09-24: the success is not a dead end. New position's own link starts a fresh flow (NewPosition.tsx keys
   // the journey, anew once a position was created), and a done step still reopens: the steps are locked only while
   // Create position is asking the wallet.
@@ -823,6 +834,30 @@ test('the pool id in the link is untrusted: exactly a pool id or nothing, verifi
   const withAddresses = SELECTED_POOL_CATALOGUE.find((entry) => entry.addresses);
   assert.equal(journey.verificationToken(journey.preselectFrom(withAddresses.poolId)), withAddresses.addresses[1]);
   assert.equal(journey.USDG, '0x5fc5360d0400a0fd4f2af552add042d716f1d168');
+});
+
+// Added 2026-10-06 (the owner's point 4: little text, for someone who knows nothing about pools; his screens, words
+// only): each step's lead, each width's line, the range-out line and the total's note are one short line; the line under
+// the amounts says what Domino swaps; the chosen pool's chip and the balance line carry no technical tooltip.
+test('steps 1 to 3 speak in short lines, and say what Domino swaps in one sentence', () => {
+  const words = (text) => text.split(/\s+/).length;
+  for (const key of ['pool', 'range', 'amount', 'review']) assert.ok(words(CREATE.step[key].lead) <= 10, `${key}: ${CREATE.step[key].lead}`);
+  assert.equal(CREATE.step.pool.lead, 'Search a token, then pick a pool.');
+  assert.equal(CREATE.step.amount.lead, 'Enter one amount; the other fills in.');
+  assert.equal(CREATE.step.amount.leadOne('ETH'), 'This range takes only ETH. Enter an amount.', 'a range beside the price says it takes one token, where the amount is typed');
+  for (const line of [...Object.values(CREATE.amount.widthLines), ...Object.values(CREATE.amount.rangeOut), CREATE.amount.totalNote, CREATE.amount.totalOneNote, CREATE.amount.totalSwapNote]) {
+    assert.ok(words(line) <= 10, line);
+  }
+  assert.deepEqual(CREATE.amount.rangeOut, { below: 'No fees until the price rises into this range.', above: 'No fees until the price falls into this range.' });
+  // Network fees are paid in ETH on top, never taken from the position: "extra", not something the total is "before".
+  assert.deepEqual([CREATE.amount.totalNote, CREATE.amount.totalOneNote, CREATE.amount.totalSwapNote], ['Network fees are extra.', 'Network fees are extra.', 'After the swap; network fees are extra.']);
+  // Each width keeps its trade-off: the wider window is never simply better.
+  assert.deepEqual(CREATE.amount.widthLines, { standard: 'A smaller window: the price can leave it sooner.', wide: 'A larger window: more room to move, fees spread thinner.', custom: 'Set your own lowest and highest price.' });
+  const paired = readFileSync(new URL('../src/components/create/PairedAmounts.tsx', import.meta.url), 'utf8');
+  assert.equal((paired.match(/Domino swaps /g) ?? []).length, 3, 'each of the three swap lines says what Domino swaps');
+  assert.doesNotMatch(paired, /You don’t have enough|when you create the position/, 'the long sentences are gone');
+  assert.equal(CREATE.pool.verifiedAt, undefined);
+  assert.doesNotMatch(readFileSync(new URL('../src/components/create/StagePool.tsx', import.meta.url), 'utf8'), /title=\{CREATE\.pool/);
 });
 
 test('the copy never promises, never names a sample or a fixture, and never links anywhere', () => {

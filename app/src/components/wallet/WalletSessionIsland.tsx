@@ -73,7 +73,8 @@ function WalletControl() {
     label = (
       <>
         <span aria-hidden="true" className="dm-wallet-disc" style={{ '--mark-h': 200 + (tokenHue(identity.address) % 120) } as CSSProperties} />
-        <span className="sr-only">{view.status === 'signed_in' ? 'Signed in as ' : 'Connected wallet '}</span>
+        {/* Changed on purpose 2026-10-06: a session held on another network (session.away) is signed in there too. */}
+        <span className="sr-only">{view.status === 'signed_in' || session.away ? 'Signed in as ' : 'Connected wallet '}</span>
         <span className="tnum font-mono text-[0.8125rem] tracking-normal">{shortAddress(identity.address)}</span>
         <IconChevronDown size={14} className="text-fg-subtle" />
       </>

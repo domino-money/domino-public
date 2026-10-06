@@ -4,7 +4,8 @@ import { cx } from '../ui'
 
 /*
  * Domino's feature vignettes (DESIGN.md F.2 to F.4): small looping drawings
- * of what automation does with earned fees, and of who holds the position.
+ * of what automation does with earned fees, and of Auto-exit closing a
+ * position at its range's edge (2026-10-06, in Non-custodial's place).
  * Each one is only shapes: no text, no digits, no title, no image and no
  * colour literal (every colour is a token in art.css). A tile always stands on
  * an edge; nothing is drawn behind a tile, and no tile uses the brand mark's
@@ -94,7 +95,7 @@ export function ArtTile({ w, layout, parts = 'solid' }: { w: number; layout: rea
 }
 
 function Frame({ kind, className, live, still = false, svgRef, children }: {
-  kind: 'compound' | 'seq' | 'wallet'
+  kind: 'compound' | 'seq' | 'exit'
   className?: string
   live: boolean
   still?: boolean
@@ -238,39 +239,75 @@ export function SequenceFrame({ className }: { className?: string }) {
   )
 }
 
-/** The signature stroke's outline: about 3 wide at the wallet, tapering to 1.6 at the range, never to a point. */
-const SWASH = 'M 116 98.4 C 146 89.4, 172 135.2, 202 122.2 L 202 123.8 C 172 136.8, 146 94.6, 116 101.6 Z'
-/** The stroke's centre line, which the highlight is traced along. */
-const TRACE = 'M 121 100 C 146 92, 172 136, 200 123'
+/** Auto-exit's price, inside the range until it reaches the range's top edge at (198, 104) (also the moving tip's offset-path in art.css). */
+const EXIT_PRICE = 'M 40 138 L 58 133 L 76 138 L 96 129 L 114 133 L 134 123 L 152 127 L 168 117 L 184 112 L 198 104'
+/** The tokens' hop from the edge to the wallet's pocket (also the drops' offset-path in art.css). */
+const EXIT_HOP = 'M 202 98 C 216 66, 262 60, 283 99'
 
 /**
- * Non-custodial: the owner's wallet signs, and one stroke carries that control,
- * one way only, to the position: its tile standing on its range. Once a cycle
- * the wallet's seal rings, a highlight writes along the stroke, the range's
- * edge lights and the tile answers; then a long rest. Nothing travels back,
- * and there is no badge: nothing here verifies who controls a wallet.
+ * Auto-exit (Added 2026-10-06, the owner's point 5; rugged97: "when the price hits the edge of the range we close the
+ * position automatically and send the tokens to the wallet"): the price climbs inside the range; at its top edge the
+ * tip's ring pulses, the range empties, two drops (the two tokens) hop to the wallet and settle in its pocket, and the
+ * wallet's pocket answers. The position's tile stays standing on its range (its NFT stays in the wallet). The resting
+ * picture is the end of the story: the price at the edge, the range empty, the tokens in the wallet.
  */
-export function VignetteWallet({ className, running }: VignetteProps) {
+export function VignetteExit({ className, running }: VignetteProps) {
   const [ref, seen] = useInView<SVGSVGElement>(0.4, running === undefined)
   return (
-    <Frame kind="wallet" className={className} live={running ?? seen} svgRef={ref}>
-      {/* Drawn first, so both ends of the stroke tuck under the wallet and the range. */}
-      <path className="swash" d={SWASH} />
-      <path className="trace" d={TRACE} pathLength={100} />
-      <g transform="translate(28 68)">
-        <rect className="wallet-card" x={10} y={-9} width={62} height={22} rx={6} />
-        <rect className="wallet-body" width={92} height={62} rx={12} />
-        <path className="wallet-pocket" d="M 92 21 H 66 A 8 8 0 0 0 58 29 V 35 A 8 8 0 0 0 66 43 H 92" />
-        <circle className="seal-ring" cx={71} cy={32} r={6} />
-        <circle className="seal" cx={71} cy={32} r={3.5} />
-      </g>
-      <rect className="band" x={200} y={104} width={92} height={38} rx={10} />
-      <rect className="band-lit" x={200} y={104} width={92} height={38} rx={10} />
-      <g transform="translate(235 65.5)">
-        <g className="pos tile-solid">
-          <ArtTile w={22} layout={[2, 3]} />
+    <Frame kind="exit" className={className} live={running ?? seen} svgRef={ref}>
+      <g className="scene">
+        <rect className="band" x={34} y={104} width={180} height={44} rx={10} />
+        <rect className="band-fill" x={34} y={104} width={180} height={44} rx={10} />
+        <line className="edge" x1={34} y1={104} x2={214} y2={104} />
+        <path className="hop" d={EXIT_HOP} />
+        <path className="price" d={EXIT_PRICE} pathLength={100} />
+        <g className="tip-rest">
+          <circle className="tip-ring" cx={198} cy={104} r={8} />
+          <circle className="tip-core" cx={198} cy={104} r={4} />
         </g>
+        <g className="tip">
+          <circle className="tip-ring" cx={0} cy={0} r={8} />
+          <circle className="tip-core" cx={0} cy={0} r={4} />
+        </g>
+        <g transform="translate(70 65.5)">
+          <g className="tile-solid">
+            <ArtTile w={22} layout={[1, 2]} />
+          </g>
+        </g>
+        <g transform="translate(232 78)">
+          <rect className="wallet-card" x={8} y={-8} width={46} height={18} rx={5} />
+          <rect className="wallet-body" width={70} height={48} rx={11} />
+          <path className="wallet-pocket" d="M 70 15 H 46 A 8 8 0 0 0 38 23 V 25 A 8 8 0 0 0 46 33 H 70" />
+          <circle className="pocket-ring" cx={55} cy={24} r={7} />
+          <circle className="coin coin-1" cx={51} cy={24} r={3.5} />
+          <circle className="coin coin-2" cx={60} cy={24} r={3.5} />
+        </g>
+        {[1, 2].map((n) => (
+          <g key={n} className={`drop drop-${n}`}>
+            <circle className="drop-dot" cx={0} cy={0} r={3.5} />
+          </g>
+        ))}
       </g>
     </Frame>
+  )
+}
+
+/**
+ * Auto-exit's still thumb for Automate's card (in the plain position's thumb's frame, components/automate/ModeArt.tsx
+ * PlainArt): the range with its tile, and the tokens' hop out of its top edge to the wallet. No motion.
+ */
+export function ExitThumb({ className }: { className?: string }) {
+  return (
+    <svg className={cx('dm-art dm-exit-thumb', className)} width="3.5rem" height="2rem" viewBox="0 0 56 32" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false">
+      <rect className="band" x={2} y={24.5} width={32} height={7} rx={3.5} />
+      <g transform="translate(9 7)">
+        <g className="tile-solid">
+          <ArtTile w={10} layout={[1, 2]} />
+        </g>
+      </g>
+      <path className="hop" d="M 33 21 C 37 9, 48 8, 51 19" />
+      <circle className="tip" cx={33} cy={24.5} r={2} />
+      <circle className="coin" cx={51} cy={24} r={2.4} />
+    </svg>
   )
 }

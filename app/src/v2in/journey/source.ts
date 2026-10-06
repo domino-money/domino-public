@@ -1,6 +1,6 @@
 import { livePlanTransport as sitePlanTransport } from '../../finance/v2/http'
 import { v2Chain } from '../../v2/chains'
-import { v2Gate, type V2Gate } from '../../v2/gate'
+import { v2Gate, type GateRoutes, type V2Gate } from '../../v2/gate'
 import { v2PageProbe } from '../transports'
 import { POSITION_PLAN_RUNTIME } from '../../v2/plan/contract'
 import type { S1PlanContext, S1PlanTransport, S1PlanValidators } from '../../v2/plan/types'
@@ -25,8 +25,29 @@ const CHAINS: readonly V2ChainId[] = [4663, 8453, 42161]
 
 /** The S1 gate of every network at the page's origin. */
 export async function journeyGates(): Promise<JourneyGates> {
-  const gates = await Promise.all(CHAINS.map((chainId) => v2Gate('s1', chainId, undefined, v2PageProbe)))
-  return Object.freeze({ 4663: gates[0], 8453: gates[1], 42161: gates[2] })
+  return (await journeyGatesRead()).gates
+}
+
+/**
+ * The S1 gates, and whether reading them again could change them (2026-10-06, the owner's point 3: Base and Arbitrum One
+ * went missing for a whole visit after one failed read): `again` when the plan route's own word could not be had for the
+ * moment (its capabilities read failed or was cut short), so every network is `preview` for now only. A route that is
+ * off, or not deployed (the preview), is a settled word: reading again would say the same.
+ */
+export async function journeyGatesRead(): Promise<{ gates: JourneyGates; again: boolean }> {
+  let again = false
+  const routes: GateRoutes = async () => {
+    const probe = await v2PageProbe()
+    return {
+      async state(route) {
+        const state = await probe.state(route)
+        if (route === 'plan' && !state.on && (state.reason === 'unavailable' || state.reason === 'aborted')) again = true
+        return state
+      },
+    }
+  }
+  const gates = await Promise.all(CHAINS.map((chainId) => v2Gate('s1', chainId, undefined, routes)))
+  return { gates: Object.freeze({ 4663: gates[0], 8453: gates[1], 42161: gates[2] }), again }
 }
 
 export const planRuntime: S1PlanValidators = POSITION_PLAN_RUNTIME

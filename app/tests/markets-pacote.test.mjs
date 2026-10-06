@@ -195,6 +195,54 @@ test('DEX Screener: the store keeps the newest figures, gives none past ten minu
   assert.equal(dex.subjectOf(['0x0000000000000000000000000000000000000000', USDG]), '0x0000000000000000000000000000000000000000', 'ETH/USDG: native ether, as the provider names it');
 });
 
+// Added 2026-10-06 (the owner's point 3: Base's and Arbitrum One's pools in New position with TVL, 24h volume and APR
+// "like Robinhood Chain"). Shapes as DEX Screener answered for VIRTUAL on Base and ARB on Arbitrum One that day: Uniswap
+// v4 pools by their 32-byte id, v3 pools by their address (labelled v3 on Base, unlabelled on Arbitrum One), other
+// exchanges beside them, one of them labelled v4 with a pair address.
+test('DEX Screener on Base and Arbitrum One (2026-10-06): Uniswap pools by their v4 id or v3 address, on that chain only; the store keeps each chain apart and asks by chain', async () => {
+  const VIRTUAL = '0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b';
+  const USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+  const WETH_BASE = '0x4200000000000000000000000000000000000006';
+  const ZERO = '0x0000000000000000000000000000000000000000';
+  const V4 = '0xaf2baac6d0437b0b16c3eb6ec7f0e9b8af1fa2b6e8d8b1d0a5fa4d4ee8fd4b0a';
+  const V3 = '0x529d2863a1521d0b57db028168fde2e97120017c';
+  const pair = (pairAddress, quote, usd, extra = {}) => ({ chainId: 'base', dexId: 'uniswap', pairAddress, baseToken: { address: VIRTUAL }, quoteToken: { address: quote }, liquidity: { usd }, volume: { h24: 1000 }, ...extra });
+  const body = [
+    pair(V4, USDC, 136159.17, { labels: ['v4'] }),
+    pair(V3.toUpperCase().replace('0X', '0x'), USDC, 939056.41),
+    pair('0x61d460db2951a3c8e9f6b1e2a2c6b1c8e1c0dbb2', WETH_BASE, 25125.67, { dexId: 'quickswap', labels: ['v4'] }),
+    pair('0x3f0296bf652e19bca772ec3df08b32732f93014a', WETH_BASE, 381753.71, { dexId: 'aerodrome' }),
+    pair(`0x${'12'.repeat(32)}`, ZERO, 10, { chainId: 'robinhood', labels: ['v4'] }),
+    pair('0x123', USDC, 1),
+  ];
+  const found = dex.dexChainPoolsFromPairs(body, 8453, NOW * 1000);
+  assert.deepEqual(found.map((p) => [p.poolId, p.base, p.quote, p.liquidityUsd, p.volume24hUsd, p.retrievedAt]), [[V4, VIRTUAL, USDC, '136159.17', '1000.00', NOW], [V3, VIRTUAL, USDC, '939056.41', '1000.00', NOW]], 'Uniswap’s pools only, by their exact name there, labelled or not');
+  assert.deepEqual(dex.dexChainPoolsFromPairs(body, 42161, NOW * 1000), [], 'Arbitrum One takes Arbitrum One’s pairs only');
+  assert.deepEqual(dex.dexChainPoolsFromPairs(body, 4663, NOW * 1000), [], 'Robinhood Chain keeps its own rule (v4 ids, dexPoolsFromPairs)');
+  assert.deepEqual(dex.dexTokenFromPairs(body, VIRTUAL, NOW * 1000, 8453), { address: VIRTUAL, liquidityUsd: 136159.17 + 939056.41 + 25125.67 + 381753.71 + 1, pools: 5, retrievedAt: NOW });
+  // The store: one chain's pools and tokens never stand for another's, and each chain is asked on its own.
+  const asked = [];
+  let at = NOW * 1000;
+  const store = dex.createDexStore(async (address, chainId) => { asked.push([address, chainId]); return null; }, () => at);
+  store.take(VIRTUAL, body, at, 8453);
+  assert.equal(store.chainPool(8453, V4).liquidityUsd, '136159.17');
+  assert.equal(store.chainPool(8453, V3.toUpperCase().replace('0X', '0x')).liquidityUsd, '939056.41');
+  assert.equal(store.chainPool(42161, V4), null);
+  assert.equal(store.pool(V4), null, 'never a Robinhood Chain pool');
+  assert.equal(store.chainToken(8453, VIRTUAL).pools, 5);
+  assert.equal(store.token(VIRTUAL), null, 'nor a Robinhood Chain token');
+  store.askOn(8453, VIRTUAL);
+  store.askOn(8453, VIRTUAL.toUpperCase().replace('0X', '0x'));
+  store.askOn(42161, VIRTUAL);
+  store.ask(VIRTUAL);
+  store.askOn(1, VIRTUAL);
+  store.askOn(8453, ZERO);
+  assert.deepEqual(asked, [[VIRTUAL, 8453], [VIRTUAL, 42161], [VIRTUAL, 4663], [ZERO, 8453]], 'once a minute per chain and token (native ETH by the zero address); a chain not covered never');
+  at += (dex.DEX_MAX_AGE_S + 1) * 1000;
+  assert.equal(store.chainPool(8453, V4), null, 'none past ten minutes');
+  assert.equal(store.chainToken(8453, VIRTUAL), null);
+});
+
 // ---------------------------------------------------------------------------
 // V2: a token's pools from both sources
 // ---------------------------------------------------------------------------

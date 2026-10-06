@@ -2,7 +2,8 @@
  * PHASE B, B1 (spec F7 §1.3): the shared V1 modules made chain-aware, with Robinhood Chain's behaviour byte-identical.
  *   - finance/nonce.ts: a journal per chain; 4663's keys are exactly V1's (the same hashed input).
  *   - finance/batch.ts: wallet_getCapabilities and wallet_sendCalls carry the action's chain; 0x1237 by default.
- *   - session/machine.ts: a session is kept across Base and Arbitrum One only in a build that carries V2.
+ *   - session/machine.ts: a session is kept across Base and Arbitrum One only in a build that carries V2 (and, since
+ *     2026-10-06, across the networks a deposit may come from).
  *   - config/chainIdentity.ts: the V2 chains' ids, equal to the V2 profiles'.
  *   - finance/v2/signatureJournal.ts and src/v2/capabilities.ts.
  */
@@ -158,10 +159,12 @@ test('a build without V2: moving to Base is an identity change, exactly as befor
 
 test('the v2-test build: the session is kept while the wallet is on Base or Arbitrum One, and back on Robinhood Chain it is read again, no signature', () => {
   const m = withV2(true, `${BUILD}session/machine.js`);
-  assert.deepEqual([...m.sessionChains('https://domino.money')], [4663, 8453, 42161]);
+  // Changed on purpose 2026-10-06 (the owner's point 2a): and every network a deposit may come from, after Domino's three.
+  assert.deepEqual([...m.sessionChains('https://domino.money')], [4663, 8453, 42161, ...m.CROSSCHAIN_ORIGIN_CHAIN_IDS]);
+  assert.deepEqual([...m.keptChains()], [4663, 99801, 8453, 42161, ...m.CROSSCHAIN_ORIGIN_CHAIN_IDS]);
   const env = { origin: ORIGIN, checksum: getAddress, chains: m.sessionChains(ORIGIN) };
   const start = signedIn(m, env);
-  for (const chainId of [8453, 42161]) {
+  for (const chainId of [8453, 42161, 1, 10]) {
     const away = then(m, env, start, { type: 'identity', identity: wallet(chainId) });
     assert.deepEqual(away.machine.view, { status: 'wrong_network', chainId }, 'Robinhood Chain\'s screens say the wallet is elsewhere');
     assert.deepEqual(routes(away.effects), [], 'no logout, nothing asked');
@@ -172,20 +175,33 @@ test('the v2-test build: the session is kept while the wallet is on Base or Arbi
     assert.equal(landed.machine.view.status, 'signed_in');
     assert.equal([...away.effects, ...back.effects, ...landed.effects].filter((e) => e.type === 'sign').length, 0, 'no signature');
   }
-  // A chain outside both lists is still an identity change.
-  const elsewhere = then(m, env, start, { type: 'identity', identity: wallet(1) });
+  // Changed on purpose 2026-10-06 (the owner's point 2a): Ethereum is a network a deposit may come from: kept (above). A
+  // chain outside every list is still an identity change.
+  const elsewhere = then(m, env, start, { type: 'identity', identity: wallet(31337) });
   assert.deepEqual(routes(elsewhere.effects), ['logout']);
+});
+
+// Added 2026-10-06 (the owner's point 2a): the networks a deposit may come from are rugged97's pins, copied as numbers into
+// the session machine (the package's pin table would put every bridge address in the page's entry).
+test('the deposit origins the session is kept across are crosschain-v1 pins as origins, less Domino’s own three', async () => {
+  const m = withV2(true, `${BUILD}session/machine.js`);
+  const { CONSTANTS } = await import(new URL('../../../api-contracts/crosschain-v1/schema-data.mjs', import.meta.url).href);
+  const pinned = Object.keys(CONSTANTS.chains).map(Number).sort((a, b) => a - b);
+  assert.deepEqual([...new Set([...identity.V2_CHAIN_IDS, ...m.CROSSCHAIN_ORIGIN_CHAIN_IDS])].sort((a, b) => a - b), pinned);
+  assert.equal(m.CROSSCHAIN_ORIGIN_CHAIN_IDS.some((id) => identity.V2_CHAIN_IDS.includes(id)), false, 'Domino’s own are V2_CHAIN_IDS');
+  assert.equal(m.CROSSCHAIN_ORIGIN_CHAIN_IDS.includes(99801), false);
 });
 
 // Added 2026-10-05 (the owner, testing a deposit from another network: "it keeps asking me to sign in"): the session held on
 // Base or Arbitrum One is usable there (session/machine.ts heldAway; the controller lends its CSRF, finance/v2/http.ts
 // counts it), for its own account only, at rest only, and only in a build that carries V2.
-test('the session held on Base or Arbitrum One is usable there; never on another chain, for another account, or in a build without V2', () => {
+test('the session held on Base or Arbitrum One, or on a deposit’s origin network, is usable there; never on another chain, for another account, or in a build without V2', () => {
   const m = withV2(true, `${BUILD}session/machine.js`);
   const env = { origin: ORIGIN, checksum: getAddress, chains: m.sessionChains(ORIGIN) };
   const start = signedIn(m, env);
   assert.equal(m.heldAway(start.machine, env), false, 'on Robinhood Chain the session is simply signed in');
-  for (const chainId of [8453, 42161]) {
+  // Changed on purpose 2026-10-06 (the owner's point 2a): Ethereum and OP Mainnet (deposit origins) too.
+  for (const chainId of [8453, 42161, 1, 10]) {
     const away = then(m, env, start, { type: 'identity', identity: wallet(chainId) });
     assert.equal(away.machine.view.status, 'wrong_network');
     assert.equal(m.heldAway(away.machine, env), true, `held on ${chainId}`);
@@ -193,8 +209,10 @@ test('the session held on Base or Arbitrum One is usable there; never on another
     assert.equal(m.heldAway({ ...away.machine, flow: { kind: 'checking' } }, env), false, 'only at rest');
     assert.equal(m.heldAway({ ...away.machine, session: { ...away.machine.session, owner: '0x' + '9'.repeat(40) } }, env), false, 'only for its own account');
   }
-  const elsewhere = then(m, env, start, { type: 'identity', identity: wallet(1) });
-  assert.equal(m.heldAway(elsewhere.machine, env), false, 'Ethereum: the session is closed');
+  const elsewhere = then(m, env, start, { type: 'identity', identity: wallet(31337) });
+  assert.equal(m.heldAway(elsewhere.machine, env), false, 'a network no deposit comes from: the session is closed');
+  const ethereum = then(m, env, start, { type: 'identity', identity: wallet(1) });
+  assert.equal(m.heldAway(ethereum.machine, { ...env, chains: [4663, 8453, 42161] }), false, 'not where the page keeps no session');
   const v1 = withV2(false, `${BUILD}session/machine.js`);
   const v1env = { origin: ORIGIN, checksum: getAddress, chains: v1.sessionChains(ORIGIN) };
   const v1start = signedIn(v1, v1env);

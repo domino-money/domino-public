@@ -219,7 +219,7 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
         </div>
         {slippage.ok && slippageWarns(slippage.bps) && (
           <p role="status" className="dm-flow-position" data-tone="neutral" data-review-slippage-warning="">
-            {CREATE.review.slippageWarning(slippageWritten(slippage.bps))}
+            {CREATE.amount.slippageWarning}
           </p>
         )}
         {/* Only when there is something to warn about, as the range step does:
@@ -425,7 +425,7 @@ export function FinalControl({ state, balances, onBusy }: { state: JourneyState;
         <Suspense fallback={<Unavailable note={CREATE.review.loading} />}>
           <Control state={state} reviewed={planFor(state, balances)} onBusy={onBusy} />
         </Suspense>
-        {created && <CreatedNext tokenId={created} />}
+        {created && <CreatedNext tokenId={created} state={state} />}
       </>
     )
   }

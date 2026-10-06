@@ -30,6 +30,13 @@ export const ROOT_CHANGE_RANGE_COPY = 'Change range isn’t available while your
 /** A successor has no action here (§8.2): the vault holds it, and the way out is on the main position's page (its vault's reserves). */
 export const SUCCESSOR_BLOCKED_COPY = "Your automation holds this position. Withdraw it from your automation on your main position's page first."
 export const REARM_COPY = 'Turn automation back on'
+/**
+ * Added 2026-10-06 (the integration review, rugged-literal #1): the root of Auto-exit's own automation, its Auto-exit on
+ * or paused, in Auto-exit's words. Its exit needs the position's approval alone, so only a step that moves that approval
+ * (the zap's, on Add liquidity on v4 or Withdraw in one token) pauses it, and approving the position again ends the pause.
+ */
+export const EXIT_PAUSE_COPY = 'This pauses Auto-exit until you approve this position again.'
+export const EXIT_REARM_COPY = 'Approve again'
 
 /** [#6] v4 pools with a hook stay refused: an existing hooked position says this on its actions (the "···" menu's heading). */
 export const HOOKED_COPY = "Pools with hooks aren't supported yet."
@@ -59,6 +66,12 @@ export const UNCONVERTED_OFFER_ABOVE_PERCENT = 10
 
 /** How often a sent step's receipt, and a batch's status, is asked again; a delay is never a failure. */
 export const RECEIPT_POLL_MS = 1_500
+
+/**
+ * App choice (2026-10-06, the review of point 5): how often the page reads the wallet's list again while it waits for a
+ * position New position just made (read-v6's index runs a few seconds behind the chain), for at most two minutes.
+ */
+export const NEW_POSITION_REREAD_MS = 3_000
 
 /** The range choices around the price now, either way, in percent (the S1 reference's). */
 export const RANGE_PRESETS: readonly { key: string; label: string; percent: number }[] = Object.freeze([

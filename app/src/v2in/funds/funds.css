@@ -2,37 +2,76 @@
   .dm-funds-offer { border: 0.0625rem solid var(--border-card); border-radius: 1rem; background: var(--card); overflow: hidden; min-width: 0; }
   .dm-funds-heading { display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem 1rem 0.75rem; }
   .dm-funds-icon { display: grid; place-items: center; flex-shrink: 0; width: 2rem; height: 2rem; border-radius: 0.625rem; color: var(--primary); background: var(--wash-strong); font-size: 1.125rem; }
-  .dm-funds-heading h4 { font-size: 0.875rem; font-weight: 600; line-height: 1.4; color: var(--fg); }
-  .dm-funds-heading p { margin-top: 0.25rem; font-size: 0.75rem; line-height: 1.5; color: var(--fg-subtle); }
-  .dm-funds-body { display: grid; gap: 1rem; padding: 0 1rem 1rem; min-width: 0; }
-  .dm-funds-body > div:first-child { padding-left: 2.75rem; }
+  .dm-funds-heading > div { display: grid; gap: 0.25rem; min-width: 0; padding-top: 0.375rem; }
+  .dm-funds-heading h4 { font-size: 0.875rem; font-weight: 600; line-height: 1.25rem; color: var(--fg); }
+  .dm-funds-heading p { font-size: 0.75rem; line-height: 1.125rem; color: var(--fg-subtle); }
+  .dm-funds-body { display: grid; gap: 0.875rem; padding: 0 1rem 1rem 3.75rem; min-width: 0; }
   .dm-funds-unavailable { font-size: 0.75rem; line-height: 1.5; color: var(--fg-muted); padding: 0.75rem; border-radius: 0.625rem; background: var(--surface-1); }
-  .dm-funds-route { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; border-block: 0.0625rem solid var(--border); padding: 0.875rem 0; color: var(--fg-muted); font-size: 0.6875rem; }
-  .dm-funds-route li { display: flex; gap: 0.375rem; align-items: center; }
-  .dm-funds-route li span { display: grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: var(--surface-3); color: var(--fg); font-size: 0.625rem; }
-  .dm-funds-private { display: grid; gap: 1rem; min-width: 0; }
-  .dm-funds-private[hidden] { display: none; }
-  .dm-funds-discovery > summary, .dm-funds-edit > summary { cursor: pointer; color: var(--fg-muted); font-size: 0.75rem; padding-block: 0.375rem; }
-  .dm-funds-discovery > summary[hidden], .dm-funds-edit > summary[hidden] { display: none; }
-  .dm-funds-discovery[open] > summary:not([hidden]), .dm-funds-edit[open] > summary:not([hidden]) { margin-bottom: 0.75rem; }
-  .dm-funds-form { display: grid; gap: 1rem; }
-  .dm-funds-candidate { padding: 1rem; min-width: 0; }
-  .dm-funds-quote-lines { margin-top: 0.75rem; display: grid; gap: 0.75rem; font-weight: 400; }
-  .dm-funds-delivery { color: var(--fg); font-size: 0.9375rem; line-height: 1.6; font-weight: 500; font-variant-numeric: tabular-nums; }
-  .dm-funds-quote-lines ul { display: grid; gap: 0.5rem; color: var(--fg-muted); font-size: 0.75rem; line-height: 1.6; }
-  .dm-funds-alternatives > div { padding-top: 0.75rem; }
-  .dm-funds-holdings, .dm-funds-found { display: grid; gap: 0.75rem; min-width: 0; }
-  .dm-funds-holdings:empty { display: none; }
-  .dm-funds-source { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.875rem; border: 0.0625rem solid var(--border); border-radius: 0.75rem; background: var(--surface-1); }
-  .dm-funds-source > div { display: grid; gap: 0.25rem; min-width: 0; }
-  .dm-funds-source strong { font-size: 0.875rem; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .dm-funds-source span { font-size: 0.6875rem; color: var(--fg-subtle); }
-  .dm-funds-source > button { flex-shrink: 0; }
-  .dm-funds-check { display: grid; gap: 0.5rem; justify-items: start; }
-  .dm-funds-check > span { max-width: 32rem; }
-  .dm-funds-status { font-size: 0.75rem; color: var(--fg-muted); display: flex; align-items: center; gap: 0.5rem; }
-  .dm-funds-status::before { content: ''; width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--primary); animation: dm-funds-breathe 1.8s ease-in-out infinite; }
+  /* Change amount: drawn as the quote's Details, just under it. */
+  .dm-funds-quote-wrap + .dm-funds-edit { margin-top: -0.5rem; }
+  .dm-funds-edit[open] > summary { margin-bottom: 0.5rem; }
+  .dm-funds-form { display: grid; gap: 1rem; min-width: 0; }
+
+  /* Added 2026-10-06 (the owner's point 1): the discreet line under the two amounts, before Advanced. A quiet row, as
+     Advanced is drawn: the token's mark with a small arrow (a token there, and it will be bridged), what is held and
+     where, and "Bring it here" in Tangerine. */
+  .dm-funds-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; width: 100%; min-height: 3rem; padding: 0.625rem 1rem; border-radius: var(--radius-lg); background: transparent; box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-muted); font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; text-align: left; cursor: pointer; transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease, box-shadow var(--dur-hover) ease; }
+  .dm-funds-line:hover { background: var(--wash); color: var(--fg); box-shadow: inset 0 0 0 1px var(--border-lip); }
+  .dm-funds-line:focus-visible { outline-offset: var(--focus-offset-inset); }
+  .dm-funds-line-mark { position: relative; display: inline-grid; flex-shrink: 0; }
+  .dm-funds-line-arrow { position: absolute; right: -0.3125rem; bottom: -0.25rem; display: grid; place-items: center; width: 0.875rem; height: 0.875rem; border-radius: var(--radius-pill); background: var(--primary); color: var(--primary-fg); font-size: 0.5625rem; font-weight: 700; line-height: 1; box-shadow: 0 0 0 2px var(--card); }
+  .dm-funds-line-text { flex: 1 1 12rem; min-width: 0; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; text-wrap: pretty; }
+  .dm-funds-line-usd { color: var(--fg-subtle); }
+  .dm-funds-line-action { margin-left: auto; color: var(--primary-ink); font-weight: 500; white-space: nowrap; }
+  .dm-funds-line-action::after { content: ' →'; }
+
+  /* The short box's networks: each button with what the service read there under it; "Other networks" as a quiet link. */
+  .dm-funds-networks { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; min-width: 0; }
+  .dm-funds-network { display: grid; justify-items: start; gap: 0.25rem; min-width: 0; }
+  .dm-funds-network > .dm-hint { margin-top: 0; }
+  .dm-funds-more { justify-self: start; padding: 0.125rem 0; background: none; color: var(--fg-muted); font-size: 0.75rem; line-height: 1rem; text-decoration: underline; text-decoration-color: var(--fg-faint); text-underline-offset: 0.1875rem; cursor: pointer; }
+  .dm-funds-more:hover:not(:disabled) { color: var(--fg); text-decoration-color: currentColor; }
+  .dm-funds-more:disabled { cursor: default; opacity: 0.6; }
+
+  /* The quote card (Changed on purpose 2026-10-06, the owner's point 4): what arrives, when, one button, one live line,
+     the discrete line; the rest in Details. */
+  .dm-funds-quote { display: grid; gap: 0.75rem; min-width: 0; }
+  .dm-funds-receive { display: grid; gap: 0.25rem; padding: 0.875rem 1rem; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-funds-delivery { color: var(--fg); font-size: 0.9375rem; line-height: 1.375rem; font-weight: 500; font-variant-numeric: lining-nums tabular-nums; overflow-wrap: anywhere; }
+  .dm-funds-eta { color: var(--fg-subtle); font-size: 0.75rem; line-height: 1rem; }
+  .dm-funds-note { color: var(--fg-muted); font-size: 0.8125rem; line-height: 1.125rem; }
+  .dm-funds-none { display: grid; gap: 0.375rem; }
+  .dm-funds-none > p { color: var(--fg); font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-funds-none > ul { display: grid; gap: 0.25rem; color: var(--fg-muted); font-size: 0.75rem; line-height: 1.125rem; }
+  .dm-funds-gas { padding: 0.625rem 0.75rem; border-radius: var(--radius); box-shadow: inset 0 0 0 1px var(--border); cursor: pointer; }
+  .dm-funds-gas-why { display: block; margin-top: 0.125rem; }
+  .dm-funds-act { display: grid; justify-items: start; gap: 0.5rem; min-width: 0; }
+  .dm-funds-act > .dm-hint, .dm-funds-act > .dm-error { margin: 0; }
+  .dm-funds-go { max-width: 100%; white-space: normal; text-align: center; }
+  .dm-funds-elsewhere { color: var(--fg-subtle); font-size: 0.6875rem; line-height: 1rem; letter-spacing: -0.08px; }
+  .dm-funds-details > summary { width: fit-content; padding-left: 0; font-size: 0.75rem; min-height: 2rem; }
+  .dm-funds-details > summary:hover { background: none; color: var(--fg); }
+  .dm-details.dm-funds-details > :not(summary) { padding: 0.25rem 0 0; }
+  .dm-funds-details-body { display: grid; gap: 0.75rem; min-width: 0; }
+  .dm-funds-candidate { display: grid; gap: 0.375rem; padding: 0.75rem; border-radius: var(--radius); background: var(--surface-1); min-width: 0; }
+  .dm-funds-candidate-name { color: var(--fg); font-size: 0.75rem; line-height: 1rem; font-weight: 600; }
+  .dm-funds-candidate > p, .dm-funds-candidate > ul { color: var(--fg-muted); font-size: 0.75rem; line-height: 1.125rem; overflow-wrap: anywhere; }
+  .dm-funds-candidate > ul { display: grid; gap: 0.25rem; }
+  .dm-funds-stale { opacity: 0.5; transition: opacity var(--dur-hover) ease; }
+
+  /* Added 2026-10-06 (the integration review): what a pick came to, with its "Sign in" beside it when that is the way on. */
+  .dm-funds-pick-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; min-width: 0; }
+  .dm-funds-pick-row > p { margin: 0; min-width: 0; }
+
+  /* A pulse beside a line that says what is happening behind the scenes (the owner: a small sign, never a blank). */
+  .dm-funds-status { font-size: 0.75rem; line-height: 1rem; color: var(--fg-muted); display: flex; align-items: center; gap: 0.5rem; }
+  .dm-funds-status::before { content: ''; flex-shrink: 0; width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--primary); animation: dm-funds-breathe 1.8s ease-in-out infinite; }
   @keyframes dm-funds-breathe { 50% { opacity: 0.35; } }
   @media (prefers-reduced-motion: reduce) { .dm-funds-status::before { animation: none; } }
-  @media (max-width: 25rem) { .dm-funds-heading { padding: 0.875rem 0.875rem 0.625rem; } .dm-funds-body { padding: 0 0.875rem 0.875rem; } .dm-funds-body > div:first-child { padding-left: 0; } .dm-funds-route { gap: 0.75rem; } }
+  @media (max-width: 25rem) {
+    .dm-funds-heading { padding: 0.875rem 0.875rem 0.625rem; }
+    .dm-funds-body { padding: 0 0.875rem 0.875rem; }
+    .dm-funds-line { padding: 0.625rem 0.75rem; }
+    .dm-funds-go { width: 100%; }
+  }
 }

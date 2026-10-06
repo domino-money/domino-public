@@ -13,8 +13,11 @@ import { ErrorLine, FlowDialog, LockedNote } from './ui'
  * `locked` (the gate's `preview`, or anything drawn from the package's fixtures): the review stops there, and `lockedCopy`
  * stands where the wallet would be asked. Live: the session is opened (the wallet on the chain), `prepare` builds the step
  * through the closed client (checks first: a refusal is said before anything is sent), and the press offers it once.
+ *
+ * Changed on purpose 2026-10-06 (the integration review, money #4): `held` keeps the press back while the caller's own
+ * condition is not met (a tick it asks for), and `onError` lets the caller say a failure itself (true: no error line).
  */
-export function OneStepDialog({ name, title, primary, children, chainId, contracts, locked, lockedCopy, context, labels, prepare, onDone, onClose }: {
+export function OneStepDialog({ name, title, primary, children, chainId, contracts, locked, lockedCopy, context, labels, prepare, held = false, onError, onDone, onClose }: {
   name: string
   title: string
   primary: string
@@ -27,6 +30,8 @@ export function OneStepDialog({ name, title, primary, children, chainId, contrac
   labels: ErrorLabels
   /** The step, built through the client once the session is open (a read may refuse it first). */
   prepare: (session: AutomationSession) => Promise<WalletStep> | WalletStep
+  held?: boolean
+  onError?: (error: ErrorView) => boolean
   onDone: () => void
   onClose: () => void
 }) {
@@ -36,6 +41,13 @@ export function OneStepDialog({ name, title, primary, children, chainId, contrac
   const [finished, setFinished] = useState(false)
   // The caller's step builder, fixed for this dialog's life.
   const build = useRef(prepare)
+  // Changed on purpose 2026-10-06 (the integration review): the labels a refusal is said with, never a reason to build the
+  // step again. A page read that redraws them (new token names, the same tokens) once rebuilt it, mid-run or after it was
+  // done: then the run started over, or "This step is already done." stood under a finished dialog.
+  const named = useRef(labels)
+  useEffect(() => {
+    named.current = labels
+  })
   useEffect(() => {
     if (locked) return
     let alive = true
@@ -47,22 +59,22 @@ export function OneStepDialog({ name, title, primary, children, chainId, contrac
         setSession(opened)
         setStep(made)
       } catch (failure) {
-        if (alive) setError(describeError(failure, context, labels))
+        if (alive) setError(describeError(failure, context, named.current))
       }
     })()
     return () => {
       alive = false
     }
-  }, [locked, chainId, contracts, context, labels])
+  }, [locked, chainId, contracts, context])
   const steps = useMemo(() => (step ? [step] : []), [step])
-  const run = useStepsRun({ session, steps, context, labels, onAllDone: () => { setFinished(true); onDone() } })
+  const run = useStepsRun({ session, steps, context, labels, onError: onError ? (view) => onError(view) : undefined, onAllDone: () => { setFinished(true); onDone() } })
   const footer = finished ? (
     <Button type="button" variant="outline" size="lg" className="w-full" onClick={onClose} data-v2in-close="">
       Back to position
     </Button>
   ) : (
     <>
-      <Button type="button" variant="primary" size="lg" className="w-full" disabled={locked || !step || run.running} aria-busy={run.running || undefined} data-v2in-send={name} onClick={() => void run.press()}>
+      <Button type="button" variant="primary" size="lg" className="w-full" disabled={locked || !step || run.running || held} aria-busy={run.running || undefined} data-v2in-send={name} onClick={() => void run.press()}>
         {primary}
       </Button>
       {locked && <LockedNote copy={lockedCopy} />}
@@ -77,7 +89,7 @@ export function OneStepDialog({ name, title, primary, children, chainId, contrac
           Checking…
         </p>
       )}
-      <ErrorLine error={error ?? run.notice} />
+      <ErrorLine error={finished ? null : error ?? run.notice} />
     </FlowDialog>
   )
 }
