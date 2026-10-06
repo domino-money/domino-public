@@ -38,6 +38,7 @@ test('§3.5: the base quote reads exactly as the spec writes it, Relay the winne
     'Domino fee (0.35%): 0.35 USDC, charged by Relay on Arbitrum One',
     'Bridge fee: 0.048945 USDC',
     'You receive about 99.571446 USDG on Robinhood Chain (at least 99.073589 USDG)',
+    'You send 100 USDC on Arbitrum One',
     'Network fee on Arbitrum One: estimated by Relay',
     'Arrives in about 1 s',
   ]);
@@ -52,6 +53,7 @@ test('§3.5: the base quote reads exactly as the spec writes it, Relay the winne
     'Domino fee (0.35%): 0.349695 USDG, charged by Across on Robinhood Chain',
     'Bridge fee: 0.087036 USDC',
     'You receive about 99.563269 USDG on Robinhood Chain (at least 99.563269 USDG)',
+    'You send 100 USDC on Arbitrum One',
     'Network fee on Arbitrum One: Not reported',
     'Arrives in about 2 s',
   ]);
@@ -89,6 +91,7 @@ test('native ETH through Across while Relay is busy: WETH fees on each side, ETH
     'Domino fee (0.35%): 0.000175 WETH, charged by Across on Robinhood Chain',
     'Bridge fee: 0.000021 WETH',
     'You receive about 0.049804 ETH on Robinhood Chain (at least 0.049804 ETH)',
+    'You send 0.05 ETH on Arbitrum One',
     'Network fee on Arbitrum One: Not reported',
     'Arrives in about 1 s',
   ]);
@@ -97,6 +100,7 @@ test('native ETH through Across while Relay is busy: WETH fees on each side, ETH
     'Domino fee (0.35%): 0.000174929011197839 WETH, charged by Across on Robinhood Chain',
     'Bridge fee: 0.000020282514903141 WETH',
     'You receive about 0.04980478847389902 ETH on Robinhood Chain (at least 0.04980478847389902 ETH)',
+    'You send 0.05 ETH on Arbitrum One',
     'Network fee on Arbitrum One: Not reported',
     'Arrives in about 1 s',
   ]);
@@ -113,13 +117,39 @@ test('destination gas: Relay delivers it and says so; Across says it cannot', ()
 });
 
 // Added 2026-10-06 (crosschain-v1 1.1.0-rc.1): a quote by output whose Relay deposit needs more than the wallet may send.
+// Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3): it says what it needs against what can be sent, and every
+// priced candidate says what it sends ("You send {inputRaw} on {origin}").
 test('by output, a candidate above what the wallet may send says so, keeps its price, and is never the winner', () => {
-  const view = presentQuote(quoteOf('variants/quote.output-above-max.json'), NAME);
+  const quote = quoteOf('variants/quote.output-above-max.json');
+  const view = presentQuote(quote, NAME);
   assert.equal(view.decision, 'across');
   const relay = view.candidates[0];
-  assert.deepEqual([relay.status, relay.winner, relay.text], ['input_above_max', false, 'Relay needs more than you can send from Base.']);
+  assert.deepEqual([relay.status, relay.winner, relay.text], ['input_above_max', false, 'Relay needs 100.916974 USDC, you can send 100.91 USDC from Base.']);
   assert.ok(relay.lines.includes('You receive about 100.502513 USDG on Robinhood Chain (at least 100 USDG)'), 'still priced');
+  assert.ok(relay.lines.includes('You send 100.916974 USDC on Base'));
   assert.equal(view.winner.provider, 'across');
+  assert.ok(view.winner.lines.includes('You send 100.902201 USDC on Base'), "the winner's own input, not what must arrive");
+  // Without the amounts, the §3.4 sentence.
+  const bare = presentQuote({ ...quote, request: { ...quote.request, maxInputRaw: null } }, NAME);
+  assert.equal(bare.candidates[0].text, 'Relay needs more than you can send from Base.');
+});
+
+// Added 2026-10-06 (rugged's delta of 6 Oct §3): the one click's quote by output, through the client and the fixture
+// transport as the offer gets it: the winner by rate, what each sends, and the funds model's request echoed exactly.
+test('by output through the client: the request the offer makes is the one answered; each candidate says what it sends', async () => {
+  const funds = require('../../.test-build/app/src/v2in/funds/model.js');
+  const recorded = fixture('variants/quote.output.json').quote.request;
+  const request = funds.quoteRequestOf({ originChainId: recorded.originChainId, originToken: recorded.originToken, destinationChainId: recorded.destinationChainId, destinationToken: recorded.destinationToken, amountRaw: recorded.amountRaw, slippageBps: recorded.slippageBps, destinationGas: recorded.destinationGas, maxInputRaw: recorded.maxInputRaw });
+  const { client, transport } = lab();
+  transport.script('quote', reply(200, fixtureText('variants/quote.output.json')));
+  const answer = await client.quote(request, { owner: OWNER });
+  assert.equal(answer.ok, true);
+  assert.deepEqual(transport.calls().map((c) => c.body), [request]);
+  const view = presentQuote(answer.data.quote, NAME);
+  assert.equal(view.decision, 'relay');
+  assert.ok(view.winner.lines.includes('You send 100.916974 USDC on Base'));
+  assert.ok(view.candidates[1].lines.includes('You send 100.902201 USDC on Base'));
+  assert.equal(funds.sentRaw(answer.data.quote), '100916974', "the field and the button: the winner's input");
 });
 
 test('every candidate status has the spec’s sentence (§3.4)', () => {

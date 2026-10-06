@@ -182,7 +182,9 @@ const signInFromDialog = async (page) => {
 };
 const ALL_ETH = 20_000_000_000_000_000n - 500_000_000_000_000n; // 0.02 ETH less the gas Review keeps
 
-test('ETH held on Base for the USDG the position lacks: one quote of about 50 USDG of ETH at the read prices, never all of it', async () => {
+// Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3): the one quote is by output: the USDG lacking must arrive, at
+// most all the ETH that can be sent leaves; the service says how much ETH that takes.
+test('ETH held on Base for the USDG the position lacks: one quote by output, about 50 USDG of ETH sent, never all of it', async () => {
   const s = await openFunding({ served: etherOnly(8453) });
   try {
     const offer = s.zap.locator('[data-funds-offer][data-funds-mode="live"]');
@@ -192,21 +194,20 @@ test('ETH held on Base for the USDG the position lacks: one quote of about 50 US
     const quote = offer.locator('[data-funds-quote]');
     await quote.waitFor({ timeout: 30_000 });
     const asked = s.calls.filter((c) => c.route === 'quote').map((c) => c.body);
-    assert.equal(asked.length, 1, 'the read prices sized it: one quote');
-    assert.deepEqual([asked[0].originChainId, asked[0].originToken, asked[0].destinationToken], [8453, ZERO, USDG]);
-    const sent = BigInt(asked[0].amountRaw);
-    // 50 USDG at the fixtures' US$4,000.12 an ETH, with 2% room: about 0.01275 ETH.
-    assert.ok(sent > 12_500_000_000_000_000n && sent < 13_000_000_000_000_000n, `about the need: ${sent}`);
-    assert.ok(sent * 3n < ALL_ETH * 2n, 'never all of it');
-    assert.match((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), /^Bring 0\.0127\d* ETH from Base$/);
-    assert.match((await quote.locator('[data-funds-receive] .dm-funds-delivery').innerText()).trim(), /^You receive about 50\.\d+ USDG on Robinhood Chain \(at least 50\.\d+ USDG\)$/, 'what arrives covers the 50 USDG');
+    assert.equal(asked.length, 1, 'one quote');
+    assert.deepEqual([asked[0].originChainId, asked[0].originToken, asked[0].destinationToken, asked[0].amountKind, asked[0].maxInputRaw], [8453, ZERO, USDG, 'output', String(ALL_ETH)]);
+    assert.equal(asked[0].amountRaw, '50000000', 'the 50 USDG lacking, in USDG');
+    // 50 USDG at the fixtures' US$4,000.12 an ETH, as the service answers it: about 0.0126 ETH.
+    assert.match((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), /^Bring 0\.0126\d* ETH from Base$/);
+    assert.match((await quote.locator('[data-funds-receive] .dm-funds-delivery').innerText()).trim(), /^You receive about 50\.\d+ USDG on Robinhood Chain \(at least 50 USDG\)$/, 'what arrives covers the 50 USDG');
     assert.equal(await offer.locator('[data-funds-short-holding]').count(), 0, 'enough there: nothing said about it');
     assert.equal(s.chain.sends.length, 0);
     await captureCard(s, 'other-kind');
   } finally { await s.close(); }
 });
 
-test('ETH held on Arbitrum One with no price read: all of it is quoted once, and the quote shown is sized from that rate', async () => {
+// Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3): no price needed any more: ONE quote by output, as on Base.
+test('ETH held on Arbitrum One with no price read: still ONE quote, by output, never all of it', async () => {
   const s = await openFunding({ served: etherOnly(42161) });
   try {
     const offer = s.zap.locator('[data-funds-offer][data-funds-mode="live"]');
@@ -215,10 +216,8 @@ test('ETH held on Arbitrum One with no price read: all of it is quoted once, and
     await signInFromDialog(s.page);
     const quote = offer.locator('[data-funds-quote]:not([aria-busy])');
     await s.page.waitForFunction(() => /^Bring 0\.01\d* ETH from Arbitrum One$/.test(document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.textContent?.trim() ?? ''), null, { timeout: 30_000 });
-    const asked = s.calls.filter((c) => c.route === 'quote').map((c) => BigInt(c.body.amountRaw));
-    assert.equal(asked.length, 2, 'a first quote, and one more: never a third');
-    assert.equal(asked[0], ALL_ETH, 'the first: all that can be sent, its rate only');
-    assert.ok(asked[1] > 12_000_000_000_000_000n && asked[1] < 13_500_000_000_000_000n, `the one shown: about the need at that rate, ${asked[1]}`);
+    const asked = s.calls.filter((c) => c.route === 'quote').map((c) => c.body);
+    assert.deepEqual(asked.map((q) => [q.amountKind, q.amountRaw, q.maxInputRaw]), [['output', '50000000', String(ALL_ETH)]], 'one quote: the need, by output');
     assert.equal(await quote.count(), 1);
     assert.equal(s.chain.sends.length, 0);
   } finally { await s.close(); }
@@ -251,13 +250,22 @@ test('the journey’s offer, a wallet that batches on Arbitrum One: the approval
   const s = await openFunding({ served: usdcOnArbitrum(), origin });
   try {
     const { offer, quote } = await bringFromArbitrum(s);
-    assert.equal((await quote.locator('[data-funds-domino-fee]').innerText()).trim(), 'Domino fee (0.35%): 0.1785 USDC, charged by Relay on Arbitrum One · you can also bridge with any other service');
-    assert.equal((await quote.locator('[data-funds-network-fee]').innerText()).trim(), 'Network fee on Arbitrum One: about 0.000001 ETH, estimated by Relay');
+    // Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3): quoted by output, so the fee and the network fee are the
+    // package's quote.output answer's, scaled to what the position lacks.
+    assert.equal((await quote.locator('[data-funds-domino-fee]').innerText()).trim(), 'Domino fee (0.35%): 0.175909 USDC, charged by Relay on Arbitrum One · you can also bridge with any other service');
+    assert.equal((await quote.locator('[data-funds-network-fee]').innerText()).trim(), 'Network fee on Arbitrum One: about <0.000001 ETH, estimated by Relay');
     await quote.locator('[data-funds-deposit-button]').click();
     const card = offer.locator(`[data-funds-deposit="${HASH_OF(0)}"]`);
     await card.waitFor({ timeout: 30_000 });
     const [batch] = origin.state.batches;
     assert.deepEqual([batch.chainId, batch.atomicRequired, batch.calls.map((call) => call.to)], ['0xa4b1', true, [ARB_USDC, DEPOSITORY]], 'the exact approval and the deposit, one batch on Arbitrum One');
+    // The batch's approval is the winner's steps[0]: exactly what its deposit takes (its inputRaw), never what must arrive.
+    const asked = s.calls.filter((c) => c.route === 'quote').map((c) => c.body).at(-1);
+    assert.equal(asked.amountKind, 'output');
+    const plan = quoteFor(asked, S2_OWNER).quote;
+    const sent = plan.candidates.find((c) => c.provider === plan.decision).inputRaw;
+    assert.equal(plan.steps[0].approval.amountRaw, sent);
+    assert.equal(batch.calls[0].data, plan.steps[0].transaction.data, `approve(depository, ${sent})`);
     assert.deepEqual(origin.state.sent, [], 'no transaction of its own');
     assert.equal(s.chain.sends.length, 0, 'nothing sent on Robinhood Chain');
     assert.equal((await card.locator('.dm-subtitle').first().innerText()).trim(), 'Coming from Arbitrum One');

@@ -17,7 +17,8 @@ export const CANDIDATE_COPY: Readonly<Record<CandidateStatus, string | null>> = 
   quoted: null,
   destination_gas_unsupported: "{provider} can't deliver gas on {destination}.",
   // Added 2026-10-06 (crosschain-v1 1.1.0-rc.1): a quote by output whose deposit needs more than the wallet may send.
-  // Never met while the page asks by exact input.
+  // Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3): with both amounts known, ./present.ts says them instead
+  // (feeLines.aboveMax); this sentence only when one cannot be written.
   input_above_max: '{provider} needs more than you can send from {origin}.',
   no_route: '{provider} has no route for this token.',
   amount_too_low: 'Amount too low for {provider}.',
@@ -98,4 +99,8 @@ export const feeLines = {
   network: (origin: string, provider: string | null) => `Network fee on ${origin}: ${provider === null ? NOT_REPORTED : `estimated by ${provider}`}`,
   eta: (duration: string) => `Arrives in about ${duration}`,
   destinationGas: (amount: string, destination: string) => `Includes ${amount} for network fees on ${destination}`,
+  /** Added 2026-10-06 (rugged's delta of 6 Oct §3): what the candidate's deposit takes from the wallet on the origin. */
+  send: (amount: string, origin: string) => `You send ${amount} on ${origin}`,
+  /** Added 2026-10-06 (rugged's delta of 6 Oct §3): an `input_above_max` candidate, its input against the most the wallet may send. */
+  aboveMax: (provider: string, needed: string, max: string, origin: string) => `${provider} needs ${needed}, you can send ${max} from ${origin}.`,
 }

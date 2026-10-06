@@ -37,15 +37,15 @@ import { FUNDS_TEXT, senderCopy } from './copy'
 import { DepositStatus, PendingDeposit, type TrackedDeposit } from './DepositStatus'
 import { runDeposit, type FlowOutcome, type FlowStage } from './flow'
 import {
+  aboveMaxOf,
   amountRawOf,
   BALANCE_ORIGINS,
   balanceChainsRequest,
   balancesRequest,
   bestHolding,
   bringChoice,
+  convertUnits,
   deliverableTokens,
-  firstAsk,
-  fixedFeeOf,
   heldMayArrive,
   heldOrigins,
   holdingArtwork,
@@ -67,11 +67,9 @@ import {
   quoteRequestOf,
   requestFailure,
   sendable,
-  sizeStep,
+  sentRaw,
   typedQuoteWait,
   usableHoldings,
-  winningMinimum,
-  type KindPrices,
   type Lack,
   type LineHolding,
   type NetworkHolds,
@@ -136,6 +134,11 @@ interface Picked {
   need: bigint | null
   /** Added 2026-10-06 (the review): whether it was sized with "Get gas on {destination}": a change sizes it again. */
   gas: boolean
+  /**
+   * Added 2026-10-06 (rugged's delta of 6 Oct §3): the quote was asked by output, for `need` with this as `maxInputRaw`
+   * (the coin's sendable balance); null or absent: by exact input (everything held, or all there is when that is less).
+   */
+  max?: bigint | null
 }
 
 /** One choice of the person's at a time (Added 2026-10-06, the review): a newer one lets this one go, its quotes too. */
@@ -179,7 +182,14 @@ const forgetSenderOn = (ref: { current: Promise<OriginSender> | null }, error: u
 }
 
 /** A raw amount as the amount field takes it ("1234.5", no grouping); null when the decimals are not usable. */
-const fieldUnits = (raw: bigint, decimals: number): string | null => formatUnitsExact(raw.toString(), decimals)?.replace(/,/g, '') ?? null
+const fieldUnits = (raw: bigint | string, decimals: number): string | null => formatUnitsExact(raw.toString(), decimals)?.replace(/,/g, '') ?? null
+
+/**
+ * Added 2026-10-06 (rugged's delta of 6 Oct §3): a one click's quote by output: `need` must arrive on `destination`
+ * (destination units), and at most `max` (the coin's sendable balance, origin units) may leave the wallet.
+ */
+const outputRequestOf = (p: Picked, destination: V2ChainId, need: bigint, max: bigint, gas: boolean): CrosschainRequests['quote'] =>
+  quoteRequestOf({ originChainId: p.origin, originToken: p.token, destinationChainId: destination, destinationToken: p.target, amountRaw: need.toString(), slippageBps: FUNDS_DEFAULT_SLIPPAGE_BPS, destinationGas: gas, maxInputRaw: max.toString() })
 
 /**
  * Whether the header's wallet dialog, where signing in happens, is open: its button says so (aria-expanded), as
@@ -310,9 +320,10 @@ function DiscreetLine({ line, onBring }: { line: LineHolding; onBring: () => voi
  *     Domino's other networks with what the service read there; a network read as empty is gone; when every network read
  *     is empty, one sentence; a network NOT read keeps its button (the wallet's own read there, never a zero). What is
  *     brought, and as which token, is chosen together (model.ts bringChoice: a holding that covers what the position
- *     lacks first, a plain bridge first); the amount is what the position lacks, sized from the service's own quote so its
- *     guaranteed minimum covers it (one quote, and at most one more; model.ts firstAsk, sizeStep), for another kind of
- *     token too; never everything held once an amount is typed; a holding smaller than the need is said in one line. The
+ *     lacks first, a plain bridge first); the amount is what the position lacks, asked of the service by output (ONE quote:
+ *     what must arrive, with the coin's sendable balance as the most to send; Changed on purpose 2026-10-06, rugged's delta
+ *     of 6 Oct §3), for another kind of token too; never everything held once an amount is typed; a holding smaller than
+ *     the need is said in one line and brought whole, by exact input. The
  *     amount step already says the wallet is short (`shortSaid`): the box does not say it again. While a deposit is on its
  *     way, neither the line nor the networks show; once it is settled, the balances are read again.
  *   - The target follows the holding (dollar to the stable, ether to ETH or WETH, else the other token a deposit can
@@ -329,8 +340,8 @@ function DiscreetLine({ line, onBring }: { line: LineHolding; onBring: () => voi
  *   - a sign-in the person closes ends the wait at once, said calmly with a "Sign in" button; the line, the networks and
  *     Other networks stay usable meanwhile;
  *   - once a network is picked the title names the network alone (the button names what leaves the wallet);
- *   - the sizing keeps a quote's fixed part (Relay's gas top-up) whole, asks a failed first quote again rather than
- *     leaving it unsized, and a quote that still guarantees less than the need says so;
+ *   - the sizing asks a failed quote again rather than leaving it unsized (Changed on purpose 2026-10-06, rugged's delta
+ *     of 6 Oct §3: by output, every priced candidate guarantees the need, Relay's gas top-up included in what is sent);
  *   - a range that takes one token alone is brought that token, and "Use" never makes another one the amount's token;
  *   - a held step closes only its own origin; only a deposit that may still arrive here holds every offer back;
  *   - a bridge the listing could not list is said in one line; amounts that leave the wallet, fees and needs round up.
@@ -683,8 +694,13 @@ export function BringFunds({
   const gasFlag = gasOffered !== null && gasChosen
 
   const amountRaw = listed ? amountRawOf(amount, decimals) : null
+  // Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3): what a one click sized is asked by output (what the
+  // position lacks must arrive; the coin's sendable balance is the most to send) until the person changes the form; the
+  // amount field then shows what the winner's deposit takes, and a change there asks by exact input again.
+  const sizedRequest = picked !== null && picked.need !== null && picked.max != null && !touched ? outputRequestOf(picked, chainId, picked.need, picked.max, gasFlag) : null
   const request =
-    listed && originChainId !== null && amountRaw !== null && target !== null
+    sizedRequest ??
+    (listed && originChainId !== null && amountRaw !== null && target !== null
       ? quoteRequestOf({
           originChainId,
           originToken: listed.address,
@@ -694,7 +710,7 @@ export function BringFunds({
           slippageBps: FUNDS_DEFAULT_SLIPPAGE_BPS,
           destinationGas: gasFlag,
         })
-      : null
+      : null)
   const requestKey = request && sessionReady ? `${access}|${JSON.stringify(request)}` : null
 
   // ---- the quote (§3.4, §3.5) ----------------------------------------------------------------------------------------
@@ -1076,70 +1092,67 @@ export function BringFunds({
   const lastPick = useRef<{ origin: number; named: LineHolding | null } | 'others' | null>(null)
 
   /**
-   * Added 2026-10-06 (the owner's point 2b): the quote for what the position lacks, sized from the service's own quote.
-   * Changed on purpose 2026-10-06 (the review of 2026-10-06: for another kind of token the first quote was of everything
-   * held there, and it stood): the first quote asks for the need in the token sent, with room for the fees (by decimals
-   * for the same kind; for another kind, at the prices Domino's service read, never shown; with none, all that can be
-   * sent); then model.ts sizeStep decides between that quote and one more, for the need at its rate, never more than
-   * what is held there (the one line then says so). A first ask of everything held never stands as the amount. Each quote
-   * within the page's few a minute, and let go with the choice. The form takes the amount chosen ("Change amount").
+   * Added 2026-10-06 (the owner's point 2b): the quote for what the position lacks.
+   * Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3, crosschain-v1 1.1.0-rc.1): ONE quote, by output: what the
+   * position lacks must arrive (destination units), with the chosen coin's sendable balance as the most to send (origin
+   * units); the service answers what each bridge's deposit takes, and the field shows the winner's. A holding of the same
+   * kind smaller than the need itself, or one no bridge can send the need from (`input_above_max`, said in one line), is
+   * brought whole: a quote by exact input of all there is ("All you have"). Each quote within the page's few a minute,
+   * and let go with the choice. The form takes the amount chosen ("Change amount").
    */
-  const sizeBring = async (p: Picked, need: bigint, gas: boolean, turn: Turn, prices: KindPrices) => {
+  const sizeBring = async (p: Picked, need: bigint, gas: boolean, turn: Turn) => {
     if (services === null) return
     const { alive, signal } = turn
     const network = originName(p.origin)
     const available = sendable(p.holding)
     const needDecimals = destinationChoices().find((d) => d.chainId === chainId)?.tokens.find((t) => lower(t.address) === p.target)?.decimals ?? null
-    const requestFor = (raw: bigint) =>
-      quoteRequestOf({ originChainId: p.origin, originToken: p.token, destinationChainId: chainId, destinationToken: p.target, amountRaw: raw.toString(), slippageBps: FUNDS_DEFAULT_SLIPPAGE_BPS, destinationGas: gas })
+    const byOutput = outputRequestOf(p, chainId, need, available, gas)
+    const allOf = quoteRequestOf({ originChainId: p.origin, originToken: p.token, destinationChainId: chainId, destinationToken: p.target, amountRaw: available.toString(), slippageBps: FUNDS_DEFAULT_SLIPPAGE_BPS, destinationGas: gas })
     const keyFor = (wanted: CrosschainRequests['quote']) => `${latest.current.access}|${JSON.stringify(wanted)}`
-    const show = (raw: bigint, outcome: QuoteOutcome | null, short: boolean) => {
+    const show = (wanted: CrosschainRequests['quote'], outcome: QuoteOutcome | null, note: string | null) => {
       setSizing(false)
       // The quote takes over from the pick's own line.
       tell(null)
-      const units = fieldUnits(raw, p.decimals)
+      const output = wanted.amountKind === 'output'
+      // By output, the field shows what the winner's deposit takes (origin units), never what must arrive.
+      const sent = !output ? BigInt(wanted.amountRaw) : outcome && outcome.ok && outcome.data.quote.decision !== null ? BigInt(sentRaw(outcome.data.quote)) : null
+      const units = sent === null ? '' : fieldUnits(sent, p.decimals)
       if (units === null) return tell({ chainId: p.origin, stage: 'failed', copy: FUNDS_TEXT.readFailed(network), code: 'units' })
       setAmount(units)
-      setPicked({ ...p, need, gas })
-      setShortNote(short ? FUNDS_TEXT.allYouHave(network) : null)
-      const wanted = requestFor(raw)
+      setPicked({ ...p, need, gas, max: output ? available : null })
+      setShortNote(note)
       autoRequotes.current = 0
       if (outcome && outcome.ok) {
         quoteAsk.current?.()
         setQuote({ state: 'ok', key: keyFor(wanted), quote: outcome.data.quote, timing: outcome.timing, source: outcome.source, request: wanted, note: null })
       } else askQuote(wanted, keyFor(wanted), null)
     }
-    // No figure the page can stand behind: the person types the amount.
-    const enter = () => {
-      setSizing(false)
-      setAmount('')
-      setEditOpen(true)
-      setTouched(true)
-      tell({ chainId: p.origin, stage: 'enter' })
-    }
     if (available <= 0n) return tell({ chainId: p.origin, stage: 'empty', copy: FUNDS_TEXT.noneThere(p.holding.symbol, network) })
-    if (needDecimals === null) return enter()
-    const ask = async (raw: bigint): Promise<QuoteOutcome | null> => {
+    const ask = async (wanted: CrosschainRequests['quote']): Promise<QuoteOutcome | null> => {
       // Within the page's few quotes a minute: past them, this one waits its turn.
       const wait = quoteBudgetWait(quotesAsked.current, services.clock.monoMs())
       if (wait > 0) await services.wait(wait)
       if (!alive()) return null
       countQuote()
-      return services.client.quote(requestFor(raw), { owner: services.owner, signal })
+      return services.client.quote(wanted, { owner: services.owner, signal })
     }
-    const first = firstAsk({ need, needDecimals, needKind: kindOf(chainId, p.target), sentDecimals: p.decimals, sentKind: kindOf(p.origin, p.holding.token), available, prices })
     tell({ chainId: p.origin, stage: 'quoting' })
     setSizing(true)
-    let probe = await ask(first.amount)
-    // A first quote that did not come back is asked again after the page's own wait (said meanwhile), never shown as the
-    // amount. Changed on purpose 2026-10-06 (the integration review: a sized first ask that timed out stood on screen as
-    // the amount, its quote never sized): a sized first ask as well as one of everything held.
+    // The same kind, by decimals, smaller than the need itself: all there is, by exact input, said in one line.
+    const kind = kindOf(chainId, p.target)
+    if (kind !== null && kind === kindOf(p.origin, p.holding.token) && needDecimals !== null && available < convertUnits(need, needDecimals, p.decimals)) {
+      const all = await ask(allOf)
+      if (all === null || !alive()) return
+      return show(allOf, all, FUNDS_TEXT.allYouHave(network))
+    }
+    let probe = await ask(byOutput)
+    // A quote that did not come back is asked again after the page's own wait (said meanwhile), never left unsized.
     for (let attempt = 1; probe !== null && !probe.ok && alive(); attempt += 1) {
       const failure = requestFailure(probe.failure, attempt)
       if (failure.featureOff) setFeatureOff(failure)
       if (failure.requote && attempt <= 1) {
         // A quote that came back already expired: asked again at once, as the page's own ask does.
-        probe = await ask(first.amount)
+        probe = await ask(byOutput)
         continue
       }
       tell({ chainId: p.origin, stage: 'failed', copy: failure.copy || FUNDS_TEXT.noRoutes, code: failure.code ?? 'quote_failed' })
@@ -1153,16 +1166,15 @@ export function BringFunds({
       await services.wait(failure.retryMs)
       if (!alive()) return
       tell({ chainId: p.origin, stage: 'quoting' })
-      probe = await ask(first.amount)
+      probe = await ask(byOutput)
     }
     if (probe === null || !alive() || !probe.ok) return
-    // The part of the quote that does not shrink with the amount (Relay's gas top-up) is kept whole (model.ts fixedFeeOf).
-    const step = sizeStep({ need, asked: first.amount, available, minimum: winningMinimum(probe.data.quote), blind: first.blind, fee: fixedFeeOf(probe.data.quote) })
-    if (step.step === 'enter') return enter()
-    if (step.step === 'show') return show(first.amount, probe, step.short)
-    const final = await ask(step.amount)
-    if (final === null || !alive()) return
-    show(step.amount, final, step.short)
+    // No bridge can send the need from what is there: what each needs against what can be sent, then all there is.
+    const above = aboveMaxOf(probe.data.quote, name)
+    if (above === null) return show(byOutput, probe, null)
+    const all = await ask(allOf)
+    if (all === null || !alive()) return
+    show(allOf, all, FUNDS_TEXT.aboveMax(above.needs, above.max, network))
   }
   const sizeRef = useRef(sizeBring)
   useEffect(() => {
@@ -1314,7 +1326,7 @@ export function BringFunds({
       tell(null)
       return askQuote(wantedRequest, `${latest.current.access}|${JSON.stringify(wantedRequest)}`, null)
     }
-    await sizeBring(p, needRaw, latest.current.gasFlag, turn, prices)
+    await sizeBring(p, needRaw, latest.current.gasFlag, turn)
   }
 
   // Added 2026-10-06 (the owner's point 2b): a quote a one click sized follows the typed amount: when what the position
@@ -1324,7 +1336,7 @@ export function BringFunds({
     if (!resizeDue || picked === null || pickedNeed === null || services === null || asked.state === 'loading') return
     const turn = newTurn()
     const gas = gasFlag
-    return services.clock.setTimer(() => void sizeRef.current(picked, pickedNeed, gas, turn, kindPrices(latest.current.served)), typedQuoteWait(quotesAsked.current, services.clock.monoMs()))
+    return services.clock.setTimer(() => void sizeRef.current(picked, pickedNeed, gas, turn), typedQuoteWait(quotesAsked.current, services.clock.monoMs()))
   }, [resizeDue, picked, pickedNeed, gasFlag, services, asked.state, newTurn])
 
   /** "Get gas on {destination}" changed (§3.9): a quote a one click sized for the need is sized again with it (above); any other is asked again as it is. */
@@ -1484,15 +1496,14 @@ export function BringFunds({
   const shortText = lack && lack.shortRaw !== null && lack.shortRaw > 0n ? shortAmountText(lack.shortRaw.toString(), lack.token, { symbol, decimals: lack.decimals }, 'up') : null
   const shownQuote = quote.state === 'ok' && !sizing ? quote : previous
   const gasInCard = gasOffered === 'suggested' ? { destination: chain.name, chosen: gasChosen, disabled: busy || quote.state === 'loading', onChange: chooseGas } : null
-  // Added 2026-10-06 (the integration review): a quote a one click sized whose guaranteed minimum is below what the
-  // position lacks says so in one line (the holding being all there is says it its own way).
-  const sizedMinimum = picked !== null && picked.need !== null && quote.state === 'ok' && !sizing && lower(quote.quote.request.destinationToken) === picked.target ? winningMinimum(quote.quote) : null
-  const shortView =
-    shortNote !== null
-      ? { text: shortNote, kind: 'holding' as const }
-      : sizedMinimum !== null && picked !== null && picked.need !== null && sizedMinimum < picked.need
-        ? { text: FUNDS_TEXT.bringsLess, kind: 'quote' as const }
-        : null
+  // The one line when what is there is less than the need (Changed on purpose 2026-10-06, rugged's delta of 6 Oct §3: a
+  // quote by output guarantees the need, as the runtime checks, so a sized quote never brings less).
+  const shortView = shortNote !== null ? { text: shortNote, kind: 'holding' as const } : null
+  // After a quote by output, the field shows what the winner's deposit takes (origin units), not what must arrive.
+  const sizedShown =
+    sizedRequest !== null && picked !== null && shownQuote !== null && shownQuote.quote.request.amountKind === 'output' && shownQuote.quote.decision !== null
+      ? fieldUnits(sentRaw(shownQuote.quote), picked.decimals)
+      : null
   // The deposits followed here: "On the way" only while one may still arrive here (Changed on purpose 2026-10-06, the
   // integration review: an arrived card sat under it, and so it did beside a held approval, where nothing moves, or a
   // deposit held for another network): one not settled yet, or one held for this network (model.ts heldMayArrive).
@@ -1581,7 +1592,7 @@ export function BringFunds({
             unit={unit}
             inputMode={decimals === null ? 'numeric' : 'decimal'}
             placeholder="0"
-            value={amount}
+            value={sizedShown ?? amount}
             disabled={busy}
             data-funds-amount-input=""
             data-funds-raw-units={decimals === null ? '' : undefined}

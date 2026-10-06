@@ -29,7 +29,6 @@ import {
   FUNDS_MAX_SLIPPAGE_BPS,
   FUNDS_MIN_SLIPPAGE_BPS,
   FUNDS_REQUEST_RETRY_MS,
-  FUNDS_SIZE_SLACK_BPS,
   FUNDS_SUGGEST_DESTINATION_GAS_AT_OR_BELOW_WEI,
   FUNDS_TYPED_QUOTE_DEBOUNCE_MS,
   FUNDS_TYPED_QUOTES_PER_MINUTE,
@@ -277,8 +276,10 @@ export function originToken(list: OriginsList, chainId: number | null, address: 
 
 /**
  * The quote request the form makes: exactly the nine fields, addresses lowercase (§3.4). Changed on purpose (data)
- * 2026-10-06 (crosschain-v1 1.1.0-rc.1): by exact input, `amountKind: 'exact_input'` and `maxInputRaw: null`; asking
- * by output (what must arrive, with the most that can be sent) is the offer's follow-up.
+ * 2026-10-06 (crosschain-v1 1.1.0-rc.1): by exact input, `amountKind: 'exact_input'` and `maxInputRaw: null`; with
+ * `maxInputRaw` (Changed on purpose 2026-10-06, rugged's delta of 6 Oct §3: a one click sizes what it brings with ONE
+ * quote), by output: `amountRaw` is what must arrive (destination units) and `maxInputRaw` the most the wallet may send
+ * (the chosen coin's sendable balance, origin units).
  */
 export function quoteRequestOf(input: {
   originChainId: number
@@ -288,17 +289,35 @@ export function quoteRequestOf(input: {
   amountRaw: string
   slippageBps: number
   destinationGas: boolean
+  maxInputRaw?: string
 }): CrosschainRequests['quote'] {
+  const output = input.maxInputRaw !== undefined
   return {
     originChainId: input.originChainId,
     originToken: lower(input.originToken),
     destinationChainId: input.destinationChainId,
     destinationToken: lower(input.destinationToken),
-    amountKind: 'exact_input',
+    amountKind: output ? 'output' : 'exact_input',
     amountRaw: input.amountRaw,
-    maxInputRaw: null,
+    maxInputRaw: output ? (input.maxInputRaw ?? null) : null,
     slippageBps: input.slippageBps,
     destinationGas: input.destinationGas,
+  }
+}
+
+/**
+ * Added 2026-10-06 (rugged's delta of 6 Oct §3): a quote by output with no decision because its priced candidates need
+ * more than the wallet may send (`input_above_max`): what each needs, rounded up ("Relay needs 100.92 USDC"), and the most
+ * that can be sent, rounded down, for FUNDS_TEXT.aboveMax. Null for any other quote (pure).
+ */
+export function aboveMaxOf(quote: QuotePlan, name: Naming): { needs: string[]; max: string } | null {
+  const { request } = quote
+  const above = quote.candidates.filter((c) => c.status === 'input_above_max' && c.inputRaw !== null)
+  if (request.amountKind !== 'output' || request.maxInputRaw === null || quote.decision !== null || above.length === 0) return null
+  const info = name.book(request.originChainId, request.originToken)
+  return {
+    needs: above.map((c) => `${PROVIDER_NAME[c.provider]} needs ${shortAmountText(c.inputRaw ?? '0', request.originToken, info, 'up')}`),
+    max: shortAmountText(request.maxInputRaw, request.originToken, info),
   }
 }
 
@@ -512,42 +531,13 @@ export function convertUnits(raw: bigint, from: number, to: number): bigint {
   return (raw + scale - 1n) / scale
 }
 
-/** A need with 1% more, rounded up (pure). */
-export const withMargin = (raw: bigint): bigint => (raw * 101n + 99n) / 100n
-
-/** An amount with FUNDS_FIRST_GUESS_ROOM_BPS more for the fees and the slippage, rounded up (pure). */
+/**
+ * An amount with FUNDS_FIRST_GUESS_ROOM_BPS more for the fees and the slippage, rounded up (pure). Changed on purpose
+ * 2026-10-06 (crosschain-v1 1.1.0-rc.1, rugged's delta of 6 Oct §3): only to choose the holding (bringChoice); the
+ * amount itself is the service's, by output.
+ */
 function withFeeRoom(raw: bigint): bigint {
   return (raw * (10_000n + BigInt(FUNDS_FIRST_GUESS_ROOM_BPS)) + 9_999n) / 10_000n
-}
-
-/**
- * Added 2026-10-06 (the owner's point 2b, spec §3.4): the amount to send so the quote's guaranteed minimum covers `need`,
- * from a quote of `asked` whose minimum was `minimum`: the need at that quote's own rate, rounded up, plus 1% for a
- * bridge's fixed costs at another size. Null when the quote says nothing (pure).
- */
-export function sizeFromQuote(need: bigint, asked: bigint, minimum: bigint): bigint | null {
-  if (need <= 0n || asked <= 0n || minimum <= 0n) return null
-  return withMargin((need * asked + minimum - 1n) / minimum)
-}
-
-/** The winning candidate's guaranteed minimum, raw; null without a decision or a minimum (pure). */
-export function winningMinimum(quote: QuotePlan): bigint | null {
-  const winner = quote.candidates.find((c) => c.provider === quote.decision)
-  return winner?.minimumOutputRaw && RAW.test(winner.minimumOutputRaw) ? BigInt(winner.minimumOutputRaw) : null
-}
-
-/**
- * Added 2026-10-06 (the integration review: with "Get gas on {destination}", a quote sized down from a larger one lost
- * Relay's gas top-up, about US$2 whatever the amount): the part of the winner's quote that does not shrink with the
- * amount, in the token sent: its provider fee, when it carries gas delivered on the destination and is taken from what
- * is sent (on the origin, in the token sent: Relay's is). Without gas the provider's own fixed cost fits in the 1% the
- * sizing adds (sizeFromQuote). Zero otherwise (pure).
- */
-export function fixedFeeOf(quote: QuotePlan): bigint {
-  const winner = quote.candidates.find((c) => c.provider === quote.decision)
-  const fee = winner?.providerFee ?? null
-  if (!winner || winner.destinationGas === null || fee === null || !RAW.test(fee.amountRaw)) return 0n
-  return fee.chainId === quote.request.originChainId && lower(fee.token) === lower(quote.request.originToken) ? BigInt(fee.amountRaw) : 0n
 }
 
 /**
@@ -598,64 +588,6 @@ export function worthIn(need: bigint, needDecimals: number, needUsd: bigint | nu
   const num = need * needUsd * 10n ** BigInt(sentDecimals)
   const den = 10n ** BigInt(needDecimals) * sentUsd
   return (num + den - 1n) / den
-}
-
-/**
- * Added 2026-10-06 (the review of 2026-10-06: for another kind of token the first quote was of everything held, and it
- * stood): the first amount quoted for `need` of a target, sent as a token of `sentKind`: the need in the token sent (by
- * decimals for the same kind; at the prices Domino's service read, for another kind), with room for the fees, never more
- * than `available`. `blind`: another kind with no price read, so the first quote is of all that can be sent and only its
- * own rate sizes the amount (sizeStep). `short`: what can be sent is less than the need itself, by that estimate (pure).
- */
-export function firstAsk(input: {
-  need: bigint
-  needDecimals: number
-  needKind: Kind | null
-  sentDecimals: number
-  sentKind: Kind | null
-  available: bigint
-  prices: KindPrices
-}): { amount: bigint; blind: boolean; short: boolean } {
-  const { need, needDecimals, needKind, sentDecimals, sentKind, available, prices } = input
-  const same = needKind !== null && needKind === sentKind
-  const estimate = same
-    ? convertUnits(need, needDecimals, sentDecimals)
-    : needKind !== null && sentKind !== null
-      ? worthIn(need, needDecimals, prices[needKind], sentDecimals, prices[sentKind])
-      : null
-  if (estimate === null) return { amount: available, blind: true, short: false }
-  const room = withFeeRoom(estimate)
-  return { amount: room < available ? room : available, blind: false, short: available < estimate }
-}
-
-/**
- * What the sizing does once its first quote is back (Added 2026-10-06, the review of 2026-10-06; spec §3.4). `asked` was
- * quoted with the guaranteed minimum `minimum` (null: no route, or no decision); `available` is all that can be sent.
- *   - no minimum: that quote is shown as the service said it; but a blind first ask (everything held, for another kind)
- *     never stands as the amount: the person types it (`enter`);
- *   - covered: that quote, unless its own rate says FUNDS_SIZE_SLACK_BPS less would cover the need too: then once more,
- *     for the need at that rate; Changed on purpose 2026-10-06 (the integration review): `fee`, the quote's part that
- *     does not shrink with the amount (fixedFeeOf), is kept whole and only the rest is scaled, so a smaller quote still
- *     pays it (when it does shrink after all, this only brings a little more);
- *   - short: once more, for the need at that rate, never more than `available`; when `asked` was all of it already, that
- *     quote, said to be all there is (`short`).
- * Never a third quote (pure).
- */
-export type SizeStep = { step: 'show'; short: boolean } | { step: 'again'; amount: bigint; short: boolean } | { step: 'enter' }
-
-export function sizeStep(input: { need: bigint; asked: bigint; available: bigint; minimum: bigint | null; blind: boolean; fee?: bigint }): SizeStep {
-  const { need, asked, available, minimum, blind } = input
-  const scaled = minimum === null ? null : sizeFromQuote(need, asked, minimum)
-  if (scaled === null) return blind ? { step: 'enter' } : { step: 'show', short: false }
-  if (minimum !== null && minimum >= need) {
-    const fee = input.fee ?? 0n
-    const kept = fee > 0n && fee < asked ? sizeFromQuote(need, asked - fee, minimum) : null
-    const sized = kept === null ? scaled : kept + fee
-    const next = sized < available ? sized : available
-    return asked - next > (next * BigInt(FUNDS_SIZE_SLACK_BPS)) / 10_000n ? { step: 'again', amount: next, short: false } : { step: 'show', short: false }
-  }
-  const next = scaled < available ? scaled : available
-  return next > asked ? { step: 'again', amount: next, short: scaled > available } : { step: 'show', short: true }
 }
 
 /** A holding's worth in micro-dollars at its kind's price; null without one (pure). */

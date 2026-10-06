@@ -218,11 +218,26 @@ function candidateLines(
       destination,
       amount(c.minimumOutputRaw, request.destinationChainId, request.destinationToken),
     ),
+    // Added 2026-10-06 (rugged's delta of 6 Oct §3): what its deposit takes, its own by output (rounded up: it leaves the wallet).
+    ...(c.inputRaw === null ? [] : [feeLines.send(amount(c.inputRaw, request.originChainId, request.originToken, 'up'), origin)]),
     feeLines.network(origin, c.originGas !== null && c.originGas.feeRaw !== null ? provider : null),
   ]
   if (c.destinationGas !== null) lines.push(feeLines.destinationGas(amount(c.destinationGas.deliveredRaw, request.destinationChainId, ZERO), destination))
   if (c.etaSeconds !== null) lines.push(feeLines.eta(durationText(c.etaSeconds)))
   return lines
+}
+
+/**
+ * Added 2026-10-06 (rugged's delta of 6 Oct §3): an `input_above_max` candidate in words, its input (rounded up) against
+ * the most the wallet may send (rounded down): "Relay needs 100.916974 USDC, you can send 100.91 USDC from Base."; the
+ * §3.4 sentence when either is missing.
+ */
+export function aboveMaxText(quote: QuotePlan, c: Candidate, name: Naming, origin: string): string {
+  const { request } = quote
+  const provider = PROVIDER_NAME[c.provider]
+  if (c.inputRaw === null || request.maxInputRaw === null) return fill(CANDIDATE_COPY.input_above_max ?? '', { provider, origin })
+  const info = name.book(request.originChainId, request.originToken)
+  return feeLines.aboveMax(provider, shortAmountText(c.inputRaw, request.originToken, info, 'up'), shortAmountText(request.maxInputRaw, request.originToken, info), origin)
 }
 
 export function presentQuote(quote: QuotePlan, name: Naming): QuoteView {
@@ -237,7 +252,7 @@ export function presentQuote(quote: QuotePlan, name: Naming): QuoteView {
       name: PROVIDER_NAME[c.provider],
       winner: quote.decision === c.provider,
       status: c.status,
-      text: template === null ? null : fill(template, { provider: PROVIDER_NAME[c.provider], destination, origin }),
+      text: c.status === 'input_above_max' ? aboveMaxText(quote, c, name, origin) : template === null ? null : fill(template, { provider: PROVIDER_NAME[c.provider], destination, origin }),
       lines,
       exactLines,
       receive: lines && exactLines ? { text: lines[2], exact: exactLines[2] } : null,

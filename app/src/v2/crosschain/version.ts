@@ -8,10 +8,12 @@
  * Exact: a prerelease never satisfies a range, so rc.2 is refused until this pin moves.
  *
  * Changed on purpose (data) 2026-10-06: 1.0.0-rc.1 -> 1.1.0-rc.1 (quoting by output, the owner's authorization of
- * 6 Oct 2026). The package carries one version, so the app moves with it, by exact input only: every quote request
- * says `amountKind: 'exact_input'` and `maxInputRaw: null` (v2in/funds/model.ts quoteRequestOf), and what the wallet
- * sends is the winner's `inputRaw`, the amount asked in exact input. Asking by output is the funds offer's follow-up.
- * The listener answers both versions for the switch window; the Worker and this page are each one version.
+ * 6 Oct 2026). The package carries one version, so the app moves with it, and asks both ways (rugged's delta of 6 Oct
+ * §3): by exact input (`amountKind: 'exact_input'`, `maxInputRaw: null`, v2in/funds/model.ts quoteRequestOf) for a typed
+ * amount, Other networks, everything held and "All you have"; by output (`amountKind: 'output'`, `amountRaw` = what the
+ * position lacks, `maxInputRaw` = the sendable balance, v2in/funds/BringFunds.tsx outputRequestOf) for the one click
+ * sized for what the position lacks. What the wallet sends is always the winner's `inputRaw`. The listener answers both
+ * versions for the switch window; the Worker and this page are each one version.
  */
 import type { CrosschainContractVersion } from 'api-contracts/crosschain-v1/types'
 

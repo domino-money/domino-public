@@ -224,8 +224,10 @@ test('what is held on Ethereum and OP Mainnet joins the same logic: kinds, marks
   const holdings = model.holdingsFromChainBalances(ethereum, model.originCandidate(1)).holdings;
   const choice = model.bringChoice({ lacks: [lack], holdings, destination: 4663, origin: 1, deliverable: pool, prices: model.kindPrices(ethereum) });
   assert.deepEqual([choice.holding.symbol, choice.target], ['USDC', USDG], 'a plain bridge of a dollar');
-  const first = model.firstAsk({ need: 50_000_000n, needDecimals: 6, needKind: model.kindOf(4663, USDG), sentDecimals: 6, sentKind: model.kindOf(1, USDC_1), available: 100_000_000n, prices: model.kindPrices(ethereum) });
-  assert.deepEqual(first, { amount: 51_000_000n, blind: false, short: false }, 'the need with room for the fees, as from any network');
+  // Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3): the amount is asked by output, as from any network: the
+  // need must arrive, the USDC that can be sent is the most to send.
+  const request = model.quoteRequestOf({ originChainId: 1, originToken: USDC_1, destinationChainId: 4663, destinationToken: USDG, amountRaw: '50000000', slippageBps: 50, destinationGas: false, maxInputRaw: '100000000' });
+  assert.deepEqual([request.amountKind, request.amountRaw, request.maxInputRaw], ['output', '50000000', '100000000'], 'the need, by output, as from any network');
   const listing = { chains: [{ chainId: 1, name: 'Ethereum', tokens: [{ address: USDC_1, symbol: 'USDC', decimals: 6, providers: ['relay', 'across'] }] }] };
   assert.equal(model.holdingFor(holdings, USDG, 4663, 1, listing).token, USDC_1, 'the one the listing bridges');
   // The token to pay with weighs what is held there too: US$500 of USDC on Ethereum against US$40 of ETH here.

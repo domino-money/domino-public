@@ -257,13 +257,15 @@ test('the offer appears automatically, while wallet network changes wait for the
   assert.match(offer, /const underWay = ownWay \|\| heldNotice !== null \|\| held\.length > 0 \|\| deposits\.length > 0/);
   // Never everything held once an amount is typed: a figure, or the amount field for the person.
   assert.match(offer, /if \(typed && \(needRaw === null \|\| needRaw <= 0n\)\) \{/);
-  assert.match(offer, /await sizeBring\(p, needRaw, latest\.current\.gasFlag, turn, prices\)/);
-  // Changed on purpose 2026-10-06 (the review): the lack and the holding chosen together; the first ask by kind and price,
-  // then sizeStep; a first ask of everything held never stands as the amount; every quote within the cap, let go with the choice.
+  assert.match(offer, /await sizeBring\(p, needRaw, latest\.current\.gasFlag, turn\)/);
+  // Changed on purpose 2026-10-06 (the review): the lack and the holding chosen together (by kind and price); Changed on
+  // purpose 2026-10-06 (rugged's delta of 6 Oct §3): then ONE quote by output, the need with the sendable balance as the
+  // most to send; all there is by exact input only when less; every quote within the cap, let go with the choice.
   assert.match(offer, /bringChoice\(\{ lacks: latest\.current\.lacks, holdings, destination: chainId, origin, deliverable, prices \}\)/);
-  assert.match(offer, /const first = firstAsk\(\{ need, needDecimals, needKind: kindOf\(chainId, p\.target\), sentDecimals: p\.decimals, sentKind: kindOf\(p\.origin, p\.holding\.token\), available, prices \}\)/);
-  assert.match(offer, /const step = sizeStep\(\{ need, asked: first\.amount, available, minimum: winningMinimum\(probe\.data\.quote\), blind: first\.blind, fee: fixedFeeOf\(probe\.data\.quote\) \}\)/);
-  assert.match(offer, /return services\.client\.quote\(requestFor\(raw\), \{ owner: services\.owner, signal \}\)/, 'a sizing quote stops with its choice');
+  assert.match(offer, /const byOutput = outputRequestOf\(p, chainId, need, available, gas\)/);
+  assert.match(offer, /let probe = await ask\(byOutput\)/);
+  assert.doesNotMatch(offer, /firstAsk|sizeStep|winningMinimum|fixedFeeOf/);
+  assert.match(offer, /return services\.client\.quote\(wanted, \{ owner: services\.owner, signal \}\)/, 'a sizing quote stops with its choice');
   assert.equal([...offer.matchAll(/services\.client\.quote\(/g)].length, 2, 'two places ask a quote: the page\'s own ask and the sizing\'s, both counted');
   assert.equal([...offer.matchAll(/countQuote\(\)/g)].length, 2);
   assert.doesNotMatch(offer, /lackFor|firstGuess/);

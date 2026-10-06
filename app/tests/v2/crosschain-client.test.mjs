@@ -53,7 +53,7 @@ test('every response and variant validates and is accepted for its route, echoin
     'quote.destination-gas.json',
     'quote.native-only-across.json',
     'quote.none.json',
-    // Added 2026-10-06 (1.1.0-rc.1): quotes by output, which this client accepts although the page does not ask them yet.
+    // Added 2026-10-06 (1.1.0-rc.1): quotes by output, which the offer's one click asks (rugged's delta of 6 Oct §3).
     'quote.output-above-max.json',
     'quote.output-native.json',
     'quote.output.json',

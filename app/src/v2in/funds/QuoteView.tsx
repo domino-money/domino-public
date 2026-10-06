@@ -80,10 +80,10 @@ export function QuoteView({
   gas: GasChoice | null
   /**
    * Added 2026-10-06 (the owner's point 2b): the one line saying the holding is smaller than what the position lacks
-   * (`holding`); Changed on purpose 2026-10-06 (the integration review): or that the quote shown guarantees less than it
-   * (`quote`).
+   * (`holding`). Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3): the `quote` kind ("may bring less") is gone,
+   * since a quote by output guarantees at least what the position lacks (minimumOutputRaw >= amountRaw).
    */
-  short: { text: string; kind: 'holding' | 'quote' } | null
+  short: { text: string; kind: 'holding' } | null
   onDeposit: () => void
   /** "I rejected it in my wallet", under the wallet_request_open sentence. */
   onForget: () => void
@@ -239,7 +239,8 @@ export function QuoteView({
             </KeyValue>
             {winner && advantage !== null && other && (
               <KeyValue label={FUNDS_TEXT.whyThisRoute}>
-                {`${winner.name} delivers ${shortAmountText(advantage, quote.request.destinationToken, name.book(quote.request.destinationChainId, quote.request.destinationToken))} more than ${other.name}, after every fee.`}
+                {/* Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3): the decision is the better rate, so the margin is for the same amount sent. */}
+                {`${winner.name} delivers ${shortAmountText(advantage, quote.request.destinationToken, name.book(quote.request.destinationChainId, quote.request.destinationToken))} more than ${other.name} for the same amount sent, after every fee.`}
               </KeyValue>
             )}
             {winner && quote.reason === 'only_quote' && <KeyValue label={FUNDS_TEXT.whyThisRoute}>{`Only ${winner.name} quoted this deposit.`}</KeyValue>}

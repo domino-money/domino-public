@@ -54,21 +54,12 @@ export const FUNDS_DESTINATION_GAS_DEFAULT_ON = false
 export const FUNDS_AUTO_REQUOTES = 3
 
 /**
- * Added 2026-10-06 (the owner's point 2b: a US$16 position asked for US$270): the amount brought is sized from the
- * service's own quote, so its guaranteed minimum covers what the position lacks. The first quote asks for the need in the
- * token sent (by decimals for the same kind; at the USD prices Domino's service read, for another kind) plus this much
- * (Domino's 0.35%, the bridge's own fee and the 0.5% slippage, with room); when its minimum falls short, or its rate says
- * much less would do, one more quote asks for the need at the first one's rate, plus 1% (model.ts sizeStep,
- * sizeFromQuote). At most two quotes per choice: the service's quote budget is shared by every visitor.
+ * Added 2026-10-06 (the owner's point 2b: a US$16 position asked for US$270). Changed on purpose 2026-10-06 (rugged's
+ * delta of 6 Oct §3, crosschain-v1 1.1.0-rc.1): the amount brought is the service's own, asked by output in ONE quote;
+ * this room (Domino's 0.35%, the bridge's own fee and the 0.5% slippage, with room) is used only to choose which coin
+ * covers what the position lacks (model.ts bringChoice, withFeeRoom).
  */
 export const FUNDS_FIRST_GUESS_ROOM_BPS = 200
-
-/**
- * Added 2026-10-06 (the review of 2026-10-06: a US$100 position offered to bring 0.4995 ETH): a first quote that covers
- * the need while its own rate says this much less would too (a first ask of everything held, for another kind of token
- * with no price read; a price that was off) is asked once more, smaller (model.ts sizeStep).
- */
-export const FUNDS_SIZE_SLACK_BPS = 300
 
 /**
  * Added 2026-10-06 (the owner's point 4: no "Get a quote" button): a change under "Change amount" asks for a new quote by

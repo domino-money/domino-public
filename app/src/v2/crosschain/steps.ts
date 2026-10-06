@@ -16,8 +16,9 @@
  *   - the steps are sent exactly as they came: `to`, `data`, and `value = BigInt(valueRaw)`.
  *
  * What the deposit takes is the winning candidate's `inputRaw` (Changed on purpose (data) 2026-10-06, crosschain-v1
- * 1.1.0-rc.1): the request's `amountRaw` when it asks by exact input, as this page does, and the provider's when it
- * asks by output, where `amountRaw` is what must arrive.
+ * 1.1.0-rc.1): the request's `amountRaw` when it asks by exact input (a typed amount, Other networks, everything held,
+ * "All you have"), and the provider's when it asks by output (the one click sized for what the position lacks,
+ * v2in/funds/BringFunds.tsx outputRequestOf), where `amountRaw` is what must arrive.
  *
  * The approval is skipped only when an allowance reading for this owner, this token and this spender on the origin
  * chain covers the amount. Without a reading the exact approval stays: it moves nothing by itself (F5).

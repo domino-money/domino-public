@@ -229,7 +229,8 @@ test('a failed request: §3.8 words, its code apart, and whether it asks again b
 });
 
 // Added 2026-10-05 (the owner: "it has to happen behind the scenes"): the one click "Bring it from {network}" chooses the
-// token and the amount itself (src/v2in/funds/BringFunds.tsx bringFrom over model.ts holdingFor, convertUnits, withMargin).
+// token and the amount itself (src/v2in/funds/BringFunds.tsx bringFrom over model.ts holdingFor, convertUnits; the amount,
+// since 2026-10-06, the service's own by output: below).
 test('the one click chooses what to send: the same kind of token first, native ETH before WETH, only what the listing bridges', () => {
   const WETH_BASE = '0x4200000000000000000000000000000000000006';
   const holding = (token, symbol, decimals, raw) => ({ chainId: 8453, chainName: 'Base', token, symbol, decimals, raw });
@@ -249,13 +250,10 @@ test('the one click chooses what to send: the same kind of token first, native E
   assert.equal(model.holdingFor(held, ETH, 4663, 8453, listing([])), null);
 });
 
-test('the amount: the need in the token sent, with 1% more for the bridge\'s fees, rounded up', () => {
+test('a need in the token sent: converted by decimals, rounded up', () => {
   assert.equal(model.convertUnits(2_100_000_000_000_000n, 18, 18), 2_100_000_000_000_000n);
   assert.equal(model.convertUnits(5_000_000n, 6, 18), 5_000_000_000_000_000_000n, 'more decimals: exact');
   assert.equal(model.convertUnits(1_000_000_000_000_000_001n, 18, 6), 1_000_001n, 'fewer decimals: rounded up, never short');
-  assert.equal(model.withMargin(100n), 101n);
-  assert.equal(model.withMargin(2_100_000_000_000_000n), 2_121_000_000_000_000n);
-  assert.equal(model.withMargin(1n), 2n, 'rounded up');
 });
 
 // Added 2026-10-06 (the owner's point 2b): a holding of the kind wanted that covers the need comes before one that does not.
@@ -297,21 +295,43 @@ test('kinds and the target rule: a dollar to the stable, ether to ETH or WETH, e
   // After an amount, which lack a network's holdings serve is chosen with the holding itself (model.ts bringChoice, below).
 });
 
-// Added 2026-10-06 (the owner's point 2b, spec §3.4): the amount brought is sized from the service's own quote.
-test('sizing from the quote: the first ask has room for the fees; the second scales the need by the first one\'s minimum', () => {
-  // 100 USDG lacking, sent as USDC (6 decimals both): 100 + 2%.
-  const sameKind = (need, needDecimals, sentDecimals) => model.firstAsk({ need, needDecimals, needKind: 'dollar', sentDecimals, sentKind: 'dollar', available: 10n ** 30n, prices: { ether: null, dollar: null } }).amount;
-  assert.equal(sameKind(100_000_000n, 6, 6), 102_000_000n);
-  assert.equal(sameKind(1n, 18, 6), 2n, 'converted up, then the room, rounded up');
-  // A quote of 102 whose minimum was 99: 100 at that rate is 103.030304 (rounded up), plus 1%, rounded up.
-  assert.equal(model.sizeFromQuote(100_000_000n, 102_000_000n, 99_000_000n), 104_060_608n);
-  assert.equal(model.sizeFromQuote(0n, 1n, 1n), null);
-  assert.equal(model.sizeFromQuote(1n, 1n, 0n), null);
-  const quote = (decision, minimum) => ({ decision, candidates: [{ provider: 'relay', minimumOutputRaw: minimum }, { provider: 'across', minimumOutputRaw: '5' }] });
-  assert.equal(model.winningMinimum(quote('relay', '99073589')), 99_073_589n);
-  assert.equal(model.winningMinimum(quote('across', null)), 5n);
-  assert.equal(model.winningMinimum(quote(null, '1')), null);
-  assert.equal(model.winningMinimum(quote('relay', null)), null);
+// Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3, crosschain-v1 1.1.0-rc.1): the amount brought is no longer
+// sized from two quotes; ONE quote asks by output: what the position lacks must arrive, the coin's sendable balance is the
+// most to send. The old sizing (firstAsk, sizeStep, sizeFromQuote, withMargin, winningMinimum, fixedFeeOf) is gone.
+test('the one click\'s request: by output, the need in destination units, the sendable balance as the most to send; the runtime takes it', () => {
+  const byOutput = model.quoteRequestOf({ originChainId: 8453, originToken: USDC_BASE.toUpperCase().replace('0X', '0x'), destinationChainId: 4663, destinationToken: USDG, amountRaw: '100000000', slippageBps: 50, destinationGas: false, maxInputRaw: '150000000' });
+  assert.deepEqual(byOutput, { originChainId: 8453, originToken: USDC_BASE, destinationChainId: 4663, destinationToken: USDG, amountKind: 'output', amountRaw: '100000000', maxInputRaw: '150000000', slippageBps: 50, destinationGas: false });
+  assert.equal(runtime.validateRequest('quote', byOutput), true);
+  // The package's own request by output (variants/quote.output) is this one, less its owner.
+  const { owner, ...recorded } = JSON.parse(readFileSync(new URL('../../../api-contracts/crosschain-v1/fixtures/variants/quote.output.json', import.meta.url), 'utf8')).quote.request;
+  assert.ok(owner);
+  assert.deepEqual(byOutput, recorded);
+  // With "Get gas on {destination}": the same request, Relay adding the gas to what is sent.
+  assert.equal(runtime.validateRequest('quote', { ...byOutput, destinationGas: true }), true);
+  // Without a cap it is by exact input, as typed amounts, "Other networks" and everything held are.
+  assert.deepEqual({ ...model.quoteRequestOf({ ...byOutput, maxInputRaw: undefined }) }, { ...byOutput, amountKind: 'exact_input', maxInputRaw: null });
+  for (const name of ['sizeStep', 'firstAsk', 'sizeFromQuote', 'withMargin', 'winningMinimum', 'fixedFeeOf']) assert.equal(model[name], undefined, `${name} is gone`);
+  const constants = require('../../.test-build/app/src/v2in/funds/constants.js');
+  assert.equal(constants.FUNDS_SIZE_SLACK_BPS, undefined, 'FUNDS_SIZE_SLACK_BPS is gone');
+});
+
+test('both bridges above what can be sent: what each needs against the most the wallet may send, in one line', () => {
+  const { naming } = require('../../.test-build/app/src/v2/crosschain/present.js');
+  const { FUNDS_TEXT } = require('../../.test-build/app/src/v2in/funds/copy.js');
+  const recorded = JSON.parse(readFileSync(new URL('../../../api-contracts/crosschain-v1/fixtures/variants/quote.output-above-max.json', import.meta.url), 'utf8')).quote;
+  assert.equal(model.aboveMaxOf(recorded, naming(null)), null, 'Across still sends it: no line');
+  const both = { ...recorded, decision: null, reason: 'no_quote', steps: [], candidates: recorded.candidates.map((c) => ({ ...c, status: 'input_above_max' })) };
+  const above = model.aboveMaxOf(both, naming(null));
+  assert.deepEqual(above, { needs: ['Relay needs 100.916974 USDC', 'Across needs 100.902201 USDC'], max: '100.91 USDC' });
+  assert.equal(FUNDS_TEXT.aboveMax(above.needs, above.max, 'Base'), 'Relay needs 100.916974 USDC and Across needs 100.902201 USDC; you can send 100.91 USDC from Base.');
+  assert.equal(model.aboveMaxOf({ ...both, request: { ...both.request, amountKind: 'exact_input', maxInputRaw: null } }, naming(null)), null, 'never by exact input');
+  // The page: ONE quote by output, then all there is by exact input only when no bridge can send the need.
+  const offer = readFileSync(new URL('../../src/v2in/funds/BringFunds.tsx', import.meta.url), 'utf8');
+  assert.match(offer, /const byOutput = outputRequestOf\(p, chainId, need, available, gas\)/);
+  assert.match(offer, /show\(allOf, all, FUNDS_TEXT\.aboveMax\(above\.needs, above\.max, network\)\)/);
+  assert.match(offer, /return show\(allOf, all, FUNDS_TEXT\.allYouHave\(network\)\)/);
+  assert.match(offer, /for \(let attempt = 1; probe !== null && !probe\.ok && alive\(\); attempt \+= 1\)/, 'never left on screen unsized');
+  assert.doesNotMatch(offer, /sizeStep|firstAsk|fixedFeeOf|winningMinimum/);
 });
 
 test('a change under Change amount is quoted after a pause, and never more than six times a minute', () => {
@@ -449,82 +469,6 @@ test('the prices of each kind, as Domino\'s service read them: any network\'s ET
   assert.equal(model.worthIn(1n, 6, null, 18, PRICES.ether), null);
 });
 
-test('the first amount asked: the need in the token sent with room for the fees; for another kind at the prices read; with none, all of it, said blind', () => {
-  const available = 499_500_000_000_000_000n; // 0.5 ETH less the gas Review keeps
-  const ask = (input) => model.firstAsk({ need: 100_000_000n, needDecimals: 6, sentDecimals: 18, available, prices: PRICES, ...input });
-  // The same kind: 100 USDG sent as USDC, 2% more.
-  assert.deepEqual(model.firstAsk({ need: 100_000_000n, needDecimals: 6, needKind: 'dollar', sentDecimals: 6, sentKind: 'dollar', available: 10n ** 12n, prices: NO_PRICES }), { amount: 102_000_000n, blind: false, short: false });
-  // Another kind: 100 USDG is 0.025 ETH; 2% more.
-  assert.deepEqual(ask({ needKind: 'dollar', sentKind: 'ether' }), { amount: 25_500_000_000_000_000n, blind: false, short: false });
-  assert.deepEqual(ask({ needKind: 'dollar', sentKind: 'ether', available: 10n ** 16n }), { amount: 10n ** 16n, blind: false, short: true }, 'less than the need: all of it, said');
-  // No price read: all that can be sent, sized afterwards from its own quote only.
-  assert.deepEqual(ask({ needKind: 'dollar', sentKind: 'ether', prices: NO_PRICES }), { amount: available, blind: true, short: false });
-  assert.deepEqual(ask({ needKind: null, sentKind: 'ether' }), { amount: available, blind: true, short: false }, 'a kind not known: blind');
-});
-
-test('after the first quote: that quote when it covers without much to spare; else one more at its rate, never past what is held; never a third', () => {
-  const need = 100_000_000n;
-  // Covered, close to the need: that quote.
-  assert.deepEqual(model.sizeStep({ need, asked: 102_000_000n, available: 10n ** 12n, minimum: 100_900_000n, blind: false }), { step: 'show', short: false });
-  // Covered many times over (a blind first ask of everything): once more, for the need at that rate, plus 1%.
-  const blind = model.sizeStep({ need, asked: 499_500_000_000_000_000n, available: 499_500_000_000_000_000n, minimum: 1_990_000_000n, blind: true });
-  assert.equal(blind.step, 'again');
-  assert.equal(blind.amount, model.sizeFromQuote(need, 499_500_000_000_000_000n, 1_990_000_000n));
-  assert.ok(blind.amount < 26_000_000_000_000_000n && blind.amount > 25_000_000_000_000_000n, `about 0.025 ETH, never 0.4995: ${blind.amount}`);
-  // Short at this size: once more, larger.
-  assert.deepEqual(model.sizeStep({ need, asked: 102_000_000n, available: 10n ** 12n, minimum: 97_000_000n, blind: false }), { step: 'again', amount: model.sizeFromQuote(need, 102_000_000n, 97_000_000n), short: false });
-  // Short, and more than is held: all of it, said; all of it already asked: that quote, said.
-  assert.deepEqual(model.sizeStep({ need, asked: 102_000_000n, available: 103_000_000n, minimum: 97_000_000n, blind: false }), { step: 'again', amount: 103_000_000n, short: true });
-  assert.deepEqual(model.sizeStep({ need, asked: 50_000_000n, available: 50_000_000n, minimum: 49_000_000n, blind: false }), { step: 'show', short: true });
-  // No route (no minimum): shown as the service said it; a blind ask of everything held never stands: the person types it.
-  assert.deepEqual(model.sizeStep({ need, asked: 102_000_000n, available: 10n ** 12n, minimum: null, blind: false }), { step: 'show', short: false });
-  assert.deepEqual(model.sizeStep({ need, asked: 10n ** 18n, available: 10n ** 18n, minimum: null, blind: true }), { step: 'enter' });
-});
-
-// Added 2026-10-06 (the integration review, money #1): "Get gas on Base" ticked, a Base WETH/VIRTUAL position 0.005926 WETH
-// short, 500 USDC on Arbitrum One and no price read (a blind first ask of all of it). Relay's gas top-up, about US$2 in its
-// provider fee whatever the amount, used to be scaled down with the rest: the quote shown guaranteed about 0.89 of the need.
-test('sizing down from a larger quote keeps the part that does not shrink (Relay\'s gas top-up) whole: the smaller quote still covers', () => {
-  const FEE = 2_083_748n; // Relay's provider fee with the gas top-up, in USDC (6 decimals)
-  const ETH_USD = 2_700n;
-  /** The guaranteed minimum, in WETH wei, of a quote of `x` USDC: 0.35% Domino fee, the fixed fee, 0.5% slippage. */
-  const minimumOf = (x) => ((((x - (x * 35n) / 10_000n - FEE) * 10n ** 12n) / ETH_USD) * 9_950n) / 10_000n;
-  const need = 5_926_000_000_000_000n;
-  const available = 500_000_000n;
-  const probe = { need, asked: available, available, minimum: minimumOf(available), blind: true };
-  const kept = model.sizeStep({ ...probe, fee: FEE });
-  assert.equal(kept.step, 'again');
-  assert.ok(minimumOf(kept.amount) >= need, `the smaller quote's minimum covers the need: ${minimumOf(kept.amount)} >= ${need}`);
-  assert.ok(kept.amount < 20_000_000n, `about the need, never all of it: ${kept.amount}`);
-  const scaled = model.sizeStep(probe);
-  assert.ok(minimumOf(scaled.amount) < need, 'scaled whole, the fixed part shrank with it: short (the bug)');
-  // A fee that does shrink with the amount: kept whole, it only brings a little more, never less.
-  const proportional = (x) => ((((x - (x * 35n) / 10_000n - (x * 5n) / 10_000n) * 10n ** 12n) / ETH_USD) * 9_950n) / 10_000n;
-  const big = model.sizeStep({ need, asked: available, available, minimum: proportional(available), blind: true, fee: (available * 5n) / 10_000n });
-  assert.ok(proportional(big.amount) >= need);
-  // Short of the need: the fee changes nothing (scaling up already pays any fixed part).
-  assert.deepEqual(model.sizeStep({ need: 100_000_000n, asked: 102_000_000n, available: 10n ** 12n, minimum: 97_000_000n, blind: false, fee: 2_000_000n }), model.sizeStep({ need: 100_000_000n, asked: 102_000_000n, available: 10n ** 12n, minimum: 97_000_000n, blind: false }));
-});
-
-test('the fixed part of a quote: the winner\'s provider fee when it carries gas on the destination and is taken from what is sent; else none', () => {
-  const USDC = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
-  const quote = (patch = {}, decision = 'relay') => ({
-    decision,
-    request: { originChainId: 42161, originToken: USDC },
-    candidates: [{ provider: 'relay', destinationGas: { deliveredRaw: '740778127264099' }, providerFee: { amountRaw: '2083748', chainId: 42161, token: USDC.toUpperCase().replace('0X', '0x') }, ...patch }],
-  });
-  assert.equal(model.fixedFeeOf(quote()), 2_083_748n);
-  assert.equal(model.fixedFeeOf(quote({ destinationGas: null })), 0n, 'without gas, the 1% the sizing adds covers it');
-  assert.equal(model.fixedFeeOf(quote({ providerFee: { amountRaw: '2083748', chainId: 4663, token: USDG } })), 0n, 'taken from what arrives: not in the token sent');
-  assert.equal(model.fixedFeeOf(quote({ providerFee: null })), 0n);
-  assert.equal(model.fixedFeeOf(quote({}, null)), 0n, 'no decision');
-  // The page keeps it whole when it sizes (BringFunds.tsx sizeBring), and asks a failed first quote again, sized or not.
-  const offer = readFileSync(new URL('../../src/v2in/funds/BringFunds.tsx', import.meta.url), 'utf8');
-  assert.match(offer, /blind: first\.blind, fee: fixedFeeOf\(probe\.data\.quote\) \}\)/);
-  assert.match(offer, /for \(let attempt = 1; probe !== null && !probe\.ok && alive\(\); attempt \+= 1\)/, 'never left on screen unsized');
-  assert.doesNotMatch(offer, /return show\(first\.amount, null, first\.short\)/);
-});
-
 // The review's blocker: a USDG/TSLA pool on Robinhood Chain, 100 USDG typed, only 0.5 ETH held on Base. The page used to
 // offer "Bring 0.4995 ETH from Base" for a US$100 position.
 test('another kind of token held: the amount asked is about what the position lacks, never the balance, with prices or without', () => {
@@ -534,16 +478,13 @@ test('another kind of token held: the amount asked is about what the position la
   assert.equal(choice.target, USDG);
   assert.equal(choice.holding.token, ETH);
   const available = model.sendable(choice.holding);
-  // With the prices Domino's service read: one quote, of about US$102 of ETH.
-  const first = model.firstAsk({ need: 100_000_000n, needDecimals: 6, needKind: 'dollar', sentDecimals: 18, sentKind: 'ether', available, prices: PRICES });
-  assert.equal(first.amount, 25_500_000_000_000_000n);
-  assert.deepEqual(model.sizeStep({ need: 100_000_000n, asked: first.amount, available, minimum: 100_700_000n, blind: first.blind }), { step: 'show', short: false });
-  // Without them: everything is asked once, and that quote's own rate sizes the one that is shown.
-  const blind = model.firstAsk({ need: 100_000_000n, needDecimals: 6, needKind: 'dollar', sentDecimals: 18, sentKind: 'ether', available, prices: NO_PRICES });
-  assert.equal(blind.amount, available);
-  const step = model.sizeStep({ need: 100_000_000n, asked: blind.amount, available, minimum: 1_985_000_000n, blind: true });
-  assert.equal(step.step, 'again');
-  assert.ok(step.amount * 10n < available, 'about the need, never the balance');
+  // Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3): with prices or without, ONE quote by output: 100 USDG must
+  // arrive, and at most the ETH that can be sent leaves; the service answers how much ETH that takes.
+  const request = model.quoteRequestOf({ originChainId: 8453, originToken: ETH, destinationChainId: 4663, destinationToken: USDG, amountRaw: '100000000', slippageBps: 50, destinationGas: false, maxInputRaw: available.toString() });
+  assert.equal(request.amountKind, 'output');
+  assert.equal(request.amountRaw, '100000000', 'what the position lacks, never the balance');
+  assert.equal(request.maxInputRaw, available.toString());
+  assert.equal(runtime.validateRequest('quote', request), true);
 });
 
 test('the lack and the holding chosen together: one that covers first, a plain bridge first; native ETH when both cover; the larger when none does', () => {

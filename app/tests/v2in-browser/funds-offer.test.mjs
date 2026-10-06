@@ -88,7 +88,8 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
   const bridgeCalls = [];
   // Changed on purpose 2026-10-06 (the owner's point 2b): the offer sizes what it brings from the service's own quotes, so
   // the stub answers whatever amount is asked (../support/crosschain-quotes.mjs, from the package's recorded answers):
-  // with Relay's gas on the destination when asked, and with no route for NO_ROUTE_RAW.
+  // with Relay's gas on the destination when asked, and with no route for NO_ROUTE_RAW. Changed on purpose 2026-10-06
+  // (rugged's delta of 6 Oct §3): a one click asks by output, answered from the package's quote.output variants.
   const bridgeRoute = async (request, url) => {
     if (!bridge || !url.pathname.startsWith('/api/crosschain/v1/')) return undefined;
     const route = url.pathname.split('/').at(-1);
@@ -293,7 +294,9 @@ const ARB_WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
 const ARB_WALLET = { tokens: { [`42161:${ARB_USDC}`]: { balance: 100_000_000n, decimals: 6 } }, native: { 42161: 10n ** 16n } };
 
 // Changed on purpose 2026-10-06 (the owner's point 2b: a US$16 position asked for US$270): the amount brought is what the
-// position lacks, sized from the service's own quote, never everything held there.
+// position lacks, sized from the service's own quote, never everything held there. Changed on purpose 2026-10-06 (rugged's
+// delta of 6 Oct §3): ONE quote by output: the need must arrive, the USDC that can be sent is the most to send; the
+// button and the amount field say what the winner's deposit takes.
 test('one click on a network: signed in once, the wallet moved there once, its balance read, the token and the amount the position lacks, one quote', async () => {
   const s = await openNewPosition({ bridge: true, switching: true, balances: ARB_WALLET });
   try {
@@ -313,20 +316,20 @@ test('one click on a network: signed in once, the wallet moved there once, its b
     await quote.waitFor({ timeout: 30_000 });
     assert.equal(s.signCalls(), 1, 'signed once');
     assert.deepEqual(switches(s), ['0xa4b1'], 'the wallet moved to Arbitrum One once, to read it (the service read nothing)');
-    // 50 USDG lacking, sent as USDC: 50 plus room for the fees; the first quote's minimum covers it, so it is the only one.
-    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountRaw, q.destinationToken, q.destinationGas]), [[42161, ARB_USDC, '51000000', USDG, false]], 'one quote, for what the position lacks');
+    // 50 USDG lacking, sent as USDC: by output, 50 USDG must arrive, at most the 100 USDC there leaves.
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountKind, q.amountRaw, q.maxInputRaw, q.destinationToken, q.destinationGas]), [[42161, ARB_USDC, 'output', '50000000', '100000000', USDG, false]], 'one quote, for what the position lacks');
     // Changed on purpose 2026-10-06 (the integration review): the title names the network alone once it is picked; the
     // button says what leaves the wallet (USDC), the card what arrives (USDG).
     assert.match(await offer.locator('[data-funds-title]').innerText(), /^Bring funds from Arbitrum One$/);
     assert.equal(await offer.locator('[data-funds-sources]').count(), 0, 'the choice made, the quote is the screen');
     // The card: what arrives and when, one button, the discrete line; the rest folded under one Details.
-    assert.equal((await quote.locator('[data-funds-receive] .dm-funds-delivery').innerText()).trim(), 'You receive about 50.781437 USDG on Robinhood Chain (at least 50.52753 USDG)');
+    assert.equal((await quote.locator('[data-funds-receive] .dm-funds-delivery').innerText()).trim(), 'You receive about 50.251256 USDG on Robinhood Chain (at least 50 USDG)');
     assert.equal((await quote.locator('[data-funds-eta]').innerText()).trim(), 'Arrives in about 1 s');
-    assert.equal((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), 'Bring 51 USDC from Arbitrum One');
+    assert.equal((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), 'Bring 50.458487 USDC from Arbitrum One', 'what the winner\'s deposit takes');
     // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §1): in view, Domino's fee with its amount,
     // token, chain and where it is charged (in #16's discrete line), and the network fee on the origin; the rest in Details.
-    assert.match(await quote.locator('[data-funds-bridge-elsewhere]').innerText(), /^Domino fee \(0\.35%\): 0\.1785 USDC, charged by Relay on Arbitrum One · you can also bridge with any other service$/);
-    assert.equal((await quote.locator('[data-funds-network-fee="estimated"]').innerText()).trim(), 'Network fee on Arbitrum One: about 0.000001 ETH, estimated by Relay');
+    assert.match(await quote.locator('[data-funds-bridge-elsewhere]').innerText(), /^Domino fee \(0\.35%\): 0\.175909 USDC, charged by Relay on Arbitrum One · you can also bridge with any other service$/);
+    assert.equal((await quote.locator('[data-funds-network-fee="estimated"]').innerText()).trim(), 'Network fee on Arbitrum One: about <0.000001 ETH, estimated by Relay');
     assert.equal(await quote.locator('details').count(), 1, 'ONE Details');
     assert.equal(await quote.locator('[data-funds-quote-details]').getAttribute('open'), null, 'closed');
     assert.equal(await quote.locator('[data-funds-candidate="relay"]').isVisible(), false, 'the bridge fee and the other route are in Details');
@@ -334,9 +337,15 @@ test('one click on a network: signed in once, the wallet moved there once, its b
     assert.equal(await offer.locator('.dm-pill').count(), 0, 'no "Best" pill');
     await capture(s, 'funds-one-click');
     await quote.locator('[data-funds-quote-details] > summary').click();
-    assert.match(await quote.locator('[data-funds-candidate="relay"][data-funds-winner] [data-funds-lines]').innerText(), /Domino fee \(0\.35%\): 0\.1785 USDC, charged by Relay on Arbitrum One/);
+    assert.match(await quote.locator('[data-funds-candidate="relay"][data-funds-winner] [data-funds-lines]').innerText(), /Domino fee \(0\.35%\): 0\.175909 USDC, charged by Relay on Arbitrum One/);
+    assert.match(await quote.locator('[data-funds-candidate="relay"][data-funds-winner] [data-funds-lines]').innerText(), /You send 50\.458487 USDC on Arbitrum One/);
+    assert.match(await quote.locator('[data-funds-candidate="across"] [data-funds-lines]').innerText(), /You send 50\.451101 USDC on Arbitrum One/, 'each route says what it sends');
     assert.equal(await quote.locator('[data-funds-candidate="across"]').isVisible(), true, 'the other route, in the same Details');
-    assert.match(await quote.locator('[data-funds-send]').innerText(), /51 USDC/);
+    assert.match(await quote.locator('[data-funds-send]').innerText(), /50\.458487 USDC/);
+    assert.match(await quote.locator('[data-funds-quote-details]').innerText(), /Relay delivers 0\.007255 USDG more than Across for the same amount sent, after every fee\./);
+    // The amount field shows the winner's input (origin units), not what must arrive.
+    await offer.locator('[data-funds-edit] > summary').click();
+    assert.equal(await offer.locator('[data-funds-edit] #funds-amount').inputValue(), '50.458487');
     await capture(s, 'funds-one-click-details');
   } finally { await s.close(); }
 });
@@ -350,12 +359,12 @@ test('the quote follows the amount typed: sized again when it changes, gone when
     const offer = s.page.locator('[data-funds-offer]');
     await offer.locator('[data-funds-network="42161"]').click();
     await signInFromDialog(s);
-    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.textContent?.trim() === 'Bring 51 USDC from Arbitrum One', null, { timeout: 30_000 });
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.textContent?.trim() === 'Bring 50.458487 USDC from Arbitrum One', null, { timeout: 30_000 });
     await typeUsdg(s, '80');
     // Changed on purpose 2026-10-06 (the review): the quote for 50 is greyed and closed at once, not only once its new size is asked.
     assert.equal(await s.page.evaluate(() => document.querySelector('[data-funds-quote-stale]') !== null && document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.disabled === true), true, 'never sendable for the old amount');
-    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.textContent?.trim() === 'Bring 81.6 USDC from Arbitrum One' && !document.querySelector('[data-funds-quote-stale]'), null, { timeout: 30_000 });
-    assert.deepEqual(s.quotes().map((q) => q.amountRaw), ['51000000', '81600000'], 'one quote each, the second for the new amount');
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.textContent?.trim() === 'Bring 80.73358 USDC from Arbitrum One' && !document.querySelector('[data-funds-quote-stale]'), null, { timeout: 30_000 });
+    assert.deepEqual(s.quotes().map((q) => [q.amountKind, q.amountRaw]), [['output', '50000000'], ['output', '80000000']], 'one quote each, the second for the new amount');
     await typeUsdg(s, '');
     await offer.waitFor({ state: 'detached' });
     assert.equal(s.quotes().length, 2, 'nothing asked for an amount no longer lacking');
@@ -447,23 +456,24 @@ test('the quote card: gas on the destination in the card, sized again; Change am
     assert.equal(await quote.locator('[data-funds-candidate="across"]').isVisible(), false, 'the other route is folded');
     await quote.locator('[data-funds-quote-details] > summary').click();
     assert.equal(await quote.locator('[data-funds-candidate="across"]').isVisible(), true, 'the other route and why it has no price stay one click away');
-    // Sized again with the gas: what arrives with Relay's top-up taken out still covers the position.
+    // Changed on purpose 2026-10-06 (rugged's delta of 6 Oct §3): asked again by output, ONE quote with the gas: what must
+    // arrive is the same, and Relay adds its top-up's cost to what is sent.
     const sized = s.quotes().filter((q) => q.destinationGas);
-    assert.ok(sized.length >= 1 && sized.length <= 2, `${sized.length} quotes with the gas: at most one more`);
-    assert.ok(BigInt(sized.at(-1).amountRaw) > 51_000_000n, 'more sent, so what arrives still covers the position');
+    assert.deepEqual(sized.map((q) => [q.amountKind, q.amountRaw, q.maxInputRaw]), [['output', '50000000', '100000000']], 'one quote with the gas');
+    assert.equal((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), 'Bring 52.49329 USDC from Arbitrum One', 'more sent, so what arrives still covers the position');
     await gas.uncheck();
-    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote]:not([aria-busy]) [data-funds-deposit-button]')?.textContent?.trim() === 'Bring 51 USDC from Arbitrum One' && !document.querySelector('[data-funds-quote-stale]'), null, { timeout: 30_000 });
-    // Change amount: the amount, the network and the token; nothing else.
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote]:not([aria-busy]) [data-funds-deposit-button]')?.textContent?.trim() === 'Bring 50.458487 USDC from Arbitrum One' && !document.querySelector('[data-funds-quote-stale]'), null, { timeout: 30_000 });
+    // Change amount: the amount, the network and the token; nothing else. The amount is what the winner's deposit takes.
     await offer.locator('[data-funds-edit] > summary').click();
     const edit = offer.locator('[data-funds-edit]');
-    assert.equal(await edit.locator('#funds-amount').inputValue(), '51');
+    assert.equal(await edit.locator('#funds-amount').inputValue(), '50.458487');
     assert.equal(await edit.locator('[data-funds-slippage], [data-funds-get-quote], [data-funds-providers]').count(), 0, 'no bridge slippage, no Get a quote, no provider list');
     assert.equal(await edit.getByText(/Relay|Across/).count(), 0, 'no provider names');
     const before = s.quotes().length;
     await edit.locator('#funds-amount').fill('3');
     await edit.locator('#funds-amount').fill('30');
     await s.page.waitForFunction(() => document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.textContent?.trim() === 'Bring 30 USDC from Arbitrum One' && !document.querySelector('[data-funds-quote-stale]'), null, { timeout: 30_000 });
-    assert.deepEqual(s.quotes().slice(before).map((q) => q.amountRaw), ['30000000'], 'asked once, after the pause, for what was typed last');
+    assert.deepEqual(s.quotes().slice(before).map((q) => [q.amountKind, q.amountRaw, q.maxInputRaw]), [['exact_input', '30000000', null]], 'asked once, after the pause, for what was typed last, by exact input');
     await edit.locator('#funds-amount').fill('7');
     await s.page.waitForFunction(() => document.querySelector('[data-funds-quote]')?.getAttribute('data-funds-decision') === 'none' && !document.querySelector('[data-funds-quote-stale]'), null, { timeout: 30_000 });
     assert.equal(await quote.locator('[data-funds-deposit-button]').count(), 0, 'no send control for a plan with no route');
@@ -530,11 +540,36 @@ test('before an amount, ONE discreet line names what the service read on another
     await signInFromDialog(s);
     const quote = s.page.locator('[data-funds-offer] [data-funds-quote]');
     await quote.waitFor({ timeout: 30_000 });
-    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountRaw, q.destinationToken]), [[42161, ARB_USDC, '100000000', USDG]], 'all of it, brought as USDG (the same kind)');
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountKind, q.amountRaw, q.destinationToken]), [[42161, ARB_USDC, 'exact_input', '100000000', USDG]], 'all of it, brought as USDG (the same kind), by exact input');
     assert.equal((await s.page.locator('[data-funds-title]').innerText()).trim(), 'Bring funds from Arbitrum One', 'never a token beside the button\'s other one');
     assert.deepEqual(switches(s), [], 'the wallet stays on Robinhood Chain for the quote');
     assert.equal(await s.page.locator('[data-funds-line]').count(), 0, 'the line gives way to the offer');
     await capture(s, 'funds-discreet-line-quote');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (rugged's delta of 6 Oct §3): less than the need there. The same kind smaller than the need itself: all of
+// it, by exact input, said in one line, one quote. Enough by decimals but not after the fees (both bridges above what can
+// be sent): what each needs against what can be sent, in one line, then all of it by exact input.
+test('less than the need there: all of it by exact input, said in one line; both bridges above the balance say what each needs', async () => {
+  // 100 USDC on Arbitrum One, as Domino's service reads it, with ETH there for its gas only: the USDC is what is brought.
+  const s = await openNewPosition({ bridge: true, served: arbitrumHoldings({ [ARB_USDC]: 100_000_000n, [ZERO]: 1_000_000_000_000n }) });
+  try {
+    await s.page.locator('[data-funds-line]').waitFor({ timeout: 30_000 });
+    await typeUsdg(s, '150');
+    const offer = s.page.locator('[data-funds-offer]');
+    await offer.locator('[data-funds-network-holds="42161"]').waitFor({ timeout: 30_000 });
+    await offer.locator('[data-funds-network="42161"]').click();
+    await signInFromDialog(s);
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote] [data-funds-deposit-button]')?.textContent?.trim() === 'Bring 100 USDC from Arbitrum One', null, { timeout: 30_000 });
+    assert.deepEqual(s.quotes().map((q) => [q.amountKind, q.amountRaw, q.maxInputRaw]), [['exact_input', '100000000', null]], 'one quote, of all of it');
+    assert.equal((await offer.locator('[data-funds-short-holding="holding"]').innerText()).trim(), "That's all you have on Arbitrum One. It's less than this amount needs.");
+    await typeUsdg(s, '99.9');
+    await s.page.waitForFunction(() => /needs/.test(document.querySelector('[data-funds-short-holding]')?.textContent ?? '') && !document.querySelector('[data-funds-quote-stale]'), null, { timeout: 30_000 });
+    assert.deepEqual(s.quotes().slice(1).map((q) => [q.amountKind, q.amountRaw, q.maxInputRaw]), [['output', '99900000', '100000000'], ['exact_input', '100000000', null]], 'by output first; above the balance for both, then all of it');
+    assert.equal((await offer.locator('[data-funds-short-holding="holding"]').innerText()).trim(), 'Relay needs 100.816058 USDC and Across needs 100.801299 USDC; you can send 100 USDC from Arbitrum One.');
+    assert.equal((await offer.locator('[data-funds-quote] [data-funds-deposit-button]').innerText()).trim(), 'Bring 100 USDC from Arbitrum One');
+    await capture(s, 'funds-above-max');
   } finally { await s.close(); }
 });
 
@@ -575,7 +610,7 @@ test("after an amount, the service's balances under each network; one click quot
     await signInFromDialog(s);
     const quote = offer.locator('[data-funds-quote]');
     await quote.waitFor({ timeout: 30_000 });
-    assert.deepEqual(s.quotes().map((q) => q.amountRaw), ['51000000'], 'what the position lacks, sized: one quote');
+    assert.deepEqual(s.quotes().map((q) => [q.amountKind, q.amountRaw, q.maxInputRaw]), [['output', '50000000', '100000000']], 'what the position lacks, by output: one quote');
     assert.deepEqual(switches(s), [], 'the wallet stays on Robinhood Chain for the quote');
     // Changed on purpose 2026-10-06 (rugged97's #379): counted among Domino's own reads (Ethereum's and OP Mainnet's are apart).
     assert.ok(dominoReads(reads).length >= 2, 'read when the step opened, and again for the choice');
@@ -642,7 +677,7 @@ test('Other networks: pick Ethereum and its USDC, type the amount; one quote aft
     await form.locator('#funds-amount').fill('25');
     const quote = offer.locator('[data-funds-quote]');
     await quote.waitFor({ timeout: 30_000 });
-    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountRaw]), [[1, '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '25000000']]);
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountKind, q.amountRaw]), [[1, '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 'exact_input', '25000000']], 'typed: by exact input');
     assert.equal((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), 'Bring 25 USDC from Ethereum');
     assert.deepEqual(switches(s), [], 'the wallet moves only to send');
     await capture(s, 'funds-other-networks');
@@ -992,9 +1027,9 @@ test('the quote card keeps Domino’s fee in full and the network fee in view; B
   try {
     const { offer, quote } = await toQuote(s);
     // In view, not only in Details: the fee's amount, token, chain and where it is charged; the gas on the origin.
-    assert.equal((await quote.locator('[data-funds-domino-fee]').innerText()).trim(), 'Domino fee (0.35%): 0.1785 USDC, charged by Relay on Arbitrum One · you can also bridge with any other service');
-    assert.equal((await quote.locator('[data-funds-network-fee]').innerText()).trim(), 'Network fee on Arbitrum One: about 0.000001 ETH, estimated by Relay');
-    assert.equal(await quote.locator('[data-funds-network-fee]').getAttribute('title'), 'Network fee on Arbitrum One: about 0.000001692667911 ETH, estimated by Relay', 'exact in its title');
+    assert.equal((await quote.locator('[data-funds-domino-fee]').innerText()).trim(), 'Domino fee (0.35%): 0.175909 USDC, charged by Relay on Arbitrum One · you can also bridge with any other service');
+    assert.equal((await quote.locator('[data-funds-network-fee]').innerText()).trim(), 'Network fee on Arbitrum One: about <0.000001 ETH, estimated by Relay');
+    assert.equal(await quote.locator('[data-funds-network-fee]').getAttribute('title'), 'Network fee on Arbitrum One: about 0.000000523395870437 ETH, estimated by Relay', 'exact in its title');
     assert.equal(await quote.locator('[data-funds-domino-fee]').isVisible(), true);
     assert.equal(await quote.locator('[data-funds-network-fee]').isVisible(), true);
     assert.equal(await quote.locator('[data-funds-quote-details]').getAttribute('open'), null, 'with Details closed');
@@ -1175,9 +1210,9 @@ test('after an amount, Ethereum has its button where the service read something 
     await signInFromDialog(s);
     const quote = offer.locator('[data-funds-quote]');
     await quote.locator('[data-funds-deposit-button]').waitFor({ timeout: 30_000 });
-    // 50 USDG lacking, sent as USDC from Ethereum: 50 plus room for the fees, as from any network.
-    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountRaw, q.destinationToken]), [[1, USDC_1, '51000000', USDG]]);
-    assert.equal((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), 'Bring 51 USDC from Ethereum');
+    // 50 USDG lacking, sent as USDC from Ethereum: by output, as from any network.
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountKind, q.amountRaw, q.maxInputRaw, q.destinationToken]), [[1, USDC_1, 'output', '50000000', '100000000', USDG]]);
+    assert.equal((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), 'Bring 50.458487 USDC from Ethereum');
     assert.deepEqual(switches(s), [], 'the wallet stays on Robinhood Chain for the quote');
   } finally { await s.close(); }
 });
@@ -1232,6 +1267,6 @@ test('a Worker that still refuses Ethereum and OP Mainnet: Domino\'s three exact
     await offer.locator('[data-funds-network="42161"]').click();
     await signInFromDialog(s);
     await offer.locator('[data-funds-quote] [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
-    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountRaw]), [[42161, ARB_USDC, '51000000']], 'brought from Arbitrum One as before');
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountRaw]), [[42161, ARB_USDC, '50000000']], 'brought from Arbitrum One as before');
   } finally { await s.close(); }
 });

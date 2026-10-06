@@ -62,8 +62,11 @@ export const FUNDS_TEXT = {
    * Changed on purpose 2026-10-06 (the integration review: the sentence was not English).
    */
   allYouHave: (network: string) => `That's all you have on ${network}. It's less than this amount needs.`,
-  /** Added 2026-10-06 (the integration review): the quote shown guarantees less than the position lacks. */
-  bringsLess: 'This may bring less than this amount needs.',
+  /**
+   * Added 2026-10-06 (rugged's delta of 6 Oct §3): a quote by output that no bridge can send within the balance: each
+   * one's input ("Relay needs 100.92 USDC") against what can be sent, in one line; all there is is then brought.
+   */
+  aboveMax: (needs: readonly string[], max: string, network: string) => `${needs.join(' and ')}; you can send ${max} from ${network}.`,
   /** Added 2026-10-06 (the owner's point 2b): no figure can be worked out, so the person says how much. */
   enterAmount: 'Enter how much to bring.',
   /** Added 2026-10-06 (the review): the list of what can be brought did not come in time (the balance itself was read). */
