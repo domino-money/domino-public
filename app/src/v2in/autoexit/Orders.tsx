@@ -47,6 +47,12 @@ import { closedLine, conditionWords, edgesOf, onLine, receiveWords, triggerWords
  * for a lost approval, and "Turn on" while none is on (the first part of turning Auto-exit on; its dialog follows). Both
  * ways back on of a paused one (its module here, its approval in the automation's dialog) read the pool's price first: an
  * end the price already passed is said before the wallet opens, with a tick to go on anyway and "Turn off instead".
+ *
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §4 item 7: after an exit nobody needs to clean up; "show
+ * 'Closed by Auto-exit' with the values, and never offer to resume"): once it closed the position the card says "Closed
+ * by Auto-exit" with what it delivered (read-v6's executed order: after the 0.2% fee), its pill "Closed", and offers no
+ * way back on: none of "Turn on", "Turn back on" or the rearm (the emptied position is offered no Auto-exit, and its
+ * automation's rearm ends with reason 6, ../automate/vaultView.ts vaultActions).
  */
 
 /**
@@ -266,7 +272,7 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
 
   const pill = state.kind === 'on' ? <Pill tone="in" dot data-exit-pill="on">On</Pill>
     : state.kind === 'paused' ? <Pill tone="wait" dot data-exit-pill="paused">Paused</Pill>
-      : state.kind === 'closed' ? <Pill tone="neutral" data-exit-pill="closed">Closed the position</Pill>
+      : state.kind === 'closed' ? <Pill tone="neutral" data-exit-pill="closed">Closed</Pill>
         : v1Automated ? null : <Pill tone="neutral" data-exit-pill="off">Off</Pill>
   const line = state.kind === 'on' ? onLine(edges, target.tokens, orientation)
     : state.kind === 'paused' ? conditionWords(state.reasons[0], chain.name)
@@ -290,7 +296,8 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
             Turn off
           </Button>
         )}
-        {state.kind !== 'on' && state.kind !== 'paused' && offer && (
+        {/* Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §4 item 7): while none is on, never after an exit. */}
+        {state.kind === 'off' && offer && (
           <Button type="button" variant="primary" size="sm" onClick={onTurnOn} data-v2in-open="mandate">
             Turn on
           </Button>

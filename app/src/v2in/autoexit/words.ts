@@ -1,6 +1,7 @@
-import { AUTO_EXIT_TEXT, type AutoExitFeeKey, type AutoExitTextKey } from '../../finance/v2/autoExit'
+import { AUTO_EXIT_TEXT, autoExitWarnings, type AutoExitFeeKey, type AutoExitTextKey } from '../../finance/v2/autoExit'
 import { group } from '../../lib/format/decimal'
 import type { PriceOrientation, TriggerField } from '../../v2/trigger'
+import type { Dex } from '../../v2/types'
 import type { TokenView } from '../automate/tokens'
 import { edgeWords, moveOf, triggerPrice, type EdgeWords } from './form'
 
@@ -12,6 +13,23 @@ import { edgeWords, moveOf, triggerPrice, type EdgeWords } from './form'
  *
  * Domino V2 integration (2026-10-02): the logic of src/v2ui/autoExit/words.ts, copied for the integrated screens.
  */
+
+/**
+ * The §4.7 warnings "Turn on Auto-exit" accepts with them in view above it (the spec delta of 6 Oct §2): 1, 2, and 3 on
+ * v3, the first three of §4.7's list on a v3 pool (its keys are not written here: this copy module is read as text).
+ */
+const IN_VIEW: ReadonlySet<AutoExitTextKey> = new Set(autoExitWarnings(3).slice(0, 3))
+
+/**
+ * §4.7's warnings as Auto-exit's dialog shows them (./MandateDialog.tsx), never the two it cannot meet (it never
+ * converts; one Auto-exit per position) nor the fee line (its own fact), split by where they stand. Added 2026-10-06
+ * (rugged's answer of 6 Oct, §4 item 5, and the spec delta of 6 Oct §2: one "Turn on Auto-exit" is the acknowledgement
+ * only with them in view above it): warnings 1 and 2, and 3 on a v3 pool, in view; the rest (5 and 7) under Details.
+ */
+export function exitWarnings(dex: Dex): { inView: readonly AutoExitTextKey[]; details: readonly AutoExitTextKey[] } {
+  const shown = autoExitWarnings(dex).filter((key) => key !== 'autoexit_fee_line' && key !== 'autoexit_warning_slippage_on_top' && key !== 'autoexit_warning_other_orders')
+  return { inView: shown.filter((key) => IN_VIEW.has(key)), details: shown.filter((key) => !IN_VIEW.has(key)) }
+}
 
 /** "2,000.5" from "2000.5": the integer part grouped. */
 export const groupedPrice = (text: string): string => {
@@ -52,12 +70,14 @@ export function onLine(edges: readonly EdgeWords[], tokens: readonly [TokenView,
 
 /**
  * What the card says once Auto-exit closed the position (Added 2026-10-06, the review of point 5): that the tokens were
- * sent only when nothing waits to be claimed; otherwise where they are.
+ * sent only when nothing waits to be claimed; otherwise where they are. Changed on purpose 2026-10-06 (rugged's answer of
+ * 6 Oct, §4 item 7: "show 'Closed by Auto-exit' with the values, and never offer to resume"): in his words, the values
+ * on the line under it (./Orders.tsx).
  */
 export function closedLine(unclaimed: boolean): string {
   return unclaimed
-    ? "Auto-exit closed this position. Some tokens couldn't be sent to your wallet: claim them below."
-    : 'Auto-exit closed this position and sent the tokens to your wallet.'
+    ? "Closed by Auto-exit. Some tokens couldn't be sent to your wallet: claim them below."
+    : 'Closed by Auto-exit. The tokens were sent to your wallet.'
 }
 
 /**

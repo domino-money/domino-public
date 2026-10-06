@@ -136,6 +136,12 @@ function useKept(view: RunView): { reviewed: Reviewed | null; steps: readonly Ru
  *
  * Under a `preview` gate no plan is asked (real data only: nothing stands in): the review shows what was chosen (`asked`),
  * and the wallet's steps are not drawn: the gate's sentence stands in their place, once, under Create position too.
+ *
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, spec delta §1: a closed Details counts as "shown" for the
+ * technical facts, but the minimum and every warning, offer or confirmation stay in view): §2.9's line ("…up to X%
+ * smaller…") is in view, under the figures it bounds, no longer in Details. Details keeps what the delta lets it keep:
+ * the route leg by leg with "At least" and its tiers, the leftovers, the L1 data fee and Base's ceiling, the deadlines,
+ * §2.7's "Paying with ETH needs a direct transaction." and a new pool's tick and initSqrtPriceX96.
  */
 export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, onRejected, onNewPool, onPoolRace, short = null, estimate = null }: {
   state: JourneyState
@@ -291,6 +297,8 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
             </p>
           )}
         </div>
+        {/* §2.9's minimum, in view (Changed on purpose 2026-10-06, rugged's answer of 6 Oct, delta §1: it was in Details). */}
+        {smaller !== null && <Note data-review-smaller={smaller}>{JOURNEY.review.smaller(smaller)}</Note>}
         {short && (
           // Said once, here in view (Changed on purpose 2026-10-06, the review of the owner's point 4): what the wallet has
           // of the token it lacks, what the position needs, and the two ways on; Create position's line only says why it waits.
@@ -390,10 +398,10 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
             <span>{CREATE.review.details}</span>
           </summary>
           <div className="grid gap-3">
-            {(smaller !== null || paysEth) && (
+            {/* §2.7's sentence, which the delta of 6 Oct (§1) lets Details keep. */}
+            {paysEth && (
               <div className="grid gap-2 pt-2">
-                {smaller !== null && <Note data-review-smaller={smaller}>{JOURNEY.review.smaller(smaller)}</Note>}
-                {paysEth && <Note data-review-warning="eth_direct">{JOURNEY.review.ethDirect}</Note>}
+                <Note data-review-warning="eth_direct">{JOURNEY.review.ethDirect}</Note>
               </div>
             )}
             <dl className="dm-flow-facts" data-review-plan="">

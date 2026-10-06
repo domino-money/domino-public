@@ -13,7 +13,7 @@ import { AutomationFrame } from '../components/positions/visual/AutomationFrame'
 import { POSITION_KIT } from '../components/positions/visual/kit'
 import { PositionSkeleton } from '../components/positions/visual/PositionSkeleton'
 import { Button, Chip, Display, EmptyState, LinkButton, PageShell } from '../components/ui'
-import { NO_SIGN_IN_BOTH, automationLayout, sameShows, type CardShows } from '../lib/automationCards'
+import { MANAGED_LINE, NO_SIGN_IN_BOTH, automationLayout, sameShows, type CardShows } from '../lib/automationCards'
 import { chainRead } from '../lib/fees/answers'
 import { warmState } from '../lib/fees/client'
 import { parseAddressInput, shortAddress } from '../lib/read/screens/identity'
@@ -48,11 +48,14 @@ const HeldDeposits = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<Parameters<D
 // while there is nothing to withdraw, and nothing in place of a chunk that cannot load.
 const FeeReserves = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ owner: string; placement: 'positions' | 'position' }>>(recovering(() => import('../components/positions/FeeReserves'), () => ({ default: () => null }))) : null
 // Domino V2 (integration, 2026-10-02): Managed positions with Domino's vaults (each vault's state, the fees waiting in it,
-// Withdraw to wallet, Leave automation), drawn around Performance itself, only in a build that carries V2 (the define is
-// false in both deployable builds, so this is null there and nothing of it is bundled).
-// A chunk that cannot load leaves V1's Performance itself (2026-10-03, review #7).
-type ManagedProps = { performance: ComponentType<{ onShows?: TellShows }>; onShows?: TellShows }
-const V2Managed = __DOMINO_V2__ ? lazy<ComponentType<ManagedProps>>(recovering(() => import('../v2in/automate/ManagedVaults'), () => ({ default: ({ performance: Performance, onShows }: ManagedProps) => <Performance onShows={onShows} /> }))) : null
+// Withdraw to wallet, Leave automation), only in a build that carries V2.
+// Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §3: performance-v2 is off on purpose, it is V1's "Start
+// tracking", and V1 is off since 2026-10-05): in that build the card is the vaults' alone, from read-v6's portfolio, and
+// V1's Performance is never mounted (it asked performance-v2/epochs once signed in); a chunk that cannot load says so in
+// its own line, as the other private cards do, where V1's Performance stood in for it (2026-10-03, review #7). `receipts`:
+// what the Receipts card says, which the vaults' card says too while it lists nothing of its own.
+type ManagedProps = { onShows?: TellShows; receipts?: CardShows | null }
+const V2Managed = __DOMINO_V2__ ? lazy<ComponentType<ManagedProps>>(recovering(() => import('../v2in/automate/ManagedVaults'), couldNotLoad)) : null
 
 // Your positions and a position's own page: chunks of their own, loaded only on Positions, so no other page pays for
 // them. The list exists only where a wallet can connect; the page is public chain data and opens in every build.
@@ -145,9 +148,12 @@ function Plot({ children }: { children: ReactNode }) {
  * line. The history itself is rugged97's Performance screen, mounted inside
  * the automation frame (DESIGN-V2 §13.6): signed out, its sentence sits on a
  * dotted plate under the Domino-compound machine. Changed on purpose (owner,
- * 2026-09-27, round 5): the chip says the window in plain words.
+ * 2026-09-27, round 5): the chip says the window in plain words. Changed on
+ * purpose 2026-10-06 (rugged's answer of 6 Oct, §3): in a build that carries
+ * Domino V2 the card is the vaults' (src/v2in/automate/ManagedVaults.tsx),
+ * with no Performance in it.
  */
-function ManagedCard({ hidden, onShows }: { hidden?: boolean; onShows?: TellShows }) {
+function ManagedCard({ hidden, onShows, receipts = null }: { hidden?: boolean; onShows?: TellShows; receipts?: CardShows | null }) {
   return (
     <AutomationFrame
       title="Managed positions"
@@ -160,8 +166,8 @@ function ManagedCard({ hidden, onShows }: { hidden?: boolean; onShows?: TellShow
       data-managed-positions={Performance ? '' : undefined}
     >
       {Performance ? (
-        <Suspense fallback={<Quiet line="How your automated positions did in the last 24 hours." />}>
-          {V2Managed ? <V2Managed performance={Performance} onShows={onShows} /> : <Performance onShows={onShows} />}
+        <Suspense fallback={<Quiet line={MANAGED_LINE} />}>
+          {V2Managed ? <V2Managed onShows={onShows} receipts={receipts} /> : <Performance onShows={onShows} />}
         </Suspense>
       ) : (
         <Plot>Managed history needs wallet sign-in, which isn’t available here.</Plot>
@@ -255,7 +261,7 @@ function AutomationPair() {
   return (
     <div className="dm-acct-pair" data-automation-cards={layout.kind}>
       {merged && <OneLine line={layout.line} />}
-      <ManagedCard hidden={merged} onShows={tellManaged} />
+      <ManagedCard hidden={merged} onShows={tellManaged} receipts={receipts} />
       <ReceiptsCard limit={RECENT} hidden={merged} onShows={tellReceipts} />
     </div>
   )

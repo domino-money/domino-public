@@ -621,12 +621,15 @@ test('the V2 pages: Manage a position, Bring funds from another network, Auto-ex
   assert.match(sectionText(manage, 'with-automation'), /Change range isn’t available/);
   assert.match(src('v2in/position/constants.ts'), /ROOT_BLOCKS_CHANGE_RANGE = true/);
   // Bring funds (src/v2in/funds; spec F7 §3): Relay or Across, 0.35% charged by the bridge, two steps for a token, refunds.
+  // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct: the owner revoked decision #15; F7 delta of 6 Oct §1 and §2):
+  // the token's two steps in one confirmation where the wallet batches; Domino's fee and the network fee on the quote.
   const bring = page('bring-funds');
   assert.match(sectionText(bring, 'cost'), /0\.35% of what you deposit, charged by the bridge as Domino’s fee: Relay takes it from what you send, Across from what arrives\./);
-  assert.match(sectionText(bring, 'how'), /a token takes two transactions, an approval of the exact amount and then the deposit; ETH takes one\./);
+  assert.match(sectionText(bring, 'how'), /a token takes an approval of the exact amount and then the deposit, in one confirmation when your wallet can send both together; ETH takes one\./);
+  assert.match(sectionText(bring, 'how'), /The quote shows what you receive, the least you receive, about how long it takes, Domino’s fee and the network fee\./);
   assert.match(sectionText(bring, 'refunds'), /Across in full, usually 2\.5 to 3 hours after your deposit; Relay minus the refund’s gas\./);
   assert.match(src('v2/crosschain/copy.ts'), /usually 2\.5 to 3 hours after your deposit/);
-  assert.match(src('v2in/funds/constants.ts'), /FUNDS_BATCH_APPROVAL_AND_DEPOSIT = false/);
+  assert.match(src('v2in/funds/constants.ts'), /FUNDS_BATCH_APPROVAL_AND_DEPOSIT = true/);
   assert.match(src('v2in/funds/copy.ts'), /gasOffer: \(destination: string\) => `Get gas on \$\{destination\}`/);
   // Auto-exit (src/v2in/autoexit; spec F7 §4; Changed on purpose 2026-10-06, the owner's point 5): where it is, that no
   // price is typed (the range's ends), its one-batch activation, its fee, the warnings word for word, the old slug kept.
@@ -650,7 +653,8 @@ test('the V2 pages: Manage a position, Bring funds from another network, Auto-ex
   assert.equal(warnings.length, 6);
   const sources = [src('finance/v2/autoExit.ts'), mandate].join('\n')
   for (const warning of warnings) {
-    // The docs write apostrophes as the docs do; the words are the dialog's own (its Details lists them).
+    // The docs write apostrophes as the docs do; the words are the dialog's own (the first ones above its button since
+    // 2026-10-06, rugged's spec delta of 6 Oct §2; the rest under its Details).
     const said = warning.replaceAll('’', "'");
     assert.ok(sources.includes(said), `the warning is the dialog's own: ${warning}`);
   }

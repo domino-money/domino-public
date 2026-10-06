@@ -59,9 +59,15 @@ interface State {
   revoked: ReadonlySet<string>
   /** Added 2026-10-06 (the final check, F2): the last ExitModuleSet a step of this page emitted, by vault. */
   modules: ReadonlyMap<string, ExitModuleSet>
+  /**
+   * Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 6: "the app keeps 'approved at block X' until
+   * positions[].state.snapshot.number ≥ X"): the block of the last step of this page that approved a position for its
+   * automation, by `${chainId}|${vault}|${tokenId}`.
+   */
+  approvals: ReadonlyMap<string, bigint>
 }
 
-let state: State = { vaults: new Map(), events: new Map(), mandates: [], revoked: new Set(), modules: new Map() }
+let state: State = { vaults: new Map(), events: new Map(), mandates: [], revoked: new Set(), modules: new Map(), approvals: new Map() }
 const listeners = new Set<() => void>()
 const emit = (next: State) => {
   state = next
@@ -156,7 +162,23 @@ export function rememberRevoked(chainId: V2ChainId, id: Hex): void {
 export const sessionRevoked = (s: State, chainId: V2ChainId): ReadonlySet<string> =>
   new Set([...s.revoked].filter((key) => key.startsWith(`${chainId}|`)).map((key) => key.slice(key.indexOf('|') + 1)))
 
+const approvalKey = (chainId: V2ChainId, vault: string, tokenId: bigint | string) => `${chainId}|${vault.toLowerCase()}|${BigInt(tokenId)}`
+
+/**
+ * Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 6): a position approved for its automation again by a step of this
+ * page, from that step's receipt (the block it is in). The latest block is kept.
+ */
+export function rememberApproval(chainId: V2ChainId, vault: Address, tokenId: bigint, block: bigint): void {
+  const key = approvalKey(chainId, vault, tokenId)
+  const known = state.approvals.get(key)
+  if (known !== undefined && known >= block) return
+  emit({ ...state, approvals: new Map(state.approvals).set(key, block) })
+}
+
+/** The block of this page's last approval of a position for its automation, or null. */
+export const approvedAt = (s: State, chainId: V2ChainId, vault: string, tokenId: bigint | string): bigint | null => s.approvals.get(approvalKey(chainId, vault, tokenId)) ?? null
+
 /** Forgets everything (a test's fresh start). */
 export function forgetAutomationSession(): void {
-  emit({ vaults: new Map(), events: new Map(), mandates: [], revoked: new Set(), modules: new Map() })
+  emit({ vaults: new Map(), events: new Map(), mandates: [], revoked: new Set(), modules: new Map(), approvals: new Map() })
 }

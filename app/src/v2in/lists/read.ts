@@ -188,10 +188,15 @@ export function createKeyedReader<T>(read: (key: string) => Promise<T>, policy: 
   }
 }
 
-/** How long until a read-v6 answer is asked again: a minute after a good one; 5 s, 15 s, 45 s, then a minute after failures. */
+/**
+ * How long until a read-v6 answer is asked again: a minute after a good one; 5 s, 15 s, 45 s, then a minute after failures.
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §1: the gateway's Retry-After is the real time to the lane's
+ * next token): never sooner than the Retry-After a busy reader named (src/v2/read/v6.ts `retryAfterSeconds`).
+ */
 export function readAgainAfter<T>(reply: ListsReply<T>, failures: number): number | null {
   if (reply.kind === 'ok') return 60_000
   // An answer that broke the contract is not asked again soon: the same answer would come back.
   if (reply.kind === 'invalid') return 300_000
-  return [5_000, 15_000, 45_000][failures - 1] ?? 60_000
+  const named = 'retryAfterSeconds' in reply && typeof reply.retryAfterSeconds === 'number' ? reply.retryAfterSeconds * 1000 : 0
+  return Math.max([5_000, 15_000, 45_000][failures - 1] ?? 60_000, named)
 }

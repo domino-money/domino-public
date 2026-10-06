@@ -138,6 +138,12 @@ export interface DexStore {
   ask(address: string): void
   /** Added 2026-10-06: a pool on Base or Arbitrum One by its name there (v4 id or v3 address). */
   chainPool(chainId: number, name: string, nowMs?: number): DexPool | null
+  /**
+   * Added 2026-10-06 (rugged's delta of 6 Oct §4: a figure older than 10 minutes is not shown, a dash says why): the newest
+   * figures read for a pool on Base or Arbitrum One, whatever their age, for New position to tell an old figure from none
+   * (lib/create/otherChains.ts networkRows, which applies the 10 minutes itself).
+   */
+  chainPoolSeen(chainId: number, name: string): DexPool | null
   /** Added 2026-10-06: a token on Base or Arbitrum One, once a body about it was read (none past DEX_MAX_AGE_S). */
   chainToken(chainId: number, address: string, nowMs?: number): DexToken | null
   /** Added 2026-10-06: asks about a token on Base or Arbitrum One, unless it was asked within DEX_ASK_EVERY_MS. */
@@ -194,6 +200,7 @@ export function createDexStore(read: (address: string, chainId: number) => Promi
     token: (address, nowMs = wall()) => fresh(tokens.get(keyOf(HOME, address)), nowMs),
     ask: (address) => askAbout(HOME, address),
     chainPool: (chainId, name, nowMs = wall()) => fresh(pools.get(keyOf(chainId, name)), nowMs),
+    chainPoolSeen: (chainId, name) => (chainId === HOME ? null : (pools.get(keyOf(chainId, name)) ?? null)),
     chainToken: (chainId, address, nowMs = wall()) => fresh(tokens.get(keyOf(chainId, address)), nowMs),
     askOn: (chainId, address) => askAbout(chainId, address),
     subscribe(listener) {

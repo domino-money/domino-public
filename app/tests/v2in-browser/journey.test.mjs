@@ -222,6 +222,12 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
     // Everything else under ONE Details, closed; the developer facts only as its data attributes.
     const details = review.locator('[data-review-details]');
     assert.equal(await details.getAttribute('open'), null, 'technical detail stays folded');
+    // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, spec delta §1): §2.9's minimum stays in view, Details
+    // closed, never folded with the technical facts.
+    const smaller = review.locator('[data-review-smaller]');
+    assert.match(await smaller.innerText(), /^If the price moves within your slippage, your position can be up to [\d.]+% smaller\. The rest returns to your wallet\.$/);
+    assert.equal(await smaller.isVisible(), true, 'in view with Details closed');
+    assert.equal(await details.locator('[data-review-smaller]').count(), 0, 'not in Details');
     assert.equal(await review.locator('details').count(), 1, 'one Details');
     assert.match(await details.getAttribute('data-plan-hash'), /^0x[0-9a-f]{64}$/);
     assert.match(await details.getAttribute('data-routes-hash'), /^0x[0-9a-f]{64}$/);
@@ -230,7 +236,6 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
     await page.screenshot({ path: join(shots(), 'journey-robinhood-live-review.png'), fullPage: true });
     await details.locator('summary').click();
     assert.match(await details.locator('[data-fact="route-leg-0"]').innerText(), /500 USDG → ETH[\s\S]*Expected 0\.19 ETH[\s\S]*At least 0\.18905 ETH[\s\S]*Uniswap · 0\.05%/);
-    assert.match(await details.locator('[data-review-smaller]').innerText(), /^If the price moves within your slippage, your position can be up to [\d.]+% smaller\. The rest returns to your wallet\.$/);
     assert.match(await details.locator('[data-fact="review-leftovers"]').innerText(), /6\.75 USDG/);
     assert.match(await details.locator('[data-fact="review-l1-fee"]').innerText(), /^L1 data fee\s+0 ETH$/, 'a measured zero, said as 0 (spec §2.4)');
     assert.equal(await details.locator('[data-fact="review-network-fee"]').count(), 0, 'no ceiling off Base');
@@ -531,6 +536,15 @@ test('(e) his journey on Base: Base\'s USDC in his search with its tag, the wall
     assert.equal(await pools.locator(`li[data-pool-key="${poolIdOf(POOL_BASE)}"]`).count(), 1, 'the one pool with a price and liquidity');
     assert.equal((await pools.locator('[data-chain-chip="8453"]').first().innerText()).trim(), 'Base');
     assert.equal(await page.locator('[data-pools-unavailable]').count(), 0);
+    // Added 2026-10-06 (rugged97's delta of 6 Oct §4: "Sem par: '—' com o motivo"): DEX Screener answered for USDC with no
+    // pair for this pool, so its TVL, 24h volume and APR are dashes saying so, in their titles and as each dash's name.
+    const unlisted = pools.locator(`li[data-pool-key="${poolIdOf(POOL_BASE)}"]`);
+    await unlisted.locator('[data-provider-reason="dexscreener_no_pair"]').nth(1).waitFor();
+    assert.deepEqual(await unlisted.locator('[data-provider-figure]').evaluateAll((cells) => cells.map((cell) => [cell.innerText.replace(/\s+/g, ' ').trim(), cell.getAttribute('title'), cell.querySelector('[aria-label]')?.getAttribute('aria-label') ?? null])), [
+      ['TVL —', 'DEX Screener doesn’t list this pool.', 'DEX Screener doesn’t list this pool.'],
+      ['24h volume —', 'DEX Screener doesn’t list this pool.', 'DEX Screener doesn’t list this pool.'],
+    ]);
+    assert.equal(await unlisted.locator('[data-row-apr="none"] [title]').getAttribute('title'), 'DEX Screener doesn’t list this pool.');
     await pools.locator('input[name="pool-option"]').first().click();
     const chosen = page.locator('[data-chosen-pool]');
     await chosen.waitFor();
@@ -1721,7 +1735,12 @@ test('(h) Base like Robinhood Chain: found by name with a pulse while Base is se
     assert.deepEqual(await texts(poolIdOf(VIRTUAL_POOLS.usdc)), ['TVL $136.2K', '24h volume $103.5K', 'APR 83.2% est.']);
     assert.deepEqual(await texts(poolIdOf(VIRTUAL_POOLS.eth)), ['TVL $35.1K', '24h volume $8.8K', 'APR 27.6% est.']);
     assert.equal(await row(V3_KEY).locator('[data-provider="dexscreener"][data-provider-figure="attributed"]').count(), 2, 'attributed to the provider, as Robinhood Chain’s are');
-    assert.match(await row(V3_KEY).locator('[data-provider-figure]').first().getAttribute('title'), /^Reported by a market data provider, retrieved /);
+    // Changed on purpose 2026-10-06 (rugged97's delta of 6 Oct §4: the provider's number, with its name and the time it
+    // was read): DEX Screener named in each figure's title, and in the APR's it is worked out from.
+    for (const title of await row(V3_KEY).locator('[data-provider-figure]').evaluateAll((cells) => cells.map((cell) => cell.getAttribute('title')))) {
+      assert.match(title, /^Reported by DEX Screener, retrieved \d\d:\d\d:\d\d UTC, \d{4}-\d\d-\d\d\. Provider-reported, not reconciled with chain data\.$/);
+    }
+    assert.match(await row(V3_KEY).locator('[data-row-apr="estimate"] [title]').getAttribute('title'), /^Estimate from this pool’s fixed LP fee and DEX Screener’s 24h volume and liquidity, retrieved \d\d:\d\d:\d\d UTC, \d{4}-\d\d-\d\d, annualised\./);
     assert.match(await row(V3_KEY).innerText(), /VIRTUAL\s*\/\s*WETH/);
     assert.equal(await pools.getByText(/v3|v4/).count(), 0, 'no version jargon');
     assert.equal(chain.multicalls.length, 0, 'nothing read through the wallet');
@@ -1741,6 +1760,101 @@ test('(h) Base like Robinhood Chain: found by name with a pulse while Base is se
       assert.deepEqual(await chipsOf(pools), keys.map(() => ({ inside: true, clear: true, beside: at.beside })), widthName(at));
     }
     await page.screenshot({ path: join(shots(), 'journey-base-pools-phone.png') });
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (rugged97's delta of 6 Oct §4: "Com mais de 10 min, não aparece"): Base's rows show DEX Screener's
+// figures for ten minutes after they were read, never after. A minute before, VIRTUAL is asked about again, so a fresh
+// answer keeps the rows full past the ten minutes; once an answer brings nothing about the pools, their figures go at
+// their own ten minutes, each a dash saying so, the APR with them. The page's clock is Playwright's, jumped forward.
+test('(h2) Base’s rows: DEX Screener’s figures for ten minutes after they were read, never after; asked again a minute before', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now() });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const PAIRS = `https://api.dexscreener.com/token-pairs/v1/base/${VIRTUAL_BASE}`;
+  // VIRTUAL's pairs while `listed`; after that an answer that names none of them.
+  let listed = true;
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, connect: false, clock: true,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], chainReads: virtualReads(), dex: (url) => (url === PAIRS && !listed ? [] : virtualDex(url)),
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('virtual protocol');
+    const hit = page.locator(`[data-token-network-option="8453:${VIRTUAL_BASE}"]`);
+    await hit.waitFor();
+    await hit.click();
+    const pools = page.locator('[data-picker="pool"][data-picker-network="8453"]');
+    await pools.locator('[data-row-apr="estimate"]').nth(2).waitFor({ timeout: 30_000 });
+    const v3 = pools.locator(`li[data-pool-key="${V3_KEY}"]`);
+    const texts = async () => (await v3.locator('[data-provider-figure], [data-row-apr]').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim());
+    const tvlTitle = () => v3.locator('[data-provider-figure]').first().getAttribute('title');
+    const asked = () => s.dexAsked.filter((url) => url === PAIRS).length;
+    const until = async (done, what) => {
+      for (let i = 0; i < 200 && !(await done()); i++) await page.waitForTimeout(50);
+      assert.ok(await done(), what);
+    };
+    assert.deepEqual(await texts(), ['TVL $166.3K', '24h volume $21.1K', 'APR 13.9% est.']);
+    const first = await tvlTitle();
+    const before = asked();
+    // Nine and a half minutes on: asked again (due a minute before the ten), and its answer, read now, is what shows.
+    await page.clock.fastForward('09:30');
+    await until(() => asked() === before + 1, 'VIRTUAL asked about again before its figures went');
+    await until(async () => (await tvlTitle()) !== first, 'the second answer’s time in the title');
+    assert.match(await tvlTitle(), /^Reported by DEX Screener, retrieved \d\d:\d\d:\d\d UTC, \d{4}-\d\d-\d\d\./);
+    // Ten and a half minutes after the first answer: still figures, the second answer's.
+    await page.clock.fastForward('01:00');
+    await page.waitForTimeout(300);
+    assert.deepEqual(await texts(), ['TVL $166.3K', '24h volume $21.1K', 'APR 13.9% est.'], 'never a dash while a fresh answer stands');
+    // The next answer names none of the pools: ten minutes after the second answer its figures go, each a dash saying so.
+    listed = false;
+    await page.clock.fastForward('08:30');
+    await until(() => asked() === before + 2, 'asked again a minute before the second answer’s ten minutes');
+    await page.waitForTimeout(300);
+    assert.deepEqual(await texts(), ['TVL $166.3K', '24h volume $21.1K', 'APR 13.9% est.'], 'shown until its ten minutes are up');
+    await page.clock.fastForward('01:00');
+    await v3.locator('[data-provider-reason="dexscreener_too_old"]').nth(1).waitFor();
+    assert.deepEqual(await texts(), ['TVL —', '24h volume —', 'APR —']);
+    const old = 'DEX Screener’s figures for this pool are more than 10 minutes old.';
+    assert.deepEqual(await v3.locator('[data-provider-figure]').evaluateAll((cells) => cells.map((cell) => [cell.getAttribute('title'), cell.querySelector('[aria-label]')?.getAttribute('aria-label') ?? null])), [[old, old], [old, old]]);
+    assert.equal(await v3.locator('[data-row-apr="none"] [title]').getAttribute('title'), old);
+    assert.equal(await pools.locator('[data-provider-figure="attributed"]').count(), 0, 'no row keeps a figure past its ten minutes');
+    // The rows, re-sorted as they came, fade in again (flow.css .dm-flow-pool-rows) before the picture.
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: join(shots(), 'journey-base-pools-too-old.png') });
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (rugged97's delta of 6 Oct §4): the pool chosen keeps the figures its row showed, and the preview beside
+// the steps shows them for their ten minutes; after them it shows none (components/create/PositionPreview.tsx).
+test('(h3) a Base pool chosen: the preview shows its DEX Screener figures for their ten minutes, then none', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now() });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, connect: false, clock: true,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], chainReads: virtualReads(), dex: virtualDex,
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('virtual protocol');
+    const hit = page.locator(`[data-token-network-option="8453:${VIRTUAL_BASE}"]`);
+    await hit.waitFor();
+    await hit.click();
+    const pools = page.locator('[data-picker="pool"][data-picker-network="8453"]');
+    await pools.locator('[data-row-apr="estimate"]').nth(2).waitFor({ timeout: 30_000 });
+    await pools.locator(`li[data-pool-key="${V3_KEY}"] input[name="pool-option"]`).click();
+    await page.locator(`[data-chosen-pool="${V3_KEY}"]`).waitFor();
+    const stats = page.locator('aside[data-preview] .dm-flow-pv-stats');
+    assert.match(await stats.innerText(), /In this pool\s*\$166\.3K[\s\S]*Yearly fee estimate\s*13\.9% est\./);
+    await page.clock.fastForward('09:30');
+    await page.waitForTimeout(300);
+    assert.match(await stats.innerText(), /\$166\.3K/, 'shown for its ten minutes');
+    await page.clock.fastForward('01:00');
+    await stats.waitFor({ state: 'detached' });
+    assert.match(await page.locator('aside[data-preview] .dm-flow-pv-pair').innerText(), /VIRTUAL\s*\/\s*WETH/, 'the pool stays, its figures gone');
   } finally { await s.close(); }
 });
 
@@ -2191,6 +2305,55 @@ test('(y) a Robinhood Chain pair without USDG shows a dollar estimate: ETH at it
   } finally { await s.close(); }
 });
 
+// Added 2026-10-06 (rugged's answer of 6 Oct, §1: each visitor's reads have a budget per lane of the reader, whose Retry-After
+// is now the real time to the lane's next token; and "don't repeat chain-pools of the same token before 15 s, which is the
+// reader's cache"): the pool's prices asked again after a busy reader's 429 no sooner than the Retry-After it named, and that
+// answer serving the same pool when New position is opened again a moment later (src/v2in/journey/served.ts chainPoolsOn,
+// the reuse Base's and Arbitrum One's rows share): one more chain-pools read, never two.
+test('(y2) a busy reader’s Retry-After is waited before the pair’s prices are asked again, and their answer serves the pool chosen again in a New position opened again', async () => {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), eth: 10n ** 19n, balances: { [FIXTURE_TOKEN]: 5n * 10n ** 12n }, pools: [{ pool: POOL_ETH_TOKEN, sqrtPriceX96: TOKEN_SQRT, tick: TOKEN_TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  const reads = createChainReads({ chainId: 4663, tokens: RH_TOKENS, pools: [{ pool: POOL_ETH_TOKEN, sqrtPriceX96: TOKEN_SQRT, tick: TOKEN_TICK, liquidity: 10n ** 16n }] });
+  // The first chain-pools is refused by a busy reader that names 6 s; each is timed as it arrives.
+  const asked = [];
+  const chainReads = {
+    calls: reads.calls,
+    answer: (route, request) => {
+      if (route !== 'chain-pools') return reads.answer(route, request);
+      asked.push(Date.now());
+      return asked.length === 1 ? { status: 429, body: { error: 'read_capacity_busy' }, retryAfter: '6' } : reads.answer(route, request);
+    },
+  };
+  const read = createReadStub({ answer: ethTokenRead });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], chainReads, artwork: true,
+  });
+  const choose = async (page) => {
+    await page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
+    await page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
+    await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.locator('[data-chosen-pool]').waitFor();
+  };
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await choose(page);
+    await until(() => asked.length >= 2, 'the prices asked again');
+    assert.ok(asked[1] - asked[0] >= 6_000, `asked again ${asked[1] - asked[0]} ms after the 429, never under the 6 s it named`);
+    // A moment later, New position opened again and the same pool chosen: the answer just read serves it.
+    await page.evaluate(() => { location.hash = '#/positions'; });
+    await page.getByRole('heading', { level: 1, name: 'Positions', exact: true }).waitFor();
+    await page.evaluate(() => { location.hash = '#/new'; });
+    await page.locator('[data-create-journey]').waitFor();
+    await choose(page);
+    await page.waitForTimeout(1_500);
+    assert.ok(Date.now() - asked[1] < 20_000, 'still within the 20 s an answer is reused');
+    assert.equal(asked.length, 2, 'chain-pools of the same pair is not asked again: one answer serves it');
+    assert.deepEqual(reads.calls.filter((call) => call.route === 'chain-pools').map((call) => call.request), [{ chainId: 4663, token: ZERO, pairedToken: FIXTURE_TOKEN }], 'the one answered read, about the pair');
+  } finally { await s.close(); }
+});
+
 // Added 2026-10-06 (the owner, on production's New position: AI/PONS and CASHCAT/AI short on Robinhood Chain, and no offer to
 // bring anything, since neither token is one a deposit from another network delivers): where the offer would be, ONE line
 // names the token to pay with instead (src/v2in/funds/PayWith.tsx); chosen, the step draws that token's one panel
@@ -2240,11 +2403,15 @@ function payPlanner(answers = []) {
  * The owner's journey on TOKEN / OTHER, 1,000 TOKEN typed with 100 TOKEN and no OTHER in the wallet: short, nothing to bring.
  * Changed on purpose 2026-10-06 (the review): `s2` false leaves the crosschain route unserved (S2's gate not live), and
  * `symbol` names OTHER.
+ * Changed on purpose 2026-10-06 (the review of rugged97's #379): `elsewhere(request)` answers, when the suite hands it in,
+ * the service's read of Ethereum and OP Mainnet (a request of its own); `reads` records Domino's alone then.
  */
-async function shortOfPair(ethWei, planner, { s2 = true, symbol = 'OTHER' } = {}) {
+async function shortOfPair(ethWei, planner, { s2 = true, symbol = 'OTHER', elsewhere = null } = {}) {
   const chain = createV2Chain({ chainId: 4663, timestamp: now(), eth: ethWei, balances: { [FIXTURE_TOKEN]: 100_000_000n }, pools: [{ pool: POOL_PAIR, sqrtPriceX96: PAIR_SQRT, tick: PAIR_TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);
-  const reads = createChainReads({ chainId: 4663, tokens: payTokens(symbol), balances: { [ZERO]: ethWei } });
+  const own = createChainReads({ chainId: 4663, tokens: payTokens(symbol), balances: { [ZERO]: ethWei } });
+  const away = (route, request) => route === 'chain-balances' && request.tokens?.some((t) => t.chainId === 1 || t.chainId === 10);
+  const reads = elsewhere === null ? own : { calls: own.calls, answer: (route, request) => (away(route, request) ? elsewhere(request) : own.answer(route, request)) };
   const read = createReadStub({ answer: pairRead(symbol) });
   const s = await openJourney(browser, chain, {
     dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner,
@@ -2382,6 +2549,42 @@ test('(z3) S2 not live: the line and the panel all the same; the wallet gone, th
     await page.locator('[data-paired-amounts]').waitFor();
     assert.equal(chain.sends.length, 0);
   } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the review of rugged97's #379: the token to pay with waited for Ethereum's and OP Mainnet's read, and
+// failed with it): the line comes from Domino's read alone while theirs is still out; theirs, once back, only adds what is
+// held there, and the line names USDG once the dollars held there are worth more than the ETH here.
+test('(z5) Ethereum and OP Mainnet never hold the line back: it comes while their read is out; their USDC, once read, makes it USDG', async () => {
+  const USDC_1 = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+  const WETH_1 = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
+  let release = () => {};
+  const out = new Promise((done) => { release = done; });
+  const asked = [];
+  // US$20,000 of USDC on Ethereum, against 2 ETH (about US$8,000) here.
+  const ethereum = createChainReads({ chainId: 1, tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: WETH_1, symbol: 'WETH', decimals: 18 }, { address: USDC_1, symbol: 'USDC', decimals: 6 }], balances: { [USDC_1]: 20_000_000_000n } });
+  const elsewhere = async (request) => {
+    asked.push(request);
+    await out;
+    return ethereum.answer('chain-balances', request);
+  };
+  const { s, chain, reads, page } = await shortOfPair(2n * 10n ** 18n, payPlanner([]), { elsewhere });
+  try {
+    const line = page.locator('button[data-pay-with]');
+    await line.waitFor({ timeout: 15_000 });
+    assert.equal(await line.getAttribute('data-pay-with'), ZERO);
+    assert.equal(await words(line), 'Pay with ETH instead · Domino swaps it for TOKEN and OTHER', 'from Domino’s read alone');
+    assert.ok(reads.calls.some((call) => call.route === 'chain-balances'), 'Domino’s three read');
+    assert.ok(asked.length >= 1 && asked.every((request) => request.tokens.every((t) => t.chainId === 1 || t.chainId === 10)), 'Ethereum and OP Mainnet asked, in a request of their own');
+    assert.equal(ethereum.calls.length, 0, 'and not answered yet');
+    release();
+    await page.locator(`button[data-pay-with="${USDG_RH}"]`).waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('button[data-pay-with]').count(), 1, 'still one line');
+    assert.equal(await words(page.locator('button[data-pay-with]')), 'Pay with USDG instead · Domino swaps it for TOKEN and OTHER', 'their dollars count once read');
+    assert.equal(chain.sends.length, 0);
+  } finally {
+    release();
+    await s.close();
+  }
 });
 
 // Added 2026-10-06 (the review of 2026-10-06: a 50-character symbol pushed the line and the way back out of a phone's width;

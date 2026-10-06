@@ -25,8 +25,11 @@ export interface PoolPrices {
    * V2's zap swaps for the pool's two (position-plan-v1: "the pool's tokens, or exactly one other token"); null where none
    * is offered: a token of the pool is one a deposit from another network delivers (that offer stands, as before), or the
    * network's S1 gate is not live.
+   * Changed on purpose 2026-10-06 (the review of rugged97's #379: it waited for a read of other networks' holdings): the
+   * answer comes as soon as the pool's network's own read is in; `later` hears the offer again when a read that answers
+   * after it changes it, and replaces that answer (useKeyedRead).
    */
-  pay: (pool: PoolOption, owner: string, signal: AbortSignal) => Promise<PayFacts | null>
+  pay: (pool: PoolOption, owner: string, signal: AbortSignal, later: (facts: PayFacts | null) => void) => Promise<PayFacts | null>
 }
 
 /**
@@ -50,8 +53,10 @@ export const usePoolPrices = (): PoolPrices | null => useContext(PoolPricesConte
  * Added 2026-10-06: what `read` answered for `key` (null: nothing to read), once in; undefined while it is read, and for
  * another key, so an answer is never shown for what it was not about. Keyed by text, never by an object a draw rebuilds;
  * `read` is the one of the last draw.
+ * Changed on purpose 2026-10-06 (the review of rugged97's #379): what `read` hands `later` (a read that answered after
+ * the first changed it) replaces its answer for the same key, whichever of the two arrives first.
  */
-export function useKeyedRead<T>(key: string | null, read: (signal: AbortSignal) => Promise<T>): T | undefined {
+export function useKeyedRead<T>(key: string | null, read: (signal: AbortSignal, later: (value: T) => void) => Promise<T>): T | undefined {
   const [got, setGot] = useState<{ key: string; value: T } | null>(null)
   const latest = useRef(read)
   useEffect(() => {
@@ -60,9 +65,16 @@ export function useKeyedRead<T>(key: string | null, read: (signal: AbortSignal) 
   useEffect(() => {
     if (key === null) return
     const controller = new AbortController()
-    void latest.current(controller.signal).then(
+    let replaced = false
+    const keep = (value: T) => {
+      if (!controller.signal.aborted) setGot({ key, value })
+    }
+    void latest.current(controller.signal, (value) => {
+      replaced = true
+      keep(value)
+    }).then(
       (value) => {
-        if (!controller.signal.aborted) setGot({ key, value })
+        if (!replaced) keep(value)
       },
       () => undefined,
     )

@@ -1,7 +1,8 @@
 /**
  * Managed positions and Receipts on Positions, read together (2026-10-01, audit D2: with nothing to show, the two cards
- * were two large empty plates saying the same thing twice). Each card (screens/Performance.tsx, screens/Execution.tsx)
- * tells the page what it has to show; when neither has anything, for the same reason, the page draws one calm line for
+ * were two large empty plates saying the same thing twice). Each card (screens/Performance.tsx, screens/Execution.tsx;
+ * in a build that carries Domino V2, src/v2in/automate/ManagedVaults.tsx and src/v2in/lists/Receipts.tsx) tells the page
+ * what it has to show; when neither has anything, for the same reason, the page draws one calm line for
  * both in their place (screens/Positions.tsx), and keeps both cards mounted, hidden, so they go on reading and take
  * their place again the moment either has something.
  *
@@ -16,6 +17,14 @@ export const NOTHING_YET_BOTH = 'Nothing here yet. Turn on Auto-compound for a p
 
 /** The one line for both cards in a build that cannot sign in (the fixture and bridge test builds). */
 export const NO_SIGN_IN_BOTH = 'Wallet sign-in isn’t available here, so automated positions and their receipts can’t be shown.'
+
+/**
+ * Managed positions' line under its title, and its plate's sentence while it has nothing to list yet (screens/Performance.tsx).
+ * Moved here on purpose 2026-10-06, unchanged (rugged's answer of 6 Oct, §3): in a build that carries Domino V2 the card
+ * is src/v2in/automate/ManagedVaults.tsx alone, which says the same words without V1's Performance.
+ */
+export const MANAGED_LINE = 'How your automated positions did in the last 24 hours.'
+export const MANAGED_APPEAR = 'Your automated positions appear here.'
 
 /**
  * What a card has to show:

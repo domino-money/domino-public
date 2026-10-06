@@ -217,7 +217,10 @@ test('every route in the header renders', async (t) => {
     // New position's last step, so Setup no longer asks for a wallet to deposit; one line points there instead.
     ['/setup', /Deposits and recovery[\s\S]*Opening a position\? Start with New position\./, '[data-setup-release="unavailable"]'],
     // Changed on purpose (2026-09-24, the owner's simpler automation page): its title is its one action, and without a release it says so.
-    ['/sequence', /Set up automation[\s\S]*Automation can’t be set up here\./, '[data-sequence-release="unavailable"]'],
+    // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §8): the deployable build carries Domino V2, whose choices never
+    // wait for V1's sequence release (its profile ends 2026-10-21 and is not renewed): with none behind this server the page
+    // goes on to the wallet's positions, here asking for a wallet, and never says it can't be set up.
+    ['/sequence', /Set up automation[\s\S]*Connect your wallet[\s\S]*Your open positions appear here to choose from\./, '[data-sequence-wallet="none"]'],
   ]) {
     const page = await openPage(context, { origin, route });
     if (settled) await page.locator(settled).waitFor({ state: 'attached' });
@@ -1167,6 +1170,12 @@ test('Automate shows the plain position, then its two cards and nothing under th
 
 /** The routes that open Positions, whose list asks for a wallet in its own empty state. */
 const POSITIONS_ROUTES = new Set(['/positions', '/app', '/portfolio']);
+/**
+ * The routes whose page asks for a wallet in its own empty state, and where it says so. Changed on purpose 2026-10-06
+ * (rugged's answer of 6 Oct, §8): Set up automation too, which in the deployable build (it carries Domino V2) no longer
+ * waits for V1's sequence release, so with no wallet it asks for one, with a Connect wallet that only opens the header's dialog.
+ */
+const OWN_CONNECT = new Map([...[...POSITIONS_ROUTES].map((route) => [route, '[data-empty="owned-connect"]']), ['/sequence', '[data-sequence-wallet="none"]']]);
 
 test('the wallet control is on every route and ready, no route mentions practice, and nothing is stored', async () => {
   for (const route of ROUTES) {
@@ -1178,9 +1187,9 @@ test('the wallet control is on every route and ready, no route mentions practice
     // would leave the reader guessing which one does. Changed on purpose
     // (owner, 2026-09-24): Positions' own list asks for a wallet in its empty
     // state, with a Connect wallet that only opens the header's dialog.
-    if (POSITIONS_ROUTES.has(route)) await page.locator('[data-empty="owned-connect"]').waitFor();
+    if (OWN_CONNECT.has(route)) await page.locator(OWN_CONNECT.get(route)).waitFor();
     const buttons = await page.getByRole('button', { name: 'Connect wallet' }).all();
-    assert.equal(buttons.length, POSITIONS_ROUTES.has(route) ? 2 : 1, `Connect wallet on ${route}: found ${buttons.length}`);
+    assert.equal(buttons.length, OWN_CONNECT.has(route) ? 2 : 1, `Connect wallet on ${route}: found ${buttons.length}`);
     for (const button of buttons) assert.equal(await button.isDisabled(), false, `Connect wallet is disabled on ${route}`);
     assert.equal(await page.locator('header').getByRole('button', { name: 'Connect wallet' }).count(), 1, `the control is not in the header on ${route}`);
     assert.doesNotMatch(await page.locator('#root').innerText(), /practice/i, `practice on ${route}`);

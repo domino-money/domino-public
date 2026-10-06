@@ -8,7 +8,7 @@
  * data-error-code attribute.
  */
 import { DECLINED_COPY } from '../../v2/errors'
-import { FAILURE_COPY, NO_ROUTE } from '../../v2/crosschain/copy'
+import { FAILURE_COPY, NO_ROUTE, NOT_REPORTED } from '../../v2/crosschain/copy'
 
 export const FUNDS_TEXT = {
   /**
@@ -108,6 +108,16 @@ export const FUNDS_TEXT = {
   },
   /** The quote's one button (Changed on purpose 2026-10-06, the owner's point 4): what leaves the wallet, and from where. */
   bring: (amount: string, network: string) => `Bring ${amount} from ${network}`,
+  /**
+   * Added 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §2 step 7: the line that counts the transactions says
+   * one confirmation for a batch, in his words): the live line while the approval and the deposit go as one batch.
+   */
+  batchLine: (sent: boolean) => `Approval and deposit in one confirmation · ${sent ? 'waiting to be included…' : 'confirm in your wallet'}`,
+  /**
+   * Added 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §1: one network cost line in view, never 0; in S2 the
+   * gas on the origin the provider estimated, or "Not reported"): the winner's estimate, as Details writes it.
+   */
+  networkFee: (origin: string, fee: string | null, provider: string) => `Network fee on ${origin}: ${fee === null ? NOT_REPORTED : `about ${fee}, estimated by ${provider}`}`,
   // Added 2026-10-06 (the owner's point 4): what the quote's Details list.
   youSend: 'You send',
   chosenRoute: (provider: string) => `${provider} (chosen)`,
@@ -187,6 +197,10 @@ export const SENDER_COPY: Readonly<Record<string, string>> = Object.freeze({
   gas_budget_exceeded: 'This step needs a larger network fee than Domino allows, so nothing was sent.',
   native_balance_insufficient: 'Not enough {native} on {origin} to pay the network fee.',
   step_would_fail: 'This step would fail on {origin}. Get a new quote and try again.',
+  // Added 2026-10-06 (rugged's answer of 6 Oct: approval and deposit in one batch): what became of a batch the wallet took.
+  batch_not_included: "Your wallet didn't send it. Nothing was bridged.",
+  batch_reverted: 'The approval and the deposit failed on {origin}. Nothing was bridged.',
+  batch_unknown: "We couldn't follow this deposit. Check your wallet's activity on {origin}.",
 })
 export const SENDER_GENERIC = "Something went wrong with your wallet's answer. Check your wallet's activity on {origin}."
 
@@ -200,5 +214,9 @@ export function senderCopy(code: string, values: { origin: string; native: strin
 /**
  * Decision #16 [owner, 02/10] (§3.5, §8.2 S2; texts #29): the discrete small line beside the fee and the provider in the
  * quote, exactly: "Domino fee 0.35% · via {provider} · you can also bridge with any other service".
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §1: the Domino fee stays in view with its
+ * amount and token, and in S2 its chain and where it is charged; the card showed only "Domino fee 0.35% · via …"): the
+ * fee is §3.5's own sentence for the winner (v2/crosschain/copy.ts feeLines.domino: "Domino fee (0.35%): 0.35 USDC,
+ * charged by Relay on Arbitrum One"), which names the provider; the clause after it is #16's, as it was.
  */
-export const bridgeElsewhereLine = (percent: string, provider: string) => `Domino fee ${percent} · via ${provider} · you can also bridge with any other service`
+export const bridgeElsewhereLine = (fee: string) => `${fee} · you can also bridge with any other service`

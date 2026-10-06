@@ -333,9 +333,12 @@ export const WAITING_REASON_TEXT: Readonly<Record<string, string>> = Object.free
   successor_anchor_unstable: 'Waiting for the reference price to settle before opening the next position',
   // waiting.error InvalidTick: a range out of the tick bounds, which the backend never builds.
   reverted_invalid_tick: "Waiting: the next position's range isn't valid at this price",
-  // Added 2026-10-05 (rugged97's #358): a v3 pool with too little price history for the reference price (its oracle
-  // slots); Domino's automation adds the slots, paid once per pool.
-  twap_history_short: "Waiting for this pool to record enough price history",
+  // Added 2026-10-06 (rugged's answer of 6 Oct, §4's notes: a reason the automation writes with no words here):
+  // Domino's price publisher signs the pool's price only once it has held for about a minute (within 0.5% of its price
+  // 12 s and 60 s before), so a price that just moved waits. Changed on purpose 2026-10-06 (the same notes):
+  // twap_history_short is gone; the backend never writes it, and its words spoke of oracle slots Domino pays for, which
+  // the decision of 5 Oct ruled out (a v3 pool without the history uses the signed price, as v4 does).
+  v2_observation_unstable: 'Waiting for the price to settle',
 })
 
 /** A share in basis points as a percent: 500 → "5", 250 → "2.5", 5000 → "50". */

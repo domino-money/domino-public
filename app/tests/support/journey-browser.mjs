@@ -28,15 +28,18 @@ export const WALLET_NAME = 'Journey Wallet';
  * `originOpen` false leaves the gate closed (today's journey exactly). `read6` (2026-10-06): more of read-v6's routes,
  * `{ route: (request) => answer }`, for the position's own page a test opens from New position's success. `planner` null
  * (2026-10-06): no planner stands in for the plan route, so the owner's journey asks the plan for a signed-in session only,
- * as the site does (src/v2in/journey/source.ts testPlannerOn); the wallet a suite connects stays signed out.
+ * as the site does (src/v2in/journey/source.ts testPlannerOn); the wallet a suite connects stays signed out. `clock`
+ * (2026-10-06): Playwright's fake clock, installed before the page loads; it ticks on its own, and a suite jumps it
+ * forward with `page.clock.fastForward`.
  */
-export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null, read6 = null, dex = null } = {}) {
+export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null, read6 = null, dex = null, clock = false } = {}) {
   const fake = createFakeSession();
   const server = createWalletServer({ fake, dist, routes });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
   const origin = `http://127.0.0.1:${server.address().port}`;
   fake.origin = origin;
   const context = await browser.newContext({ viewport });
+  if (clock) await context.clock.install();
   const foreign = [], csp = [], errors = [], planned = [];
   await context.route((url) => !url.href.startsWith(origin), (route) => {
     foreign.push(route.request().url());

@@ -6,7 +6,7 @@ import { sessionKey } from '../session/port'
 import { livePort } from '../session/livePort'
 import { openWalletDialog, signedOutLine } from '../finance/signedOut'
 import { realClock } from '../lib/clock'
-import { NOTHING_YET_BOTH, type CardShows } from '../lib/automationCards'
+import { MANAGED_APPEAR, MANAGED_LINE, NOTHING_YET_BOTH, type CardShows } from '../lib/automationCards'
 import {
   COLLECTION_TEXT, ENROLLMENT_REASON_TEXT, ENROLLMENT_STATUS_TEXT, PERFORMANCE_STATUS_TEXT,
   createPerformanceController, enrollmentFailureText, exactDecimal, formatMetricPercent, formatMetricUsd, performanceReasonText, trackableSequence, utcSeconds,
@@ -211,9 +211,9 @@ const untracked = (view: PerformanceView) => view.sequences.older || view.sequen
 function emptyText(view: PerformanceView): string {
   // While the session is checked with nothing kept: no line yet (2026-09-27, round 6), the check decides it in a moment.
   if (view.state === 'checking') return ''
-  if (view.state !== 'ready' || view.sequences.state === 'idle' || view.sequences.state === 'reading') return 'Your automated positions appear here.'
+  if (view.state !== 'ready' || view.sequences.state === 'idle' || view.sequences.state === 'reading') return MANAGED_APPEAR
   if (!trackable(view)) return NOTHING_YET
-  return untracked(view) ? 'Nothing tracked yet: press Start tracking below.' : 'Your automated positions appear here.'
+  return untracked(view) ? 'Nothing tracked yet: press Start tracking below.' : MANAGED_APPEAR
 }
 const NOTHING_YET = 'Nothing here yet. Turn on Auto-compound for a position and how it does shows here.'
 
@@ -308,7 +308,7 @@ export default function Performance({ onShows }: { onShows?: (shows: CardShows |
     data-sequences={view.sequences.state} data-sequences-reason={view.sequences.reason ?? undefined}>
     <h2 className="sr-only">Your strategy history</h2>
     {/* One plain line; how a missing figure shows is its title, and each cell's own title says why. */}
-    <p className="dm-acct-desc" title="Missing prices and incomplete history show as dashes.">How your automated positions did in the last 24 hours.</p>
+    <p className="dm-acct-desc" title="Missing prices and incomplete history show as dashes.">{MANAGED_LINE}</p>
     {view.state === 'signed_out' ? <Card level={2} className="dm-acct-plot dm-dots-chart" data-signed-out={session.kind}>
       <p>{out.text}</p>
       {out.action && <Button variant="outline" size="sm" onClick={openWalletDialog}>{out.action}</Button>}

@@ -1107,7 +1107,12 @@ function picker(props = {}) {
   // Changed on purpose 2026-09-28 (speed wave): New position's read is the flow's (src/lib/create/poolsAhead.ts), the real
   // module over the same deferred boundaries, one per picker, so what this checks of the picker's read holds as before.
   const ahead = load('src/lib/create/poolsAhead.ts', { readWithin, hintsWithin, usablePoolsRequest: real('src/lib/read/screens/poolsList.ts').usablePoolsRequest })
+  // 2026-10-06 (rugged97's delta of 6 Oct §4): a row of Base or Arbitrum One names DEX Screener (the real rules, tested in
+  // tests/v2/multichain-journey.test.mjs); this picker's rows are Robinhood Chain's, which they leave as they were.
+  const others = real('src/lib/create/otherChains.ts')
   const { PoolPicker } = load('PoolPicker', {
+    poolOnOtherChain: others.poolOnOtherChain, networkFigureNote: others.networkFigureNote, networkAprNote: others.networkAprNote, figuresShownUntil: others.figuresShownUntil,
+    readNow: () => ({ wall: 1001000, monotonic: 0 }),
     keptCreatePools: ahead.keptCreatePools, readCreatePools: ahead.readCreatePools,
     readWithin,
     askAgainLater(outcome, attempt, signal) { const pending = deferred(); asks.push({ outcome, attempt, signal, ...pending }); return pending.promise },

@@ -160,8 +160,13 @@ test('the offer\'s page module hands in the HTTP transport, the signed-in sessio
 test('one click on one of Domino\'s networks: switched through wallet/port, read through the closed reader, nothing else', () => {
   assert.equal(ALL.some(({ path }) => path === 'v2in/funds/Holdings.tsx'), false, 'the scan is gone');
   const offer = ALL.find(({ path }) => path === 'v2in/funds/BringFunds.tsx').code;
-  assert.match(offer, /const SOURCE_CHAINS: readonly V2ChainId\[\] = \[4663, 8453, 42161\]/, 'Robinhood Chain, Base and Arbitrum One only, never Ethereum or OP Mainnet');
-  assert.match(offer, /const switched = await switchToChain\(origin\)/, 'a V2 network, through the port');
+  // Changed on purpose 2026-10-06 (rugged97's #379): Ethereum and OP Mainnet have a button too, but only where Domino's
+  // service read something to bring there (model.ts BALANCE_ORIGINS, their own read); Domino's own stay these three.
+  assert.match(offer, /const SOURCE_CHAINS: readonly V2ChainId\[\] = \[4663, 8453, 42161\]/, 'Robinhood Chain, Base and Arbitrum One');
+  assert.match(offer, /const away = BALANCE_ORIGINS\.filter\(\(id\) => id !== chainId && !closed\.has\(id\)\)\s+\.map\(\(id\) => \(\{ id, holds: holdsOf\(id\) \}\)\)\s+\.filter\(\(n\) => n\.holds\.state === 'holds' \|\| n\.holds\.state === 'no_gas'\)/, 'Ethereum and OP Mainnet only where something was read there, never unread or empty');
+  // Changed on purpose 2026-10-06 (rugged97's #379): a V2 network through the port's V2 switch; Ethereum or OP Mainnet
+  // through its switch to an origin.
+  assert.match(offer, /const switched = await \(isV2ChainId\(origin\) \? switchToChain\(origin\) : switchToOrigin\(origin\)\)/, 'through the port');
   assert.doesNotMatch(offer, /scanHoldings|CANDIDATE_ORIGINS\.filter/, 'no scan of every network');
   assert.match(offer, /report = await readHoldingsReport\(await browserOriginWallet\(\), candidate\)/, 'the closed reader, on the network the wallet is on');
   assert.match(offer, /report\.unread\.length > 0 \? fail\(FUNDS_TEXT\.readFailed\(network\), 'read_partial'\)/, 'an unread balance is never said to be zero');
@@ -180,7 +185,15 @@ test('one click on one of Domino\'s networks: switched through wallet/port, read
 
 test('the decided words: #16\'s discrete line, #29\'s "Get gas on {destination}" and S2\'s locked sentence, exactly; titles by token and network', () => {
   const copy = require('../../.test-build/app/src/v2in/funds/copy.js');
-  assert.equal(copy.bridgeElsewhereLine('0.35%', 'Relay'), 'Domino fee 0.35% · via Relay · you can also bridge with any other service');
+  // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §1): the fee in the line is §3.5's sentence,
+  // with its amount, token, chain and where it is charged; #16's clause after it, as it was.
+  assert.equal(copy.bridgeElsewhereLine('Domino fee (0.35%): 0.35 USDC, charged by Relay on Arbitrum One'), 'Domino fee (0.35%): 0.35 USDC, charged by Relay on Arbitrum One · you can also bridge with any other service');
+  // One network cost line in view, never 0: the provider's estimate on the origin, or "Not reported".
+  assert.equal(copy.FUNDS_TEXT.networkFee('Arbitrum One', '0.000001 ETH', 'Relay'), 'Network fee on Arbitrum One: about 0.000001 ETH, estimated by Relay');
+  assert.equal(copy.FUNDS_TEXT.networkFee('Arbitrum One', null, 'Across'), 'Network fee on Arbitrum One: Not reported');
+  // rugged's answer of 6 Oct (F7 delta of 6 Oct §2 step 7), his words: the line that counts the transactions, for a batch.
+  assert.equal(copy.FUNDS_TEXT.batchLine(false), 'Approval and deposit in one confirmation · confirm in your wallet');
+  assert.equal(copy.FUNDS_TEXT.batchLine(true), 'Approval and deposit in one confirmation · waiting to be included…');
   assert.equal(copy.FUNDS_TEXT.gasOffer('Robinhood Chain'), 'Get gas on Robinhood Chain');
   // Changed on purpose 2026-10-06 (the integration review: "Bring USDG from Arbitrum One" above "Bring 100 USDC from
   // Arbitrum One"): once a network is picked, the title names the network alone.
@@ -199,7 +212,8 @@ test('the decided words: #16\'s discrete line, #29\'s "Get gas on {destination}"
   assert.doesNotMatch(offer, /lockedCopy/, "never the gate's contracts sentence");
   const constants = require('../../.test-build/app/src/v2in/funds/constants.js');
   assert.equal(constants.FUNDS_SHOW_BRIDGE_ELSEWHERE, true, 'decision #16');
-  assert.equal(constants.FUNDS_BATCH_APPROVAL_AND_DEPOSIT, false, 'decision #15');
+  // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct: the owner revoked decision #15).
+  assert.equal(constants.FUNDS_BATCH_APPROVAL_AND_DEPOSIT, true, 'decision #15 revoked: one batch where the wallet batches on the origin');
   // Changed on purpose (data) 2026-10-02 (S2 wired): the app's side of #17 is done; the Worker's deployment and binding are the dashboard's.
   assert.equal(constants.FUNDS_HTTP_TRANSPORT_WIRED, true, 'open point #17, the app\'s side');
 });
@@ -215,6 +229,14 @@ test('the offer appears automatically, while wallet network changes wait for the
   assert.match(offer, /const servedFor = `\$\{ownKey\}\|\$\{servedGen\}`/);
   assert.match(offer, /onSettled=\{\(\) => \{\s+setSettled\(\(previous\) => new Set\(previous\)\.add\(d\.record\.depositTxHash\)\)\s+readAgain\(\)/);
   assert.match(offer, /readChainBalances\(transports\.read, transports\.readRuntime, wallet, balancesRequest\(chainId\)\)/, 'only what model.ts balancesRequest asks');
+  // Changed on purpose 2026-10-06 (rugged97's #379): Ethereum and OP Mainnet in a request of their own, under the same gate,
+  // each answer kept apart (a failed one never takes the other's with it), Domino's three first before anything is drawn.
+  assert.equal([...offer.matchAll(/readChainBalances\(/g)].length, 2, 'two requests, never one naming both');
+  assert.match(offer, /const tokens = balanceChainsRequest\(chainId\)\s+if \(tokens\.length === 0\) return null\s+const away = await readChainBalances\(transports\.read, transports\.readRuntime, wallet, tokens\)/, 'only what model.ts balanceChainsRequest asks');
+  assert.match(offer, /if \(!routeServes\(await transports\.routeState\('readV6'\), 'chain-balances'\)\) return null\s+if \(part === 'elsewhere'\)/, 'the same gate for both');
+  assert.match(offer, /for \(const part of \['domino', 'elsewhere'\] as const\) \{\s+void readServed\(part\)\.then\(\(answer\) => \{\s+if \(alive\) keepServed\(servedKey, part, answer\)/);
+  assert.match(offer, /return answer === null && \(here\[part\] \?\? null\) !== null \? here : \{ \.\.\.here, \[part\]: answer \}/, 'a failed read keeps its own earlier answer, and touches nothing else');
+  assert.match(offer, /const servedNow = useMemo\(\(\) => \(servedHere === null \|\| servedHere\.domino === undefined \? null : mergeBalances\(servedHere\.domino, servedHere\.elsewhere \?\? null\)\), \[servedHere\]\)/);
   assert.doesNotMatch(offer, /setOpened|open=\{opened/);
   // Changed on purpose 2026-10-06 (the integration review): or the same pick again, from its "Sign in" button once the
   // person closed the wallet's dialog.

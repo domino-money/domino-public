@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CopyButton } from '../../components/read/screens/CopyButton'
 import { Button, Card, KeyValue, KeyValueList, Pill } from '../../components/ui'
-import { OriginStepError, type DepositJournal, type OriginReview, type OriginSender } from '../../finance/v2/crosschain'
+import { OriginStepError, type DepositJournal, type OriginReview, type OriginSender, type PendingBatch, type SentStep } from '../../finance/v2/crosschain'
 import { amountText } from '../../v2/crosschain/amounts'
 import { PROVIDER_NAME } from '../../v2/crosschain/copy'
 import { createStatusPoller, type PollState } from '../../v2/crosschain/polling'
@@ -10,7 +10,7 @@ import type { CrosschainJournalRecord } from '../../v2/crosschain/steps'
 import { v2TxUrl } from '../../v2/explorers'
 import { switchToChain, v2SwitchNotice } from '../../wallet/port'
 import { FUNDS_FINALITY_WATCH_MS, FUNDS_RECEIPT_POLL_MS } from './constants'
-import { FUNDS_TEXT } from './copy'
+import { FUNDS_TEXT, senderCopy } from './copy'
 import { continueWith } from './model'
 import type { FundsServices } from './services'
 
@@ -49,6 +49,81 @@ function HashLine({ chainId, hash, label }: { chainId: number; hash: string; lab
         hash
       )}
     </KeyValue>
+  )
+}
+
+/**
+ * Added 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §2 step 5): a deposit sent as one batch whose transaction
+ * the wallet has not named yet, kept by the sender (finance/v2/crosschain.ts PendingBatch) and found here after a
+ * reload, or once the run that sent it stopped: the wallet's status for it is asked through the closed sender every
+ * FUNDS_RECEIPT_POLL_MS until it names the transaction; that deposit is then followed as any other (`onSent`). When
+ * nothing of it ran, or the wallet no longer knows it, that is said, and the person may remove it from the list.
+ */
+export function PendingDeposit({
+  entry,
+  services,
+  sender,
+  name,
+  onSent,
+  onRemove,
+}: {
+  entry: PendingBatch
+  services: FundsServices
+  sender: () => Promise<OriginSender>
+  name: Naming
+  /** The wallet named the batch's transaction: the deposit's, its record kept (or not: `journaled`). */
+  onSent: (sent: SentStep) => void
+  onRemove: () => void
+}) {
+  const [said, setSaid] = useState<'pending' | 'batch_not_included' | 'batch_reverted' | 'batch_unknown'>('pending')
+  const sent = useRef(onSent)
+  useEffect(() => {
+    sent.current = onSent
+  })
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      while (live) {
+        try {
+          const state = await (await sender()).batchStatus(entry)
+          if (!live) return
+          if (state.state === 'sent') return sent.current(state.sent)
+          if (state.state === 'gone') return setSaid(state.reverted ? 'batch_reverted' : 'batch_not_included')
+          if (state.state === 'unknown') return setSaid('batch_unknown')
+        } catch {
+          // Asked again: the wallet away for a moment, or a read that failed.
+        }
+        await services.wait(FUNDS_RECEIPT_POLL_MS)
+      }
+    })()
+    return () => {
+      live = false
+    }
+  }, [entry, sender, services])
+  const origin = name.origin(entry.originChainId) ?? `network ${entry.originChainId}`
+  return (
+    <Card level={2} className="p-4" data-funds-pending-batch={entry.originChainId} data-funds-batch-state={said}>
+      <span className="dm-subtitle">{FUNDS_TEXT.depositFrom(origin)}</span>
+      <p role="status" className={said === 'pending' ? 'mt-2 text-body' : 'dm-error mt-2'} data-error-code={said === 'pending' ? undefined : said} data-funds-state-text="">
+        {said === 'pending' ? FUNDS_TEXT.stepWords.sent : senderCopy(said, { origin, native: '' })}
+      </p>
+      <details className="dm-details mt-3">
+        <summary>{FUNDS_TEXT.details}</summary>
+        <KeyValueList>
+          <KeyValue label={FUNDS_TEXT.bridge}>{PROVIDER_NAME[entry.provider]}</KeyValue>
+          {entry.requestId && (
+            <KeyValue label="Relay request" mono>
+              {entry.requestId}
+            </KeyValue>
+          )}
+        </KeyValueList>
+      </details>
+      {said !== 'pending' && (
+        <Button variant="ghost" size="sm" className="mt-2" onClick={onRemove} data-funds-remove="">
+          {FUNDS_TEXT.remove}
+        </Button>
+      )}
+    </Card>
   )
 }
 

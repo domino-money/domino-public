@@ -241,6 +241,14 @@ test('DEX Screener on Base and Arbitrum One (2026-10-06): Uniswap pools by their
   at += (dex.DEX_MAX_AGE_S + 1) * 1000;
   assert.equal(store.chainPool(8453, V4), null, 'none past ten minutes');
   assert.equal(store.chainToken(8453, VIRTUAL), null);
+  // Added 2026-10-06 (rugged97's delta of 6 Oct §4): the newest figures whatever their age, for New position to say a
+  // figure is too old rather than missing; still each chain's own, and never Robinhood Chain's.
+  assert.deepEqual([store.chainPoolSeen(8453, V4).liquidityUsd, store.chainPoolSeen(8453, V4).retrievedAt], ['136159.17', NOW]);
+  assert.equal(store.chainPoolSeen(42161, V4), null);
+  const HOME_POOL = `0x${'34'.repeat(32)}`;
+  store.take(VIRTUAL, [pair(HOME_POOL, USDG, 10, { chainId: 'robinhood', labels: ['v4'] })], at);
+  assert.equal(store.pool(HOME_POOL).liquidityUsd, '10.00', 'Robinhood Chain’s pool is kept');
+  assert.equal(store.chainPoolSeen(4663, HOME_POOL), null, 'but never given out as another network’s');
 });
 
 // ---------------------------------------------------------------------------

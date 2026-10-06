@@ -1,10 +1,10 @@
-import type { ChainBalancesResponse, ChainPoolsResponse } from 'api-contracts/read-v6/types'
-import type { PoolPrices } from '../../lib/create/poolPrices'
-import { readChainBalances, readChainPools } from '../../v2/read/v6'
+import type { ChainBalancesResponse } from 'api-contracts/read-v6/types'
+import type { PayFacts, PoolPrices } from '../../lib/create/poolPrices'
+import { readChainBalances } from '../../v2/read/v6'
 import type { V2ChainId } from '../../v2/types'
-import { balanceOn, balancesRequest, holdingArtwork, payToken } from '../funds/model'
+import { balanceChainsRequest, balanceOn, balancesRequest, holdingArtwork, mergeBalances, payToken } from '../funds/model'
 import { pricesOf } from './model/chainReads'
-import { patiently, servedOn, type LiveGate } from './served'
+import { chainPoolsOn, patiently, servedOn, type LiveGate } from './served'
 import type { JourneyGates } from './source'
 
 /** Quiet re-asks of a prices read that failed for the moment (a busy reader: 429 read_capacity_busy), after the first. */
@@ -23,7 +23,11 @@ export const PRICE_REASKS = 3
  * and Arbitrum One's rows take theirs). Asked exactly as every chain read of New position is (./served.ts): only while the
  * read route serves chain-pools; a failure that may pass (a busy reader, a dropped connection) is asked again quietly up
  * to PRICE_REASKS times (the read screens' waits); anything else is final, and the steps say "USD estimate unavailable" as
- * before. Nothing is kept between pools: each pool's prices are the chain's now.
+ * before. Nothing is kept between pools: each pool's prices are the chain's now. Changed on purpose 2026-10-06 (rugged's
+ * answer of 6 Oct, §1: "don't repeat chain-pools of the same token before 15 s, which is the reader's cache"): a pair's
+ * answer serves every ask within 20 s, choosing the pool again or opening New position again included (./served.ts
+ * chainPoolsOn, as Base's and Arbitrum One's rows reuse theirs), and a busy reader is asked again no sooner than its
+ * Retry-After.
  *
  * Added 2026-10-06 (the owner: AI/PONS and CASHCAT/AI short on Robinhood Chain, and no offer at all): `pay`, the one other
  * token the deposit may be paid with on the pool's network (../funds/model.ts payToken: none while a token of the pool is
@@ -31,6 +35,13 @@ export const PRICE_REASKS = 3
  * read-v6 chain-balances read of the tokens the offer asks about (../funds/model.ts balancesRequest: what is held here and
  * elsewhere decides between ETH and the stable). Asked as the other chain reads are, under the pool's network's live S1
  * gate, whatever S2's gate says (the review of 2026-10-06); when it cannot be read, ETH, with no balance said.
+ * Changed on purpose 2026-10-06 (rugged97's #379, read-v6 1.1.0-rc.1, additive): what is held on Ethereum and OP Mainnet
+ * counts too, read beside it in a request of their own (../funds/model.ts balanceChainsRequest), asked once, so a Worker
+ * that still refuses them, or an answer that cannot be had, leaves this read as it was; theirs counts only beside it (the
+ * comparison is about what is held here as well). Changed on purpose 2026-10-06 (the review: the token to pay with waited
+ * for their read, and failed with it): each answer is used as it arrives. The offer comes from Domino's answer as soon as
+ * it is in, with theirs beside it only if it is already back; theirs, back later, only adds what is held there, and the
+ * offer is said again (`later`) when that changes the token to pay with. Domino's never waits for theirs.
  */
 export function poolPricesFor(gates: JourneyGates | null): PoolPrices | null {
   if (!gates) return null
@@ -43,24 +54,44 @@ export function poolPricesFor(gates: JourneyGates | null): PoolPrices | null {
       const gate = live(4663)
       if (!gate || pool.currencies[0].chainId !== 4663 || pool.currencies[1].chainId !== 4663) return null
       const pair = { currency0: pool.currencies[0].address.toLowerCase(), currency1: pool.currencies[1].address.toLowerCase() }
-      const said = await patiently(() => servedOn<ChainPoolsResponse>(gate, 'chain-pools', (t) => readChainPools(t.read, t.readRuntime, 4663, pair.currency0, pair.currency1)), signal, PRICE_REASKS)
+      const said = await patiently(() => chainPoolsOn(gate, 4663, pair.currency0, pair.currency1), signal, PRICE_REASKS)
       return said.kind === 'ok' && !signal.aborted ? (pricesOf(said.body, pair) ?? null) : null
     },
-    async pay(pool, owner, signal) {
+    async pay(pool, owner, signal, later) {
       const chainId = pool.currencies[0].chainId
       const gate = live(chainId)
       const tokens = pool.currencies.map((currency) => currency.address)
       if (!gate || !payToken(chainId, tokens, null)) return null
-      const said = await patiently(() => servedOn<ChainBalancesResponse>(gate, 'chain-balances', (t) => readChainBalances(t.read, t.readRuntime, owner, balancesRequest(chainId))), signal)
-      const answer = said.kind === 'ok' ? said.body : null
-      const token = payToken(chainId, tokens, answer)
-      if (signal.aborted || !token) return null
-      const held = answer && balanceOn(answer, chainId, token.address)
-      return {
-        token: { origin: 'read', chainId, address: token.address, symbol: token.symbol, decimals: token.decimals, readStatus: 'available', artwork: holdingArtwork(chainId, token.address) },
-        raw: held ? held.raw : null,
-        usd: held ? held.usd : null,
+      const ask = (request: readonly { chainId: number; address: string }[]) => servedOn<ChainBalancesResponse>(gate, 'chain-balances', (t) => readChainBalances(t.read, t.readRuntime, owner, request))
+      // The offer from Domino's answer (null: not read), with Ethereum's and OP Mainnet's beside it (null: none, or not yet).
+      const offer = (domino: ChainBalancesResponse | null, away: ChainBalancesResponse | null): PayFacts | null => {
+        const answer = domino && mergeBalances(domino, away)
+        const token = payToken(chainId, tokens, answer)
+        const held = token && answer && balanceOn(answer, chainId, token.address)
+        return (
+          token && {
+            token: { origin: 'read', chainId, address: token.address, symbol: token.symbol, decimals: token.decimals, readStatus: 'available', artwork: holdingArtwork(chainId, token.address) },
+            raw: held ? held.raw : null,
+            usd: held ? held.usd : null,
+          }
+        )
       }
+      // Theirs asked beside Domino's three, in a request of its own, and never waited for: `away.body` once it is back.
+      const elsewhere = balanceChainsRequest(chainId)
+      const away: { body?: ChainBalancesResponse | null } = {}
+      const asked = elsewhere.length === 0 ? null : ask(elsewhere).then((said) => (away.body = said.kind === 'ok' ? said.body : null))
+      const said = await patiently(() => ask(balancesRequest(chainId)), signal)
+      const domino = said.kind === 'ok' ? said.body : null
+      const first = offer(domino, away.body ?? null)
+      if (signal.aborted) return null
+      // Theirs back after Domino's (and only beside it): what is held there joins, said again when the token changes.
+      if (domino && asked && away.body === undefined) {
+        void asked.then((body) => {
+          const next = body && !signal.aborted ? offer(domino, body) : null
+          if (next && next.token.address !== first?.token.address) later(next)
+        })
+      }
+      return first
     },
   }
 }

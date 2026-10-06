@@ -1,8 +1,9 @@
 /**
  * TEST-ONLY. read-v6's live chain reads (chain-pools, chain-balances, chain-tokens; api-contracts/read-v6 README "Chain
  * reads") answered for a fake chain (./v2-chain.mjs) on Base or Arbitrum One (Robinhood Chain too since 2026-10-06, for its
- * pairs' prices and the wallet's balances there): answers the contract accepts, built from the
- * package's own fixtures (their snapshot, their ETH/USD round, the stable at 1) with the test's pools, balances and tokens.
+ * pairs' prices and the wallet's balances there; and, for chain-balances, Ethereum or OP Mainnet, rugged97's #379): answers
+ * the contract accepts, built from the package's own fixtures (their snapshot, their ETH/USD round, the stable at 1) with
+ * the test's pools, balances and tokens.
  * `answer(route, request)` is what a browser suite hands to `window.__dominoV2Test.read6` (src/v2in/dataSource.ts); every
  * answer is checked against the package's validators before it is served, so a suite never draws what the contract refuses.
  */
@@ -17,13 +18,31 @@ const TOKENS = fixture('chain-tokens-usdc');
 const ZERO = '0x0000000000000000000000000000000000000000';
 const ETH_PRICE = POOLS.tokens.find((token) => token.symbol === 'ETH').price;
 const STABLE_PRICE = POOLS.tokens.find((token) => token.symbol === 'USDC').price;
-const STABLES = { 4663: '0x5fc5360d0400a0fd4f2af552add042d716f1d168', 8453: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 42161: '0xaf88d065e77c8cc2239327c5edb3a432268e5831' };
-const WRAPPED = { 4663: '0x0bd7d308f8e1639fab988df18a8011f41eacad73', 8453: '0x4200000000000000000000000000000000000006', 42161: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1' };
+/**
+ * Added 2026-10-06 (rugged97's #379: chain-balances also reads Ethereum and OP Mainnet when a request names them): their
+ * profiles (api-contracts/v2/balance-chains), for their stable, their WETH and their Chainlink ETH/USD feed.
+ */
+const balanceChain = (name) => JSON.parse(readFileSync(new URL(`../../../api-contracts/v2/balance-chains/${name}.json`, import.meta.url), 'utf8'));
+const BALANCE_CHAINS = [balanceChain('ethereum-1'), balanceChain('optimism-10')];
+const STABLES = {
+  4663: '0x5fc5360d0400a0fd4f2af552add042d716f1d168', 8453: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 42161: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
+  ...Object.fromEntries(BALANCE_CHAINS.map((chain) => [chain.chainId, chain.chargeCurrencies.find((c) => c.rank === 1).address.toLowerCase()])),
+};
+const WRAPPED = {
+  4663: '0x0bd7d308f8e1639fab988df18a8011f41eacad73', 8453: '0x4200000000000000000000000000000000000006', 42161: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
+  ...Object.fromEntries(BALANCE_CHAINS.map((chain) => [chain.chainId, chain.wrappedNative.address.toLowerCase()])),
+};
 /**
  * Added 2026-10-06 (Robinhood Chain's pairs valued in USD): the fixtures' round as Robinhood Chain's own feed reads it (the
  * contract's PRICE_PROFILES: another feed, a heartbeat of 24 h), so its ETH and WETH are priced too.
+ * Changed on purpose 2026-10-06 (rugged97's #379): and as Ethereum's and OP Mainnet's own feeds read it (heartbeats of
+ * 3,600 s and 1,200 s; the round is a minute old at the fixtures' block), so theirs are priced as well.
  */
-const ETH_PRICES = { 8453: ETH_PRICE, 4663: { ...ETH_PRICE, ethUsd: { ...ETH_PRICE.ethUsd, feed: '0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9' } } };
+const ETH_PRICES = {
+  8453: ETH_PRICE,
+  4663: { ...ETH_PRICE, ethUsd: { ...ETH_PRICE.ethUsd, feed: '0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9' } },
+  ...Object.fromEntries(BALANCE_CHAINS.map((chain) => [chain.chainId, { ...ETH_PRICE, ethUsd: { ...ETH_PRICE.ethUsd, feed: chain.gasPrice.chainlinkEthUsd.proxy.toLowerCase() } }])),
+};
 
 /**
  * A token's price as the fixtures' read says it: the stable at 1; ETH and WETH at Base's feed round (the fixtures' chain;

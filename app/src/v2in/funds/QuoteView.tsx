@@ -1,6 +1,6 @@
 import { Button, KeyValue, KeyValueList } from '../../components/ui'
 import { durationText } from '../../v2/crosschain/amounts'
-import { bpsPercent, NOT_REPORTED, PROVIDER_NAME } from '../../v2/crosschain/copy'
+import { NOT_REPORTED, PROVIDER_NAME } from '../../v2/crosschain/copy'
 import { originGasDetail, presentQuote, shortAmountText, type CandidateView, type Naming } from '../../v2/crosschain/present'
 import type { QuotePlan } from '../../v2/crosschain/types'
 import { FUNDS_SHOW_BRIDGE_ELSEWHERE } from './constants'
@@ -42,6 +42,14 @@ export interface GasChoice {
  * heading and no "Best" pill. The deposit's two transactions stay two (decision #15): the line counts them. Every error
  * and notice stays, and so does V1's "I rejected it in my wallet". `decision: null` is "No route available right now."
  * with one line per provider. No USD anywhere, not even the provider's own estimate.
+ *
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §1 and §2; spec §8.2):
+ *   - in view, not only in Details: the Domino fee with its amount and token, its chain and where it is charged (§3.5's
+ *     sentence for the winner, in decision #16's discrete line, which showed only "Domino fee 0.35% · via …"), and one
+ *     network cost line: the winner's gas on the origin as its provider estimated it (Details' own words), or "Not
+ *     reported", never 0. The other candidate, the provider's fee and the request ids stay in Details;
+ *   - the owner revoked decision #15: when the approval and the deposit go as one batch, the live line says "Approval and
+ *     deposit in one confirmation".
  *
  * `locked` (the service not wired): Deposit stays closed with the offer's plain sentence; nothing here reaches the wallet.
  */
@@ -88,8 +96,17 @@ export function QuoteView({
   const lifetime = quote.expiresAt - quote.requestedAt
   const lockedId = 'funds-deposit-locked'
   const approval = words.approval && steps.approval !== 'skipped'
-  const live = steps.running ? runLine(steps.stage?.stage ?? null, approval, words.origin) : null
+  const stage = steps.stage?.stage ?? null
+  // A batch is one confirmation, whatever the steps' count (Changed on purpose 2026-10-06, rugged's answer of 6 Oct).
+  const live = !steps.running ? null : stage === 'batch_wallet' || stage === 'batch_sent' ? FUNDS_TEXT.batchLine(stage === 'batch_sent') : runLine(stage, approval, words.origin)
   const sendable = quote.decision !== null && quote.steps.length > 0
+  // In view (Changed on purpose 2026-10-06, rugged's answer of 6 Oct, F7 delta of 6 Oct §1): the winner's Domino fee, §3.5's
+  // sentence (its amount rounded up, exact in the title), and its provider's gas estimate on the origin, never 0.
+  const winning = quote.candidates.find((c) => c.provider === quote.decision) ?? null
+  const fee = winner?.lines?.[0] ?? null
+  const feeExact = winner?.exactLines?.[0] ?? null
+  const gasFee = winning ? originGasDetail(quote, winning, name) : null
+  const gasExact = winning ? originGasDetail(quote, winning, name, true) : null
   // The winner first, then the other: each with its §3.5 lines (exact in the title) or its §3.4 sentence.
   const candidate = (c: CandidateView) => (
     <div key={c.provider} className="dm-funds-candidate" data-funds-candidate={c.provider} data-funds-status={c.status} data-funds-winner={c.winner ? '' : undefined}>
@@ -191,10 +208,24 @@ export function QuoteView({
           )}
         </div>
       )}
-      {/* Decision #16: the discrete small line beside the fee and the provider (§3.5, §8.2 S2). */}
-      {FUNDS_SHOW_BRIDGE_ELSEWHERE && quote.decision !== null && (
-        <p className="dm-funds-elsewhere" data-funds-bridge-elsewhere="">
-          {bridgeElsewhereLine(bpsPercent(quote.appFeeBps), PROVIDER_NAME[quote.decision])}
+      {/* Decision #16: the discrete small line beside the fee and the provider (§3.5, §8.2 S2), the fee in full since 2026-10-06. */}
+      {quote.decision !== null && fee !== null && (
+        <p
+          className="dm-funds-elsewhere"
+          data-funds-bridge-elsewhere=""
+          data-funds-domino-fee=""
+          title={feeExact !== null && feeExact !== fee ? (FUNDS_SHOW_BRIDGE_ELSEWHERE ? bridgeElsewhereLine(feeExact) : feeExact) : undefined}
+        >
+          {FUNDS_SHOW_BRIDGE_ELSEWHERE ? bridgeElsewhereLine(fee) : fee}
+        </p>
+      )}
+      {quote.decision !== null && (
+        <p
+          className="dm-funds-elsewhere"
+          data-funds-network-fee={gasFee === null ? 'not-reported' : 'estimated'}
+          title={gasExact !== null && gasExact !== gasFee ? FUNDS_TEXT.networkFee(view.origin, gasExact, PROVIDER_NAME[quote.decision]) : undefined}
+        >
+          {FUNDS_TEXT.networkFee(view.origin, gasFee, PROVIDER_NAME[quote.decision])}
         </p>
       )}
       {/* Nothing to detail without a route: the headline and each provider's line say it all. */}

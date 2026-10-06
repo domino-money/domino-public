@@ -4,6 +4,8 @@
  * origin is short, its receipt before the deposit, the deposit exactly as the validated quote gave it, the chain read
  * again right before each send, a refusal releasing its claim, an unknown outcome keeping it, an expired quote sending
  * nothing, a fixture quote never sendable, the wallet's own fees (no zero tip), and the journal record kept for a reload.
+ * Added 2026-10-06 (rugged's answer of 6 Oct: the owner revoked decision #15): where the wallet batches on the origin, the
+ * exact approval and the deposit as ONE batch, kept until the wallet names its transaction, the deposit's.
  */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -13,7 +15,7 @@ import { createOriginChain, memoryStorage } from '../support/s2-origin-chain.mjs
 import { build, clone, fixture, runtime } from './support/crosschain.mjs';
 
 const require = createRequire(import.meta.url);
-const { createOriginSender, createDepositJournal, createUnsettledStore, depositJournalKey, DEPOSIT_JOURNAL_MAX, DEPOSIT_JOURNAL_PREFIX, isUnsettledOffer, OriginStepError, ORIGIN_MAX_GAS, unsettledKey } = require('../../.test-build/app/src/finance/v2/crosschain.js');
+const { BATCH_JOURNAL_MAX, BATCH_JOURNAL_PREFIX, batchJournalKey, createBatchJournal, createOriginSender, createDepositJournal, createUnsettledStore, depositJournalKey, DEPOSIT_JOURNAL_MAX, DEPOSIT_JOURNAL_PREFIX, isPendingBatch, isUnsettledOffer, OriginStepError, ORIGIN_MAX_GAS, unsettledKey } = require('../../.test-build/app/src/finance/v2/crosschain.js');
 const { walletSteps, stillSendable, SEND_MARGIN_MS } = build('steps');
 
 /** The connected wallet: the anvil account the browser suites use. */
@@ -497,4 +499,213 @@ test('without a journal the deposit still goes, and says it was not kept', async
   const sent = await s.sender.send(await s.sender.review(s.input), 'deposit');
   assert.equal(sent.journaled, false);
   assert.ok(sent.record);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Added 2026-10-06 (rugged's answer of 6 Oct: the owner revoked decision #15; F7 delta of 6 Oct §2): the exact approval
+// and the deposit as ONE EIP-5792 batch where the wallet batches atomically on the origin
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** The fake origin's first transaction hash (../support/s2-origin-chain.mjs): a step's, or a batch's one transaction. */
+const FIRST_HASH = `0x${(0xa0).toString(16).padStart(64, '0')}`;
+
+/** The lab above, on a wallet that batches on the origin (`atomic`), with every store in one storage, as a page keeps them. */
+function batchLab({ atomic = 'supported', mine = 'instant', quote = optimismQuote() } = {}) {
+  const origin = createOriginChain({ owner: OWNER, chainId: quote.request.originChainId, atomic, mine });
+  const clock = { now: 1_000 };
+  const storage = memoryStorage();
+  const journal = createDepositJournal(storage);
+  const unsettled = createUnsettledStore(storage);
+  const batches = createBatchJournal(storage);
+  const sender = createOriginSender(origin.wallet, { runtime, monoMs: () => clock.now, journal, unsettled, batches });
+  return { origin, clock, storage, journal, unsettled, batches, sender, quote, input: { quote, timing: TIMING, source: 'http' } };
+}
+const quoteKey = (quote) => `${quote.requestFingerprint}:${quote.requestedAt}`;
+
+test('batches: the wallet’s atomic status read on the ORIGIN chain; a wallet that states none, or only another chain’s, does not batch', async () => {
+  const s = batchLab();
+  const review = await s.sender.review(s.input);
+  const asked = s.origin.mark();
+  assert.equal(await s.sender.atomic(review), 'supported');
+  assert.deepEqual(asked(), ['eth_accounts', 'eth_chainId', 'wallet_getCapabilities'], 'the account and the chain, then what the wallet can do there');
+  const ready = batchLab({ atomic: 'ready' });
+  assert.equal(await ready.sender.atomic(await ready.sender.review(ready.input)), 'ready', 'the wallet would first upgrade the account, and asks');
+  const none = lab();
+  assert.equal(await none.sender.atomic(await none.sender.review(none.input)), 'unsupported', 'no capabilities: steps one by one');
+  const other = batchLab();
+  const otherReview = await other.sender.review(other.input);
+  other.origin.state.chainId = 42161;
+  assert.equal(await codeOf(other.sender.atomic(otherReview)), 'wallet_wrong_chain', 'never read on another chain than the origin');
+  assert.equal(await codeOf(other.sender.atomic({ ...otherReview })), 'review_required', 'only a review this sender issued');
+});
+
+test('batches: the exact approval and the deposit as ONE batch, exactly as quoted; kept until the wallet names its one transaction, the deposit’s', async () => {
+  const s = batchLab({ mine: 'manual' });
+  const review = await s.sender.review(s.input);
+  assert.deepEqual(review.plan.steps.map((step) => step.kind), ['approval', 'deposit']);
+  const asked = s.origin.mark();
+  const entry = await s.sender.sendBatch(review);
+  const methods = asked();
+  assert.deepEqual(methods.filter((m) => ['eth_sendTransaction', 'eth_estimateGas', 'eth_simulateV1'].includes(m)), [], 'no transaction of its own, no estimate, no simulation: the wallet simulates');
+  assert.equal(methods.filter((m) => m === 'wallet_sendCalls').length, 1, 'one batch');
+  assert.equal(methods.at(-2), 'eth_chainId', 'the chain read last, right before the wallet');
+  const [batch] = s.origin.state.batches;
+  assert.deepEqual([batch.version, batch.atomicRequired, batch.chainId, batch.from], ['2.0.0', true, '0xa', OWNER], 'atomic required, on the origin, from the owner');
+  // Both calls exactly as the quote gave them: the exact approval (never the unlimited one), then the deposit.
+  assert.deepEqual(batch.calls, [
+    { to: OP_USDC, data: s.quote.steps[0].transaction.data, value: '0x0' },
+    { to: DEPOSITORY, data: s.quote.steps[1].transaction.data, value: '0x0' },
+  ]);
+  // Kept until the wallet names its transaction: the wallet's id, with the origin, the provider and Relay's request id.
+  assert.deepEqual(entry, { originChainId: 10, destinationChainId: 4663, provider: 'relay', requestId: s.quote.candidates[0].tracking.requestId, batchId: 'batch-1', quote: quoteKey(s.quote), at: entry.at });
+  assert.deepEqual(s.batches.list(OWNER), [entry]);
+  const key = batchJournalKey(OWNER);
+  assert.ok(key.startsWith(BATCH_JOURNAL_PREFIX) && !key.includes(OWNER.slice(2)), 'no address in the key');
+  assert.doesNotMatch(s.storage.map.get(key), /100000000|0x095ea7b3|e8017952/i, 'no amount and no calldata kept');
+  assert.deepEqual(s.journal.list(4663, OWNER), [], 'no deposit record before its transaction is known');
+  assert.deepEqual([...s.origin.batchClaims.values()].map((claim) => claim.id), ['batch-1'], 'the page’s latch on the origin, with the wallet’s id');
+  // Pending until mined; then the wallet names its one transaction: the deposit's.
+  assert.deepEqual(await s.sender.batchStatus(entry), { state: 'pending' });
+  s.origin.include(FIRST_HASH);
+  const said = await s.sender.batchStatus(entry);
+  assert.equal(said.state, 'sent');
+  assert.deepEqual(said.sent, {
+    hash: FIRST_HASH,
+    journaled: true,
+    record: { provider: 'relay', originChainId: 10, destinationChainId: 4663, depositTxHash: FIRST_HASH, requestId: s.quote.candidates[0].tracking.requestId, lastState: null },
+  });
+  assert.deepEqual(s.journal.list(4663, OWNER), [said.sent.record]);
+  assert.deepEqual(s.batches.list(OWNER), [], 'the batch kept until then goes');
+  assert.equal(s.origin.batchClaims.size, 0, 'and so does its latch');
+  // Its receipt is read for the review it came from, as a step's; the wallet's own transaction is not matched to a step.
+  assert.equal((await s.sender.receipt(review, FIRST_HASH)).state, 'included');
+  // Never twice: not from that review, not from a new review of that quote.
+  assert.equal(await codeOf(s.sender.sendBatch(review)), 'step_already_sent');
+  assert.equal(await codeOf(s.sender.send(review, 'approval')), 'step_already_sent');
+  assert.equal(await codeOf(s.sender.review(s.input)), 'deposit_already_offered');
+  assert.equal(s.origin.state.sent.length, 0, 'never a transaction of its own');
+});
+
+test('batches: kept across a reload until the wallet names its transaction; nothing more on that origin meanwhile', async () => {
+  const s = batchLab({ mine: 'manual' });
+  const entry = await s.sender.sendBatch(await s.sender.review(s.input));
+  // A reload: a new sender over the same storage finds the batch and that it is in flight on its origin.
+  const reloaded = createOriginSender(s.origin.wallet, { runtime, monoMs: () => s.clock.now, journal: createDepositJournal(s.storage), unsettled: createUnsettledStore(s.storage), batches: createBatchJournal(s.storage) });
+  const [kept] = createBatchJournal(s.storage).list(OWNER);
+  assert.deepEqual(kept, entry);
+  assert.equal(await codeOf(reloaded.review(s.input)), 'deposit_already_offered', 'its quote is sent');
+  const next = { ...s.input, quote: laterQuote(s.quote) };
+  assert.equal(await codeOf(reloaded.review(next)), 'pending_wallet_transaction', 'a batch in flight holds its origin');
+  // Read on whichever chain the wallet is on: the wallet's status names no chain.
+  s.origin.state.chainId = 4663;
+  assert.deepEqual(await reloaded.batchStatus(kept), { state: 'pending' });
+  s.origin.include(FIRST_HASH);
+  const said = await reloaded.batchStatus(kept);
+  assert.equal(said.state, 'sent');
+  assert.equal(said.sent.record.depositTxHash, FIRST_HASH);
+  assert.deepEqual(createDepositJournal(s.storage).list(4663, OWNER), [said.sent.record], 'the deposit followed from its record, after a reload too');
+  assert.deepEqual(createBatchJournal(s.storage).list(OWNER), []);
+  s.origin.state.chainId = 10;
+  assert.deepEqual((await reloaded.review(next)).plan.steps.map((step) => step.kind), ['deposit'], 'the origin free again; the batch’s approval stands');
+});
+
+test('batches: a refusal in the wallet lets its claim go; that review offers nothing more, a new review of the quote can', async () => {
+  const s = batchLab();
+  const review = await s.sender.review(s.input);
+  s.origin.state.nextBatch = 'refuse';
+  assert.equal(await codeOf(s.sender.sendBatch(review)), 'declined');
+  assert.equal(s.origin.batchClaims.size, 0, 'nothing of it can run: its claim goes');
+  assert.deepEqual(s.batches.list(OWNER), []);
+  assert.deepEqual(s.unsettled.list(OWNER), [], 'nothing held');
+  assert.equal(await codeOf(s.sender.sendBatch(review)), 'step_already_sent');
+  assert.equal(await codeOf(s.sender.send(review, 'approval')), 'step_already_sent');
+  const entry = await s.sender.sendBatch(await s.sender.review(s.input));
+  assert.equal(entry.batchId, 'batch-1');
+});
+
+test('batches: a wallet that cannot batch these calls (5700), or an account upgrade declined (5750), asked nothing that runs: the same review goes step by step', async () => {
+  for (const [next, code] of [['unsupported', 'batch_unsupported'], ['upgrade-declined', 'batch_upgrade_declined']]) {
+    const s = batchLab();
+    const review = await s.sender.review(s.input);
+    s.origin.state.nextBatch = next;
+    assert.equal(await codeOf(s.sender.sendBatch(review)), code);
+    assert.equal(s.origin.batchClaims.size, 0, `${next}: the claim goes`);
+    assert.deepEqual(s.batches.list(OWNER), []);
+    const approval = await s.sender.send(review, 'approval');
+    assert.equal((await s.sender.receipt(review, approval.hash)).state, 'included');
+    await s.sender.send(review, 'deposit');
+    assert.deepEqual(s.origin.state.sent.map((tx) => tx.to), [OP_USDC, DEPOSITORY], `${next}: the two transactions of before`);
+  }
+  // A wallet handle with no batch latch never batches either.
+  const s = batchLab();
+  const sender = createOriginSender({ ...s.origin.wallet, claimBatch: undefined }, { runtime, monoMs: () => s.clock.now, journal: s.journal });
+  const asked = s.origin.mark();
+  assert.equal(await codeOf(sender.sendBatch(await sender.review(s.input))), 'batch_unsupported');
+  assert.equal(asked().includes('wallet_sendCalls'), false);
+});
+
+test('batches: F1, a batch the wallet took whose answer was lost holds the origin as a step does, and is never offered again', async () => {
+  const s = batchLab();
+  const review = await s.sender.review(s.input);
+  s.origin.state.nextBatch = 'lost';
+  assert.equal(await codeOf(s.sender.sendBatch(review)), 'wallet_result_unknown');
+  assert.deepEqual(s.unsettled.list(OWNER).map((o) => [o.originChainId, o.kind, o.nonce, o.state, o.quote]), [[10, 'deposit', '3', 'open', quoteKey(s.quote)]]);
+  assert.equal(s.origin.batchClaims.size, 1, 'its latch kept: the wallet may run it');
+  assert.equal(await codeOf(s.sender.review(s.input)), 'deposit_already_offered');
+  // It ran (mined at once): the chain took the held nonce, so a new quote is told the deposit probably went.
+  assert.equal(await codeOf(s.sender.review({ ...s.input, quote: laterQuote(s.quote) })), 'deposit_may_have_gone');
+});
+
+test('batches: not included (400) or reverted (500): nothing ran, it goes with its latch; a wallet that forgot it (5730): kept, unknown', async () => {
+  for (const [status, reverted] of [[400, false], [500, true]]) {
+    const s = batchLab({ mine: 'manual' });
+    const entry = await s.sender.sendBatch(await s.sender.review(s.input));
+    s.origin.state.batchStatus = status;
+    assert.deepEqual(await s.sender.batchStatus(entry), { state: 'gone', reverted }, String(status));
+    assert.deepEqual(s.batches.list(OWNER), []);
+    assert.equal(s.origin.batchClaims.size, 0);
+    assert.deepEqual(s.journal.list(4663, OWNER), [], 'no deposit to follow');
+    // Nothing of it ran: a new review of that quote may offer it again while the quote is good.
+    s.origin.state.batchStatus = null;
+    s.origin.state.pending = s.origin.state.latest;
+    assert.deepEqual((await s.sender.review(s.input)).plan.steps.map((step) => step.kind), ['approval', 'deposit']);
+  }
+  const s = batchLab({ mine: 'manual' });
+  const entry = await s.sender.sendBatch(await s.sender.review(s.input));
+  s.origin.state.forgetBatches = true;
+  assert.deepEqual(await s.sender.batchStatus(entry), { state: 'unknown' });
+  assert.deepEqual(s.batches.list(OWNER), [entry], 'kept, for the person to remove');
+});
+
+test('batches: only a review with both steps, and only while its quote is good; nothing is asked otherwise', async () => {
+  const s = batchLab();
+  covered(s);
+  const alone = await s.sender.review(s.input);
+  assert.deepEqual(alone.plan.steps.map((step) => step.kind), ['deposit'], 'the allowance covers the amount: the deposit alone');
+  assert.equal(await codeOf(s.sender.sendBatch(alone)), 'step_not_in_plan');
+  const native = batchLab({ quote: nativeQuote() });
+  assert.equal(await codeOf(native.sender.sendBatch(await native.sender.review(native.input))), 'step_not_in_plan', 'native ETH: one transaction');
+  const late = batchLab();
+  const review = await late.sender.review(late.input);
+  late.clock.now += 120_000;
+  const asked = late.origin.mark();
+  assert.equal(await codeOf(late.sender.sendBatch(review)), 'quote_expired');
+  assert.deepEqual(asked(), [], 'refused before the wallet is asked anything');
+  assert.equal(late.origin.batchClaims.size, 0);
+});
+
+test('batches kept: closed entries only, public data, at most eight per owner', () => {
+  const storage = memoryStorage();
+  const batches = createBatchJournal(storage);
+  const entry = (i, extra = {}) => ({ originChainId: 42161, destinationChainId: 4663, provider: 'across', requestId: null, batchId: `id-${i}`, quote: `${'a'.repeat(64)}:${i}`, at: i, ...extra });
+  for (let i = 1; i <= BATCH_JOURNAL_MAX + 2; i++) batches.put(OWNER, entry(i));
+  const kept = createBatchJournal(storage).list(OWNER);
+  assert.equal(kept.length, BATCH_JOURNAL_MAX);
+  assert.equal(kept[0].batchId, `id-${BATCH_JOURNAL_MAX + 2}`, 'newest first');
+  for (const bad of [{ amountRaw: '1' }, { provider: 'relay' }, { destinationChainId: 1 }, { batchId: 'a|b' }, { originChainId: 4663 }]) assert.equal(isPendingBatch(entry(1, bad)), false, JSON.stringify(bad));
+  assert.throws(() => batches.put(OWNER, entry(1, { amountRaw: '1' })), /invalid_batch_entry/);
+  batches.drop(OWNER, `id-${BATCH_JOURNAL_MAX + 2}`);
+  assert.equal(createBatchJournal(storage).list(OWNER).length, BATCH_JOURNAL_MAX - 1);
+  storage.setItem(batchJournalKey(OWNER), JSON.stringify([entry(1), { ...entry(2), extra: true }, 'x']));
+  assert.deepEqual(createBatchJournal(storage).list(OWNER).map((e) => e.batchId), ['id-1'], 'anything else is left out, never repaired');
 });

@@ -1186,7 +1186,14 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // 2026-10-06 (the owner: USD for every Robinhood Chain pair from read-v6's qualified prices, and "Pay with ETH instead"
     // when a pair cannot be brought): this Windows build measured Domino V2's own family at 639,831 B, 169 B under 640,000,
     // closer than Linux builds measure apart: 640,000 -> 641,000.
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 189_000], ['session/public reads', base, 165_000], ['financial', financial, 346_000], ['all lazy', allLazy, 383_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 6_000], ['domino v2', v2, 641_000]]) {
+    // 2026-10-06 (rugged97's answer of 6 Oct, app side: S2's approval and deposit in one batch and its card's fee and network
+    // lines, Review's "up to X% smaller" line in view and DEX Screener's ten-minute rule, Auto-exit's warnings above its
+    // button, its texts and "Closed by Auto-exit"): this Windows build measured route screens 188,415 B, session/public reads
+    // 164,857 B and Domino V2's own family 643,594 B: 189,000 -> 190,000, 165,000 -> 166,000 and 641,000 -> 645,000, the next
+    // kB and one more, as Linux builds measure a few hundred bytes apart.
+    // 2026-10-06 (the same answer's Ethereum and OP Mainnet balances and its misc items merged in): Domino V2's own family
+    // measured 645,073 B: 645,000 -> 647,000, the next kB and one more.
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 190_000], ['session/public reads', base, 166_000], ['financial', financial, 346_000], ['all lazy', allLazy, 383_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 6_000], ['domino v2', v2, 647_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir === WALLET && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

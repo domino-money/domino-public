@@ -93,6 +93,19 @@ test('read-v6 over HTTP: a reply that is not the route\'s is a dash, never data;
   await assert.rejects(tooLarge.post('portfolio', { wallet: 'x'.repeat(9000) }), /request_too_large/);
 });
 
+// Added 2026-10-06 (rugged's answer of 6 Oct, §1: the gateway's Retry-After is now the real time to the lane's next token):
+// the read Worker's Retry-After reaches the client with its 429, which keeps it; a good answer carries none.
+test('read-v6 over HTTP: a busy reader\'s 429 brings its Retry-After to the client; a good answer carries none', async () => {
+  const busy = { kind: 'reply', reply: { ...answer(429, { error: 'read_capacity_busy' }).reply, retryAfterHeader: '4' } };
+  const transport = createHttpReadV6Transport({ post: async () => busy });
+  assert.deepEqual(await transport.post('portfolio', { wallet: PORTFOLIO.wallet }), { status: 429, body: { error: 'read_capacity_busy' }, retryAfter: '4' });
+  assert.deepEqual(await readPortfolio(transport, runtime, PORTFOLIO.wallet), { kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 4 });
+  const good = { kind: 'reply', reply: { ...answer(200, PORTFOLIO).reply, retryAfterHeader: '4' } };
+  const said = await createHttpReadV6Transport({ post: async () => good }).post('portfolio', { wallet: PORTFOLIO.wallet });
+  assert.equal(said.status, 200);
+  assert.equal('retryAfter' in said, false);
+});
+
 /** A V1 session as the plan transport takes it: signed in at `epoch` (or not), lending `csrf`. */
 function session({ epoch = 7, csrfAccess = true, csrf = 'csrf-token-1', gone = false } = {}) {
   const lent = [];

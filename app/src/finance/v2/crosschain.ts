@@ -1,9 +1,10 @@
 import { keccak256, numberToHex, stringToHex, type Address, type Hex } from 'viem'
+import { atomicStatus, batchCallsState, offerBatch, type AtomicStatus, type BatchCall, type BatchWallet } from '../batch'
 import { chainNonceJournal, definiteRefusal, personRefused } from '../nonce'
 import type { Timing } from '../../v2/crosschain/client'
 import { isJournalRecord, journalRecord, stillSendable, walletSteps, type CrosschainJournalRecord, type SendablePlan } from '../../v2/crosschain/steps'
 import type { CrosschainTransport } from '../../v2/crosschain/transport'
-import type { CrosschainValidators, QuotePlan } from '../../v2/crosschain/types'
+import type { CrosschainValidators, DestinationChainId, QuotePlan } from '../../v2/crosschain/types'
 import { V2_CHAINS } from '../../v2/chains'
 import { NONCE_LATCH_EXPIRY_S, WalletNotAsked } from './transact'
 
@@ -49,8 +50,15 @@ import { NONCE_LATCH_EXPIRY_S, WalletNotAsked } from './transact'
  *     made of the destination chain and the owner (hashed, as finance/nonce.ts does), so tracking resumes after a
  *     reload. Public data only: no amount, key, session or calldata.
  *
- * Batches (EIP-5792) are not offered: approval and deposit stay two transactions until the owner and F5 say a batch
- * serves (spec open point 15; v2ui/s2/constants.ts S2_BATCH_APPROVAL_AND_DEPOSIT). A network is never added here.
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct: the owner revoked decision #15; F7 delta of 6 Oct §2): when
+ * the wallet batches atomically on the ORIGIN chain (`atomic`, finance/batch.ts atomicStatus on originChainId), an
+ * ERC-20's exact approval and its deposit are offered as ONE EIP-5792 batch (`sendBatch`, finance/batch.ts offerBatch,
+ * atomic required): both calls exactly as the quote gave them, behind the page's batch latch for that quote on that
+ * chain, with this module's discipline (the quote still sendable, its deposit never offered twice, nothing of this owner
+ * in flight on the origin, the chain read last); no simulation (the wallet simulates). Until the wallet names the one
+ * transaction that carried it, the batch is kept (`PendingBatch`, with its origin, provider and request id); then that
+ * transaction is the deposit's (`batchStatus`): its journal record is written with that hash. A wallet that cannot batch
+ * goes step by step, as before. A network is never added here.
  *
  * This module is one of the closed V2 files that name wallet transaction methods (tests/session.source-guard.test.mjs),
  * held to exactly the methods it names. Nothing here fetches.
@@ -71,6 +79,15 @@ export interface OriginWallet {
   settleNonce?(chainId: number, nonce: bigint, now: number, maxAge: number): Promise<boolean>
   /** V1's forget (../nonce.ts): the person says the request is gone from the wallet; the latch is let go, whoever holds it. */
   forgetNonce?(chainId: number, nonce: bigint): Promise<boolean>
+  /**
+   * Added 2026-10-06 (rugged's answer of 6 Oct: approval and deposit in one batch): the page's batch latch on `chainId`
+   * (../nonce.ts chainNonceJournal, keyed by what the batch opens: one quote's deposit), so a batch is offered once. A
+   * wallet handle without it never batches: its steps go one by one.
+   */
+  batchOffered?(chainId: number, key: Hex): string | null
+  claimBatch?(chainId: number, key: Hex): Promise<string>
+  recordBatch?(chainId: number, key: Hex, claim: string, id: string): Promise<void>
+  releaseBatch?(chainId: number, key: Hex, claim: string): Promise<void>
 }
 
 /** A quote reviewed against the wallet: the steps to send, the exact approval when there is one. Frozen; issued here only. */
@@ -92,6 +109,14 @@ export interface SentStep {
   journaled: boolean
   record: CrosschainJournalRecord | null
 }
+
+/**
+ * Where a deposit's batch stands, as the wallet says (Added 2026-10-06, rugged's answer of 6 Oct: approval and deposit in
+ * one batch): `pending` while it is not on chain; `sent` once the wallet names the one transaction that carried it, the
+ * deposit's (its journal record written with that hash); `gone` when nothing of it ran (not included, or `reverted`
+ * whole); `unknown` when the wallet no longer knows it, or names no one transaction for it.
+ */
+export type BatchState = { state: 'pending' } | { state: 'sent'; sent: SentStep } | { state: 'gone'; reverted: boolean } | { state: 'unknown' }
 
 /**
  * Why the sender stopped. The code is for a data-* attribute and the screen's sentence; never shown as text.
@@ -122,6 +147,10 @@ export interface SentStep {
  *   gas_budget_exceeded     the step needs more gas than ORIGIN_MAX_GAS
  *   native_balance_insufficient  not enough of the origin's native token for the fee (and the value)
  *   step_would_fail         the wallet's estimate says the step reverts
+ *   batch_unsupported       (Added 2026-10-06) the wallet cannot batch these calls on the origin; nothing it can run was
+ *                           asked, and the same review goes step by step
+ *   batch_upgrade_declined  (Added 2026-10-06) the person declined the wallet's account upgrade the batch needed; the same
+ *                           review goes step by step
  *   receipt_not_from_this_review, transaction_does_not_match, invalid_receipt, invalid_wallet_reply, wallet_error
  */
 export class OriginStepError extends Error {
@@ -172,6 +201,12 @@ type Rpc = (method: string, params: unknown[], options?: { onRefusal?: () => Pro
 /** A quote's identity on this page: the service's fingerprint of its request and the moment it was asked. */
 export const quoteKeyOf = (quote: Pick<QuotePlan, 'requestFingerprint' | 'requestedAt'>): string => `${lower(quote.requestFingerprint)}:${quote.requestedAt}`
 
+/**
+ * What the page's batch latch for one quote's batch is keyed by (Added 2026-10-06): the operation a batch opens, here that
+ * quote's deposit (quoteKeyOf), hashed to the latch's 32 bytes (../nonce.ts claimBatch).
+ */
+export const batchKeyOf = (quoteKey: string): Hex => keccak256(stringToHex(`crosschain-batch|${quoteKey}`))
+
 /** An error the wallet threw, as one of this module's codes. A code of this module passes through. */
 export function stepErrorOf(error: unknown): OriginStepError {
   if (error instanceof OriginStepError) return error
@@ -204,6 +239,8 @@ export type OriginSender = ReturnType<typeof createOriginSender>
 /**
  * The sender for one connected wallet. `monoMs` is the page's monotonic clock (the quote's deadline is on it);
  * `now` is wall seconds for the operation bounds only; `journal` keeps the deposit's record (null: none kept).
+ * `batches` (Added 2026-10-06): the deposits handed to the wallet as one batch, kept until the wallet names their
+ * transaction.
  */
 export function createOriginSender(
   wallet: OriginWallet,
@@ -212,19 +249,23 @@ export function createOriginSender(
     monoMs,
     journal,
     unsettled = createUnsettledStore(null),
+    batches = createBatchJournal(null),
     now = () => Date.now() / 1000,
-  }: { runtime: CrosschainValidators; monoMs: () => number; journal: DepositJournal | null; unsettled?: UnsettledStore; now?: () => number },
+  }: { runtime: CrosschainValidators; monoMs: () => number; journal: DepositJournal | null; unsettled?: UnsettledStore; batches?: BatchJournal; now?: () => number },
 ) {
   const owner = lower(wallet.owner) as Address
   if (!ADDRESS.test(owner)) fail('invalid_wallet_owner')
   interface ReviewState {
     offered: Set<'approval' | 'deposit'>
     approvalConfirmed: boolean
-    sent: Map<Hex, { kind: 'approval' | 'deposit'; transaction: Readonly<Record<string, string>> }>
+    /** A batch's transaction (Added 2026-10-06) is the wallet's own: `transaction` null, only its receipt is read. */
+    sent: Map<Hex, { kind: 'approval' | 'deposit' | 'batch'; transaction: Readonly<Record<string, string>> | null }>
   }
   const reviews = new WeakMap<OriginReview, ReviewState>()
   /** Quotes whose deposit this page handed to the wallet: never offered again, whatever came back. */
   const offeredQuotes = new Set<string>()
+  /** The batches this sender offered, by the wallet's id, with the review they came from (Added 2026-10-06). */
+  const offeredBatches = new Map<string, OriginReview>()
   let busy = false
 
   /** Wallet calls bound to `chainId`, inside `seconds` and ORIGIN_MAX_CALLS, stopping the moment the wallet changes. */
@@ -312,6 +353,8 @@ export function createOriginSender(
    * kept as "may have gone" and said once. Only the chain or the person's word (forgetUnsettled) settles it.
    */
   async function checkUnsettled(rpc: Rpc, origin: number): Promise<void> {
+    // Added 2026-10-06: a batch the wallet took on this origin, whose transaction it has not named yet, is in flight there.
+    if (batches.list(owner).some((entry) => entry.originChainId === origin)) fail('pending_wallet_transaction')
     const open = unsettled.list(owner).find((offer) => offer.originChainId === origin && offer.state === 'open')
     if (!open) return
     const nonce = BigInt(open.nonce)
@@ -331,7 +374,7 @@ export function createOriginSender(
   /** The quote's deposit, once handed to the wallet on this page (or held unsettled after a reload), is never offered again. */
   const depositOffered = (quote: Pick<QuotePlan, 'requestFingerprint' | 'requestedAt'>): boolean => {
     const key = quoteKeyOf(quote)
-    return offeredQuotes.has(key) || unsettled.list(owner).some((offer) => offer.kind === 'deposit' && offer.quote === key)
+    return offeredQuotes.has(key) || unsettled.list(owner).some((offer) => offer.kind === 'deposit' && offer.quote === key) || batches.list(owner).some((entry) => entry.quote === key)
   }
 
   /**
@@ -484,6 +527,219 @@ export function createOriginSender(
     })
   }
 
+  /**
+   * A batch latch let go (Added 2026-10-06), by its claim or by the wallet's id, as far as this page can: one it cannot
+   * let go only keeps that one quote's batch from being offered again, which never happens anyway.
+   */
+  async function letGoBatch(chainId: number, key: Hex, claim: string): Promise<void> {
+    try {
+      await wallet.releaseBatch?.(chainId, key, claim)
+    } catch {
+      // Kept: see above.
+    }
+  }
+
+  /**
+   * Added 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §2 step 1): whether the wallet batches atomically on
+   * the review's ORIGIN chain, read through its own provider (finance/batch.ts atomicStatus on originChainId):
+   * `supported`, `ready` (the wallet would first upgrade the account there, EIP-7702, and asks the person to), or
+   * `unsupported`, also when the read fails or times out. Reads only.
+   */
+  async function atomic(reviewed: OriginReview): Promise<AtomicStatus> {
+    if (!reviews.has(reviewed)) return fail('review_required')
+    const origin = reviewed.plan.originChainId
+    return exclusive(async () => {
+      const rpc = caller(origin, ORIGIN_READ_S)
+      await identity(rpc, origin)
+      return atomicStatus({ owner, request: (method, params) => rpc(method, params) }, 5_000, origin)
+    })
+  }
+
+  /**
+   * Added 2026-10-06 (rugged's answer of 6 Oct: the owner revoked decision #15; F7 delta of 6 Oct §2 steps 4 and 6): the
+   * review's exact approval and its deposit offered to the wallet as ONE EIP-5792 batch (finance/batch.ts offerBatch:
+   * version 2.0.0, atomic required, on the origin), both calls exactly as the quote gave them (`to`, `data`, `value`), once,
+   * behind the page's batch latch for this quote on that chain. Only a review with both steps: an allowance that already
+   * covers the amount leaves the deposit alone, one transaction (`send`). `send`'s discipline, without its estimate (the
+   * wallet simulates a batch, and the deposit cannot be estimated before its approval runs): the quote still sendable
+   * (asked again right before the wallet), its deposit never offered twice, nothing of this owner in flight on the origin,
+   * the chain read last. Both steps count as offered from the moment the wallet is asked. A wallet that cannot batch
+   * (`batch_unsupported`) or a declined account upgrade (`batch_upgrade_declined`) asked nothing that can run: the claim
+   * goes, and the same review may go step by step. A refusal lets the claim go; an answer that never came holds the
+   * origin, as a step's does (F1). The batch the wallet took is kept (`batches`) until it names its transaction
+   * (`batchStatus`).
+   */
+  async function sendBatch(reviewed: OriginReview): Promise<PendingBatch> {
+    const state = reviews.get(reviewed) ?? fail('review_required')
+    const { plan } = reviewed
+    if (plan.steps.length !== 2 || plan.steps[0].kind !== 'approval' || plan.steps[1].kind !== 'deposit' || reviewed.approval === null) return fail('step_not_in_plan')
+    if (state.offered.size > 0) return fail('step_already_sent')
+    if (!stillSendable(plan, monoMs())) return fail(plan.synthetic ? 'quote_synthetic' : 'quote_expired')
+    if (depositOffered(reviewed.quote)) return fail('deposit_already_offered')
+    const origin = plan.originChainId
+    if (plan.steps.some((step) => step.chainId !== origin)) return fail('wallet_wrong_chain')
+    const { claimBatch, recordBatch, releaseBatch } = wallet
+    // No latch to offer a batch behind: never one; the steps go one by one.
+    if (!claimBatch || !recordBatch || !releaseBatch) return fail('batch_unsupported')
+    const quoteKey = quoteKeyOf(reviewed.quote)
+    const key = batchKeyOf(quoteKey)
+    // Another tab, or this one after a lost answer, already offered this quote's batch.
+    if ((wallet.batchOffered?.(origin, key) ?? null) !== null) return fail('deposit_already_offered')
+    return exclusive(async () => {
+      // The prompt never outlives the quote: the window ends at its deadline less the margin, as a step's.
+      const rpc = caller(origin, Math.min(ORIGIN_SIGN_WINDOW_S, (plan.sendBeforeMono - monoMs()) / 1000))
+      await identity(rpc, origin)
+      await checkUnsettled(rpc, origin)
+      // Nothing of this owner in flight on the origin. Its next nonce is what settles a batch held below (a 7702 batch spends it).
+      const nonce = await freeNonce(rpc, origin)
+      const calls: BatchCall[] = plan.steps.map((step) => {
+        if (step.value < 0n || step.value > MAX_UINT128) fail('invalid_step')
+        return { to: lower(step.to) as Address, data: step.data, value: numberToHex(step.value) }
+      })
+      // Immediately before the wallet is asked: the same chain (spec §1.3); offerBatch asks `stillValid` again after its claim.
+      if (quantity(await rpc('eth_chainId', [])) !== BigInt(origin)) fail('wallet_wrong_chain')
+      // Offered from here on: never again from this review, whatever the wallet answers.
+      state.offered.add('approval')
+      state.offered.add('deposit')
+      let claim: string | undefined
+      let asked = false
+      const latch: BatchWallet = {
+        owner,
+        request: (method, params) => rpc(method, params),
+        claimBatch: async (k) => (claim = await claimBatch(origin, k)),
+        recordBatch: (k, c, id) => recordBatch(origin, k, c, id),
+        releaseBatch: (k, c) => releaseBatch(origin, k, c),
+      }
+      // The one request offerBatch makes is the offer itself; the wallet was asked only once the port invoked its provider.
+      const request = async (method: string, params: unknown[]) => {
+        try {
+          // The answer (the batch's id) is kept even if the wallet moved while its prompt was open: the batch may run.
+          const answer = await rpc(method, params, {
+            onRefusal: async () => {
+              if (claim !== undefined) await letGoBatch(origin, key, claim)
+            },
+            answerKept: true,
+          })
+          asked = true
+          return answer
+        } catch (error) {
+          if (!(error instanceof WalletNotAsked)) asked = true
+          throw error
+        }
+      }
+      let batchId: string
+      try {
+        batchId = await offerBatch(request, latch, key, calls, () => wallet.current() && wallet.chainId() === origin && stillSendable(plan, monoMs()), origin)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : ''
+        if (!asked || message === 'batch_unsupported' || message === 'batch_upgrade_declined' || message === 'wallet_review_expired') {
+          // Nothing the wallet can run was asked: the claim goes, and the same review may still go step by step.
+          state.offered.clear()
+          if (claim !== undefined) await letGoBatch(origin, key, claim)
+          if (message === 'batch_unsupported' || message === 'batch_upgrade_declined') return fail(message)
+          if (message === 'wallet_review_expired') return fail(!wallet.current() ? 'wallet_identity_changed' : wallet.chainId() !== origin ? 'wallet_wrong_chain' : 'quote_expired')
+          // Another tab claimed this quote's batch first.
+          if (message === 'wallet_batch_already_offered') return fail('deposit_already_offered')
+          throw error
+        }
+        // A definite refusal: nothing was sent (offerBatch let its claim go). This review never offers it again; a new one can.
+        if (definiteRefusal(error)) throw error
+        // Handed to the wallet with no usable answer: it may run. This quote's deposit is sent for this page, and the
+        // origin is held for this owner until the chain or the person settles it (F1), as a step's.
+        offeredQuotes.add(quoteKey)
+        unsettled.put(owner, {
+          originChainId: origin,
+          nonce: nonce.toString(),
+          kind: 'deposit',
+          quote: quoteKey,
+          provider: plan.provider,
+          destinationChainId: plan.destinationChainId,
+          at: Math.floor(now()),
+          state: 'open',
+        })
+        return fail('wallet_result_unknown')
+      }
+      offeredQuotes.add(quoteKey)
+      offeredBatches.set(batchId, reviewed)
+      const entry: PendingBatch = Object.freeze({
+        originChainId: origin,
+        destinationChainId: plan.destinationChainId,
+        provider: plan.provider,
+        requestId: plan.requestId,
+        batchId,
+        quote: quoteKey,
+        at: Math.floor(now()),
+      })
+      try {
+        batches.put(owner, entry)
+      } catch {
+        // An id this page cannot keep: followed on this page only (batchStatus takes the entry itself).
+      }
+      return entry
+    })
+  }
+
+  /**
+   * Added 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §2 step 5): where a deposit's batch stands, from the
+   * wallet's own status for it (finance/batch.ts batchCallsState). EIP-5792's status names no chain, so it is read on
+   * whichever chain the wallet is on; a read that fails is thrown, to be asked again.
+   *   - `pending` (1xx) while it is not on chain;
+   *   - `sent` (2xx) once the wallet names the one transaction that carried both calls: that is the deposit's
+   *     transaction (in an atomic batch, approval and deposit are one transaction). Its journal record is written with
+   *     that hash (§3.6 step 4), the batch kept until then goes, and a receipt for that hash is read as `receipt` reads a
+   *     step's, for the review it came from;
+   *   - `gone` when nothing of it ran (4xx: not included, and the wallet will not try again; 5xx: reverted whole): it goes,
+   *     and so does its latch; a new review may offer that quote's deposit again;
+   *   - `unknown` when the wallet no longer knows it (5730), or names no one transaction for it: kept, for the person.
+   */
+  async function batchStatus(entry: PendingBatch): Promise<BatchState> {
+    try {
+      const chainId = wallet.chainId()
+      if (chainId === null) return fail('wallet_wrong_chain')
+      const rpc = caller(chainId, ORIGIN_READ_S)
+      await identity(rpc, chainId)
+      const said = await batchCallsState((method, params) => rpc(method, params), entry.batchId)
+      if (said === null) return { state: 'unknown' }
+      if (said.status >= 100 && said.status < 200) return { state: 'pending' }
+      const key = batchKeyOf(entry.quote)
+      if (said.status >= 400 && said.status < 600) {
+        batches.drop(owner, entry.batchId)
+        offeredBatches.delete(entry.batchId)
+        offeredQuotes.delete(entry.quote)
+        await letGoBatch(entry.originChainId, key, entry.batchId)
+        return { state: 'gone', reverted: said.status >= 500 }
+      }
+      if (said.status < 200 || said.status >= 300 || said.transactionHash === null) return { state: 'unknown' }
+      const hash = said.transactionHash
+      const kept: CrosschainJournalRecord = {
+        provider: entry.provider,
+        originChainId: entry.originChainId,
+        destinationChainId: entry.destinationChainId,
+        depositTxHash: hash,
+        requestId: entry.requestId,
+        lastState: null,
+      }
+      if (!isJournalRecord(kept)) return fail('invalid_wallet_reply')
+      let journaled = false
+      if (journal) {
+        try {
+          journal.put(owner, kept)
+          journaled = true
+        } catch {
+          journaled = false
+        }
+      }
+      const from = offeredBatches.get(entry.batchId)
+      if (from) reviews.get(from)?.sent.set(hash, { kind: 'batch', transaction: null })
+      offeredBatches.delete(entry.batchId)
+      batches.drop(owner, entry.batchId)
+      await letGoBatch(entry.originChainId, key, entry.batchId)
+      return { state: 'sent', sent: { hash, journaled, record: kept } }
+    } catch (error) {
+      throw stepErrorOf(error)
+    }
+  }
+
   /** Where a step this review sent stands. A successful approval receipt is what lets the deposit go. */
   async function receipt(reviewed: OriginReview, hash: Hex): Promise<OriginReceipt> {
     const state = reviews.get(reviewed) ?? fail('review_required')
@@ -492,26 +748,31 @@ export function createOriginSender(
     return exclusive(async (): Promise<OriginReceipt> => {
       const rpc = caller(origin, ORIGIN_READ_S)
       await identity(rpc, origin)
-      const tx = (await rpc('eth_getTransactionByHash', [hash])) as Record<string, unknown> | null
-      if (tx === null) return { state: 'pending' }
+      // A step's transaction must be the one offered. Changed on purpose 2026-10-06 (rugged's answer of 6 Oct: approval and
+      // deposit in one batch): a batch's is the wallet's own (its account's execute, or a bundler's), named by the wallet
+      // (batchStatus), so only its receipt is read.
       const offered = sent.transaction
-      const found = record(tx)
-      if (
-        lower(String(found.hash)) !== lower(hash) ||
-        lower(String(found.from)) !== owner ||
-        lower(String(found.to)) !== offered.to ||
-        lower(String(found.input)) !== lower(offered.data) ||
-        quantity(found.value) !== BigInt(offered.value) ||
-        quantity(found.nonce) !== BigInt(offered.nonce)
-      ) {
-        return fail('transaction_does_not_match')
+      if (offered !== null) {
+        const tx = (await rpc('eth_getTransactionByHash', [hash])) as Record<string, unknown> | null
+        if (tx === null) return { state: 'pending' }
+        const found = record(tx)
+        if (
+          lower(String(found.hash)) !== lower(hash) ||
+          lower(String(found.from)) !== owner ||
+          lower(String(found.to)) !== offered.to ||
+          lower(String(found.input)) !== lower(offered.data) ||
+          quantity(found.value) !== BigInt(offered.value) ||
+          quantity(found.nonce) !== BigInt(offered.nonce)
+        ) {
+          return fail('transaction_does_not_match')
+        }
       }
       const raw = (await rpc('eth_getTransactionReceipt', [hash])) as Record<string, unknown> | null
       if (raw === null) return { state: 'pending' }
       const got = record(raw)
       if (
         lower(String(got.transactionHash)) !== lower(hash) ||
-        lower(String(got.from)) !== owner ||
+        (offered !== null && lower(String(got.from)) !== owner) ||
         typeof got.blockHash !== 'string' ||
         !HASH.test(lower(got.blockHash)) ||
         !['0x0', '0x1'].includes(String(got.status))
@@ -582,6 +843,9 @@ export function createOriginSender(
     review,
     send,
     receipt,
+    atomic,
+    sendBatch,
+    batchStatus,
     forgetUnsettled,
     /** Whether this quote's deposit was already handed to the wallet on this page (or is held unsettled). */
     depositOffered,
@@ -804,6 +1068,128 @@ export function browserUnsettledStore(): UnsettledStore {
   return createUnsettledStore(null)
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Deposits handed to the wallet as one batch, until the wallet names their transaction (Added 2026-10-06)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * A deposit's batch the wallet took, kept until the wallet names the transaction that carried it (Added 2026-10-06,
+ * rugged's answer of 6 Oct, F7 delta of 6 Oct §2 step 5: "até o recibo, guardar o id do lote com originChainId, o provedor
+ * e o requestId"): then the deposit's journal record is written with that hash, and this entry goes. Public data only:
+ * the wallet's id for the batch, as the nonce journal keeps one (../nonce.ts recordBatch); no amount, calldata or key.
+ */
+export interface PendingBatch {
+  originChainId: number
+  destinationChainId: DestinationChainId
+  provider: 'relay' | 'across'
+  /** Relay's request id (`status` needs it); null for Across. */
+  requestId: string | null
+  /** The wallet's id for the batch (EIP-5792). */
+  batchId: string
+  /** quoteKeyOf the quote it came from: that quote's deposit is never offered again. */
+  quote: string
+  /** When the wallet took it, unix seconds. */
+  at: number
+}
+
+/** The batches kept for one owner, newest first. */
+export interface BatchJournal {
+  list(owner: string): readonly PendingBatch[]
+  /** Adds the batch, or replaces the one kept with the same id. */
+  put(owner: string, entry: PendingBatch): void
+  drop(owner: string, batchId: string): void
+}
+
+export const BATCH_JOURNAL_PREFIX = 'domino.v2.crosschain-batches.v1.'
+/** At most this many kept per owner; the oldest goes first. */
+export const BATCH_JOURNAL_MAX = 8
+const BATCH_FIELDS = ['originChainId', 'destinationChainId', 'provider', 'requestId', 'batchId', 'quote', 'at'] as const
+/** A wallet's id for a batch as the nonce journal admits one (../nonce.ts BATCH_ID): printable, at most 512 characters. */
+const BATCH_ID = /^[\x21-\x7b\x7d\x7e]{1,512}$/
+
+/** The storage name for an owner's kept batches: hashed, so no address is written in a key. */
+export function batchJournalKey(owner: string): string {
+  const who = lower(owner)
+  if (!ADDRESS.test(who)) return fail('invalid_journal_key')
+  return BATCH_JOURNAL_PREFIX + keccak256(stringToHex(`batches|${who}`)).slice(2)
+}
+
+/** A closed check of an entry read back: exactly the seven fields, each in its only shape. */
+export function isPendingBatch(value: unknown): value is PendingBatch {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const entry = value as Record<string, unknown>
+  const keys = Object.keys(entry)
+  if (keys.length !== BATCH_FIELDS.length || !BATCH_FIELDS.every((key) => Object.hasOwn(entry, key))) return false
+  const { originChainId, destinationChainId, provider, requestId, batchId, quote, at } = entry
+  if (typeof originChainId !== 'number' || !Number.isSafeInteger(originChainId) || originChainId < 1) return false
+  if (destinationChainId !== 4663 && destinationChainId !== 8453 && destinationChainId !== 42161) return false
+  if (originChainId === destinationChainId) return false
+  if (provider === 'relay' ? typeof requestId !== 'string' || !HASH.test(requestId) : provider !== 'across' || requestId !== null) return false
+  return (
+    typeof batchId === 'string' &&
+    BATCH_ID.test(batchId) &&
+    typeof quote === 'string' &&
+    /^[0-9a-f]{64}:[0-9]{1,16}$/.test(quote) &&
+    typeof at === 'number' &&
+    Number.isSafeInteger(at) &&
+    at >= 0
+  )
+}
+
+/**
+ * The kept batches, in this page's memory and, where `storage` allows, in it too so a reload finds them (the pattern of
+ * createUnsettledStore: this page's memory wins once it wrote; a storage that refuses a write never loses one here).
+ */
+export function createBatchJournal(storage: StoragePort | null): BatchJournal {
+  const memory = new Map<string, PendingBatch[]>()
+  const read = (key: string): PendingBatch[] => {
+    const kept = memory.get(key)
+    if (kept) return kept
+    if (!storage) return []
+    try {
+      const raw = storage.getItem(key)
+      const value = raw === null ? [] : (JSON.parse(raw) as unknown)
+      return Array.isArray(value) ? value.filter(isPendingBatch).slice(0, BATCH_JOURNAL_MAX) : []
+    } catch {
+      return []
+    }
+  }
+  const write = (key: string, entries: PendingBatch[]) => {
+    memory.set(key, entries)
+    if (!storage) return
+    try {
+      if (entries.length === 0) storage.removeItem(key)
+      else storage.setItem(key, JSON.stringify(entries.map((e) => Object.fromEntries(BATCH_FIELDS.map((field) => [field, e[field]])))))
+    } catch {
+      // Kept in this page's memory; a reload will not find it.
+    }
+  }
+  return {
+    list: (owner) => Object.freeze(read(batchJournalKey(owner)).map((entry) => Object.freeze({ ...entry }))),
+    put(owner, entry) {
+      if (!isPendingBatch(entry)) fail('invalid_batch_entry')
+      const key = batchJournalKey(owner)
+      write(key, [entry, ...read(key).filter((e) => e.batchId !== entry.batchId)].slice(0, BATCH_JOURNAL_MAX))
+    },
+    drop(owner, batchId) {
+      const key = batchJournalKey(owner)
+      const all = read(key)
+      const kept = all.filter((e) => e.batchId !== batchId)
+      if (kept.length !== all.length) write(key, kept)
+    },
+  }
+}
+
+/** The page's kept batches: in localStorage where the browser keeps it, in memory otherwise. */
+export function browserBatchJournal(): BatchJournal {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) return createBatchJournal(window.localStorage)
+  } catch {
+    // No storage here: memory only.
+  }
+  return createBatchJournal(null)
+}
+
 /** The page's own journal, in localStorage; null where the browser keeps nothing (the screen then tracks in memory). */
 export function browserDepositJournal(): DepositJournal | null {
   try {
@@ -843,5 +1229,10 @@ export async function browserOriginWallet(): Promise<OriginWallet> {
     releaseRejectedNonce: (chainId, nonce, token) => chainNonceJournal(chainId).releaseAfterRejection(owner, nonce, token),
     settleNonce: (chainId, nonce, now, maxAge) => chainNonceJournal(chainId).settle(owner, nonce, now, maxAge),
     forgetNonce: (chainId, nonce) => chainNonceJournal(chainId).forget(owner, nonce),
+    // Added 2026-10-06: the batch latch of the chain a batch is offered on (the same journal, keyed by the batch's key).
+    batchOffered: (chainId, key) => chainNonceJournal(chainId).batchOffered(owner, key),
+    claimBatch: (chainId, key) => chainNonceJournal(chainId).claimBatch(owner, key, Date.now() / 1000),
+    recordBatch: (chainId, key, claim, id) => chainNonceJournal(chainId).recordBatch(owner, key, claim, id),
+    releaseBatch: (chainId, key, claim) => chainNonceJournal(chainId).releaseBatch(owner, key, claim),
   }
 }

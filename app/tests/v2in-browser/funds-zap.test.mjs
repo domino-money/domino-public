@@ -10,7 +10,8 @@ import { launchBrowser } from '../support/s1-browser.mjs';
 import { S2_ACCOUNT, S2_OWNER } from '../support/s2-wallet.mjs';
 import { contractsFor, createV2Chain } from '../support/v2-chain.mjs';
 import { createChainReads } from '../support/chain-reads.mjs';
-import { quoteFor } from '../support/crosschain-quotes.mjs';
+import { quoteFor, recorded } from '../support/crosschain-quotes.mjs';
+import { createOriginChain } from '../support/s2-origin-chain.mjs';
 import { WALLET_V2_DIST } from '../support/wallet-dist.mjs';
 
 const require = createRequire(import.meta.url);
@@ -27,7 +28,18 @@ after(async () => { await closeBrowser(browser); });
 const FIXTURE_ETH_USD = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../api-contracts/read-v6/fixtures/valid/chain-pools.json'), 'utf8')).tokens.find((token) => token.symbol === 'ETH').price.usd;
 const ETH_AS_USDG = { num: BigInt(FIXTURE_ETH_USD.replace('.', '').slice(0, FIXTURE_ETH_USD.indexOf('.') + 6)), den: 10n ** 18n };
 
-async function openFunding({ balance = 0n, failed = false, bridge = true, served = null } = {}) {
+/** The deposit the package's recorded `status` answer is about (its fixtures/responses/status.json). */
+const RECORDED_DEPOSIT = `0x${'d1'.repeat(32)}`;
+/** What S2's closed sender asks on a deposit's origin (Added 2026-10-06): the fake origin chain answers it there. */
+const ORIGIN_METHODS = new Set(['eth_call', 'eth_getBalance', 'eth_getTransactionCount', 'eth_gasPrice', 'eth_maxPriorityFeePerGas', 'eth_estimateGas', 'eth_sendTransaction', 'eth_getTransactionByHash', 'eth_getTransactionReceipt', 'eth_getBlockByNumber', 'wallet_getCapabilities', 'wallet_sendCalls']);
+
+/**
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct: approval and deposit in one batch): `origin`, a fake ORIGIN
+ * chain (../support/s2-origin-chain.mjs) the wallet sends a deposit on: while the wallet is on that chain, what the closed
+ * sender asks there is that chain's answer, and so is a batch's status on any chain (its id names none); the V2 chain
+ * behind the journey answers everything else, as before. A deposit sent here is answered as Relay not having seen it yet.
+ */
+async function openFunding({ balance = 0n, failed = false, bridge = true, served = null, origin = null } = {}) {
   const calls = [], walletMethods = [];
   const chain = createV2Chain({ chainId: 4663, timestamp: Math.floor(Date.now() / 1000), balances: { [USDG]: balance }, pools: [{ pool: POOL, sqrtPriceX96: sqrtPriceAtTick(TICK), tick: TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);
@@ -41,6 +53,12 @@ async function openFunding({ balance = 0n, failed = false, bridge = true, served
     // Changed on purpose 2026-10-06 (the review): whatever amount is asked, as ../support/crosschain-quotes.mjs answers it;
     // ETH sent as USDG at the read fixtures' round, through Relay alone (Across bridges one token as itself only).
     if (route === 'quote') return Response.json(quoteFor(body, S2_OWNER, 'responses/quote', body.originToken === ZERO && body.destinationToken === USDG ? { rate: ETH_AS_USDG, relayOnly: true } : {}), { headers });
+    if (route === 'status' && body.depositTxHash !== RECORDED_DEPOSIT) {
+      const awaiting = recorded('variants/status.relay-awaiting', S2_OWNER);
+      awaiting.status.request = { ...body, owner: S2_OWNER };
+      awaiting.status.transition = body.previousState === null ? 'initial' : 'unchanged';
+      return Response.json(awaiting, { headers });
+    }
     const data = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../api-contracts/crosschain-v1/fixtures/responses/' + route + '.json'), 'utf8').replaceAll('0x1111111111111111111111111111111111111111', S2_OWNER));
     if (route === 'origins') data.origins.destinationToken = body.destinationToken;
     return Response.json(data, { headers });
@@ -48,6 +66,13 @@ async function openFunding({ balance = 0n, failed = false, bridge = true, served
   const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, routes, zapOnRobinhood: true, chainReads: served,
     intercept: async (method, params) => {
       walletMethods.push(method);
+      if (origin && (method === 'wallet_getCallsStatus' || (chain.chainId === origin.state.chainId && ORIGIN_METHODS.has(method)))) {
+        try {
+          return { result: await origin.wallet.request(method, params) };
+        } catch (error) {
+          return { error: { code: error.code ?? -32603, message: error.message, data: error.data } };
+        }
+      }
       if (method === 'personal_sign') return { result: await S2_ACCOUNT.signMessage({ message: { raw: params[0] } }) };
       if (failed && method === 'eth_call' && params[0]?.to === USDG && params[0]?.data?.startsWith('0x70a08231')) return { error: { code: -32603, message: 'balance unavailable' } };
     },
@@ -195,5 +220,59 @@ test('ETH held on Arbitrum One with no price read: all of it is quoted once, and
     assert.ok(asked[1] > 12_000_000_000_000_000n && asked[1] < 13_500_000_000_000_000n, `the one shown: about the need at that rate, ${asked[1]}`);
     assert.equal(await quote.count(), 1);
     assert.equal(s.chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (rugged's answer of 6 Oct: the owner revoked decision #15; F7 delta of 6 Oct §1 and §2): the journey's
+// offer sends from Arbitrum One through the same closed sender: the exact approval and the deposit as ONE batch where the
+// wallet batches there, else the two transactions of before; the card keeps Domino's fee in full and the network fee.
+/** 0.01 ETH and 100 USDC on Arbitrum One, as Domino's service reads them. */
+const usdcOnArbitrum = () => createChainReads({
+  chainId: 42161,
+  tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: ARB_WETH, symbol: 'WETH', decimals: 18 }, { address: ARB_USDC, symbol: 'USDC', decimals: 6 }],
+  balances: { [ZERO]: 10n ** 16n, [ARB_USDC]: 100_000_000n },
+});
+const DEPOSITORY = '0x4cd00e387622c35bddb9b4c962c136462338bc31';
+const HASH_OF = (i) => `0x${(0xa0 + i).toString(16).padStart(64, '0')}`;
+
+async function bringFromArbitrum(s) {
+  const offer = s.zap.locator('[data-funds-offer][data-funds-mode="live"]');
+  await offer.locator('[data-funds-network-holds="42161"]').waitFor({ timeout: 30_000 });
+  await offer.locator('[data-funds-network="42161"]').click();
+  await signInFromDialog(s.page);
+  const quote = offer.locator('[data-funds-quote]');
+  await quote.waitFor({ timeout: 30_000 });
+  return { offer, quote };
+}
+
+test('the journey’s offer, a wallet that batches on Arbitrum One: the approval and the deposit in ONE confirmation, the deposit followed from it', async () => {
+  const origin = createOriginChain({ owner: S2_OWNER, chainId: 42161, atomic: 'supported' });
+  const s = await openFunding({ served: usdcOnArbitrum(), origin });
+  try {
+    const { offer, quote } = await bringFromArbitrum(s);
+    assert.equal((await quote.locator('[data-funds-domino-fee]').innerText()).trim(), 'Domino fee (0.35%): 0.1785 USDC, charged by Relay on Arbitrum One · you can also bridge with any other service');
+    assert.equal((await quote.locator('[data-funds-network-fee]').innerText()).trim(), 'Network fee on Arbitrum One: about 0.000001 ETH, estimated by Relay');
+    await quote.locator('[data-funds-deposit-button]').click();
+    const card = offer.locator(`[data-funds-deposit="${HASH_OF(0)}"]`);
+    await card.waitFor({ timeout: 30_000 });
+    const [batch] = origin.state.batches;
+    assert.deepEqual([batch.chainId, batch.atomicRequired, batch.calls.map((call) => call.to)], ['0xa4b1', true, [ARB_USDC, DEPOSITORY]], 'the exact approval and the deposit, one batch on Arbitrum One');
+    assert.deepEqual(origin.state.sent, [], 'no transaction of its own');
+    assert.equal(s.chain.sends.length, 0, 'nothing sent on Robinhood Chain');
+    assert.equal((await card.locator('.dm-subtitle').first().innerText()).trim(), 'Coming from Arbitrum One');
+    await captureCard(s, 'batch-sent');
+  } finally { await s.close(); }
+});
+
+test('the journey’s offer, a wallet that does not batch on Arbitrum One: the exact approval, then the deposit', async () => {
+  const origin = createOriginChain({ owner: S2_OWNER, chainId: 42161 });
+  const s = await openFunding({ served: usdcOnArbitrum(), origin });
+  try {
+    const { offer, quote } = await bringFromArbitrum(s);
+    await quote.locator('[data-funds-deposit-button]').click();
+    await offer.locator(`[data-funds-deposit="${HASH_OF(1)}"]`).waitFor({ timeout: 30_000 });
+    assert.deepEqual(origin.state.sent.map((tx) => tx.to), [ARB_USDC, DEPOSITORY], 'two transactions, approval first');
+    assert.deepEqual(origin.state.batches, [], 'never a batch');
+    assert.equal(s.chain.sends.length, 0, 'nothing sent on Robinhood Chain');
   } finally { await s.close(); }
 });

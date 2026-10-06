@@ -38,6 +38,6 @@ export function usePayFacts(pool: PoolOption | null, revision: number): PayFacts
   const prices = usePoolPrices()
   const identity = useWalletIdentity()
   const owner = identity.kind === 'connected' ? identity.address : null
-  // Read only for a key, which says there is a pool, a reader and a wallet.
-  return useKeyedRead(prices && pool && owner ? `${pool.key}|${owner}|${revision}` : null, (signal) => prices!.pay(pool!, owner!, signal))
+  // Read only for a key, which says there is a pool, a reader and a wallet; said again when a later read changes it.
+  return useKeyedRead(prices && pool && owner ? `${pool.key}|${owner}|${revision}` : null, (signal, later) => prices!.pay(pool!, owner!, signal, later))
 }

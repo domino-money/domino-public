@@ -34,25 +34,40 @@ export interface ReadV6Validators {
   validateError(status: number, value: unknown): boolean
 }
 
-/** One exchange with the read API: the status and the JSON body; throws for a network failure. */
+/**
+ * One exchange with the read API: the status and the JSON body; throws for a network failure. Added 2026-10-06 (rugged's
+ * answer of 6 Oct, §1): `retryAfter`, the reply's Retry-After header as sent, where the transport has one.
+ */
 export interface ReadV6Transport {
   readonly kind: 'fixture' | 'http'
-  post(route: ReadV6Route, body: unknown): Promise<{ status: number; body: unknown }>
+  post(route: ReadV6Route, body: unknown): Promise<{ status: number; body: unknown; retryAfter?: string | null }>
 }
 
 export type ReadV6Reply<T> =
   | { kind: 'ok'; body: T }
-  /** The API said it cannot answer now (its error code), or the network failed (`network`): a dash, with the reason. */
-  | { kind: 'unavailable'; reason: ReadV6ErrorCode | 'network' | 'unexpected_status' }
+  /**
+   * The API said it cannot answer now (its error code), or the network failed (`network`): a dash, with the reason.
+   * `retryAfterSeconds` (added 2026-10-06, rugged's answer of 6 Oct, §1: the gateway's Retry-After is now the real time to
+   * the lane's next token): on a busy reader's 429 (`read_capacity_busy`), the whole seconds it asked to wait (1 to 60, as
+   * the read Worker relays them) before the same read is asked again; absent when it named none.
+   */
+  | { kind: 'unavailable'; reason: ReadV6ErrorCode | 'network' | 'unexpected_status'; retryAfterSeconds?: number }
   /** The body broke the contract: nothing of it is drawn. */
   | { kind: 'invalid'; detail: 'request' | 'response' | 'exchange' | 'error_body' }
 
 const ADDRESS = /^0x[0-9a-f]{40}$/
 
+/** A Retry-After in whole seconds, 1 to 60 (the read Worker relays no other: bridge/src/worker.mjs retryAfter); else none. */
+export function retryAfterSeconds(header: string | null | undefined): number | undefined {
+  if (typeof header !== 'string' || !/^[0-9]{1,3}$/.test(header.trim())) return undefined
+  const seconds = Number(header.trim())
+  return seconds >= 1 && seconds <= 60 ? seconds : undefined
+}
+
 async function exchange<T>(transport: ReadV6Transport, runtime: ReadV6Validators, route: ReadV6Route, request: Record<string, unknown>): Promise<ReadV6Reply<T>> {
   if (runtime.CONTRACT_VERSION !== READ_V6_CONTRACT_VERSION) return { kind: 'invalid', detail: 'response' }
   if (!runtime.validateRequest(route, request)) return { kind: 'invalid', detail: 'request' }
-  let answer: { status: number; body: unknown }
+  let answer: { status: number; body: unknown; retryAfter?: string | null }
   try {
     answer = await transport.post(route, request)
   } catch {
@@ -65,7 +80,10 @@ async function exchange<T>(transport: ReadV6Transport, runtime: ReadV6Validators
   }
   if (!runtime.validateError(answer.status, answer.body)) return { kind: 'invalid', detail: 'error_body' }
   const code = (answer.body as { error: ReadV6ErrorCode }).error
-  return { kind: 'unavailable', reason: runtime.ERROR_STATUS_BY_CODE[code] === answer.status ? code : 'unexpected_status' }
+  if (runtime.ERROR_STATUS_BY_CODE[code] !== answer.status) return { kind: 'unavailable', reason: 'unexpected_status' }
+  // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §1): a busy reader's 429 keeps the wait it named.
+  const wait = answer.status === 429 ? retryAfterSeconds(answer.retryAfter) : undefined
+  return wait === undefined ? { kind: 'unavailable', reason: code } : { kind: 'unavailable', reason: code, retryAfterSeconds: wait }
 }
 
 /** The wallet's V2 portfolio on the three chains. `wallet` is sent in lower case, as the contract requires. */

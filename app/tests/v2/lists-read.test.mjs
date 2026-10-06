@@ -149,4 +149,8 @@ test('the keyed reader: one read per key for every view, kept, asked again by it
   assert.equal(read.readAgainAfter({ kind: 'unavailable', reason: 'x' }, 3), 45_000);
   assert.equal(read.readAgainAfter({ kind: 'unavailable', reason: 'x' }, 9), 60_000);
   assert.equal(read.readAgainAfter({ kind: 'invalid', detail: 'response' }, 1), 300_000, 'a broken answer is not asked again soon');
+  // Added 2026-10-06 (rugged's answer of 6 Oct, §1): never sooner than the Retry-After a busy reader named.
+  assert.equal(read.readAgainAfter({ kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 9 }, 1), 9_000);
+  assert.equal(read.readAgainAfter({ kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 2 }, 1), 5_000, 'a shorter one changes nothing');
+  assert.equal(read.readAgainAfter({ kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 30 }, 2), 30_000);
 });

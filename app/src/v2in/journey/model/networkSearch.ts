@@ -38,8 +38,11 @@ export type SearchAnswer =
   | { kind: 'pasted'; said: Pasted }
   /** The route does not serve: nothing to wait for, the network's own currencies stand in. */
   | { kind: 'off' }
-  /** No answer; `passing` when asking again soon could help. */
-  | { kind: 'failed'; passing: boolean }
+  /**
+   * No answer; `passing` when asking again soon could help. `retryAfterS` (added 2026-10-06, rugged's answer of 6 Oct, §1):
+   * the Retry-After a busy reader named, in whole seconds, for `delay`.
+   */
+  | { kind: 'failed'; passing: boolean; retryAfterS?: number }
 
 export interface SearchDeps {
   /** The networks searched. */
@@ -48,8 +51,11 @@ export interface SearchDeps {
   read: (chainId: OtherChainId, text: string) => Promise<SearchAnswer>
   /** Whether an address is one of the network's own currencies, named without a read. */
   own: (chainId: OtherChainId, address: string) => boolean
-  /** The wait before quiet re-ask number `attempt` (0 for the first), or null when no more are asked. */
-  delay: (attempt: number) => number | null
+  /**
+   * The wait before quiet re-ask number `attempt` (0 for the first), or null when no more are asked. Changed on purpose
+   * 2026-10-06 (rugged's answer of 6 Oct, §1): with the Retry-After the failed read named, if any.
+   */
+  delay: (attempt: number, retryAfterS?: number) => number | null
   /** Runs `run` once `ms` have passed (with the page visible); returns what cancels it. */
   after: (ms: number, run: () => void) => () => void
   /** How many texts' answers are kept for the page (per network and text). */
@@ -102,10 +108,10 @@ export function createNetworkSearch(deps: SearchDeps): SearchStore {
     }
   }
   /** A failed name search asked again after its quiet wait, while the list still asks for its text; or done for good. */
-  function again(chainId: OtherChainId, text: string) {
+  function again(chainId: OtherChainId, text: string, retryAfterS?: number) {
     const key = keyOf(chainId, text)
     const attempt = spent.get(key) ?? 0
-    const wait = deps.delay(attempt)
+    const wait = deps.delay(attempt, retryAfterS)
     if (wait === null) {
       settled.add(key)
       return
@@ -135,7 +141,7 @@ export function createNetworkSearch(deps: SearchDeps): SearchStore {
       const key = keyOf(chainId, text)
       if (answer.kind === 'hits') keep(found, key, answer.rows)
       else if (answer.kind === 'pasted') keep(pastes, key, answer.said)
-      else if (answer.kind === 'failed' && answer.passing && !ADDRESS.test(text)) again(chainId, text)
+      else if (answer.kind === 'failed' && answer.passing && !ADDRESS.test(text)) again(chainId, text, answer.retryAfterS)
       else if (ADDRESS.test(text)) keep(pastes, key, { state: 'unread' })
       else settled.add(key)
       notify()

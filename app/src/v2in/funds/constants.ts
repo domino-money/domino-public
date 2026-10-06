@@ -8,15 +8,22 @@
 /**
  * DECIDED #16 [owner, 02/10] (§3.5, §8.2 S2; texts #29): SHOW that the person may bridge with any other service, as a
  * discrete small line beside the fee and the provider in the quote: "Domino fee 0.35% · via {provider} · you can also
- * bridge with any other service" (copy.ts bridgeElsewhereLine).
+ * bridge with any other service" (copy.ts bridgeElsewhereLine). Changed on purpose 2026-10-06 (rugged's answer of 6 Oct,
+ * F7 delta of 6 Oct §1: the Domino fee in view with its amount and token, its chain and where it is charged): the line
+ * is the §3.5 fee sentence, then the same clause: "Domino fee (0.35%): 0.35 USDC, charged by Relay on Arbitrum One · you
+ * can also bridge with any other service".
  */
 export const FUNDS_SHOW_BRIDGE_ELSEWHERE = true
 
 /**
  * DECIDED #15 [owner, 02/10] (§3.1, §3.6, §8.2 S2): an ERC-20 deposit is always two separate transactions, the exact
  * approval then the deposit, with no EIP-5792 batch; the approval's receipt is waited for before the deposit.
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct: the owner revoked decision #15; F7 delta of 6 Oct §2): when
+ * the wallet batches atomically on the ORIGIN chain (finance/batch.ts atomicStatus: `supported` or `ready`), the exact
+ * approval and the deposit go as ONE EIP-5792 batch, one confirmation (./flow.ts); otherwise the two transactions above.
+ * An allowance that already covers the amount sends the deposit alone, one transaction; native ETH is one transaction.
  */
-export const FUNDS_BATCH_APPROVAL_AND_DEPOSIT = false
+export const FUNDS_BATCH_APPROVAL_AND_DEPOSIT = true
 
 /**
  * #17 (owner + F5/F8, §3.1, §3.2), the app's side done (Changed on purpose (data) 2026-10-02 (S2 wired)): the forwarder
@@ -78,6 +85,18 @@ export const FUNDS_TYPED_QUOTES_PER_MINUTE = 6
  * (about a bridge's own minimum), so the discreet line before an amount does not name it.
  */
 export const FUNDS_LINE_MIN_USD = 1
+
+/**
+ * Added 2026-10-06 (the review of rugged97's #379: Ethereum's and OP Mainnet's ETH as origins): the ETH kept on Ethereum
+ * when its own ETH is brought from there, for that deposit's fee in Ethereum's own gas, as every origin keeps its own
+ * (model.ts sendable). The origin sender asks the wallet there for the deposit's gas estimate plus 20%, at twice the
+ * network's gas price, beside the amount sent (finance/v2/crosschain.ts). Domino's three networks and OP Mainnet, rollups
+ * whose gas costs a sliver of that, keep the gas Review keeps (0.0005 ETH, lib/create/reviewPlan.ts), as before; on
+ * Ethereum that falls short from about 2 gwei, so 0.003 ETH: a deposit of up to 120,000 gas at up to 12.5 gwei. What is
+ * kept stays in the wallet there.
+ */
+export const FUNDS_ETHEREUM_GAS_RESERVE_WEI = 3_000_000_000_000_000n
+
 /** How often a sent step's receipt is read while waiting for it. */
 export const FUNDS_RECEIPT_POLL_MS = 3_000
 /** How long the deposit's receipt is watched for "Finalized" once included; past it the step stays "Included". */

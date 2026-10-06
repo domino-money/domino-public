@@ -139,7 +139,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
  * AUTO-EXIT. When the price hits the edge of the range we close the position automatically and send the tokens to the
  * wallet. It must be separate from the rest"): Auto-exit, in its dialog's and card's own words, its prices the range's
  * edges, one per position, never with compounding. The old slug opens it (registry.ts DOC_ALIASES). The warnings are
- * §4.7's, as the dialog says them under its Details. Changed on purpose 2026-10-06 (the review of point 5): where it is
+ * §4.7's, as the dialog says them. Changed on purpose 2026-10-06 (the review of point 5): where it is
  * offered (every network's position page; New position's success on Robinhood Chain), and the card's own words.
  */
 export const AUTO_EXIT: DocPage = {

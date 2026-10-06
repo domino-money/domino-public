@@ -20,7 +20,8 @@ const { FIXTURE_TOKEN, createReadStub } = await import('../support/read-stub.mjs
 const { installS2Wallet, S2_ACCOUNT, S2_OWNER } = await import('../support/s2-wallet.mjs');
 const { createWalletServer } = await import('../support/wallet-server.mjs');
 const { createChainReads } = await import('../support/chain-reads.mjs');
-const { quoteFor } = await import('../support/crosschain-quotes.mjs');
+const { quoteFor, recorded } = await import('../support/crosschain-quotes.mjs');
+const { createOriginChain } = await import('../support/s2-origin-chain.mjs');
 const readV6Runtime = await import('../../../api-contracts/read-v6/runtime.mjs');
 
 const V2_DIST = WALLET_V2_DIST;
@@ -69,8 +70,11 @@ function walletAssets(ethWei) {
  * Added 2026-10-06 (the integration review): `range`, a Custom range typed as the page writes prices ("1 ETH = … USDG"),
  * [lowest, highest]; `relayDown`, the origins listing with Relay busy (only what Across bridges listed); `held`, steps held
  * unsettled from an earlier visit (finance/v2/crosschain.ts's store, in localStorage).
+ * Added 2026-10-06 (rugged's answer of 6 Oct: approval and deposit in one batch): `sendOn`, a fake ORIGIN chain the wallet
+ * sends on (../support/s2-wallet.mjs; nothing is sent anywhere else); `batches`, deposits sent as one batch on an earlier
+ * visit and kept until the wallet names their transaction (finance/v2/crosschain.ts's store, in localStorage).
  */
-async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, bridge = false, switching = false, served = null, journal = null, clock = false, range = null, relayDown = false, held = null } = {}) {
+async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, bridge = false, switching = false, served = null, journal = null, clock = false, range = null, relayDown = false, held = null, sendOn = null, batches = null } = {}) {
   const fake = createFakeSession();
   const errors = [];
   // The read stub's own fixture for each read (tests/support/read-stub.mjs), TOKEN as USDG, and the wallet's balances.
@@ -101,6 +105,8 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
       const crossKind = body.originToken === ZERO && body.destinationToken === USDG ? { rate: ETH_AS_USDG, relayOnly: true } : {};
       return Response.json(quoteFor(body, S2_OWNER, body.destinationGas ? 'variants/quote.destination-gas' : body.amountRaw === NO_ROUTE_RAW ? 'variants/quote.none' : 'responses/quote', crossKind), { headers });
     }
+    // A deposit sent here (Added 2026-10-06): Relay has not seen it yet, about the very deposit asked.
+    if (route === 'status' && body.depositTxHash !== RECORDED_DEPOSIT) return Response.json(awaitingFor(body), { headers });
     const data = JSON.parse(readFileSync(resolve(APP, '../api-contracts/crosschain-v1/fixtures/responses/' + route + '.json'), 'utf8').replaceAll('0x1111111111111111111111111111111111111111', S2_OWNER));
     // The listing is the recorded one, for the token asked.
     if (route === 'origins') data.origins.destinationToken = body.destinationToken;
@@ -148,11 +154,13 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
       });
     });
   }
-  const wallet = await installS2Wallet(context, { chainId: 4663, ...balances });
+  const wallet = await installS2Wallet(context, { chainId: 4663, ...balances, origin: sendOn });
   // A deposit this browser followed on an earlier visit (finance/v2/crosschain.ts's journal, in localStorage).
   if (journal) await context.addInitScript(({ key, value }) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, journal);
   // Steps held unsettled on an earlier visit (finance/v2/crosschain.ts's store, in localStorage).
   if (held) await context.addInitScript(({ key, value }) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, held);
+  // Deposits sent as one batch on an earlier visit (finance/v2/crosschain.ts's store, in localStorage).
+  if (batches) await context.addInitScript(({ key, value }) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, batches);
   // The gate's test-build hook (src/v2/gate.ts): opens V2 options on this server's origin; S2 is then `preview` here.
   if (gateOpen) await context.addInitScript(() => { window.__dominoV2Test = { originOpen: true }; });
   const page = await context.newPage();
@@ -172,7 +180,9 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
       assert.deepEqual(wallet.state.sends, [], 'the wallet was never asked to send');
       // Changed on purpose 2026-10-05: after the person's choice of network (`switching`), the wallet goes there.
       const never = switching ? NEVER.filter((method) => method !== 'wallet_switchEthereumChain') : NEVER;
-      assert.deepEqual(wallet.state.log.filter((entry) => never.includes(entry.method)).map((entry) => entry.method), [], 'no automatic wallet switch, signature or transaction');
+      // Added 2026-10-06: a suite that presses Bring (`sendOn`) sends on that origin, and only there.
+      const elsewhere = (entry) => !sendOn || entry.chainId !== sendOn.state.chainId || entry.method === 'eth_signTypedData_v4';
+      assert.deepEqual(wallet.state.log.filter((entry) => never.includes(entry.method) && elsewhere(entry)).map((entry) => entry.method), [], 'no automatic wallet switch, signature or transaction');
       assert.deepEqual(rpc.publicAsked ?? [], [], 'no public RPC');
     },
   };
@@ -210,6 +220,19 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
     await s.close().catch(() => {});
     throw error;
   }
+}
+
+/** The deposit the package's recorded `status` answer is about (its fixtures/responses/status.json). */
+const RECORDED_DEPOSIT = `0x${'d1'.repeat(32)}`;
+/**
+ * Added 2026-10-06: Relay's answer for a deposit it has not seen yet (the package's own status.relay-awaiting), about the
+ * very deposit asked: the request echoed with the owner, and the transition from the state last shown.
+ */
+function awaitingFor(body) {
+  const data = recorded('variants/status.relay-awaiting', S2_OWNER);
+  data.status.request = { ...body, owner: S2_OWNER };
+  data.status.transition = body.previousState === null ? 'initial' : 'unchanged';
+  return data;
 }
 
 /** Types `text` in the USDG field: the amount step's own amount, typed in USDG. */
@@ -299,10 +322,13 @@ test('one click on a network: signed in once, the wallet moved there once, its b
     assert.equal((await quote.locator('[data-funds-receive] .dm-funds-delivery').innerText()).trim(), 'You receive about 50.781437 USDG on Robinhood Chain (at least 50.52753 USDG)');
     assert.equal((await quote.locator('[data-funds-eta]').innerText()).trim(), 'Arrives in about 1 s');
     assert.equal((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), 'Bring 51 USDC from Arbitrum One');
-    assert.match(await quote.locator('[data-funds-bridge-elsewhere]').innerText(), /^Domino fee 0\.35% · via Relay · you can also bridge with any other service$/);
+    // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §1): in view, Domino's fee with its amount,
+    // token, chain and where it is charged (in #16's discrete line), and the network fee on the origin; the rest in Details.
+    assert.match(await quote.locator('[data-funds-bridge-elsewhere]').innerText(), /^Domino fee \(0\.35%\): 0\.1785 USDC, charged by Relay on Arbitrum One · you can also bridge with any other service$/);
+    assert.equal((await quote.locator('[data-funds-network-fee="estimated"]').innerText()).trim(), 'Network fee on Arbitrum One: about 0.000001 ETH, estimated by Relay');
     assert.equal(await quote.locator('details').count(), 1, 'ONE Details');
     assert.equal(await quote.locator('[data-funds-quote-details]').getAttribute('open'), null, 'closed');
-    assert.equal(await quote.locator('[data-funds-candidate="relay"]').isVisible(), false, 'the fees are in Details');
+    assert.equal(await quote.locator('[data-funds-candidate="relay"]').isVisible(), false, 'the bridge fee and the other route are in Details');
     assert.equal(await offer.getByText('Quote', { exact: true }).count(), 0, 'no "Quote" heading');
     assert.equal(await offer.locator('.dm-pill').count(), 0, 'no "Best" pill');
     await capture(s, 'funds-one-click');
@@ -453,6 +479,24 @@ const arbitrumHoldings = (balances = { [ARB_USDC]: 100_000_000n, [ZERO]: 10n ** 
   tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: ARB_WETH, symbol: 'WETH', decimals: 18 }, { address: ARB_USDC, symbol: 'USDC', name: 'USD Coin', decimals: 6 }],
   balances,
 });
+/**
+ * Added 2026-10-06 (rugged97's #379): the networks each chain-balances request named, in order. Ethereum and OP Mainnet
+ * (`BALANCE_CHAIN_IDS`) are asked in a request of their own, beside Domino's three.
+ */
+const BALANCE_CHAIN_IDS = [1, 10];
+const askedNetworks = (reads) => reads.calls.filter((c) => c.route === 'chain-balances').map((c) => [...new Set(c.request.tokens.map((t) => t.chainId))]);
+/** The service's reads of Domino's three networks alone (never one naming Ethereum or OP Mainnet). */
+const dominoReads = (reads) => reads.calls.filter((c) => c.route === 'chain-balances' && !c.request.tokens.some((t) => BALANCE_CHAIN_IDS.includes(t.chainId)));
+const dominoRead = (reads) => dominoReads(reads)[0];
+/** Added 2026-10-06 (the review of rugged97's #379): the service's reads of Ethereum and OP Mainnet alone, in their own request. */
+const elsewhereReads = (reads) => reads.calls.filter((c) => c.route === 'chain-balances' && c.request.tokens.every((t) => BALANCE_CHAIN_IDS.includes(t.chainId)));
+/**
+ * Added 2026-10-06 (the review of rugged97's #379): Domino's three read by `domino`, and Ethereum and OP Mainnet by
+ * `elsewhere`, each stub answering, and recording, the requests of its own read alone.
+ */
+const twoReads = (domino, elsewhere) => ({
+  answer: (route, request) => (route === 'chain-balances' && request.tokens?.some((t) => BALANCE_CHAIN_IDS.includes(t.chainId)) ? elsewhere : domino).answer(route, request),
+});
 
 // Added 2026-10-06 (the owner's point 1: "only before an amount, only when the person has money on another network ... a
 // visual sign that she has a token there and that we will bridge it"; clicking brings everything held there, less the gas).
@@ -475,7 +519,9 @@ test('before an amount, ONE discreet line names what the service read on another
       return !!(line && advanced && amounts && amounts.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING && line.compareDocumentPosition(advanced) & Node.DOCUMENT_POSITION_FOLLOWING);
     }), true);
     // Changed on purpose 2026-10-06 (paying with one other token): the destination's WETH and USDG after its ETH.
-    assert.deepEqual(reads.calls[0].request.tokens.map((t) => t.chainId), [8453, 8453, 8453, 42161, 42161, 42161, 4663, 4663, 4663], 'the other networks\' ETH, WETH and USDC, then the destination\'s ETH, WETH and USDG');
+    // Changed on purpose 2026-10-06 (rugged97's #379): Ethereum and OP Mainnet are asked in a request of their own, beside
+    // this one (dominoRead), so this one is found by what it asks.
+    assert.deepEqual(dominoRead(reads).request.tokens.map((t) => t.chainId), [8453, 8453, 8453, 42161, 42161, 42161, 4663, 4663, 4663], 'the other networks\' ETH, WETH and USDC, then the destination\'s ETH, WETH and USDG');
     assert.equal(s.bridgeCalls.length, 0, 'no sign-in, no quote before the click');
     assert.deepEqual(switches(s), []);
     await capture(s, 'funds-discreet-line', '[data-funds-line]');
@@ -492,12 +538,18 @@ test('before an amount, ONE discreet line names what the service read on another
 });
 
 test('no line when every network the service read holds nothing to bring', async () => {
-  const reads = arbitrumHoldings({});
-  const s = await openNewPosition({ bridge: true, served: reads });
+  // Changed on purpose 2026-10-06 (the review of rugged97's #379: with two reads, "a chain-balances read was asked" no
+  // longer said Domino's was): Domino's three, read by one stub, and Ethereum and OP Mainnet, read apart by another (nothing
+  // on Ethereum either, OP Mainnet not configured), each checked on its own before the page is looked at.
+  const arbitrum = arbitrumHoldings({});
+  const ethereum = ethereumHoldings({});
+  const s = await openNewPosition({ bridge: true, served: twoReads(arbitrum, ethereum) });
   try {
-    await s.page.waitForFunction(() => document.querySelector('[data-funds-line]') === null);
+    for (const until = Date.now() + 30_000; dominoReads(arbitrum).length === 0 || elsewhereReads(ethereum).length === 0; await s.page.waitForTimeout(50)) assert.ok(Date.now() < until, 'both reads asked');
     await s.page.waitForTimeout(800);
-    assert.ok(reads.calls.some((c) => c.route === 'chain-balances'), 'read');
+    assert.deepEqual(dominoRead(arbitrum).request.tokens.map((t) => t.chainId), [8453, 8453, 8453, 42161, 42161, 42161, 4663, 4663, 4663], 'Domino\'s three, read');
+    assert.ok(askedNetworks(arbitrum).every((ids) => ids.join() === DOMINO_ASKED), 'Domino\'s read, only Domino\'s three');
+    assert.ok(askedNetworks(ethereum).every((ids) => ids.join() === ELSEWHERE_ASKED), 'Ethereum and OP Mainnet, read on their own');
     assert.equal(await s.page.locator('[data-funds-line], [data-funds-offer]').count(), 0);
   } finally { await s.close(); }
 });
@@ -524,7 +576,8 @@ test("after an amount, the service's balances under each network; one click quot
     await quote.waitFor({ timeout: 30_000 });
     assert.deepEqual(s.quotes().map((q) => q.amountRaw), ['51000000'], 'what the position lacks, sized: one quote');
     assert.deepEqual(switches(s), [], 'the wallet stays on Robinhood Chain for the quote');
-    assert.ok(reads.calls.filter((c) => c.route === 'chain-balances').length >= 2, 'read when the step opened, and again for the choice');
+    // Changed on purpose 2026-10-06 (rugged97's #379): counted among Domino's own reads (Ethereum's and OP Mainnet's are apart).
+    assert.ok(dominoReads(reads).length >= 2, 'read when the step opened, and again for the choice');
     await shot(s.page, 'funds-served-balances.png');
   } finally { await s.close(); }
 });
@@ -899,5 +952,285 @@ test('a range that takes USDG alone: ETH that arrived is never made the amount t
     assert.equal((await hint.innerText()).trim(), 'Enter the amount in USDG above: Domino swaps what arrived for it.');
     assert.equal(await card.locator('[data-funds-use]').count(), 0, 'no Use for a token the range takes none of');
     await capture(s, 'funds-takes-only-arrived', `[data-funds-deposit="${record.depositTxHash}"]`);
+  } finally { await s.close(); }
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Added 2026-10-06 (rugged's answer of 6 Oct: the owner revoked decision #15; F7 delta of 6 Oct §1 and §2): the quote card
+// shows Domino's fee in full and the network fee; Bring sends the exact approval and the deposit as ONE batch where the
+// wallet batches on the origin, else the two transactions of before; a batch kept from an earlier visit is followed.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** The fake origin's first and second transaction hashes (../support/s2-origin-chain.mjs). */
+const HASH_OF = (i) => `0x${(0xa0 + i).toString(16).padStart(64, '0')}`;
+const DEPOSITORY_ARB = '0x4cd00e387622c35bddb9b4c962c136462338bc31';
+/** Waits, a little at a time, until `check` holds (a fake's own state, outside the page). */
+const until = async (check, ms = 30_000) => {
+  for (const end = Date.now() + ms; !check() && Date.now() < end; ) await new Promise((done) => setTimeout(done, 100));
+  assert.ok(check(), 'in time');
+};
+/** 0.01 ETH on Arbitrum One for the network fees there, as the wallet reads it. */
+const ARB_GAS = { native: { 42161: 10n ** 16n } };
+
+/** To the quote card for USDG lacking on Robinhood Chain, from the USDC Domino's service read on Arbitrum One. */
+async function toQuote(s) {
+  await s.page.locator('[data-funds-line]').waitFor({ timeout: 30_000 });
+  await typeUsdg(s, '50');
+  const offer = s.page.locator('[data-funds-offer]');
+  await offer.locator('[data-funds-network-holds="42161"]').waitFor({ timeout: 30_000 });
+  await offer.locator('[data-funds-network="42161"]').click();
+  await signInFromDialog(s);
+  const quote = offer.locator('[data-funds-quote]');
+  await quote.waitFor({ timeout: 30_000 });
+  return { offer, quote };
+}
+
+test('the quote card keeps Domino’s fee in full and the network fee in view; Bring is ONE confirmation where the wallet batches on Arbitrum One', async () => {
+  const origin = createOriginChain({ owner: S2_OWNER, chainId: 42161, atomic: 'ready', mine: 'manual' });
+  const s = await openNewPosition({ bridge: true, switching: true, balances: ARB_GAS, served: arbitrumHoldings(), sendOn: origin });
+  try {
+    const { offer, quote } = await toQuote(s);
+    // In view, not only in Details: the fee's amount, token, chain and where it is charged; the gas on the origin.
+    assert.equal((await quote.locator('[data-funds-domino-fee]').innerText()).trim(), 'Domino fee (0.35%): 0.1785 USDC, charged by Relay on Arbitrum One · you can also bridge with any other service');
+    assert.equal((await quote.locator('[data-funds-network-fee]').innerText()).trim(), 'Network fee on Arbitrum One: about 0.000001 ETH, estimated by Relay');
+    assert.equal(await quote.locator('[data-funds-network-fee]').getAttribute('title'), 'Network fee on Arbitrum One: about 0.000001692667911 ETH, estimated by Relay', 'exact in its title');
+    assert.equal(await quote.locator('[data-funds-domino-fee]').isVisible(), true);
+    assert.equal(await quote.locator('[data-funds-network-fee]').isVisible(), true);
+    assert.equal(await quote.locator('[data-funds-quote-details]').getAttribute('open'), null, 'with Details closed');
+    await capture(s, 'funds-quote-fees');
+    // Bring: the wallet moves to Arbitrum One, then ONE confirmation for the approval and the deposit.
+    origin.state.nextBatch = 'wait';
+    await quote.locator('[data-funds-deposit-button]').click();
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote] [data-funds-run-status]')?.textContent?.trim() === 'Approval and deposit in one confirmation · confirm in your wallet', null, { timeout: 30_000 });
+    await capture(s, 'funds-batch-confirm');
+    // The wallet's prompt is open: the batch reached it; the person confirms.
+    await until(() => origin.state.answerBatch !== null);
+    origin.answerBatch();
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-quote] [data-funds-run-status]')?.textContent?.trim() === 'Approval and deposit in one confirmation · waiting to be included…', null, { timeout: 30_000 });
+    // The batch: atomic required, on Arbitrum One, the exact approval and the deposit exactly as quoted.
+    const [batch] = origin.state.batches;
+    const asked = s.quotes().at(-1);
+    const { steps } = quoteFor(asked, S2_OWNER).quote;
+    assert.deepEqual([batch.version, batch.atomicRequired, batch.chainId, batch.from], ['2.0.0', true, '0xa4b1', S2_OWNER]);
+    assert.deepEqual(batch.calls, steps.map((step) => ({ to: step.transaction.to, data: step.transaction.data, value: '0x0' })));
+    assert.deepEqual([batch.calls[0].to, batch.calls[1].to], [ARB_USDC, DEPOSITORY_ARB]);
+    assert.equal(s.wallet.calls('eth_sendTransaction').length, 0, 'no transaction of its own');
+    assert.deepEqual(switches(s), ['0xa4b1'], 'the wallet moved to Arbitrum One once, to send');
+    // Kept until the wallet names its transaction (in this browser, for a reload).
+    const { batchJournalKey, depositJournalKey } = createRequire(import.meta.url)('../../.test-build/app/src/finance/v2/crosschain.js');
+    const keptBatch = JSON.parse(await s.page.evaluate((key) => localStorage.getItem(key), batchJournalKey(S2_OWNER)));
+    assert.deepEqual(keptBatch.map((e) => [e.originChainId, e.destinationChainId, e.provider, e.batchId]), [[42161, 4663, 'relay', 'batch-1']]);
+    // Mined: the deposit's transaction is the batch's one transaction; the deposit is followed from it.
+    origin.include(HASH_OF(0));
+    const card = s.page.locator(`[data-funds-deposit="${HASH_OF(0)}"]`);
+    await card.waitFor({ timeout: 30_000 });
+    assert.equal((await card.locator('.dm-subtitle').first().innerText()).trim(), 'Coming from Arbitrum One');
+    const kept = JSON.parse(await s.page.evaluate((key) => localStorage.getItem(key), depositJournalKey(4663, S2_OWNER)));
+    assert.deepEqual(kept.map((r) => [r.provider, r.originChainId, r.depositTxHash, r.requestId !== null]), [['relay', 42161, HASH_OF(0), true]]);
+    assert.equal(await s.page.evaluate((key) => localStorage.getItem(key), batchJournalKey(S2_OWNER)), null, 'the batch kept until then is gone');
+    await card.locator('details > summary').click();
+    // Its receipt read on Arbitrum One for the review it came from: included (Details: "On Arbitrum One").
+    await s.page.waitForFunction((hash) => /On Arbitrum One\s*(Included|Finalized)/.test(document.querySelector(`[data-funds-deposit="${hash}"] details`)?.textContent ?? ''), HASH_OF(0), { timeout: 30_000 });
+    assert.equal(await offer.locator('[data-funds-quote]').count(), 0, 'the quote is done');
+    await capture(s, 'funds-batch-sent', `[data-funds-deposit="${HASH_OF(0)}"]`);
+  } finally { await s.close(); }
+});
+
+test('a wallet that does not batch on Arbitrum One: the exact approval, then the deposit, two confirmations as before', async () => {
+  const origin = createOriginChain({ owner: S2_OWNER, chainId: 42161 });
+  const s = await openNewPosition({ bridge: true, switching: true, balances: ARB_GAS, served: arbitrumHoldings(), sendOn: origin });
+  try {
+    const { quote } = await toQuote(s);
+    await quote.locator('[data-funds-deposit-button]').click();
+    const card = s.page.locator(`[data-funds-deposit="${HASH_OF(1)}"]`);
+    await card.waitFor({ timeout: 30_000 });
+    assert.deepEqual(origin.state.sent.map((tx) => [tx.to, tx.chainId]), [[ARB_USDC, '0xa4b1'], [DEPOSITORY_ARB, '0xa4b1']], 'the approval, then the deposit');
+    assert.deepEqual(origin.state.batches, [], 'never a batch');
+    assert.equal(s.wallet.calls('wallet_getCapabilities').filter((entry) => entry.chainId === 42161).length, 1, 'what the wallet can batch there, asked once');
+    assert.equal((await card.locator('.dm-subtitle').first().innerText()).trim(), 'Coming from Arbitrum One');
+  } finally { await s.close(); }
+});
+
+test('the allowance already covers the amount on Arbitrum One: the deposit alone, one transaction, the wallet’s batching not even asked', async () => {
+  const origin = createOriginChain({ owner: S2_OWNER, chainId: 42161, atomic: 'supported' });
+  origin.state.allowances.set(`${ARB_USDC}|${S2_OWNER}|${DEPOSITORY_ARB}`, 10n ** 12n);
+  const s = await openNewPosition({ bridge: true, switching: true, balances: ARB_GAS, served: arbitrumHoldings(), sendOn: origin });
+  try {
+    const { quote } = await toQuote(s);
+    await quote.locator('[data-funds-deposit-button]').click();
+    await s.page.locator(`[data-funds-deposit="${HASH_OF(0)}"]`).waitFor({ timeout: 30_000 });
+    assert.deepEqual(origin.state.sent.map((tx) => tx.to), [DEPOSITORY_ARB], 'one transaction');
+    assert.deepEqual(origin.state.batches, []);
+    assert.equal(s.wallet.calls('wallet_getCapabilities').filter((entry) => entry.chainId === 42161).length, 0);
+  } finally { await s.close(); }
+});
+
+test('a deposit sent as one batch on an earlier visit: followed once the wallet names its transaction, from whichever network the wallet is on', async () => {
+  const { batchJournalKey } = createRequire(import.meta.url)('../../.test-build/app/src/finance/v2/crosschain.js');
+  const origin = createOriginChain({ owner: S2_OWNER, chainId: 42161, atomic: 'supported', mine: 'manual' });
+  // The batch the wallet took on the earlier visit, still not on chain.
+  const { id } = await origin.wallet.request('wallet_sendCalls', [{ version: '2.0.0', chainId: '0xa4b1', from: S2_OWNER, atomicRequired: true, calls: [{ to: DEPOSITORY_ARB, data: '0xe8017952', value: '0x0' }] }]);
+  const entry = { originChainId: 42161, destinationChainId: 4663, provider: 'relay', requestId: `0x${'17'.repeat(32)}`, batchId: id, quote: `${'ab'.repeat(32)}:1`, at: Math.floor(Date.now() / 1000) };
+  const s = await openNewPosition({ bridge: true, sendOn: origin, batches: { key: batchJournalKey(S2_OWNER), value: JSON.stringify([entry]) } });
+  try {
+    const pending = s.page.locator('[data-funds-pending-batch="42161"]');
+    await pending.waitFor({ timeout: 30_000 });
+    assert.equal((await pending.locator('.dm-subtitle').innerText()).trim(), 'Coming from Arbitrum One');
+    assert.equal((await pending.locator('[data-funds-state-text]').innerText()).trim(), 'Sent, waiting to be included…');
+    assert.equal(await s.page.locator('[data-funds-deposits] > h4').innerText(), 'On the way');
+    assert.equal(await s.page.locator('[data-funds-line]').count(), 0, 'nothing more offered while it may arrive');
+    await capture(s, 'funds-batch-pending', '[data-funds-pending-batch]');
+    // Its status asked through the wallet on Robinhood Chain, where the wallet is: the id names no network.
+    assert.ok(s.wallet.calls('wallet_getCallsStatus').every((entry) => entry.chainId === 4663));
+    origin.include(HASH_OF(0));
+    const card = s.page.locator(`[data-funds-deposit="${HASH_OF(0)}"]`);
+    await card.waitFor({ timeout: 30_000 });
+    await pending.waitFor({ state: 'detached', timeout: 10_000 });
+    assert.equal(await s.page.evaluate((key) => localStorage.getItem(key), batchJournalKey(S2_OWNER)), null, 'the batch kept until then is gone');
+    assert.deepEqual(switches(s), [], 'the wallet never moved');
+  } finally { await s.close(); }
+});
+
+// ---- Added 2026-10-06: Ethereum and OP Mainnet (rugged97's #379, read-v6 1.1.0-rc.1: chain-balances reads them when a
+// request names them; rollout reader, then Worker, then app). Domino's service reads them in a request of their own, beside
+// Domino's three, and what is held there joins the line, the networks, the sizing and the quote as any of Domino's networks'.
+
+const USDC_1 = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+const WETH_1 = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
+/** 100 USDC and 0.01 ETH (for the approval's and the deposit's gas) on Ethereum, as Domino's service reads them. */
+const ethereumHoldings = (balances = { [USDC_1]: 100_000_000n, [ZERO]: 10n ** 16n }) => createChainReads({
+  chainId: 1,
+  tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: WETH_1, symbol: 'WETH', decimals: 18 }, { address: USDC_1, symbol: 'USDC', name: 'USD Coin', decimals: 6 }],
+  balances,
+});
+/** The two requests the offer makes: Domino's three (the destination last), and Ethereum and OP Mainnet on their own. */
+const DOMINO_ASKED = '8453,42161,4663';
+const ELSEWHERE_ASKED = BALANCE_CHAIN_IDS.join();
+
+/** The page at a desktop's width and a phone's (1280 and 390), with no sideways scroll at either; then back. */
+async function bothWidths(page, name) {
+  const dir = resolve(import.meta.dirname, '../../.test-artifacts');
+  mkdirSync(dir, { recursive: true });
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, `${name}: no horizontal scroll at ${width}`);
+    await page.screenshot({ path: resolve(dir, `${name}-${width}.png`), fullPage: true });
+  }
+  await page.setViewportSize({ width: 1320, height: 1100 });
+}
+
+test('USDC on Ethereum, read in a request of its own, is the discreet line; one click quotes it from Ethereum, the wallet staying where it is', async () => {
+  const reads = ethereumHoldings();
+  const s = await openNewPosition({ bridge: true, served: reads });
+  try {
+    const line = s.page.locator('[data-funds-line]');
+    await line.waitFor({ timeout: 30_000 });
+    assert.equal(await s.page.locator('[data-funds-line]').count(), 1, 'one line');
+    assert.equal(await line.getAttribute('data-funds-line'), '1');
+    assert.equal(await line.getAttribute('data-funds-line-token'), USDC_1);
+    assert.equal(await line.getAttribute('data-funds-line-target'), USDG, 'a dollar, brought as USDG');
+    assert.equal((await line.locator('.dm-funds-line-text').innerText()).trim(), 'You have 100 USDC on Ethereum (about $100.00)');
+    assert.equal((await line.locator('.dm-funds-line-action').innerText()).trim(), 'Bring it here');
+    assert.equal(await line.locator('[data-token-mark="unknown"]').count(), 1, 'a calm disc: no bundled USDC, nothing fetched');
+    // Two requests: Domino's three exactly as before, and Ethereum and OP Mainnet on their own; never one naming both.
+    const asked = askedNetworks(reads);
+    assert.ok(asked.some((ids) => ids.join() === DOMINO_ASKED), 'Domino\'s three, as before');
+    assert.ok(asked.some((ids) => ids.join() === ELSEWHERE_ASKED), 'Ethereum and OP Mainnet on their own');
+    assert.ok(asked.every((ids) => [DOMINO_ASKED, ELSEWHERE_ASKED].includes(ids.join())), `never one naming both: ${JSON.stringify(asked)}`);
+    assert.equal(s.bridgeCalls.length, 0, 'no sign-in, no quote before the click');
+    await bothWidths(s.page, 'funds-line-ethereum');
+    await line.click();
+    await signInFromDialog(s);
+    const quote = s.page.locator('[data-funds-offer] [data-funds-quote]');
+    await quote.locator('[data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+    // The bring quote asks origin chain 1: all of it (before an amount, the owner's default), brought as USDG.
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountRaw, q.destinationChainId, q.destinationToken]), [[1, USDC_1, '100000000', 4663, USDG]]);
+    assert.equal((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), 'Bring 100 USDC from Ethereum');
+    assert.equal((await s.page.locator('[data-funds-title]').innerText()).trim(), 'Bring funds from Ethereum');
+    assert.deepEqual(switches(s), [], 'the wallet stays on Robinhood Chain for the quote');
+    assert.ok(askedNetworks(reads).filter((ids) => ids.join() === ELSEWHERE_ASKED).length >= 2, 'Ethereum read again for the choice');
+    await bothWidths(s.page, 'funds-line-ethereum-quote');
+  } finally { await s.close(); }
+});
+
+test('after an amount, Ethereum has its button where the service read something there; one click quotes what the position lacks from it', async () => {
+  const reads = ethereumHoldings();
+  const s = await openNewPosition({ bridge: true, served: reads });
+  try {
+    await s.page.locator('[data-funds-line="1"]').waitFor({ timeout: 30_000 });
+    await typeUsdg(s, '50');
+    const offer = s.page.locator('[data-funds-offer]');
+    const holds = offer.locator('[data-funds-network-holds="1"]');
+    await holds.waitFor({ timeout: 30_000 });
+    // Domino's networks first (not read by the service here: their buttons stay, nothing said), then Ethereum; OP Mainnet,
+    // not read, has none.
+    assert.deepEqual(await offer.locator('[data-funds-network]').evaluateAll((els) => els.map((el) => [el.getAttribute('data-funds-network'), el.textContent.trim(), el.getAttribute('data-funds-holds')])), [['8453', 'Base', 'unread'], ['42161', 'Arbitrum One', 'unread'], ['1', 'Ethereum', 'holds']]);
+    // Changed on purpose 2026-10-06 (the review of rugged97's #379): its ETH less Ethereum's own gas (0.003 ETH kept there).
+    assert.match((await holds.innerText()).trim(), /^You have 0\.007 ETH · 100 USDC \(about \$\d+\.\d{2}\)$/, 'what can be sent there, valued');
+    assert.equal(await offer.locator('[data-funds-other]').count(), 1, 'Other networks stays');
+    await bothWidths(s.page, 'funds-networks-ethereum');
+    await offer.locator('[data-funds-network="1"]').click();
+    await signInFromDialog(s);
+    const quote = offer.locator('[data-funds-quote]');
+    await quote.locator('[data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+    // 50 USDG lacking, sent as USDC from Ethereum: 50 plus room for the fees, as from any network.
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountRaw, q.destinationToken]), [[1, USDC_1, '51000000', USDG]]);
+    assert.equal((await quote.locator('[data-funds-deposit-button]').innerText()).trim(), 'Bring 51 USDC from Ethereum');
+    assert.deepEqual(switches(s), [], 'the wallet stays on Robinhood Chain for the quote');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (the review of rugged97's #379: before an amount, a one click from Ethereum with its own ETH quoted the
+// whole balance less the gas Review keeps, which is sized to the rollups' gas, so the deposit could not pay Ethereum's):
+// Ethereum's ETH keeps Ethereum's own gas, 0.003 ETH, in the line, its value and the quote.
+test('ETH on Ethereum keeps Ethereum\'s own gas: the line and its one click bring the balance less 0.003 ETH', async () => {
+  const s = await openNewPosition({ bridge: true, served: ethereumHoldings({ [ZERO]: 10n ** 17n }), range: ['500000000000', '900000000000'] });
+  try {
+    const line = s.page.locator('[data-funds-line="1"]');
+    await line.waitFor({ timeout: 30_000 });
+    assert.equal(await line.getAttribute('data-funds-line-token'), ZERO);
+    assert.match((await line.locator('.dm-funds-line-text').innerText()).trim(), /^You have 0\.097 ETH on Ethereum \(about \$[\d,]+\.\d{2}\)$/, 'what can be sent: Ethereum\'s gas stays there');
+    await line.click();
+    await signInFromDialog(s);
+    await s.page.locator('[data-funds-offer] [data-funds-quote] [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.destinationToken, q.amountRaw]), [[1, ZERO, USDG, '97000000000000000']], 'the balance less 0.003 ETH');
+    assert.deepEqual(switches(s), [], 'the wallet stays on Robinhood Chain for the quote');
+  } finally { await s.close(); }
+});
+
+// A Worker that has not taken its rollout step yet refuses a request naming Ethereum or OP Mainnet (422 invalid_request, as
+// bridge/src/worker.mjs answers a request its contract refuses): Domino's three are read, drawn and brought from exactly as
+// before, and the two simply stay unread (nothing said of them; Other networks as before).
+test('a Worker that still refuses Ethereum and OP Mainnet: Domino\'s three exactly as before, the two unread and unsaid', async () => {
+  const arbitrum = arbitrumHoldings();
+  const refused = [];
+  const served = {
+    calls: arbitrum.calls,
+    answer(route, request) {
+      if (route === 'chain-balances' && request.tokens?.some((t) => BALANCE_CHAIN_IDS.includes(t.chainId))) {
+        refused.push(request);
+        return { status: 422, body: { error: 'invalid_request' } };
+      }
+      return arbitrum.answer(route, request);
+    },
+  };
+  const s = await openNewPosition({ bridge: true, served });
+  try {
+    const line = s.page.locator('[data-funds-line]');
+    await line.waitFor({ timeout: 30_000 });
+    assert.equal((await line.locator('.dm-funds-line-text').innerText()).trim(), 'You have 100 USDC on Arbitrum One (about $100.00)', 'the line as before');
+    assert.ok(refused.length >= 1, 'Ethereum and OP Mainnet were asked, and refused');
+    assert.deepEqual(dominoRead(arbitrum).request.tokens.map((t) => t.chainId), [8453, 8453, 8453, 42161, 42161, 42161, 4663, 4663, 4663], 'Domino\'s request as before');
+    await typeUsdg(s, '50');
+    const offer = s.page.locator('[data-funds-offer]');
+    await offer.locator('[data-funds-network-holds="42161"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(await offer.locator('[data-funds-network]').evaluateAll((els) => els.map((el) => el.getAttribute('data-funds-network'))), ['8453', '42161'], 'no button for a network not read');
+    assert.equal(await offer.getByText(/Ethereum|OP Mainnet/).count(), 0, 'nothing said of them');
+    assert.equal(await offer.locator('[data-funds-other]').count(), 1, 'Other networks, as before');
+    await offer.locator('[data-funds-network="42161"]').click();
+    await signInFromDialog(s);
+    await offer.locator('[data-funds-quote] [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(s.quotes().map((q) => [q.originChainId, q.originToken, q.amountRaw]), [[42161, ARB_USDC, '51000000']], 'brought from Arbitrum One as before');
   } finally { await s.close(); }
 });

@@ -5,6 +5,12 @@
  * an ERC-20's balanceOf and decimals), records every request, and refuses everything else with 4200, recorded.
  * `eth_sendTransaction` is refused too and recorded in `sends`: the suite asserts it stays empty, since a fixture quote
  * must never reach the wallet. Nothing here signs anything or touches a network.
+ *
+ * Added 2026-10-06 (rugged's answer of 6 Oct: approval and deposit in one batch): `origin`, a fake ORIGIN chain
+ * (./s2-origin-chain.mjs createOriginChain) the wallet sends on. While the wallet is on that chain, what S2's closed sender
+ * asks to send there (the nonce, the fee, the estimate, the send, the allowance, receipts and blocks, and EIP-5792's
+ * capabilities and batch) is that chain's answer, and so is a batch's status on any chain (its id names none). Without
+ * `origin`, exactly as before.
  */
 import { numberToHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -15,14 +21,25 @@ export const S2_OWNER = S2_ACCOUNT.address.toLowerCase();
 
 const word = (value) => `0x${BigInt(value).toString(16).padStart(64, '0')}`;
 const lower = (value) => String(value).toLowerCase();
+/** What the origin chain answers while the wallet is on it (`origin`); the allowance is its only eth_call. */
+const ORIGIN_METHODS = new Set(['eth_getTransactionCount', 'eth_gasPrice', 'eth_maxPriorityFeePerGas', 'eth_estimateGas', 'eth_sendTransaction', 'eth_getTransactionByHash', 'eth_getTransactionReceipt', 'eth_getBlockByNumber', 'wallet_getCapabilities', 'wallet_sendCalls']);
+const ALLOWANCE = '0xdd62ed3e';
 
 /**
  * `chainId`: where the wallet starts. `chains`: the chains it knows (others answer 4902). `native`: chainId → wei.
  * `tokens`: `${chainId}:${address}` → { balance, decimals }. `nonces`: chainId → { latest, pending } (0 and 0 by default).
  */
-export async function installS2Wallet(context, { chainId = 4663, chains = [4663, 8453, 42161, 1, 10], native = {}, tokens = {}, nonces = {} } = {}) {
+export async function installS2Wallet(context, { chainId = 4663, chains = [4663, 8453, 42161, 1, 10], native = {}, tokens = {}, nonces = {}, origin = null } = {}) {
   const state = { chainId, chains: new Set(chains), native: { ...native }, tokens: { ...tokens }, nonces: { ...nonces }, permitted: false, log: [], sends: [], refused: [] };
   const fail = (code, message) => ({ error: { code, message } });
+  /** The origin chain's own answer, as a provider gives it. */
+  async function fromOrigin(method, params) {
+    try {
+      return { result: await origin.wallet.request(method, params) };
+    } catch (error) {
+      return { error: { code: error.code ?? -32603, message: error.message, data: error.data } };
+    }
+  }
 
   async function emit(event, payload) {
     for (const page of context.pages()) await page.evaluate(([name, value]) => window.__s2WalletEmit?.(name, value), [event, payload]).catch(() => {});
@@ -30,6 +47,7 @@ export async function installS2Wallet(context, { chainId = 4663, chains = [4663,
 
   async function request(method, params) {
     state.log.push({ method, params, chainId: state.chainId });
+    if (origin && (method === 'wallet_getCallsStatus' || (state.chainId === origin.state.chainId && (ORIGIN_METHODS.has(method) || (method === 'eth_call' && lower(params?.[0]?.data).startsWith(ALLOWANCE)))))) return fromOrigin(method, params);
     switch (method) {
       case 'eth_requestAccounts':
       case 'wallet_requestPermissions':

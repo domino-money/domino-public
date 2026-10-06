@@ -2,9 +2,10 @@ import { createContext, useContext } from 'react'
 import { compare } from '../read/decimal'
 import type { DexPool } from '../read/dexFigures'
 import { attributed } from '../read/figureFallback'
-import { retrievalNote } from '../read/screens/figures'
+import { PROVIDER_LONG, provenanceText, retrievalNote, utcTime, type AttributedFigure } from '../read/screens/figures'
 import { NATIVE_CURRENCY, addressKey } from '../read/screens/identity'
 import type { PoolOption } from '../read/screens/poolsList'
+import type { RowApr } from '../read/screens/rowApr'
 import type { TokenFacts } from '../read/screens/tokenSearch'
 import type { TokenCandidate } from '../read/screens/tokens'
 import type { TokenChainId, TokenDisplay } from '../read/types'
@@ -31,6 +32,12 @@ import type { CurrencyBalance } from './budgets'
  * volume and the APR worked out from them, from the same provider and in the same words as Robinhood Chain's
  * (`networkRows`); their tokens get the provider's artwork (lib/tokenArtwork.ts); one row stands for a v3 and a v4 pool
  * of one pair and fee; and the search ranks every network's hits together (`mergeHits`).
+ * Changed on purpose 2026-10-06 (rugged97's delta of 6 Oct, §4, which records the owner's decision for DEX Screener):
+ * those figures are DEX Screener's, labelled with its name and when they were read (`networkFigureNote`,
+ * `networkAprNote`), never a qualified source; one read more than ten minutes before is not shown (`networkRows`,
+ * `networkFiguresAt`, NETWORK_FIGURES_MAX_AGE_S); a pool DEX Screener has no pair for is a dash saying so
+ * (NETWORK_FIGURE_MISSING). They are never reconciled with the chain or read-v6, and never enter a balance, a position, a
+ * vault, a sum across networks or a qualified USD figure: New position's pool rows and its preview are where they show.
  */
 
 /** The other networks: Base and Arbitrum One. */
@@ -107,6 +114,52 @@ export const PROTOCOL_FEE_UNDESCRIBED = 1 << 24
 /** A pool's name at DEX Screener: a v4 pool's id, or a v3 pool's address (its key is the address as a 32-byte word). */
 export const dexNameOf = (option: Pick<PoolOption, 'key' | 'dex'>): string => (option.dex === 3 ? `0x${option.key.slice(26)}` : option.key)
 
+/**
+ * How long DEX Screener's figures on Base's and Arbitrum One's rows may be shown after they were read, in seconds (Added
+ * 2026-10-06, rugged97's delta of 6 Oct §4: "Com mais de 10 min, não aparece"): the same ten minutes the store gives a
+ * figure out for (lib/read/dexFigures.ts DEX_MAX_AGE_S).
+ */
+export const NETWORK_FIGURES_MAX_AGE_S = 600
+
+/**
+ * Why a figure of Base's or Arbitrum One's rows is a dash, as the closed reason it carries (Added 2026-10-06, rugged97's
+ * delta of 6 Oct §4: "Sem par: '—' com o motivo"; a figure past NETWORK_FIGURES_MAX_AGE_S does not appear either).
+ */
+export const NETWORK_FIGURE_MISSING = {
+  /** DEX Screener has no pair by the pool's exact name with both its currencies (no Uniswap v4 at all on Arbitrum One). */
+  noPair: 'dexscreener_no_pair',
+  /** Its figures for the pool were read more than ten minutes ago. */
+  tooOld: 'dexscreener_too_old',
+  /** Nothing about the pool's token was read from DEX Screener: no answer yet, or a read that failed. */
+  notRead: 'dexscreener_not_read',
+} as const
+
+/** Each reason in the figure's own words (its title, and a dash's accessible name). */
+const MISSING_TEXT: Readonly<Record<string, string>> = {
+  [NETWORK_FIGURE_MISSING.noPair]: 'DEX Screener doesn’t list this pool.',
+  [NETWORK_FIGURE_MISSING.tooOld]: 'DEX Screener’s figures for this pool are more than 10 minutes old.',
+  [NETWORK_FIGURE_MISSING.notRead]: 'DEX Screener’s figures couldn’t be read.',
+}
+
+const missingFigure = (reason: (typeof NETWORK_FIGURE_MISSING)[keyof typeof NETWORK_FIGURE_MISSING]): AttributedFigure => ({ state: 'unavailable', provider: 'dexscreener', reason })
+
+/** Whether a figure read at `retrievedAt` may no longer be shown at `nowS` (both unix seconds). */
+const tooOld = (retrievedAt: number, nowS: number): boolean => nowS - retrievedAt > NETWORK_FIGURES_MAX_AGE_S
+
+/** A DEX Screener figure with a value, and so a time it was read. */
+const dexValued = (figure: AttributedFigure): figure is Extract<AttributedFigure, { retrievedAt: number }> =>
+  (figure.state === 'attributed' || figure.state === 'attributed_stale') && figure.provider === 'dexscreener'
+
+/**
+ * What `networkRows` knows besides each pool's figures (Added 2026-10-06, rugged97's delta of 6 Oct §4): the time now (unix
+ * seconds), and whether a DEX Screener answer about the list's token was read in the last ten minutes (`listed`), so a
+ * pool it does not name has no pair there rather than unread figures.
+ */
+export interface NetworkSeen {
+  nowS: number
+  listed: boolean
+}
+
 /** Whether a provider pair is about exactly this pool's two currencies (native ETH as the zero address on both sides). */
 function samePair(option: Pick<PoolOption, 'currencies'>, dex: DexPool): boolean {
   const own = [option.currencies[0].address.toLowerCase(), option.currencies[1].address.toLowerCase()].sort()
@@ -156,12 +209,30 @@ const reportedTvl = (option: PoolOption): string | null => reported(option.liqui
  *     wallet read's) own order, ETH and WETH partners first, the most liquidity in range first, so a near-empty 0.01%
  *     pool is never the first row a beginner sees. Their measured depths (qualified USD) order them instead only when
  *     every one of them has one: a pool whose depth could not be measured may well be the deepest.
+ *
+ * Changed on purpose 2026-10-06 (rugged97's delta of 6 Oct §4): `dex` gives the newest figures read for a pool, whatever
+ * their age (lib/read/dexFigures.ts chainPoolSeen), and the ten minutes are counted here, at `seen.nowS`: figures read
+ * longer ago are a dash, as if none were reported, so they neither show nor order a row. Every dash says why
+ * (NETWORK_FIGURE_MISSING): no pair by the pool's name with its two currencies (where an answer about the list's token
+ * was read, `seen.listed`, or a pair under that name holds other tokens), figures too old, or none read. A pair listed
+ * with neither figure is "not reported" by DEX Screener, no longer the row's own dash.
  */
-export function networkRows(options: readonly PoolOption[], dex: (chainId: number, name: string) => DexPool | null, facts: Readonly<Record<string, NetworkPoolFacts>> = {}, keep: string | null = null): PoolOption[] {
+export function networkRows(
+  options: readonly PoolOption[],
+  dex: (chainId: number, name: string) => DexPool | null,
+  facts: Readonly<Record<string, NetworkPoolFacts>> = {},
+  keep: string | null = null,
+  seen: NetworkSeen = { nowS: Math.floor(Date.now() / 1000), listed: false },
+): PoolOption[] {
   const figured = options.map((option): PoolOption => {
     const found = dex(option.currencies[0].chainId, dexNameOf(option))
-    if (!found || !samePair(option, found) || (found.liquidityUsd === null && found.volume24hUsd === null)) return option
-    return { ...option, liquidity: attributed(found.liquidityUsd, found.retrievedAt), volume: attributed(found.volume24hUsd, found.retrievedAt), providerNote: retrievalNote(found.retrievedAt) }
+    const pair = found !== null && samePair(option, found) ? found : null
+    if (pair !== null && !tooOld(pair.retrievedAt, seen.nowS)) {
+      const reported = pair.liquidityUsd !== null || pair.volume24hUsd !== null
+      return { ...option, liquidity: attributed(pair.liquidityUsd, pair.retrievedAt), volume: attributed(pair.volume24hUsd, pair.retrievedAt), providerNote: reported ? retrievalNote(pair.retrievedAt) : null }
+    }
+    const why = missingFigure(pair !== null ? NETWORK_FIGURE_MISSING.tooOld : found !== null || seen.listed ? NETWORK_FIGURE_MISSING.noPair : NETWORK_FIGURE_MISSING.notRead)
+    return { ...option, liquidity: why, volume: why, providerNote: null }
   })
   const kept = new Map<string, PoolOption>()
   for (const option of figured) {
@@ -187,6 +258,58 @@ export function networkRows(options: readonly PoolOption[], dex: (chainId: numbe
       (byDepth ? moreOf(facts[a.key]?.depthUsd, facts[b.key]?.depthUsd) : 0) ||
       (at.get(a.key) ?? 0) - (at.get(b.key) ?? 0),
   )
+}
+
+/**
+ * A pool of Base or Arbitrum One as it may be shown at `nowS`, unix seconds (Added 2026-10-06, rugged97's delta of 6 Oct
+ * §4), pure: a DEX Screener figure read more than ten minutes before is a dash saying so, and the APR worked out from it
+ * goes with it. For a row kept on screen while time passes (the chosen pool, the row last pointed at: the pool preview,
+ * components/create/PositionPreview.tsx). A Robinhood Chain pool, whose figures are the read service's, comes back as it is.
+ */
+export function networkFiguresAt(option: PoolOption, nowS: number): PoolOption {
+  if (!poolOnOtherChain(option)) return option
+  const aged = (figure: AttributedFigure): AttributedFigure => (dexValued(figure) && tooOld(figure.retrievedAt, nowS) ? missingFigure(NETWORK_FIGURE_MISSING.tooOld) : figure)
+  const liquidity = aged(option.liquidity)
+  const volume = aged(option.volume)
+  return liquidity === option.liquidity && volume === option.volume ? option : { ...option, liquidity, volume, providerNote: null }
+}
+
+/**
+ * The last second the first DEX Screener figure among these pools may be shown (Added 2026-10-06, rugged97's delta of 6 Oct
+ * §4), unix seconds; null when none of them shows one. The screen draws them again just after it.
+ */
+export function figuresShownUntil(options: readonly PoolOption[]): number | null {
+  let until: number | null = null
+  for (const option of options) {
+    if (!poolOnOtherChain(option)) continue
+    for (const figure of [option.liquidity, option.volume]) {
+      if (dexValued(figure) && (until === null || figure.retrievedAt + NETWORK_FIGURES_MAX_AGE_S < until)) until = figure.retrievedAt + NETWORK_FIGURES_MAX_AGE_S
+    }
+  }
+  return until
+}
+
+/**
+ * What a TVL or 24h volume of Base's or Arbitrum One's rows says of itself, as its title (Added 2026-10-06, rugged97's delta
+ * of 6 Oct §4: the provider's number, labelled with its name and the time it was read; not a qualified source): why there
+ * is none (NETWORK_FIGURE_MISSING), else Robinhood Chain's words (lib/read/screens/figures.ts provenanceText: "Reported by
+ * …, retrieved 14:13:20 UTC, 2026-09-21. Provider-reported, not reconciled with chain data."), where those name the part
+ * a provider plays and these name DEX Screener.
+ */
+export const networkFigureNote = (figure: AttributedFigure): string =>
+  (figure.state === 'unavailable' ? MISSING_TEXT[figure.reason] : undefined) ?? provenanceText(figure).long.replace(PROVIDER_LONG, 'DEX Screener')
+
+/**
+ * What an APR of Base's or Arbitrum One's rows says of itself, as its title (Added 2026-10-06, rugged97's delta of 6 Oct
+ * §4): an estimate worked out from DEX Screener's 24h volume and TVL, named and dated; without one, the reason of the DEX
+ * Screener dash it lacks, else `otherwise` (the row's own reason, components/read/screens/PoolPicker.tsx).
+ */
+export function networkAprNote(option: Pick<PoolOption, 'liquidity' | 'volume'>, apr: RowApr, otherwise: string): string {
+  if (apr.kind === 'estimate' && dexValued(option.liquidity)) {
+    return `Estimate from this pool’s fixed LP fee and DEX Screener’s 24h volume and liquidity, retrieved ${utcTime(option.liquidity.retrievedAt)}, annualised. A pool estimate, not a position’s APR, not APY and not a forecast.`
+  }
+  const dash = [option.liquidity, option.volume].find((figure) => figure.state === 'unavailable' && MISSING_TEXT[figure.reason] !== undefined)
+  return dash && dash.state === 'unavailable' ? MISSING_TEXT[dash.reason] : otherwise
 }
 
 /** How well a hit's symbol matches the text typed, as the search ranks names: 0 exact, 1 a prefix, 2 inside it, 3 not. */

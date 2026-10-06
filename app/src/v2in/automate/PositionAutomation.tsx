@@ -8,7 +8,7 @@ import { useWalletIdentity } from '../../lib/walletIdentity'
 import { v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
 import { ZERO_ADDRESS, type Address, type Dex, type V2ChainId } from '../../v2/types'
-import { exitCardState, withExitModules, withRevoked } from '../autoexit/card'
+import { exitCardState, withApprovals, withExitModules, withRevoked } from '../autoexit/card'
 import { exitOrderKey, offerExitOrder, onExitOrderAsked } from '../autoexit/entry'
 import { fullRange } from '../autoexit/form'
 import { MandateDialog, type ExitTarget } from '../autoexit/MandateDialog'
@@ -20,7 +20,7 @@ import { onVaultOffered, takeVault } from './handoff'
 import { IndexStatus } from './IndexStatus'
 import { chainView, creditsOn, mandatesOf, mergeCredits, tokenMetaOf, vaultsOfPosition } from './portfolio'
 import { routeQuiet, usePortfolio } from './read6'
-import { automationState, exitModuleSet, sessionMandates, sessionRevoked, subscribeAutomation } from './store'
+import { approvedAt, automationState, exitModuleSet, sessionMandates, sessionRevoked, subscribeAutomation } from './store'
 import { poolTokens, walletTokenMeta } from './tokens'
 import { VaultCard } from './VaultCard'
 import { VaultDialog, type VaultDialogKind, type VaultDialogSubject } from './VaultDialog'
@@ -112,8 +112,13 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   // (the final check F2's review): and with the Auto-exits this page turned off (withRevoked), so its automation's word
   // agrees with the card's: after "Turn back on" then "Turn off", "Turn on" (its rearm first) is offered again at once.
   const listed = indexed?.portfolio ?? (answer && answer.reply.kind === 'ok' ? answer.reply.body : null)
+  // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §4 item 6): and with the approvals this page gave back,
+  // while the index's read of the position is older (../autoexit/card.ts withApprovals): "Approve again" done, the card
+  // says "On".
   const body = useMemo(
-    () => (listed ? withExitModules(withRevoked(listed, chainId, sessionRevoked(store, chainId)), (id, vault, nonce) => exitModuleSet(store, id, vault, nonce)) : null),
+    () => (listed
+      ? withApprovals(withExitModules(withRevoked(listed, chainId, sessionRevoked(store, chainId)), (id, vault, nonce) => exitModuleSet(store, id, vault, nonce)), (id, vault, tokenId) => approvedAt(store, id, vault, tokenId))
+      : null),
     [listed, store, chainId],
   )
   const views = useMemo(
@@ -188,7 +193,9 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   // Changed on purpose 2026-10-06 (the review of point 5): a range that covers every price the pool allows never reaches
   // an end, so Auto-exit is not offered on it.
   const closable = pagePool !== null && !fullRange(range, pagePool.tickSpacing)
-  const target: ExitTarget | null = !exitOn && orderGate && pagePool && pageTokens && liquid && closable && (member || plain)
+  // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §4 item 7: "never offer to resume"): a position Auto-exit
+  // closed is never offered it again, whatever a later read of the page says of its liquidity.
+  const target: ExitTarget | null = !exitOn && exitState.kind !== 'closed' && orderGate && pagePool && pageTokens && liquid && closable && (member || plain)
     ? { chainId, dex, tokenId: idOf(tokenId), pool: pagePool, tokens: pageTokens, range, price: pagePrice, vault: member ? { address: member.vault, role: 'root', autoExitEnabled: member.autoExitEnabled } : null }
     : null
   // §4.8: what exits could not deliver, from the index, joined with the chain's own figures for the pool's two tokens (the

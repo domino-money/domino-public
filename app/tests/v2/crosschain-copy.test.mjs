@@ -59,6 +59,11 @@ test('§3.5: the base quote reads exactly as the spec writes it, Relay the winne
   assert.equal(originGasDetail(q, q.candidates[0], NAME), '0.000001 ETH', 'rounded for the screen');
   assert.equal(originGasDetail(q, q.candidates[0], NAME, true), '0.000001692667911 ETH', 'and exact');
   assert.equal(originGasDetail(q, q.candidates[1], NAME), null);
+  // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §1: the quote card's network cost line,
+  // "never 0"): an estimate of zero is not reported either.
+  const zero = { ...q.candidates[0], originGas: { feeRaw: '0', usd: '0' } };
+  assert.equal(originGasDetail(q, zero, NAME), null);
+  assert.equal(originGasDetail(q, zero, NAME, true), null);
 });
 
 test('no route: the headline, and one line per provider with the spec’s words; the reason text never shows', () => {

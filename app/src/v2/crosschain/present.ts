@@ -258,9 +258,11 @@ export function presentQuote(quote: QuotePlan, name: Naming): QuoteView {
  * The provider's network fee estimate on the origin, in its native token, for the details only (never in USD).
  * Null when the provider did not report one or the page cannot name the origin's native token's decimals.
  * Changed on purpose 2026-10-06 (the owner's point 4): rounded for the screen, unless `exact`.
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §1: the quote card's network cost line is
+ * this estimate, "never 0"): an estimate of zero says nothing about the fee, so it is not reported either.
  */
 export function originGasDetail(quote: QuotePlan, c: Candidate, name: Naming, exact = false): string | null {
-  if (c.originGas === null || c.originGas.feeRaw === null) return null
+  if (c.originGas === null || c.originGas.feeRaw === null || !/^[1-9]\d*$/.test(c.originGas.feeRaw)) return null
   const native = name.book(quote.request.originChainId, ZERO)
   return native === null ? null : (exact ? amountText : shortAmountText)(c.originGas.feeRaw, ZERO, native)
 }

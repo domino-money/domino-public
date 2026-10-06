@@ -4,20 +4,23 @@ import { AmountField } from '../../components/create/fields'
 import { TokenMark } from '../../components/TokenIcon'
 import { Button, Card, KeyValue, KeyValueList, Select, Skeleton } from '../../components/ui'
 import {
+  browserBatchJournal,
   browserDepositJournal,
   browserOriginWallet,
   browserUnsettledStore,
   createOriginSender,
   OriginStepError,
   quoteKeyOf,
+  type BatchJournal,
   type OriginSender,
+  type PendingBatch,
   type UnsettledOffer,
   type UnsettledStore,
 } from '../../finance/v2/crosschain'
 import { CANDIDATE_ORIGINS, readHoldingsReport, type Holding } from '../../finance/v2/holdings'
 import { openWalletDialog } from '../../finance/signedOut'
 import { formatUsd } from '../../lib/format/usd'
-import { v2Chain } from '../../v2/chains'
+import { isV2ChainId, v2Chain } from '../../v2/chains'
 import { cleanSymbol, formatUnitsExact, knownDecimals } from '../../v2/crosschain/amounts'
 import { quoteDeadlineMono, type Timing } from '../../v2/crosschain/client'
 import { ADD_ORIGIN, FAILURE_COPY, fill, NO_ROUTE } from '../../v2/crosschain/copy'
@@ -31,10 +34,12 @@ import type { V2ChainId } from '../../v2/types'
 import { switchToChain, switchToOrigin, v2SwitchNotice, type ChainSwitchOutcome } from '../../wallet/port'
 import { FUNDS_AUTO_REQUOTES, FUNDS_DEFAULT_SLIPPAGE_BPS, FUNDS_DESTINATION_GAS_DEFAULT_ON, FUNDS_RECEIPT_POLL_MS } from './constants'
 import { FUNDS_TEXT, senderCopy } from './copy'
-import { DepositStatus, type TrackedDeposit } from './DepositStatus'
+import { DepositStatus, PendingDeposit, type TrackedDeposit } from './DepositStatus'
 import { runDeposit, type FlowOutcome, type FlowStage } from './flow'
 import {
   amountRawOf,
+  BALANCE_ORIGINS,
+  balanceChainsRequest,
   balancesRequest,
   bestHolding,
   bringChoice,
@@ -50,9 +55,12 @@ import {
   holdOffers,
   kindOf,
   kindPrices,
+  mergeBalances,
   nativeOn,
   networkHolds,
   offerDestinationGas,
+  originCandidate,
+  originName,
   originToken,
   otherNetworks,
   quoteBudgetWait,
@@ -86,16 +94,27 @@ type QuoteOutcome = Awaited<ReturnType<FundsServices['client']['quote']>>
  * comes from Domino's own networks, Robinhood Chain, Base and Arbitrum One, never the destination; Domino's service reads
  * their balances. Changed on purpose 2026-10-06 (the owner's point 2a): the other networks crosschain-v1 lists are offered
  * too, behind ONE "Other networks" entry (model.ts otherNetworks); the session is held there (session/machine.ts).
+ * Changed on purpose 2026-10-06 (rugged97's #379): Ethereum and OP Mainnet join them (model.ts BALANCE_ORIGINS) only where
+ * Domino's service read something to bring there, in a read of their own; these stay Domino's three.
  */
 const SOURCE_CHAINS: readonly V2ChainId[] = [4663, 8453, 42161]
 
-/** Where the one click "Bring it from {network}" stands: done for the person, said in one line. */
+/**
+ * Which of the service's two reads (Added 2026-10-06, rugged97's #379): Domino's three networks (model.ts balancesRequest),
+ * or the balance chains, Ethereum and OP Mainnet (model.ts balanceChainsRequest), each asked and kept on its own.
+ */
+type ServedPart = 'domino' | 'elsewhere'
+
+/**
+ * Where the one click "Bring it from {network}" stands: done for the person, said in one line. `chainId`: one of Domino's
+ * networks, or (Changed on purpose 2026-10-06, rugged97's #379) Ethereum or OP Mainnet.
+ */
 type Pick =
-  | { chainId: V2ChainId; stage: 'signing' | 'switching' | 'reading' | 'quoting' }
-  | { chainId: V2ChainId; stage: 'enter' }
+  | { chainId: number; stage: 'signing' | 'switching' | 'reading' | 'quoting' }
+  | { chainId: number; stage: 'enter' }
   /** `down`: the copy also says which bridge the listing could not list (Added 2026-10-06, the integration review). */
-  | { chainId: V2ChainId; stage: 'empty'; copy: string; down?: boolean }
-  | { chainId: V2ChainId; stage: 'failed'; copy: string; code: string }
+  | { chainId: number; stage: 'empty'; copy: string; down?: boolean }
+  | { chainId: number; stage: 'failed'; copy: string; code: string }
 
 type QuoteState =
   | { state: 'idle' }
@@ -107,7 +126,7 @@ type QuoteState =
 
 /** What a one click brought the quote for, so a change of the typed amount sizes it again (Added 2026-10-06). */
 interface Picked {
-  origin: V2ChainId
+  origin: number
   holding: Holding
   /** The listed address sent (lowercase) and the decimals it is sent in. */
   token: string
@@ -131,7 +150,7 @@ function stepsAfter(previous: StepsView, stage: FlowStage): StepsView {
     case 'reviewing':
       return { ...previous, stage }
     case 'approval_wallet':
-      return { ...previous, stage, approval: 'wallet' }
+      return { ...previous, stage, approval: 'wallet', deposit: 'waiting' }
     case 'approval_sent':
       return { ...previous, stage, approval: 'sent' }
     case 'approval_done':
@@ -140,12 +159,20 @@ function stepsAfter(previous: StepsView, stage: FlowStage): StepsView {
       return { ...previous, stage, approval: 'skipped' }
     case 'deposit_wallet':
       return { ...previous, stage, deposit: 'wallet' }
+    // Added 2026-10-06 (rugged's answer of 6 Oct): the approval and the deposit as one batch, one confirmation.
+    case 'batch_wallet':
+      return { ...previous, stage, approval: 'wallet', deposit: 'wallet' }
+    case 'batch_sent':
+      return { ...previous, stage, approval: 'sent', deposit: 'wallet' }
   }
 }
 
 /** The page's one store of steps held unsettled (finance/v2/crosschain.ts): kept across offers and chains. */
 let pageStore: UnsettledStore | null = null
 const pageUnsettled = (): UnsettledStore => (pageStore ??= browserUnsettledStore())
+/** Added 2026-10-06: the page's one store of deposits sent as one batch, until the wallet names their transaction. */
+let pageBatchStore: BatchJournal | null = null
+const pageBatches = (): BatchJournal => (pageBatchStore ??= browserBatchJournal())
 
 const forgetSenderOn = (ref: { current: Promise<OriginSender> | null }, error: unknown) => {
   if (error instanceof OriginStepError && error.code === 'wallet_identity_changed') ref.current = null
@@ -247,6 +274,9 @@ function DiscreetLine({ line, onBring }: { line: LineHolding; onBring: () => voi
   const amount = holdingText({ ...line.holding, raw: sendable(line.holding) })
   const { chainId, token, symbol, decimals } = line.holding
   // Its markup is ./PayWith.tsx FundsLine since 2026-10-06 (the same line offers paying with one other token), unchanged.
+  // Changed on purpose 2026-10-06 (rugged97's #379): a holding on Ethereum or OP Mainnet takes the same mark, its bundled
+  // ETH or WETH (model.ts holdingArtwork), else the calm disc: TokenMark asks for artwork only on the networks DEX
+  // Screener's reads cover (lib/tokenArtwork.ts tokenArtworkKey), so nothing is fetched for theirs.
   return (
     <FundsLine
       onClick={onBring}
@@ -255,7 +285,7 @@ function DiscreetLine({ line, onBring }: { line: LineHolding; onBring: () => voi
       data-funds-line-target={line.target}
       mark={
         <>
-          <TokenMark token={{ origin: 'read', chainId: line.chainId, address: token, symbol, decimals, readStatus: 'available', artwork: holdingArtwork(chainId, token) }} size={20} />
+          <TokenMark token={{ origin: 'read', chainId: line.chainId as V2ChainId, address: token, symbol, decimals, readStatus: 'available', artwork: holdingArtwork(chainId, token) }} size={20} />
           <span className="dm-funds-line-arrow">↗</span>
         </>
       }
@@ -388,8 +418,11 @@ export function BringFunds({
     lacksKey: string
     request: CrosschainRequests['quote'] | null
     served: ChainBalancesResponse | null
+    /** Added 2026-10-06 (rugged97's #379): each of the service's two reads as kept now (null: none). */
+    domino: ChainBalancesResponse | null
+    elsewhere: ChainBalancesResponse | null
     servedGen: number
-  }>({ access, list: null, listTarget: null, gasFlag: false, lacks, lacksKey, request: null, served: null, servedGen: 0 })
+  }>({ access, list: null, listTarget: null, gasFlag: false, lacks, lacksKey, request: null, served: null, domino: null, elsewhere: null, servedGen: 0 })
 
   // Changed only through a live sender (never while the offer is locked).
   const journal = useMemo(() => (live ? browserDepositJournal() : null), [live])
@@ -434,6 +467,12 @@ export function BringFunds({
   const [held, setHeld] = useState<readonly UnsettledOffer[]>(() => unsettled?.list(wallet) ?? [])
   const refreshHeld = useCallback(() => setHeld(unsettled?.list(wallet) ?? []), [unsettled, wallet])
   const [heldNotice, setHeldNotice] = useState<{ origin: number; copy: string; code: string | null } | null>(null)
+  // Added 2026-10-06 (rugged's answer of 6 Oct, F7 delta of 6 Oct §2 step 5): deposits sent as one batch whose transaction
+  // the wallet has not named yet, for this position's network, kept by the sender across a reload. Live chains only.
+  const batchStore = live ? pageBatches() : null
+  const pendingOf = useCallback(() => batchStore?.list(wallet).filter((entry) => entry.destinationChainId === chainId) ?? [], [batchStore, wallet, chainId])
+  const [pending, setPending] = useState<readonly PendingBatch[]>(pendingOf)
+  const refreshPending = useCallback(() => setPending(pendingOf()), [pendingOf])
   /** Quotes whose deposit this page handed to the wallet: never offered again (the sender refuses them too). */
   const [handedQuotes, setHandedQuotes] = useState<ReadonlySet<string>>(() => new Set())
 
@@ -443,32 +482,46 @@ export function BringFunds({
     if (!live || services === null) return Promise.reject(new OriginStepError('quote_synthetic'))
     if (!senderRef.current) {
       senderRef.current = browserOriginWallet()
-        .then((own) => createOriginSender(own, { runtime: services.runtime, monoMs: services.clock.monoMs, journal, unsettled: unsettled ?? undefined }))
+        .then((own) => createOriginSender(own, { runtime: services.runtime, monoMs: services.clock.monoMs, journal, unsettled: unsettled ?? undefined, batches: batchStore ?? undefined }))
         .catch((error: unknown) => {
           senderRef.current = null
           throw error
         })
     }
     return senderRef.current
-  }, [live, services, journal, unsettled])
+  }, [live, services, journal, unsettled, batchStore])
 
 
   // ---- the balances on the other networks, read by Domino's service (Added 2026-10-06) ------------------------------
   // read-v6's chain-balances (rugged97's item 3): public chain data, no session and no wallet move. Changed on purpose
   // 2026-10-06 (the owner's point 1): read as soon as the amount step opens (`discreet`), not only once the wallet lacks,
   // with the destination's ETH; read again for each pick, so a choice rests on the chain now.
+  // Changed on purpose 2026-10-06 (rugged97's #379, read-v6 1.1.0-rc.1, additive): Ethereum and OP Mainnet are read too, in
+  // a request of their own (`elsewhere`, model.ts balanceChainsRequest), asked beside Domino's three (`domino`) under the
+  // same gate and kept apart: while the Worker still refuses them (its rollout step comes after the reader's), or their
+  // answer cannot be had, Domino's three are read, kept and drawn exactly as before, and theirs simply stay unread.
   const transports = useMemo(() => (live ? v2Transports(gate) : null), [live, gate])
-  const readServed = useCallback(async (): Promise<ChainBalancesResponse | null> => {
-    if (transports === null) return null
-    try {
-      if (!routeServes(await transports.routeState('readV6'), 'chain-balances')) return null
-      const reply = await readChainBalances(transports.read, transports.readRuntime, wallet, balancesRequest(chainId))
-      return reply.kind === 'ok' ? reply.body : null
-    } catch {
-      return null
-    }
-  }, [transports, wallet, chainId])
-  const [served, setServed] = useState<{ key: string; answer: ChainBalancesResponse | null } | null>(null)
+  const readServed = useCallback(
+    async (part: ServedPart): Promise<ChainBalancesResponse | null> => {
+      if (transports === null) return null
+      try {
+        if (!routeServes(await transports.routeState('readV6'), 'chain-balances')) return null
+        if (part === 'elsewhere') {
+          const tokens = balanceChainsRequest(chainId)
+          if (tokens.length === 0) return null
+          const away = await readChainBalances(transports.read, transports.readRuntime, wallet, tokens)
+          return away.kind === 'ok' ? away.body : null
+        }
+        const reply = await readChainBalances(transports.read, transports.readRuntime, wallet, balancesRequest(chainId))
+        return reply.kind === 'ok' ? reply.body : null
+      } catch {
+        return null
+      }
+    },
+    [transports, wallet, chainId],
+  )
+  /** Each read's answer for one wallet, chain and generation: the answer, null when it was not read, absent until it is back. */
+  const [served, setServed] = useState<{ key: string; domino?: ChainBalancesResponse | null; elsewhere?: ChainBalancesResponse | null } | null>(null)
   const ownKey = `${wallet}|${chainId}`
   // Changed on purpose 2026-10-06 (the review: after a deposit the line offered the funds just bridged once more): read
   // again, as a new generation, once a deposit or a held step is settled; only the current generation's answer is used.
@@ -476,32 +529,45 @@ export function BringFunds({
   const readAgain = useCallback(() => setServedGen((n) => n + 1), [])
   const servedFor = `${ownKey}|${servedGen}`
   const servedKey = live && (discreet || lacks.length > 0 || pick !== null) ? servedFor : null
+  // One read's answer kept under `key`: a read that failed keeps what the same read of that generation had read (as before,
+  // each read on its own, so neither ever takes the other's with it).
+  const keepServed = useCallback((key: string, part: ServedPart, answer: ChainBalancesResponse | null) => {
+    setServed((previous) => {
+      const here = previous !== null && previous.key === key ? previous : { key }
+      return answer === null && (here[part] ?? null) !== null ? here : { ...here, [part]: answer }
+    })
+  }, [])
   useEffect(() => {
     if (servedKey === null) return
     let alive = true
-    void readServed().then((answer) => {
-      if (alive) setServed((previous) => (answer === null && previous?.key === servedKey && previous.answer !== null ? previous : { key: servedKey, answer }))
-    })
+    for (const part of ['domino', 'elsewhere'] as const) {
+      void readServed(part).then((answer) => {
+        if (alive) keepServed(servedKey, part, answer)
+      })
+    }
     return () => {
       alive = false
     }
-  }, [servedKey, readServed])
+  }, [servedKey, readServed, keepServed])
   const servedHere = served !== null && served.key === servedFor ? served : null
-  const servedNow = servedHere?.answer ?? null
+  // Nothing of the service's is used before Domino's three are back (or known not to be), as before; Ethereum's and OP
+  // Mainnet's join them whenever theirs is (model.ts mergeBalances), never holding them back.
+  const servedNow = useMemo(() => (servedHere === null || servedHere.domino === undefined ? null : mergeBalances(servedHere.domino, servedHere.elsewhere ?? null)), [servedHere])
   // 'loading' until the first answer (or its absence) for this wallet, chain and generation.
-  const servedState: 'loading' | 'read' | 'none' = servedHere === null ? 'loading' : servedHere.answer === null ? 'none' : 'read'
+  const servedState: 'loading' | 'read' | 'none' = servedHere === null || servedHere.domino === undefined ? 'loading' : servedNow === null ? 'none' : 'read'
   /** Deposits whose card says nothing more will come of them here (arrived, refunded, stopped for good). */
   const [settled, setSettled] = useState<ReadonlySet<string>>(() => new Set())
   // A deposit this page sent on its way, or a deposit held unsettled for this position's network: what the position
   // lacks may change by itself, so neither the line nor the networks offer anything meanwhile (Added 2026-10-06, the
   // review; model.ts holdOffers). Changed on purpose 2026-10-06 (the integration review): any other held step closes only
   // its own origin (`closed`), as the sender refuses only that one.
+  // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct): and a deposit sent as one batch that may still be on its way.
   const inFlight = holdOffers(
     deposits.map((d) => ({ sentHere: d.review !== null, hash: d.record.depositTxHash })),
     settled,
     held,
     chainId,
-  )
+  ) || pending.length > 0
   const closed = useMemo(() => heldOrigins(held), [held])
 
   // ---- origins (§3.3), asked for the token chosen, with a service to ask and a session ----------------------------
@@ -645,7 +711,19 @@ export function BringFunds({
   const stale = asked.state === 'ok' && !steps.running && !obsolete && (sizing || resizeDue || (touched && requestKey !== null && asked.key !== requestKey)) ? asked : null
   const previous = quote.state === 'loading' ? quote.previous : stale
   useEffect(() => {
-    latest.current = { access, list, listTarget: originsAnswer?.value.state === 'ok' ? originsAnswer.target : null, gasFlag, lacks, lacksKey, request, served: servedNow, servedGen }
+    latest.current = {
+      access,
+      list,
+      listTarget: originsAnswer?.value.state === 'ok' ? originsAnswer.target : null,
+      gasFlag,
+      lacks,
+      lacksKey,
+      request,
+      served: servedNow,
+      domino: servedHere?.domino ?? null,
+      elsewhere: servedHere?.elsewhere ?? null,
+      servedGen,
+    }
   })
   const quoteAsk = useRef<(() => void) | null>(null)
   const autoRequotes = useRef(0)
@@ -879,6 +957,10 @@ export function BringFunds({
           review: async (input) => (await lazy()).review(input),
           send: async (reviewed, kind) => (await lazy()).send(reviewed, kind),
           receipt: async (reviewed, hash) => (await lazy()).receipt(reviewed, hash),
+          // Added 2026-10-06 (rugged's answer of 6 Oct): the approval and the deposit as one batch where the wallet batches.
+          atomic: async (reviewed) => (await lazy()).atomic(reviewed),
+          sendBatch: async (reviewed) => (await lazy()).sendBatch(reviewed),
+          batchStatus: async (entry) => (await lazy()).batchStatus(entry),
         },
         switchToOrigin,
         walletChainId: () => walletChain.current,
@@ -901,6 +983,7 @@ export function BringFunds({
     // A deposit handed to the wallet with no usable answer is sent for this page: this quote never offers it again (F1).
     if (outcome.kind === 'error' && outcome.offered && outcome.step === 'deposit') setHandedQuotes((previous) => new Set(previous).add(quoteKeyOf(offered)))
     refreshHeld()
+    refreshPending()
     switch (outcome.kind) {
       case 'sent': {
         const { record, journaled } = outcome.sent
@@ -973,7 +1056,7 @@ export function BringFunds({
    * nothing to press for three minutes): the wait ends as soon as the dialog is closed with no session and no signature
    * on its way (SIGN_IN_OPEN_MS, SIGN_IN_GRACE_MS); meanwhile the line, the networks and a "Sign in" button stay usable.
    */
-  const signIn = async (chainOf: V2ChainId, alive: () => boolean): Promise<boolean> => {
+  const signIn = async (chainOf: number, alive: () => boolean): Promise<boolean> => {
     const ready = () => latest.current.access.startsWith('ready:')
     if (ready()) return true
     tell({ chainId: chainOf, stage: 'signing' })
@@ -990,7 +1073,7 @@ export function BringFunds({
     return until(ready, waiting, SIGN_IN_OPEN_MS)
   }
   /** The pick a sign-in stopped, to run again from its "Sign in" button (Added 2026-10-06, the integration review). */
-  const lastPick = useRef<{ origin: V2ChainId; named: LineHolding | null } | 'others' | null>(null)
+  const lastPick = useRef<{ origin: number; named: LineHolding | null } | 'others' | null>(null)
 
   /**
    * Added 2026-10-06 (the owner's point 2b): the quote for what the position lacks, sized from the service's own quote.
@@ -1004,7 +1087,7 @@ export function BringFunds({
   const sizeBring = async (p: Picked, need: bigint, gas: boolean, turn: Turn, prices: KindPrices) => {
     if (services === null) return
     const { alive, signal } = turn
-    const network = v2Chain(p.origin).name
+    const network = originName(p.origin)
     const available = sendable(p.holding)
     const needDecimals = destinationChoices().find((d) => d.chainId === chainId)?.tokens.find((t) => lower(t.address) === p.target)?.decimals ?? null
     const requestFor = (raw: bigint) =>
@@ -1093,13 +1176,16 @@ export function BringFunds({
    * an amount, everything held there less the gas Review keeps (the owner's default); after one, what the position lacks,
    * sized from the service's quote; with no figure, the amount field opens for the person. What comes back is the quote
    * and its one button.
+   * Changed on purpose 2026-10-06 (rugged97's #379): Ethereum and OP Mainnet as well, where the service read them, by the
+   * same steps: their own read again (model.ts balanceChainsRequest), the same choice, sign-in, listing, sizing and quote;
+   * the wallet moves there to read only through wallet/port's switch to an origin.
    */
-  const bringFrom = async (origin: V2ChainId, named: LineHolding | null = null) => {
+  const bringFrom = async (origin: number, named: LineHolding | null = null) => {
     if (!live || services === null || steps.running) return
     const turn = newTurn()
     const { alive } = turn
     lastPick.current = { origin, named }
-    const network = v2Chain(origin).name
+    const network = originName(origin)
     const fail = (copy: string, code: string) => {
       if (alive()) tell({ chainId: origin, stage: 'failed', copy, code })
     }
@@ -1115,15 +1201,19 @@ export function BringFunds({
     setPicked(null)
     setShortNote(null)
     setSizing(false)
-    const candidate = CANDIDATE_ORIGINS.find((c) => c.chainId === origin)
+    const candidate = originCandidate(origin)
     if (!candidate) return fail(FUNDS_TEXT.readFailed(network), 'no_candidate')
     const tokensWords = FUNDS_TEXT.orList(candidate.tokens.map((t) => t.symbol))
     // 1. What is there now, as Domino's service reads it; Changed on purpose 2026-10-06 (the review): the line's holding
     //    too, which may have gone since the line was drawn. Else the line's own; else the wallet's own read there.
+    //    Changed on purpose 2026-10-06 (rugged97's #379): the read that covers this network, asked again alone, with what
+    //    the other one holds now beside it.
     tell({ chainId: origin, stage: 'reading' })
-    const fresh = await readServed()
+    const part: ServedPart = isV2ChainId(origin) ? 'domino' : 'elsewhere'
+    const read = await readServed(part)
     if (!alive()) return
-    if (fresh) setServed({ key: `${ownKey}|${latest.current.servedGen}`, answer: fresh })
+    if (read) keepServed(`${ownKey}|${latest.current.servedGen}`, part, read)
+    const fresh = read === null ? null : part === 'domino' ? mergeBalances(read, latest.current.elsewhere) : mergeBalances(latest.current.domino, read)
     const report = fresh ? holdingsFromChainBalances(fresh, candidate) : null
     let holdings: Holding[] | null = null
     if (fresh && report) {
@@ -1145,7 +1235,8 @@ export function BringFunds({
       if (!(await signIn(origin, alive))) return fail(FUNDS_TEXT.signInFirst, 'signed_out')
       if (walletChain.current !== origin) {
         tell({ chainId: origin, stage: 'switching' })
-        const switched = await switchToChain(origin)
+        // Ethereum and OP Mainnet (Changed on purpose 2026-10-06, rugged97's #379) through the port's switch to an origin.
+        const switched = await (isV2ChainId(origin) ? switchToChain(origin) : switchToOrigin(origin))
         if (!alive()) return
         if (switched !== 'switched') return fail(switched === 'unknown_chain' ? fill(ADD_ORIGIN, { origin: network }) : v2SwitchNotice(switched, network), `switch_${switched}`)
         // The session held there (session/machine.ts heldAway) is ready again once the move settles.
@@ -1212,7 +1303,8 @@ export function BringFunds({
       return tell({ chainId: origin, stage: 'enter' })
     }
     if (!typed || needRaw === null) {
-      // Before an amount: everything held there, less the gas Review keeps (the owner's default).
+      // Before an amount: everything held there, less the gas Review keeps (the owner's default); on Ethereum, less the gas
+      // its deposit takes there (Changed on purpose 2026-10-06, the review of rugged97's #379: model.ts sendable).
       const units = fieldUnits(available, holding.decimals)
       if (units === null) return fail(FUNDS_TEXT.readFailed(network), 'units')
       setAmount(units)
@@ -1285,7 +1377,7 @@ export function BringFunds({
   const pickBusy = picking && pick?.stage !== 'signing' && (pick?.stage !== 'quoting' || quote.state === 'idle')
 
   const pickWords = (current: Pick): string => {
-    const network = v2Chain(current.chainId).name
+    const network = originName(current.chainId)
     switch (current.stage) {
       case 'signing':
         return FUNDS_TEXT.signingIn
@@ -1312,7 +1404,7 @@ export function BringFunds({
   // Changed on purpose 2026-10-06: a deposit or a held step this browser follows keeps the box drawn even when nothing is
   // lacking (the amount step reads its balances again as one arrives, and nothing lacks while it reads: the card must not
   // be dropped and drawn again then, or its arrival would be told, and the balances read, once more).
-  const underWay = ownWay || heldNotice !== null || held.length > 0 || deposits.length > 0
+  const underWay = ownWay || heldNotice !== null || held.length > 0 || deposits.length > 0 || pending.length > 0
   // A pick waiting for a sign-in leaves the line usable (Changed on purpose 2026-10-06, the integration review).
   const signing = pick?.stage === 'signing' && quote.state === 'idle' && !steps.running && !otherMode
   // Before an amount, the discreet line (or nothing); never while the offer is locked, nor beside a pick or a quote, nor
@@ -1356,11 +1448,18 @@ export function BringFunds({
   // Changed on purpose 2026-10-06 (the integration review): a network a held step keeps closed is not offered; the others
   // are, with Other networks.
   const open = sources.filter((id) => !closed.has(id))
-  const holdsOf = (id: V2ChainId): NetworkHolds => {
-    const candidate = CANDIDATE_ORIGINS.find((c) => c.chainId === id)
+  const holdsOf = (id: number): NetworkHolds => {
+    const candidate = originCandidate(id)
     return candidate ? networkHolds(servedNow, candidate) : { state: 'unread' }
   }
   const networks = open.map((id) => ({ id, holds: holdsOf(id) })).filter((n) => n.holds.state !== 'empty')
+  // Changed on purpose 2026-10-06 (rugged97's #379): Ethereum and OP Mainnet after Domino's own, only where the service read
+  // something there (to bring, or tokens with no ETH to send them, said under the button as for any network); unread or
+  // read as empty, no button and no word: they stay behind Other networks, as before. Never one a held step keeps closed.
+  const away = BALANCE_ORIGINS.filter((id) => id !== chainId && !closed.has(id))
+    .map((id) => ({ id, holds: holdsOf(id) }))
+    .filter((n) => n.holds.state === 'holds' || n.holds.state === 'no_gas')
+  const shown = [...networks, ...away]
   // What can be sent there (Changed on purpose 2026-10-06, the integration review: native ETH less the gas Review keeps).
   const holdsText = (holds: NetworkHolds): string | null =>
     holds.state === 'holds'
@@ -1397,7 +1496,7 @@ export function BringFunds({
   // The deposits followed here: "On the way" only while one may still arrive here (Changed on purpose 2026-10-06, the
   // integration review: an arrived card sat under it, and so it did beside a held approval, where nothing moves, or a
   // deposit held for another network): one not settled yet, or one held for this network (model.ts heldMayArrive).
-  const following = deposits.some((d) => !settled.has(d.record.depositTxHash)) || heldMayArrive(held, chainId)
+  const following = deposits.some((d) => !settled.has(d.record.depositTxHash)) || heldMayArrive(held, chainId) || pending.length > 0
   // A bridge the listing could not list, said once: beside the networks or the form, unless the pick's own line says it.
   const downSaid = pick !== null && pick.stage === 'empty' && pick.down === true && quote.state === 'idle' && !steps.running
   const downView =
@@ -1557,7 +1656,7 @@ export function BringFunds({
                       <p role="status" className="dm-funds-status" data-funds-checking="">
                         {FUNDS_TEXT.checkingNetworks}
                       </p>
-                    ) : networks.length === 0 ? (
+                    ) : shown.length === 0 ? (
                       open.length > 0 && (
                         <p className="text-body text-fg-muted" data-funds-nothing="">
                           {FUNDS_TEXT.nothingElsewhere(FUNDS_TEXT.orList(open.map((id) => v2Chain(id).name)))}
@@ -1567,7 +1666,7 @@ export function BringFunds({
                       <>
                         <p className="text-body">{FUNDS_TEXT.bringFrom}</p>
                         <div className="dm-funds-networks">
-                          {networks.map(({ id, holds }) => {
+                          {shown.map(({ id, holds }) => {
                             const words = holdsText(holds)
                             return (
                               <div key={id} className="dm-funds-network">
@@ -1581,7 +1680,7 @@ export function BringFunds({
                                   data-funds-network={id}
                                   data-funds-holds={holds.state}
                                 >
-                                  {v2Chain(id).name}
+                                  {originName(id)}
                                 </Button>
                                 {words && (
                                   <span className={holds.state === 'no_gas' ? 'dm-hint' : 'dm-hint tnum'} data-funds-network-holds={id} data-funds-holds={holds.state === 'holds' ? 'holds' : 'no_gas'}>
@@ -1617,7 +1716,7 @@ export function BringFunds({
                     {signInButton}
                   </div>
                 )}
-                {(deposits.length > 0 || held.length > 0 || heldNotice !== null) && (
+                {(deposits.length > 0 || held.length > 0 || heldNotice !== null || pending.length > 0) && (
                   <section className="grid gap-3" data-funds-deposits="">
                     {following && <h4 className="dm-subtitle">{FUNDS_TEXT.onTheWay}</h4>}
                     {heldNotice && !held.some((offer) => offer.originChainId === heldNotice.origin) && (
@@ -1642,6 +1741,27 @@ export function BringFunds({
                         }}
                       />
                     ))}
+                    {/* A run follows its own batch; one kept from before is followed here (Added 2026-10-06). */}
+                    {!steps.running &&
+                      pending.map((entry) => (
+                        <PendingDeposit
+                          key={`batch-${entry.batchId}`}
+                          entry={entry}
+                          services={services}
+                          sender={sender}
+                          name={name}
+                          onSent={(sent) => {
+                            refreshPending()
+                            const record = sent.record
+                            if (record) setDeposits((previous) => [{ record, destinationToken: null, originLabel: null, review: null, journaled: sent.journaled }, ...previous.filter((d) => d.record.depositTxHash !== record.depositTxHash)])
+                          }}
+                          onRemove={() => {
+                            batchStore?.drop(wallet, entry.batchId)
+                            refreshPending()
+                            readAgain()
+                          }}
+                        />
+                      ))}
                     {deposits.map((d) => (
                       <DepositStatus
                         key={`${d.record.originChainId}:${d.record.depositTxHash}`}

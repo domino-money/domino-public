@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { reasonText } from '../../../lib/read/describe'
 import { aprDigits } from '../../../lib/format/apr'
 import { feeWords } from '../../../lib/format/fee'
+import { readNow } from '../../../lib/markets'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { cataloguePoolId, createCatalogueSession, verifyCandidate, type CatalogueSession, type CatalogueSnapshot } from '../../../lib/read/screens/catalogueSession'
-import { PROTOCOL_FEE_UNDESCRIBED, networkRows, type NetworkPools } from '../../../lib/create/otherChains'
+import { PROTOCOL_FEE_UNDESCRIBED, figuresShownUntil, networkAprNote, networkFigureNote, networkRows, poolOnOtherChain, type NetworkPools } from '../../../lib/create/otherChains'
 import { dexStore } from '../../../lib/read/dexFigures'
 import { keptCreatePools, readCreatePools, type PoolsAnswer } from '../../../lib/create/poolsAhead'
 import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from '../../../lib/read/screens/identity'
@@ -79,6 +80,9 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false,
     </label>
   )
   if (plain) {
+    // Changed on purpose 2026-10-06 (rugged97's delta of 6 Oct §4): a row of Base or Arbitrum One names DEX Screener and
+    // when it was read in each figure's title, or says why a figure is a dash (lib/create/otherChains.ts).
+    const other = poolOnOtherChain(option)
     return (
       <li
         className={cx('dm-mkt-option', checked && 'dm-mkt-option--checked')}
@@ -90,8 +94,8 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false,
       >
         {head}
         <div className="dm-mkt-option-figures dm-flow-pool-figures">
-          <ProviderFigure label="TVL" figure={option.liquidity} dash />
-          <ProviderFigure label="24h volume" figure={option.volume} dash />
+          <ProviderFigure label="TVL" figure={option.liquidity} dash note={other ? networkFigureNote(option.liquidity) : undefined} />
+          <ProviderFigure label="24h volume" figure={option.volume} dash note={other ? networkFigureNote(option.volume) : undefined} />
           <RowAprFigure option={option} label="APR" />
         </div>
       </li>
@@ -386,16 +390,21 @@ function RowAprFigure({ option, label = 'Pool APR' }: { option: PoolOption; labe
     liquidity: option.liquidity,
     volume: option.volume,
   })
+  // Changed on purpose 2026-10-06 (rugged97's delta of 6 Oct §4): on a row of Base or Arbitrum One the estimate names DEX
+  // Screener and when its figures were read, and a dash says why DEX Screener gave none (lib/create/otherChains.ts).
+  const other = poolOnOtherChain(option)
+  const title = apr.kind === 'estimate' ? ROW_APR_TITLE : noAprTitle(option, apr.reason)
+  const said = other ? networkAprNote(option, apr, title) : title
   return (
     <p className="dm-mkt-option-apr" data-row-apr={apr.kind === 'estimate' ? (apr.stale ? 'stale' : 'estimate') : 'none'} data-row-apr-reason={apr.kind === 'none' ? apr.reason : undefined}>
       <span className="text-fg-muted">{label}</span>
       {apr.kind === 'estimate' ? (
-        <span className="tnum font-medium text-fg" title={ROW_APR_TITLE}>
+        <span className="tnum font-medium text-fg" title={said}>
           {/* The one APR rule of every screen (lib/format/apr.ts, audit E21): "12.2% est.", "2,704% est.". */}
           {aprDigits(apr.text) ?? apr.text}% est.
         </span>
       ) : (
-        <span className="text-fg-subtle" title={noAprTitle(option, apr.reason)}>
+        <span className="text-fg-subtle" title={said} aria-label={other ? said : undefined}>
           —
         </span>
       )}
@@ -641,6 +650,12 @@ export function PoolPicker({
  * Screener's TVL and 24h volume where the provider lists that pool, and the APR worked out from them, drawn again as the
  * figures arrive (lib/read/dexFigures.ts); a v3 and a v4 pool of one pair and fee are one row; the largest TVL first
  * (lib/create/otherChains.ts networkRows). The token's figures are asked again once they are older than the store keeps.
+ *
+ * Changed on purpose 2026-10-06 (rugged97's delta of 6 Oct §4): each figure names DEX Screener and when it was read, a
+ * figure read more than ten minutes before is a dash saying so, and a pool DEX Screener has no pair for is a dash saying
+ * that. The ten minutes count on this list's own clock, read when it mounts and again just after the first figure shown
+ * may no longer be (the rows are drawn again then); a minute before, the token is asked about again, so the rows usually
+ * keep figures.
  */
 export function NetworkPoolPicker({
   read,
@@ -677,10 +692,15 @@ export function NetworkPoolPicker({
   }, [owner])
   // DEX Screener's figures arriving draw the rows again (2026-10-06).
   useSyncExternalStore(dexStore.subscribe, dexStore.version, dexStore.version)
+  // The clock the rows' ten minutes count on (Added 2026-10-06, rugged97's delta of 6 Oct §4): read when the list mounts,
+  // and again just after the first figure shown may no longer be (below).
+  const [clock, setClock] = useState(readNow)
   const chainId = result.kind === 'ok' ? (result.options[0]?.currencies[0].chainId ?? null) : null
   const subject = result.kind === 'ok' ? (result.subject ?? null) : null
   // The token's figures, asked again when the store holds none fresh (at most once a minute, the store's own limit).
   const stale = chainId !== null && subject !== null && dexStore.chainToken(chainId, subject) === null
+  // An answer about the token read in the last ten minutes: a pool it does not name has no pair at DEX Screener (2026-10-06).
+  const listed = chainId !== null && subject !== null && !stale
   useEffect(() => {
     if (stale && chainId !== null && subject !== null) dexStore.askOn(chainId, subject)
   }, [stale, chainId, subject])
@@ -695,7 +715,21 @@ export function NetworkPoolPicker({
     const timer = setTimeout(() => setWaited(answered), FIGURES_WAIT_MS)
     return () => clearTimeout(timer)
   }, [waiting, answered])
-  const options = result.kind === 'ok' && !waiting ? networkRows(result.options, (chain, name) => dexStore.chainPool(chain, name), result.facts, pending?.key ?? null) : []
+  const options = result.kind === 'ok' && !waiting ? networkRows(result.options, (chain, name) => dexStore.chainPoolSeen(chain, name), result.facts, pending?.key ?? null, { nowS: Math.floor(clock.wall / 1000), listed }) : []
+  // Drawn again just after the first figure shown may no longer be, and its token asked about again a minute before, so
+  // fresh figures usually arrive first (Added 2026-10-06, rugged97's delta of 6 Oct §4). `clock` is a dependency so a
+  // wall clock that stepped back is waited out, never left behind.
+  const until = figuresShownUntil(options)
+  useEffect(() => {
+    if (until === null) return
+    const after = (seconds: number) => Math.max(0, seconds * 1000 - Date.now())
+    const renew = chainId !== null && subject !== null ? setTimeout(() => dexStore.askOn(chainId, subject), after(until - 60)) : null
+    const wake = setTimeout(() => setClock(readNow()), after(until + 1))
+    return () => {
+      if (renew !== null) clearTimeout(renew)
+      clearTimeout(wake)
+    }
+  }, [until, chainId, subject, clock])
   const list = (
     <ul className="dm-flow-pool-rows">
       {options.map((option) => (

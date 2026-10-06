@@ -38,10 +38,13 @@ test('what is asked: every other network\'s ETH, WETH and stable, then the desti
   }
   assert.equal(runtime.validateRequest('chain-balances', { wallet: `0x${'ab'.repeat(20)}`, tokens: [{ chainId: 137, address: ZERO }] }), false, 'a network the service does not read is refused whole');
   // Changed on purpose (data) 2026-10-06: read-v6 1.1.0-rc.1's chain-balances also reads Ethereum and OP Mainnet when
-  // asked (the owner's decision; reader, then Worker, then app). The contract takes them; this build asks Domino's three
-  // until the Worker serves them.
+  // asked (the owner's decision; reader, then Worker, then app). The contract takes them.
   assert.ok(runtime.validateRequest('chain-balances', { wallet: `0x${'ab'.repeat(20)}`, tokens: [{ chainId: 1, address: ZERO }, { chainId: 10, address: ZERO }] }), 'Ethereum and OP Mainnet, when asked');
+  // Changed on purpose 2026-10-06 (rugged97's #379): the app asks them, but in a request of their own (model.ts
+  // balanceChainsRequest; tests/v2/funds-balance-chains.test.mjs), never in this one, so a Worker that still refuses them
+  // cannot take Domino's three with them: this request stays Domino's three.
   assert.deepEqual([...model.SERVED_BALANCE_CHAINS], [4663, 8453, 42161]);
+  assert.ok(model.balanceChainsRequest(4663).every((t) => [1, 10].includes(t.chainId)));
 });
 
 test('an answer as the wallet\'s own read: the network\'s own symbols, what is above zero, unread never zero, a network not read none', () => {

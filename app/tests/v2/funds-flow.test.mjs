@@ -4,6 +4,9 @@
  * before the wallet is asked anything; a live quote goes switch → review → exact approval → its receipt (a delay is
  * never a failure) → the quote checked again → the deposit, two transactions and never a batch; each stop names its
  * step and nothing is ever sent twice. The fixtures are re-addressed HERE only, to drive the sender as a live quote would.
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct: the owner revoked decision #15; F7 delta of 6 Oct §2): where
+ * the wallet batches on the origin, the approval and the deposit in ONE batch, followed until the wallet names its one
+ * transaction, the deposit's; the two transactions of before everywhere else.
  */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -21,8 +24,8 @@ const TIMING = { sentMono: 0, receivedMono: 0 };
 /** The fake chain's first transaction hash (tests/support/s2-origin-chain.mjs). */
 const FIRST_HASH = `0x${(0xa0).toString(16).padStart(64, '0')}`;
 
-function lab({ quote = asOwner(fixture('responses/quote.json').quote), walletOn = 4663, switchTo = 'switched', mine = 'instant', source = 'http' } = {}) {
-  const origin = createOriginChain({ owner: OWNER, chainId: walletOn, mine });
+function lab({ quote = asOwner(fixture('responses/quote.json').quote), walletOn = 4663, switchTo = 'switched', mine = 'instant', source = 'http', atomic = null } = {}) {
+  const origin = createOriginChain({ owner: OWNER, chainId: walletOn, mine, atomic });
   const clock = { now: 1_000 };
   const journal = createDepositJournal(memoryStorage());
   const sender = createOriginSender(origin.wallet, { runtime, monoMs: () => clock.now, journal });
@@ -123,4 +126,89 @@ test('an approval included and reverted stops before the deposit; a quote with n
   const none = lab({ quote: asOwner(fixture('variants/quote.none.json').quote) });
   assert.deepEqual(await none.run(), { kind: 'not_sendable', reason: 'no_decision' });
   assert.deepEqual(none.origin.state.asked, []);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Added 2026-10-06 (rugged's answer of 6 Oct: the owner revoked decision #15; F7 delta of 6 Oct §2, steps 1 to 7)
+// ---------------------------------------------------------------------------------------------------------------------
+
+const allowanceKey = (quote) => `${quote.steps[0].approval.token}|${OWNER}|${quote.steps[0].approval.spender}`;
+
+test('a wallet that batches on the origin: the approval and the deposit in ONE confirmation, followed until the wallet names its transaction, the deposit’s', async () => {
+  for (const atomic of ['supported', 'ready']) {
+    const s = lab({ atomic, mine: 'manual' });
+    const outcome = await s.run();
+    assert.equal(outcome.kind, 'sent', atomic);
+    assert.deepEqual(s.switches, [42161]);
+    assert.deepEqual(s.stages, ['switching', 'reviewing', 'batch_wallet', 'batch_sent'], `${atomic}: one confirmation, then its transaction waited for`);
+    assert.ok(s.waits() >= 3, 'pending a while: waited, not failed');
+    assert.deepEqual(s.origin.state.sent, [], 'no transaction of its own');
+    const [batch] = s.origin.state.batches;
+    assert.deepEqual(batch.calls.map((call) => [call.to, call.data, call.value]), s.quote.steps.map((step) => [step.transaction.to, step.transaction.data, '0x0']), 'the exact approval and the deposit, exactly as quoted');
+    assert.equal(outcome.sent.hash, FIRST_HASH, 'the deposit’s transaction is the batch’s one transaction');
+    assert.equal(outcome.sent.record.depositTxHash, FIRST_HASH);
+    assert.deepEqual(s.journal.list(4663, OWNER), [outcome.sent.record], 'tracking starts from it');
+  }
+});
+
+test('the allowance already covers the amount: the deposit alone, one transaction, the wallet’s batching not even asked; native ETH the same', async () => {
+  const s = lab({ walletOn: 42161, atomic: 'supported' });
+  s.origin.state.allowances.set(allowanceKey(s.quote), 100_000_000n);
+  const asked = s.origin.mark();
+  assert.equal((await s.run()).kind, 'sent');
+  assert.deepEqual(s.stages, ['reviewing', 'approval_skipped', 'deposit_wallet']);
+  assert.equal(s.origin.state.sent.length, 1);
+  assert.deepEqual(asked().filter((method) => method.startsWith('wallet_')), [], 'no batch, no capabilities read');
+  const n = lab({ walletOn: 42161, atomic: 'supported', quote: asOwner(fixture('variants/quote.native-only-across.json').quote) });
+  assert.equal((await n.run()).kind, 'sent');
+  assert.deepEqual(n.stages, ['reviewing', 'approval_skipped', 'deposit_wallet']);
+  assert.deepEqual(n.origin.state.batches, []);
+  assert.equal(n.origin.state.sent.length, 1);
+});
+
+test('a wallet that does not batch, one that cannot run this batch after all, or an account upgrade declined: the two transactions of before', async () => {
+  for (const [atomic, next] of [[null, null], ['supported', 'unsupported'], ['ready', 'upgrade-declined']]) {
+    const s = lab({ walletOn: 42161, atomic });
+    s.origin.state.nextBatch = next;
+    assert.equal((await s.run()).kind, 'sent', String(next));
+    assert.deepEqual(s.stages, [...(next ? ['reviewing', 'batch_wallet'] : ['reviewing']), 'approval_wallet', 'approval_sent', 'approval_done', 'deposit_wallet']);
+    assert.deepEqual(s.origin.state.sent.map((tx) => tx.to), [s.quote.steps[0].transaction.to, s.quote.steps[1].transaction.to], 'approval, then deposit');
+    assert.deepEqual(s.origin.state.batches, []);
+  }
+});
+
+test('a batch refused stops at the deposit; one not included or reverted says nothing ran; an answer lost, or a batch the wallet forgot, counts as sent', async () => {
+  const r = lab({ walletOn: 42161, atomic: 'supported' });
+  r.origin.state.nextBatch = 'refuse';
+  assert.deepEqual(await r.run(), { kind: 'error', step: 'deposit', code: 'declined', hash: null, offered: false });
+  for (const [status, code] of [[400, 'batch_not_included'], [500, 'batch_reverted']]) {
+    const g = lab({ walletOn: 42161, atomic: 'supported', mine: 'manual' });
+    g.origin.state.batchStatus = status;
+    assert.deepEqual(await g.run(), { kind: 'error', step: 'deposit', code, hash: null, offered: false });
+    assert.deepEqual(g.journal.list(4663, OWNER), []);
+  }
+  const u = lab({ walletOn: 42161, atomic: 'supported' });
+  u.origin.state.nextBatch = 'lost';
+  assert.deepEqual(await u.run(), { kind: 'error', step: 'deposit', code: 'wallet_result_unknown', hash: null, offered: true });
+  assert.equal((await u.run()).code, 'deposit_already_offered', 'never offered twice');
+  const f = lab({ walletOn: 42161, atomic: 'supported', mine: 'manual' });
+  f.origin.state.forgetBatches = true;
+  assert.deepEqual(await f.run(), { kind: 'error', step: 'deposit', code: 'batch_unknown', hash: null, offered: true });
+});
+
+test('before the batch is offered, a quote past its deadline asks for a new one: nothing asked of the wallet', async () => {
+  const s = lab({ walletOn: 42161, atomic: 'supported' });
+  const { review } = s.deps.sender;
+  s.deps.sender = {
+    ...s.deps.sender,
+    review: async (input) => {
+      const reviewed = await review(input);
+      s.clock.now = 110_000;
+      return reviewed;
+    },
+  };
+  const asked = s.origin.mark();
+  assert.deepEqual(await s.run(), { kind: 'expired', approved: false });
+  assert.deepEqual(asked().filter((method) => method.startsWith('wallet_') || method === 'eth_sendTransaction'), []);
+  assert.deepEqual(s.stages, ['reviewing']);
 });

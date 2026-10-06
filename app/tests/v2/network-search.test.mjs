@@ -105,6 +105,20 @@ test('a failure that may pass is asked again after its quiet wait, a few times, 
   assert.equal(other.store.pending('eth'), false);
 });
 
+// Added 2026-10-06 (rugged's answer of 6 Oct, §1: the gateway's Retry-After is now the real time to the lane's next token):
+// a busy reader's search is asked again no sooner than its Retry-After, which the wait is told.
+test('a busy reader’s Retry-After reaches the wait before the search is asked again', async () => {
+  const told = [];
+  const { store, answer, asked, waits } = harness({ delay: (attempt, retryAfterS) => { told.push([attempt, retryAfterS]); return attempt < 2 ? Math.max(1000, (retryAfterS ?? 0) * 1000) : null; } });
+  store.ask('usd');
+  await answer(8453, { kind: 'failed', passing: true, retryAfterS: 7 });
+  await answer(42161, { kind: 'failed', passing: true });
+  assert.deepEqual(told, [[0, 7], [0, undefined]]);
+  assert.deepEqual(waits.map((wait) => wait.ms), [7000, 1000], 'Base waits the 7 s its reader asked; Arbitrum One the quiet wait');
+  waits[0].run();
+  assert.deepEqual(asked(), ['8453:usd', '42161:usd', '8453:usd']);
+});
+
 test('the list closing stops a waiting re-ask; opened again, the text is asked afresh', async () => {
   const { store, answer, asked, waits } = harness();
   const stop = store.ask('aero');

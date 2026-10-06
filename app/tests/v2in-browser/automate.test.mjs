@@ -281,15 +281,16 @@ function listing(chain, vault, { armed, reason = null, paused = false, pausedBy 
 }
 
 /**
- * Set up automation's page opens once Domino V1's sequence release is published (screens/Sequence.tsx), and only then
- * mounts the vault's own flow (src/v2in/automate/SetupEntry.tsx): the release Worker's answer, as the pinned V1 record
- * (src/finance/pin.ts) with its expiry ahead. Added 2026-10-06 (the owner's point 5) for Set up automation's Auto-exit guard.
+ * Domino V1's sequence release as the release Worker answers it once its profile has ended (2026-10-21 19:01:30 UTC, not
+ * renewed: an expired profile is refused with 503 setup_configuration_unavailable), each time it is asked kept in `asked`.
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §8): Set up automation's page no longer waits for V1's release
+ * in a build that carries V2 (screens/Sequence.tsx), so the vault's own flow (src/v2in/automate/SetupEntry.tsx) opens with
+ * that profile gone; until then this answered the pinned V1 record (src/finance/pin.ts) with its expiry ahead.
  */
-const { SEQUENCE_RECOVERY_RECORD } = require('../../.test-build/app/src/finance/pin.js');
-const v1SequenceRelease = () => async (request, url) => {
+const v1SequenceGone = (asked = []) => async (request, url) => {
   if (url.pathname !== '/api/setup/v1/sequence-release') return undefined;
-  const body = { ...SEQUENCE_RECOVERY_RECORD, deployment: { ...SEQUENCE_RECOVERY_RECORD.deployment, expiresAt: Math.floor(Date.now() / 1000) + 30 * 86_400 } };
-  return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-Domino-Setup-Contract': '1.0.0-rc.1' } });
+  asked.push(request.method);
+  return new Response(JSON.stringify({ error: 'setup_configuration_unavailable' }), { status: 503, headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-Domino-Setup-Contract': '1.0.0-rc.1' } });
 };
 
 /** V1's own chain read of ROOT (tests/support/browser-chain.mjs): its holder, liquidity, burned or not. */
@@ -336,15 +337,29 @@ test('preview: Auto-exit on a plain position the wallet holds: the range\'s two 
     // Changed on purpose 2026-10-06 (the review of point 5): the price now beside them; under the preview, the page's read.
     assert.equal(await dialog.locator('[data-mandate-now]').innerText(), 'Now 2,500');
     assert.equal(await dialog.locator('[data-mandate-near]').count(), 0, 'both ends far from the price: no warning');
-    assert.match(await dialog.locator('[data-mandate-fee]').innerText(), /^Fee\s+0\.2% of the position's value, only if it closes$/);
+    // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, the spec delta §2: one button is the acknowledgement and the
+    // consent only with them in view above it): §4.6's fee line whole, warnings 1 and 2 (v4: no third), and the
+    // protection-only automation's consent sentence, all outside Details, above where the button goes.
+    assert.match(await dialog.locator('[data-mandate-fee]').innerText(), /^Fee\s+0\.2% of the position's value, only if it closes\. It's the only fee\.$/);
+    const ack = dialog.locator('[data-mandate-ack]');
+    assert.equal(await ack.isVisible(), true, 'in view, Details closed');
+    assert.equal(await ack.evaluate((node) => node.closest('details')), null, 'never inside Details');
+    assert.deepEqual(await ack.locator('[data-warning]').evaluateAll((notes) => notes.map((note) => [note.getAttribute('data-warning'), note.textContent])), [
+      ['autoexit_warning_not_guaranteed', "The exit price is not guaranteed. In a sudden gap or a rug, the pool's liquidity can disappear before Domino closes the position."],
+      ['autoexit_warning_reference_price', 'Domino closes it once the reference price passes the end of your range and the pool price is within the slippage limit of it.'],
+    ]);
+    assert.equal(await ack.locator('[data-mandate-consent]').innerText(), 'Auto-exit never reinvests. The fees this position earns leave with it when it closes, and the 0.2% fee counts them too.');
+    assert.equal(await ack.locator('[data-mandate-owed]').count(), 0, 'nothing owed (and no review under the preview)');
     // Under the gate's preview: the gate's sentence where the button would be, never a button.
     assert.equal(await dialog.locator('[data-v2-locked]').innerText(), LOCKED);
     assert.equal(await dialog.locator('[data-mandate-send]').count(), 0);
-    // Details: closed; the warnings, the fixed terms, the wallet's integers and the steps (a signature, then one batch).
+    // Details: closed; warnings 5 and 7 and the pause on a change, the fixed terms, the wallet's integers and the steps
+    // (a signature, then one batch).
     const details = dialog.locator('[data-mandate-details]');
     assert.equal(await details.evaluate((node) => node.open), false, 'closed until opened');
     await details.locator('summary').click();
-    assert.deepEqual(await details.locator('[data-mandate-warnings] li').evaluateAll((items) => items.map((li) => li.getAttribute('data-warning'))), ['autoexit_warning_not_guaranteed', 'autoexit_warning_reference_price', 'autoexit_warning_turn_off_pauses', 'autoexit_warning_halt', 'changes-pause']);
+    assert.deepEqual(await details.locator('[data-mandate-warnings] li').evaluateAll((items) => items.map((li) => li.getAttribute('data-warning'))), ['autoexit_warning_turn_off_pauses', 'autoexit_warning_halt', 'changes-pause']);
+    assert.equal(await details.locator('[data-protection-only]').innerText(), "Auto-exit only closes this position. Domino doesn't reinvest its fees.");
     assert.match(await details.locator('[data-mandate-terms]').innerText(), /You receive\s+Both tokens, as withdrawn[\s\S]*Slippage limit\s+1% on top of the pool fee[\s\S]*Valid until\s+\d{1,2} \w+ 20\d\d/);
     assert.equal(await details.locator('[data-wallet-shows="below"]').innerText(), sqrtPriceAtTick(-210000).toString());
     assert.deepEqual(await details.locator('[data-wallet-steps="mandate-preview"] li').evaluateAll((items) => items.map((li) => li.getAttribute('data-wallet-step'))), ['sign-mandate', 'protect-batch']);
@@ -416,6 +431,41 @@ test('preview: a position page offers Auto-exit beside its other actions, and op
     await dialog.waitFor({ state: 'detached' });
     const asked = s.wallet.state.log.map((entry) => entry.method);
     for (const method of SENDS_AND_SIGNATURES) assert.ok(!asked.includes(method), `${method} is never asked in preview`);
+  } finally {
+    await s.close();
+  }
+});
+
+// Added 2026-10-06 (rugged's answer of 6 Oct, §3: performance-v2 is off on purpose, it is V1's "Start tracking", and V1 is
+// off since 2026-10-05; "in V2, state and receipts come from read-v6's portfolio and activity"): in a build that carries V2,
+// Managed positions is the vaults' card alone. V1's Performance, which asked performance-v2/epochs as soon as a session was
+// signed in, is never mounted: nothing asks that route, signed out or in. Signed out, the one line for both cards stands as
+// before; signed in, with Receipts drawn (V1's receipts unreadable here), Managed positions says its vaults appear here.
+test('preview: Managed positions never asks performance-v2 (V1\'s "Start tracking"): signed out, the cards\' one line stands; signed in, no V1 history is drawn and nothing asks the route', async () => {
+  const v1 = browserChain({ positions: [], tokens: TOKENS });
+  const s = await openPreview(v1, '/positions');
+  const { page } = s;
+  const performance = () => s.requests.filter((url) => new URL(url).pathname.startsWith('/api/performance/'));
+  try {
+    const merged = page.locator('[data-automation-cards="merged"] [data-automation-empty="signed_out"]');
+    await merged.waitFor({ timeout: 30_000 });
+    assert.equal((await merged.innerText()).replace(/\s+/g, ' ').trim(), 'Managed positions and receipts Sign in with your wallet to see your automated positions and their receipts. Sign in');
+    // Signed in from the header's wallet dialog.
+    await page.locator('header [aria-haspopup="dialog"]').click();
+    await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Sign in', exact: true }).click();
+    await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in', null, { timeout: 30_000 });
+    await page.keyboard.press('Escape');
+    // Receipts reads V1's receipts with the session (no route behind this server: unreadable), so both cards are drawn.
+    await page.locator('[data-automation-cards="split"] section[aria-label="Execution receipts"]:not([data-execution="checking"]):not([data-execution="loading"])').waitFor({ timeout: 30_000 });
+    const managed = page.locator('section[aria-labelledby="managed-title"]');
+    await managed.locator('[data-v2in-vaults-empty]').waitFor();
+    assert.equal(await managed.isVisible(), true);
+    assert.equal(await managed.locator('[data-v2in-vaults-empty]').innerText(), 'Your automated positions appear here.');
+    assert.equal(await managed.locator('.dm-acct-desc').innerText(), 'How your automated positions did in the last 24 hours.');
+    await page.waitForTimeout(1_500);
+    assert.equal(await page.locator('section[aria-label="Private performance"], [data-track-sequences], [data-performance]').count(), 0, 'no V1 history, no Start tracking');
+    assert.deepEqual(performance(), [], 'performance-v2 is never asked');
+    await managed.screenshot({ path: join(shots(), 'v2in-managed-signed-in-no-vaults.png'), animations: 'disabled' });
   } finally {
     await s.close();
   }
@@ -856,7 +906,9 @@ test('live: a protection-only automation with its Auto-exit on is ONE card: "Clo
     armed: true, paused: true, pausedBy: 'owner', autoExit: true, reserves: [[ZERO, 0n], [USDG, 0n]], root: { owner: OWNER, liquidity },
     orders: (fixture) => fixture.slice(0, 1).map((order) => ({ ...order, tokenId: String(ROOT), status: 'active', expired: false, blockedBy: [], moduleEnabled: true, waiting: waitingOf('trigger_not_reached'), executed: null, revoked: null, terms: { triggerBelowSqrtPriceX96: String(below), triggerAboveSqrtPriceX96: String(above), receive: 'both', convertTo: null, maxSlippageBps: 100 } })),
   });
-  const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }), routes: [v1SequenceRelease()] });
+  // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §8): V1's sequence profile has ended, as after 21 Oct.
+  const released = [];
+  const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }), routes: [v1SequenceGone(released)] });
   const { page } = s;
   try {
     const mount = page.locator(`[data-v2in-position="${ROOT}"][data-v2in-mode="live"]`);
@@ -894,6 +946,12 @@ test('live: a protection-only automation with its Auto-exit on is ONE card: "Clo
     await page.evaluate((id) => { location.hash = `#/sequence/protection/${id}`; }, String(ROOT));
     const setup = page.locator('[data-v2in-setup="live"]');
     await setup.waitFor({ timeout: 30_000 });
+    // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §8): with V1's profile gone the page still opens Domino V2's
+    // choices; its release is still asked (V1's own screen, behind them, closes without it), and its line is never drawn.
+    for (let wait = 0; wait < 100 && released.length === 0; wait += 1) await page.waitForTimeout(100);
+    assert.ok(released.length >= 1, 'V1’s release was asked, and refused');
+    assert.equal(await page.locator('[data-sequence-release="unavailable"]').count(), 0, 'no "Automation can’t be set up here."');
+    assert.doesNotMatch(await page.locator('main').innerText(), /Automation can’t be set up here/);
     await page.waitForFunction(() => document.querySelector('#v2in-setup-reason')?.textContent === 'Auto-exit is already on for this position.', null, { timeout: 30_000 });
     assert.equal(await setup.locator('[data-sequence-action="protection"]').isDisabled(), true, 'no second Auto-exit');
     await setup.locator('[data-sequence-mode="compound"]').click();
@@ -1045,6 +1103,186 @@ test('live: Auto-exit on a plain position is ONE signature and ONE wallet_sendCa
   } finally { await s.close(); }
 });
 
+// Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 7 and the spec delta §3: one Auto-exit per position; a second one active
+// on the same position executes with value zero when it fires, the operator paying its gas). This page read its Auto-exit
+// turned off and offers "Turn on" in its automation; another tab turned one on since, and read-v6 lists it by the press.
+test('live: one Auto-exit per position: one turned on in another tab since the page read stops the press before the signature; nothing signed or sent, and the page reads again', async () => {
+  const liquidity = 10n ** 18n;
+  const chain = createVaultChain({ chainId: 4663, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -201060, tickUpper: -198060, liquidity }] });
+  const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, startPaused: true });
+  chain.setExitModule(vault, AUTO_EXIT);
+  chain.setPrice(4, KEY, (2n ** 96n) / 20000n);
+  const terms = { triggerBelowSqrtPriceX96: String(sqrtPriceAtTick(-201060)), triggerAboveSqrtPriceX96: String(sqrtPriceAtTick(-198060)), receive: 'both', convertTo: null, maxSlippageBps: 100 };
+  const turnedOff = (order) => ({ ...order, tokenId: String(ROOT), status: 'revoked', expired: false, blockedBy: [], moduleEnabled: true, waiting: null, executed: null, revoked: SINCE, terms });
+  const listed = (orders) => listing(chain, vault, { armed: true, paused: true, pausedBy: 'owner', autoExit: true, reserves: [[ZERO, 0n], [USDG, 0n]], root: { owner: OWNER, liquidity }, orders });
+  const portfolio = listed((fixture) => fixture.slice(0, 1).map(turnedOff));
+  // What read-v6 lists once the other tab turned it on again: a second order of the position, active.
+  const later = listed((fixture) => [...fixture.slice(0, 1).map(turnedOff), { ...fixture[0], mandateHash: `0x${'d4'.repeat(32)}`, tokenId: String(ROOT), status: 'active', expired: false, blockedBy: [], moduleEnabled: true, waiting: null, executed: null, revoked: null, terms }]);
+  const v1 = browserChain({ positions: [{ tokenId: String(ROOT), holder: OWNER, key: KEY, tickLower: -201060, tickUpper: -198060, liquidity, unclaimed: [0n, 0n] }], pools: { [poolIdOf(KEY)]: { sqrtPriceX96: (2n ** 96n) / 20000n, tick: -198080 } }, tokens: TOKENS });
+  const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1 });
+  const { page } = s;
+  try {
+    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="off"]`);
+    await card.waitFor({ timeout: 30_000 });
+    await card.locator('[data-v2in-open="mandate"]').click();
+    const dialog = page.locator('[role="dialog"][data-v2in-dialog="mandate"]');
+    await dialog.waitFor();
+    await dialog.locator('[data-mandate-send]:not([disabled])').waitFor({ timeout: 30_000 });
+    // Another tab turned Auto-exit on for this position meanwhile: read-v6 lists it now.
+    await page.evaluate((answer) => { window.__dominoV2Test.read6.portfolio = answer; }, later);
+    await dialog.locator('[data-mandate-send]').click();
+    const refused = dialog.locator('[data-error-code="mandate_already_on"]');
+    await refused.waitFor({ timeout: 30_000 });
+    assert.equal(await refused.innerText(), 'Auto-exit is already on for this position.');
+    assert.equal(await dialog.locator('[data-mandate-send]').isDisabled(), true, 'no second one offered');
+    assert.equal(chain.log.includes('eth_signTypedData_v4'), false, 'nothing signed');
+    assert.deepEqual(chain.sends, [], 'nothing sent');
+    assert.equal(chain.module().status.size, 0, 'no order registered on the position\'s automation');
+    // The page read again: behind the dialog its card says the one that is on; the dialog still says why, its button off.
+    await page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`).waitFor({ state: 'attached', timeout: 30_000 });
+    await page.waitForTimeout(500);
+    assert.equal(await refused.innerText(), 'Auto-exit is already on for this position.', 'still said');
+    assert.equal(await dialog.locator('[data-mandate-send]').isDisabled(), true);
+    await dialog.screenshot({ path: join(shots(), 'v2in-autoexit-one-per-position.png'), animations: 'disabled' });
+    await dialog.getByRole('button', { name: 'Close' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`).waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('[data-position-v2-action="protect"]').count(), 0, 'and no second one is offered');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (found with rugged's answer of 6 Oct, §4 item 7): a failure before anything is signed is followed by a new
+// review, whose new list took the run's notice with it; the dialog's own note keeps it said until the next press.
+test('live: a signature declined in the wallet stays said after the dialog reviews again; the next press asks again and goes through', async () => {
+  const liquidity = 10n ** 18n;
+  const chain = createVaultChain({ chainId: 4663, atomic: 'ready', simulateV1: true, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -201060, tickUpper: -198060, liquidity }] });
+  chain.setPrice(4, KEY, (2n ** 96n) / 20000n);
+  const portfolio = read6Answer('portfolio', 'portfolio-empty', [[READ6.wallet, OWNER]]);
+  const v1 = browserChain({ positions: [{ tokenId: String(ROOT), holder: OWNER, key: KEY, tickLower: -201060, tickUpper: -198060, liquidity, unclaimed: [0n, 0n] }], pools: { [poolIdOf(KEY)]: { sqrtPriceX96: (2n ** 96n) / 20000n, tick: -198080 } }, tokens: TOKENS });
+  const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1 });
+  try {
+    const { page } = s;
+    await page.locator('[data-position-v2-action="protect"]').click();
+    const dialog = page.locator('[role="dialog"][data-v2in-dialog="mandate"]');
+    await dialog.waitFor();
+    await dialog.locator('[data-mandate-send]:not([disabled])').waitFor({ timeout: 30_000 });
+    // Each review of the order reads the module's slippage ceiling once.
+    const reviews = () => chain.callsSince(0).filter((call) => call.calls.includes('autoExit.MAX_SLIPPAGE_BPS')).length;
+    const before = reviews();
+    chain.decline();
+    await dialog.locator('[data-mandate-send]').click();
+    const declined = dialog.locator('[data-error-code="declined"]');
+    await declined.waitFor({ timeout: 30_000 });
+    assert.equal(await declined.innerText(), 'You declined in your wallet. Nothing was sent.');
+    // The dialog reviews again (a fresh signature number); once it has, the refusal is still said.
+    for (let i = 0; i < 300 && reviews() === before; i += 1) await page.waitForTimeout(100);
+    assert.ok(reviews() > before, 'reviewed again');
+    await dialog.locator('[data-mandate-send]:not([disabled])').waitFor({ timeout: 30_000 });
+    await page.waitForTimeout(500);
+    assert.equal(await declined.innerText(), 'You declined in your wallet. Nothing was sent.', 'still said');
+    assert.deepEqual(chain.sends, []);
+    await dialog.locator('[data-mandate-send]').click();
+    await dialog.locator('[data-mandate-registered]').waitFor({ timeout: 60_000 });
+    assert.equal(await dialog.locator('[data-error-code]').count(), 0, 'said until the next press');
+    assert.equal(chain.log.filter((method) => method === 'eth_signTypedData_v4').length, 2, 'the refused ask, then the one signed');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 2: a wallet without batching): another tab sets up automation on the
+// wallet's other position between this dialog's signature and its createVault, taking the nonce the order was signed for
+// (its vault is then the predicted address, with another root: an order registered for it would never execute, read-v6
+// saying not_in_vault). The dialog makes the prediction, the approval and the signature again, then creates the vault.
+test('live, a wallet that cannot batch: another vault takes the nonce after the approval; the prediction, the approval and the signature are made again before createVault', async () => {
+  const liquidity = 10n ** 18n;
+  const SECOND = ROOT + 1n;
+  const chain = createVaultChain({ chainId: 4663, positions: [
+    { dex: 4, tokenId: ROOT, pool: POOL, tickLower: -201060, tickUpper: -198060, liquidity },
+    { dex: 4, tokenId: SECOND, pool: POOL, tickLower: -201060, tickUpper: -198060, liquidity },
+  ] });
+  chain.setPrice(4, KEY, (2n ** 96n) / 20000n);
+  const manager = chain.positionManager[4].toLowerCase();
+  const [first, next] = [chain.predict(4, OWNER, 0n), chain.predict(4, OWNER, 1n)];
+  // The other tab: right after this page's approval is in a block, a vault for the other position on nonce 0.
+  const request = chain.request;
+  let landed = null;
+  chain.request = async (method, params) => {
+    const reply = await request(method, params);
+    if (method === 'eth_sendTransaction' && landed === null && String(params?.[0]?.to).toLowerCase() === manager) landed = await chain.seedVault({ dex: 4, tokenId: SECOND });
+    return reply;
+  };
+  const portfolio = read6Answer('portfolio', 'portfolio-empty', [[READ6.wallet, OWNER]]);
+  const v1 = browserChain({ positions: [{ tokenId: String(ROOT), holder: OWNER, key: KEY, tickLower: -201060, tickUpper: -198060, liquidity, unclaimed: [0n, 0n] }], pools: { [poolIdOf(KEY)]: { sqrtPriceX96: (2n ** 96n) / 20000n, tick: -198080 } }, tokens: TOKENS });
+  const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1 });
+  try {
+    const { page } = s;
+    await page.locator('[data-position-v2-action="protect"]').click();
+    const dialog = page.locator('[role="dialog"][data-v2in-dialog="mandate"]');
+    await dialog.waitFor();
+    const send = dialog.locator('[data-mandate-send]');
+    await dialog.locator('[data-mandate-send]:not([disabled])').waitFor({ timeout: 30_000 });
+    await send.click();
+    // Signed and approved, then the other vault took the nonce: said, and nothing created for the old prediction.
+    const moved = dialog.locator('[data-error-code="vault_nonce_moved"]');
+    await moved.waitFor({ timeout: 60_000 });
+    assert.equal(await moved.innerText(), 'Another automation was set up from this wallet. Review again: your approval must point to the new one.');
+    assert.equal(landed, first, 'the other tab\'s vault is at the address the order was signed for');
+    assert.equal(chain.log.filter((method) => method === 'eth_signTypedData_v4').length, 1);
+    assert.deepEqual(chain.sends.map((tx) => [tx.to.toLowerCase(), selectorOf(tx.data)]), [[manager, SELECTOR.approve]], 'the approval only: no createVault');
+    // The new review is ready: one press makes the prediction's approval, the signature and the rest.
+    await dialog.locator('[data-mandate-send]:not([disabled])').waitFor({ timeout: 30_000 });
+    await send.click();
+    await dialog.locator('[data-mandate-registered]').waitFor({ timeout: 60_000 });
+    assert.equal(chain.log.filter((method) => method === 'eth_signTypedData_v4').length, 2, 'signed again, for the new prediction');
+    const createVault = toFunctionSelector(ABI.factory.find((item) => item.type === 'function' && item.name === 'createVault'));
+    const registerMandate = toFunctionSelector(ABI.autoExit.find((item) => item.type === 'function' && item.name === 'registerMandate'));
+    assert.deepEqual(chain.sends.map((tx) => [tx.to.toLowerCase(), selectorOf(tx.data)]), [
+      [manager, SELECTOR.approve],
+      [manager, SELECTOR.approve],
+      [FAKE.vaultFactoryV4.toLowerCase(), createVault],
+      [next, SELECTOR.setExitModule],
+      [AUTO_EXIT, registerMandate],
+    ]);
+    assert.deepEqual(decodeFunctionData({ abi: ABI.v4, data: chain.sends[1].data }).args.map((a) => (typeof a === 'string' ? a.toLowerCase() : a)), [next, ROOT], 'approved again, to the new prediction');
+    const [mandate] = decodeFunctionData({ abi: ABI.autoExit, data: chain.sends[4].data }).args;
+    assert.equal(mandate.vault.toLowerCase(), next, 'signed for the new prediction');
+    assert.equal(chain.module().status.get(mandateHash(mandate)), 1, 'registered, active');
+    assert.equal(chain.module().status.size, 1, 'the order signed for the old prediction was never registered');
+    const made = chain.vault(next);
+    assert.deepEqual([made.root.tokenId, made.paused, made.exitModule], [ROOT, true, AUTO_EXIT]);
+    assert.equal(chain.vault(first).root.tokenId, SECOND, 'the other tab\'s vault holds the other position');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 7: after an exit nobody needs to clean up; "show 'Closed by Auto-exit'
+// with the values, and never offer to resume").
+test('live: once Auto-exit closed the position, its card says "Closed by Auto-exit" with what it delivered, and nothing offers it again', async () => {
+  const chain = createVaultChain({ chainId: 4663, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -201060, tickUpper: -198060, liquidity: 10n ** 18n }] });
+  const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, startPaused: true });
+  chain.setExitModule(vault, AUTO_EXIT);
+  chain.closeRoot(4, ROOT);
+  chain.disarm(vault, 6);
+  const [below, above] = [sqrtPriceAtTick(-201060), sqrtPriceAtTick(-198060)];
+  const portfolio = listing(chain, vault, {
+    armed: false, reason: 'auto_exit', paused: true, pausedBy: 'owner', autoExit: true, reserves: [[ZERO, 0n], [USDG, 0n]], root: { owner: OWNER, liquidity: 0n },
+    orders: (fixture) => fixture.slice(0, 1).map((order) => ({ ...order, tokenId: String(ROOT), status: 'executed', expired: false, blockedBy: [], moduleEnabled: true, waiting: null, revoked: null, executed: { tx: SINCE, anchorSqrtPriceX96: String(below), delivered: ['500000000000000000', '1250000000'] }, terms: { triggerBelowSqrtPriceX96: String(below), triggerAboveSqrtPriceX96: String(above), receive: 'both', convertTo: null, maxSlippageBps: 100 } })),
+  });
+  const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity: 0n }) });
+  const { page } = s;
+  try {
+    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="closed"]`);
+    await card.waitFor({ timeout: 30_000 });
+    assert.equal(await card.locator('h2').innerText(), 'Auto-exit');
+    assert.equal(await card.locator('[data-exit-pill]').innerText(), 'Closed');
+    assert.equal(await card.locator('[data-v2in-exit-line="closed"]').innerText(), 'Closed by Auto-exit. The tokens were sent to your wallet.');
+    assert.equal(await card.locator('[data-order-result]').innerText(), 'You received, after the 0.2% fee: 0.5 ETH + 1,250 USDG');
+    // Never offered again: no Turn on, no Turn back on, no rearm, nothing to turn off; no Auto-exit among the page's actions.
+    assert.equal(await card.locator('[data-v2in-open="mandate"], [data-order-module-on], [data-vault-open="rearm"], [data-vault-more="rearm"], [data-exit-off]').count(), 0);
+    assert.doesNotMatch(await card.innerText(), /Turn on|Turn back on|Approve again|Turn off/);
+    assert.equal(await page.locator('[data-position-v2-action="protect"]').count(), 0);
+    await card.screenshot({ path: join(shots(), 'v2in-autoexit-card-closed.png'), animations: 'disabled' });
+  } finally { await s.close(); }
+});
+
 // Added 2026-10-06 (the review of the owner's point 5): Add liquidity on v4 moves the NFT's one approval to the zap, and
 // Auto-exit's own vault waits for it. Turning it back on is Auto-exit's: its consent, never compounding's. Changed on
 // purpose 2026-10-06 (the integration review, rugged-literal #1, money #4): said by what it does ("Approve again"; never
@@ -1062,6 +1300,9 @@ async function approvalLost({ price }) {
     armed: false, reason: 'custody_lost', paused: true, pausedBy: 'owner', autoExit: true, reserves: [[ZERO, 0n], [USDG, 0n]], root: { owner: OWNER, liquidity },
     orders: (fixture) => fixture.slice(0, 1).map((order) => ({ ...order, tokenId: String(ROOT), status: 'active', expired: false, blockedBy: ['custody_lost'], moduleEnabled: true, waiting: null, executed: null, revoked: null, terms: { triggerBelowSqrtPriceX96: String(below), triggerAboveSqrtPriceX96: String(above), receive: 'both', convertTo: null, maxSlippageBps: 100 } })),
   });
+  // Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 6): read-v6 read the position (and found its approval gone) before
+  // anything this page sends, whose blocks start at the fake chain's 0x100001.
+  portfolio.body.positions[0].state.snapshot.number = 0x10_0000 - 100;
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }) });
   return { chain, vault, s };
 }
@@ -1112,6 +1353,15 @@ test('live: Auto-exit paused because its position lost the approval: "Approve ag
     assert.deepEqual(await dialog.locator('[data-error-code], .dm-error').allInnerTexts(), [], 'never "This step is already done." with no way on');
     assert.equal(chain.vault(vault).paused, true, 'still paused: Auto-exit only, nothing reinvested');
     assert.equal(chain.vault(vault).exitModule, AUTO_EXIT);
+    // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §4 item 6): read-v6 still lists the lost approval (its read of the
+    // position is older than the approval just given back): the card says "On" at once, never "Approve again" again.
+    await dialog.locator('[data-v2in-close]').click();
+    await dialog.waitFor({ state: 'detached' });
+    const on = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`);
+    await on.waitFor({ timeout: 30_000 });
+    assert.equal(await on.locator('[data-exit-pill]').innerText(), 'On');
+    assert.match(await on.locator('[data-v2in-exit-line="on"]').innerText(), /^Closes at 1,855\.72 – 2,504\.92 USDG per ETH$/);
+    assert.equal(await on.locator('[data-vault-open="rearm"]').count(), 0, 'no "Approve again" once it was');
   } finally {
     await s.close();
   }

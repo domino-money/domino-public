@@ -9,7 +9,7 @@ import { PastEdge } from '../autoexit/PastEdge'
 import { EDGE_PASSED, edgePassed } from '../autoexit/turnBackOn'
 import { CLOSED_TEXT, describeError, errorLabels, PROTECTION_CONSENT_TEXT, RESERVES_TEXT, STEPS_INSTEAD, type ErrorView } from './copy'
 import { openAutomation, type AutomationSession } from './session'
-import { recordVaultEvents } from './store'
+import { recordVaultEvents, rememberApproval } from './store'
 import { useStepsRun, WalletSteps, type StepOutcome, type WalletStep } from './steps'
 import { amountWords, shortAddress, type TokenView } from './tokens'
 import { Check, Details, ErrorLine, Fact, FlowDialog, LockedNote } from './ui'
@@ -264,6 +264,18 @@ export function VaultDialog({ kind, view, tokens, gate, subject = null, exit, on
   useEffect(() => {
     exitNow.current = exit
   })
+  // Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 6: read-v6 drops `custody_lost` only once it reads the position
+  // again): the block of this dialog's approval of the position for its automation, said to the page once the dialog
+  // closes, so its Auto-exit's card says "On" at once (../autoexit/card.ts withApprovals). Not before: a change of the
+  // page's store while the dialog is open would read its review again under it.
+  const approvedIn = useRef<bigint | null>(null)
+  const { chainId: approvedChain, vault: approvedVault, rootTokenId: approvedRoot } = view
+  useEffect(() => {
+    const block = approvedIn
+    return () => {
+      if (block.current !== null) rememberApproval(approvedChain, approvedVault, approvedRoot, block.current)
+    }
+  }, [approvedChain, approvedVault, approvedRoot])
   const [round, setRound] = useState(0)
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null)
   const [review, setReview] = useState<VaultActionReview | null>(null)
@@ -445,6 +457,7 @@ export function VaultDialog({ kind, view, tokens, gate, subject = null, exit, on
     labels,
     onStepDone: (outcome: StepOutcome) => {
       if (outcome.receipt) recordVaultEvents(view.chainId, view.vault, outcome.receipt.events)
+      if (outcome.receipt && outcome.step.key === 'approve-root') approvedIn.current = outcome.receipt.blockNumber
     },
     onAllDone: () => {
       setFinished(true)

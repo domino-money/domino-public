@@ -75,6 +75,38 @@ export function withExitModules(body: PortfolioResponse, setOf: (chainId: V2Chai
 }
 
 /**
+ * Whether the automation's record of an order says its last try found the position's approval gone, as the contract
+ * says it (§4.9: AutomationUnavailable, InvalidPosition), with or without its `reverted_<error>` reason.
+ */
+const custodyWaiting = (waiting: Mandate['waiting']): boolean =>
+  waiting !== null && (waiting.error === 'AutomationUnavailable' || waiting.error === 'InvalidPosition' || waiting.reason === 'reverted_automation_unavailable' || waiting.reason === 'reverted_invalid_position')
+
+/**
+ * read-v6's answer with the approvals a step of this page gave back (Added 2026-10-06, rugged's answer of 6 Oct, §4 item
+ * 6: read-v6 drops `custody_lost` only once it reads the position's custody again, up to about 30 minutes; "the app
+ * keeps 'approved at block X' until positions[].state.snapshot.number ≥ X"). `approvedAt`: the block of this page's last
+ * approval of the position for its automation (../automate/store.ts approvedAt). While read-v6's read of the position
+ * is older than that block (or there is none), an active order of that automation's position is no longer blocked by
+ * `custody_lost`, nor said to wait for the approval: the card says "On" at once, not "Approve again". Once read-v6 read
+ * the position at or after the block, its own word stands. Pure; the same answer when nothing applies.
+ */
+export function withApprovals(body: PortfolioResponse, approvedAt: (chainId: V2ChainId, vault: string, tokenId: string) => bigint | null): PortfolioResponse {
+  let changed = false
+  const mandates = body.mandates.map((order) => {
+    if (order.status !== 'active' || !order.blockedBy.includes('custody_lost')) return order
+    const block = approvedAt(order.chainId, order.vault, order.tokenId)
+    if (block === null) return order
+    const at = order.vault.toLowerCase()
+    const dex = body.vaults.find((v) => v.chainId === order.chainId && v.address.toLowerCase() === at)?.dex ?? null
+    const read = body.positions.find((p) => p.chainId === order.chainId && p.tokenId === order.tokenId && (dex === null || p.dex === dex))
+    if (read && read.state.status === 'live' && BigInt(read.state.snapshot.number) >= block) return order
+    changed = true
+    return { ...order, blockedBy: order.blockedBy.filter((code) => code !== 'custody_lost'), waiting: custodyWaiting(order.waiting) ? null : order.waiting }
+  })
+  return changed ? { ...body, mandates } : body
+}
+
+/**
  * read-v6's answer with the Auto-exits this page turned off on `chainId` (`off`, by id: ../automate/store.ts
  * sessionRevoked) listed as turned off while the index still lists them active (Added 2026-10-06, the final check F2's
  * review). So the automation's own word on its Auto-exit (./standing.ts exitStandingOf, its rearm) says what the card
@@ -108,6 +140,23 @@ export function exitCardState(orders: readonly Mandate[], mine: readonly Session
     return { kind: 'closed', id: executed.mandateHash.toLowerCase() as Hex, delivered }
   }
   return { kind: 'off' }
+}
+
+/**
+ * Whether read-v6 lists an Auto-exit on this very position that counts as on: active and not expired (one paused still
+ * counts: it closes the position once what blocks it is gone), not one this page turned off (`off`, as in
+ * exitCardState), in a vault of the position's DEX (a v3 and a v4 NFT may share a number; an order whose vault is not
+ * listed counts). Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 7 and the spec delta §3: one Auto-exit per
+ * position; a second one active on the same position executes with value zero when it fires, the operator paying its
+ * gas): Auto-exit's dialog asks it right before the signature (./MandateDialog.tsx). Pure.
+ */
+export function exitOnPosition(body: Pick<PortfolioResponse, 'vaults' | 'mandates'>, chainId: V2ChainId, tokenId: string, dex: 3 | 4, off: ReadonlySet<string> = new Set()): boolean {
+  return body.mandates.some((order) => {
+    if (order.chainId !== chainId || order.tokenId !== tokenId || order.status !== 'active' || order.expired || off.has(order.mandateHash.toLowerCase())) return false
+    const at = order.vault.toLowerCase()
+    const vault = body.vaults.find((v) => v.chainId === chainId && v.address.toLowerCase() === at)
+    return !vault || vault.dex === dex
+  })
 }
 
 /**

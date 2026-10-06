@@ -200,12 +200,13 @@ export const BRING_FUNDS: DocPage = {
       id: 'how',
       title: 'How it works',
       blocks: [
+        // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct): the fees in view; one confirmation where it batches.
         {
           kind: 'steps',
           items: [
             { title: 'Choose', body: ['The network. The amount is what the position lacks, worked out from the bridge’s own quote, never more than you hold. Change amount lets you set it yourself.'] },
-            { title: 'Get a quote', body: ['Domino’s service asks two bridges, Relay and Across, and offers the one that delivers more after every fee. The quote shows what you receive, the least you receive and about how long it takes; its Details, every fee.'] },
-            { title: 'Deposit', body: ['Your wallet switches to that network and sends it: a token takes two transactions, an approval of the exact amount and then the deposit; ETH takes one.'] },
+            { title: 'Get a quote', body: ['Domino’s service asks two bridges, Relay and Across, and offers the one that delivers more after every fee. The quote shows what you receive, the least you receive, about how long it takes, Domino’s fee and the network fee.'] },
+            { title: 'Deposit', body: ['Your wallet switches to that network and sends it: a token takes an approval of the exact amount and then the deposit, in one confirmation when your wallet can send both together; ETH takes one.'] },
             { title: 'Use it', body: ['It arrives in your own wallet on the position’s network, your wallet goes back there, and the same position continues with it.'] },
           ],
         },

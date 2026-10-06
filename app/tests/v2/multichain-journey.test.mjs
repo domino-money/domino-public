@@ -222,7 +222,10 @@ test('a pool read through the wallet has no protocol fee read, so no APR is work
 
 /** DEX Screener's figures as the store gives them, by chain and name. */
 const dexOf = (entries) => (chainId, name) => entries.find((entry) => entry.chainId === chainId && entry.poolId === name.toLowerCase()) ?? null;
-const figuresOf = (chainId, poolId, base, quote, liquidityUsd, volume24hUsd = '1000.00') => ({ chainId, poolId, base, quote, liquidityUsd, volume24hUsd, retrievedAt: 1_790_000_000 });
+// Changed on purpose 2026-10-06 (rugged97's delta of 6 Oct §4): read now, as networkRows counts its ten minutes on the
+// wall clock when no time is handed in (a figure read on 21 Sep would be a dash now).
+const READ_AT = Math.floor(Date.now() / 1000);
+const figuresOf = (chainId, poolId, base, quote, liquidityUsd, volume24hUsd = '1000.00', retrievedAt = READ_AT) => ({ chainId, poolId, base, quote, liquidityUsd, volume24hUsd, retrievedAt });
 const V3_ADDRESS = '0x00000000000000000000000000000000000c0ffe';
 const onChain = (pool, fields = {}) => ({ pool, id: pool.dex === 4 ? poolIdOf(pool) : V3_ADDRESS, exists: true, initialized: true, sqrtPriceX96: SQRT, tick: 0, liquidity: 10n, block: 1n, spacingOk: true, ...fields });
 
@@ -241,7 +244,7 @@ test('networkRows: DEX Screener’s TVL and 24h volume on the very pool (its v4 
   ]));
   assert.deepEqual(shown.map((row) => [row.dex, row.feePips, row.liquidity.state === 'attributed' ? row.liquidity.raw : row.liquidity.state]), [[3, 3000, '166296.81'], [4, 3000, '35138.92'], [4, 500, 'unavailable']], 'the largest reported TVL first, a pool with none last');
   const [v3, v4, usdc] = shown;
-  assert.deepEqual(v3.liquidity, { state: 'attributed', value: '$166.3K', raw: '166296.81', zero: false, provider: 'dexscreener', retrievedAt: 1_790_000_000, cacheAgeSeconds: null }, 'the same figure a Robinhood Chain row’s stand-in is');
+  assert.deepEqual(v3.liquidity, { state: 'attributed', value: '$166.3K', raw: '166296.81', zero: false, provider: 'dexscreener', retrievedAt: READ_AT, cacheAgeSeconds: null }, 'the same figure a Robinhood Chain row’s stand-in is');
   assert.equal(v4.volume.raw, '8844.96');
   assert.match(v4.providerNote, /^Provider figures retrieved \d\d:\d\d:\d\d UTC/);
   const apr = rowApr.rowApr({ integration: v4.integration, currentLpFeePips: v4.feePips, protocolFeeRaw: v4.protocolFeeRaw, liquidity: v4.liquidity, volume: v4.volume });
@@ -252,6 +255,75 @@ test('networkRows: DEX Screener’s TVL and 24h volume on the very pool (its v4 
   // A volume the provider did not report: the TVL shows, the volume is "not reported", and the APR a dash.
   const [lone] = otherChains.networkRows([rows[0]], dexOf([figuresOf(8453, poolIdOf(V4_ETH), ZERO, TOKEN, '10.00', null)]));
   assert.deepEqual([lone.liquidity.state, lone.volume.state], ['attributed', 'not_reported']);
+});
+
+// Added 2026-10-06 (rugged97's delta of 6 Oct §4, the owner's decision for DEX Screener on Base and Arbitrum One): "Com
+// mais de 10 min, não aparece"; "Sem par: '—' com o motivo".
+test('networkRows (delta of 6 Oct §4): DEX Screener’s figures for ten minutes after they were read, never after; every dash says why: no pair, too old, nothing read', () => {
+  const token = networks.displayOf(8453, { address: TOKEN, symbol: 'TOKEN', decimals: 18 });
+  const V4_ETH = { dex: 4, currency0: ZERO, currency1: TOKEN, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const V3_WETH = { dex: 3, currency0: TOKEN, currency1: WETH_BASE, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const V4_USDC = { dex: 4, currency0: TOKEN, currency1: USDC_BASE, fee: 500, tickSpacing: 10, hooks: ZERO };
+  const rows = networks.listedPools(8453, token, [onChain(V4_ETH), onChain(V3_WETH), onChain(V4_USDC)], 1).map((row) => ({ ...row, protocolFeeRaw: 0 }));
+  const [eth, v3, usdc] = [poolIdOf(V4_ETH), `0x${'0'.repeat(24)}${V3_ADDRESS.slice(2)}`, poolIdOf(V4_USDC)];
+  assert.deepEqual(rows.map((row) => row.key), [eth, v3, usdc], 'as they come');
+  const AT = 1_790_000_000;
+  const { NETWORK_FIGURE_MISSING: WHY } = otherChains;
+  assert.equal(otherChains.NETWORK_FIGURES_MAX_AGE_S, 600, 'ten minutes');
+  // The ETH pool's figures read 30 s after the v3 pool's; DEX Screener has no pair for the USDC pool.
+  const read = dexOf([figuresOf(8453, eth, TOKEN, ZERO, '35138.92', '8844.96', AT + 30), figuresOf(8453, V3_ADDRESS, TOKEN, WETH_BASE, '166296.81', '21085.45', AT)]);
+  const at = (nowS, listed = true) => otherChains.networkRows(rows, read, {}, null, { nowS, listed });
+  const said = (shown) => shown.map((row) => [row.key, ...[row.liquidity, row.volume].map((figure) => (figure.state === 'attributed' ? figure.raw : figure.reason))]);
+  // Ten minutes to the second after the v3 pool's read: both shown, the largest TVL first; the USDC pool has no pair.
+  assert.deepEqual(said(at(AT + 600)), [[v3, '166296.81', '21085.45'], [eth, '35138.92', '8844.96'], [usdc, WHY.noPair, WHY.noPair]]);
+  // A second more: the v3 pool's figures are a dash saying so, and order nothing; the ETH pool's still show.
+  assert.deepEqual(said(at(AT + 601)), [[eth, '35138.92', '8844.96'], [v3, WHY.tooOld, WHY.tooOld], [usdc, WHY.noPair, WHY.noPair]]);
+  // Past both: no figure shows, and the rows are as they came.
+  assert.deepEqual(said(at(AT + 631)), [[eth, WHY.tooOld, WHY.tooOld], [v3, WHY.tooOld, WHY.tooOld], [usdc, WHY.noPair, WHY.noPair]]);
+  for (const row of at(AT + 631)) assert.equal(row.providerNote, null, `${row.key}: no retrieval to date`);
+  // No answer about the token read in the last ten minutes: a pool without figures says nothing was read.
+  assert.deepEqual(said(at(AT + 60, false))[2], [usdc, WHY.notRead, WHY.notRead]);
+  // A pair under the pool's name that holds other tokens is no pair for it, whatever was read about the token.
+  const mismatched = otherChains.networkRows(rows, dexOf([figuresOf(8453, usdc, TOKEN, WETH_BASE, '1.00', '1.00', AT)]), {}, null, { nowS: AT, listed: false });
+  assert.equal(mismatched.find((row) => row.key === usdc).liquidity.reason, WHY.noPair);
+  // A pair DEX Screener lists with neither figure: both "not reported" by it, and no retrieval to date.
+  const [bare] = otherChains.networkRows([rows[0]], dexOf([figuresOf(8453, eth, ZERO, TOKEN, null, null, AT)]), {}, null, { nowS: AT, listed: true });
+  assert.deepEqual([bare.liquidity, bare.volume, bare.providerNote], [{ state: 'not_reported', provider: 'dexscreener' }, { state: 'not_reported', provider: 'dexscreener' }, null]);
+
+  // A row kept on screen while time passes (the chosen pool, the row last pointed at): the same ten minutes as it is drawn.
+  const shown = at(AT + 60);
+  assert.equal(otherChains.figuresShownUntil(shown), AT + 600, 'the first figure shown may be until the v3 pool’s ten minutes are up');
+  const kept = shown.find((row) => row.key === v3);
+  assert.equal(otherChains.networkFiguresAt(kept, AT + 600), kept, 'still shown: the very row');
+  const gone = otherChains.networkFiguresAt(kept, AT + 601);
+  const dash = { state: 'unavailable', provider: 'dexscreener', reason: WHY.tooOld };
+  assert.deepEqual([gone.liquidity, gone.volume, gone.providerNote], [dash, dash, null]);
+  assert.deepEqual(rowApr.rowApr({ integration: gone.integration, currentLpFeePips: gone.feePips, protocolFeeRaw: gone.protocolFeeRaw, liquidity: gone.liquidity, volume: gone.volume }), { kind: 'none', reason: 'missing_reported_tvl' }, 'the APR goes with them');
+  assert.equal(otherChains.figuresShownUntil([gone]), null);
+  assert.equal(otherChains.figuresShownUntil(at(AT + 631)), null, 'nothing shown, nothing to wait for');
+  // Robinhood Chain's figures are the read service's: never aged here.
+  const home = { ...kept, currencies: kept.currencies.map((currency) => ({ ...currency, chainId: 4663 })) };
+  assert.equal(otherChains.networkFiguresAt(home, AT + 100_000), home);
+  assert.equal(otherChains.figuresShownUntil([home]), null);
+});
+
+// Added 2026-10-06 (rugged97's delta of 6 Oct §4): "Rótulo: número do provedor, com o nome dele e a hora da leitura";
+// not a qualified source; a dash with its reason.
+test('networkFigureNote and networkAprNote (delta of 6 Oct §4): DEX Screener named, with the time it was read; a dash says why', () => {
+  const AT = 1_790_000_000;
+  const { NETWORK_FIGURE_MISSING: WHY } = otherChains;
+  const figure = { state: 'attributed', value: '$166.3K', raw: '166296.81', zero: false, provider: 'dexscreener', retrievedAt: AT, cacheAgeSeconds: null };
+  assert.equal(otherChains.networkFigureNote(figure), 'Reported by DEX Screener, retrieved 14:13:20 UTC, 2026-09-21. Provider-reported, not reconciled with chain data.');
+  assert.equal(otherChains.networkFigureNote({ state: 'not_reported', provider: 'dexscreener' }), 'Retrieved from DEX Screener, which reported no value for this figure. Provider-reported, not reconciled with chain data.');
+  const dash = (reason) => ({ state: 'unavailable', provider: 'dexscreener', reason });
+  assert.equal(otherChains.networkFigureNote(dash(WHY.noPair)), 'DEX Screener doesn’t list this pool.');
+  assert.equal(otherChains.networkFigureNote(dash(WHY.tooOld)), 'DEX Screener’s figures for this pool are more than 10 minutes old.');
+  assert.equal(otherChains.networkFigureNote(dash(WHY.notRead)), 'DEX Screener’s figures couldn’t be read.');
+  // The APR: worked out from DEX Screener's two figures, named and dated; without one, the reason of the dash it lacks.
+  assert.equal(otherChains.networkAprNote({ liquidity: figure, volume: figure }, { kind: 'estimate', text: '13.9', stale: false }, 'the row’s own'), 'Estimate from this pool’s fixed LP fee and DEX Screener’s 24h volume and liquidity, retrieved 14:13:20 UTC, 2026-09-21, annualised. A pool estimate, not a position’s APR, not APY and not a forecast.');
+  assert.equal(otherChains.networkAprNote({ liquidity: dash(WHY.noPair), volume: dash(WHY.noPair) }, { kind: 'none', reason: 'missing_reported_tvl' }, 'the row’s own'), 'DEX Screener doesn’t list this pool.');
+  assert.equal(otherChains.networkAprNote({ liquidity: figure, volume: dash(WHY.tooOld) }, { kind: 'none', reason: 'missing_volume24h' }, 'the row’s own'), 'DEX Screener’s figures for this pool are more than 10 minutes old.');
+  assert.equal(otherChains.networkAprNote({ liquidity: figure, volume: figure }, { kind: 'none', reason: 'protocol_fee_directional_unsupported' }, 'the row’s own'), 'the row’s own', 'any other reason is the row’s own');
 });
 
 test('networkRows: a v3 and a v4 pool of one pair and fee are one row: the larger DEX Screener TVL, else the deeper, else the more liquid; the chosen one stays', () => {

@@ -319,7 +319,12 @@ test('source: the V2 modules invoke a wallet\'s provider in exactly the known pl
   assert.deepEqual(v2.filter((path) => /getProvider\(/.test(read(path))).sort(), ['finance/v2/crosschain.ts', 'finance/v2/wallet.ts'], 'only the two wallet builders take a provider');
   const offers = Object.fromEntries(v2.map((path) => [path, [...read(path).matchAll(/\bofferBatch\(/g)].length]).filter(([, count]) => count > 0));
   // vault.ts: offerV2Batch's one call (the vault's and the auto-exit module's batches); zap.ts: sendBatch's one call.
-  assert.deepEqual(offers, { 'finance/v2/vault.ts': 1, 'finance/v2/zap.ts': 1 });
+  // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct: the owner revoked decision #15): crosschain.ts, S2's sendBatch,
+  // a deposit's approval and the deposit on its ORIGIN chain. No Domino contract is on its way (S2 has no live lock): it
+  // is behind S2's own guards, a review of a quote from Domino's service only (quote_synthetic), asserted below.
+  assert.deepEqual(offers, { 'finance/v2/crosschain.ts': 1, 'finance/v2/vault.ts': 1, 'finance/v2/zap.ts': 1 });
+  const s2 = read('finance/v2/crosschain.ts');
+  assert.match(s2, /async function sendBatch\(reviewed: OriginReview\): Promise<PendingBatch> \{\n    const state = reviews\.get\(reviewed\) \?\? fail\('review_required'\)/, 'only a review this sender issued, and a review refuses a fixture quote');
   // Changed on purpose 2026-10-06 (the owner's point 5): two auto-exit batches, the registration and the one-batch activation
   // (sendRegisterBatch, sendProtectBatch), both through the vault's locked offerV2Batch.
   assert.equal([...read('finance/v2/autoExit.ts').matchAll(/\bofferV2Batch\(/g)].length, 2, 'auto-exit offers through the vault\'s locked offerV2Batch');

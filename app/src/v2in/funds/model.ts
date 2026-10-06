@@ -19,9 +19,11 @@ import { FAILURE_COPY, PROVIDER_NAME } from '../../v2/crosschain/copy'
 import { errorDisposition } from '../../v2/crosschain/errors'
 import { destinationChoices, networkName, roundedUnits, shortAmountText, type Naming } from '../../v2/crosschain/present'
 import type { CrosschainRequests, OriginsList, OriginToken, QuotePlan } from '../../v2/crosschain/types'
+import { BALANCE_CHAINS, balanceChain } from '../../v2/balanceChains'
 import { isV2ChainId, v2Chain } from '../../v2/chains'
 import type { V2ChainId } from '../../v2/types'
 import {
+  FUNDS_ETHEREUM_GAS_RESERVE_WEI,
   FUNDS_FIRST_GUESS_ROOM_BPS,
   FUNDS_LINE_MIN_USD,
   FUNDS_MAX_SLIPPAGE_BPS,
@@ -419,8 +421,16 @@ export type Kind = 'ether' | 'dollar'
 /**
  * A token's kind on one of Domino's networks, by its profile: ETH and WETH are ether, the stable (its rank-1 charge
  * currency) a dollar; anything else, and any token of another network, null (pure). Added 2026-10-06.
+ * Changed on purpose 2026-10-06 (rugged97's #379: chain-balances reads Ethereum and OP Mainnet when asked): on those two,
+ * by their balance-chain profiles (v2/balanceChains.ts) the same way, so what is held there joins the line, the networks,
+ * the sizing and the token to pay with as any of Domino's networks' holdings do.
  */
 export function kindOf(chainId: number, token: string): Kind | null {
+  const elsewhere = balanceChain(chainId)
+  if (elsewhere !== null) {
+    const held = lower(token)
+    return held === ZERO || held === elsewhere.wrapped ? 'ether' : held === elsewhere.stable ? 'dollar' : null
+  }
   if (!isV2ChainId(chainId)) return null
   const chain = v2Chain(chainId)
   const address = lower(token)
@@ -428,8 +438,16 @@ export function kindOf(chainId: number, token: string): Kind | null {
   return chain.chargeCurrencies.some((c) => c.rank === 1 && lower(c.address) === address) ? 'dollar' : null
 }
 
-/** What can be sent of a holding: all of a token; native ETH less the gas Review keeps (lib/create/reviewPlan.ts maxSpend). */
-export const sendable = (holding: Pick<Holding, 'token' | 'raw'>): bigint => maxSpend(holding.raw, holding.token === ZERO)
+/**
+ * What can be sent of a holding: all of a token; native ETH less the gas Review keeps (lib/create/reviewPlan.ts maxSpend).
+ * Changed on purpose 2026-10-06 (the review of rugged97's #379): native ETH less the gas its own deposit takes in that
+ * network's gas: on Ethereum FUNDS_ETHEREUM_GAS_RESERVE_WEI; on Domino's three and OP Mainnet, rollups, the gas Review
+ * keeps, as before (Review's allowance is sized to their gas, never to Ethereum's) (pure).
+ */
+export function sendable({ chainId, token, raw }: Pick<Holding, 'chainId' | 'token' | 'raw'>): bigint {
+  const kept = token !== ZERO ? 0n : chainId === 1 ? FUNDS_ETHEREUM_GAS_RESERVE_WEI : REVIEW_GAS_RESERVE_WEI
+  return raw > kept ? raw - kept : 0n
+}
 
 /**
  * The holding to send for `target` on `destination` (pure): one the listing bridges from that network, the same kind of
@@ -441,7 +459,7 @@ export function holdingFor(
   holdings: readonly Holding[],
   target: string,
   destination: V2ChainId,
-  origin: V2ChainId,
+  origin: number,
   list: OriginsList,
   need: { raw: bigint; decimals: number } | null = null,
 ): Holding | null {
@@ -736,8 +754,12 @@ export const heldOrigins = (held: readonly HeldStep[]): ReadonlySet<number> => n
 /**
  * The bundled mark of a holding on one of Domino's networks, by its address only (Added 2026-10-06, the review: the line
  * asked for a symbol's file that is not there): its ETH, its WETH, Robinhood Chain's USDG; else none (a plain disc).
+ * Changed on purpose 2026-10-06 (rugged97's #379): on Ethereum and OP Mainnet, their ETH and WETH by their balance-chain
+ * profiles; their USDC has no bundled mark, as on Base and Arbitrum One.
  */
 export function holdingArtwork(chainId: number, token: string): 'ETH' | 'WETH' | 'USDG' | null {
+  const elsewhere = balanceChain(chainId)
+  if (elsewhere !== null) return lower(token) === ZERO ? 'ETH' : lower(token) === elsewhere.wrapped ? 'WETH' : null
   if (!isV2ChainId(chainId)) return null
   const address = lower(token)
   const chain = v2Chain(chainId)
@@ -749,6 +771,9 @@ export function holdingArtwork(chainId: number, token: string): 'ETH' | 'WETH' |
 /**
  * The networks read-v6's chain-balances reads (its BalanceTokenRef chainId: Domino's three). A request that names any
  * other network is refused whole (src/v2/read/v6.ts checks the request first), so nothing else is ever asked.
+ * Changed on purpose 2026-10-06 (rugged97's #379, read-v6 1.1.0-rc.1, additive): the service also reads Ethereum and OP
+ * Mainnet when a request names them, but never in this request: they go in one of their own (balanceChainsRequest), so a
+ * Worker that still refuses them cannot take Domino's three with them. These stay Domino's three.
  */
 export const SERVED_BALANCE_CHAINS: readonly number[] = Object.freeze([4663, 8453, 42161])
 
@@ -765,6 +790,52 @@ export function balancesRequest(destination: number): { chainId: number; address
   return [...served.filter((candidate) => candidate.chainId !== destination), ...served.filter((candidate) => candidate.chainId === destination)].flatMap((candidate) =>
     candidate.tokens.map((token) => ({ chainId: candidate.chainId, address: token.address.toLowerCase() })),
   )
+}
+
+/**
+ * Added 2026-10-06 (rugged97's #379, read-v6 1.1.0-rc.1, additive; the owner's decision of 6 Oct): the balance chains
+ * Domino's service reads when a request names them, Ethereum and OP Mainnet (BALANCE_ORIGINS: those crosschain-v1 bridges
+ * from), never the destination: each one's ETH, WETH and stable from its balance-chain profile (v2/balanceChains.ts), in
+ * that order. A request of their OWN, never part of balancesRequest's: rugged97's rollout moves the reader, then the
+ * Worker, then the app, so while the Worker still refuses them, or their answer cannot be had, only they go unread and
+ * Domino's three are read exactly as before. Six tokens, within the service's 24; none when there is no such network.
+ */
+export function balanceChainsRequest(destination: number): { chainId: number; address: string }[] {
+  return BALANCE_CHAINS.filter((chain) => chain.chainId !== destination && BALANCE_ORIGINS.includes(chain.chainId)).flatMap((chain) =>
+    chain.tokens.map((token) => ({ chainId: chain.chainId, address: token.address })),
+  )
+}
+
+/**
+ * Added 2026-10-06 (rugged97's #379): what Domino's service read in the two requests (balancesRequest, and
+ * balanceChainsRequest) as ONE answer for the offer's choices: Domino's networks first, as read, then the balance chains
+ * (a chain both name, which neither request does, is Domino's read's), so whatever is taken from the first chain that has
+ * it (kindPrices) is still Domino's networks' first. Either alone is itself, untouched: a balance chains' read that failed,
+ * or was refused, leaves Domino's answer exactly as it was (and theirs stay unread, never empty); neither is none. Nothing
+ * is summed across the two reads (the owner, 2 Oct: no sum across chains without all of them, read together): the
+ * answer's own total is none, while each chain keeps its own (pure).
+ */
+export function mergeBalances(domino: ChainBalancesResponse | null, elsewhere: ChainBalancesResponse | null): ChainBalancesResponse | null {
+  if (domino === null || elsewhere === null) return domino ?? elsewhere
+  const chains = [...domino.chains, ...elsewhere.chains.filter((chain) => !domino.chains.some((own) => own.chainId === chain.chainId))]
+  return { ...domino, coverage: domino.coverage === 'complete' && elsewhere.coverage === 'complete' ? 'complete' : 'partial', chains, totalUsd: null }
+}
+
+/**
+ * Added 2026-10-06 (rugged97's #379): a network the offer may bring from as the app's one table names it (lib/networkName.ts,
+ * through v2/crosschain/present.ts OWN_NETWORK_NAMES): "Base", "Arbitrum One", "Ethereum", "OP Mainnet" (pure).
+ */
+export const originName = (chainId: number): string => networkName(chainId, null) ?? `network ${chainId}`
+
+/**
+ * Added 2026-10-06 (rugged97's #379): the network the offer reads holdings on, with the tokens read there: one of Domino's
+ * from finance/v2/holdings.ts CANDIDATE_ORIGINS; Ethereum and OP Mainnet from their balance-chain profiles, the very tokens
+ * balanceChainsRequest asks, named by the app's one table; null for any other (pure).
+ */
+export function originCandidate(chainId: number): OriginCandidate | null {
+  const elsewhere = balanceChain(chainId)
+  if (elsewhere !== null) return { chainId, name: originName(chainId), tokens: elsewhere.tokens }
+  return CANDIDATE_ORIGINS.find((candidate) => candidate.chainId === chainId) ?? null
 }
 
 /**
@@ -916,7 +987,8 @@ function unpricedFloor(kind: Kind | null, decimals: number): bigint {
 
 /** A holding the discreet line names (Added 2026-10-06, the owner's point 1). */
 export interface LineHolding {
-  chainId: V2ChainId
+  /** One of Domino's networks, or (Changed on purpose 2026-10-06, rugged97's #379) Ethereum or OP Mainnet. */
+  chainId: number
   network: string
   /** As read (the whole balance); the line names what can be sent of it (sendable). */
   holding: Holding
@@ -936,14 +1008,18 @@ export interface LineHolding {
  * the value, the floor and `valueUsd` are of what can be sent (native ETH less the gas Review keeps); a holding with no
  * value of its own is weighed at its kind's price read elsewhere, only to leave out what is too little; with no price read
  * at all, against its kind's own floor (unpricedFloor). `except`: the origins a held step keeps closed (heldOrigins).
+ * Changed on purpose 2026-10-06 (rugged97's #379): and on Ethereum and OP Mainnet as the service read them
+ * (balanceChainsRequest, merged by mergeBalances), by the same rules, each named by the app's one table (originName);
+ * Domino's networks first where two holdings are otherwise alike.
  */
 export function bestHolding(answer: ChainBalancesResponse, destination: number, deliverable: readonly string[], except: ReadonlySet<number> = new Set()): LineHolding | null {
   if (deliverable.length === 0) return null
   const prices = kindPrices(answer)
   const floor = BigInt(FUNDS_LINE_MIN_USD) * 1_000_000n
   const found: (LineHolding & { same: boolean; micro: bigint | null })[] = []
-  for (const candidate of CANDIDATE_ORIGINS) {
-    if (!SERVED_BALANCE_CHAINS.includes(candidate.chainId) || candidate.chainId === destination || !isV2ChainId(candidate.chainId) || except.has(candidate.chainId)) continue
+  for (const chainId of [...SERVED_BALANCE_CHAINS, ...BALANCE_ORIGINS]) {
+    const candidate = originCandidate(chainId)
+    if (candidate === null || chainId === destination || except.has(chainId)) continue
     const report = holdingsFromChainBalances(answer, candidate)
     if (!report) continue
     for (const holding of usableHoldings(report.holdings, nativeOn(answer, candidate.chainId)).usable) {
@@ -953,7 +1029,7 @@ export function bestHolding(answer: ChainBalancesResponse, destination: number, 
       if (weighed !== null ? weighed < floor : sendable(holding) < unpricedFloor(kind, holding.decimals)) continue
       const target = targetFor(kind, deliverable, destination)
       if (target === null) continue
-      found.push({ chainId: candidate.chainId, network: candidate.name, holding, valueUsd: micro === null ? null : usdText(micro), target, same: kind !== null && kind === kindOf(destination, target), micro })
+      found.push({ chainId: candidate.chainId, network: originName(candidate.chainId), holding, valueUsd: micro === null ? null : usdText(micro), target, same: kind !== null && kind === kindOf(destination, target), micro })
     }
   }
   const order = (a: (typeof found)[number], b: (typeof found)[number]): number => {
@@ -974,6 +1050,13 @@ export function bestHolding(answer: ChainBalancesResponse, destination: number, 
  * tests/v2/funds-model.test.mjs holds this copy to them), less Domino's own three: the short list "Other networks" offers.
  */
 export const BOTH_PINNED_ORIGINS: readonly number[] = Object.freeze([1, 10, 56, 130, 137, 143, 324, 480, 999, 1868, 4217, 4326, 5042, 9745, 43114, 57073, 59144])
+
+/**
+ * Added 2026-10-06 (rugged97's #379): the balance chains read-v6's chain-balances reads when asked (v2/balanceChains.ts:
+ * Ethereum, OP Mainnet) that crosschain-v1 bridges from (BOTH_PINNED_ORIGINS: the networks its origins listing names with
+ * both Relay and Across pinned), in that order: the networks balanceChainsRequest asks about, beside Domino's own.
+ */
+export const BALANCE_ORIGINS: readonly number[] = Object.freeze(BALANCE_CHAINS.map((chain) => chain.chainId as number).filter((chainId) => BOTH_PINNED_ORIGINS.includes(chainId)))
 
 /** One of the "Other networks" and the tokens to send from it. */
 export interface OtherNetwork {

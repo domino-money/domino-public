@@ -110,6 +110,26 @@ test('an answer about another wallet is refused (validateExchange); an error is 
   assert.deepEqual(await readActivity(transport, runtime, WALLET, { limit: 51 }), { kind: 'invalid', detail: 'request' }, 'limit 1 to 50');
 });
 
+// Added 2026-10-06 (rugged's answer of 6 Oct, §1: the gateway's Retry-After is now the real time to the lane's next token):
+// a busy reader's 429 keeps the wait it named, as the read Worker relays it (1 to 60 s); no other refusal carries one.
+test('a busy reader\'s 429 keeps the Retry-After it named (1 to 60 s); a missing or malformed one, or another refusal\'s, is none', async () => {
+  const transport = createReadV6FixtureTransport();
+  const POOLS = fixture('valid/chain-pools.json');
+  const ask = () => readChainPools(transport, runtime, POOLS.chainId, POOLS.token, POOLS.pairedToken ?? undefined);
+  transport.script('chain-pools', 429, { error: 'read_capacity_busy' }, '7');
+  assert.deepEqual(await ask(), { kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 7 });
+  transport.script('chain-pools', 429, { error: 'read_capacity_busy' }, ' 60 ');
+  assert.deepEqual(await ask(), { kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 60 });
+  for (const header of [undefined, '0', '61', '1.5', 'Wed, 21 Oct 2026 07:28:00 GMT', '']) {
+    transport.script('chain-pools', 429, { error: 'read_capacity_busy' }, header);
+    assert.deepEqual(await ask(), { kind: 'unavailable', reason: 'read_capacity_busy' }, `Retry-After ${header}`);
+  }
+  transport.script('chain-pools', 503, { error: 'upstream_unavailable' }, '9');
+  assert.deepEqual(await ask(), { kind: 'unavailable', reason: 'upstream_unavailable' }, 'a 503 names no wait of its own');
+  transport.script('portfolio', 429, { error: 'read_capacity_busy' }, '3');
+  assert.deepEqual(await readPortfolio(transport, runtime, WALLET), { kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 3 }, 'the stored routes too');
+});
+
 test('one chain out is said as out, and never empties the others (§6.3)', () => {
   const chains = fixture('valid/portfolio-behind.json').chains;
   const out = (ids) => chains.map((c) => (ids.includes(c.chainId) ? { ...c, status: 'unavailable', reason: 'never_indexed' } : { ...c, status: 'current', reason: null }));

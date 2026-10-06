@@ -4,6 +4,7 @@ import { PROTOCOL_FEE_UNDESCRIBED, type NetworkPoolFacts, type NetworkResolved, 
 import { amountFact } from '../../../lib/read/pagers'
 import { poolIdKey } from '../../../lib/read/screens/identity'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
+import type { TransientCandidate } from '../../../lib/read/screens/transient'
 import type { TokenDisplay } from '../../../lib/read/types'
 import { v2Chain } from '../../../v2/chains'
 import type { ReadV6Reply } from '../../../v2/read/v6'
@@ -97,6 +98,71 @@ const PASSING_REASONS: ReadonlySet<string> = new Set([
   'snapshot_not_built', 'snapshot_reorganized', 'stale_or_future_block', 'catalogue_database_unavailable', 'missing_rpc_result',
 ])
 export const passingReply = (reply: ReadV6Reply<unknown>): boolean => reply.kind === 'unavailable' && PASSING_REASONS.has(reply.reason)
+
+/** The Retry-After a failed reply named (src/v2/read/v6.ts: a busy reader's 429), in whole seconds; undefined for none. */
+export const retryAfterOf = (reply: ReadV6Reply<unknown>): number | undefined => (reply.kind === 'unavailable' ? reply.retryAfterSeconds : undefined)
+
+/**
+ * A failure that may pass, as the read screens' one rule waits for it (lib/read/screens/transient.ts): a dropped
+ * connection's. Moved here on purpose 2026-10-06 from ../served.ts, unchanged (which still exports it), for `passingAfter`.
+ */
+export const PASSING: TransientCandidate = { state: 'unavailable', cause: { kind: 'network' } }
+
+/**
+ * What a failed chain read waits before it is asked again, as the read screens' rule takes it (quietDelayMs; pure).
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §1: the gateway's Retry-After is now the real time to the
+ * lane's next token): a busy reader's 429 that named a Retry-After waits as a busy service does, never less than it asked;
+ * any other failure that may pass waits as a dropped connection does (PASSING), as before.
+ */
+export const passingAfter = (retryAfterS: number | undefined): TransientCandidate => (retryAfterS === undefined ? PASSING : { state: 'busy', retryAfterSeconds: retryAfterS })
+
+/**
+ * The reader's own cache of a chain-pools answer (rugged's answer of 6 Oct, §1: "don't repeat chain-pools of the same
+ * token before 15 s, which is the reader's cache"): asked again sooner, the same answer comes back, for one more of the
+ * visitor's provider lane's tokens.
+ */
+export const READER_POOLS_CACHE_MS = 15_000
+/** How long every caller reuses a chain-pools answer (rugged: "the app already reuses for 20 s"): above the reader's cache. */
+export const POOLS_REUSE_MS = 20_000
+
+/** A chain-pools read's key: the network, the token and the one it is paired with (none: the network's base currencies). */
+export const poolsKey = (chainId: number, token: string, paired?: string): string => `${chainId}|${token.toLowerCase()}|${paired?.toLowerCase() ?? ''}`
+
+/**
+ * One answer per key for every ask within `maxAgeMs` (POOLS_REUSE_MS by default, never less than the reader's own cache,
+ * READER_POOLS_CACHE_MS) of the ask that read it (pure; Added 2026-10-06, rugged's answer of 6 Oct, §1): a read on its way
+ * is shared; an answer `ok` refuses (a failure) is dropped as it lands, so it is asked again after its own wait, except
+ * that a failure `holdMs` names a wait for (a busy reader's Retry-After) is kept that long from when it landed, so no
+ * caller asks the same read again before it (each one that meets it waits at least as long); at most `size` keys are
+ * kept, the oldest dropped first. The clock is handed in.
+ */
+export function createAnswerReuse<T>(ok: (answer: T) => boolean, now: () => number, size = 64, holdMs: (failure: T) => number = () => 0) {
+  // `until`: a failure kept until then, whatever an ask's age allows.
+  const kept = new Map<string, { at: number; answer: Promise<T>; until?: number }>()
+  return {
+    ask(key: string, read: () => Promise<T>, maxAgeMs: number = POOLS_REUSE_MS): Promise<T> {
+      const found = kept.get(key)
+      if (found && (found.until !== undefined ? now() < found.until : now() - found.at < Math.max(maxAgeMs, READER_POOLS_CACHE_MS))) return found.answer
+      const answer = read()
+      kept.delete(key)
+      kept.set(key, { at: now(), answer })
+      while (kept.size > size) kept.delete(kept.keys().next().value as string)
+      const settle = (hold: number) => {
+        const entry = kept.get(key)
+        if (entry?.answer !== answer) return
+        if (hold > 0) entry.until = now() + hold
+        else kept.delete(key)
+      }
+      void answer.then(
+        (said) => {
+          if (!ok(said)) settle(holdMs(said))
+        },
+        () => settle(0),
+      )
+      return answer
+    },
+  }
+}
 
 /**
  * A pool's protocol fee as a row carries it for the fee APR estimate (2026-10-06): v4's packed fee as read; a v3 pool's

@@ -1,22 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, LinkButton } from '../../components/ui'
 import { ActionSheet, SheetAlert, SheetCard, SheetFact, SheetFacts, SheetLocked, SheetMore, SheetNote, SheetStatus } from '../../components/positions/ActionSheet'
-import { AUTO_EXIT_TEXT, autoExitWarnings, type AutoExitTextKey, type MandateBatch, type MandateReview, type ProtectBatch } from '../../finance/v2/autoExit'
+import { AUTO_EXIT_TEXT, type MandateBatch, type MandateReview, type ProtectBatch } from '../../finance/v2/autoExit'
 import type { VaultCreateRequest, VaultCreateReview } from '../../finance/v2/vault'
 import type { V2Gate } from '../../v2/gate'
 import type { Address, Dex, V2ChainId } from '../../v2/types'
 import { describeError, errorLabels, PROTECTION_CONSENT_TEXT, STEPS_INSTEAD, type ErrorView } from '../automate/copy'
 import { protectionSettings } from '../automate/form'
+import { portfolioFor } from '../automate/read6'
 import { openAutomation, type AutomationSession } from '../automate/session'
-import { recordVaultEvents, rememberMandate, rememberVault } from '../automate/store'
+import { automationState, recordVaultEvents, rememberMandate, rememberVault, sessionMandates, sessionRevoked } from '../automate/store'
 import { useStepsRun, WalletSteps, type WalletStep } from '../automate/steps'
 import { dateWords, shortAddress, type TokenView } from '../automate/tokens'
 import { Fact } from '../automate/ui'
+import { exitOnPosition } from './card'
 import { AUTO_EXIT_DEFAULT_SLIPPAGE_BPS, AUTO_EXIT_PROTECTION_ONLY_TEXT } from './constants'
 import { autoExitTerms, edgePrice, exitEdges, nearEdge, type EdgesProblem, type ExitEdges, type ExitRange } from './form'
 import { defaultOrientation } from './orientation'
 import { freshSqrtPrice, snapshotSqrtPrice, type ExitPriceSnapshot } from './priceContext'
-import { edgesOf, runLine, unitWords } from './words'
+import { edgesOf, exitWarnings, runLine, unitWords } from './words'
 
 /**
  * Auto-exit on a position (spec F7 §4.2–§4.4, §4.6, §4.7, §8.2; decisions #18, #19, #20, #25), in the look of the position
@@ -50,6 +52,24 @@ import { edgesOf, runLine, unitWords } from './words'
  *     the same batch when it is off).
  * While a step is with the wallet, ONE line says where it stands ("Step 1 of 2 · Sign in your wallet"). Under the gate's
  * `preview` the dialog stops before the wallet: the gate's sentence stands where the button would be.
+ *
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §4 item 5, and the spec delta of 6 Oct §2: one "Turn on
+ * Auto-exit" is the §4.7 acknowledgement and the §5.1 consent only with what it accepts in view above it): warnings 1
+ * and 2 (and 3 on a v3 pool), the fee line with "It's the only fee" (§4.6), the protection-only automation's consent
+ * sentence (§5.1) and, on v3 with amounts owed, the sentence that they go to the wallet stand above the button, as the
+ * position's Review shows its warnings. Details keeps warnings 5 and 7 (6 never applies: one Auto-exit per position),
+ * the fixed terms, the integers the wallet shows and the steps.
+ *
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §4 item 7 and the delta §3: one Auto-exit per position; a
+ * second one active on the same position executes with value zero when it fires, the operator paying its gas): right
+ * before the signature, read-v6 is read again and this page's own registrations are looked at; one on this position
+ * (another tab, an index that caught up since the page read it) stops here, `mandate_already_on`, nothing signed, and the
+ * page reads again. A wallet without batching (his §4 item 2): another vault of this wallet that took the nonce the
+ * order was signed for (another tab) is refused at the steps that create the vault (`vault_nonce_moved`: the vault
+ * client's own rebuild, and the prediction read again right before them, finance/v2/autoExit.ts predictionHolds), and
+ * the dialog starts over: the prediction, the approval and the signature again, before any createVault (an order signed
+ * for another vault never executes; read-v6 says `not_in_vault`). This very vault made elsewhere for this position
+ * stops, as above.
  */
 
 export interface ExitTarget {
@@ -68,10 +88,6 @@ export interface ExitTarget {
 
 type Path = 'batch' | 'steps'
 
-/** §4.7's warnings as this dialog shows them: not the two Auto-exit cannot meet (it never converts; one per position). */
-const shownWarnings = (dex: Dex): readonly AutoExitTextKey[] =>
-  autoExitWarnings(dex).filter((key) => key !== 'autoexit_fee_line' && key !== 'autoexit_warning_slippage_on_top' && key !== 'autoexit_warning_other_orders')
-
 /**
  * What pauses Auto-exit without any word from the person (spec §4.5): the position moved or approved elsewhere. Changed on
  * purpose 2026-10-06 (the integration review, rugged-literal #1): not any change: an exit needs the approval alone, so
@@ -79,7 +95,13 @@ const shownWarnings = (dex: Dex): readonly AutoExitTextKey[] =>
  */
 const CHANGES_PAUSE = "Moving this position or approving another app on it pauses Auto-exit until you approve it again. Collecting fees doesn't."
 const LEDE = 'When the price reaches the end of your range, Domino closes this position and sends the tokens to your wallet.'
-const FEE = "0.2% of the position's value, only if it closes"
+/**
+ * The fee, as §4.6's line says it (AUTO_EXIT_TEXT.autoexit_fee_line under the fact's own "Fee" label). Changed on
+ * purpose 2026-10-06 (the spec delta of 6 Oct §2: the fee line in view above the button): with "It's the only fee." too.
+ */
+const FEE = AUTO_EXIT_TEXT.autoexit_fee_line.replace(/^Fee: /, '')
+/** §5.1, on v3 with amounts owed (`vault_v3_owed_to_wallet`), in Auto-exit's words; in view above the button (delta §2). */
+const OWED = 'Amounts waiting to be collected from this position will be sent to your wallet when Auto-exit starts.'
 /** Added 2026-10-06 (the review of point 5): an edge within the slippage band of the price now. */
 const NEAR = 'The price is close to the end of your range, so Auto-exit may close this position soon.'
 /** Added 2026-10-06 (the review of point 5): the price crossed an edge after the signature; the new edges need a new one. */
@@ -113,6 +135,24 @@ function protectionRequest(dex: Dex, tokenId: bigint): VaultCreateRequest {
 /** The codes after which the prediction the order was signed for moved: a new review, and a new signature, next press. */
 const PREDICTION_MOVED: ReadonlySet<string> = new Set(['vault_nonce_moved', 'UnexpectedNonce', 'vault_review_stale', 'mandate_review_stale'])
 const REACHED = 'mandate_trigger_reached'
+/** Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 7: one Auto-exit per position): one is on for it already. */
+const ALREADY_ON = 'mandate_already_on'
+
+/**
+ * Whether this position has an Auto-exit on already, asked right before the signature (Added 2026-10-06, rugged's
+ * answer of 6 Oct, §4 item 7 and the spec delta §3: a second one active on the same position executes with value zero
+ * when it fires, the operator paying its gas): one this page registered that the index does not list yet, or one read-v6
+ * lists now, read again here (the page's own read may be older than another tab's step). Those this page turned off do
+ * not count. A read that cannot be made says nothing either way: the page's own read found none before it offered the
+ * button.
+ */
+async function exitOnAlready(gate: Exclude<V2Gate, { mode: 'off' }>, owner: Address, chainId: V2ChainId, dex: Dex, tokenId: bigint): Promise<boolean> {
+  const store = automationState()
+  const off = sessionRevoked(store, chainId)
+  if (sessionMandates(store, chainId, owner).some((m) => m.registered && m.tokenId === tokenId && !off.has(m.id))) return true
+  const answer = await portfolioFor(owner, gate)
+  return answer !== null && answer.reply.kind === 'ok' && exitOnPosition(answer.reply.body, chainId, tokenId.toString(), dex, off)
+}
 
 const sameEdges = (a: ExitEdges | null, b: ExitEdges | null) =>
   a !== null && b !== null && a.triggerBelowSqrtPriceX96 === b.triggerBelowSqrtPriceX96 && a.triggerAboveSqrtPriceX96 === b.triggerAboveSqrtPriceX96
@@ -187,6 +227,8 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
   const [round, setRound] = useState(0)
   const [signed, setSigned] = useState(false)
   const [registered, setRegistered] = useState(false)
+  // Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 7): an Auto-exit found on this position at the press; no button.
+  const [taken, setTaken] = useState(false)
   // A refusal said until the next press (the run's own notice goes with its list when the list changes).
   const [note, setNote] = useState<ErrorView | null>(null)
   // The batch gave way to the steps: the same press goes on with them (read in effects only).
@@ -216,6 +258,8 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
       title: TITLE.sign,
       context: 'autoExit',
       sign: async () => {
+        // One Auto-exit per position (rugged's answer of 6 Oct, §4 item 7): nothing is signed while one is on already.
+        if (await exitOnAlready(gate, session.owner, target.chainId, dex, tokenId)) throw new Error(ALREADY_ON)
         const result = await session.autoExit.signMandate(mandate)
         rememberMandate({ chainId: target.chainId, owner: session.owner, id: mandate.id, nonce: mandate.mandate.nonce, vault: mandate.vault, tokenId: mandate.mandate.tokenId, registered: false, triggers: { below: mandate.mandate.triggerBelowSqrtPriceX96, above: mandate.mandate.triggerAboveSqrtPriceX96 } })
         setSigned(true)
@@ -243,7 +287,17 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
         key: step.kind,
         title: step.kind === 'approve-root' ? TITLE.approval(tokenId) : TITLE.create,
         context: 'vault',
-        tx: { client: session.vault, prepare: () => session.vault.prepareStep(createReview, index, null) },
+        tx: {
+          client: session.vault,
+          prepare: async () => {
+            // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §4 items 2 and 7): the vault the order was signed
+            // for, read again before each step that creates it (in the session's queue already). Another vault of this
+            // wallet on its nonce is `vault_nonce_moved` (all again, below); this very vault made elsewhere for this
+            // position means an Auto-exit there (one per position).
+            if ((await session.autoExit.predictionHolds(mandate)) === 'created') throw new Error(ALREADY_ON)
+            return session.vault.prepareStep(createReview, index, null)
+          },
+        },
       }))
       return [sign, ...create, enable, register]
     }
@@ -262,7 +316,7 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
       }]
     }
     return [sign, enable, register]
-  }, [session, mandate, createReview, path, createRequest, tokenId, target.chainId])
+  }, [session, mandate, createReview, path, createRequest, tokenId, target.chainId, gate, dex])
 
   /** A fresh start after the chain moved under a signature: a new price, a new review, a new signature on the next press. */
   const startOver = (said: ErrorView) => {
@@ -301,6 +355,15 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
         startOver(error)
         return true
       }
+      if (error.code === ALREADY_ON) {
+        // One Auto-exit on this position already (another tab, an index that caught up): said (the dialog's own note,
+        // which stays: the run's notice goes with its list), no second one offered, and the page reads again (its card
+        // says it).
+        setTaken(true)
+        setNote(error)
+        onChanged()
+        return true
+      }
       if (error.code === REACHED) {
         // The price reached an armed edge before the wallet's turn (the client refused it): read again, sign again.
         startOver({ text: PRICE_MOVED, code: REACHED })
@@ -308,6 +371,10 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
         setPriceRound((n) => n + 1)
         return true
       }
+      // Changed on purpose 2026-10-06 (found with rugged's answer of 6 Oct, §4 item 7: a refusal at the signature
+      // vanished): a failure before anything was signed is followed by a new review, whose new list takes the run's
+      // notice with it; the dialog's own note keeps it said until the next press.
+      setNote(error)
       return false
     },
   })
@@ -339,7 +406,8 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
     }
   }, [locked, session, priceRound])
 
-  const reviewKey = !locked && session && quiet && !priceError && priceCurrent ? wantKey : null
+  // Not once an Auto-exit was found on this position at the press (`taken`): nothing more is reviewed for a second one.
+  const reviewKey = !locked && session && quiet && !taken && !priceError && priceCurrent ? wantKey : null
   useEffect(() => {
     if (reviewKey === null || !session) return
     const { terms: chosen, target: at, createRequest: request, labels: named, range: ends, spacing: step, armed: arming } = inputs.current
@@ -417,7 +485,7 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
   const line = runLine(run.phases)
   const retry = sessionError !== null || priceError !== null || reviewError !== null
   const preparing = !locked && !error && !registered && steps.length === 0 && (edges !== null || problem === 'price_unknown')
-  const canPress = !locked && !registered && !run.running && (retry || (edges !== null && steps.length > 0))
+  const canPress = !locked && !registered && !taken && !run.running && (retry || (edges !== null && steps.length > 0))
   const previewSteps: WalletStep[] = plain
     ? [{ key: 'sign-mandate', title: TITLE.sign }, { key: 'protect-batch', title: TITLE.batch, note: 'One confirmation when your wallet can send the calls together; otherwise one each.' }]
     : target.vault?.autoExitEnabled === false
@@ -425,6 +493,10 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
       : [{ key: 'sign-mandate', title: TITLE.sign }, { key: 'register-mandate', title: TITLE.register }]
   // Nothing to close at, for good (a full range), or not from this side of the range now: no button, the sentence says why.
   const nothing = problem === 'full_range' || problem === 'edges_unreachable'
+  // §5.1 on v3: what the position owes goes to the wallet when its automation is made (the review says so).
+  const owed = createReview?.warnings.includes('vault_v3_owed_to_wallet') === true
+  // §4.7's warnings: those the button accepts above it, the rest under Details (./words.ts exitWarnings).
+  const warnings = exitWarnings(dex)
 
   const footer = registered ? (
     done?.href ? (
@@ -478,6 +550,16 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
       <SheetFacts data-mandate-fee="">
         <SheetFact label="Fee">{FEE}</SheetFact>
       </SheetFacts>
+      {/* Changed on purpose 2026-10-06 (the spec delta of 6 Oct §2): what "Turn on Auto-exit" accepts, above it. */}
+      {!registered && !nothing && (
+        <div className="dm-pa-notes" data-mandate-ack="">
+          {warnings.inView.map((key) => (
+            <SheetNote key={key} data-warning={key}>{AUTO_EXIT_TEXT[key]}</SheetNote>
+          ))}
+          <SheetNote data-mandate-consent="">{PROTECTION_CONSENT_TEXT}</SheetNote>
+          {owed && <SheetNote data-mandate-owed="">{OWED}</SheetNote>}
+        </div>
+      )}
       {registered ? (
         <SheetStatus state="done" data-mandate-registered="">Auto-exit is on. Domino closes this position at the end of its range.</SheetStatus>
       ) : line ? (
@@ -488,7 +570,7 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
       {error && !registered && <SheetAlert data-error-code={error.code}>{error.text}</SheetAlert>}
       <SheetMore label="Details" data-mandate-details="">
         <ul className="dm-v2in-warnings dm-exit-warnings" data-mandate-warnings="">
-          {shownWarnings(dex).map((key) => (
+          {warnings.details.map((key) => (
             <li key={key} data-warning={key}>{AUTO_EXIT_TEXT[key]}</li>
           ))}
           <li data-warning="changes-pause">{CHANGES_PAUSE}</li>
@@ -498,8 +580,7 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
           <SheetFact label="Slippage limit">{`${AUTO_EXIT_DEFAULT_SLIPPAGE_BPS / 100}% on top of the pool fee`}</SheetFact>
           {shownTerms && <SheetFact label="Valid until">{dateWords(shownTerms.validUntil)}</SheetFact>}
         </SheetFacts>
-        <p className="dm-acct-note" data-protection-only="">{AUTO_EXIT_PROTECTION_ONLY_TEXT} {PROTECTION_CONSENT_TEXT}</p>
-        {createReview?.warnings.includes('vault_v3_owed_to_wallet') && <p className="dm-acct-note">Amounts waiting to be collected from this position will be sent to your wallet when Auto-exit starts.</p>}
+        <p className="dm-acct-note" data-protection-only="">{AUTO_EXIT_PROTECTION_ONLY_TEXT}</p>
         {words.map((edge) => (
           <Fact key={edge.field} label={`Your wallet shows the ${edge.move === 'falls' ? 'lower' : 'upper'} price as`}>
             <span data-wallet-shows={edge.field === 'triggerBelowSqrtPriceX96' ? 'below' : 'above'}>{edge.sqrtPriceX96.toString()}</span>

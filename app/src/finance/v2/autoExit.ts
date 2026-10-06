@@ -29,7 +29,7 @@ import {
  *     wallet, which is the order's owner and its signer;
  *   - the position is the vault's root or an ACTIVE successor;
  *   - every term of spec §4.2's table is checked before anything is signed, each failure a closed reason code
- *     (MANDATE_REASON_TEXT words it for "This order isn't valid: {reason}."). `receiveMode` is taken as given, never
+ *     (MANDATE_REASON_TEXT words it for "This Auto-exit isn't valid: {reason}."). `receiveMode` is taken as given, never
  *     inferred from `convertTo` (address(0) is ETH on v4 AND the "no conversion" value of RECEIVE_BOTH);
  *   - the nonce is random (256 bits), unused on chain and not held in the page's signature journal; it is recorded in
  *     the journal BEFORE the wallet is asked, forgotten after a definite refusal (4001) only, and kept until the chain
@@ -679,6 +679,20 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
     }),
 
     /**
+     * Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 2: a wallet without batching): where the vault a predicted
+     * review was signed for stands at the latest block, read right before a step that creates it: `free` while it is
+     * still this wallet's next createVault (the factory's nonce unmoved, the same prediction), `created` once this very
+     * vault exists, the wallet's, with the order's position as its root; `vault_nonce_moved` when another vault of this
+     * wallet took the nonce (another tab): the prediction, the approval and the signature are then made again before any
+     * createVault (an order registered for another vault never executes; read-v6 says `not_in_vault`). Reads only.
+     */
+    predictionHolds: (review: MandateReview) => t.bounded(async (rpc): Promise<'free' | 'created'> => {
+      if (!reviews.has(review)) return fail('mandate_review_unknown')
+      await t.identity(rpc)
+      return predictedStill({ rpc, block: 'latest' }, review)
+    }),
+
+    /**
      * A SIGNED review's `[setExitModule(autoExit), registerMandate(mandate, signature)]` as ONE batch (spec §4.4 item 7),
      * derived at the latest block and simulated whole through the wallet's eth_simulateV1 only (a wallet without it is
      * `batch_simulation_unavailable`: the steps instead), its cost checked against the budget and the owner's ETH.
@@ -1174,7 +1188,7 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
       })
     }),
 
-    /** Cancels an ACTIVE order of this owner (spec §4.5 "Cancel order"): at any time, halted, module off or expired. */
+    /** Turns off an ACTIVE order of this owner (spec §4.5 "Turn off", the delta of 6 Oct §3): at any time, halted, module off or expired. */
     prepareRevoke: (id: Hex, gas: V2GasBudget | null = null) => t.bounded(async (rpc) => {
       if (typeof id !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(id)) return fail('mandate_invalid_id')
       const hash = id.toLowerCase() as Hex

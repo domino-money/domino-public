@@ -63,7 +63,7 @@ export type ErrorContext = 'zap' | 'vault' | 'autoExit' | 'autoExitWaiting'
  * - `disable-chain`: switch S1 off on this chain and say so (a deployment fault);
  * - `add-chain`: the person adds the chain to their wallet;
  * - `fix-fields`: correct the form's fields;
- * - `show-existing`: show the order already registered;
+ * - `show-existing`: show the Auto-exit already on;
  * - `predict-again`: read the factory's nonce again, predict the vault again and approve again;
  * - `unsubscribe`: remove the other app's subscription at Uniswap;
  * - `support`: the amount stays where it is; contact support;
@@ -197,14 +197,18 @@ export const ZAP_ERRORS: readonly ErrorRow[] = Object.freeze([
   row('InvalidZapConfig()', '0x787fe9bc', NOT_AVAILABLE, 'disable-chain'),
 ])
 
-/** §4.9, first table: the owner's actions on the auto-exit module. */
+/**
+ * §4.9, first table: the owner's actions on the auto-exit module. Changed on purpose 2026-10-06 (rugged's answer of 6
+ * Oct: the spec delta of 6 Oct §3, "order" becomes "Auto-exit"): the four rows that named an order say the delta's
+ * words, so every screen that decodes them says Auto-exit (src/v2in/automate/copy.ts no longer rewrites them).
+ */
 export const AUTO_EXIT_ERRORS: readonly ErrorRow[] = Object.freeze([
-  row('MandateAlreadyRegistered()', '0x6f6ffce9', 'This order is already registered.', 'show-existing'),
-  row('InvalidMandate()', '0x544cad7e', "This order isn't valid: {reason}.", 'fix-fields'),
-  row('NonceAlreadyUsed()', '0x1fb09b80', 'This signed order was already used or cancelled. Sign a new one.', 'new-nonce'),
+  row('MandateAlreadyRegistered()', '0x6f6ffce9', 'This Auto-exit is already on.', 'show-existing'),
+  row('InvalidMandate()', '0x544cad7e', "This Auto-exit isn't valid: {reason}.", 'fix-fields'),
+  row('NonceAlreadyUsed()', '0x1fb09b80', 'This signature was already used or cancelled. Sign a new one.', 'new-nonce'),
   row('InvalidSignature()', '0x8baa579f', "The signature isn't from the owner of this automation.", 'switch-account'),
   row('Unauthorized()', '0x82b42900', VAULT_OWNER_ONLY, 'none'),
-  row('MandateNotActive()', '0x952501f6', 'This order is no longer active.', 'reread-status'),
+  row('MandateNotActive()', '0x952501f6', 'This Auto-exit is no longer on.', 'reread-status'),
   row('NothingToClaim()', '0x969bf728', 'Nothing to claim in {token}.', 'none'),
   row('InvalidRecipient()', '0x9c8d2cd2', 'Choose a valid address to receive the funds.', 'fix-fields'),
   row('DeliveryMismatch(address)', '0xf0de72c3', '{token} moved a different amount than expected, so the claim was refused.', 'support'),

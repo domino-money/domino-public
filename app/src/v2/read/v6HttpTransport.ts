@@ -51,13 +51,15 @@ export function createHttpReadV6Transport({ post }: { post: RawPost }): ReadV6Tr
       const reply = result.reply
       // Not the read route's answer: nothing in it is the contract's.
       if (reply.opaqueRedirect || reply.contractHeader !== READ_V6_CONTRACT_VERSION) throw new Error('not_the_route')
+      // Added 2026-10-06 (rugged's answer of 6 Oct, §1): a refusal's Retry-After, as sent, for ./v6.ts to keep on a 429.
+      const wait = reply.status !== 200 && reply.retryAfterHeader !== null ? { retryAfter: reply.retryAfterHeader } : {}
       // The route's own answer, but not JSON it could have sent (or too large to read): no body, which ./v6.ts refuses as
       // `invalid` (the contract broke), never as data.
-      if (reply.contentType === null || !JSON_MEDIA.test(reply.contentType) || reply.body.kind !== 'text') return { status: reply.status, body: undefined }
+      if (reply.contentType === null || !JSON_MEDIA.test(reply.contentType) || reply.body.kind !== 'text') return { status: reply.status, body: undefined, ...wait }
       try {
-        return { status: reply.status, body: JSON.parse(reply.body.text) as unknown }
+        return { status: reply.status, body: JSON.parse(reply.body.text) as unknown, ...wait }
       } catch {
-        return { status: reply.status, body: undefined }
+        return { status: reply.status, body: undefined, ...wait }
       }
     },
   }

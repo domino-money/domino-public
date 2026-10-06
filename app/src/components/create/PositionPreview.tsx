@@ -1,10 +1,12 @@
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { rangeGeometry } from '../../lib/chart/range'
 import { CREATE } from '../../lib/create/copy'
 import { aprDigits } from '../../lib/format/apr'
 import type { JourneyState } from '../../lib/create/journey'
+import { figuresShownUntil, networkFiguresAt } from '../../lib/create/otherChains'
 import { awayShort, plainFigure } from '../../lib/create/plain'
 import { formatUsd } from '../../lib/format/usd'
+import { readNow } from '../../lib/markets'
 import { rem } from '../../lib/rootScale'
 import type { PoolPrice } from '../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
@@ -156,7 +158,18 @@ export function PositionPreview({
   const [kept, setKept] = useState<PoolOption | null>(pool)
   if (pool && pool.key !== kept?.key) setKept(pool)
   const head = pool ?? kept
-  const figures = head ? poolFigures(head) : null
+  // Changed on purpose 2026-10-06 (rugged97's delta of 6 Oct §4): a pool of Base or Arbitrum One shows DEX Screener's
+  // figures for ten minutes after they were read, never after (lib/create/otherChains.ts networkFiguresAt), on a clock
+  // read when the card mounts and again just after the figure shown may no longer be. Robinhood Chain's are as they were.
+  const [clock, setClock] = useState(readNow)
+  const shown = head ? networkFiguresAt(head, Math.floor(clock.wall / 1000)) : null
+  const until = shown ? figuresShownUntil([shown]) : null
+  useEffect(() => {
+    if (until === null) return
+    const wake = setTimeout(() => setClock(readNow()), Math.max(0, (until + 1) * 1000 - Date.now()))
+    return () => clearTimeout(wake)
+  }, [until, clock])
+  const figures = shown ? poolFigures(shown) : null
   const view = chosen && price && state.range ? rangeView(state.range, price, chosen) : null
   const held = chosen ? heldAmounts(state, balances) : null
   const valued = held !== null && held.sides.every((side) => side.usd !== null) ? held.total : null

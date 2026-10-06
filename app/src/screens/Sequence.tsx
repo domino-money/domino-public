@@ -56,6 +56,8 @@ const openWallet = () => document.querySelector<HTMLButtonElement>('header [aria
  * here. With one: the wallet's open positions to choose from, then the guided
  * choices and one button (SequenceCreate). No NFT id or address is typed, and
  * how the processes work is on the docs pages.
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §8): in a build that carries Domino V2 that line closes only
+ * V1's own screen (`v1Closed` below); the wallet's positions and Domino V2's choices never wait for V1's release.
  */
 export default function Sequence({ lab: labText }: { lab?: string } = {}) {
   // The tab's name (lib/routeTitle.ts, audit E11).
@@ -94,10 +96,15 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
   const positions: WalletPositionsState = lab && owner ? { phase: 'ready', block: 0, positions: lab.positions } : read
   const list = pickerList(positions)
 
-  let body
-  if (release.kind === 'loading') body = <div hidden data-sequence-release="loading" />
-  else if (release.kind === 'unavailable')
-    body = (
+  // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §8: his patch, as sent; the profile ends 2026-10-21 19:01:30 UTC).
+  // V1's sequence release admits V1's own creation only (it expires 2026-10-21 19:01:30 UTC and is not renewed: V1 is
+  // off since 2026-10-05). Domino V2's choices have their own gate (src/v2in/automate/SetupEntry.tsx: the pinned
+  // manifest and read-v6's word), so in a build that carries V2 the page no longer waits for V1's release: only the V1
+  // screen SetupEntry falls back to (its vault gate off) is closed without it.
+  const v1Closed =
+    release.kind === 'loading' ? (
+      <div hidden data-sequence-release="loading" />
+    ) : release.kind === 'unavailable' ? (
       <div className="dm-seq-empty dm-dots-plate">
         <span className="dm-empty-tile dm-seq-empty-tile" aria-hidden="true">
           <IconAutomate />
@@ -106,7 +113,9 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
           Automation can’t be set up here.
         </p>
       </div>
-    )
+    ) : null
+  let body
+  if (!V2Setup && v1Closed) body = v1Closed
   // 2026-10-01 (audit C5): the wallet control is still finding the wallet; "Connect your wallet" flashed here meanwhile.
   else if (owner === null && identity.kind === 'unknown')
     body = (
@@ -176,7 +185,7 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
   else
     body = V2Setup ? (
       <Suspense fallback={<div className="dm-card dm-acct-block dm-seq-loading" aria-busy="true" />}>
-        <V2Setup positions={list.positions} intent={intent} v1={<SequenceCreate key={owner} positions={list.positions} intent={intent} connect={connectSequence} capabilities={capabilities} />} />
+        <V2Setup positions={list.positions} intent={intent} v1={v1Closed ?? <SequenceCreate key={owner} positions={list.positions} intent={intent} connect={connectSequence} capabilities={capabilities} />} />
       </Suspense>
     ) : (
       <SequenceCreate key={owner} positions={list.positions} intent={intent} connect={connectSequence} capabilities={capabilities} />

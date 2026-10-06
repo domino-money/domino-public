@@ -65,7 +65,9 @@ export const CLOSED_TEXT: Readonly<Record<string, string>> = Object.freeze({
   mandate_nonce_unavailable: "A fresh signature number couldn't be chosen. Try again.",
   mandate_already_signed: 'This Auto-exit is already signed.',
   mandate_nonce_held: 'This Auto-exit is signed and waiting. Finish turning it on, or cancel it.',
-  mandate_nonce_used: 'This signed Auto-exit was already used or cancelled. Sign again.',
+  // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct: the spec delta §3): the page's own checks before the
+  // module's NonceAlreadyUsed and MandateNotActive say the delta's words for them (src/v2/errors.ts AUTO_EXIT_ERRORS).
+  mandate_nonce_used: 'This signature was already used or cancelled. Sign a new one.',
   mandate_review_unknown: CHANGED,
   mandate_review_stale: CHANGED,
   mandate_step_unknown: CHANGED,
@@ -75,7 +77,11 @@ export const CLOSED_TEXT: Readonly<Record<string, string>> = Object.freeze({
   mandate_signature_mismatch: "Your wallet's signature can't be used for this Auto-exit.",
   mandate_module_not_enabled: 'Turn on Auto-exit for your automation first.',
   mandate_already_registered: 'This Auto-exit is already on.',
-  mandate_not_active: 'This Auto-exit is already off.',
+  mandate_not_active: 'This Auto-exit is no longer on.',
+  // Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 7: one Auto-exit per position; a second one active on the same
+  // position executes with value zero, the operator paying its gas): read-v6 lists one on this position, on another page
+  // or tab (../autoexit/MandateDialog.tsx, right before the signature). Set up automation's own words for it.
+  mandate_already_on: 'Auto-exit is already on for this position.',
   mandate_not_owner: 'Only the owner of this automation can do this.',
   mandate_invalid_id: CHANGED,
   mandate_invalid_nonce: CHANGED,
@@ -164,19 +170,6 @@ function fill(text: string, labels: ErrorLabels): string {
 }
 
 /**
- * §4.9's rows for the auto-exit module (src/v2/errors.ts AUTO_EXIT_ERRORS, the spec's words, which call it an order) in
- * Auto-exit's own, where the screens say them, by the error's name. Changed on purpose 2026-10-06 (the owner's point 5:
- * the product is Auto-exit, never an "order" on screen); what each means and its recovery are the spec's.
- */
-const AUTO_EXIT_REVERT_TEXT: Readonly<Record<string, string>> = Object.freeze({
-  MandateAlreadyRegistered: 'This Auto-exit is already on.',
-  NonceAlreadyUsed: 'This signature was already used or cancelled. Sign a new one.',
-  MandateNotActive: 'This Auto-exit is no longer on.',
-})
-const autoExitWords = (dataCode: string, copy: string): string =>
-  Object.hasOwn(AUTO_EXIT_REVERT_TEXT, dataCode) ? AUTO_EXIT_REVERT_TEXT[dataCode] : copy.replace(/^This order isn't valid:/, "This Auto-exit isn't valid:")
-
-/**
  * §4.9's waiting rows and §6.2's waiting reason that speak of a trigger or of "auto-exit for your automation", in
  * Auto-exit's own words where its card and its automation say them (./portfolio.ts waitingWords), by the error's name or
  * the reason's code. Changed on purpose 2026-10-06 (the review of point 5); the meaning is the spec's.
@@ -191,7 +184,9 @@ export const AUTO_EXIT_WAITING_TEXT: Readonly<Record<string, string>> = Object.f
 
 /**
  * What a failure says, and its code for `data-error-code`. `context` is the contract the step talks to: 'vault' for a
- * vault, its factory or the position manager's approval; 'autoExit' for the auto-exit module (in Auto-exit's words).
+ * vault, its factory or the position manager's approval; 'autoExit' for the auto-exit module. Changed on purpose
+ * 2026-10-06 (rugged's answer of 6 Oct: the spec delta §3): the module's rows say Auto-exit in the table itself
+ * (src/v2/errors.ts), so no context rewrites a row's words any more.
  */
 export function describeError(error: unknown, context: 'vault' | 'autoExit', labels: ErrorLabels): ErrorView {
   // The money lock before Domino's new contracts are live (finance/v2/liveLock.ts): nothing was asked of any wallet,
@@ -201,7 +196,7 @@ export function describeError(error: unknown, context: 'vault' | 'autoExit', lab
   // (decodeV2Error would read the word "reverted" as one): the page's own outcome codes.
   if (error instanceof Error && (SENT_OUTCOMES.has(error.message) || isBatchCode(error.message))) return { text: CLOSED_TEXT[error.message], code: error.message }
   const decoded = decodeV2Error(error, context, labels)
-  if (decoded) return { text: context === 'autoExit' ? autoExitWords(decoded.dataCode, decoded.copy) : decoded.copy, code: decoded.dataCode, recovery: decoded.recovery }
+  if (decoded) return { text: decoded.copy, code: decoded.dataCode, recovery: decoded.recovery }
   // A refusal the wallet said in other words than 4001 (WalletConnect's 5000, a hardware wallet's): nothing was sent.
   if (personRefused(error)) return { text: DECLINED_COPY, code: 'declined' }
   // The page's own switch to the chain (wallet/port.ts v2SwitchNotice already said it).

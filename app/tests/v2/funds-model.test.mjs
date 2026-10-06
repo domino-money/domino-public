@@ -280,7 +280,9 @@ test('kinds and the target rule: a dollar to the stable, ether to ETH or WETH, e
   assert.equal(model.kindOf(8453, USDC_BASE), 'dollar');
   assert.equal(model.kindOf(42161, ARB_USDC.toUpperCase().replace('0X', '0x')), 'dollar', 'any case');
   assert.equal(model.kindOf(8453, USDG), null, 'Robinhood Chain\'s stable is nothing on Base');
-  assert.equal(model.kindOf(1, ETH), null, 'another network: not one of Domino\'s');
+  // Changed on purpose 2026-10-06 (rugged97's #379): Ethereum and OP Mainnet have kinds by their balance-chain profiles
+  // (tests/v2/funds-balance-chains.test.mjs); any other network none.
+  assert.equal(model.kindOf(137, ETH), null, 'another network: neither Domino\'s nor a balance chain');
   assert.equal(model.kindOf(4663, TSLA), null);
   // The pool's tokens a deposit can deliver, in pool order.
   assert.deepEqual(model.deliverableTokens(4663, [ETH, USDG]), [ETH, USDG]);
@@ -610,5 +612,7 @@ test('the line\'s mark: by address only, the bundled ETH, WETH and USDG; any oth
   assert.equal(model.holdingArtwork(4663, USDG.toUpperCase().replace('0X', '0x')), 'USDG');
   assert.equal(model.holdingArtwork(8453, USDC_BASE), null, 'no bundled USDC: never a file named after a symbol');
   assert.equal(model.holdingArtwork(8453, USDG), null, 'USDG\'s address means nothing on Base');
-  assert.equal(model.holdingArtwork(1, ETH), null, 'not one of Domino\'s networks');
+  // Changed on purpose 2026-10-06 (rugged97's #379): Ethereum's and OP Mainnet's ETH and WETH have their marks too
+  // (tests/v2/funds-balance-chains.test.mjs); any other network none.
+  assert.equal(model.holdingArtwork(137, ETH), null, 'neither Domino\'s networks nor a balance chain');
 });

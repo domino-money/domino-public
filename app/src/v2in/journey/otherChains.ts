@@ -10,15 +10,15 @@ import type { TokenDisplay } from '../../lib/read/types'
 import { browserOriginWallet } from '../../finance/v2/crosschain'
 import { readHoldingsReport } from '../../finance/v2/holdings'
 import { v2Chain } from '../../v2/chains'
-import { readChainBalances, readChainPools, readChainTokens, type ReadV6Reply } from '../../v2/read/v6'
+import { readChainBalances, readChainTokens, type ReadV6Reply } from '../../v2/read/v6'
 import type { Address, V2ChainId } from '../../v2/types'
 import type { V2Transports } from '../transports'
 import { JOURNEY } from './copy'
 import { journeyError } from './errors'
-import { balanceTokens, balancesOfAnswer, factsOfAnswer, lookalikeOf, pastedOf, poolsOfAnswer, rereadOf, resolvedOf, rowsOfTokens, symbolRank } from './model/chainReads'
+import { READER_POOLS_CACHE_MS, balanceTokens, balancesOfAnswer, factsOfAnswer, lookalikeOf, passingAfter, pastedOf, poolsOfAnswer, rereadOf, resolvedOf, rowsOfTokens, symbolRank } from './model/chainReads'
 import { createNetworkSearch, searchable, type SearchAnswer } from './model/networkSearch'
 import { displayOf, factsOfFound, listedPools, networkTokens, offeredNetworks, optionOf, poolsToRead, refOf } from './model/networks'
-import { PASSING, patiently, servedOn, type LiveGate, type Served } from './served'
+import { chainPoolsOn, patiently, servedOn, type LiveGate, type Served } from './served'
 import type { JourneyGates } from './source'
 import { cleanSymbol, profileTokens } from './tokens'
 import { connectJourney, inTurn } from './wallet'
@@ -60,7 +60,10 @@ import { connectJourney, inTurn } from './wallet'
  * Each read goes to the service only while its route serves (the read Worker's capabilities). When it does not, or its
  * answer is not one (unavailable, or refused by the contract), the read goes through the wallet as before. What is pure
  * of it is ./model/chainReads.ts. A pool answer is reused for 20 seconds, so choosing a pasted address and listing its
- * pools is one read.
+ * pools is one read. Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §1: never chain-pools of the same token
+ * again within the reader's own 15 s cache): the page's one reuse (./served.ts chainPoolsOn), shared with Robinhood
+ * Chain's prices and kept when New position is opened again, and a price read again reuses an answer the reader would
+ * only give again; a busy reader's name search is asked again no sooner than the Retry-After it named.
  *
  * Changed on purpose 2026-10-06 (the owner's point 3: on those networks the search "sometimes only brings Robinhood
  * Chain", a pasted contract came as unnamed rows, and the pools came "dry"):
@@ -80,8 +83,6 @@ import { connectJourney, inTurn } from './wallet'
 
 type Live = LiveGate
 
-/** A pool answer is reused this long (a pasted address resolved, then its pools listed). */
-const POOLS_REUSE_MS = 20_000
 /** Per network, at most this many hits: the list stays about one screen. */
 const SEARCH_LIMIT = 8
 /** Quiet re-asks of a failed name search, per network and text, while the list stays open (2026-10-06). */
@@ -118,21 +119,13 @@ export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
   // Asked once more after a quiet wait when it failed for the moment (2026-10-06): the wallet's own read comes only after
   // (./served.ts patiently, moved there on purpose 2026-10-06 and asked the same way here).
 
-  const poolAnswers = new Map<string, { at: number; answer: Promise<Served<ChainPoolsResponse>> }>()
-  const poolsKey = (chainId: OtherChainId, token: string, paired?: string) => `${chainId}|${token.toLowerCase()}|${paired?.toLowerCase() ?? ''}`
-  /** chain-pools for a token (or a pair): one read for the asks within POOLS_REUSE_MS of each other; a failure is not kept. */
-  function chainPools(chainId: OtherChainId, token: string, paired?: string) {
-    const key = poolsKey(chainId, token, paired)
-    const kept = poolAnswers.get(key)
-    if (kept && Date.now() - kept.at < POOLS_REUSE_MS) return kept.answer
-    const answer = served<ChainPoolsResponse>(chainId, 'chain-pools', (t) => readChainPools(t.read, t.readRuntime, chainId, token, paired))
-    poolAnswers.set(key, { at: Date.now(), answer })
-    while (poolAnswers.size > 64) poolAnswers.delete(poolAnswers.keys().next().value as string)
-    void answer.then((said) => {
-      if (said.kind !== 'ok' && poolAnswers.get(key)?.answer === answer) poolAnswers.delete(key)
-    })
-    return answer
-  }
+  /**
+   * chain-pools for a token (or a pair): one read for the asks within 20 s of each other; a failure is not kept. Changed on
+   * purpose 2026-10-06 (rugged's answer of 6 Oct, §1): the page's one reuse (./served.ts chainPoolsOn), where each list kept
+   * its own; `maxAgeMs` asks for a younger answer, never one younger than the reader's own cache.
+   */
+  const chainPools = (chainId: OtherChainId, token: string, paired?: string, maxAgeMs?: number): Promise<Served<ChainPoolsResponse>> =>
+    chainPoolsOn(gateOf(chainId), chainId, token, paired, maxAgeMs)
 
   /** One of the network's own currencies (ETH, WETH, USDC) at an address, as its profile names it. */
   const profileAt = (chainId: OtherChainId, address: string) => profileTokens(chainId).find((token) => token.address === address)
@@ -147,10 +140,12 @@ export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
       }
       const said = await served<ChainTokensResponse>(chainId, 'chain-tokens', (t) => readChainTokens(t.read, t.readRuntime, chainId, text, SEARCH_LIMIT))
       if (said.kind === 'ok') return { kind: 'hits', rows: rowsOfTokens(chainId, said.body) }
-      return said.kind === 'off' ? { kind: 'off' } : { kind: 'failed', passing: said.passing }
+      if (said.kind === 'off') return { kind: 'off' }
+      return said.retryAfterS === undefined ? { kind: 'failed', passing: said.passing } : { kind: 'failed', passing: said.passing, retryAfterS: said.retryAfterS }
     },
     own: (chainId, address) => profileAt(chainId, address) !== undefined,
-    delay: (attempt) => (attempt < SEARCH_REASKS ? quietDelayMs(PASSING, attempt) : null),
+    // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §1): no sooner than a busy reader's Retry-After.
+    delay: (attempt, retryAfterS) => (attempt < SEARCH_REASKS ? quietDelayMs(passingAfter(retryAfterS), attempt) : null),
     after: whenVisibleAfter,
   })
   /**
@@ -227,9 +222,9 @@ export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
       const gate = gateOf(chainId)
       if (!gate) return null
       const ref = refOf(option)
-      // A pool on screen that has aged wants the chain's price now, never a kept answer.
-      poolAnswers.delete(poolsKey(chainId, ref.currency0, ref.currency1))
-      const said = await patiently(() => chainPools(chainId, ref.currency0, ref.currency1), signal)
+      // A pool on screen that has aged wants the chain's price now, never a kept answer. Changed on purpose 2026-10-06
+      // (rugged's answer of 6 Oct, §1): save one the reader itself would give again, younger than its own cache.
+      const said = await patiently(() => chainPools(chainId, ref.currency0, ref.currency1, READER_POOLS_CACHE_MS), signal)
       if (signal.aborted) return null
       if (said.kind === 'ok') return rereadOf(option, ref, said.body, said.receivedAt)
       const [read] = await inTurn(async () => (await connectJourney(chainId, gate.contracts)).zap.readPools([ref]))

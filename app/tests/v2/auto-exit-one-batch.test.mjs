@@ -299,3 +299,38 @@ test('a v3 position\'s price is its pool\'s own slot0, at the profile factory\'s
   chain.setPrice(3, pool, 123_456_789_000_000_000_000_000n);
   assert.equal((await client.readPoolPrice(3, 77n)).sqrtPriceX96, 123_456_789_000_000_000_000_000n);
 });
+
+// Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 2: a wallet without batching): another vault of the wallet landing on its
+// nonce between the signature and createVault makes the signed order one for another vault (registered, it would never
+// execute: read-v6 says not_in_vault). The steps that create the vault refuse it (the vault client's own rebuild, and this
+// client's predictionHolds right before them, src/v2in/autoexit/MandateDialog.tsx), and the dialog makes the prediction,
+// the approval and the signature again; this very vault made elsewhere for the position is `created` (one per position).
+test('without batching, the prediction is read again before the vault is created: free until another vault takes its nonce (vault_nonce_moved, as the vault client\'s own step says); this very vault made for the position is created', async () => {
+  const { chain, client, vaults } = setup({ atomic: null, simulateV1: false });
+  const created = await vaults.reviewCreate(create());
+  const review = await client.reviewMandate(order(created.vault));
+  await client.signMandate(review);
+  assert.equal(await client.predictionHolds(review), 'free');
+  assert.equal(created.steps[0].kind, 'approve-root');
+  assert.equal((await vaults.receipt(await vaults.send(await vaults.prepareStep(created, 0, GAS), true))).state, 'finalized');
+  assert.equal(await client.predictionHolds(review), 'free', 'the approval alone moves nothing');
+  // Another tab sets up automation on the wallet's other position first: nonce 0 is its vault, at the predicted address.
+  assert.equal(await chain.seedVault({ dex: 4, tokenId: SECOND }), created.vault);
+  await assert.rejects(client.predictionHolds(review), /vault_nonce_moved/);
+  await assert.rejects(vaults.prepareStep(created, 1, GAS), /vault_nonce_moved/, 'the vault client\'s own create step says the same');
+  await assert.rejects(client.predictionHolds({ ...review }), /mandate_review_unknown/, 'only a review this client made');
+  // A fresh review predicts the next vault; the approval moves to it.
+  const again = await vaults.reviewCreate(create());
+  assert.equal(again.vault, chain.predict(4, OWNER, 1n));
+  const next = await client.reviewMandate(order(again.vault));
+  assert.equal(await client.predictionHolds(next), 'free');
+
+  // The wallet's own steps made this very vault for this position: created.
+  const own = setup({ atomic: null, simulateV1: false });
+  const made = await own.vaults.reviewCreate(create());
+  const r2 = await own.client.reviewMandate(order(made.vault));
+  for (let index = 0; index < made.steps.length; index++) await own.vaults.send(await own.vaults.prepareStep(made, index, GAS), true);
+  assert.equal(await own.client.predictionHolds(r2), 'created');
+  // A review of a vault the wallet already had is not a prediction.
+  await assert.rejects(own.client.predictionHolds(await own.client.reviewMandate(order(made.vault))), /mandate_review_unknown/);
+});

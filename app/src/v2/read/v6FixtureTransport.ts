@@ -9,14 +9,17 @@ import type { ReadV6Transport } from './v6'
 
 export interface ReadV6FixtureTransport extends ReadV6Transport {
   readonly kind: 'fixture'
-  /** The answer for every read of `route` from now on (the last one scripted wins). */
-  script(route: ReadV6Route, status: number, body: unknown): void
+  /**
+   * The answer for every read of `route` from now on (the last one scripted wins). `retryAfter` (added 2026-10-06): the
+   * Retry-After header a refusal comes with.
+   */
+  script(route: ReadV6Route, status: number, body: unknown, retryAfter?: string): void
   calls(): readonly { route: ReadV6Route; body: unknown }[]
   unscripted(): readonly ReadV6Route[]
 }
 
 export function createReadV6FixtureTransport(): ReadV6FixtureTransport {
-  const answers = new Map<ReadV6Route, { status: number; body: unknown }>()
+  const answers = new Map<ReadV6Route, { status: number; body: unknown; retryAfter?: string }>()
   const log: { route: ReadV6Route; body: unknown }[] = []
   const refused: ReadV6Route[] = []
   return {
@@ -28,10 +31,10 @@ export function createReadV6FixtureTransport(): ReadV6FixtureTransport {
         refused.push(route)
         throw new Error(`no read-v6 answer scripted for ${route}`)
       }
-      return { status: answer.status, body: structuredClone(answer.body) }
+      return { status: answer.status, body: structuredClone(answer.body), ...(answer.retryAfter !== undefined ? { retryAfter: answer.retryAfter } : {}) }
     },
-    script(route, status, body) {
-      answers.set(route, { status, body: structuredClone(body) })
+    script(route, status, body, retryAfter) {
+      answers.set(route, { status, body: structuredClone(body), ...(retryAfter !== undefined ? { retryAfter } : {}) })
     },
     calls: () => log,
     unscripted: () => refused,

@@ -4,6 +4,15 @@
  * every one. ERC-20 reads (allowance, balanceOf, decimals) come from its own tables; an exact approval it mines sets
  * the allowance; the page's nonce journal is an in-memory one with V1's rules (claim once, release a claim only by its
  * token, settle a latch older than the limit). Nothing here touches a network.
+ *
+ * Added 2026-10-06 (rugged's answer of 6 Oct: approval and deposit in one batch), off by default so every earlier test
+ * sees the same wallet: `atomic` ('supported' | 'ready') makes it answer wallet_getCapabilities for its chain with that
+ * `atomic.status`; wallet_sendCalls (version 2.0.0, atomic required, its chain, the owner) then runs the calls in ONE
+ * transaction of the owner's (a 7702 account's own: one nonce, the calls in order, all or none), mined as any send, and
+ * wallet_getCallsStatus answers 100 until it is mined, then 200 (500 reverted) with its one receipt, or `batchStatus` when
+ * set (400, say), or 5730 once `forgetBatches` is set. `nextBatch`: 'refuse' (4001), 'unsupported' (5700),
+ * 'upgrade-declined' (5750), 'hang' (no answer), 'lost' (taken, then a -32603), 'wait' (answered by `answerBatch()`).
+ * The page's batch latch is an in-memory one with V1's rules (claim once, record the id, release by the claim or the id).
  */
 import { numberToHex } from 'viem';
 
@@ -24,6 +33,7 @@ export function createOriginChain({
   estimate = 100_000n,
   finalizedTag = true,
   mine = 'instant',
+  atomic = null,
 } = {}) {
   const state = {
     chainId,
@@ -52,10 +62,19 @@ export function createOriginChain({
     revertEstimate: false,
     head: 100n,
     finalized: 100n,
+    // The batch path (added 2026-10-06).
+    atomic,
+    batches: [],
+    nextBatch: null,
+    batchStatus: null,
+    forgetBatches: false,
+    answerBatch: null,
   };
   const txs = new Map();
   const receipts = new Map();
   const claims = new Map();
+  const batchHashes = new Map();
+  const batchClaims = new Map();
   let ids = 0;
   const key = (token, holder, spender) => `${lower(token)}|${lower(holder)}|${lower(spender)}`;
   const hashOf = (i) => `0x${(0xa0 + i).toString(16).padStart(64, '0')}`;
@@ -69,10 +88,12 @@ export function createOriginChain({
     const ok = !tx.reverts;
     receipts.set(hash, { transactionHash: hash, from: tx.from, blockHash: blockHash(blockNumber), blockNumber: numberToHex(blockNumber), status: ok ? '0x1' : '0x0', logs: [] });
     state.latest += 1;
-    if (ok && lower(tx.data).startsWith(APPROVE)) {
-      const spender = `0x${tx.data.slice(10 + 24, 74)}`;
-      const amount = BigInt(`0x${tx.data.slice(74, 138)}`);
-      state.allowances.set(key(tx.to, tx.from, spender), amount);
+    // A batch's calls run in its one transaction, in order (added 2026-10-06); a reverted one ran none of them.
+    for (const call of ok ? (tx.calls ?? [tx]) : []) {
+      if (!lower(call.data).startsWith(APPROVE)) continue;
+      const spender = `0x${call.data.slice(10 + 24, 74)}`;
+      const amount = BigInt(`0x${call.data.slice(74, 138)}`);
+      state.allowances.set(key(call.to, tx.from, spender), amount);
     }
   }
 
@@ -135,6 +156,43 @@ export function createOriginChain({
       }
       case 'eth_getTransactionReceipt':
         return receipts.get(lower(params[0])) ?? null;
+      // The batch path (added 2026-10-06).
+      case 'wallet_getCapabilities':
+        if (state.atomic === null) throw Object.assign(new Error(`${method} is not answered here`), { code: 4200 });
+        return { [numberToHex(state.chainId)]: { atomic: { status: state.atomic } } };
+      case 'wallet_sendCalls': {
+        if (state.atomic === null) throw Object.assign(new Error(`${method} is not answered here`), { code: 4200 });
+        const [batch] = params;
+        if (batch.version !== '2.0.0' || batch.atomicRequired !== true || Number(batch.chainId) !== state.chainId || lower(batch.from) !== lower(owner)) throw Object.assign(new Error('Invalid batch'), { code: -32602 });
+        const next = state.nextBatch;
+        state.nextBatch = null;
+        if (next === 'refuse') throw Object.assign(new Error('User rejected the request.'), { code: 4001 });
+        if (next === 'unsupported') throw Object.assign(new Error('Atomic batch unsupported.'), { code: 5700 });
+        if (next === 'upgrade-declined') throw Object.assign(new Error('The account upgrade was rejected.'), { code: 5750 });
+        if (next === 'hang') return new Promise(() => {});
+        state.batches.push(batch);
+        const hash = hashOf(ids++);
+        txs.set(hash, { from: lower(owner), to: lower(owner), data: '0x', value: '0x0', nonce: numberToHex(state.pending), hash, calls: batch.calls.map((call) => ({ ...call })), reverts: state.revertNextSend === true });
+        state.revertNextSend = false;
+        state.pending += 1;
+        const id = `batch-${state.batches.length}`;
+        batchHashes.set(id, hash);
+        if (state.mine === 'instant') includeTx(hash);
+        if (next === 'lost') throw Object.assign(new Error('Request timed out.'), { code: -32603 });
+        if (next === 'wait') return new Promise((done) => { state.answerBatch = () => done({ id }); });
+        return { id };
+      }
+      case 'wallet_getCallsStatus': {
+        if (state.atomic === null) throw Object.assign(new Error(`${method} is not answered here`), { code: 4200 });
+        const id = params[0];
+        const hash = batchHashes.get(id);
+        if (!hash || state.forgetBatches) throw Object.assign(new Error('Unknown bundle id.'), { code: 5730 });
+        const reply = { version: '2.0.0', id, chainId: numberToHex(state.chainId), atomic: true };
+        if (state.batchStatus !== null) return { ...reply, status: state.batchStatus };
+        const receipt = receipts.get(hash);
+        if (!receipt) return { ...reply, status: 100 };
+        return { ...reply, status: receipt.status === '0x1' ? 200 : 500, receipts: [{ ...receipt, gasUsed: '0x30d40' }] };
+      }
       case 'eth_getBlockByNumber': {
         if (params[0] === 'finalized') {
           if (!state.finalizedTag) throw Object.assign(new Error('Unknown block tag'), { code: -32602 });
@@ -178,6 +236,22 @@ export function createOriginChain({
     async forgetNonce(chain, n) {
       return claims.delete(`${chain}|${n}`);
     },
+    // The page's batch latch (added 2026-10-06), as ../../src/finance/nonce.ts keeps it: '' until the wallet answered.
+    batchOffered: (chain, k) => (batchClaims.has(`${chain}|${k}`) ? (batchClaims.get(`${chain}|${k}`).id ?? '') : null),
+    async claimBatch(chain, k) {
+      if (batchClaims.has(`${chain}|${k}`)) throw new Error('wallet_batch_already_offered');
+      const token = `batch-claim-${++tokens}`;
+      batchClaims.set(`${chain}|${k}`, { token, id: null });
+      return token;
+    },
+    async recordBatch(chain, k, token, id) {
+      const claim = batchClaims.get(`${chain}|${k}`);
+      if (claim?.token === token) claim.id = id;
+    },
+    async releaseBatch(chain, k, token) {
+      const claim = batchClaims.get(`${chain}|${k}`);
+      if (claim && token !== '' && (claim.token === token || claim.id === token)) batchClaims.delete(`${chain}|${k}`);
+    },
   };
 
   return {
@@ -185,6 +259,10 @@ export function createOriginChain({
     wallet,
     claims,
     receipts,
+    /** The page's batch latches, by `${chain}|${key}` (added 2026-10-06). */
+    batchClaims,
+    /** The wallet's answer to a batch held with nextBatch 'wait' (added 2026-10-06). */
+    answerBatch: () => state.answerBatch?.(),
     /** Mines a sent transaction now (manual mining). */
     include: (hash) => includeTx(lower(hash)),
     /** Makes the next sent transaction revert once mined. */

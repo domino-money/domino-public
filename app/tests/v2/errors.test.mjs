@@ -94,13 +94,14 @@ const SPEC = [
   ['zap', 'ExecutionFailed(uint256,bytes)', '0x2c4029e9', ROUTE, 'requote'],
   ['zap', 'DirectCall()', '0xdf146856', UNAVAILABLE, 'disable-chain'],
   ['zap', 'InvalidZapConfig()', '0x787fe9bc', UNAVAILABLE, 'disable-chain'],
-  // §4.9, the owner's actions
-  ['autoExit', 'MandateAlreadyRegistered()', '0x6f6ffce9', 'This order is already registered.', 'show-existing'],
-  ['autoExit', 'InvalidMandate()', '0x544cad7e', "This order isn't valid: {reason}.", 'fix-fields'],
-  ['autoExit', 'NonceAlreadyUsed()', '0x1fb09b80', 'This signed order was already used or cancelled. Sign a new one.', 'new-nonce'],
+  // §4.9, the owner's actions. Changed on purpose 2026-10-06 (rugged's answer of 6 Oct: the spec delta §3, "order" becomes
+  // "Auto-exit"): the delta's words.
+  ['autoExit', 'MandateAlreadyRegistered()', '0x6f6ffce9', 'This Auto-exit is already on.', 'show-existing'],
+  ['autoExit', 'InvalidMandate()', '0x544cad7e', "This Auto-exit isn't valid: {reason}.", 'fix-fields'],
+  ['autoExit', 'NonceAlreadyUsed()', '0x1fb09b80', 'This signature was already used or cancelled. Sign a new one.', 'new-nonce'],
   ['autoExit', 'InvalidSignature()', '0x8baa579f', "The signature isn't from the owner of this automation.", 'switch-account'],
   ['autoExit', 'Unauthorized()', '0x82b42900', 'Only the owner of this automation can do this.', 'none'],
-  ['autoExit', 'MandateNotActive()', '0x952501f6', 'This order is no longer active.', 'reread-status'],
+  ['autoExit', 'MandateNotActive()', '0x952501f6', 'This Auto-exit is no longer on.', 'reread-status'],
   ['autoExit', 'NothingToClaim()', '0x969bf728', 'Nothing to claim in {token}.', 'none'],
   ['autoExit', 'InvalidRecipient()', '0x9c8d2cd2', 'Choose a valid address to receive the funds.', 'fix-fields'],
   ['autoExit', 'DeliveryMismatch(address)', '0xf0de72c3', '{token} moved a different amount than expected, so the claim was refused.', 'support'],
@@ -469,12 +470,12 @@ test('{token} for an error that carries none comes from the action\'s token; wit
 
 test('{reason} is InvalidMandate\'s local reason; {chain} the chain\'s name; InvalidInit says the consent when it was missing', () => {
   const mandate = (reason) => errors.decodeRevertData(revertData('InvalidMandate()'), 'autoExit', { chainId: 4663, reason });
-  assert.equal(mandate('set a price to exit at').copy, "This order isn't valid: set a price to exit at.");
-  assert.equal(mandate('the slippage must be 10% or less.').copy, "This order isn't valid: the slippage must be 10% or less.");
-  assert.equal(mandate('the date\u202e is in the past').copy, "This order isn't valid: the date is in the past.");
+  assert.equal(mandate('set a price to exit at').copy, "This Auto-exit isn't valid: set a price to exit at.");
+  assert.equal(mandate('the slippage must be 10% or less.').copy, "This Auto-exit isn't valid: the slippage must be 10% or less.");
+  assert.equal(mandate('the date\u202e is in the past').copy, "This Auto-exit isn't valid: the date is in the past.");
   for (const missing of [undefined, '', '.', '   ']) assert.deepEqual([mandate(missing).copy, mandate(missing).recovery], [GENERIC, 'fix-fields']);
   // The reason fills {reason} only: another sentence is untouched by it.
-  assert.equal(errors.decodeRevertData(revertData('MandateNotActive()'), 'autoExit', { chainId: 4663, reason: 'x' }).copy, 'This order is no longer active.');
+  assert.equal(errors.decodeRevertData(revertData('MandateNotActive()'), 'autoExit', { chainId: 4663, reason: 'x' }).copy, 'This Auto-exit is no longer on.');
   const halted = errors.decodeRevertData(revertData('AutomationHalted()'), 'autoExitWaiting', { chainId: 42161 });
   assert.equal(halted.copy, 'Paused: Domino stopped automation on Arbitrum One for safety.');
   assert.equal(errors.decodeRevertData(revertData('AutomationHalted()'), 'autoExitWaiting', { chainId: 1 }).copy, GENERIC);

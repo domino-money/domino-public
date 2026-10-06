@@ -64,6 +64,13 @@ async function captureReceiptState(page, name, target) {
 /** What the product rules keep off these screens. "Not connected" pills driven by ROADMAP are allowed; "not connected yet" is not. */
 const FORBIDDEN = /not connected yet|not enabled|isn’t enabled|isn't enabled|aren't enabled|not available on this deployment|coming soon|in this release|\bbeta\b|\balpha\b|\bv4\b|read-only|temporarily unavailable|retry after|Last read/i;
 const RELEASE_OFF = { status: 200, body: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: false, deployment: null } };
+/**
+ * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §3: performance-v2 is off on purpose, it is V1's "Start
+ * tracking", and V1 is off since 2026-10-05): a build that carries Domino V2 (V1's suites run on wallet-test-v2,
+ * scripts/v1-on-v2.mjs) never mounts V1's Performance (src/v2in/automate/ManagedVaults.tsx is its Managed positions, from
+ * read-v6), so the tests of V1's history, its copies in this browser and Start tracking are the V1 build's alone.
+ */
+const V1_HISTORY = WALLET_DIST === WALLET_V2_DIST ? { skip: 'a build with Domino V2 draws no V1 history (rugged97, 6 Oct, §3)' } : {};
 
 /**
  * `chain`: what the public RPC answers the page (tests/support/browser-chain.mjs), an empty chain unless one is given
@@ -145,7 +152,7 @@ part('automation');
 // Changed on purpose (owner, 2026-09-27, round 5, "Domino is for people who know nothing about pools"): the signed-out
 // sentences are plain, a managed position is one short row with three figures and the rest inside All figures, and a receipt
 // is one short row whose sentence is inside it.
-test('private history and receipts read themselves after login, format exact producer amounts, and disappear on account change', async () => {
+test('private history and receipts read themselves after login, format exact producer amounts, and disappear on account change', V1_HISTORY, async () => {
   const s = await scenario();
   try {
     // Changed on purpose 2026-10-01 (audit D2): with no wallet connected yet, each card says to connect one (it said
@@ -200,7 +207,7 @@ const setVisibility = (page, value) => page.evaluate((state) => {
 
 // Changed on purpose (review:wallet, receipts polling): a switched-off route used to be asked again every 60 s while the tab stayed visible, so
 // this case fast-forwarded 65 s. It cannot change without a deploy, so it is not asked again on a timer; the owner coming back to the tab asks.
-test('switched off, history and receipts show a quiet unavailable state and are not asked again on a timer; switched on, both fill in when the tab is shown again, with nothing pressed', async () => {
+test('switched off, history and receipts show a quiet unavailable state and are not asked again on a timer; switched on, both fill in when the tab is shown again, with nothing pressed', V1_HISTORY, async () => {
   const s = await scenario({ clock: true });
   s.set({ performance: 'off', execution: 'off' });
   try {
@@ -340,13 +347,32 @@ test('a switched-off deposit service leaves only the empty list: no line about d
 // Changed on purpose (qa:visual, dead ends; then the owner's simpler automation page, 2026-09-24): without a release the page says in one
 // plain muted line that automation can't be set up here, why in its data and title. There are no owner controls, no saved-profile
 // recovery path and nothing to read or press.
-test('sequence is reachable from Automate, reads its release on mount with no wallet, and without one says in one plain line that automation can’t be set up here', async () => {
+// Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §8: V1's sequence profile ends 2026-10-21 19:01:30 UTC and is not renewed):
+// on the build that carries Domino V2 (V1's suites run on wallet-test-v2, scripts/v1-on-v2.mjs) the page still reads its release once,
+// but never waits for it (screens/Sequence.tsx): with no release and no wallet it asks for the wallet, and never says it can't be set up.
+/** Set up automation without V1's release in a build that carries Domino V2: the wallet's empty state, never the release's line. */
+async function sequenceWithoutRelease(s, label) {
+  const connect = s.page.locator('main.dm-seq [data-sequence-wallet="none"]');
+  await connect.waitFor();
+  await until(() => s.releases.some((call) => call.path === '/api/setup/v1/sequence-release'), `${label}: the release asked`);
+  assert.equal(await s.page.locator('[data-sequence-release="unavailable"]').count(), 0, `${label}: no "Automation can’t be set up here."`);
+  assert.match(await connect.innerText(), /^Connect your wallet\s+Your open positions appear here to choose from\.\s+Connect wallet$/, label);
+  assert.deepEqual(await s.page.locator('main button').allInnerTexts(), ['Connect wallet'], `${label}: the wallet's one button, no owner controls`);
+}
+test('sequence is reachable from Automate, reads its release on mount with no wallet, and without one says in one plain line that automation can’t be set up here (with Domino V2: goes on to the wallet)', async () => {
   const s = await scenario();
   try {
     // The way into sequences lives on Automate (DESIGN.md E.6), where wallet builds render its link.
     await s.page.goto(`${s.origin}/#/automate`);
     await s.page.getByRole('link', {name:'Set up Domino-compound'}).click();
     await s.page.getByRole('heading', {name:'Set up automation',exact:true}).waitFor();
+    if (WALLET_DIST === WALLET_V2_DIST) {
+      await sequenceWithoutRelease(s, 'no release');
+      assert.deepEqual(s.releases, [{ path: '/api/setup/v1/sequence-release', method: 'GET', contract: '1.0.0-rc.1' }], 'one public GET on mount');
+      assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
+      assert.equal(s.wallet.state.signed.length, 0); assert.deepEqual(s.wallet.state.refused, []);
+      return;
+    }
     const line = s.page.locator('[data-sequence-release="unavailable"][data-sequence-release-reason="release_not_available"]');
     await line.waitFor();
     assert.deepEqual(s.releases, [{ path: '/api/setup/v1/sequence-release', method: 'GET', contract: '1.0.0-rc.1' }], 'one public GET on mount');
@@ -377,10 +403,13 @@ test('a refused or failing release (403, 404, 503) is treated like available:fal
     codeHashes: { factory: hash(0x21), implementation: hash(0x22), poolManager: hash(0x23), positionManager: hash(0x24), stateView: hash(0x25), readHelper: hash(0x26), engine: hash(0x27), routing: hash(0x28), priceGuard: hash(0x29),
       vault: keccak256(concatHex(['0x363d3d373d3d3d363d73', implementation, '0x5af43d82803e903d91602b57fd5bf3'])) } } };
   try {
+    // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §8): with Domino V2 in the build the page goes on to the wallet.
+    const v2 = WALLET_DIST === WALLET_V2_DIST;
     for (const [status, code] of [[403, 'origin_not_allowed'], [404, 'route_not_available'], [503, 'setup_configuration_unavailable']]) {
       s.set({ sequenceRelease: { status, body: { error: code } }, setupRelease: { status, body: { error: code } } });
       await s.page.goto(`${s.origin}/#/sequence`); await s.page.reload();
-      await s.page.locator(`[data-sequence-release="unavailable"][data-sequence-release-reason="${code}"]`).waitFor();
+      if (v2) await sequenceWithoutRelease(s, `sequence ${status}`);
+      else await s.page.locator(`[data-sequence-release="unavailable"][data-sequence-release-reason="${code}"]`).waitFor();
       assert.doesNotMatch(await s.page.locator('main').innerText(), /Create a paused sequence|not available|not connected/i, `sequence ${status}`);
       await s.page.goto(`${s.origin}/#/setup`); await s.page.reload();
       // No saved profile: no card, only the hidden marker that says where the release stands.
@@ -390,8 +419,11 @@ test('a refused or failing release (403, 404, 503) is treated like available:fal
     // Changed on purpose (2026-09-24): the saved profile only fed the owner controls' recovery path, which the owner removed.
     await s.page.evaluate((value) => localStorage.setItem('domino.sequence.public-recovery.v1', JSON.stringify(value)), saved);
     await s.page.goto(`${s.origin}/#/sequence`); await s.page.reload();
-    await s.page.locator('[data-sequence-release="unavailable"]').waitFor();
-    assert.equal(await s.page.locator('main button').count(), 0, 'a saved profile brings no controls back');
+    if (v2) await sequenceWithoutRelease(s, 'a saved profile');
+    else {
+      await s.page.locator('[data-sequence-release="unavailable"]').waitFor();
+      assert.equal(await s.page.locator('main button').count(), 0, 'a saved profile brings no controls back');
+    }
     assert.ok(s.releases.every(call => call.method === 'GET'));
     assert.equal(s.wallet.state.signed.length, 0); assert.deepEqual(s.wallet.state.refused, [], 'mounting asked the wallet for nothing');
   } finally { await s.close(); }
@@ -4863,7 +4895,7 @@ test('many receipts: the Positions tab shows four short rows at most, cancelled 
   } finally { await s.close(); }
 });
 
-test('few receipts and none: a short list with nothing to fold, and a friendly empty plate; Managed positions shows one short row per position with its figures one click away', async () => {
+test('few receipts and none: a short list with nothing to fold, and a friendly empty plate; Managed positions shows one short row per position with its figures one click away', V1_HISTORY, async () => {
   for (const [name, pages] of [['few', [[receiptItem(1, 'cancelled'), receiptItem(2, 'reconciled', { block: 7346840, usdg: '16490000', ufg: '1086592191816706700000' })]]], ['none', [[]]]]) {
     const s = await scenario();
     await answerReceipts(s.context, pages);
@@ -5274,7 +5306,7 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     holdNext: () => { hold = true; }, simulate: calls => batchResults(calls).results };
 }
 
-test('Start tracking is offered for the sequences the wallet lists, reads each one\'s positions from its vault, and sends enroll with the session: nothing typed, nothing signed', async () => {
+test('Start tracking is offered for the sequences the wallet lists, reads each one\'s positions from its vault, and sends enroll with the session: nothing typed, nothing signed', V1_HISTORY, async () => {
   const s = await scenario();
   const chain = fakeSequenceChain(OWNER, { roots: [100n, 200n], chains: { 0: [{ id: 11n, active: true }, { id: 12n, active: false }] } });
   // The mock wallet answers only login methods, so chain reads reach this fake chain; a wallet method outside both is still refused and fails the run.
@@ -5335,7 +5367,7 @@ test('Start tracking is offered for the sequences the wallet lists, reads each o
 // tracks yet. Managed positions must not tell him to turn Auto-compound on right above the Start tracking that offers his
 // automation; and once tracking is asked for, the row that waits for its first figures is named by its position, never by
 // the automation's address, and the position is not named a second time under Track your automations.
-test('with an automation the wallet owns and nothing tracked, Managed positions points at Start tracking; a position waiting for its first figures is named by its position, once, with no address in sight', async () => {
+test('with an automation the wallet owns and nothing tracked, Managed positions points at Start tracking; a position waiting for its first figures is named by its position, once, with no address in sight', V1_HISTORY, async () => {
   const s = await scenario();
   const chain = fakeSequenceChain(OWNER, { roots: [3325113n] });
   await s.context.exposeFunction('__dominoChainRead', (method, params) => chain.request(method, params));
@@ -7048,7 +7080,9 @@ test('a position’s page offers Automate and says Plain position only for one o
     // Domino positions, and a missing id that no New position made here is not asked for again, fresh.
     const before = chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length;
     await s.page.evaluate((id) => { location.hash = `#/sequence/${id}`; }, ELSEWHERE);
-    await s.page.locator('main.dm-seq [data-sequence-release]').first().waitFor({ timeout: 10_000 });
+    // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §8): with Domino V2 in the build the page never waits for V1's
+    // release, so its own mount (src/v2in/automate/SetupEntry.tsx) may be what it draws first.
+    await s.page.locator('main.dm-seq :is([data-sequence-release], [data-v2in-setup])').first().waitFor({ timeout: 10_000 });
     await s.page.waitForTimeout(1_000);
     // Changed on purpose 2026-09-28 (speed wave B, item 18): the wallet's list read a moment ago on Positions is this
     // visit's, kept in the page's memory: the automation page takes it and reads it neither once more nor for an id it lacks.
@@ -8272,7 +8306,7 @@ test('the receipts page never blanks: reads merge in place, a hidden tab and a f
   } finally { await s.close(); }
 });
 
-test('a copy this browser kept for another wallet, or one the contract refuses, is never shown', async () => {
+test('a copy this browser kept for another wallet, or one the contract refuses, is never shown', V1_HISTORY, async () => {
   const s = await scenario({ clock: true });
   const other = '0x' + 'ee'.repeat(20);
   const good = receiptItem(1, 'reconciled', { block: 7_340_000, usdg: '5000000' });
@@ -8301,7 +8335,7 @@ test('a copy this browser kept for another wallet, or one the contract refuses, 
 });
 
 // Managed positions never flash empty either (the owner, 2026-09-27, round 6), and a sign-out forgets what this browser kept.
-test('Managed positions never flash empty: a hidden tab, a failed read and the way back keep the cards; reloaded, they paint from this browser’s copy; signing out forgets every private copy', async () => {
+test('Managed positions never flash empty: a hidden tab, a failed read and the way back keep the cards; reloaded, they paint from this browser’s copy; signing out forgets every private copy', V1_HISTORY, async () => {
   const s = await scenario({ clock: true });
   await answerReceipts(s.context, [[receiptItem(2, 'reconciled', { block: 7346840, usdg: '16490000' })]]);
   const PERFORMANCE = /\/api\/performance\/v2\//, LIST = /\/api\/execution\/v1\/list$/;
@@ -8445,14 +8479,17 @@ test('signed in with nothing automated and no receipt yet, the two cards are one
     await s.page.locator('section[aria-label="Execution receipts"] [data-execution-intent]').first().waitFor();
     assert.equal(await s.page.locator('[data-automation-cards="split"]').count(), 1);
     assert.equal(await s.page.locator('[data-automation-empty]').count(), 0);
-    await s.page.getByText('Nothing here yet. Turn on Auto-compound for a position and how it does shows here.', { exact: true }).waitFor();
+    // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §3): with Domino V2 in the build, Managed positions is the
+    // vaults' card (no V1 history), whose plate says where they appear.
+    const plate = WALLET_DIST === WALLET_V2_DIST ? 'Your automated positions appear here.' : 'Nothing here yet. Turn on Auto-compound for a position and how it does shows here.';
+    await s.page.getByText(plate, { exact: true }).waitFor();
   } finally { await s.close(); }
 });
 
 // 2026-09-28, round 6 review: the copies were forgotten only by the cards' own controllers, which stop once no Positions view is
 // shown, so a sign-out on any other page left them in this browser (up to 30 days), and the next visit painted the signed-out
 // wallet's receipts while its session was checked. The wallet island, on every page, forgets every private copy instead.
-test('signing out or letting the wallet go on any page forgets every private copy, and the next visit paints none of them', async () => {
+test('signing out or letting the wallet go on any page forgets every private copy, and the next visit paints none of them', V1_HISTORY, async () => {
   const s = await scenario();
   await answerReceipts(s.context, [[receiptItem(1, 'reconciled', { block: 7_340_000, usdg: '5000000' }), receiptItem(2, 'reconciled', { block: 7_340_100, usdg: '7000000' })]]);
   const kept = () => s.page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.kept.v1.')).sort());

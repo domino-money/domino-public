@@ -38,10 +38,14 @@ export interface V2Transports {
   routeState(route: V2Route): Promise<V2RouteState>
 }
 
-/** A scripted answer, as a test build's suite hands it. */
+/**
+ * A scripted answer, as a test build's suite hands it. Added 2026-10-06 (rugged's answer of 6 Oct, §1): a refusal's
+ * `retryAfter`, the Retry-After header the read Worker would send with it.
+ */
 export interface ScriptedAnswer {
   status: number
   body: unknown
+  retryAfter?: string
 }
 /**
  * What a test build's suite may script (`window.__dominoV2Test.read6` / `.plan`). Changed on purpose 2026-10-06 (the
@@ -106,7 +110,7 @@ function scriptedRead(answers: NonNullable<V2DataScript['read6']>): ReadV6Transp
   const transport = createReadV6FixtureTransport()
   for (const route of ['portfolio', 'activity', ...CHAIN_READS] as const) {
     const answer = answers[route]
-    if (answer && typeof answer !== 'function') transport.script(route, answer.status, answer.body)
+    if (answer && typeof answer !== 'function') transport.script(route, answer.status, answer.body, answer.retryAfter)
   }
   return {
     kind: transport.kind,
@@ -115,7 +119,7 @@ function scriptedRead(answers: NonNullable<V2DataScript['read6']>): ReadV6Transp
       if (typeof answer !== 'function') return transport.post(route, body)
       const said = await answer(structuredClone(body) as Record<string, unknown>)
       if (!said) throw new Error(`no read-v6 answer scripted for ${route}`)
-      return { status: said.status, body: structuredClone(said.body) }
+      return { status: said.status, body: structuredClone(said.body), ...(typeof said.retryAfter === 'string' ? { retryAfter: said.retryAfter } : {}) }
     },
   }
 }

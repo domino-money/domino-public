@@ -151,11 +151,30 @@ test('the edges in the app\'s price words, the falling one first, in either orie
   assert.deepEqual(blind.map((edge) => edge.price), [null, null]);
   assert.equal(words.closesAtWords(blind, unknown, 'token1PerToken0'), null);
   assert.equal(words.onLine(blind, unknown, 'token1PerToken0'), 'Closes at the ends of your range');
-  // Closed: the tokens were sent only when nothing waits to be claimed.
-  assert.equal(words.closedLine(false), 'Auto-exit closed this position and sent the tokens to your wallet.');
-  assert.match(words.closedLine(true), /^Auto-exit closed this position\. Some tokens couldn't be sent to your wallet: claim them below\.$/);
+  // Closed: the tokens were sent only when nothing waits to be claimed. Changed on purpose 2026-10-06 (rugged's answer of
+  // 6 Oct, §4 item 7: "show 'Closed by Auto-exit' with the values"): in his words.
+  assert.equal(words.closedLine(false), 'Closed by Auto-exit. The tokens were sent to your wallet.');
+  assert.match(words.closedLine(true), /^Closed by Auto-exit\. Some tokens couldn't be sent to your wallet: claim them below\.$/);
   assert.equal(words.receiveWords(0, ETH, TOKENS), 'Both tokens');
   assert.match(words.triggerWords('triggerBelowSqrtPriceX96', edges.triggerBelowSqrtPriceX96, TOKENS, 'token1PerToken0'), /^Closes if the price falls to [\d,.]+ USDG per ETH$/);
+});
+
+// Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 5, and the spec delta of 6 Oct §2: one "Turn on Auto-exit" is the
+// §4.7 acknowledgement only with warnings 1 and 2, and 3 on a v3 pool, in view above it; 5 to 7 may stay under Details).
+test('the warnings the button accepts stand above it: 1 and 2, and 3 on a v3 pool; 5 and 7 under Details; never 4 (no conversion) or 6 (one per position)', () => {
+  const { AUTO_EXIT_TEXT } = require(`${BUILD}/finance/v2/autoExit.js`);
+  assert.deepEqual(words.exitWarnings(4), {
+    inView: ['autoexit_warning_not_guaranteed', 'autoexit_warning_reference_price'],
+    details: ['autoexit_warning_turn_off_pauses', 'autoexit_warning_halt'],
+  });
+  assert.deepEqual(words.exitWarnings(3), {
+    inView: ['autoexit_warning_not_guaranteed', 'autoexit_warning_reference_price', 'autoexit_warning_v3_twap'],
+    details: ['autoexit_warning_turn_off_pauses', 'autoexit_warning_halt'],
+  });
+  // The spec delta of 6 Oct §3's words for 5 and 7.
+  assert.equal(AUTO_EXIT_TEXT.autoexit_warning_turn_off_pauses, "Leave automation pauses Auto-exit; it doesn't turn it off for good.");
+  assert.equal(AUTO_EXIT_TEXT.autoexit_warning_halt, 'If Domino stops automation for safety, Auto-exit stops too. You can still turn it off and withdraw at any time.');
+  assert.equal(AUTO_EXIT_TEXT.autoexit_warning_other_orders, 'If one Auto-exit closes the position, any other on it stays active.');
 });
 
 test('the wallet\'s one live line: the step and what it waits for, nothing at rest', () => {
@@ -191,6 +210,66 @@ test('the card\'s state: on, paused with its first reason, closed with what it d
   assert.deepEqual(card.exitCardState([], mine), { kind: 'on', id: `0x${'12'.repeat(32)}`, triggers: { below: 1n, above: 2n }, listed: false });
   assert.equal(card.exitCardState([], [{ ...mine[0], registered: false }]).kind, 'off', 'signed is not on');
   assert.equal(card.exitCardState([order({ status: 'executed' })], mine).kind, 'on', 'a newer one turned on here wins over an old exit');
+});
+
+// Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 7 and the spec delta §3: one Auto-exit per position; a second one active
+// on the same position executes with value zero when it fires, the operator paying its gas): what Auto-exit's dialog asks
+// read-v6 right before the signature.
+test('one Auto-exit per position: an active one listed on the position counts, paused too; expired, turned off, closed, another position\'s or another DEX\'s does not', () => {
+  const vault = (fields = {}) => ({ chainId: 4663, address: '0xv', dex: 4, ...fields });
+  const on = (mandates, vaults = [vault()], { chainId = 4663, tokenId = '7', dex = 4, off } = {}) => card.exitOnPosition({ vaults, mandates }, chainId, tokenId, dex, off);
+  assert.equal(on([]), false, 'none listed');
+  assert.equal(on([order()]), true, 'an active one in the position\'s vault');
+  assert.equal(on([order({ blockedBy: ['module_disabled'] })]), true, 'a paused one still closes the position once unblocked');
+  assert.equal(on([order({ blockedBy: ['custody_lost'] })]), true);
+  assert.equal(on([order()], []), true, 'its vault not listed: it counts');
+  assert.equal(on([order({ vault: '0xV' })], [vault({ dex: 3 })]), false, 'its vault found whatever the case of the address (a v3 one here)');
+  assert.equal(on([order({ expired: true })]), false, 'expired: it never executes');
+  assert.equal(on([order({ status: 'revoked' })]), false, 'turned off');
+  assert.equal(on([order({ status: 'executed' })]), false, 'it closed the position');
+  assert.equal(on([order()], [vault()], { off: new Set([`0x${'ab'.repeat(32)}`]) }), false, 'turned off on this page while the index still lists it');
+  assert.equal(on([order()], [vault()], { tokenId: '8' }), false, 'another position');
+  assert.equal(on([order()], [vault()], { chainId: 8453 }), false, 'another chain');
+  assert.equal(on([order()], [vault({ dex: 3 })]), false, 'a v3 NFT with the same number');
+  assert.equal(on([order({ status: 'revoked' }), order({ mandateHash: `0x${'cd'.repeat(32)}` })]), true, 'one turned off, a newer one on');
+});
+
+// Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 6: read-v6 drops custody_lost only once it reads the position again, up to
+// about 30 minutes; "the app keeps 'approved at block X' until positions[].state.snapshot.number ≥ X").
+test('an approval given back on this page: custody_lost no longer pauses its Auto-exit while read-v6 read the position before it; read at or after it, read-v6\'s word stands', () => {
+  const store = require(`${BUILD}/v2in/automate/store.js`);
+  store.forgetAutomationSession();
+  const blocked = { reason: 'reverted_automation_unavailable', error: 'AutomationUnavailable', since: NOW - 60, sinceBlock: 1, checkedAt: NOW, checkedBlock: 2, lastRevert: null };
+  const lost = (fields = {}) => order({ blockedBy: ['custody_lost'], waiting: blocked, ...fields });
+  const position = (number, fields = {}) => ({ chainId: 4663, dex: 4, tokenId: '7', state: number === null ? { status: 'unavailable' } : { status: 'live', snapshot: { number } }, ...fields });
+  const body = (positions, mandates = [lost()]) => ({ vaults: [{ chainId: 4663, address: '0xv', dex: 4 }], positions, mandates });
+  const at = (chainId, vault, tokenId) => store.approvedAt(store.automationState(), chainId, vault, tokenId);
+  const listed = body([position(100)]);
+  assert.equal(card.withApprovals(listed, at), listed, 'nothing approved here: the same answer');
+  store.rememberApproval(4663, '0xV', 7n, 120n);
+  assert.equal(store.approvedAt(store.automationState(), 4663, '0xv', '7'), 120n, 'by chain, vault (any case) and position');
+  const shown = card.withApprovals(listed, at);
+  assert.deepEqual([shown.mandates[0].blockedBy, shown.mandates[0].waiting], [[], null], 'read before the approval: not paused for it, nor said to wait for it');
+  assert.equal(card.exitCardState(listed.mandates, []).kind, 'paused');
+  assert.equal(card.exitCardState(shown.mandates, []).kind, 'on');
+  assert.deepEqual(card.withApprovals(body([position(120)]), at).mandates[0].blockedBy, ['custody_lost'], 'read at the approval\'s block: read-v6\'s word');
+  assert.deepEqual(card.withApprovals(body([position(121)]), at).mandates[0].blockedBy, ['custody_lost'], 'read after it');
+  assert.deepEqual(card.withApprovals(body([]), at).mandates[0].blockedBy, [], 'the position not listed: the approval stands');
+  assert.deepEqual(card.withApprovals(body([position(null)]), at).mandates[0].blockedBy, [], 'its read unavailable: the approval stands');
+  assert.deepEqual(card.withApprovals(body([position(130, { dex: 3 })]), at).mandates[0].blockedBy, [], 'a v3 NFT with the same number says nothing of it');
+  // Its other reasons stay, and a waiting record about something else.
+  const two = card.withApprovals(body([position(100)], [lost({ blockedBy: ['module_disabled', 'custody_lost'], waiting: { ...blocked, reason: 'trigger_not_reached', error: null } })]), at);
+  assert.deepEqual([two.mandates[0].blockedBy, two.mandates[0].waiting?.reason], [['module_disabled'], 'trigger_not_reached']);
+  // Another vault's order, another chain's, one not active or not blocked by it: untouched.
+  for (const other of [lost({ vault: '0xw' }), lost({ chainId: 8453 }), lost({ status: 'revoked' }), order({ blockedBy: ['module_disabled'] })]) {
+    const answer = body([position(100)], [other]);
+    assert.equal(card.withApprovals(answer, at), answer, JSON.stringify([other.vault, other.chainId, other.status, other.blockedBy]));
+  }
+  // The latest approval is kept.
+  store.rememberApproval(4663, '0xv', 7n, 110n);
+  assert.equal(store.approvedAt(store.automationState(), 4663, '0xv', 7n), 120n);
+  store.forgetAutomationSession();
+  assert.equal(store.approvedAt(store.automationState(), 4663, '0xv', 7n), null);
 });
 
 // Added 2026-10-06 (the final check, F2): Leave automation (exitAll) turns the vault's module off and "Turn back on"
