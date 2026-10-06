@@ -180,9 +180,31 @@ The indexer runs as the catalogue writer, `domino-write`, from the public-data r
      - chain-tokens answers from the pinned list;
      - the gateway refuses without Access.
    - **Tunnel:** the path opened on 5 Oct 2026, 22:28 UTC, by *Publish read path* `tunnels-v6` (run 37382665095, tunnel configuration version 15): `v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens)`, every other setting kept.
-   - **Not yet:**
-     - The read Worker still names `portfolio,activity` only.
-     - read-v6 `1.1.0-rc.1` (#363, qualified USD) moves the reader, the Worker (`worker-v6`) and the app together, in a window agreed with the app's owner: the beta reads read-v6 (about 250 portfolio and activity reads a day) and both sides check the version.
+   - **Then:** read-v6 `1.1.0-rc.1` (#363, qualified USD) had to move the reader, the Worker (`worker-v6`) and the app together, in a window agreed with the app's owner. The beta reads read-v6 (about 250 portfolio and activity reads a day), and both sides check the version. That was step 8.
+
+8. **read-v6 `1.1.0-rc.1` (#363, #370): live since 6 Oct 2026, 00:47:07 UTC.**
+   - **First attempt, 5 Oct 23:57:43 UTC, rolled back by itself.**
+     - Release `f25a9a9b` (#363): `portfolio` and `chain-balances` answered 200 with prices.
+     - `chain-pools` for USDC on Base answered 503 `request_budget_exhausted` after 8.8 s. Its 13 pools needed 11 calls of 64 reads, and a read may send 8.
+     - The flip put `5b3ffbc5`'s two 70 drop-ins back and restarted; `worker-v6` was not dispatched.
+   - **The fix, #370 (`2b167f2b`):** the depth reads fit the budget.
+     - Only the ticks a walk crosses are read: a word of margin each side had also left Base's deepest USDC pools unmeasurable.
+     - A survey takes at most 4 calls of 512 reads; 3 on the real chains.
+   - **Release `2b167f2b`,** activated with `--read-v6 --chain-reads`. Checked:
+     - `portfolio` 200 `1.1.0-rc.1`;
+     - `chain-balances` 200 with prices on the three chains (the stables at US$ 1, ETH and WETH from the feed);
+     - `chain-pools` for USDC on Base 200, all 13 pools measured.
+   - **The Worker:** *Publish read path* `worker-v6` on `main`'s `2b167f2b` (run 37395832328, done 00:47:59 UTC, Worker version `c106c68a`). read-v6 is on with `portfolio`, `activity`, `chain-pools`, `chain-balances` and `chain-tokens`; every other flag kept.
+   - **The app:** its owner publishes #368's screens from `main` after #370, preview first. `domino.money/api/read/v6` asks for beta access, so the check through the site is the app's.
+
+9. **Kept connections and chains at once (#371, `a79f5c35`): live since 6 Oct 2026, 01:27:13 UTC.**
+   - **The swap:** the release was installed beside, its two 70 drop-ins swapped in, and `domino-continuous-reads.target` restarted. The same checks as step 8 answered 200 `1.1.0-rc.1`. The Worker was not touched: same contract.
+   - **Rollback:** put back `2b167f2b`'s drop-ins, kept in `/root/deploy-v2-a79f5c35…/read-dropins/`, then restart the target.
+   - **The reader's times,** for the same uncached reads on the VM's loopback, before and after:
+     - `chain-pools`, Base: WETH 4.0 s → 2.1 s, cbBTC 4.1 s → 1.3 s;
+     - `chain-pools`, Arbitrum: USDC 2.4 s → 1.2 s, ARB 2.1 s → 0.5 s;
+     - `chain-balances`: the first after a restart 2.8 s → 1.2 s, one with prices kept 0.96 s → 0.21 s.
+   - **The endpoints:** Chainstack stays primary on Base and Arbitrum, Alchemy fallback only (the owner, 6 Oct 2026), even though Alchemy answered Base's survey faster ("Measuring the endpoints", below).
 
 ### Base and Arbitrum
 
