@@ -51,10 +51,11 @@ export function inTurn<T>(work: () => Promise<T>): Promise<T> {
   return next
 }
 
-export async function connectJourney(chainId: V2ChainId, contracts: V2Contracts): Promise<JourneyConnection> {
+export async function connectJourney(chainId: V2ChainId, contracts: V2Contracts, allowSwitch = true): Promise<JourneyConnection> {
   const chain = v2Chain(chainId)
   const wallet = await v2Wallet()
   if (wallet.chainId() !== chainId) {
+    if (!allowSwitch) throw new JourneyNotice('Return to this position’s network to refresh its quote.', 'quote_network_changed')
     const outcome = await switchToChain(chainId)
     if (outcome !== 'switched') throw new JourneyNotice(v2SwitchNotice(outcome, chain.name), outcome)
   }

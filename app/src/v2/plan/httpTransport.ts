@@ -82,7 +82,9 @@ export function createHttpS1PlanTransport({ post, csrf }: { post: RawPost; csrf:
       const reply = result.reply
       // Not the plan route's: no contract body to read.
       if (reply.contractHeader !== S1_PLAN_CONTRACT_VERSION) return { status: reply.status, body: null }
-      return { status: reply.status, body: jsonBody(reply) }
+      const after = reply.retryAfterHeader
+      const wait = after === null ? NaN : /^\d+$/.test(after) ? Number(after) : Math.ceil((Date.parse(after) - Date.now()) / 1000)
+      return { status: reply.status, body: jsonBody(reply), ...(Number.isSafeInteger(wait) && wait >= 0 ? { retryAfterSeconds: wait } : {}) }
     },
   }
 }

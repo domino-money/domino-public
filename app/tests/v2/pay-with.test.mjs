@@ -125,10 +125,38 @@ test('the plan\'s inputs: exactly the one token paid with, at the amount typed; 
   assert.ok(zap);
   // Whatever Review's plan for the pool's tokens says (here: short), the inputs are the token paid with alone.
   const short = { need: [1n, 1n], plan: { kind: 'short', token: 0, have: 0n, need: 1n } };
-  assert.deepEqual(inputsFromV1(zap, short, half.payWith), { kind: 'inputs', inputs: [{ token: ZERO, amount: E18 / 2n }] });
-  assert.deepEqual(inputsFromV1(zap, null, { token: token(USDG, 'USDG', 6), text: '250.5' }), { kind: 'inputs', inputs: [{ token: USDG, amount: 250_500_000n }] });
+  assert.deepEqual(inputsFromV1(zap, short, half.payWith, { token: ETH, raw: E18, usd: null }), { kind: 'inputs', inputs: [{ token: ZERO, amount: E18 / 2n }] });
+  assert.deepEqual(inputsFromV1(zap, null, { token: token(USDG, 'USDG', 6), text: '250.5' }, { token: token(USDG, 'USDG', 6), raw: 300_000_000n, nativeRaw: E18, usd: null }), { kind: 'inputs', inputs: [{ token: USDG, amount: 250_500_000n }] });
   assert.deepEqual(inputsFromV1(zap, null, { token: ETH, text: '' }), { kind: 'wait' });
   assert.deepEqual(inputsFromV1(null, null, half.payWith), { kind: 'wait' }, 'no pool');
   // Without it, the pool's own funding as before.
   assert.deepEqual(inputsFromV1(zap, short), { kind: 'short', token: AI, have: 0n, need: 1n });
+});
+
+
+test('external funding waits for its own chain/token balance and protects the exact typed amount plus native gas', () => {
+  const half = journey.withPayWith(typed(), { token: ETH, text: '0.5' });
+  const zap = zapStateFromV1(half);
+  const facts = { token: ETH, raw: E18 / 2n, nativeRaw: E18 / 2n, usd: null };
+  assert.deepEqual(inputsFromV1(zap, null, half.payWith), { kind: 'wait' });
+  assert.deepEqual(inputsFromV1(zap, null, half.payWith, null), { kind: 'unread' });
+  assert.deepEqual(inputsFromV1(zap, null, half.payWith, facts), { kind: 'short', token: ZERO, have: E18 / 2n - REVIEW_GAS_RESERVE_WEI, need: E18 / 2n });
+  assert.deepEqual(inputsFromV1(zap, null, half.payWith, { ...facts, token: { ...ETH, chainId: 8453 } }), { kind: 'unread' }, 'another chain is not this wallet balance');
+  assert.deepEqual(inputsFromV1(zap, null, half.payWith, { ...facts, token: token(USDG, 'USDG', 6) }), { kind: 'unread' }, 'a late recommendation never funds the chosen ETH');
+  const stable = { token: token(USDG, 'USDG', 6), text: '250.5' };
+  const dollars = { token: stable.token, raw: 300_000_000n, usd: null };
+  assert.deepEqual(inputsFromV1(zap, null, stable, dollars), { kind: 'unread' }, 'unknown gas balance is not ready');
+  assert.deepEqual(inputsFromV1(zap, null, stable, { ...dollars, nativeRaw: 0n }), { kind: 'gas' });
+  assert.deepEqual(inputsFromV1(zap, null, stable, { ...dollars, nativeRaw: E18 }), { kind: 'inputs', inputs: [{ token: USDG, amount: 250_500_000n }] }, 'excess funds never increase the amount typed');
+});
+
+test('a background price crossing the range keeps the typed token, quantity, ticks and slippage', () => {
+  const state = typed();
+  const fresh = { ...POOL, tick: 12_000, sqrtPriceX96: '144358793897561188941933813476', readAt: 30_000 };
+  const next = journey.withFreshPool(state, fresh);
+  assert.equal(next.pool, fresh);
+  for (const field of ['token', 'budget', 'range', 'slippageBps', 'payWith']) assert.deepEqual(next[field], state[field], field);
+  assert.equal(journey.withFreshPool(state, { ...fresh, key: 'another' }), state, 'an older pool response cannot overwrite a new selection');
+  assert.equal(journey.withFreshPool(state, { ...fresh, block: POOL.block - 1 }), state, 'an older snapshot cannot move the price backwards');
+  assert.equal(journey.withFreshPool(state, { ...fresh, currencies: fresh.currencies.map((t) => ({ ...t, chainId: 8453 })) }), state, 'same identifier on another chain is a different pool');
 });

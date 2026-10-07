@@ -242,7 +242,8 @@ export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
       if (pair) return pair
       const tokens = option.currencies.map((currency) => ({ address: currency.address, symbol: currency.address, decimals: currency.decimals as number }))
       const report = await inTurn(async () => {
-        await connectJourney(chainId, gate.contracts)
+        // Balance refresh is read-only. A service outage never moves the wallet to another network.
+        await connectJourney(chainId, gate.contracts, false)
         const wallet = await browserOriginWallet()
         if (wallet.owner.toLowerCase() !== owner.toLowerCase()) return null
         return readHoldingsReport(wallet, { chainId, name: v2Chain(chainId).name, tokens })

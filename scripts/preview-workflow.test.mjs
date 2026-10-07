@@ -16,7 +16,10 @@ import { test } from 'node:test'
 
 const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
 const GROUP = "ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}"
+const RELEASE_TITLE = 'Simplify position funding and refresh balances after transfers (#393)'
 const UPLOAD_IF = "env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && steps.newest.outputs.current == 'true' && vars.GATED_PREVIEW_HOLD != 'true'"
+
+const PRODUCTION_IF = UPLOAD_IF + " && startsWith(github.event.head_commit.message, '" + RELEASE_TITLE + "')"
 
 function job(text, id) {
   const jobs = text.slice(text.indexOf('\njobs:\n') + 7)
@@ -63,6 +66,10 @@ function policy(text) {
   assert.match(list[newest], /newest=\$\(git ls-remote origin refs\/heads\/main \| cut -f1\)/)
   assert.match(list[newest], /if \[ "\$newest" = "\$GITHUB_SHA" \]; then echo "current=true" >> "\$GITHUB_OUTPUT"; else echo "current=false" >> "\$GITHUB_OUTPUT"; fi/)
   assert.equal(field(list[upload], 'if', 8), UPLOAD_IF)
+  const production = list.findIndex(step => /run: npm --prefix app run deploy$/.test(step.split('\n').find(line => /^        run:/.test(line)) ?? ''))
+  assert.ok(production > upload, 'production uses the digest already uploaded to preview in this checkout')
+  assert.equal(field(list[production], 'if', 8), PRODUCTION_IF, 'only the owner-authorized PR #393 release may publish production')
+  assert.equal((text.match(/run: npm --prefix app run deploy$/gm) ?? []).length, 1)
   const notice = list.find(step => step.startsWith('name: Say why nothing was deployed\n'))
   assert.ok(notice)
   assert.equal(field(notice, 'if', 8), "env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''")
@@ -73,16 +80,16 @@ function policy(text) {
   assert.ok(held)
   assert.equal(field(held, 'if', 8), "vars.GATED_PREVIEW_HOLD == 'true'")
   for (const step of list) {
-    if (step !== list[upload] && step !== notice) {
+    if (step !== list[upload] && step !== list[production] && step !== notice) {
       assert.doesNotMatch(step, /CLOUDFLARE_|\$\{\{\s*secrets\./, 'setup/build must have no Cloudflare credentials')
     }
   }
-  for (const step of [list[upload], notice]) {
+  for (const step of [list[upload], list[production], notice]) {
     assert.equal(field(step, 'CLOUDFLARE_API_TOKEN', 10), '${{ secrets.CLOUDFLARE_API_TOKEN }}')
     assert.equal(field(step, 'CLOUDFLARE_ACCOUNT_ID', 10), '${{ vars.CLOUDFLARE_ACCOUNT_ID }}')
   }
-  assert.equal((text.match(/secrets\.CLOUDFLARE_API_TOKEN/g) ?? []).length, 2)
-  assert.doesNotMatch(text, /secrets\.CLOUDFLARE_ACCOUNT_ID|run:.*(?:run deploy\s*$|pages deploy)/m)
+  assert.equal((text.match(/secrets\.CLOUDFLARE_API_TOKEN/g) ?? []).length, 3)
+  assert.doesNotMatch(text, /secrets\.CLOUDFLARE_ACCOUNT_ID|run:.*pages deploy/m)
   return notice
 }
 
@@ -123,4 +130,14 @@ test('missing settings identify secret versus variable without printing either v
       assert.doesNotMatch(result.stdout + result.stderr, /synthetic-token-value|synthetic-account-value/)
     }
   }
+})
+
+test('production is restricted to the authorized release after preview, with the same hold and newest-main guards', () => {
+  assert.throws(() => policy(workflow.replace(PRODUCTION_IF, UPLOAD_IF)))
+  assert.throws(() => policy(workflow.replace(PRODUCTION_IF, "startsWith(github.event.head_commit.message, '" + RELEASE_TITLE + "')")))
+  assert.throws(() => policy(workflow.replace(RELEASE_TITLE, 'A different release (#999)')))
+  const block = steps(job(workflow, 'preview')).find(step => step.startsWith('name: Publish the authorized funding release to production'))
+  assert.ok(block)
+  const moved = workflow.replace('      - ' + block, '').replace('      - name: Deploy that recorded dist to the gated preview', '      - ' + block + '      - name: Deploy that recorded dist to the gated preview')
+  assert.throws(() => policy(moved))
 })

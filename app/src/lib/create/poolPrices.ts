@@ -15,6 +15,8 @@ import type { TokenDisplay } from '../read/types'
  * one other token would be (`pay`), read the same way.
  */
 export interface PoolPrices {
+  /** Current price of this pool through read services; never changes wallet networks. */
+  refresh?: (pool: PoolOption, signal: AbortSignal) => Promise<PoolOption | null>
   /**
    * The pool's two currencies' USD prices (18 decimals), in pool order, null for one without a qualified price; null when
    * none could be read (the read route off, a refusal, or a failure that did not pass after a few quiet tries).
@@ -29,7 +31,7 @@ export interface PoolPrices {
    * answer comes as soon as the pool's network's own read is in; `later` hears the offer again when a read that answers
    * after it changes it, and replaces that answer (useKeyedRead).
    */
-  pay: (pool: PoolOption, owner: string, signal: AbortSignal, later: (facts: PayFacts | null) => void) => Promise<PayFacts | null>
+  pay: (pool: PoolOption, owner: string, signal: AbortSignal, later: (facts: PayFacts | null) => void, selected?: TokenDisplay | null) => Promise<PayFacts | null>
 }
 
 /**
@@ -41,6 +43,8 @@ export interface PoolPrices {
 export interface PayFacts {
   token: TokenDisplay
   raw: bigint | null
+  /** Native balance on the destination, independent of the selected wallet network. */
+  nativeRaw?: bigint | null
   usd: string | null
 }
 

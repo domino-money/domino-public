@@ -18,6 +18,7 @@ import {
   validateRange,
   verificationToken,
   withBudget,
+  withFreshPool,
   withPayWith,
   withPool,
   withRange,
@@ -30,6 +31,9 @@ import {
   type TickRange,
 } from '../../lib/create/journey'
 import { useOtherChains } from '../../lib/create/otherChains'
+import { payFunding } from '../../lib/create/payFunding'
+import type { PayFacts } from '../../lib/create/poolPrices'
+import { reviewPlan } from '../../lib/create/reviewPlan'
 import { forgetCreatePools } from '../../lib/create/poolsAhead'
 import { featuredStore, useFeatured } from '../../lib/read/featuredSource'
 import { verifyCandidate } from '../../lib/read/screens/catalogueSession'
@@ -51,8 +55,8 @@ import { FinalControl, StageReview, preloadCreateControl } from './StageReview'
 import { StageToken, type PreselectStatus } from './StageToken'
 import { AmountSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type StepView, type VisualStep } from './StepList'
 import { PositionPreview } from './PositionPreview'
-import { usePayFacts, usePricedPool } from './usePricedPool'
-import { heldAmounts } from './valuation'
+import { useLivePoolPrice, usePayFacts, usePricedPool } from './usePricedPool'
+import { heldAmounts, rawBalances } from './valuation'
 
 /** The outcomes only the verification read, or the featured list before it, can produce. */
 type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'unsupported' | 'failed' | 'withdrawn' }>
@@ -73,10 +77,11 @@ const V2PoolAdvanced = __DOMINO_V2__ ? lazy(recovering(() => import('../../v2in/
  * the new contracts once Robinhood Chain's S1 gate is live, and hands back today's own Review and Create position (`v1`)
  * everywhere else. Asked once a pool is chosen, as Create position's own code is; one that cannot load leaves today's own.
  */
-type V2ReviewProps = { state: JourneyState; now: number; balances: PairBalancesState; v1: ReactElement }
+type V2ReviewProps = { state: JourneyState; now: number; balances: PairBalancesState; pay?: PayFacts | null; v1: ReactElement }
 type V2CreateProps = {
   state: JourneyState
   balances: PairBalancesState
+  pay?: PayFacts | null
   onBusy?: (busy: boolean) => void
   onReadAgain?: () => void
   v1: ReactElement
@@ -359,6 +364,7 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
         open(state, 'amount')
         return
       case 'amount': {
+        if (!checkFor.amount.ok) return
         const toBalance = next(state, now)
         if (toBalance.stage !== 'balance') return
         // The balance stage has no step of its own: its rows are in Review. It always continues.
@@ -407,6 +413,28 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   // Review's Read again, when the read finished with nothing usable (2026-10-06, the final check's F5).
   const [balanceRevision, setBalanceRevision] = useState(0)
   const pair = usePairBalances(source, state.pool, others, balanceRevision)
+  const balanceRead = useRef(pair.status)
+  const payReading = useRef(false)
+  const marketReading = useRef(false)
+  useEffect(() => { balanceRead.current = pair.status })
+  const balanceKey = state.pool ? `${state.pool.currencies[0].chainId}|${state.pool.key}` : null
+  useEffect(() => {
+    if (!__DOMINO_V2__ || current !== 'amount' || creating || !balanceKey) return
+    let last = Date.now()
+    const refresh = () => {
+      if (document.hidden || balanceRead.current === 'disconnected' || balanceRead.current === 'loading' || payReading.current || marketReading.current || Date.now() - last < 20_000) return
+      last = Date.now()
+      setBalanceRevision((n) => n + 1)
+    }
+    const timer = setInterval(refresh, 30_000)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [current, creating, balanceKey])
   // Added 2026-10-06 (the owner: "USD estimate unavailable" for Robinhood Chain pairs without USDG): the chosen pool with its
   // currencies' qualified prices, once read (./usePricedPool.ts), for what the steps value: the amount step, its row, the
   // preview and Review. Everything else keeps the state as it is.
@@ -414,9 +442,22 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   const valued = useMemo<JourneyState>(() => (pricedPool === state.pool ? state : { ...state, pool: pricedPool }), [state, pricedPool])
   // Added 2026-10-06 (the owner: AI/PONS short on Robinhood Chain and nothing offered): what paying with one other token
   // would be for this pool and wallet, read once and again with the balances (./usePricedPool.ts usePayFacts).
-  const pay = usePayFacts(state.pool, balanceRevision)
+  const pay = usePayFacts(state.pool, balanceRevision, state.payWith?.token ?? null)
+  useEffect(() => { payReading.current = pay === undefined })
+  const priceReading = useLivePoolPrice(state.pool, current === 'amount' && !creating, balanceRevision, (fresh) => {
+    // A price crossing the range never clears or silently changes the user's independent amount.
+    setState((was) => withFreshPool(was, fresh))
+  })
+  useEffect(() => { marketReading.current = priceReading })
+  const paidFunding = state.payWith ? payFunding(state.payWith, pay) : null
+  const pairFunding = state.payWith ? null : reviewPlan(state, rawBalances(pair))
+  const fundingCheck: Check = paidFunding && paidFunding.kind !== 'ready'
+    ? fail(paidFunding.kind === 'short' ? 'Choose how to fund this amount below.' : paidFunding.kind === 'gas' ? 'Add ETH for the network fee to continue.' : paidFunding.kind === 'unread' ? 'Your balance could not be checked yet.' : CREATE.amount.pairReading)
+    : __DOMINO_V2__ && !state.payWith && pair.status !== 'disconnected' && (!pairFunding?.plan || pairFunding.plan.kind === 'short')
+      ? fail(pairFunding?.plan?.kind === 'short' ? 'Choose how to fund this amount below.' : pair.status === 'ready' ? 'Your balance could not be checked yet.' : CREATE.amount.pairReading)
+      : priceReading ? fail('Updating the price…') : amountCheck
 
-  const checkFor: Record<VisualStep, Check> = { pool: poolCheck, range: rangeCheck, amount: amountCheck, review: canContinue('review', state, now) }
+  const checkFor: Record<VisualStep, Check> = { pool: poolCheck, range: rangeCheck, amount: amountCheck.ok ? fundingCheck : amountCheck, review: canContinue('review', state, now) }
   const check = checkFor[current]
   // Changed on purpose (owner, 2026-09-24): step 1 shows no buttons until a token is chosen, and then only
   // Continue, full width (there is nowhere to go back to from the first step). The buttons arrive gently
@@ -443,6 +484,7 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
           <V2Create
             state={state}
             balances={pair}
+            pay={pay}
             onBusy={setCreating}
             onReadAgain={() => setBalanceRevision((n) => n + 1)}
             v1={<FinalControl state={state} balances={pair} onBusy={setCreating} />}
@@ -501,7 +543,7 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
         )
       case 'review':
         return V2Review ? (
-          <V2Review state={valued} now={now} balances={pair} v1={<StageReview state={valued} now={now} balances={pair} />} />
+          <V2Review state={valued} now={now} balances={pair} pay={pay} v1={<StageReview state={valued} now={now} balances={pair} />} />
         ) : (
           <StageReview state={valued} now={now} balances={pair} />
         )

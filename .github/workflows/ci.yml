@@ -562,6 +562,15 @@ jobs:
           # identifier that already appears in dashboard URLs and wrangler
           # configs, and hiding it would only cost the owner a step.
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      # One production release explicitly authorized for PR #393. Other main
+      # commits retain the preview-only policy. release.mjs refuses production
+      # unless this exact recorded digest has just reached preview here.
+      - name: Publish the authorized funding release to production
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && steps.newest.outputs.current == 'true' && vars.GATED_PREVIEW_HOLD != 'true' && startsWith(github.event.head_commit.message, 'Simplify position funding and refresh balances after transfers (#393)')
+        run: npm --prefix app run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       - name: Say why nothing was deployed
         if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
         env:

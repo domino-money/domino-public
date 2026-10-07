@@ -166,7 +166,7 @@ export function useJourneyRun(input: RunInput) {
   useEffect(() => () => void generation.current++, [])
   const errorOf = (error: unknown) => (error instanceof PlanFailure ? error.view : journeyError(error, latest.current.chainId, latest.current.label))
 
-  async function quote(requoting: boolean): Promise<void> {
+  async function quote(requoting: boolean, allowSwitch = true): Promise<void> {
     const gen = ++generation.current
     Object.assign(live.current, { stage: 'quoting', requoting, reviewed: null, asked: null, steps: [], current: 0, error: null, prepared: null, batch: null, feePerGas: null, cancel: null, round: live.current.round + 1 })
     bump()
@@ -175,7 +175,7 @@ export function useJourneyRun(input: RunInput) {
     try {
       const transport = livePlanTransport()
       if (!transport) throw new PlanFailure({ copy: JOURNEY.review.planUnavailable, code: 'plan_route_unavailable', recovery: 'none' })
-      const connection = await connectJourney(chainId, gate.contracts)
+      const connection = await connectJourney(chainId, gate.contracts, allowSwitch)
       // What an earlier review still reads on this client, first (one request at a time).
       await reading.get(connection.zap)
       if (gen !== generation.current) return
@@ -213,7 +213,14 @@ export function useJourneyRun(input: RunInput) {
       // An answer past its expiry, or `preview_expired`: asked again without a word, twice at most in a row.
       if (view.recovery === 'quiet-requote' && live.current.requotes < JOURNEY_QUIET_REQUOTES) {
         live.current.requotes++
-        return quote(true)
+        return quote(true, allowSwitch)
+      }
+      // Read failures get bounded, delayed recovery; no wallet transaction is retried here.
+      if (view.recovery === 'retry-later' && (view.retryAfterSeconds ?? 0) <= 300 && live.current.requotes < JOURNEY_QUIET_REQUOTES) {
+        const attempt = live.current.requotes++
+        await sleep(Math.max(4000 * 2 ** attempt, (view.retryAfterSeconds ?? 0) * 1000))
+        if (gen === generation.current) return quote(true, false)
+        return
       }
       Object.assign(live.current, { stage: 'failed', requoting: false, error: view })
       bump()
@@ -599,6 +606,15 @@ export function useJourneyRun(input: RunInput) {
       live.current.requotes = 0
       live.current.receipt = null
       void quote(false)
+    },
+    /** An idle review may refresh without prompting a wallet or replaying any offered step. */
+    refresh: () => {
+      const state = live.current
+      const connection = state.reviewed?.connection
+      if (state.stage !== 'reviewed' || state.busy || state.receipt || state.cancel || state.error || !connection?.wallet.current() || connection.wallet.chainId() !== connection.chainId) return
+      if (state.steps.some((step) => !['ready', 'waiting'].includes(step.status))) return
+      state.requotes = 0
+      void quote(true, false)
     },
     run: () => void run(),
     cancelSignature: () => void cancelSignature(),

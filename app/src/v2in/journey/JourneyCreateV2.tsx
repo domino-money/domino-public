@@ -8,6 +8,7 @@ import { crosschainSessionAccess } from '../../finance/v2/http'
 import { CREATE } from '../../lib/create/copy'
 import { publishCreated, publishFlowMade } from '../../lib/create/createProgress'
 import type { JourneyState as V1JourneyState } from '../../lib/create/journey'
+import type { PayFacts } from '../../lib/create/poolPrices'
 import { reviewPlan } from '../../lib/create/reviewPlan'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import { v2Chain } from '../../v2/chains'
@@ -75,6 +76,7 @@ function useLiveGate(chainId: V2ChainId): Gate | 'outside' | 'reading' | 'not-li
 type CreateProps = {
   state: V1JourneyState
   balances: PairBalancesState
+  pay?: PayFacts | null
   onBusy?: (busy: boolean) => void
   /** Added 2026-10-06 (the final check's F5): reads the wallet's balances of the pool's two tokens again. */
   onReadAgain?: () => void
@@ -82,7 +84,7 @@ type CreateProps = {
 }
 
 /** Review's footer: Create position on the new contracts once the gate is live, else today's own control (`v1`). */
-export default function JourneyCreateV2({ state, balances, onBusy, onReadAgain, v1 }: CreateProps) {
+export default function JourneyCreateV2({ state, balances, pay, onBusy, onReadAgain, v1 }: CreateProps) {
   const chainId = chainOf(state)
   const gate = useLiveGate(chainId)
   // Another network's pool is never today's control's (2026-10-05): closed there, it says so. Nor a deposit paid with one
@@ -108,10 +110,10 @@ export default function JourneyCreateV2({ state, balances, onBusy, onReadAgain, 
       </Button>
     )
   }
-  return <LiveCreate state={state} balances={balances} onBusy={onBusy} onReadAgain={onReadAgain} gate={gate} chainId={chainId} />
+  return <LiveCreate state={state} balances={balances} pay={pay} onBusy={onBusy} onReadAgain={onReadAgain} gate={gate} chainId={chainId} />
 }
 
-function LiveCreate({ state, balances, onBusy, onReadAgain, gate, chainId }: Omit<CreateProps, 'v1'> & { gate: Gate; chainId: V2ChainId }) {
+function LiveCreate({ state, balances, pay, onBusy, onReadAgain, gate, chainId }: Omit<CreateProps, 'v1'> & { gate: Gate; chainId: V2ChainId }) {
   const identity = useWalletIdentity()
   const connected = identity.kind === 'connected'
   const owner = identity.kind === 'connected' ? identity.address : null
@@ -119,7 +121,7 @@ function LiveCreate({ state, balances, onBusy, onReadAgain, gate, chainId }: Omi
   // The plan is asked for the signed-in wallet only (position-plan-v1); a test build's planner needs no session.
   const signedIn = access.startsWith('ready:') || testPlannerOn()
   const zap = zapStateFromV1(state)
-  const funding = inputsFromV1(zap, reviewPlan(state, rawBalances(balances)), state.payWith)
+  const funding = inputsFromV1(zap, reviewPlan(state, rawBalances(balances)), state.payWith, pay)
   const book = tokenBook(chainId, zap?.pool ? [...zap.pool.tokens] : [])
   const run = useJourneyRun({
     chainId,
@@ -146,6 +148,17 @@ function LiveCreate({ state, balances, onBusy, onReadAgain, gate, chainId }: Omi
     const now = current.view
     if (now.busy || now.receipt || now.steps.some((step) => step.status === 'sent' || step.status === 'included' || step.status === 'finalized' || step.status === 'unknown')) return
     current.start()
+  }, [ask])
+  useEffect(() => {
+    if (ask === null) return
+    const refresh = () => {
+      const current = latest.current
+      const reviewed = current.view.reviewed
+      if (!document.hidden && reviewed && reviewed.review.quoteExpiresAt - Date.now() / 1000 <= 30) current.refresh()
+    }
+    const timer = setInterval(refresh, 10_000)
+    window.addEventListener('focus', refresh)
+    return () => { clearInterval(timer); window.removeEventListener('focus', refresh) }
   }, [ask])
   useEffect(() => {
     const owned = latest
@@ -229,7 +242,7 @@ function LiveCreate({ state, balances, onBusy, onReadAgain, gate, chainId }: Omi
       </>
     )
   }
-  if (!made && funding.kind === 'wait' && balancesUnread(balances)) {
+  if (!made && (funding.kind === 'unread' || (funding.kind === 'wait' && !state.payWith && balancesUnread(balances)))) {
     // Changed on purpose 2026-10-06 (the final check's F5): the read of the pair's balances finished with nothing usable, and
     // nothing asks it again by itself, so no quote could ever come. Said in one line, with the way on: read them again
     // (Journey's balance revision, as funds arriving from another network do).
@@ -251,14 +264,14 @@ function LiveCreate({ state, balances, onBusy, onReadAgain, gate, chainId }: Omi
   }
   // Changed on purpose 2026-10-06 (the final check's F5): nothing to quote yet says why, never "Your wallet will ask you to
   // confirm each step." under a disabled button: the balances still being read, else a choice Review cannot plan.
-  const waiting = funding.kind !== 'wait' ? null : balances.status === 'ready' ? CREATE.review.notReady : CREATE.amount.pairReading
+  const waiting = funding.kind === 'gas' ? 'Add ETH for the network fee to continue.' : funding.kind !== 'wait' ? null : state.payWith || balances.status !== 'ready' ? CREATE.amount.pairReading : CREATE.review.notReady
   // Changed on purpose 2026-10-06 (the final check's F5, a second look): a quote that failed before any review is asked
   // again from Review itself (FinalControl's Review again), for these same choices: nothing else asks it again (a wallet
   // switched to the pool's network by hand changes none of them), so only Back then Continue did.
   return (
     <FinalControl
       gate={gate}
-      view={view}
+      view={!made && funding.kind !== 'inputs' && !view.busy ? IDLE : view}
       blockedForPrice={false}
       connected={connected}
       onRun={run.run}
@@ -271,7 +284,7 @@ function LiveCreate({ state, balances, onBusy, onReadAgain, gate, chainId }: Omi
   )
 }
 
-type ReviewProps = { state: V1JourneyState; now: number; balances: PairBalancesState; v1: ReactElement }
+type ReviewProps = { state: V1JourneyState; now: number; balances: PairBalancesState; pay?: PayFacts | null; v1: ReactElement }
 
 /**
  * Whether a deposit from another network can bring `token` to `chainId` now (Added 2026-10-06, the review of point 4: the
@@ -290,14 +303,14 @@ function useBringable(chainId: V2ChainId, token: Address | null): boolean {
 }
 
 /** Review's body: the plan's review once the gate is live, else today's own Review (`v1`). */
-export function ReviewV2({ state, now, balances, v1 }: ReviewProps) {
+export function ReviewV2({ state, now, balances, pay, v1 }: ReviewProps) {
   const chainId = chainOf(state)
   const gate = useLiveGate(chainId)
   const run = useSyncExternalStore(subscribeShared, sharedNow, () => null)
   const zap = zapStateFromV1(state)
   // Paid with one other token (2026-10-06): no pool-token amounts before the plan's own; the review says what it swaps.
   const planned = zap && !state.payWith ? reviewPlan(state, rawBalances(balances)) : null
-  const funding = inputsFromV1(zap, planned, state.payWith)
+  const funding = inputsFromV1(zap, planned, state.payWith, pay)
   const bring = useBringable(chainId, funding.kind === 'short' ? funding.token : null)
   if (gate === 'outside' || gate === 'not-live' || !zap) return v1
   if (gate === 'reading') return null
@@ -306,7 +319,7 @@ export function ReviewV2({ state, now, balances, v1 }: ReviewProps) {
   // needs and says once, in its body, what the wallet has and the ways on, as today's Review does; Create position's
   // line only says why it waits.
   const short = funding.kind === 'short' && planned ? { amounts: planned.need, token: funding.token, have: funding.have, need: funding.need, bring } : null
-  const view: RunView = short ? IDLE : (run?.view ?? IDLE)
+  const view: RunView = funding.kind !== 'inputs' ? IDLE : (run?.view ?? IDLE)
   // Changed on purpose 2026-10-06 (the final check's F4): what the position holds as typed, for the headline whenever no
   // quote has figures and none is under way: no wallet, a wallet not signed in, balances not read, a quote that failed. A
   // lone dash only when it cannot be worked out. Changed on purpose 2026-10-06 (the final check's F4, a second look): the

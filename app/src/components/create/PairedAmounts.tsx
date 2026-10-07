@@ -85,7 +85,7 @@ export function PairedAmounts({
   if (paid && onPayWith) {
     const { token, text } = paid
     const typed = validateBudget(text, token.decimals)
-    const facts = pay?.token.address === token.address ? pay : null
+    const facts = pay?.token.chainId === token.chainId && pay.token.address.toLowerCase() === token.address.toLowerCase() ? pay : null
     // Max leaves native ETH's gas allowance in the wallet, as the pool's panels do.
     const spend = facts?.raw ? maxSpend(facts.raw, token.address === NATIVE_CURRENCY) : 0n
     const usdPaid = typed.ok ? usdAt(typed.raw, token.decimals, facts?.usd ?? null) : null
@@ -200,7 +200,9 @@ export function PairedAmounts({
         {pool.currencies.map((currency, index) => {
           const side = index as 0 | 1
           // A range that takes one token alone asks for that token's amount only.
-          if (only !== null && side !== only) return null
+          // A background price move may leave the typed token outside the range. Keep that input visible
+          // until the person changes it; hiding it would look as though their amount had been cleared.
+          if (only !== null && side !== only && side !== independent) return null
           const mine = side === independent
           const choice = choices[side]
           const unreadable = choice.why !== null || choice.token.decimals === null
@@ -315,4 +317,3 @@ export function PairedAmounts({
     </div>
   )
 }
-

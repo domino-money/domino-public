@@ -23,6 +23,7 @@ import type { CrosschainClock, CrosschainSession, CrosschainValidators } from '.
 import type { V2Gate } from '../../v2/gate'
 import { FUNDS_HTTP_TRANSPORT_WIRED } from './constants'
 import { fundsSource } from './model'
+import type { BalanceRead } from './reconcile'
 
 export interface FundsServices {
   client: CrosschainClient
@@ -35,11 +36,14 @@ export interface FundsServices {
   wait(ms: number): Promise<void>
   /** A timer for the quote's deadline. Returns its cancel. */
   deadlineTimer(callback: () => void, ms: number): () => void
+  /** Destination balances through the read service, without changing the wallet network. */
+  readBalances?(chainId: number, tokens: readonly string[]): Promise<BalanceRead>
 }
 
 /** The parts of the page a live chain's client is made of (./live.ts): the HTTP transport, never a fixture one. */
 export interface FundsPage {
   live(): { transport: CrosschainTransport; runtime: CrosschainValidators; session: CrosschainSession; clock: CrosschainClock }
+  balances?(gate: V2Gate, owner: string, chainId: number, tokens: readonly string[]): Promise<BalanceRead>
 }
 
 /**
@@ -53,6 +57,18 @@ export function fundsServices(gate: V2Gate, owner: string, page: FundsPage): Fun
   const { transport, runtime, session, clock } = page.live()
   if (transport.kind !== source) return null
   const client = createCrosschainClient({ transport, runtime, session, clock })
+  // Deposits arriving together share the in-flight destination read. No settled balance is cached here.
+  const balanceReads = new Map<string, Promise<BalanceRead>>()
+  const readBalances = (chainId: number, tokens: readonly string[]): Promise<BalanceRead> => {
+    const asked = [...new Set(tokens.map((token) => token.toLowerCase()))].sort()
+    const key = `${chainId}|${asked.join(',')}`
+    const pending = balanceReads.get(key)
+    if (pending) return pending
+    const request = Promise.resolve().then(() => page.balances?.(gate, owner.toLowerCase(), chainId, asked) ?? { kind: 'unavailable' as const })
+    balanceReads.set(key, request)
+    void request.finally(() => { if (balanceReads.get(key) === request) balanceReads.delete(key) }).catch(() => {})
+    return request
+  }
   return {
     client,
     runtime,
@@ -64,5 +80,6 @@ export function fundsServices(gate: V2Gate, owner: string, page: FundsPage): Fun
         clock.setTimer(done, ms)
       }),
     deadlineTimer: (callback, ms) => clock.setTimer(callback, ms),
+    readBalances,
   }
 }

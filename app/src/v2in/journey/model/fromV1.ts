@@ -1,5 +1,7 @@
 import type { DepositPlan } from '../../../lib/create/depositPlan'
-import { validateBudget, type PayWith, type JourneyState as V1JourneyState } from '../../../lib/create/journey'
+import { type PayWith, type JourneyState as V1JourneyState } from '../../../lib/create/journey'
+import { payFunding } from '../../../lib/create/payFunding'
+import type { PayFacts } from '../../../lib/create/poolPrices'
 import { slippageBpsFrom } from '../../../lib/create/slippage'
 import type { S1PlanConsent, S1PlanRequest } from '../../../v2/plan/types'
 import type { Address } from '../../../v2/types'
@@ -30,6 +32,8 @@ export function zapStateFromV1(state: Pick<V1JourneyState, 'pool' | 'range' | 's
 
 export type V1Funding =
   | { kind: 'wait' }
+  | { kind: 'unread' }
+  | { kind: 'gas' }
   | { kind: 'short'; token: Address; have: bigint; need: bigint }
   | { kind: 'inputs'; inputs: readonly { token: Address; amount: bigint }[] }
 
@@ -37,12 +41,15 @@ export type V1Funding =
  * Changed on purpose 2026-10-06 (the owner: AI/PONS short on Robinhood Chain and nothing offered): a deposit paid with one
  * other token (`payWith`, lib/create/journey.ts PayWith) is that token alone, at the amount typed (position-plan-v1: "the
  * pool's tokens, or exactly one other token"), as the zap path's "Another token" asks it: the plan swaps it for the pool's
- * two, and its review and the wallet's own checks say whether the wallet holds it.
+ * two. Its own chain/token balance is required first, including native gas; the typed quantity stays unchanged.
  */
-export function inputsFromV1(zap: JourneyState | null, planned: { need: readonly [bigint, bigint]; plan: DepositPlan | null } | null, payWith: PayWith | null = null): V1Funding {
+export function inputsFromV1(zap: JourneyState | null, planned: { need: readonly [bigint, bigint]; plan: DepositPlan | null } | null, payWith: PayWith | null = null, pay?: PayFacts | null): V1Funding {
   if (payWith) {
-    const paid = validateBudget(payWith.text, payWith.token.decimals)
-    return zap?.pool && paid.ok ? { kind: 'inputs', inputs: [{ token: payWith.token.address as Address, amount: BigInt(paid.raw) }] } : { kind: 'wait' }
+    if (!zap?.pool || payWith.token.chainId !== zap.chainId) return { kind: 'wait' }
+    const checked = payFunding(payWith, pay)
+    if (checked.kind === 'ready') return { kind: 'inputs', inputs: [{ token: payWith.token.address as Address, amount: checked.amount }] }
+    if (checked.kind === 'short') return { ...checked, token: payWith.token.address as Address }
+    return checked
   }
   const plan = planned?.plan ?? null
   if (!zap?.pool || !planned || !plan) return { kind: 'wait' }

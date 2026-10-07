@@ -2,8 +2,9 @@ import type { ChainBalancesResponse } from 'api-contracts/read-v6/types'
 import type { PayFacts, PoolPrices } from '../../lib/create/poolPrices'
 import { readChainBalances } from '../../v2/read/v6'
 import type { V2ChainId } from '../../v2/types'
-import { balanceChainsRequest, balanceOn, balancesRequest, holdingArtwork, mergeBalances, payToken } from '../funds/model'
-import { pricesOf } from './model/chainReads'
+import { balanceChainsRequest, balanceOn, balancesRequest, holdingArtwork, mergeBalances, nativeOn, payToken } from '../funds/model'
+import { pricesOf, rereadOf } from './model/chainReads'
+import { refOf } from './model/networks'
 import { chainPoolsOn, patiently, servedOn, type LiveGate } from './served'
 import type { JourneyGates } from './source'
 
@@ -50,6 +51,16 @@ export function poolPricesFor(gates: JourneyGates | null): PoolPrices | null {
     return gate?.mode === 'live' ? gate : null
   }
   return {
+    async refresh(pool, signal) {
+      const chainId = pool.currencies[0].chainId
+      const gate = live(chainId)
+      if (!gate || signal.aborted) return null
+      const ref = refOf(pool)
+      const said = await patiently(() => chainPoolsOn(gate, chainId, ref.currency0, ref.currency1), signal, PRICE_REASKS)
+      if (said.kind !== 'ok' || signal.aborted) return null
+      const fresh = rereadOf(pool, ref, said.body, said.receivedAt)
+      return fresh?.key === pool.key ? fresh : null
+    },
     async read(pool, signal) {
       const gate = live(4663)
       if (!gate || pool.currencies[0].chainId !== 4663 || pool.currencies[1].chainId !== 4663) return null
@@ -57,7 +68,7 @@ export function poolPricesFor(gates: JourneyGates | null): PoolPrices | null {
       const said = await patiently(() => chainPoolsOn(gate, 4663, pair.currency0, pair.currency1), signal, PRICE_REASKS)
       return said.kind === 'ok' && !signal.aborted ? (pricesOf(said.body, pair) ?? null) : null
     },
-    async pay(pool, owner, signal, later) {
+    async pay(pool, owner, signal, later, selected) {
       const chainId = pool.currencies[0].chainId
       const gate = live(chainId)
       const tokens = pool.currencies.map((currency) => currency.address)
@@ -66,18 +77,20 @@ export function poolPricesFor(gates: JourneyGates | null): PoolPrices | null {
       // The offer from Domino's answer (null: not read), with Ethereum's and OP Mainnet's beside it (null: none, or not yet).
       const offer = (domino: ChainBalancesResponse | null, away: ChainBalancesResponse | null): PayFacts | null => {
         const answer = domino && mergeBalances(domino, away)
-        const token = payToken(chainId, tokens, answer)
+        // A recommendation may change; the token the person already chose must not.
+        const token = selected?.chainId === chainId ? selected : payToken(chainId, tokens, answer)
         const held = token && answer && balanceOn(answer, chainId, token.address)
         return (
           token && {
             token: { origin: 'read', chainId, address: token.address, symbol: token.symbol, decimals: token.decimals, readStatus: 'available', artwork: holdingArtwork(chainId, token.address) },
             raw: held ? held.raw : null,
+            nativeRaw: answer ? nativeOn(answer, chainId) : null,
             usd: held ? held.usd : null,
           }
         )
       }
       // Theirs asked beside Domino's three, in a request of its own, and never waited for: `away.body` once it is back.
-      const elsewhere = balanceChainsRequest(chainId)
+      const elsewhere = selected ? [] : balanceChainsRequest(chainId)
       const away: { body?: ChainBalancesResponse | null } = {}
       const asked = elsewhere.length === 0 ? null : ask(elsewhere).then((said) => (away.body = said.kind === 'ok' ? said.body : null))
       const said = await patiently(() => ask(balancesRequest(chainId)), signal)

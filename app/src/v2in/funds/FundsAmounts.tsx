@@ -3,7 +3,7 @@ import { crosschainSessionAccess } from '../../finance/v2/http'
 import type { PairBalancesState } from '../../components/create/usePairBalances'
 import { rawBalances } from '../../components/create/valuation'
 import { wholeFromOther } from '../../lib/create/depositPlan'
-import { candidatesFromPool, takesOnly, type JourneyState, type PayWith } from '../../lib/create/journey'
+import { takesOnly, type JourneyState, type PayWith } from '../../lib/create/journey'
 import type { PayFacts } from '../../lib/create/poolPrices'
 import { reviewPlan, reviewTerms } from '../../lib/create/reviewPlan'
 import type { TokenCandidate } from '../../lib/read/screens/tokens'
@@ -47,8 +47,6 @@ const ZERO = '0x0000000000000000000000000000000000000000'
 export default function FundsAmounts({
   state,
   balances,
-  onBudget,
-  onDeposit,
   onArrived,
   onPayWith,
   pay,
@@ -92,7 +90,7 @@ export default function FundsAmounts({
   })
   // The amount step's own reading of ETH on the position's chain, when the pool holds ETH.
   const nativeSide = pool.currencies.findIndex((currency) => currency.address === ZERO)
-  const nativeOnDestination = raw && (nativeSide === 0 || nativeSide === 1) ? raw[nativeSide] : null
+  const nativeOnDestination = state.payWith && pay?.nativeRaw != null ? pay.nativeRaw.toString() : raw && (nativeSide === 0 || nativeSide === 1) ? raw[nativeSide] : null
   // Added 2026-10-06: the amount typed, once the wallet covers it (after an arrival): "Use" keeps it as it is.
   const keep = keptAmount(planned?.plan ?? null, independent, state.budget, independent !== null ? pool.currencies[independent].symbol : null, independent !== null ? pool.currencies[independent].decimals : null)
   // Added 2026-10-06 (the integration review): a range beside today's price takes one token alone (the amount step types
@@ -100,17 +98,12 @@ export default function FundsAmounts({
   const only = takesOnly(state)
   const takes = only === null ? null : { side: only, symbol: pool.currencies[only].symbol }
 
-  const use = (side: 0 | 1, text: string) => {
-    if (side === independent) onBudget(text)
-    // The range takes none of that token: the journey's own token stays (the swap pays with what arrived).
-    else if (only === null || side === only) onDeposit(candidatesFromPool(pool)[side], text)
-  }
   // Added 2026-10-06: paid with one other token (its panel is the step's own, components/create/PairedAmounts.tsx), the
   // offer is about that token: its amount against its balance here as Domino's service read it (`pay`), as the zap path's
   // offer sizes its inputs (model.ts payLacks); "Use" after an arrival keeps that amount once covered.
   const paid = state.payWith
   const amount = paid && amountRawOf(paid.text, paid.token.decimals)
-  const held = paid && pay?.token.address === paid.token.address ? pay.raw : null
+  const held = paid && pay?.token.chainId === paid.token.chainId && pay.token.address.toLowerCase() === paid.token.address.toLowerCase() ? pay.raw : null
   const paidLacks = paid ? payLacks(chainId, paid.token.address, paid.text, paid.token.decimals, held) : lacks
 
   return (
@@ -118,10 +111,11 @@ export default function FundsAmounts({
       {onPayWith && !paid && pay && planned?.plan?.kind === 'short' && <PayLine token={pay.token} pair={pool.currencies} onPay={() => onPayWith({ token: pay.token, text: '' })} />}
       {gate && gate.mode !== 'off' && wallet !== null && (
         <BringFunds
-          key={`${identity.kind === 'connected' ? identity.connectorName : ''}|${wallet}|${pool.key}`}
+          key={`${identity.kind === 'connected' ? identity.connectorName : ''}|${wallet}`}
           gate={gate}
           services={services}
           chainId={chainId}
+          intentKey={JSON.stringify([chainId, pool.key, state.range?.lower, state.range?.upper, paid ? [paid.token.chainId, paid.token.address.toLowerCase(), paid.text] : [state.token?.key, state.budget]])}
           wallet={wallet}
           access={access}
           walletChainId={identity.kind === 'connected' ? identity.chainId : null}
@@ -132,7 +126,8 @@ export default function FundsAmounts({
           shortSaid={!paid}
           keep={paid ? (held !== null && amount && paidLacks.length === 0 ? { side: 0, text: paid.text, label: `${paid.text} ${paid.token.symbol ?? ''}` } : null) : keep}
           takes={paid ? null : takes}
-          onUse={paid ? (side, text) => side === 0 && onPayWith?.({ token: paid.token, text }) : use}
+          // Arriving funds never replace the amount the person typed with a smaller or larger bridge result.
+          onUse={() => onArrived?.()}
           onArrived={onArrived}
         />
       )}

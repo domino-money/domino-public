@@ -28,12 +28,15 @@ export async function requestS1Plan(
     return { kind: 'invalid', detail: error instanceof Error ? error.message : 'plan_request' }
   }
   if (!runtime.validateRequest('plan', wire)) return { kind: 'invalid', detail: 'plan_request_contract' }
-  let answer: { status: number; body: unknown }
+  let answer: { status: number; body: unknown; retryAfterSeconds?: number }
   try {
     answer = await transport.plan(structuredClone(wire))
   } catch {
     return { kind: 'unavailable', reason: 'network' }
   }
   // `now` is read when the answer is in: a plan that arrives at or after its expiresAt is never consented to.
-  return parsePlanAnswer(answer, request, wire, { ...context, now: now() }, runtime)
+  const result = parsePlanAnswer(answer, request, wire, { ...context, now: now() }, runtime)
+  return (result.kind === 'refused' || result.kind === 'unavailable') && answer.retryAfterSeconds !== undefined
+    ? { ...result, retryAfterSeconds: answer.retryAfterSeconds }
+    : result
 }

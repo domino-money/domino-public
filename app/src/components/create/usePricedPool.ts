@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { poolOnOtherChain } from '../../lib/create/otherChains'
 import { useKeyedRead, usePoolPrices, type PayFacts } from '../../lib/create/poolPrices'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
+import type { TokenDisplay } from '../../lib/read/types'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import { usdgSide } from './valuation'
 
@@ -25,7 +26,7 @@ export function usePricedPool(pool: PoolOption | null): PoolOption | null {
   const prices = usePoolPrices()
   // Read only for a key, which says there is a pool and a reader.
   const usd = useKeyedRead(pool && prices && wantsPrices(pool) ? pool.key : null, (signal) => prices!.read(pool!, signal))
-  return useMemo(() => (pool && usd ? { ...pool, usdPrices: usd } : pool), [pool, usd])
+  return useMemo(() => (pool && pool.usdPrices === undefined && usd ? { ...pool, usdPrices: usd } : pool), [pool, usd])
 }
 
 /**
@@ -34,10 +35,50 @@ export function usePricedPool(pool: PoolOption | null): PoolOption | null {
  * token would be for the connected wallet (lib/create/poolPrices.ts PayFacts), read once per pool, wallet and `revision`
  * (funds that arrived read it again); null where none is offered, undefined while it is read or with nothing to read.
  */
-export function usePayFacts(pool: PoolOption | null, revision: number): PayFacts | null | undefined {
+export function usePayFacts(pool: PoolOption | null, revision: number, selected: TokenDisplay | null = null): PayFacts | null | undefined {
   const prices = usePoolPrices()
   const identity = useWalletIdentity()
   const owner = identity.kind === 'connected' ? identity.address : null
   // Read only for a key, which says there is a pool, a reader and a wallet; said again when a later read changes it.
-  return useKeyedRead(prices && pool && owner ? `${pool.key}|${owner}|${revision}` : null, (signal, later) => prices!.pay(pool!, owner!, signal, later))
+  return useKeyedRead(prices && pool && owner ? `${pool.currencies[0].chainId}|${pool.key}|${owner}|${selected?.address ?? 'offer'}|${revision}` : null, (signal, later) => prices!.pay(pool!, owner!, signal, later, selected))
+}
+
+/** Visible Amount keeps its price current. The caller preserves the typed token, amount and ticks. */
+export function useLivePoolPrice(pool: PoolOption | null, active: boolean, revision: number, onPool: (pool: PoolOption) => void): boolean {
+  const prices = usePoolPrices()
+  const latest = useRef({ pool, onPool })
+  const [pending, setPending] = useState(false)
+  useEffect(() => { latest.current = { pool, onPool } })
+  const key = pool ? `${pool.currencies[0].chainId}|${pool.key}` : null
+  useEffect(() => {
+    if (!key || !active || !prices?.refresh) return
+    const controller = new AbortController()
+    let busy = false
+    let last = 0
+    const read = async () => {
+      if (document.hidden || busy || controller.signal.aborted || Date.now() - last < 20_000) return
+      const current = latest.current.pool
+      if (!current) return
+      busy = true
+      last = Date.now()
+      setPending(true)
+      try {
+        const fresh = await prices.refresh!(current, controller.signal)
+        if (fresh && !controller.signal.aborted) latest.current.onPool(fresh)
+      } catch { /* The previous dated price remains; the next bounded read can recover. */ }
+      finally { busy = false; if (!controller.signal.aborted) setPending(false) }
+    }
+    void read()
+    const timer = setInterval(() => void read(), 30_000)
+    const wake = () => { void read() }
+    window.addEventListener('focus', wake)
+    document.addEventListener('visibilitychange', wake)
+    return () => {
+      controller.abort()
+      clearInterval(timer)
+      window.removeEventListener('focus', wake)
+      document.removeEventListener('visibilitychange', wake)
+    }
+  }, [key, active, revision, prices])
+  return active && key !== null && prices?.refresh !== undefined && pending
 }

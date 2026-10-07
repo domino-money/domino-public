@@ -439,6 +439,9 @@ export function withPool(state: JourneyState, pool: PoolOption | null, now: numb
 
 export const withRange = (state: JourneyState, range: TickRange | null): JourneyState => amountFollowsRange({ ...state, range })
 export const withBudget = (state: JourneyState, budget: string): JourneyState => ({ ...state, budget })
+/** A background price read never edits the user's token, amount, range or slippage. */
+export const withFreshPool = (state: JourneyState, pool: PoolOption): JourneyState =>
+  state.pool?.key === pool.key && state.pool.currencies[0].chainId === pool.currencies[0].chainId && pool.block >= state.pool.block ? { ...state, pool } : state
 /**
  * Added 2026-10-06: the deposit paid with one other token (`PayWith`), or with the pool's own tokens again (null). The
  * amount typed in the pool's tokens stays, for the way back.

@@ -325,13 +325,11 @@ test('both bridges above what can be sent: what each needs against the most the 
   assert.deepEqual(above, { needs: ['Relay needs 100.916974 USDC', 'Across needs 100.902201 USDC'], max: '100.91 USDC' });
   assert.equal(FUNDS_TEXT.aboveMax(above.needs, above.max, 'Base'), 'Relay needs 100.916974 USDC and Across needs 100.902201 USDC; you can send 100.91 USDC from Base.');
   assert.equal(model.aboveMaxOf({ ...both, request: { ...both.request, amountKind: 'exact_input', maxInputRaw: null } }, naming(null)), null, 'never by exact input');
-  // The page: ONE quote by output, then all there is by exact input only when no bridge can send the need.
-  const offer = readFileSync(new URL('../../src/v2in/funds/BringFunds.tsx', import.meta.url), 'utf8');
-  assert.match(offer, /const byOutput = outputRequestOf\(p, chainId, need, available, gas\)/);
-  assert.match(offer, /show\(allOf, all, FUNDS_TEXT\.aboveMax\(above\.needs, above\.max, network\)\)/);
-  assert.match(offer, /return show\(allOf, all, FUNDS_TEXT\.allYouHave\(network\)\)/);
-  assert.match(offer, /for \(let attempt = 1; probe !== null && !probe\.ok && alive\(\); attempt \+= 1\)/, 'never left on screen unsized');
-  assert.doesNotMatch(offer, /sizeStep|firstAsk|fixedFeeOf|winningMinimum/);
+  // Partial capacity is useful only inside a complete funding proposal. No isolated drain-all button is offered.
+  const intent = readFileSync(new URL('../../src/v2in/funds/fundingIntent.ts', import.meta.url), 'utf8');
+  assert.match(intent, /candidate\.status === 'input_above_max'/, 'only supported priced routes can become partial contributions');
+  assert.match(intent, /return remaining <= 0n \? sized : null/, 'the aggregate must cover the full required net output');
+  assert.match(intent, /maxInputRaw: sentRaw\(leg\.quote\)/, 'the reviewed spending amount bounds each later quote');
 });
 
 test('a change under Change amount is quoted after a pause, and never more than six times a minute', () => {
@@ -419,11 +417,11 @@ test('the wallet steps in words: the amount sent rounded up for the screen, and 
 });
 
 // Added 2026-10-06 (the 2026-10-06 study: "Use" resized the position to the whole balance after an arrival): once the
-// wallet covers the amount typed, Use keeps it; only while it is still short does Use take the balance read.
-test('after an arrival, Use keeps the amount typed once the wallet covers it; else the balance read', () => {
+// wallet covers the amount typed, Use keeps it. A short balance never replaces the user's chosen amount.
+test('after an arrival, continuation keeps the amount typed once the wallet covers it', () => {
   assert.deepEqual(model.keptAmount(BOTH, 1, ' 50 ', 'USDG'), { side: 1, text: '50', label: '50 USDG' });
   assert.deepEqual(model.keptAmount(SWAP_FROM_ETH, 1, '50', 'USDG'), { side: 1, text: '50', label: '50 USDG' }, 'covered through the swap from what arrived');
-  assert.equal(model.keptAmount(SHORT_USDG, 1, '50', 'USDG'), null, 'still short: Use takes what arrived');
+  assert.equal(model.keptAmount(SHORT_USDG, 1, '50', 'USDG'), null, 'still short: no continuation or implicit resize');
   assert.equal(model.keptAmount(null, 1, '50', 'USDG'), null, 'balances unread: no claim');
   assert.equal(model.keptAmount(BOTH, null, '50', 'USDG'), null);
   assert.equal(model.keptAmount(BOTH, 1, '  ', 'USDG'), null, 'nothing typed');
@@ -434,10 +432,10 @@ test('after an arrival, Use keeps the amount typed once the wallet covers it; el
   assert.deepEqual(model.keptAmount(BOTH, 1, '1234.5', 'USDG', 6), { side: 1, text: '1234.5', label: '1,234.5 USDG' });
   assert.deepEqual(model.keptAmount(BOTH, 1, '50', 'USDG', null), { side: 1, text: '50', label: '50 USDG' });
   const status = readFileSync(new URL('../../src/v2in/funds/DepositStatus.tsx', import.meta.url), 'utf8');
-  assert.match(status, /onDestination && keep !== null && !onUseToken \? \(/, 'Use keeps the amount on the owner\'s step only');
-  assert.match(status, /onUse\(keep\.side, keep\.text\)\n\s+onRemove\(\)/, 'the amount kept, the card done');
-  // Changed on purpose 2026-10-06 (the integration review): Use of the balance is done with the card too, never pressed twice.
-  assert.match(status, /else if \(side !== null\) onUse\(side, amount\.text\)\n\s+onRemove\(\)/, 'the balance used, the card done');
+  assert.match(status, /balanceState === 'ready' && keep !== null && \(/, 'continuation requires reconciled balances, independent of the active wallet network');
+  assert.match(status, /onUse\(keep\.side, keep\.text\)\s+onRemove\(\)/, 'the amount kept, the card done');
+  assert.doesNotMatch(status, /onUse\(side, amount\.text\)|onUseToken\(startToken|data-funds-use="balance"/, 'arrivals cannot replace the entered quantity with a wallet balance');
+  assert.doesNotMatch(status, /switchToChain|own\.balance\(/, 'reading arrivals never moves the wallet');
   const amounts = readFileSync(new URL('../../src/v2in/funds/FundsAmounts.tsx', import.meta.url), 'utf8');
   assert.match(amounts, /keptAmount\(planned\?\.plan \?\? null, independent, state\.budget, independent !== null \? pool\.currencies\[independent\]\.symbol : null, independent !== null \? pool\.currencies\[independent\]\.decimals : null\)/, 'with the typed token\'s decimals');
 });

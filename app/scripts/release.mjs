@@ -32,7 +32,9 @@
  * A local deploy needs `npx wrangler login` in the owner's own terminal, and
  * nothing in this file holds or asks for a credential. No test runs `deploy`:
  * tests/release.test.mjs injects its own runner. One CI job does deploy, and
- * only ever to the gated preview, after all four checks pass on main; it
+ * normally to the gated preview after all checks pass on main. PR #393's
+ * explicitly authorized release also publishes production from that same
+ * recorded digest; other main commits retain preview-only publication. CI
  * authenticates with a scoped CLOUDFLARE_API_TOKEN read from repository
  * secrets at that step, never with a stored login. The manually dispatched
  * read-path release can also publish production, using the same credential

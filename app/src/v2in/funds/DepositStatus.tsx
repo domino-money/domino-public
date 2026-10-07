@@ -5,17 +5,15 @@ import { OriginStepError, type DepositJournal, type OriginReview, type OriginSen
 import { amountText } from '../../v2/crosschain/amounts'
 import { PROVIDER_NAME } from '../../v2/crosschain/copy'
 import { createStatusPoller, type PollState } from '../../v2/crosschain/polling'
-import { presentStatus, shortAmountText, type Naming } from '../../v2/crosschain/present'
+import { destinationChoices, presentStatus, shortAmountText, type Naming } from '../../v2/crosschain/present'
 import type { CrosschainJournalRecord } from '../../v2/crosschain/steps'
 import { v2TxUrl } from '../../v2/explorers'
-import { switchToChain, v2SwitchNotice } from '../../wallet/port'
 import { FUNDS_FINALITY_WATCH_MS, FUNDS_RECEIPT_POLL_MS } from './constants'
 import { FUNDS_TEXT, senderCopy } from './copy'
-import { continueWith } from './model'
+import { reconcileBalances } from './reconcile'
 import type { FundsServices } from './services'
 
 type Hex = `0x${string}`
-const ZERO = '0x0000000000000000000000000000000000000000'
 
 /** A deposit the offer tracks: from the journal (after a reload), or sent from this page (with what it knows of it). */
 export interface TrackedDeposit {
@@ -66,6 +64,7 @@ export function PendingDeposit({
   name,
   onSent,
   onRemove,
+  onOutcome,
 }: {
   entry: PendingBatch
   services: FundsServices
@@ -74,12 +73,23 @@ export function PendingDeposit({
   /** The wallet named the batch's transaction: the deposit's, its record kept (or not: `journaled`). */
   onSent: (sent: SentStep) => void
   onRemove: () => void
+  /** A wallet-confirmed terminal failure can resume its funding leg; an unknown result must remain quarantined. */
+  onOutcome?: (state: 'not_included' | 'reverted' | 'unknown') => void
 }) {
   const [said, setSaid] = useState<'pending' | 'batch_not_included' | 'batch_reverted' | 'batch_unknown'>('pending')
+  const [retry, setRetry] = useState(0)
   const sent = useRef(onSent)
+  const outcome = useRef(onOutcome)
   useEffect(() => {
     sent.current = onSent
+    outcome.current = onOutcome
   })
+  const reported = useRef<string | null>(null)
+  useEffect(() => {
+    if (said === 'pending' || reported.current === said) return
+    reported.current = said
+    outcome.current?.(said === 'batch_not_included' ? 'not_included' : said === 'batch_reverted' ? 'reverted' : 'unknown')
+  }, [said])
   useEffect(() => {
     let live = true
     void (async () => {
@@ -99,7 +109,7 @@ export function PendingDeposit({
     return () => {
       live = false
     }
-  }, [entry, sender, services])
+  }, [entry, sender, services, retry])
   const origin = name.origin(entry.originChainId) ?? `network ${entry.originChainId}`
   return (
     <Card level={2} className="p-4" data-funds-pending-batch={entry.originChainId} data-funds-batch-state={said}>
@@ -118,7 +128,12 @@ export function PendingDeposit({
           )}
         </KeyValueList>
       </details>
-      {said !== 'pending' && (
+      {said === 'batch_unknown' && (
+        <Button variant="secondary" size="sm" className="mt-2" data-funds-status-retry="" onClick={() => { setSaid('pending'); setRetry((n) => n + 1) }}>
+          Check transfer
+        </Button>
+      )}
+      {(said === 'batch_not_included' || said === 'batch_reverted') && (
         <Button variant="ghost" size="sm" className="mt-2" onClick={onRemove} data-funds-remove="">
           {FUNDS_TEXT.remove}
         </Button>
@@ -133,8 +148,8 @@ export function PendingDeposit({
  * (previousState, then nextCheckSeconds; a held answer never moves the offer back; terminal and
  * crosschain_deposit_not_found stop it), each new state written back to the journal; the deposit transaction's own
  * receipt on the origin as "Included", then "Finalized" (a delay is never a failure). After `filled`: the real balance
- * on the position's chain, read through the wallet's own provider once the wallet is there, and the SAME position
- * continues with it ("Use {amount} for this position", the amount step's own handler). The fee's measurement only in
+ * on the position's chain is reconciled through the read service, independent of the active wallet network, and the
+ * SAME entered position amount is preserved. The fee's measurement only in
  * Details, and only once filled.
  */
 export function DepositStatus({
@@ -143,15 +158,12 @@ export function DepositStatus({
   owner,
   journal,
   name,
-  walletChainId,
   access,
   onArrived,
   sender,
   poolTokens,
   keep = null,
-  takes = null,
   onUse,
-  onUseToken,
   onRemove,
   onSettled,
 }: {
@@ -167,7 +179,7 @@ export function DepositStatus({
    * switch moves the session's epoch, and an answer refused for the moment stopped it for good).
    */
   access: string
-  /** Added 2026-10-05: called once, when the deposit arrived and the wallet is back on the position's chain. */
+  /** Refresh amount-step balances after each observed destination snapshot, regardless of the wallet's active chain. */
   onArrived?: () => void
   sender: () => Promise<OriginSender>
   /** The position's two tokens (lowercase), in pool order: what arrived continues the same position on its side. */
@@ -186,17 +198,18 @@ export function DepositStatus({
   onUseToken?: (token: string, text: string) => void
   onRemove: () => void
   /**
-   * Added 2026-10-06 (the review: the line offered funds just bridged a second time): called once, when nothing more will
-   * come of this deposit here (arrived, refunded, or stopped for good); the offer reads the balances again then.
+   * Called once for a confirmed terminal deposit, after balance reconciliation for a fill. A tracking error or a
+   * missing status is not proof that the transfer failed and must not unlock a replacement transfer.
    */
   onSettled?: () => void
 }) {
   const { record } = deposit
   const [poll, setPoll] = useState<PollState | null>(null)
   const [receipt, setReceipt] = useState<'pending' | 'included' | 'finalized' | 'reverted' | null>(deposit.review ? 'pending' : null)
-  const [balances, setBalances] = useState<{ token: string; raw: string }[] | null>(null)
-  const [picked, setPicked] = useState<string | null>(null)
-  const [switchNote, setSwitchNote] = useState<string | null>(null)
+  const [balances, setBalances] = useState<readonly { token: string; raw: string }[] | null>(null)
+  const [balanceState, setBalanceState] = useState<'updating' | 'ready' | 'unavailable'>('updating')
+  const [balanceRetry, setBalanceRetry] = useState(0)
+  const [statusRetry, setStatusRetry] = useState(0)
   // The record as tracking last left it: tracking starts again from there (Changed on purpose 2026-10-05).
   const initial = useRef(record)
 
@@ -220,7 +233,7 @@ export function DepositStatus({
     })
     poller.start()
     return () => poller.stop()
-  }, [services, owner, journal, access])
+  }, [services, owner, journal, access, statusRetry])
 
   // The deposit transaction's own receipt on the origin, for a deposit this page sent: "Included", then "Finalized".
   useEffect(() => {
@@ -271,83 +284,60 @@ export function DepositStatus({
   const origin = name.origin(record.originChainId) ?? `network ${record.originChainId}`
   const destination = name.destination(record.destinationChainId) ?? `network ${record.destinationChainId}`
   const filled = view.state === 'filled'
-  const onDestination = walletChainId === record.destinationChainId
-
-  // Changed on purpose 2026-10-05 (the owner: "behind the scenes"): a deposit this page sent brings the wallet back to the
-  // position's chain by itself once it arrived (one wallet prompt), and the amount step reads its balances again.
-  const broughtBack = useRef(false)
-  useEffect(() => {
-    if (!filled || onDestination || deposit.review === null || broughtBack.current) return
-    broughtBack.current = true
-    void switchToChain(record.destinationChainId).then((outcome) => {
-      if (outcome !== 'switched') setSwitchNote(v2SwitchNotice(outcome, destination))
-    })
-  }, [filled, onDestination, deposit.review, record.destinationChainId, destination])
   const arrived = useRef(onArrived)
   useEffect(() => {
     arrived.current = onArrived
   })
-  const told = useRef(false)
-  useEffect(() => {
-    if (!filled || !onDestination || told.current) return
-    told.current = true
-    arrived.current?.()
-  }, [filled, onDestination])
 
-  // After the fill: what is in the wallet on the position's chain, read through the wallet's provider (§3.7
-  // recommendation): the delivered token when this page sent the deposit; otherwise the position's tokens a deposit may
-  // deliver there (the journal does not keep which one arrived).
-  const candidates = deposit.destinationToken ? [deposit.destinationToken] : poolTokens.filter((token) => name.book(record.destinationChainId, token) !== null)
+  // The destination reader is independent of the wallet's active network. The first answer may still be the backend's
+  // pre-fill ten-second cache; a later, advancing snapshot refreshes every consumer without another wallet prompt.
+  const candidates = deposit.destinationToken ? [deposit.destinationToken] : [...new Set([
+    ...poolTokens.filter((token) => name.book(record.destinationChainId, token) !== null),
+    // Older journals did not retain the delivered token. Read only the supported destination assets so changing the
+    // position cannot strand a confirmed arrival; none of these balances is used to replace an entered amount.
+    ...(destinationChoices().find((chain) => chain.chainId === record.destinationChainId)?.tokens.map((token) => token.address.toLowerCase()) ?? []),
+  ])]
   const candidatesKey = candidates.join(',')
   useEffect(() => {
-    if (!filled || !onDestination) return
+    if (!filled) return
     let live = true
     const tokens = candidatesKey.split(',').filter(Boolean)
-    void (async () => {
-      const own = await sender().catch(() => null)
-      if (!own) return
-      const read: { token: string; raw: string }[] = []
-      for (const token of tokens) {
-        try {
-          read.push({ token, raw: await own.balance(record.destinationChainId, token) })
-        } catch {
-          // Unread: shown as nothing rather than as zero.
-        }
-      }
-      if (live) setBalances(read)
-    })()
+    const current = () => live && services.owner === owner
+    void Promise.resolve().then(async () => {
+      if (!current()) return
+      setBalances(null)
+      setBalanceState('updating')
+      const result = await reconcileBalances({
+        read: () => services.readBalances?.(record.destinationChainId, tokens) ?? Promise.resolve({ kind: 'unavailable' }),
+        monoMs: services.clock.monoMs,
+        wait: services.wait,
+        current,
+        onSnapshot: (snapshot) => {
+          setBalances(snapshot.balances)
+          arrived.current?.()
+        },
+      })
+      if (current() && result !== 'cancelled') setBalanceState(result)
+    })
     return () => {
       live = false
     }
-  }, [filled, onDestination, candidatesKey, record.destinationChainId, sender])
-
-  // What the same position continues with: the delivered token when this page sent the deposit, else the person's pick.
-  const startToken = deposit.destinationToken ?? picked
-  // After a reload, the tokens to pick from: only those there is something of (Changed on purpose 2026-10-06).
-  const pickable = (balances ?? []).filter(({ raw }) => raw !== '0')
-  const startRaw = startToken !== null ? (balances?.find((b) => b.token === startToken)?.raw ?? null) : null
-  const startInfo = startToken !== null ? name.book(record.destinationChainId, startToken) : null
-  const found = startToken !== null ? poolTokens.indexOf(startToken) : -1
-  const side: 0 | 1 | null = found === 0 || found === 1 ? found : null
-  const amount = startToken !== null && (side !== null || onUseToken) ? continueWith(startRaw, startInfo?.decimals ?? null, startToken === ZERO) : null
-  // A token the range does not take: no "Use" for it (Changed on purpose 2026-10-06, the integration review).
-  const untaken = !onUseToken && takes !== null && side !== null && side !== takes.side
+  }, [filled, candidatesKey, record.destinationChainId, record.depositTxHash, services, owner, balanceRetry])
 
   const notice = poll?.notice ?? null
   const stopped = poll?.stopped ?? null
-  // Removable once nothing more will come of it here: terminal, or stopped for good. A deposit stopped for the session
-  // (or the gate, or the route) stays: tracking resumes from the journal once that is back.
-  const done = view.terminal || stopped === 'not_found' || stopped === 'account' || stopped === 'unexpected' || stopped === 'bug'
+  // A failed status read is not a failed transfer. Keep unknown deposits tracked and reserved until a terminal answer.
+  const done = view.terminal
   const settled = useRef(onSettled)
   useEffect(() => {
     settled.current = onSettled
   })
   const saidSettled = useRef(false)
   useEffect(() => {
-    if (!done || saidSettled.current) return
+    if (!done || (filled && balanceState !== 'ready') || saidSettled.current) return
     saidSettled.current = true
     settled.current?.()
-  }, [done])
+  }, [done, filled, balanceState])
   const fee = view.feeDetail
   return (
     <Card level={2} className="p-4" data-funds-deposit={record.depositTxHash} data-funds-state={view.state ?? 'none'} data-funds-stopped={stopped ?? undefined} data-funds-transition={poll?.report?.transition ?? undefined}>
@@ -374,6 +364,11 @@ export function DepositStatus({
           </KeyValueList>
         </div>
       )}
+      {!view.terminal && (stopped === 'not_found' || stopped === 'unexpected' || stopped === 'bug') && (
+        <Button variant="secondary" size="sm" className="mt-2" data-funds-status-retry="" onClick={() => setStatusRetry((n) => n + 1)}>
+          Check transfer
+        </Button>
+      )}
       {view.link && explorerLink(view.link.chainId, view.link.hash) && (
         <p className="mt-2">
           <a href={explorerLink(view.link.chainId, view.link.hash) ?? undefined} target="_blank" rel="noreferrer noopener" className="underline" data-funds-link={view.link.kind}>
@@ -392,13 +387,20 @@ export function DepositStatus({
         </p>
       )}
       {filled && (
-        <div className="mt-3 grid gap-2" data-funds-after-fill="">
-          {onDestination ? (
-            balances !== null &&
-            (deposit.destinationToken ? balances.length > 0 : pickable.length > 0) && (
+        <div className="mt-3 grid gap-2" data-funds-after-fill="" data-funds-balance-state={balanceState}>
+          {balanceState !== 'ready' && (
+            <p role="status" className="text-caption text-fg-muted">
+              {balanceState === 'updating' ? 'Updating your balance…' : 'Your funds arrived. Your balance is taking longer to update.'}
+            </p>
+          )}
+          {balanceState === 'unavailable' && (
+            <Button variant="secondary" size="sm" className="justify-self-start" onClick={() => setBalanceRetry((n) => n + 1)} data-funds-balance-retry="">
+              Check balance
+            </Button>
+          )}
+          {balanceState === 'ready' && balances !== null && balances.length > 0 && (
               <div data-funds-balances="">
                 <p className="text-caption text-fg-muted">{FUNDS_TEXT.balanceTitle(destination)}</p>
-                {deposit.destinationToken ? (
                   <ul className="mt-1 grid gap-1 text-body">
                     {balances.map(({ token, raw }) => (
                       <li key={token} data-funds-balance={token} title={amountText(raw, token, name.book(record.destinationChainId, token))}>
@@ -406,43 +408,9 @@ export function DepositStatus({
                       </li>
                     ))}
                   </ul>
-                ) : (
-                  // After a reload the journal does not say which token arrived: the person picks the one to continue with.
-                  // Changed on purpose 2026-10-06 (the owner's point 4): only a token there is something of is offered.
-                  <div role="radiogroup" aria-label={FUNDS_TEXT.which} className="mt-1 grid gap-1 text-body" data-funds-pick="">
-                    {pickable.map(({ token, raw }) => (
-                      <label key={token} className="dm-acct-check" data-funds-balance={token} title={amountText(raw, token, name.book(record.destinationChainId, token))}>
-                        <input type="radio" name={`funds-pick-${record.depositTxHash}`} value={token} checked={picked === token} onChange={() => setPicked(token)} />
-                        {shortAmountText(raw, token, name.book(record.destinationChainId, token))}
-                      </label>
-                    ))}
-                  </div>
-                )}
               </div>
-            )
-          ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="text-caption text-fg-muted">{FUNDS_TEXT.balanceElsewhere(destination)}</p>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setSwitchNote(null)
-                  void switchToChain(record.destinationChainId).then((outcome) => {
-                    if (outcome !== 'switched') setSwitchNote(v2SwitchNotice(outcome, destination))
-                  })
-                }}
-              >
-                {FUNDS_TEXT.switchToDestination(destination)}
-              </Button>
-            </div>
-          )}
-          {switchNote && (
-            <p role="alert" className="dm-error">
-              {switchNote}
-            </p>
-          )}
-          {onDestination && keep !== null && !onUseToken ? (
+            )}
+          {balanceState === 'ready' && keep !== null && (
             // Changed on purpose 2026-10-06 (the 2026-10-06 study): the wallet now covers the amount typed in the step, so
             // the same position continues with it, unchanged; the card is done.
             <Button
@@ -455,34 +423,7 @@ export function DepositStatus({
             >
               {FUNDS_TEXT.continueButton(keep.label)}
             </Button>
-          ) : onDestination && balances !== null && (startToken !== null || pickable.length === 0) && (startToken !== null && amount !== null && untaken ? (
-            <p className="dm-hint" data-funds-takes-only="">
-              {FUNDS_TEXT.takesOnly(takes?.symbol ?? null)}
-            </p>
-          ) : startToken !== null && amount !== null && (side !== null || onUseToken) ? (
-            // §3.9: the same position continues with what is in the wallet now (still short of the amount typed); nothing is signed here.
-            // Changed on purpose 2026-10-06 (the integration review: Use left the card, and its second press did nothing): the
-            // card is done once used, as with the amount kept.
-            <div className="grid gap-2">
-              {onUseToken && <p className="dm-hint">{FUNDS_TEXT.newDepositHint}</p>}
-              <Button
-                className="justify-self-start"
-                onClick={() => {
-                  if (onUseToken) onUseToken(startToken, amount.text)
-                  else if (side !== null) onUse(side, amount.text)
-                  onRemove()
-                }}
-                data-funds-use="balance"
-                title={FUNDS_TEXT.continueButton(amountText(amount.raw, startToken, startInfo))}
-              >
-                {FUNDS_TEXT.continueButton(shortAmountText(amount.raw, startToken, startInfo))}
-              </Button>
-            </div>
-          ) : (
-            <p className="text-caption text-fg-muted" data-funds-nothing-to-use="">
-              {FUNDS_TEXT.nothingToUse(destination)}
-            </p>
-          ))}
+          )}
         </div>
       )}
       <details className="dm-details mt-3">

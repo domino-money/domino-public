@@ -139,7 +139,7 @@ test('no fixtures and no test data: nothing of the offer imports the package fix
 test('the offer\'s page module hands in the HTTP transport, the signed-in session, the runtime and the page clock, and only the two amount integrations and their S2 gate hook import it', () => {
   const live = readFileSync(resolve(FUNDS, 'live.ts'), 'utf8');
   const imports = [...live.matchAll(/^import[^;]*?from '([^']+)'/gm)].map((match) => match[1]);
-  assert.deepEqual(imports.sort(), ['../../finance/v2/http', '../../v2/crosschain/contract', '../../v2/gate', '../../v2/routes', './services']);
+  assert.deepEqual(imports.sort(), ['../../finance/v2/http', '../../v2/crosschain/contract', '../../v2/gate', '../../v2/read/v6', '../../v2/routes', '../transports', './reconcile', './services']);
   assert.match(live, /live: \(\) => \(\{ transport: liveCrosschainTransport\(\), runtime: CROSSCHAIN_RUNTIME, session: liveCrosschainSession\(\), clock: liveClock \}\)/);
   assert.match(live, /export const fundsRoutes: S2Routes = \(\) => Promise\.resolve\(\(probe \?\?= v2RouteProbe\(\)\)\)/, 'one probe for the offer, the page\'s');
   // Sorted by code unit (2026-10-04, PR #335's CI): the directory walk's order is the file system's, not the same on Linux.
@@ -153,34 +153,14 @@ test('the offer\'s page module hands in the HTTP transport, the signed-in sessio
   assert.deepEqual(hits(MINE, /lockedCopy/), [], 'nor the gate\'s sentence about Domino\'s contracts');
 });
 
-// Changed on purpose 2026-10-05 (the owner, testing the offer: "it keeps asking me to sign in ... the networks don't show
-// ... it has to happen behind the scenes, whoever uses Domino has no experience"): the holdings scan across Ethereum, Base,
-// Arbitrum One and OP Mainnet (./Holdings.tsx, gone) is one click on one of Domino's own networks: the wallet moves there
-// through wallet/port's V2 switch, its balances are read through the closed reader, the rest follows by itself.
-test('one click on one of Domino\'s networks: switched through wallet/port, read through the closed reader, nothing else', () => {
-  assert.equal(ALL.some(({ path }) => path === 'v2in/funds/Holdings.tsx'), false, 'the scan is gone');
+test('automatic discovery reads supported chain balances without a network picker or wallet reads', () => {
   const offer = ALL.find(({ path }) => path === 'v2in/funds/BringFunds.tsx').code;
-  // Changed on purpose 2026-10-06 (rugged97's #379): Ethereum and OP Mainnet have a button too, but only where Domino's
-  // service read something to bring there (model.ts BALANCE_ORIGINS, their own read); Domino's own stay these three.
-  assert.match(offer, /const SOURCE_CHAINS: readonly V2ChainId\[\] = \[4663, 8453, 42161\]/, 'Robinhood Chain, Base and Arbitrum One');
-  assert.match(offer, /const away = BALANCE_ORIGINS\.filter\(\(id\) => id !== chainId && !closed\.has\(id\)\)\s+\.map\(\(id\) => \(\{ id, holds: holdsOf\(id\) \}\)\)\s+\.filter\(\(n\) => n\.holds\.state === 'holds' \|\| n\.holds\.state === 'no_gas'\)/, 'Ethereum and OP Mainnet only where something was read there, never unread or empty');
-  // Changed on purpose 2026-10-06 (rugged97's #379): a V2 network through the port's V2 switch; Ethereum or OP Mainnet
-  // through its switch to an origin.
-  assert.match(offer, /const switched = await \(isV2ChainId\(origin\) \? switchToChain\(origin\) : switchToOrigin\(origin\)\)/, 'through the port');
-  assert.doesNotMatch(offer, /scanHoldings|CANDIDATE_ORIGINS\.filter/, 'no scan of every network');
-  assert.match(offer, /report = await readHoldingsReport\(await browserOriginWallet\(\), candidate\)/, 'the closed reader, on the network the wallet is on');
-  assert.match(offer, /report\.unread\.length > 0 \? fail\(FUNDS_TEXT\.readFailed\(network\), 'read_partial'\)/, 'an unread balance is never said to be zero');
-  assert.match(offer, /const sources = SOURCE_CHAINS\.filter\(\(id\) => id !== chainId\)/, 'never the destination');
-  assert.doesNotMatch(offer, /\.request\(|eth_|balanceOf/, 'no read of its own');
-  const copy = require('../../.test-build/app/src/v2in/funds/copy.js');
-  assert.equal(copy.FUNDS_TEXT.youNeed('0.0021 ETH', 'Robinhood Chain'), 'You need 0.0021 ETH more on Robinhood Chain.');
-  assert.equal(copy.FUNDS_TEXT.bringFrom, 'Bring it from:');
-  // Changed on purpose 2026-10-06 (the owner's point 4: little text): the how-it-works sentence is gone; one live line says it.
-  assert.equal(copy.FUNDS_TEXT.howItWorks, undefined);
-  assert.equal(copy.FUNDS_TEXT.noneThere('ETH, WETH or USDC', 'Base'), 'You have no ETH, WETH or USDC on Base.');
-  assert.equal(copy.FUNDS_TEXT.switchingTo('Base'), 'Switching your wallet to Base…');
-  assert.equal(copy.FUNDS_TEXT.checking('Base'), 'Checking your balance on Base…');
-  assert.equal(copy.FUNDS_TEXT.signingIn, "Sign in with your wallet to continue. This doesn't move funds.");
+  assert.match(offer, /balancesRequest\(chainId\), balanceChainsRequest\(chainId\)/, 'supported networks only, including Ethereum and OP Mainnet');
+  assert.match(offer, /routeServes\(await transports\.routeState\('readV6'\), 'chain-balances'\)/, 'the read route must serve balances');
+  assert.match(offer, /candidate\.chainId === chainId \|\| closed\.has\(candidate\.chainId\)/, 'the destination and quarantined origins cannot fund a new transfer');
+  assert.match(offer, /gas === null \|\| gas <= 0n/, 'an unread native balance is not usable gas');
+  assert.doesNotMatch(offer, /readHoldingsReport|<Select|otherMode|data-funds-other|bringFrom\(/, 'no manual network selection or wallet switch for discovery');
+  assert.doesNotMatch(offer, /\.request\(|eth_|balanceOf/, 'closed readers and senders own wallet operations');
 });
 
 test('the decided words: #16\'s discrete line, #29\'s "Get gas on {destination}" and S2\'s locked sentence, exactly; titles by token and network', () => {
@@ -208,7 +188,7 @@ test('the decided words: #16\'s discrete line, #29\'s "Get gas on {destination}"
   // whenever the offer has no service to ask (every gate mode today), on a press of Bring.
   assert.equal(copy.FUNDS_TEXT.locked, "Bringing funds from another network isn't available yet.");
   const offer = ALL.find(({ path }) => path === 'v2in/funds/BringFunds.tsx').code;
-  assert.match(offer, /const locked = services === null \? FUNDS_TEXT\.locked : null/);
+  assert.match(offer, /!live && <p data-funds-locked="">\{FUNDS_TEXT\.locked\}/);
   assert.doesNotMatch(offer, /lockedCopy/, "never the gate's contracts sentence");
   const constants = require('../../.test-build/app/src/v2in/funds/constants.js');
   assert.equal(constants.FUNDS_SHOW_BRIDGE_ELSEWHERE, true, 'decision #16');
@@ -219,83 +199,40 @@ test('the decided words: #16\'s discrete line, #29\'s "Get gas on {destination}"
 });
 
 
-// Changed on purpose 2026-10-05: the network is the person's one choice; nothing switches the wallet before it.
-test('the offer appears automatically, while wallet network changes wait for the person\'s one choice of network or of the discreet line', () => {
+test('the funding proposal preserves consent, source caps, unknown outcomes and the user amount', () => {
   const offer = ALL.find(({ path }) => path === 'v2in/funds/BringFunds.tsx').code;
-  // Changed on purpose 2026-10-06 (the owner's point 1): or the discreet line's holding, before an amount is typed; the
-  // service's balances are read as the amount step opens, silently, and only the networks it reads are asked.
-  assert.match(offer, /const servedKey = live && \(discreet \|\| lacks\.length > 0 \|\| pick !== null\) \? servedFor : null/, 'read as the step opens, before anything is typed');
-  // Changed on purpose 2026-10-06 (the review): read again, as a new generation, once a deposit or a held step is settled.
-  assert.match(offer, /const servedFor = `\$\{ownKey\}\|\$\{servedGen\}`/);
-  assert.match(offer, /onSettled=\{\(\) => \{\s+setSettled\(\(previous\) => new Set\(previous\)\.add\(d\.record\.depositTxHash\)\)\s+readAgain\(\)/);
-  assert.match(offer, /readChainBalances\(transports\.read, transports\.readRuntime, wallet, balancesRequest\(chainId\)\)/, 'only what model.ts balancesRequest asks');
-  // Changed on purpose 2026-10-06 (rugged97's #379): Ethereum and OP Mainnet in a request of their own, under the same gate,
-  // each answer kept apart (a failed one never takes the other's with it), Domino's three first before anything is drawn.
-  assert.equal([...offer.matchAll(/readChainBalances\(/g)].length, 2, 'two requests, never one naming both');
-  assert.match(offer, /const tokens = balanceChainsRequest\(chainId\)\s+if \(tokens\.length === 0\) return null\s+const away = await readChainBalances\(transports\.read, transports\.readRuntime, wallet, tokens\)/, 'only what model.ts balanceChainsRequest asks');
-  assert.match(offer, /if \(!routeServes\(await transports\.routeState\('readV6'\), 'chain-balances'\)\) return null\s+if \(part === 'elsewhere'\)/, 'the same gate for both');
-  assert.match(offer, /for \(const part of \['domino', 'elsewhere'\] as const\) \{\s+void readServed\(part\)\.then\(\(answer\) => \{\s+if \(alive\) keepServed\(servedKey, part, answer\)/);
-  assert.match(offer, /return answer === null && \(here\[part\] \?\? null\) !== null \? here : \{ \.\.\.here, \[part\]: answer \}/, 'a failed read keeps its own earlier answer, and touches nothing else');
-  assert.match(offer, /const servedNow = useMemo\(\(\) => \(servedHere === null \|\| servedHere\.domino === undefined \? null : mergeBalances\(servedHere\.domino, servedHere\.elsewhere \?\? null\)\), \[servedHere\]\)/);
-  assert.doesNotMatch(offer, /setOpened|open=\{opened/);
-  // Changed on purpose 2026-10-06 (the integration review): or the same pick again, from its "Sign in" button once the
-  // person closed the wallet's dialog.
-  assert.deepEqual([...offer.matchAll(/void bringFrom\(([^)]*)\)/g)].map((m) => m[1]).sort(), ['id', 'id as V2ChainId', 'last.origin, last.named', 'line.chainId, line'], 'from a network button, the same network chosen under Change amount, the discreet line, or the same pick again');
-  assert.match(offer, /lastPick\.current = \{ origin, named \}/);
-  assert.match(offer, /onClick=\{\(\) => void bringFrom\(id\)\}/);
-  // Changed on purpose 2026-10-06 (the integration review): usable while a pick waits for a sign-in; never from an origin a
-  // held step keeps closed.
-  assert.match(offer, /const line = discreet && live && lacks\.length === 0 && \(!ownWay \|\| signing\) && !inFlight && servedNow \? bestHolding\(servedNow, chainId, deliverable, closed\) : null/, 'the line only before an amount, only on a live chain, only from what was read, never beside a deposit on its way');
-  // Changed on purpose 2026-10-06 (the integration review): held back as a whole only for a deposit that may still arrive
-  // here; any other held step closes its own origin.
-  assert.match(offer, /const inFlight = holdOffers\(\s+deposits\.map\(\(d\) => \(\{ sentHere: d\.review !== null, hash: d\.record\.depositTxHash \}\)\),\s+settled,\s+held,\s+chainId,\s+\)/);
-  assert.match(offer, /const closed = useMemo\(\(\) => heldOrigins\(held\), \[held\]\)/);
-  assert.match(offer, /const open = sources\.filter\(\(id\) => !closed\.has\(id\)\)/);
-  assert.match(offer, /const networks = open\.map\(/);
-  assert.match(offer, /const showSources = lacks\.length > 0 && !inFlight && /, 'nor the networks');
-  // A deposit this browser follows keeps the box drawn while the balances are read again (its arrival told once).
-  assert.match(offer, /const underWay = ownWay \|\| heldNotice !== null \|\| held\.length > 0 \|\| deposits\.length > 0/);
-  // Never everything held once an amount is typed: a figure, or the amount field for the person.
-  assert.match(offer, /if \(typed && \(needRaw === null \|\| needRaw <= 0n\)\) \{/);
-  assert.match(offer, /await sizeBring\(p, needRaw, latest\.current\.gasFlag, turn\)/);
-  // Changed on purpose 2026-10-06 (the review): the lack and the holding chosen together (by kind and price); Changed on
-  // purpose 2026-10-06 (rugged's delta of 6 Oct §3): then ONE quote by output, the need with the sendable balance as the
-  // most to send; all there is by exact input only when less; every quote within the cap, let go with the choice.
-  assert.match(offer, /bringChoice\(\{ lacks: latest\.current\.lacks, holdings, destination: chainId, origin, deliverable, prices \}\)/);
-  assert.match(offer, /const byOutput = outputRequestOf\(p, chainId, need, available, gas\)/);
-  assert.match(offer, /let probe = await ask\(byOutput\)/);
-  assert.doesNotMatch(offer, /firstAsk|sizeStep|winningMinimum|fixedFeeOf/);
-  assert.match(offer, /return services\.client\.quote\(wanted, \{ owner: services\.owner, signal \}\)/, 'a sizing quote stops with its choice');
-  assert.equal([...offer.matchAll(/services\.client\.quote\(/g)].length, 2, 'two places ask a quote: the page\'s own ask and the sizing\'s, both counted');
-  assert.equal([...offer.matchAll(/countQuote\(\)/g)].length, 2);
-  assert.doesNotMatch(offer, /lackFor|firstGuess/);
-  // No Get a quote button and no bridge slippage control (V1's 0.5%); provider names are not listed per token.
-  assert.doesNotMatch(offer, /data-funds-get-quote|data-funds-slippage|providerListed|t\.providers\.join/);
-  assert.match(offer, /slippageBps: FUNDS_DEFAULT_SLIPPAGE_BPS/);
-  const quote = ALL.find(({ path }) => path === 'v2in/funds/QuoteView.tsx').code;
-  assert.doesNotMatch(quote, /\bPill\b|FUNDS_TEXT\.best|quoteTitle|Compare routes/, 'no Quote heading, no Best pill, no second disclosure');
-  assert.equal([...quote.matchAll(/<details/g)].length, 1, 'ONE Details');
-  assert.equal([...quote.matchAll(/data-funds-deposit-button/g)].length, 1, 'ONE button');
-  // The owner's own amount step: the line before an amount, the shortfall said once (PairedAmounts), Use keeping the amount.
+  const intent = ALL.find(({ path }) => path === 'v2in/funds/fundingIntent.ts').code;
+  const status = ALL.find(({ path }) => path === 'v2in/funds/DepositStatus.tsx').code;
+  assert.equal([...offer.matchAll(/data-funds-deposit-button/g)].length, 1, 'one primary transfer action');
+  assert.equal([...offer.matchAll(/<details/g)].length, 1, 'one progressive details disclosure');
+  assert.match(offer, /onClick=\{\(\) => void execute\(\)\}/, 'wallet sends require the user action');
+  assert.match(offer, /withFundingLock\(wallet/);
+  assert.match(offer, /respectsLeg\(accepted, leg, checked\.quote\)/, 'replacement quotes must fit accepted spending and output');
+  assert.match(intent, /maxInputRaw: sentRaw\(leg\.quote\)/, 'the accepted debit, never the whole available wallet, caps refreshes');
+  assert.match(intent, /leg\.state === 'sending' \? 'unknown' : leg\.state/, 'a reload never makes a sendable leg out of an uncertain wallet request');
+  assert.match(offer, /quoteBudgetWait/);
+  assert.match(offer, /requestFailure/);
+  assert.match(offer, /SEND_MARGIN_MS/);
+  assert.match(offer, /data-funds-destination-gas/);
+  assert.match(offer, /originGasDetail/);
+  assert.match(offer, /state === 'unknown'/);
+  assert.doesNotMatch(offer, /data-funds-get-quote|data-funds-slippage|data-funds-other/);
+  assert.match(status, /const done = view\.terminal/, 'missing bridge status is never a confirmed failure');
+  assert.match(status, /filled && balanceState !== 'ready'/, 'arrival settles only after actual balances reconcile');
+  assert.doesNotMatch(status, /switchToChain|own\.balance\(|data-funds-use="balance"/, 'no network popup or automatic whole-wallet resize on arrival');
   const amounts = ALL.find(({ path }) => path === 'v2in/funds/FundsAmounts.tsx').code;
-  // Changed on purpose 2026-10-06: paid with one other token, its own amount decides the line, and the box says the shortfall
-  // (that token's panel says nothing of it).
-  assert.match(amounts, /discreet=\{paid \? !amount : planned === null\}/);
-  assert.match(amounts, /shortSaid=\{!paid\}/);
-  assert.match(amounts, /wholeFromOther\(terms, planned\.independent, planned\.need\[0\], planned\.need\[1\], terms\.slippageBps\)/, 'on Review\'s own terms');
-  const zap = ALL.find(({ path }) => path === 'v2in/funds/ZapFunds.tsx').code;
-  assert.doesNotMatch(zap, /discreet|shortSaid/, 'the zap path keeps its own sentence and no line');
+  assert.match(amounts, /wholeFromOther\(terms, planned\.independent, planned\.need\[0\], planned\.need\[1\], terms\.slippageBps\)/, 'the funding amount uses Review terms');
+  assert.match(amounts, /intentKey=/, 'position and typed input isolate the funding intent');
 });
 
-
-test('live V2 Amount mounts the same funding flow and reads only through the closed wallet reader', () => {
+test('live V2 Amount mounts the same funding flow and reads destination balances without moving the wallet', () => {
   const stage = ALL.find(({ path }) => path === 'v2in/journey/AmountStage.tsx').code;
   const funds = ALL.find(({ path }) => path === 'v2in/funds/ZapFunds.tsx').code;
   assert.match(stage, /<ZapFunds state=\{state\} onAmounts=\{onAmounts\}/);
-  assert.match(funds, /walletChainId !== candidate.chainId/);
-  assert.match(funds, /readHoldingsReport\(await browserOriginWallet\(\), candidate\)/);
+  assert.match(funds, /services\?\.readBalances\?\.\(state\.chainId, tokensKey\.split\(','\)\)/);
   assert.match(funds, /inputsOf\(state\)/);
   assert.match(funds, /lackingZapTokens/);
-  assert.match(funds, /onUseToken=\{useToken\}/);
+  assert.match(funds, /onAmounts\(state\.amounts\)/, 'the existing amount is preserved when an arrival is acknowledged');
+  assert.doesNotMatch(funds, /onUseToken=|readHoldingsReport|browserOriginWallet/);
   assert.doesNotMatch(funds, /switchTo|\.request\(|eth_|balanceOf/);
 });

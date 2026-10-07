@@ -23,7 +23,7 @@ const APP = resolve(import.meta.dirname, '../..');
 const BUILD = resolve(APP, '.test-build/app/src');
 const { createHttpReadV6Transport, READ_V6_PATHS, READ_V6_MAX_RESPONSE_BYTES, READ_V6_TIMEOUT_MS } = require(`${BUILD}/v2/read/v6HttpTransport.js`);
 const { readPortfolio, readActivity } = require(`${BUILD}/v2/read/v6.js`);
-const { createSessionPlanTransport, S1_PLAN_MAX_RESPONSE_BYTES } = require(`${BUILD}/v2/plan/httpTransport.js`);
+const { createHttpS1PlanTransport, createSessionPlanTransport, S1_PLAN_MAX_RESPONSE_BYTES } = require(`${BUILD}/v2/plan/httpTransport.js`);
 
 const fixture = (path) => JSON.parse(readFileSync(resolve(APP, '../api-contracts/read-v6/fixtures', path), 'utf8'));
 const PORTFOLIO = fixture('valid/portfolio.json');
@@ -172,4 +172,12 @@ test('crosschain-v1 with the session: the HTTP transport over the page\'s POST; 
   assert.match(session, /reportDenial\(code\) \{\n      if \(lentEpoch !== null\) livePort\.reportDenial\(code, lentEpoch\)\n    \}/, 'a denial under the epoch lent for, to the page\'s one port');
   assert.doesNotMatch(session, /csrf\b.*=|store|localStorage/, 'the CSRF is never kept');
   assert.match(source, /export const liveClock: CrosschainClock = realClock/, 'the page clock the offer\'s page module takes (src/v2in may not import lib/clock)');
+});
+
+
+test('position-plan Retry-After survives transport for bounded automatic quote recovery', async () => {
+  const transport = createHttpS1PlanTransport({ csrf: () => 'test-csrf', post: async () => ({ kind: 'reply', reply: { status: 429, opaqueRedirect: false, contentType: 'application/json', contractHeader: '1.0.0-rc.2', requestIdHeader: 'test', retryAfterHeader: '12', body: { kind: 'text', text: JSON.stringify({ error: 'position_plan_capacity_busy' }) } } }) });
+  const answer = await transport.plan({});
+  assert.equal(answer.retryAfterSeconds, 12);
+  assert.equal(answer.status, 429);
 });

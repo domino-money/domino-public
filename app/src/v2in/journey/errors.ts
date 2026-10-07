@@ -17,13 +17,14 @@ import { JourneyNotice } from './wallet'
 export interface JourneyError {
   copy: string
   code: string
+  retryAfterSeconds?: number
   /**
    * What the screen does next: `requote` goes back to a fresh quote by itself; the plan API's own (rev2 §2.4):
    * `quiet-requote` asks again without a word (preview_expired, an answer past its expiry), `direct-retry` asks again
    * for the direct path without a word (consent_unsupported), `offer-new-pool` offers "Create a new pool (advanced)",
    * `pool-race` re-reads the pool and continues on the one that now exists.
    */
-  recovery: Recovery | 'none' | 'quiet-requote' | 'direct-retry' | 'offer-new-pool' | 'offer-both' | 'pool-race'
+  recovery: Recovery | 'none' | 'quiet-requote' | 'retry-later' | 'direct-retry' | 'offer-new-pool' | 'offer-both' | 'pool-race'
 }
 
 const PLAN_COPY = 'This plan can’t be executed. Review it again.'
@@ -106,7 +107,7 @@ export function planFailure(result: Exclude<S1PlanResult, { kind: 'ok' }>, chain
   switch (result.kind) {
     case 'expired': return { copy: EXPIRED_COPY, code: 'plan_answer_expired', recovery: 'quiet-requote' }
     case 'invalid': return { copy: JOURNEY.review.planInvalid, code: codeOf(`plan_reply_${result.detail}`), recovery: 'none' }
-    case 'unavailable': return { copy: JOURNEY.review.planUnavailable, code: codeOf(`plan_${result.reason}`), recovery: 'none' }
+    case 'unavailable': return { copy: 'The quote service could not be reached. Your amount is unchanged.', code: codeOf(`plan_${result.reason}`), recovery: result.reason === 'network' ? 'retry-later' : 'none', ...(result.retryAfterSeconds !== undefined ? { retryAfterSeconds: result.retryAfterSeconds } : {}) }
     case 'unsimulated': return { copy: PLAN_COPY, code: codeOf(`plan_simulation_${result.reason}`), recovery: 'none' }
     case 'reverted': {
       const decoded = result.selector ? decodeRevertData(result.selector, 'zap', { chainId, token }) : null
@@ -121,14 +122,16 @@ export function planFailure(result: Exclude<S1PlanResult, { kind: 'ok' }>, chain
         case 'position_plan_pool_not_initialized': return { copy: E.position_plan_pool_not_initialized, code, recovery: 'offer-new-pool' }
         case 'position_plan_pool_initialized': return { copy: E.position_plan_pool_initialized, code, recovery: 'pool-race' }
         case 'position_plan_nothing_to_convert': return { copy: E.position_plan_nothing_to_convert, code, recovery: 'offer-both' }
-        case 'invalid_request': case 'position_plan_capacity_busy': case 'position_plan_not_owner': case 'position_plan_position_not_found':
+        case 'invalid_request': case 'position_plan_not_owner': case 'position_plan_position_not_found':
         case 'position_plan_pool_invalid': case 'position_plan_hooked_pool': case 'position_plan_price_invalid': case 'position_plan_price_decimals_mismatch':
         case 'position_plan_range_invalid': case 'position_plan_liquidity_invalid': case 'position_plan_burn_needs_all':
         case 'position_plan_inputs_unsupported': case 'position_plan_no_route': case 'position_plan_amount_too_small':
           return { copy: E[code], code, recovery: 'none' }
         case 'position_plan_fee_not_backed': case 'upstream_invalid_response': case 'upstream_contract_mismatch': return { copy: E.planning_failed, code, recovery: 'none' }
-        case 'position_plan_chain_unavailable': case 'position_plan_unavailable': case 'upstream_unavailable': return { copy: E.not_available(chain), code, recovery: 'none' }
-        case 'request_timeout': case 'upstream_timeout': return { copy: E.request_timeout, code, recovery: 'none' }
+        case 'position_plan_chain_unavailable': return { copy: E.not_available(chain), code, recovery: 'none' }
+        case 'position_plan_capacity_busy': case 'position_plan_unavailable': case 'upstream_unavailable':
+        case 'request_timeout': case 'upstream_timeout':
+          return { copy: 'The quote service is temporarily busy. Your amount is unchanged.', code, recovery: 'retry-later', ...(result.retryAfterSeconds !== undefined ? { retryAfterSeconds: result.retryAfterSeconds } : {}) }
         case 'session_required': case 'csrf_invalid': return { copy: E.session, code, recovery: 'none' }
         default: return { copy: JOURNEY.review.planUnavailable, code, recovery: 'none' }
       }

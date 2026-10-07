@@ -9,7 +9,10 @@
 import { liveClock, liveCrosschainSession, liveCrosschainTransport, v2RouteProbe } from '../../finance/v2/http'
 import { CROSSCHAIN_RUNTIME } from '../../v2/crosschain/contract'
 import type { S2Routes } from '../../v2/gate'
-import type { V2RouteProbe } from '../../v2/routes'
+import { readChainBalances } from '../../v2/read/v6'
+import { routeServes, type V2RouteProbe } from '../../v2/routes'
+import { v2Transports } from '../transports'
+import { balanceSnapshot } from './reconcile'
 import type { FundsPage } from './services'
 
 /** The offer's one probe of the routes' capabilities (a settled answer kept a minute; src/v2/routes.ts). */
@@ -18,4 +21,9 @@ export const fundsRoutes: S2Routes = () => Promise.resolve((probe ??= v2RoutePro
 
 export const fundsPage: FundsPage = {
   live: () => ({ transport: liveCrosschainTransport(), runtime: CROSSCHAIN_RUNTIME, session: liveCrosschainSession(), clock: liveClock }),
+  async balances(gate, owner, chainId, tokens) {
+    const transports = v2Transports(gate)
+    if (!transports || !routeServes(await transports.routeState('readV6'), 'chain-balances')) return { kind: 'unavailable' }
+    return balanceSnapshot(await readChainBalances(transports.read, transports.readRuntime, owner, tokens.map((address) => ({ chainId, address }))), owner, chainId, tokens)
+  },
 }

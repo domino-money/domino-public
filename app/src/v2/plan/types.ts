@@ -194,9 +194,9 @@ export interface S1PlanReply {
  */
 export type S1PlanResult =
   | { kind: 'ok'; reply: S1PlanReply }
-  | { kind: 'refused'; code: PositionPlanErrorCode; status: number }
+  | { kind: 'refused'; code: PositionPlanErrorCode; status: number; retryAfterSeconds?: number }
   | { kind: 'expired' }
-  | { kind: 'unavailable'; reason: string }
+  | { kind: 'unavailable'; reason: string; retryAfterSeconds?: number }
   | { kind: 'invalid'; detail: string }
   | { kind: 'reverted'; selector: Hex | null; name: string | null }
   | { kind: 'unsimulated'; reason: string }
@@ -204,7 +204,7 @@ export type S1PlanResult =
 /** One exchange with the plan service: the HTTP status and the JSON body; throws for a failure to reach it. */
 export interface S1PlanTransport {
   readonly kind: 'fixture' | 'http'
-  plan(request: Record<string, unknown>): Promise<{ status: number; body: unknown }>
+  plan(request: Record<string, unknown>): Promise<{ status: number; body: unknown; retryAfterSeconds?: number }>
 }
 
 export type { PositionPlanErrorCode }

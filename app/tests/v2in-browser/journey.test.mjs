@@ -439,10 +439,7 @@ test('(m) his Review while a quote is asked: a resting bubble and one "Getting a
     await reviewed.locator('[data-review-network-fee="about"]').waitFor({ timeout: 30_000 });
     const before = await reviewed.locator('[data-review-amounts]').innerText();
     assert.equal(before, 'About 0.19 ETH + 490 USDG');
-    // The quote runs out (its 10 s), then Create position asks again before any consent: the same choices, quoted again.
-    const expiresAt = answers[0].plan.expiresAt;
-    while (Date.now() / 1000 < expiresAt + 0.5) await new Promise((done) => setTimeout(done, 200));
-    await page.locator('[data-create-position="live"]:not([disabled])').click();
+    // Near expiry the idle review refreshes itself, without a wallet click or any transaction.
     await asked(1);
     const stale = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="quoting"][data-review-stale]');
     await stale.waitFor({ timeout: 30_000 });
@@ -1012,7 +1009,7 @@ test('(n3) Back, then Continue, while Review still reads a later approval’s fe
 });
 
 /** His journey on Robinhood Chain, from the search to Review, with 1,000 USDG typed (the steps (d) and (h) take), or `token`. */
-async function toReview(page, amount = '1000', token = USDG_RH) {
+async function toReview(page, amount = '1000', token = USDG_RH, stayAtAmount = false) {
   await page.locator('[data-create-journey]').waitFor();
   await page.getByRole('combobox', { name: 'Search a token' }).fill(token);
   await page.locator(`[data-token-option="${token}"]`).click();
@@ -1025,7 +1022,7 @@ async function toReview(page, amount = '1000', token = USDG_RH) {
   await current('amount').waitFor();
   await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
   await page.locator('li[data-step="amount"][aria-current="step"] [data-pair-side="1"] input[inputmode="decimal"]').fill(amount);
-  await pressContinue(current('amount'));
+  if (!stayAtAmount) await pressContinue(current('amount'));
 }
 
 const askedOf = (held) => async (count) => {
@@ -1095,7 +1092,7 @@ test('(o) a fresh quote after the approval went through: the greyed review keeps
 // in view, what the wallet has and the ways on; Create position stays disabled with a short line saying why. Changed on
 // purpose 2026-10-06 (the review, a second look): "bring USDG from another network" only where Amount's bring-funds
 // offer can bring it (S2 live here, and USDG is a token a deposit delivers); (p2) is the other case.
-test('(p) a wallet short of the amount: no quote; the review shows what the position needs and says once, in view, what the wallet has', async () => {
+test('(p) a wallet short of the amount stays at funding; no quote or wallet transaction', async () => {
   const chain = createV2Chain({ chainId: 4663, timestamp: now(), eth: 400_000_000_000_000n, balances: { [USDG_RH]: 100_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);
   // The wallet's balances as the read service reports them: 0.0004 ETH (less than Review's gas allowance) and 100 USDG.
@@ -1113,23 +1110,14 @@ test('(p) a wallet short of the amount: no quote; the review shows what the posi
   });
   try {
     const page = s.page;
-    await toReview(page);
-    const reason = page.locator('#create-reason[data-zap-reason="short"]');
-    await reason.waitFor({ timeout: 30_000 });
-    assert.equal(await reason.innerText(), 'Your wallet doesn’t have enough for this amount.');
-    assert.equal(await page.locator('[data-create-position="short"]').isDisabled(), true);
-    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"]');
-    await review.waitFor();
-    assert.equal(await review.getAttribute('data-zap-review-stage'), 'idle', 'no quote asked');
-    // What the position needs, as his amount step worked it out: the 1,000 USDG typed and the ETH it pairs with.
-    assert.match(await review.locator('[data-review-amounts]').innerText(), /^About [\d.,]+ ETH \+ 1,000 USDG$/);
-    const short = review.locator(`[data-review-short="${USDG_RH}"]`);
-    await short.filter({ hasText: 'from another network' }).waitFor({ timeout: 30_000 });
-    assert.equal(await short.innerText(), 'Your wallet has 100 USDG; this position needs 1,000 USDG. Lower the amount, or bring USDG from another network.');
-    assert.equal(await page.getByText(/Your wallet has /).count(), 1, 'said once');
-    assert.equal(await review.locator('[data-review-fee], [data-review-network-fee], [data-review-inputs], [data-wallet-steps], [data-review-details], [data-review-stale]').count(), 0, 'no figure of a quote, no step');
-    await page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'journey-owner-short.png'), animations: 'disabled' });
-    assert.equal(s.planned.length, 0, 'no plan asked for a wallet that cannot fund it');
+    await toReview(page, '1000', USDG_RH, true);
+    const amount = current(page, 'amount');
+    await amount.locator('[data-amount-short]').waitFor({ timeout: 30_000 });
+    assert.equal(await footerButton(amount, 'Continue').isDisabled(), true);
+    assert.equal(await page.locator('#continue-reason').innerText(), 'Choose how to fund this amount below.');
+    assert.equal(await amount.locator('[data-pair-side="1"] input[inputmode="decimal"]').inputValue(), '1000');
+    assert.equal(await page.locator('[data-zap-review]').count(), 0);
+    assert.equal(s.planned.length, 0, 'no quote asked for a wallet that cannot fund it');
     assert.equal(chain.sends.length, 0);
   } finally { await s.close(); }
 });
@@ -1138,7 +1126,7 @@ test('(p) a wallet short of the amount: no quote; the review shows what the posi
 // stable, ETH or WETH. A wallet short of any other token is told to add it to the wallet, as today's Review says, never to
 // bring it from another network, even with Amount's bring-funds offer open (S2 live, as in (p)).
 const POOL_TOKEN = { ...POOL_RH, currency1: FIXTURE_TOKEN };
-test('(p2) a wallet short of a token no deposit delivers: add it to the wallet, never "bring TOKEN from another network"', async () => {
+test('(p2) a wallet short of a token no deposit delivers stays at funding, never promises to bridge that token', async () => {
   const chain = createV2Chain({ chainId: 4663, timestamp: now(), eth: 400_000_000_000_000n, balances: { [FIXTURE_TOKEN]: 100_000_000n }, pools: [{ pool: POOL_TOKEN, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);
   // The read service's own TOKEN in its ETH / TOKEN pool, at the price (d) uses; the wallet holds 0.0004 ETH and 100 TOKEN.
@@ -1161,18 +1149,15 @@ test('(p2) a wallet short of a token no deposit delivers: add it to the wallet, 
   });
   try {
     const page = s.page;
-    await toReview(page, '1000', FIXTURE_TOKEN);
-    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"]');
-    const short = review.locator(`[data-review-short="${FIXTURE_TOKEN}"]`);
-    await short.waitFor({ timeout: 30_000 });
-    // The crosschain route said S2 is live (Amount's offer asked it first, Review after it); the sentence stays as it is.
-    await until(() => s2Asked >= 2, 'the crosschain route asked by Review too');
-    await sleep(1_000);
-    assert.equal(await short.innerText(), 'Your wallet has 100 TOKEN; this position needs 1,000 TOKEN. Lower the amount, or add TOKEN to your wallet.');
+    await toReview(page, '1000', FIXTURE_TOKEN, true);
+    const amount = current(page, 'amount');
+    await amount.locator('[data-amount-short]').waitFor({ timeout: 30_000 });
+    assert.equal(await footerButton(amount, 'Continue').isDisabled(), true);
+    assert.equal(await amount.locator('[data-pair-side="1"] input[inputmode="decimal"]').inputValue(), '1000');
     const offers = await page.getByText(/from another network/).allInnerTexts();
-    assert.ok(offers.every((line) => !/TOKEN/.test(line)), `nothing on this screen offers to bring TOKEN: ${offers.join(' | ')}`);
-    await page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'journey-owner-short-token.png'), animations: 'disabled' });
-    assert.equal(s.planned.length, 0, 'no plan asked for a wallet that cannot fund it');
+    assert.ok(offers.every((line) => !/TOKEN/.test(line)), 'no unsupported token delivery promised');
+    assert.ok(s2Asked >= 1);
+    assert.equal(s.planned.length, 0);
     assert.equal(chain.sends.length, 0);
   } finally { await s.close(); }
 });
@@ -1207,10 +1192,7 @@ test('(q) a wallet that batches: one step, the network fee up to the batch’s c
     assert.deepEqual(await reviewed.locator('.dm-flow-wstep-title').allInnerTexts(), ['Approve and create the position, all at once']);
     assert.equal(await page.locator('#create-reason').innerText(), 'Your wallet asks you to confirm once: every step together, or none of them.');
     await page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'journey-owner-batch-review.png'), animations: 'disabled' });
-    // The quote runs out (its 10 s), then Create position asks again before any consent: the same choices, quoted again.
-    const expiresAt = answers[0].plan.expiresAt;
-    while (Date.now() / 1000 < expiresAt + 0.5) await new Promise((done) => setTimeout(done, 200));
-    await page.locator('[data-create-position="live"]:not([disabled])').click();
+    // Near expiry the idle review refreshes itself, without a wallet click or any transaction.
     await asked(1);
     const stale = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="quoting"][data-review-stale]');
     await stale.waitFor({ timeout: 30_000 });
@@ -1395,7 +1377,7 @@ test('(u2) a wallet not signed in: his Review shows the amounts as typed under S
 // Added 2026-10-06 (the final check's F5): when the wallet's balances of the pool's two tokens could not be read, his Review
 // sat on a disabled Create position under "Your wallet will ask you to confirm each step.", and nothing read them again. It
 // says so in one line and offers Read again; while they are read, it says that, never that the wallet will ask.
-test('(v) balances that could not be read: one line and Read again, which reads them again; then the plan', async () => {
+test('(v) unread Amount balances recover automatically, keep the typed quantity and then allow Review', async () => {
   const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);
   // The wallet's read fails until the test lets it answer; from then on each answer is held until let go.
@@ -1410,35 +1392,26 @@ test('(v) balances that could not be read: one line and Read again, which reads 
   });
   const s = await openJourney(browser, chain, {
     dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]),
-    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true, clock: true,
   });
   try {
     const page = s.page;
-    await toReview(page);
-    const reason = page.locator('#create-reason[data-zap-reason="unread"]');
-    await reason.waitFor({ timeout: 30_000 });
-    assert.equal(await reason.innerText(), 'Your balance couldn’t be read.');
-    assert.equal(await page.locator('[data-create-position="unread"]').isDisabled(), true);
-    const again = page.locator('[data-journey-footer] [data-create-read-again]');
-    assert.equal(await again.innerText(), 'Read again');
-    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"]');
-    assert.match(await review.locator('[data-review-amounts]').innerText(), /^About [\d.,]+ ETH \+ 1,000 USDG$/, 'the amounts as typed');
-    assert.equal(await page.getByText('Your wallet will ask you to confirm each step.').count(), 0);
-    await page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'journey-owner-balances-unread.png'), animations: 'disabled' });
-    assert.equal(s.planned.length, 0, 'no plan without the balances');
-    // Read again: the balances asked once more; while that read is under way the line says so.
+    await toReview(page, '1000', USDG_RH, true);
+    const amount = current(page, 'amount');
+    await page.locator('#continue-reason').filter({ hasText: 'Your balance could not be checked yet.' }).waitFor({ timeout: 30_000 });
+    assert.equal(await footerButton(amount, 'Continue').isDisabled(), true);
+    assert.equal(s.planned.length, 0);
     failing = false;
-    await press(again);
-    await until(() => held.length > 0, 'the balances read again');
-    await page.locator('#create-reason').filter({ hasText: 'Checking your balance…' }).waitFor({ timeout: 10_000 });
-    assert.equal(await again.count(), 0, 'no Read again while it reads');
-    assert.equal(await page.getByText('Your wallet will ask you to confirm each step.').count(), 0, 'never while nothing is reviewed');
+    await page.clock.fastForward('00:31');
+    await until(() => held.length > 0, 'the balances automatically read again');
     while (held.length > 0) held.shift()();
-    await page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]').waitFor({ timeout: 30_000 });
-    await page.locator('[data-create-position="live"]:not([disabled])').waitFor({ timeout: 30_000 });
-    assert.equal(s.planned.length, 1, 'the plan, once the balances are read');
+    await until(async () => !(await footerButton(amount, 'Continue').isDisabled()), 'funding ready after recovery');
+    assert.equal(await amount.locator('[data-pair-side="1"] input[inputmode="decimal"]').inputValue(), '1000', 'a retry never changes spending intent');
+    await pressContinue(amount);
+    await page.locator('[data-stage-card="review"] [data-zap-review-stage="reviewed"]').waitFor({ timeout: 30_000 });
+    assert.equal(s.planned.length, 1);
     assert.equal(chain.sends.length, 0);
-  } finally { await s.close(); }
+  } finally { while (held.length > 0) held.shift()(); await s.close(); }
 });
 
 // Added 2026-10-06 (the final check's F1/F6, a second look): on Base and Arbitrum One the flow rests on its success, and New
@@ -2088,9 +2061,14 @@ const ROW_WIDTHS = [
 const widthName = ({ width, touch }) => `${width}px${touch ? ' on a touch screen' : ''}`;
 /** The page drawn at one of ROW_WIDTHS (`cdp`: the page's own CDP session, for the browser's touch emulation). */
 async function drawnAt(page, cdp, at) {
-  await cdp.send('Emulation.setTouchEmulationEnabled', at.touch ? { enabled: true, maxTouchPoints: 5 } : { enabled: false });
+  // Playwright starts Chromium with a fine pointer, including on a headless Linux runner. Disabling an emulation
+  // that was never enabled can restore that host's native pointer (none), discarding Playwright's desktop defaults.
+  // Change touch mode only when needed; keep the exact root-size and row-layout assertions below.
+  const touchEnabled = await page.evaluate(() => navigator.maxTouchPoints > 0);
+  if (touchEnabled !== at.touch) await cdp.send('Emulation.setTouchEmulationEnabled', at.touch ? { enabled: true, maxTouchPoints: 5 } : { enabled: false });
   await page.setViewportSize({ width: at.width, height: at.width < 768 ? 844 : 1000 });
   await page.waitForTimeout(150);
+  assert.equal(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), at.touch, `${widthName(at)}: pointer mode`);
   assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize), at.root, widthName(at));
 }
 /** Each row's chips: inside the row's own label, clear of its figures, of its pair's symbols and of each other; and whether the figures stand beside the pair. */
@@ -2510,9 +2488,10 @@ test('(z2) paying with ETH the wallet lacks too: the offer to bring ETH from ano
     await panel.locator('#create-amount-pay').fill('0.5');
     const offer = page.locator(`[data-funds-offer][data-funds-token="${ZERO}"]`);
     await offer.waitFor({ timeout: 30_000 });
-    assert.equal(await words(offer.locator('[data-funds-title]')), 'Bring ETH from another network');
+    assert.equal(await words(offer.locator('[data-funds-title]')), 'Your funds, together');
     // 0.5 ETH and the gas Review keeps, less the 0.0001 ETH there.
-    assert.equal(await words(offer.locator('[data-funds-lack]')), 'You need 0.5004 ETH more on Robinhood Chain.');
+    assert.equal(await offer.locator('[data-funds-lack]').getAttribute('data-funds-lack-raw'), '500400000000000000');
+    assert.equal(await footerButton(current(page, 'amount'), 'Continue').isDisabled(), true);
     await bothWidths(page, 'journey-pay-with-bring');
     assert.equal(s.planned.length, 0, 'no plan before Continue');
     assert.equal(chain.sends.length, 0);
@@ -2605,6 +2584,108 @@ test('(z4) a 40-character symbol: the line and the way back stay inside a phone�
     await back.waitFor();
     assert.equal(await back.locator('bdi').last().evaluate((el) => getComputedStyle(el).textOverflow), 'ellipsis');
     await bothWidths(page, 'journey-pay-with-long-symbol-panel');
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+
+test('(z6) a delayed recommendation cannot replace an already chosen ETH amount or its balance', async () => {
+  const USDC_1 = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+  let release = () => {};
+  const out = new Promise((done) => { release = done; });
+  const ethereum = createChainReads({ chainId: 1, tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: USDC_1, symbol: 'USDC', decimals: 6 }], balances: { [USDC_1]: 20_000_000_000n } });
+  const elsewhere = async (request) => { await out; return ethereum.answer('chain-balances', request); };
+  const { s, chain, page } = await shortOfPair(2n * 10n ** 18n, payPlanner([]), { elsewhere });
+  try {
+    await page.locator('button[data-pay-with="' + ZERO + '"]').click({ timeout: 30_000 });
+    const panel = page.locator('[data-pay-with-amount="' + ZERO + '"]');
+    await panel.locator('[data-pair-balance="ready"]').waitFor({ timeout: 30_000 });
+    await panel.locator('#create-amount-pay').fill('0.5');
+    release();
+    await page.waitForTimeout(300);
+    assert.equal(await panel.locator('#create-amount-pay').inputValue(), '0.5');
+    assert.equal(await words(panel.locator('.dm-flow-balance-line')), 'Balance: 2');
+    assert.equal(await page.locator('[data-pay-with-amount]').getAttribute('data-pay-with-amount'), ZERO);
+    await pressContinue(current(page, 'amount'));
+    await page.locator('[data-zap-review-stage="reviewed"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(s.planned[0].inputs, [{ token: ZERO, amountRaw: '500000000000000000' }]);
+    assert.equal(chain.sends.length, 0);
+  } finally { release(); await s.close(); }
+});
+
+
+test('(g2) automatic balance recovery never switches the wallet away from another network', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
+  chain.switchTo(4663);
+  const own = createChainReads({ chainId: 8453, tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: USDC_BASE, symbol: 'USDC', decimals: 6 }], pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }], balances: { [USDC_BASE]: 5_000_000_000n } });
+  let failing = false;
+  let refused = 0;
+  const chainReads = { answer: (route, request) => {
+    if (route === 'chain-balances' && failing) { refused++; return { status: 404, body: { error: 'route_not_available' } }; }
+    return own.answer(route, request);
+  } };
+  const read = createReadStub({ answer: robinhoodRead });
+  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner([]), routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true, clock: true, chainReads });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
+    await page.locator('[data-token-network-option="8453:' + USDC_BASE + '"]').click({ timeout: 30_000 });
+    await page.locator('[data-picker="pool"][data-picker-network="8453"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.locator('[data-chosen-pool]').waitFor();
+    await pressContinue(current(page, 'pool'));
+    await pressContinue(current(page, 'range'));
+    const amount = current(page, 'amount');
+    await amount.locator('[data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    const field = amount.locator('[data-pair-side="1"] input[inputmode="decimal"]');
+    await field.fill('1000');
+    failing = true;
+    await page.clock.fastForward('00:31');
+    await until(() => refused > 0, 'the background read tried the service');
+    await page.locator('#continue-reason').filter({ hasText: 'Your balance could not be checked yet.' }).waitFor({ timeout: 30_000 });
+    assert.equal(chain.chainNow(), 4663);
+    assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 0);
+    assert.equal(await field.inputValue(), '1000');
+    assert.equal(await footerButton(amount, 'Continue').isDisabled(), true);
+    failing = false;
+    await page.clock.fastForward('00:31');
+    await until(async () => !(await footerButton(amount, 'Continue').isDisabled()), 'the next service read recovers');
+    assert.equal(await field.inputValue(), '1000');
+    assert.equal(chain.chainNow(), 4663);
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+test('(g3) a price crossing the range keeps the typed token visible and waits for an explicit change', async () => {
+  const pool = { pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n };
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [pool] });
+  chain.switchTo(4663);
+  const reads = createChainReads({ chainId: 8453, tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: USDC_BASE, symbol: 'USDC', decimals: 6 }], pools: [pool], balances: { [USDC_BASE]: 5_000_000_000n } });
+  const read = createReadStub({ answer: robinhoodRead });
+  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner([]), routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true, clock: true, chainReads: reads });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
+    await page.locator('[data-token-network-option="8453:' + USDC_BASE + '"]').click({ timeout: 30_000 });
+    await page.locator('[data-picker="pool"][data-picker-network="8453"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.locator('[data-chosen-pool]').waitFor();
+    await pressContinue(current(page, 'pool'));
+    await pressContinue(current(page, 'range'));
+    const amount = current(page, 'amount');
+    await amount.locator('[data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    const field = amount.locator('[data-pair-side="1"] input[inputmode="decimal"]');
+    await field.fill('1000');
+    await until(async () => !(await footerButton(amount, 'Continue').isDisabled()), 'the original amount is ready');
+    pool.tick = TICK_BASE - 20_000;
+    pool.sqrtPriceX96 = String(position.sqrtPriceAtTick(pool.tick));
+    await page.clock.fastForward('00:31');
+    await until(async () => (await page.locator('#continue-reason').textContent())?.includes('range'), 'the moved price asks for an explicit range or token change');
+    assert.equal(await field.isVisible(), true);
+    assert.equal(await field.inputValue(), '1000');
+    assert.equal(await footerButton(amount, 'Continue').isDisabled(), true);
+    assert.equal(s.planned.length, 0);
+    assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 0);
     assert.equal(chain.sends.length, 0);
   } finally { await s.close(); }
 });
