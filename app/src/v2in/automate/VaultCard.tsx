@@ -61,6 +61,7 @@ const PRIMARY_ORDER: readonly VaultDialogKind[] = ['return', 'rearm', 'withdraw'
 
 export function statusWords(view: VaultView): string {
   if (view.exit) return EXIT_STATUS[view.exit]
+  if (view.rootClosed === true) return 'Closed'
   switch (view.status) {
     case 'protection': return 'Auto-exit'
     case 'off': return 'Automation off'

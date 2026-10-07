@@ -140,6 +140,15 @@ async function serve({ v1, hooks, wallet, routes = [] }) {
   return { page, origin, context, server, rpc, wallet: installed, errors, requests };
 }
 
+async function expandAutomation(page) {
+  await page.waitForFunction(() => !document.querySelector('[data-position-loading]') && document.querySelector('[data-automation-control]'), { timeout: 30_000 });
+  const control = page.locator('[data-automation-control]');
+  await control.waitFor({ timeout: 30_000 });
+  assert.equal(await control.count(), 1, 'one mode and status control per position');
+  if (await control.getAttribute('aria-expanded') === 'false') await control.click();
+  await page.locator('[data-automation-panel]').waitFor();
+}
+
 /** Preview: Test Wallet A (tests/support/mock-wallet.mjs), V2's gate open on the test origin, nothing live. */
 async function openPreview(v1, hash) {
   const s = await serve({ v1, hooks: { originOpen: true }, wallet: (context) => installWallets(context) });
@@ -155,6 +164,7 @@ async function openPreview(v1, hash) {
   try {
     await s.page.goto(`${s.origin}/#${hash}`);
     await connect(s.page, 'Test Wallet A');
+    if (/^\/positions\/\d+$/.test(hash)) await expandAutomation(s.page);
     return { ...s, close };
   } catch (error) {
     // What the page said is kept with the failure (an assertion of close() would otherwise hide it).
@@ -214,6 +224,7 @@ async function openLive(chain, { hash, read6, v1, routes = [] }) {
   try {
     await s.page.goto(`${s.origin}/#${hash}`);
     await connect(s.page, WALLET_NAME);
+    if (/^\/positions\/\d+$/.test(hash)) await expandAutomation(s.page);
     return { ...s, chain, close };
   } catch (error) {
     // What the page said is kept with the failure (an assertion of close() would otherwise hide it).
@@ -320,7 +331,7 @@ test('preview: Auto-exit on a plain position the wallet holds: the range\'s two 
     assert.equal(await exit.isVisible(), false, 'no empty card: the actions row has the button');
     assert.equal(await mount.locator('[data-vault-card]').count(), 0, 'no vault of this wallet: no card');
 
-    await page.locator('[data-position-actions] [data-position-v2-action="protect"]').click();
+    await page.locator('[data-automation-panel] [data-v2in-open="mandate"]:visible').click();
     const dialog = page.locator('[role="dialog"][data-v2in-dialog="mandate"]');
     await dialog.waitFor();
     assert.equal(await dialog.locator('h2').innerText(), 'Auto-exit');
@@ -419,9 +430,9 @@ test('preview: a position page offers Auto-exit beside its other actions, and op
     await more.waitFor({ timeout: 30_000 });
     assert.equal(await more.getAttribute('role'), 'group');
     const entries = await more.locator('[data-position-v2-action]').evaluateAll((all) => all.map((one) => [one.getAttribute('data-position-v2-action'), one.textContent?.trim()]));
-    assert.deepEqual(entries.map(([key]) => key), ['increase', 'changeRange', 'exit', 'protect']);
-    assert.deepEqual(entries.at(-1), ['protect', 'Auto-exit']);
-    await more.locator('[data-position-v2-action="protect"]').click();
+    assert.deepEqual(entries.map(([key]) => key), ['increase', 'changeRange', 'exit']);
+    assert.equal(await more.locator('[data-position-v2-action="protect"]').count(), 0, 'automation is separate from liquidity actions');
+    await page.locator('[data-automation-panel] [data-v2in-open="mandate"]:visible').click();
     const dialog = page.locator('[role="dialog"][data-v2in-dialog="mandate"]');
     await dialog.waitFor();
     const edges = dialog.locator('[data-mandate-edges="below"] [data-mandate-edge]');
@@ -449,7 +460,7 @@ test('preview: Managed positions never asks performance-v2 (V1\'s "Start trackin
   try {
     const merged = page.locator('[data-automation-cards="merged"] [data-automation-empty="signed_out"]');
     await merged.waitFor({ timeout: 30_000 });
-    assert.equal((await merged.innerText()).replace(/\s+/g, ' ').trim(), 'Managed positions and receipts Sign in with your wallet to see your automated positions and their receipts. Sign in');
+    assert.equal((await merged.innerText()).replace(/\s+/g, ' ').trim(), 'Automated positions and activity Sign in with your wallet to see your automated positions and their receipts. Sign in');
     // Signed in from the header's wallet dialog.
     await page.locator('header [aria-haspopup="dialog"]').click();
     await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -461,7 +472,7 @@ test('preview: Managed positions never asks performance-v2 (V1\'s "Start trackin
     await managed.locator('[data-v2in-vaults-empty]').waitFor();
     assert.equal(await managed.isVisible(), true);
     assert.equal(await managed.locator('[data-v2in-vaults-empty]').innerText(), 'Your automated positions appear here.');
-    assert.equal(await managed.locator('.dm-acct-desc').innerText(), 'How your automated positions did in the last 24 hours.');
+    assert.equal(await managed.locator('.dm-acct-desc').innerText(), 'Current automation and any funds waiting to be recovered.');
     await page.waitForTimeout(1_500);
     assert.equal(await page.locator('section[aria-label="Private performance"], [data-track-sequences], [data-performance]').count(), 0, 'no V1 history, no Start tracking');
     assert.deepEqual(performance(), [], 'performance-v2 is never asked');
@@ -491,7 +502,7 @@ test('live: a root closed by the S1 exit (burned) keeps its vault\'s fees on its
     await card.waitFor({ timeout: 30_000 });
     assert.equal(await card.getAttribute('data-vault-armed'), 'no');
     assert.equal(await card.getAttribute('data-vault-reserves'), 'held');
-    assert.equal(await card.locator('[data-vault-pill]').innerText(), 'Automation off');
+    assert.equal(await card.locator('[data-vault-pill]').innerText(), 'Closed');
     assert.equal(await card.locator('[data-vault-held] [data-reserves="held"]').innerText(), '0.002 ETH + 5 USDG');
     // rev4: the closed root's reserves reason is THE sentence (said first); §5.4's words moved under Details.
     assert.match(await card.locator('[data-vault-state][data-vault-waiting="reserves_returnable"]').innerText(), /^Your position is closed\. Its waiting fees are being returned to your wallet · since /);
@@ -599,19 +610,19 @@ test('live: a root closed directly on Uniswap, the vault paused: Managed positio
   try {
     const vaults = page.locator('[data-v2in-vaults]');
     await vaults.waitFor({ timeout: 30_000 });
-    assert.equal(await vaults.locator('> .dm-acct-note').first().innerText(), 'Fees waiting to be reinvested, and your ways out.');
     // The row (#8): the name, its chain (§8.2), the pill, the figure line and the one primary button; its page has the rest.
     const row = vaults.locator(`li[data-vault-card="${vault}"]`);
-    assert.equal(await row.locator('.dm-acct-status').innerText(), 'Automation off');
-    assert.equal(await row.locator('[data-vault-held]').innerText(), 'Fees collected, not yet reinvested: 0.002 ETH + 5 USDG');
+    assert.match(await row.innerText(), /Auto-compound · Closed/);
+    assert.match(await row.innerText(), /Funds available in automation/);
     assert.equal(await row.locator('[data-v2-chain-badge="4663"]').count(), 1);
-    assert.deepEqual(await row.locator('button').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('data-vault-open'))), ['return']);
+    assert.equal(await row.locator('button').count(), 0, 'overview only navigates');
     assert.equal(await row.locator('[data-vault-idle], [data-return-hint], [data-vault-details]').count(), 0, 'the row carries no detail');
-    const link = row.locator('a.dm-mp-name');
+    const link = row.locator('a.dm-automated-link');
     assert.equal(await link.getAttribute('href'), `#/positions/${ROOT}`);
     await page.locator('.dm-auto-frame', { has: vaults }).screenshot({ path: join(shots(), 'v2in-managed-closed-root.png'), animations: 'disabled' });
 
     await link.click();
+    await expandAutomation(page);
     const card = page.locator(`[data-v2in-position="${ROOT}"] section[data-vault-card="${vault}"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.equal(await card.locator('[data-vault-held] [data-reserves="held"]').innerText(), '0.002 ETH + 5 USDG');
@@ -826,7 +837,7 @@ test('live: after Leave automation, "Turn back on" then "Turn off" made here: on
     const turnOn = none.locator('[data-vault-open="rearm"]');
     assert.equal(await turnOn.innerText(), 'Turn on');
     await none.locator('[data-exit-details] > summary').click();
-    assert.equal(await none.locator(`[data-exit-history] [data-order="${id}"]`).getAttribute('data-order-status'), 'revoked', 'the earlier list says it turned off, never "On"');
+    assert.equal(await none.locator('[data-exit-history]').count(), 0, 'history belongs to Activity');
     await none.screenshot({ path: join(shots(), 'v2in-autoexit-back-on-then-off.png'), animations: 'disabled' });
     await turnOn.click();
     const rearm = page.locator('[role="dialog"][data-v2in-dialog="vault-rearm"]');
@@ -976,7 +987,7 @@ test('Auto-exit on USDG / ERC-20 writes the edges in the app\'s own units (USDG 
   const s = await openPreview(v1, `/positions/${ID}`);
   try {
     const { page } = s;
-    await page.locator('[data-position-v2-action="protect"]').click();
+    await page.locator('[data-automation-panel] [data-v2in-open="mandate"]:visible').click();
     const dialog = page.locator('[data-v2in-dialog="mandate"]');
     const edges = dialog.locator('[data-mandate-edges="inside"] [data-mandate-edge]');
     await edges.first().waitFor();
@@ -1045,7 +1056,7 @@ test('live: Auto-exit on a plain position is ONE signature and ONE wallet_sendCa
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1 });
   try {
     const { page } = s;
-    await page.locator('[data-position-v2-action="protect"]').click();
+    await page.locator('[data-automation-panel] [data-v2in-open="mandate"]:visible').click();
     const dialog = page.locator('[role="dialog"][data-v2in-dialog="mandate"]');
     await dialog.waitFor();
     const send = dialog.locator('[data-mandate-send]');
@@ -1162,7 +1173,7 @@ test('live: a signature declined in the wallet stays said after the dialog revie
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1 });
   try {
     const { page } = s;
-    await page.locator('[data-position-v2-action="protect"]').click();
+    await page.locator('[data-automation-panel] [data-v2in-open="mandate"]:visible').click();
     const dialog = page.locator('[role="dialog"][data-v2in-dialog="mandate"]');
     await dialog.waitFor();
     await dialog.locator('[data-mandate-send]:not([disabled])').waitFor({ timeout: 30_000 });
@@ -1215,7 +1226,7 @@ test('live, a wallet that cannot batch: another vault takes the nonce after the 
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1 });
   try {
     const { page } = s;
-    await page.locator('[data-position-v2-action="protect"]').click();
+    await page.locator('[data-automation-panel] [data-v2in-open="mandate"]:visible').click();
     const dialog = page.locator('[role="dialog"][data-v2in-dialog="mandate"]');
     await dialog.waitFor();
     const send = dialog.locator('[data-mandate-send]');
@@ -1430,9 +1441,10 @@ test('live: Auto-exit on, its root disarmed by a change made outside it: "On" ev
     const row = page.locator(`[data-v2in-vaults] li[data-vault-card="${vault}"]`);
     await row.waitFor({ timeout: 30_000 });
     assert.equal(await row.getAttribute('data-vault-exit'), 'on');
-    assert.equal(await row.locator('.dm-acct-status').innerText(), 'Auto-exit');
+    assert.match(await row.innerText(), /Auto-exit · On/);
     assert.equal(await row.locator('button').count(), 0, 'never Revoke approval or Remove Domino on an Auto-exit that is on');
-    await row.locator('a.dm-mp-name').click();
+    await row.locator('a.dm-automated-link').click();
+    await expandAutomation(page);
     const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.equal(await card.locator('[data-exit-pill]').innerText(), 'On');
@@ -1610,4 +1622,47 @@ test('live: Auto-exit paused after Leave automation, its position\'s read missin
   } finally {
     await s.close();
   }
+});
+
+test('one NFT with earlier setups has one overview row and one top control; previous balances stay available on mobile', async () => {
+  const liquidity = 1_000_000n;
+  const chain = createVaultChain({ chainId: 4663, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -600, tickUpper: 600, liquidity }] });
+  const vault = await chain.seedVault({ dex: 4, tokenId: ROOT });
+  const portfolio = listing(chain, vault, { armed: true, reserves: [[ZERO, 0n], [USDG, 0n]], root: { owner: OWNER, liquidity } });
+  const previous = structuredClone(portfolio.body.vaults[0]);
+  previous.address = '0x7777777777777777777777777777777777777777';
+  previous.ownerNonce = '0';
+  previous.pausedBy = 'owner';
+  previous.autoExitEnabled = true;
+  previous.state.paused = true;
+  previous.state.rootArmed = false;
+  previous.state.exitModule = AUTO_EXIT;
+  previous.custody = { armed: false, reason: 'auto_exit', since: SINCE, source: 'event' };
+  previous.members[0] = { ...previous.members[0], status: 'disarmed', disarmReason: 'auto_exit' };
+  previous.state.reserves = [{ token: ZERO, idle: '0', total: '0' }, { token: USDG, idle: '5000000', total: '5000000' }];
+  portfolio.body.vaults.unshift(previous);
+  const readRuntime = await import('../../../api-contracts/read-v6/runtime.mjs');
+  assert.equal(readRuntime.validateResponse('portfolio', portfolio.body), true, 'the combined history is a valid portfolio');
+  const s = await openLive(chain, { hash: '/positions', read6: { portfolio }, v1: rootOnV1({ liquidity }) });
+  try {
+    const { page } = s;
+    const rows = page.locator('[data-automated-position]');
+    await rows.first().waitFor({ timeout: 30_000 });
+    assert.equal(await rows.count(), 1, 'historical vaults never duplicate the NFT');
+    assert.equal(await rows.first().getAttribute('data-vault-card'), vault, 'current NFT approval wins');
+    assert.equal(await rows.locator('button').count(), 0, 'overview only navigates');
+    assert.match(await rows.innerText(), /Funds available in automation/);
+    await rows.locator('a').click();
+    await expandAutomation(page);
+    const panel = page.locator('[data-automation-panel]');
+    assert.equal(await panel.locator('section[data-vault-card]').count(), 1);
+    assert.equal(await panel.locator('[data-exit-state="closed"]').count(), 0, 'the old Auto-exit does not replace the current mode');
+    await panel.locator('[data-automation-recovery] > summary').click();
+    const held = panel.locator(`[data-recovery-vault="${previous.address}"]`);
+    assert.match(await held.innerText(), /5 USDG/);
+    assert.equal(await held.getByRole('button', { name: 'Resume', exact: true }).count(), 0);
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: join(shots(), 'one-nft-current-and-previous-setups.png'), fullPage: true });
+  } finally { await s.close(); }
 });

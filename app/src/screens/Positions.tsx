@@ -34,7 +34,7 @@ const couldNotLoad = () => ({ default: CouldNotLoad })
 /** What a card tells the page it shows (lib/automationCards.ts): Managed positions and Receipts. */
 type TellShows = (shows: CardShows | null) => void
 const Performance = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ onShows?: TellShows }>>(recovering(() => import('./Performance'), couldNotLoad)) : null
-const Execution = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ limit?: number; onShows?: TellShows }>>(recovering(() => import('./Execution'), couldNotLoad)) : null
+const Execution = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ limit?: number; onShows?: TellShows }>>(recovering(() => import('./Execution').then(({ default: View }) => ({ default: View })), couldNotLoad)) : null
 // Changed on purpose 2026-10-02 (Domino V2 integration, lists): in a build that carries V2 only, Receipts draws V1's own
 // receipts and then read-v6's (src/v2in/lists/Receipts.tsx, which renders Execution itself), lazily and behind the bare
 // define; every deployable build, where `__DOMINO_V2__` is false, folds it away and opens Execution as before.
@@ -156,17 +156,17 @@ function Plot({ children }: { children: ReactNode }) {
 function ManagedCard({ hidden, onShows, receipts = null }: { hidden?: boolean; onShows?: TellShows; receipts?: CardShows | null }) {
   return (
     <AutomationFrame
-      title="Managed positions"
+      title={__DOMINO_V2__ ? 'Automated positions' : 'Managed positions'}
       titleId="managed-title"
       art="domino"
-      aside={<Chip>Last 24 hours</Chip>}
+      aside={__DOMINO_V2__ ? undefined : <Chip>Last 24 hours</Chip>}
       className="dm-acct-card animate-rise"
       style={rise(2)}
       hidden={hidden}
       data-managed-positions={Performance ? '' : undefined}
     >
       {Performance ? (
-        <Suspense fallback={<Quiet line={MANAGED_LINE} />}>
+        <Suspense fallback={<Quiet line={__DOMINO_V2__ ? 'Current automation and any funds waiting to be recovered.' : MANAGED_LINE} />}>
           {V2Managed ? <V2Managed onShows={onShows} receipts={receipts} /> : <Performance onShows={onShows} />}
         </Suspense>
       ) : (
@@ -229,7 +229,7 @@ function OneLine({ line }: { line: Extract<CardShows, { kind: 'none' }> | null }
     <section className="dm-card dm-acct-card dm-acct-merged animate-rise" style={rise(2)} aria-labelledby="automation-merged-title" data-automation-empty={line?.reason ?? ''}>
       <div className="dm-acct-card-head">
         <h2 id="automation-merged-title" className="dm-title">
-          Managed positions and receipts
+          {__DOMINO_V2__ ? 'Automated positions and activity' : 'Managed positions and receipts'}
         </h2>
       </div>
       <div className="dm-acct-merged-body">

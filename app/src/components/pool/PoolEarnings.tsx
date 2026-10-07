@@ -75,7 +75,7 @@ export function PoolEarnings({ apr, tvl, loading, saved = false }: { apr: number
       )}
       <p id="pool-earn-note" className="dm-pool-earn-note" data-saved-data={saved ? 'estimate' : undefined}>
         {/* Changed on purpose 2026-10-04: the copy promises nothing, not even in the negative (tests/screen-words.test.mjs). */}
-        {saved ? 'Estimate from saved figures. ' : 'Estimate only. '}Actual fees can differ. Fees are earned only inside your range.
+        Estimate only. Actual fees can differ. Fees are earned only inside your range.
       </p>
       {apr !== null && <details className="dm-pool-disclosure" data-pool-earnings-basis="">
         <summary>How it’s estimated<span aria-hidden="true" className="dm-pool-details-chevron" /></summary>

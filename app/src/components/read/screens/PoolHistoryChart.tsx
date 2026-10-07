@@ -203,7 +203,7 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
             </span>
           )}
         </div>
-        <p className="dm-pool-chart-date">{inspecting ? `${at(point.candle.startTimestamp)} · ${point.candle.swapCount} swaps` : `${stale ? 'Saved' : 'Latest'} · ${at(point.candle.startTimestamp)}`}</p>
+        <p className="dm-pool-chart-date" title={stale ? 'Last available history; this is not a current price.' : undefined}>{inspecting ? `${at(point.candle.startTimestamp)} · ${point.candle.swapCount} swaps` : at(point.candle.startTimestamp)}</p>
       </div>}
       {!point && reading && <div aria-hidden="true" className="dm-pool-skel-figure"><Skeleton className="dm-pool-skel-price" /><Skeleton className="dm-pool-skel-date" /></div>}
       <div className="dm-pool-chart-body" data-ratio-unit="quote_per_base">

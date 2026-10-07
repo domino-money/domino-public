@@ -79,7 +79,9 @@ test('a verified public chart survives reload as a labelled snapshot before the 
     assert.deepEqual(await cached.getByRole('radio').allInnerTexts(), ['24H', '7D', 'All']);
     assert.equal(await cached.getAttribute('data-fees-period-state'), 'drawn');
     await page.waitForFunction(() => performance.getEntriesByType('measure').some((e) => e.name.startsWith('domino:load:') && e.name.endsWith(':chart:cached')), null, { timeout: 10_000 });
-    assert.match(await cached.innerText(), /saved|snapshot/i);
+    assert.equal(await cached.locator('[data-fees-saved]').count(), 1, 'the history keeps its provenance for assistive technology');
+    assert.match(await cached.locator('[data-fees-saved]').getAttribute('class'), /sr-only/);
+    assert.equal(await cached.locator('[data-data-freshness]').count(), 0, 'routine refresh does not flash a cache label');
     assert.equal(await page.locator('[data-position-actions]').count(), 0, 'a snapshot is never financial authority');
     assert.equal(await page.locator('[data-position-detail]').count(), 0, 'saved history cannot populate live principal or owner');
     assert.equal(chain.log.length, firstCount, 'the cached plot is visible without a new successful chain read');

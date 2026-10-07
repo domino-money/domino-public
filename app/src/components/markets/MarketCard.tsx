@@ -196,7 +196,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
       <div className="dm-mkt-card-head">
         <Pair market={market} catalogue={catalogue} />
         <span className="dm-mkt-card-tvl">
-          <span className="dm-mkt-card-label">TVL{market?.tvlUsd.state === 'stale' && market.tvlUsd.value !== null ? ' · saved' : ''}</span>
+          <span className="dm-mkt-card-label">TVL</span>
           <span className="dm-mkt-card-figure">
             {market && !(market.figuresPending && presentMetric(market.tvlUsd).kind === 'unavailable') ? (
               <MetricCell metric={market.tvlUsd} retrieved={retrieved} />
@@ -213,7 +213,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
       <div className="dm-mkt-plot" data-series-stale={(line ?? bars)?.stale ? '' : undefined}>
         {plot}
       </div>
-      <p className="dm-mkt-card-caption">{caption}{((line ?? bars)?.stale || (series.kind === 'figure' && (market?.volume24hUsd ?? series.metric)?.state === 'stale' && (market?.volume24hUsd ?? series.metric)?.value !== null)) && <span data-saved-data="chart"> · saved</span>}</p>
+      <p className="dm-mkt-card-caption">{caption}{((line ?? bars)?.stale || (series.kind === 'figure' && (market?.volume24hUsd ?? series.metric)?.state === 'stale' && (market?.volume24hUsd ?? series.metric)?.value !== null)) && <span className="sr-only" data-saved-data="chart"> · Last available history</span>}</p>
     </a>
   )
 }

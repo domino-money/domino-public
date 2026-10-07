@@ -10,10 +10,10 @@ import { Amount as CardAmount, PairName, PositionStatus } from '../../components
 import { PositionSkeleton } from '../../components/positions/visual/PositionSkeleton'
 import { Address } from '../../components/read/screens/Address'
 import { TokenMarkPair } from '../../components/TokenIcon'
-import { Badge, Button, Chip, Display, EmptyState, FigureDash, KeyValue, KeyValueList, PageShell, Stat, StatStrip } from '../../components/ui'
+import { DataFreshness } from '../../components/DataFreshness'
+import { Button, Chip, Display, EmptyState, FigureDash, KeyValue, KeyValueList, PageShell, Stat, StatStrip } from '../../components/ui'
 import { LiveFigure, UsdText } from '../../components/figures'
 import { formatUsdFloor } from '../../lib/format/usd'
-import { shortDate, shortTime } from '../../lib/format/time'
 import { useRouteTitle } from '../../lib/routeTitle'
 import { useMediaQuery } from '../../lib/useMediaQuery'
 import { useWalletIdentity } from '../../lib/walletIdentity'
@@ -21,21 +21,23 @@ import { newPositionExpected } from '../../lib/automate/autoExitAsk'
 import { v2Chain } from '../../v2/chains'
 import { v2Gate, type V2Gate } from '../../v2/gate'
 import { v2PageProbe } from '../transports'
-import { feeTierText, shortAddress } from '../../v2/plan/present'
+import { feeTierText } from '../../v2/plan/present'
 import { coverageNote } from '../../v2/read/v6'
-import { ZERO_ADDRESS, type Address as Hex20 } from '../../v2/types'
+import { ZERO_ADDRESS } from '../../v2/types'
 import { parseV2PositionParam, type V2PositionRef } from '../route'
 import { ApprovalFact, useZapApproval } from './Approval'
 import { cardOf, poolIdentity, walletPositionOf } from './card'
 import PositionAutomation from '../automate/PositionAutomation'
-import { askExitOrder, exitOrderKey, useExitOrderOffered } from '../autoexit/entry'
+import { exitOrderKey } from '../autoexit/entry'
 import { HOOKED_COPY, NEW_POSITION_REREAD_MS, SUCCESSOR_BLOCKED_COPY } from './constants'
 import { COPY } from './copy'
-import { actionsOfPosition, chainStatusOf, findPosition, fromV6, hookedPool, isLive, tokensOf, vaultReservesOf, type ActionPosition, type LiveV6Position } from './model'
+import { chainStatusOf, findPosition, fromV6, hookedPool, isLive, tokensOf, vaultReservesOf, type LiveV6Position } from './model'
 import { MoreActions, positionMenuItems } from './MoreActions'
 import { PositionDialog, type PositionMode } from './PositionDialog'
-import { activityFor, portfolioFor, type PortfolioRead, type V6Read } from './source'
-import { amountText, labelOf, tokenBook, usdOfAmounts, type TokenBook } from './tokens'
+import { portfolioFor, type PortfolioRead, type V6Read } from './source'
+import { labelOf, tokenBook, usdOfAmounts } from './tokens'
+import { useActivityHistory } from '../lists/activity'
+import PositionHistory from '../lists/PositionHistory'
 import type { OpenGate } from './wallet'
 
 // 2026-10-03 (the owner's point 10): the Price range chart's own chunk, asked for as this page's code arrives (V1's page does the same).
@@ -114,7 +116,8 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
   // The portfolio is the connected wallet's: none is read without one (never an empty owner to read-v6).
   const needsWallet = wallet === null
   const [read, setRead] = useState<PortfolioRead | null>(null)
-  const [activity, setActivity] = useState<V6Read<ActivityResponse> | null>(null)
+  const history = useActivityHistory(wallet)
+  const activity = useMemo<V6Read<ActivityResponse> | null>(() => history.answer ? { kind: 'ok', body: history.answer } : history.error, [history.answer, history.error])
   const [round, setRound] = useState(0)
   const chain = v2Chain(target.chainId)
   const id = target.tokenId.toString()
@@ -129,7 +132,6 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
     if (needsWallet) return
     let alive = true
     void portfolioFor(gate, wallet ?? '').then((answer) => { if (alive) setRead(answer) })
-    void activityFor(gate, wallet ?? '').then((answer) => { if (alive) setActivity(answer) })
     return () => {
       alive = false
     }
@@ -211,9 +213,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   const heldByVault = successor && position.vault !== null && owner === position.vault.address
   const mine = wallet !== null && (owner === wallet || heldByVault)
   const hooked = hookedPool(position.pool)
-  const protectionKey = exitOrderKey(position.tokenId.toString(), chainId, position.dex)
-  const protect = useExitOrderOffered(protectionKey)
-  const items = action ? positionMenuItems(action, protect) : []
+  const items = action ? positionMenuItems(action, false) : []
   const identity = poolIdentity(chainId, position.pool)
   const custody = successor ? COPY.custody.successor : position.vault?.role === 'root' ? COPY.custody.root : COPY.custody.walletHolds
   // Added 2026-10-06 (read-v6 1.1.0-rc.1's qualified USD): what it holds and its fees in USD, as V1's page shows them
@@ -247,10 +247,9 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
                 Position #<span translate="no">{position.tokenId.toString()}</span>
               </span>
               <PositionStatus card={card} />
-              {stale && <Badge kind="stale" />}
             </div>
             {coverage && <p className="dm-pos-copy" data-position-coverage="">{coverage}</p>}
-            {stale && <p className="dm-pos-copy" data-position-chain-stale="">{COPY.page.chainStale(chain.name)}</p>}
+            <DataFreshness active={stale} scope={`position-${chainId}-${position.dex}-${position.tokenId}`} detail={COPY.page.chainStale(chain.name)} />
           </div>
         </div>
         {/* V1's row: one primary button and the "···" menu (./MoreActions.tsx), which says why an entry is disabled. A
@@ -264,13 +263,16 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
                 <Button type="button" variant="primary" disabled={hooked} title={hooked ? HOOKED_COPY : undefined} data-position-v2-action="collect" onClick={() => setMode('collect')}>
                   {COPY.button.collect}
                 </Button>
-                <MoreActions id={`position-v2-more-${position.tokenId}`} items={items} onPick={(key) => { if (key === 'protect') askExitOrder(protectionKey); else setMode(key) }} data-position-v2-actions={gate.mode} />
+                <MoreActions id={`position-v2-more-${position.tokenId}`} items={items} onPick={(key) => { if (key !== 'protect') setMode(key) }} data-position-v2-actions={gate.mode} />
               </>
             )}
           </div>
         )}
       </div>
 
+      <PositionAutomation tokenId={position.tokenId.toString()} position={automationPosition} holder={position.owner}
+        chainId={chainId} dex={position.dex} priceContext={{ block: position.snapshotBlock, saved: stale }}
+        indexed={{ portfolio: answer, subscriber: position.custody.subscriber }} onChanged={onChanged} />
       <StatStrip layout="tiles" className="dm-pos-stats" title={position.snapshotBlock !== null ? `Read at block ${position.snapshotBlock}` : undefined} data-position-stats="">
         <Stat
           label={COPY.page.holds}
@@ -353,7 +355,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
           <PositionRange card={card} price={price} variant="page" history={chainId === 4663 && position.dex === 4} openedAt={activityOpenedAt(activity?.kind === 'ok' ? activity.body : null, position)} />
         </section>
 
-        <PositionActivity chainId={chainId} tokenId={position.tokenId} book={book} activity={activity} />
+        <PositionHistory wallet={wallet} position={{ chainId, dex: position.dex, tokenId: position.tokenId.toString() }} />
 
         <details className="dm-card dm-pos-details" data-position-details="">
           <summary className="dm-pos-details-head">
@@ -414,55 +416,6 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
       {mode && action && (
         <PositionDialog gate={gate} position={action} mode={mode} book={book} reserves={reserves} onClose={() => setMode(null)} onDone={onChanged} />
       )}
-      <PositionAutomation tokenId={position.tokenId.toString()} position={automationPosition} holder={position.owner}
-        chainId={chainId} dex={position.dex} priceContext={{ block: position.snapshotBlock, saved: stale }}
-        indexed={{ portfolio: answer, subscriber: position.custody.subscriber }} onChanged={onChanged} />
     </div>
   )
 }
-
-/**
- * The position's activity (read-v6's `activity`, its `s1_action` receipts naming it, as the new or the previous NFT):
- * each action in plain words, when, its Domino fee (65 bps when it swapped), and whether it is final yet. Raw amounts in
- * each token's own units; no USD. Nothing until the read answers; a dash with its reason when it cannot.
- */
-function PositionActivity({ chainId, tokenId, book, activity }: { chainId: ActionPosition['chainId']; tokenId: bigint; book: TokenBook; activity: V6Read<ActivityResponse> | null }) {
-  if (!activity) return null
-  const items = activity.kind === 'ok' ? actionsOfPosition(activity.body, chainId, tokenId) : []
-  return (
-    <section className="dm-card dm-pos-card dm-pos-activity" aria-labelledby="position-v2-activity-title" data-position-activity="" data-position-activity-read={activity.kind}>
-      <h2 id="position-v2-activity-title" className="dm-title">
-        {COPY.page.activity}
-      </h2>
-      {activity.kind !== 'ok' && <p className="text-body text-fg-muted" data-position-activity-reason={activity.kind === 'unavailable' ? activity.reason : activity.detail}>{COPY.page.activityUnavailable}</p>}
-      {activity.kind === 'ok' && items.length === 0 && <p className="text-body text-fg-muted">{COPY.page.activityNone}</p>}
-      {items.length > 0 && (
-        <ul className="grid gap-2">
-          {items.map((item) => {
-            const fees = item.tariffs.filter((tariff) => tariff.kind === 'assisted_swap')
-            const at = item.tx.snapshot.timestamp
-            return (
-              <li key={item.id} data-position-activity-item={item.id} data-position-activity-action={item.action}>
-                <KeyValueList className="dm-receipt">
-                  <KeyValue label={COPY.page.activityWords[item.action]}>
-                    <span className="tnum">{shortDate(at)} {shortTime(at)} · {COPY.page.finality[item.tx.finality]}</span>
-                  </KeyValue>
-                  <KeyValue label={fees.length > 0 ? COPY.review.fee : COPY.review.noFee} data-position-activity-fee={fees.map((tariff) => tariff.amount).join(',') || 'none'}>
-                    {fees.length > 0 ? (
-                      <span className="grid justify-items-end gap-1">
-                        {fees.map((tariff) => <span key={tariff.token}>{amountText(book, tariff.token.toLowerCase() as Hex20, BigInt(tariff.amount))}</span>)}
-                        <span className="text-caption text-fg-muted">{COPY.review.feeRate}</span>
-                      </span>
-                    ) : '—'}
-                  </KeyValue>
-                  <KeyValue label={COPY.page.transaction} mono>{shortAddress(item.tx.hash)}</KeyValue>
-                </KeyValueList>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </section>
-  )
-}
-

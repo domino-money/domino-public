@@ -13,6 +13,7 @@
 @import './pool.css';     /* pool: chart card, stat strip specifics */
 @import './flow.css';     /* new position: step list */
 @import './positions.css';        /* positions: list, position page, Performance, Execution */
+@import './activity.css';         /* shared wallet and position history, in the existing screen stylesheet */
 @import './automate.css';         /* automate: Automate and the sequence pages */
 @import './account-screens.css';  /* foundation: rugged97's screens */
 @import './docs.css';     /* docs: #/docs layout, sidebar, prose, on-this-page */

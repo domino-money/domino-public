@@ -197,11 +197,7 @@ export const AUTO_EXIT: DocPage = {
   ],
 }
 
-/**
- * 2026-10-04 (the owner: docs revalidated for V2): the contract behind Auto-compound, Domino-compound and Auto-exit
- * (spec F7 §1.5, §5.3–§5.6; src/v2in/automate VaultCard.tsx, VaultDialog.tsx), said as "your automation" (the owner,
- * 2026-10-04), with its card's and dialogs' own words, and what Domino V1's automation leaves to do (spec §1.1).
- */
+/** V2 owner controls and recovery, in the product's words (F7 §1.5, §5.3–§5.6). */
 export const YOUR_AUTOMATION: DocPage = {
   slug: 'your-automation',
   title: 'Your automation',
@@ -231,8 +227,8 @@ export const YOUR_AUTOMATION: DocPage = {
       id: 'its-card',
       title: 'Its card',
       blocks: [
-        p('It shows as ', b('Automation'), ' on the position’s page, and as a row of Managed positions: its network, its state (', b('Automation on'), ', ', b('Paused'), ', ', b('Auto-exit'), ' or ', b('Automation off'), '), what it waits for, and the fees it collected and hasn’t reinvested yet. Auto-exit’s own shows as its card instead.'),
-        p(b('Details'), ' has its mode and fee, the positions Domino-compound opened, and ', b('Pause'), ' or ', b('Resume'), '. Pausing stops automated runs; Auto-exit stays on.'),
+        p('The mode and status button at the top of your position opens its controls. ', b('Automated positions'), ' links there, with one row per position. ', b('Activity'), ' shows completed actions.'),
+        p(b('Pause'), ' and ', b('Resume'), ' control compounding only. A position has compounding or Auto-exit, never both. Auto-exit has its own ', b('Turn off'), ' and restore actions. ', b('Previous setup balances'), ' keeps earlier funds available to recover.'),
       ],
     },
     {

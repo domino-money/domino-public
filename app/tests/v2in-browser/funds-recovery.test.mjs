@@ -5,6 +5,7 @@ import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from '../support/close-browser.mjs';
 import { openFundingPage, USDG, ZERO, S2_OWNER, ARB_USDC, RECORDED_DEPOSIT, createChainReads, walletAssets, typeUsdg, signIn, homeReads, chainReads, together, offerReady } from '../support/funds-browser.mjs';
+import { createOriginChain } from '../support/s2-origin-chain.mjs';
 
 const require = createRequire(import.meta.url);
 const { depositJournalKey } = require('../../.test-build/app/src/finance/v2/crosschain.js');
@@ -132,5 +133,54 @@ test('an active transfer lock in another tab prevents a second wallet prompt for
     assert.equal(await s.page.evaluate((key) => localStorage.getItem(key), fundingKey), null, 'the busy attempt never persists a competing plan');
     await other.evaluate(() => window.__releaseFundingLock());
     await other.close();
+  } finally { await s.close(); }
+});
+
+test('confirmed Ethereum gas shortage offers one reviewed alternative, never silently sending from another origin', async () => {
+  const ETH_USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+  const origin = createOriginChain({ owner: S2_OWNER, chainId: 1, gasPrice: 22_000_000_000n });
+  const s = await openFundingPage(browser, { bridge: true, switching: true, sendOn: origin,
+    balances: { native: { 1: 10_000_000_000_000n }, tokens: { [`1:${ETH_USDC}`]: { balance: 200_000_000n, decimals: 6 } } },
+    served: together(homeReads(), chainReads(1, ETH_USDC, 200_000_000n, 10_000_000_000_000n), chainReads(42161, ARB_USDC)),
+  });
+  try {
+    await offerReady(s);
+    assert.match(await s.page.locator('[data-funds-title]').innerText(), /Ethereum/);
+    await s.page.locator('[data-funds-deposit-button]').click();
+    await s.page.locator('[data-funds-gas-review]').waitFor();
+    assert.equal(await s.page.locator('[data-funds-deposit-button]').count(), 0, 'the failed route cannot be retried unchanged');
+    assert.equal(origin.state.sent.length, 0, 'gas failure was confirmed before submission');
+    const before = JSON.parse(await s.page.evaluate((key) => localStorage.getItem(key), fundingKey));
+    assert.deepEqual(before.gasRecovery, { mode: 'token', reviewNeeded: true });
+    await s.page.locator('[data-funds-gas-review]').click();
+    await s.page.getByRole('button', { name: 'Use this updated transfer', exact: true }).waitFor();
+    assert.equal(await s.page.locator('[data-funding-sources]').getAttribute('data-funding-sources'), '1');
+    assert.equal(await s.page.locator('[data-funds-network]').getAttribute('data-funds-network'), '42161');
+    assert.equal(await amount(s.page).inputValue(), '50');
+    assert.equal(s.wallet.state.chainId, 1, 'reviewing another source does not change the wallet network');
+    assert.equal(origin.state.sent.length, 0);
+    assert.deepEqual(JSON.parse(await s.page.evaluate((key) => localStorage.getItem(key), fundingKey)), before, 'a revised proposal is not a new authorization');
+  } finally { await s.close(); }
+});
+
+test('keeping more ETH cannot silently reduce the position amount when no funding alternative covers it', async () => {
+  const ETH_USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+  const eth = 18_000_000_000_000_000n;
+  const origin = createOriginChain({ owner: S2_OWNER, chainId: 1, gasPrice: 22_000_000_000n, estimate: 110_000n });
+  const s = await openFundingPage(browser, { bridge: true, switching: true, sendOn: origin, balances: { native: { 1: eth } },
+    served: together(homeReads(), chainReads(1, ETH_USDC, 0n, eth)),
+  });
+  try {
+    await offerReady(s);
+    await s.page.locator('[data-funds-deposit-button]').click();
+    await s.page.locator('[data-funds-gas-review]').waitFor();
+    const quoteCount = s.quotes().length;
+    await s.page.locator('[data-funds-gas-review]').click();
+    await s.page.locator('[data-error-code="funding_gas_retry"]').waitFor();
+    assert.match(await s.page.locator('[data-funds-run-notice]').innerText(), /Keeping more ETH/);
+    assert.equal(await s.page.locator('[data-funds-deposit-button]').count(), 0);
+    assert.equal(await amount(s.page).inputValue(), '50');
+    assert.ok(s.quotes().slice(quoteCount).filter((q) => q.originChainId === 1).every((q) => BigInt(q.maxInputRaw ?? q.amountRaw) <= 12_000_000_000_000_000n));
+    assert.equal(origin.state.sent.length, 0);
   } finally { await s.close(); }
 });

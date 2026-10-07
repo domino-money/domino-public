@@ -78,13 +78,13 @@ function YourApr({ tokenId }: { tokenId: string }) {
     figure = (
       <>
         {aprText(all.rate)}
-        {saved && <span className="text-caption text-fg-muted"> saved</span>}
+        {saved && <span className="sr-only"> · Last available history</span>}
       </>
     )
     sub = (
       <span className="dm-pos-lines">
-        <span>{saved ? 'Saved history' : 'Since opened'} ({spanText(all.seconds)})</span>
-        {saved && <span>Through {shortDate(saved.state.timestamp)} {shortTime(saved.state.timestamp)} · not current</span>}
+        <span>Since opened ({spanText(all.seconds)})</span>
+        {saved && <span className="sr-only">Through {shortDate(saved.state.timestamp)} {shortTime(saved.state.timestamp)} · not current</span>}
         {day.ok && (
           <span data-apr-day="" title={`Measured from ${shortDate(day.from.t)} ${shortTime(day.from.t)}, block ${day.from.block}, to now (${spanText(day.seconds)})`}>
             Last 24 hours: {aprText(day.rate)}

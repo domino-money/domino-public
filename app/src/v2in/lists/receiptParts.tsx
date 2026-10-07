@@ -1,4 +1,5 @@
 import type { ActivityResponse } from 'api-contracts/read-v6/types'
+import type { ReactNode } from 'react'
 import { CopyButton } from '../../components/read/screens/CopyButton'
 import { v2TxUrl } from '../../v2/explorers'
 import { IconChevronDown } from '../../components/icons'
@@ -50,10 +51,11 @@ function Hash({ value, href }: { value: string; href: string | null }) {
 }
 
 /** One of the person's own receipts as a row of a receipts list. */
-export function ReceiptRow({ view }: { view: ReceiptView }) {
+export function ReceiptRow({ view, children, positionItem }: { view: ReceiptView; children?: ReactNode; positionItem?: ActivityResponse['items'][number] }) {
   const href = v2TxUrl(view.chainId, view.hash)
   return (
-    <li data-v2-receipt={view.id} data-v2-receipt-kind={view.kind} data-v2-receipt-chain={view.chainId} data-v2-finality={view.finalized ? 'finalized' : 'included'}>
+    <li data-v2-receipt={view.id} data-v2-receipt-kind={view.kind} data-v2-receipt-chain={view.chainId} data-v2-finality={view.finalized ? 'finalized' : 'included'}
+      data-position-activity-item={positionItem?.id} data-position-activity-action={positionItem?.kind === 's1_action' ? positionItem.action : undefined}>
       <details className="dm-rcpt-row">
         <summary>
           <Pill tone={view.finalized ? 'in' : 'neutral'} dot className="dm-rcpt-chip" title={view.finalized ? 'Final on the network.' : 'In a block, not final yet. A delay is never a failure.'}>
@@ -62,6 +64,7 @@ export function ReceiptRow({ view }: { view: ReceiptView }) {
           <span className="dm-rcpt-what">
             {view.what}{' '}
             <ChainBadge name={view.chain} chainId={view.chainId} />
+            <span className="dm-activity-time"><time dateTime={new Date(view.at * 1000).toISOString()}>{timeWords(view.at)}</time></span>
           </span>
           <span className="dm-rcpt-amount tnum" data-v2-receipt-amount="">
             {view.amount ?? ''}
@@ -69,8 +72,9 @@ export function ReceiptRow({ view }: { view: ReceiptView }) {
           <IconChevronDown size={16} className="dm-rcpt-chevron" />
         </summary>
         <div className="dm-rcpt-detail">
+          {children}
           {(view.lines.some((line) => !line.tech) || view.fees.length > 0) && (
-            <dl className="dm-rcpt-facts">
+            <dl className="dm-rcpt-facts" data-position-activity-fee={positionItem?.kind === 's1_action' ? positionItem.tariffs.filter((fee) => fee.kind === 'assisted_swap').map((fee) => fee.amount).join(',') || 'none' : undefined}>
               {view.lines
                 .filter((line) => !line.tech)
                 .map((line, i) => (

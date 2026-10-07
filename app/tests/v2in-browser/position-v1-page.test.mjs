@@ -150,15 +150,17 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     const detail = page.locator('[data-position-detail][data-position-id="3135288"]');
     await detail.waitFor({ timeout: 30_000 });
     const actions = detail.locator('.dm-pos-actions[data-position-actions]');
-    await actions.locator('a[data-automate-entry]').waitFor({ timeout: 15_000 });
+    const control = detail.locator('[data-automation-control]');
+    await control.waitFor({ timeout: 30_000 });
+    assert.equal(await control.count(), 1);
+    assert.equal(await control.getAttribute('aria-expanded'), 'false');
     await actions.locator('[data-position-action="close"]').waitFor({ timeout: 15_000 });
     const more = actions.locator('[data-position-v2-actions="preview"] [data-position-v2-more]');
     await more.waitFor({ timeout: 30_000 });
-    await actions.locator('[data-position-v2-action="protect"]').waitFor();
     // Changed on purpose 2026-10-06 (the owner's point 5): the protection is named Auto-exit.
-    assert.deepEqual(await actions.locator('button').allInnerTexts(), ['Collect fees', 'Add liquidity', 'Change range', 'Withdraw', 'Auto-exit', 'Close position']);
+    assert.deepEqual(await actions.locator('button').allInnerTexts(), ['Collect fees', 'Add liquidity', 'Change range', 'Withdraw', 'Close position']);
     assert.deepEqual([await more.getAttribute('aria-label'), await more.getAttribute('role')], ['Position actions', 'group']);
-    assert.equal(await actions.locator('[data-position-v2-action]').count(), 4, 'all V2 actions are visible without a hidden menu');
+    assert.equal(await actions.locator('[data-position-v2-action]').count(), 3, 'liquidity actions stay separate from automation');
     for (const button of await actions.locator('button').all()) assert.equal(await button.isVisible(), true);
     const setup = page.locator('[data-v2in-exit="plain"]');
     assert.equal(await setup.isVisible(), false, 'the empty setup card is no longer repeated below the position');
@@ -170,6 +172,10 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth),true,'position fits at '+width);
     }
     await page.setViewportSize({width:1180,height:900});
+    await control.click();
+    assert.equal(await control.getAttribute('aria-expanded'), 'true');
+    assert.equal(await detail.locator('[data-automation-panel]').isVisible(), true);
+    assert.equal(await actions.locator('[data-automate-entry], [data-position-v2-action="protect"]').count(), 0);
     /**
      * Opens the "···" menu, checks its entries, picks one (the menu closes on the pick). Changed on purpose 2026-10-04 (the
      * owner: stop-loss and take-profit inside the position): a plain position the wallet holds ends the list with it.

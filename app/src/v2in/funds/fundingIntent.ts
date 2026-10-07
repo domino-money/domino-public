@@ -14,6 +14,8 @@ export interface FundingLeg {
   maxInputRaw: string
   minimumOutputRaw: string
   destinationGas: boolean
+  /** A reviewed retry may keep more ETH on its Ethereum origin; this is never a destination credit. */
+  reserveRaw?: string
   state: 'ready' | 'sending' | 'unknown' | 'sent' | 'settled' | 'stopped'
   depositTxHash: string | null
 }
@@ -27,6 +29,7 @@ export interface FundingIntent {
   requiredRaw: string
   createdAt: number
   legs: FundingLeg[]
+  gasRecovery?: { mode: 'native' | 'token'; reviewNeeded: boolean }
 }
 export interface PricedLeg { holding: Holding; quote: QuotePlan; timing: Timing }
 export type QuoteFunding = (request: CrosschainRequests['quote']) => Promise<{ quote: QuotePlan; timing: Timing }>
@@ -39,9 +42,14 @@ export async function planFunding(input: {
   holdings: readonly Holding[]
   destinationGas: boolean
   quote: QuoteFunding
+  spendable?: (holding: Holding) => bigint
   cancelled(): boolean
 }): Promise<PricedLeg[] | null> {
   if (input.required <= 0n) return null
+  const capacity = (holding: Holding) => {
+    const ordinary = sendable(holding), revised = input.spendable?.(holding) ?? ordinary
+    return revised < 0n ? 0n : revised < ordinary ? revised : ordinary
+  }
   const partial: Holding[] = []
   let unavailable = false
   const ask = async (holding: Holding, amount: bigint, max: bigint | null, gas: boolean): Promise<PricedLeg> => ({ holding,
@@ -51,7 +59,7 @@ export async function planFunding(input: {
       slippageBps: FUNDS_DEFAULT_SLIPPAGE_BPS, destinationGas: gas })) })
   for (const holding of input.holdings) {
     if (input.cancelled()) throw new Error('funding_cancelled')
-    const cap = sendable(holding)
+    const cap = capacity(holding)
     if (cap <= 0n) continue
     const full = await ask(holding, input.required, cap, input.destinationGas)
     if (winningMinimum(full.quote) >= input.required) return [full]
@@ -63,7 +71,7 @@ export async function planFunding(input: {
   const capacities: PricedLeg[] = []
   for (const holding of partial) {
     if (input.cancelled()) throw new Error('funding_cancelled')
-    const contribution = await ask(holding, sendable(holding), null, input.destinationGas && capacities.length === 0)
+    const contribution = await ask(holding, capacity(holding), null, input.destinationGas && capacities.length === 0)
     if (winningMinimum(contribution.quote) > 0n) capacities.push(contribution)
     else unavailable ||= contribution.quote.candidates.some((candidate) => candidate.status === 'unavailable' || candidate.status === 'rate_limited')
   }
@@ -83,7 +91,7 @@ export async function planFunding(input: {
     const gasIndex = chosen.findIndex((leg) => leg.quote.request.destinationGas)
     if (gasIndex > 0) chosen.unshift(...chosen.splice(gasIndex, 1))
     else if (gasIndex < 0) {
-      chosen[0] = await ask(chosen[0].holding, sendable(chosen[0].holding), null, true)
+      chosen[0] = await ask(chosen[0].holding, capacity(chosen[0].holding), null, true)
       if (winningMinimum(chosen[0].quote) <= 0n) return null
     }
   }
@@ -94,7 +102,7 @@ export async function planFunding(input: {
     const need = winningMinimum(leg.quote) < remaining ? winningMinimum(leg.quote) : remaining
     const gas = input.destinationGas && index === 0
     const next = need === winningMinimum(leg.quote) && leg.quote.request.destinationGas === gas
-      ? leg : await ask(leg.holding, need, sendable(leg.holding), gas)
+      ? leg : await ask(leg.holding, need, capacity(leg.holding), gas)
     if (winningMinimum(next.quote) < need) return null
     sized.push(next)
     remaining -= winningMinimum(next.quote)
@@ -155,6 +163,8 @@ export function respectsLeg(intent: FundingIntent, leg: FundingLeg, quote: Quote
 const ADDRESS = /^0x[0-9a-f]{40}$/
 const HASH = /^0x[0-9a-f]{64}$/
 const RAW = /^[1-9][0-9]{0,77}$/
+const ZERO = '0x0000000000000000000000000000000000000000'
+export const ETHEREUM_RETRY_RESERVE = 6_000_000_000_000_000n
 const STATES = new Set<FundingLeg['state']>(['ready', 'sending', 'unknown', 'sent', 'settled', 'stopped'])
 export const fundingStorageKey = (owner: string, destination: number) => `domino.funding.v1:${owner.toLowerCase()}:${destination}`
 
@@ -172,18 +182,62 @@ export function parseFunding(raw: string | null, owner: string, destination: num
       typeof leg.symbol !== 'string' || leg.symbol.length > 24 || !Number.isInteger(leg.decimals) || leg.decimals < 0 || leg.decimals > 36 ||
       !RAW.test(leg.maxInputRaw) || !RAW.test(leg.minimumOutputRaw) || !STATES.has(leg.state) || typeof leg.destinationGas !== 'boolean' ||
       (leg.depositTxHash !== null && !HASH.test(leg.depositTxHash)))) return null
+    if (value.legs.some((leg) => leg.reserveRaw !== undefined && (leg.originChainId !== 1 || leg.originToken !== ZERO || leg.reserveRaw !== ETHEREUM_RETRY_RESERVE.toString()))) return null
+    if (value.gasRecovery !== undefined && (!value.gasRecovery || !['native', 'token'].includes(value.gasRecovery.mode) || typeof value.gasRecovery.reviewNeeded !== 'boolean')) return null
     if (new Set(value.legs.map((leg) => leg.id)).size !== value.legs.length) return null
     // Explicit projection also discards injected quote/calldata fields.
     return { version: 1, id: value.id, owner: value.owner, destinationChainId: value.destinationChainId,
       destinationToken: value.destinationToken, scope: value.scope, requiredRaw: value.requiredRaw, createdAt: value.createdAt,
+      ...(value.gasRecovery ? { gasRecovery: { mode: value.gasRecovery.mode, reviewNeeded: value.gasRecovery.reviewNeeded } } : {}),
       legs: value.legs.map((leg) => ({ id: leg.id, originChainId: leg.originChainId, originToken: leg.originToken,
         symbol: leg.symbol, decimals: leg.decimals, maxInputRaw: leg.maxInputRaw, minimumOutputRaw: leg.minimumOutputRaw,
-        destinationGas: leg.destinationGas, state: leg.state === 'sending' ? 'unknown' : leg.state, depositTxHash: leg.depositTxHash })) }
+        destinationGas: leg.destinationGas, ...(leg.reserveRaw ? { reserveRaw: leg.reserveRaw } : {}), state: leg.state === 'sending' ? 'unknown' : leg.state, depositTxHash: leg.depositTxHash })) }
   } catch { return null }
 }
 
 export function outstandingLegs(intent: FundingIntent): FundingLeg[] {
   return intent.legs.filter((leg) => leg.state === 'ready' || leg.state === 'stopped')
+}
+
+/** Only a known pre-send gas failure qualifies. Wallet silence and arbitrary refusals never reopen funding. */
+export function withGasFailure(intent: FundingIntent, legId: string, code: string, offered: boolean): FundingIntent | null {
+  const leg = intent.legs.find((entry) => entry.id === legId)
+  if (!leg || leg.originChainId !== 1 || offered || !['native_balance_insufficient', 'funding_gas_short'].includes(code) ||
+    !['ready', 'stopped'].includes(leg.state) || leg.depositTxHash !== null) return null
+  return { ...intent, gasRecovery: { mode: leg.originToken === ZERO ? 'native' : 'token', reviewNeeded: true } }
+}
+
+export function fundingSpendable(holding: Holding, leg?: Pick<FundingLeg, 'reserveRaw'>): bigint {
+  if (!leg?.reserveRaw || holding.chainId !== 1 || holding.token !== ZERO) return sendable(holding)
+  const reserve = BigInt(leg.reserveRaw)
+  return holding.raw > reserve ? holding.raw - reserve : 0n
+}
+
+/** Also invalidates a reviewed alternative if another tab progresses or edits the original plan. */
+export const gasRecoveryKey = (intent: FundingIntent) => JSON.stringify([intent.id, intent.scope, intent.requiredRaw, intent.gasRecovery,
+  intent.legs.map((leg) => [leg.id, leg.state, leg.depositTxHash, leg.maxInputRaw, leg.minimumOutputRaw, leg.reserveRaw])])
+
+/** A new proposal, never a send: keep the position target, debit caps and all transferred contributions intact. */
+export async function planGasRecovery(intent: FundingIntent, holdings: readonly Holding[], quote: QuoteFunding, cancelled: () => boolean, reviewId: string): Promise<{ intent: FundingIntent; quotes: PricedLeg[]; recoveryFrom: string } | null> {
+  if (!intent.gasRecovery?.reviewNeeded || intent.legs.some((leg) => leg.state === 'sending' || leg.state === 'unknown')) return null
+  const outstanding = outstandingLegs(intent), kept = intent.legs.filter((leg) => !outstanding.includes(leg))
+  const usedOrigins = new Set(kept.map((leg) => leg.originChainId))
+  const usable = holdings.filter((holding) => !usedOrigins.has(holding.chainId) && (intent.gasRecovery?.mode !== 'token' || holding.chainId !== 1))
+  const caps = (holding: Holding) => {
+    const previous = outstanding.find((leg) => leg.originChainId === holding.chainId && leg.originToken === holding.token)
+    const available = fundingSpendable(holding, { reserveRaw: ETHEREUM_RETRY_RESERVE.toString() })
+    return previous && BigInt(previous.maxInputRaw) < available ? BigInt(previous.maxInputRaw) : available
+  }
+  const quoted = await planFunding({ destinationChainId: intent.destinationChainId, destinationToken: intent.destinationToken,
+    required: outstanding.reduce((sum, leg) => sum + BigInt(leg.minimumOutputRaw), 0n), holdings: usable,
+    destinationGas: !kept.some((leg) => leg.destinationGas) && outstanding.some((leg) => leg.destinationGas), quote, cancelled, spendable: caps })
+  if (!quoted || kept.length + quoted.length > 8) return null
+  const next = freezeFunding(intent, quoted)
+  // New ids prevent a stale observer for a stopped leg from mutating the replacement.
+  const legs = next.legs.map((leg, index) => ({ ...leg, id: `${leg.originChainId}:${leg.originToken}:retry:${reviewId}:${index}`,
+    ...(leg.originChainId === 1 && leg.originToken === ZERO ? { reserveRaw: ETHEREUM_RETRY_RESERVE.toString() } : {}) }))
+  return { intent: { ...next, legs: [...kept, ...legs], gasRecovery: { mode: intent.gasRecovery.mode, reviewNeeded: false } },
+    quotes: quoted, recoveryFrom: gasRecoveryKey(intent) }
 }
 
 /** An in-flight/unknown leg reserves its contribution but is never treated as wallet credit. */

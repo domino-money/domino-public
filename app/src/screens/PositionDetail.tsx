@@ -11,6 +11,7 @@ import { PositionSkeleton } from '../components/positions/visual/PositionSkeleto
 import { usdgSide } from '../components/positions/visual/value'
 import { Address } from '../components/read/screens/Address'
 import { TokenMarkPair } from '../components/TokenIcon'
+import { DataFreshness } from '../components/DataFreshness'
 import { Button, Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, PageShell } from '../components/ui'
 import { chainState, freshState, takeWarmState } from '../lib/fees/client'
 import { feesStore } from '../lib/fees/spawn'
@@ -313,7 +314,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
   const openedAt = ledgerOpenedAt(useFeeHistory(card.tokenId))
   // The way on: Automate, or the docs on switching a sequence on. The owner's actions show it first, unless a
   // sequence's Turn on or Pause takes its place (2026-09-25), and it stands alone while their chunk loads.
-  const entry = <AutomateEntry tokenId={card.tokenId} open={automatable} variant="action" />
+  const entry = __DOMINO_V2__ ? null : <AutomateEntry tokenId={card.tokenId} open={automatable} variant="action" />
   return (
     <div data-position-detail="" data-position-id={card.tokenId} data-snapshot={block} data-position-read={copy !== undefined ? 'saved' : gateway ? 'gateway' : 'chain'}>
       <div className="dm-pos-title">
@@ -325,10 +326,9 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
             </Display>
             {/* A copy kept by this browser (item A15): dated, and no action is offered on it. */}
             {copy !== undefined && (
-              <p className="dm-pos-copy" data-position-copy="">
-                Saved copy from {shortDate(Math.floor(copy / 1000))} {shortTime(Math.floor(copy / 1000))} · Reading the chain…
-              </p>
+              <span className="sr-only" data-position-copy="">Saved copy from {shortDate(Math.floor(copy / 1000))} {shortTime(Math.floor(copy / 1000))}</span>
             )}
+            <DataFreshness active={copy !== undefined || gateway} scope={`position-${card.tokenId}`} detail={`Last available block: ${block}`} />
             <div className="dm-pos-chips">
               {/* "fee" after the pool's fee tier (2026-09-27): beside Your APR, a bare percentage would read as a yield.
                   Changed on purpose 2026-10-01 (audit E5): the NFT's number left the chip for Details, the tab's title
@@ -342,7 +342,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
                 Position #<span translate="no">{card.tokenId}</span>
               </span>
               <PositionStatus card={card} />
-              <AutomationChip tokenId={card.tokenId} listed={card.hasLiquidity ? listed : false} />
+              {!__DOMINO_V2__ && <AutomationChip tokenId={card.tokenId} listed={card.hasLiquidity ? listed : false} />}
             </div>
           </div>
         </div>
@@ -398,6 +398,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
         )}
       </div>
 
+      {V2Position && <Suspense fallback={null}><V2Position tokenId={card.tokenId} position={wallet} holder={owner} priceContext={{ block, saved: cached || copy !== undefined || gateway }} onChanged={() => onChanged()} /></Suspense>}
       <KeyFigures card={card} state={state && usdgIndex !== null ? state : null} price={price} block={block} cached={cached} />
 
       {/* The fees its vault collected and has not reinvested, while any is above zero (2026-10-02): the owner's, from its own
@@ -424,7 +425,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
           <PositionRange card={card} price={price} variant="page" history openedAt={openedAt} />
         </section>
 
-        <PositionActivity tokenId={card.tokenId} automatic={automatic} />
+        <PositionActivity tokenId={card.tokenId} automatic={automatic} owner={card.owner.address} />
 
         {/* Everything technical, at the end and closed until asked for (the owner, 2026-09-27): the main page stays practical. */}
         <details className="dm-card dm-pos-details" data-position-details="">
@@ -710,10 +711,8 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
       <Back />
       {V2Position ? (
         <>
+          {current.phase !== 'ready' && <Suspense fallback={null}><V2Position tokenId={tokenId} position={null} holder={null} /></Suspense>}
           {body}
-          <Suspense fallback={null}>
-            <V2Position tokenId={tokenId} position={current.phase === 'ready' ? current.position : null} holder={current.phase === 'ready' ? current.owner : null} priceContext={current.phase === 'ready' ? { block: current.block, saved: current.row === true || current.copy !== undefined || current.gateway === true } : null} />
-          </Suspense>
         </>
       ) : (
         body

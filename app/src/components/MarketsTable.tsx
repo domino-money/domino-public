@@ -19,6 +19,7 @@ import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { useNow } from '../lib/read/useNow'
 import { useLoadMilestone } from '../lib/useLoadMilestone'
 import { MetricCell, PendingFigure } from './explore/MetricCell'
+import { DataFreshness } from './DataFreshness'
 import { marketsHref, poolHref } from './explore/routes'
 import { IconChevronRight, IconInfo } from './icons'
 import { PoolCatalogueIdentity, PoolTokenLabel } from './PoolCatalogueIdentity'
@@ -148,7 +149,7 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
       <span className="tnum font-medium text-fg">
         {price.text} <PoolTokenLabel token={price.quote} />
       </span>
-      {price.stale && <span className="dm-mkt-saved" data-saved-data="price">Saved price</span>}
+      {price.stale && <span className="sr-only" data-saved-data="price">Last available price; see Details for its time.</span>}
     </span>
   )
 }
@@ -213,7 +214,7 @@ function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; 
               {feeWords(feeLabel(m))}
             </Chip>
             {pinned && <PinnedChip />}
-            {savedFigures.length > 0 && <span className="dm-mkt-saved" data-saved-data="figures" title={`Saved figures: ${savedFigures.join(', ')}. Open Details for their sources and times.`}>Saved figures</span>}
+            {savedFigures.length > 0 && <span className="sr-only" data-saved-data="figures">Last available {savedFigures.join(', ')}; sources and times in Details.</span>}
             {flags.map((flag) => (
               <Chip key={flag.key} className="dm-mkt-venue dm-mkt-flag" data-pool-flag={flag.key} title={flag.title}>
                 {flag.text}
@@ -339,7 +340,7 @@ function CatalogueRow({ poolId, entry, full, loading, token, pinned, standIn }: 
           <PoolCatalogueIdentity entry={entry} />
         </a>
         {pinned && <PinnedChip />}
-        {saved && <span className="dm-mkt-saved" data-saved-data="figures">Saved figures</span>}
+        {saved && <span className="sr-only" data-saved-data="figures">Last available figures; sources and times in Details.</span>}
       </Td>
       <Td numeric col="wide">
         {loading ? <span className="dm-mkt-bubbles">{bubble('dm-mkt-bubble--price')}{bubble('dm-mkt-bubble--unit')}</span> : <FigureDash reason="Price unavailable" />}
@@ -485,6 +486,11 @@ export function MarketsTable({
   )
   const said = marketsStatus(state)
   const status = diagnostics ? <ReadStatus status={said} onRetry={retry} /> : <ReadStatus status={said} quiet />
+  const retained = markets.some((market) => {
+    const aged = agedMarket(market, now)
+    const price = marketPoolPrice(aged, now)
+    return [aged.tvlUsd, aged.volume24hUsd, aged.feeAprPercent].some((metric) => metric.state === 'stale') || (price.state === 'usable' && price.stale)
+  })
 
   // Changed on purpose 2026-10-03 (the owner): a short list no longer says "5 of 6 today" over the table. It raised a
   // question the screen can't answer, and a list carried over from an earlier day made its "today" untrue.
@@ -599,6 +605,7 @@ export function MarketsTable({
       ) : (
         table
       )}
+      <DataFreshness active={retained && state.phase !== 'loading'} scope={title} />
       {figures && PoolFiguresSlot && SlotBoundary && SlotFailed && (
         <SlotBoundary fallback={<SlotFailed />}>
           <Suspense fallback={null}>

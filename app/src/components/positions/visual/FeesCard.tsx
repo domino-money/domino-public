@@ -2,6 +2,7 @@ import { useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Delta, LiveFigure, PeriodTabs, StackedBar, UsdText, type PeriodKey } from '../../figures'
 import { TokenMarkPair } from '../../TokenIcon'
+import { DataFreshness } from '../../DataFreshness'
 import { cx } from '../../ui'
 import { ChartSkeleton } from '../../charts/ChartSkeleton'
 import { useFeeHistory } from '../../../lib/fees/useFeeHistory'
@@ -362,8 +363,9 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
   return root(
     saved ? 'cached' : 'verified',
     <>
-      <Head titleId={titleId} state={lead} tokens={tokens} standalone={standalone} tabs={tabs} mark={saved ? <span className="dm-own-est" title={savedTitle} data-fees-saved="">Saved copy</span> : undefined} />
-      {saved && <p className="dm-fees-amounts" title={savedTitle}>Saved {savedWhen(saved.state.timestamp)} · Checking for updates</p>}
+      <Head titleId={titleId} state={lead} tokens={tokens} standalone={standalone} tabs={tabs} />
+      {saved && <span className="sr-only" data-fees-saved="">{savedTitle}</span>}
+      <DataFreshness active={saved !== null} scope={id} detail={savedTitle}>Fee history is taking longer to update. Showing the last available figures.</DataFreshness>
       <div className="dm-fees-body" data-zero={view.zero ? '' : undefined}>
         <div className="dm-fees-summary">
           <p className="dm-fees-hero" title={blockTitle}>
@@ -399,7 +401,7 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
                 </span>
                 <span className="dm-fees-legend-label">
                   <span aria-hidden="true" className="dm-fees-dot" data-tone="unclaimed" />
-                  {saved ? 'Ready to collect (saved)' : 'Ready to collect'}
+                  Ready to collect
                   <span className="dm-fig-xs dm-fees-zero-fig">
                     <Value basis={basis} units={view.unclaimed} state={lead} />
                   </span>
@@ -427,7 +429,7 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
                 />
                 <LegendRow
                   tone="unclaimed"
-                  label={saved ? 'Ready to collect (saved)' : 'Ready to collect'}
+                  label="Ready to collect"
                   title={blockTitle}
                   money={positive(view.unclaimed)}
                   value={<Value basis={basis} units={view.unclaimed} state={lead} />}

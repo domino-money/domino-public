@@ -96,3 +96,78 @@ test('aggregate destination gas is paid once without adding it on top of a sourc
   assert.equal(legs.filter((leg) => leg.quote.request.destinationGas).length, 1);
   assert.ok(legs.reduce((sum, leg) => sum + model.winningMinimum(leg.quote), 0n) >= 60_000_000n);
 });
+
+const ZERO = '0x0000000000000000000000000000000000000000';
+const E18 = 10n ** 18n;
+const native = (raw) => ({ chainId: 1, chainName: 'Ethereum', token: ZERO, symbol: 'ETH', decimals: 18, raw });
+const retryQuote = async (request) => ({ quote: quoteFor(request, OWNER, 'responses/quote', request.originToken === ZERO ? { rate: { num: 4_000_000_000n, den: E18 }, relayOnly: true } : {}).quote, timing: { sentMono: 0, receivedMono: 1 } });
+const ethereumIntent = (amount = '40000000', cap = '9000000000000000') => ({ version: 1, id: 'ethereum-gas', owner: OWNER, destinationChainId: 4663, destinationToken: USDG,
+  scope: 'unchanged-original-input', requiredRaw: amount, createdAt: 1,
+  legs: [{ id: 'ethereum-native', originChainId: 1, originToken: ZERO, symbol: 'ETH', decimals: 18, maxInputRaw: cap, minimumOutputRaw: amount, destinationGas: false, state: 'stopped', depositTxHash: null }],
+});
+
+test('only confirmed unsent Ethereum gas failures permit the higher-reserve review', () => {
+  const original = ethereumIntent();
+  const failed = model.withGasFailure(original, 'ethereum-native', 'native_balance_insufficient', false);
+  assert.deepEqual(failed.gasRecovery, { mode: 'native', reviewNeeded: true });
+  assert.equal(model.withGasFailure(original, 'ethereum-native', 'wallet_error', false), null);
+  assert.equal(model.withGasFailure(original, 'ethereum-native', 'native_balance_insufficient', true), null);
+  for (const state of ['sent', 'settled', 'unknown', 'sending']) {
+    assert.equal(model.withGasFailure({ ...original, legs: [{ ...original.legs[0], state }] }, 'ethereum-native', 'funding_gas_short', false), null);
+  }
+  assert.equal(original.gasRecovery, undefined, 'classifying never changes accepted evidence');
+});
+
+test('gas recovery combines only unsent sources, keeps 0.006 ETH, and retains both the target and prior debit caps', async () => {
+  const original = model.withGasFailure(ethereumIntent(), 'ethereum-native', 'native_balance_insufficient', false);
+  const calls = [];
+  const revised = await model.planGasRecovery(original, [native(12_000_000_000_000_000n), holding(42161, 20)], async (request) => { calls.push(request); return retryQuote(request); }, () => false, 'review-1');
+  assert.ok(revised);
+  assert.equal(revised.intent.legs.length, 2);
+  const eth = revised.intent.legs.find((leg) => leg.originChainId === 1);
+  assert.equal(eth.reserveRaw, '6000000000000000');
+  assert.ok(BigInt(eth.maxInputRaw) <= 6_000_000_000_000_000n);
+  assert.equal(revised.intent.requiredRaw, original.requiredRaw);
+  assert.equal(revised.intent.scope, original.scope);
+  assert.equal(original.gasRecovery.reviewNeeded, true, 'a proposal never accepts itself');
+  assert.equal(revised.recoveryFrom, model.gasRecoveryKey(original));
+  assert.ok(calls.filter((call) => call.originChainId === 1).every((call) => BigInt(call.maxInputRaw ?? call.amountRaw) <= 6_000_000_000_000_000n));
+  assert.ok(revised.intent.legs.reduce((sum, leg) => sum + BigInt(leg.minimumOutputRaw), 0n) >= 40_000_000n);
+});
+
+test('a sent contribution is retained verbatim, never requoted, while only the outstanding amount is recovered', async () => {
+  const original = model.withGasFailure(ethereumIntent('30000000', '10000000000000000'), 'ethereum-native', 'native_balance_insufficient', false);
+  const sent = { ...original.legs[0], id: 'already-sent', originChainId: 8453, originToken: USDC[8453], symbol: 'USDC', decimals: 6, maxInputRaw: '20000000', minimumOutputRaw: '19000000', state: 'sent', depositTxHash: `0x${'cc'.repeat(32)}` };
+  original.requiredRaw = '49000000'; original.legs.unshift(sent);
+  const requests = [];
+  const revised = await model.planGasRecovery(original, [holding(8453, 100), native(20_000_000_000_000_000n)], async (request) => { requests.push(request); return retryQuote(request); }, () => false, 'review-2');
+  assert.ok(revised);
+  assert.deepEqual(revised.intent.legs[0], sent);
+  assert.ok(requests.every((request) => request.originChainId !== 8453));
+  assert.equal(requests[0].amountRaw, '30000000');
+  assert.equal(requests[0].maxInputRaw, '10000000000000000', 'more wallet balance does not enlarge the reviewed debit');
+  assert.equal(revised.intent.requiredRaw, '49000000');
+  assert.equal(await model.planGasRecovery({ ...original, legs: [{ ...sent, state: 'unknown' }, original.legs[1]] }, [native(E18)], retryQuote, () => false, 'review-3'), null);
+});
+
+test('reducing ERC20 cannot release Ethereum gas: offer another origin or no proposal', async () => {
+  const original = ethereumIntent('30000000');
+  Object.assign(original.legs[0], { originToken: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', symbol: 'USDC', decimals: 6, maxInputRaw: '31000000' });
+  const failed = model.withGasFailure(original, 'ethereum-native', 'native_balance_insufficient', false);
+  const requests = [];
+  const revised = await model.planGasRecovery(failed, [native(E18), holding(42161, 40)], async (request) => { requests.push(request); return retryQuote(request); }, () => false, 'review-4');
+  assert.ok(revised);
+  assert.ok(requests.every((request) => request.originChainId !== 1));
+  assert.equal(await model.planGasRecovery(failed, [native(E18)], retryQuote, () => false, 'review-5'), null);
+  assert.equal(failed.legs[0].maxInputRaw, '31000000');
+});
+
+test('gas recovery metadata survives reload while invalid reservations fail closed', async () => {
+  const failed = model.withGasFailure(ethereumIntent('30000000', '10000000000000000'), 'ethereum-native', 'native_balance_insufficient', false);
+  const revised = await model.planGasRecovery(failed, [native(20_000_000_000_000_000n)], retryQuote, () => false, 'review-6');
+  const restored = model.parseFunding(JSON.stringify(revised.intent), OWNER, 4663);
+  assert.equal(restored.legs[0].reserveRaw, '6000000000000000');
+  assert.equal(model.fundingSpendable(native(10_000_000_000_000_000n), restored.legs[0]), 4_000_000_000_000_000n);
+  restored.legs[0].reserveRaw = '1';
+  assert.equal(model.parseFunding(JSON.stringify(restored), OWNER, 4663), null);
+});

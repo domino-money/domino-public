@@ -165,12 +165,14 @@ test('(b) live on Base: the same page from read-v6, no USD and no APR; Domino\'s
     assert.match(await text(detail.locator('[data-stat="price"]')), /^1 ETH = \S+ USDC$/, 'the price now, in V1\'s own words');
     assert.doesNotMatch(await text(detail), /\$/, 'no USD anywhere');
     // V1's row (review #5): one primary Collect fees, then the "···" menu with the three other actions.
-    await detail.locator('[data-position-v2-action="protect"]').waitFor();
-    assert.deepEqual(await detail.locator('[data-position-actions] [data-position-v2-action]').evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-position-v2-action'))), ['collect', 'increase', 'changeRange', 'exit', 'protect']);
+    const automation = detail.locator('[data-automation-control]');
+    await automation.waitFor();
+    assert.equal(await automation.getAttribute('aria-expanded'), 'false');
+    assert.deepEqual(await detail.locator('[data-position-actions] [data-position-v2-action]').evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-position-v2-action'))), ['collect', 'increase', 'changeRange', 'exit']);
     assert.equal(await detail.locator('[data-position-actions] [data-position-v2-actions="live"] [data-position-v2-more]').count(), 1);
     const { menu, entries } = await openMenu(detail);
     // Changed on purpose 2026-10-06 (the owner's point 5): the protection is named Auto-exit.
-    assert.deepEqual(entries, [['increase', 'Add liquidity', false], ['changeRange', 'Change range', false], ['exit', 'Withdraw', false], ['protect', 'Auto-exit', false]]);
+    assert.deepEqual(entries, [['increase', 'Add liquidity', false], ['changeRange', 'Change range', false], ['exit', 'Withdraw', false]]);
     assert.equal(await menu.locator('[data-position-v2-blocked]').count(), 0, 'nothing blocked: no heading');
     await page.keyboard.press('Escape');
       // Details: the custody, the Uniswap version, and "Domino can manage this position for you when you ask." with Revoke (read through the wallet).
@@ -190,7 +192,11 @@ test('(b) live on Base: the same page from read-v6, no USD and no APR; Domino\'s
     assert.deepEqual(decodeFunctionData({ abi: NFT, data: tx.data }).args, [ZERO, 5_100_001n]);
     assert.equal(chain.nft(4, 5_100_001n).approved, ZERO);
     // Activity: the position's own S1 receipts, from read-v6; the fee's label, then its amount and its base (review #16).
-    assert.match(await text(detail.locator('[data-position-activity-item]')), /Added to a position .* Domino fee 0\.325 USDC 0\.65% of the amount swapped/);
+    const activity = detail.locator('[data-position-activity-item]').first();
+    await activity.waitFor();
+    await activity.locator('summary').click();
+    assert.match(await text(activity), /Added to position #5100001/);
+    assert.match(await text(activity), /Domino fee \(0\.65% of the amount swapped\).*0\.325 USDC/);
   } finally { await s.close(); }
 });
 
@@ -661,7 +667,8 @@ test('V2 Auto-exit on Base, preview: exactly the range\'s two edges against the 
     try {
       const page = s.page;
       const detail = page.locator('[data-position-detail][data-position-v2="base-v4"]');
-      await detail.locator('[data-position-v2-action="protect"]').click();
+      await detail.locator('[data-automation-control]').click();
+      await detail.locator('[data-automation-panel] [data-v2in-open="mandate"]:visible').click();
       const dialog = page.locator('[data-v2in-dialog="mandate"]');
       await dialog.waitFor();
       // The price (tick -199,020) inside the range (-201,060 to -197,040): both edges, exactly TickMath's integers.
@@ -761,6 +768,7 @@ test('(e2) Auto-exit on: Add liquidity on v4 moves the approval its exit needs, 
     const page = s.page;
     const root = page.locator('[data-position-detail][data-position-id="5100002"]');
     await root.waitFor({ timeout: 30_000 });
+    await root.locator('[data-automation-control]').click();
     await page.locator('[data-v2in-exit][data-exit-state="on"]').waitFor({ timeout: 30_000 });
     await pick(root, 'increase');
     const dialog = page.locator('[role="dialog"][data-position-dialog="v2-increase"]');

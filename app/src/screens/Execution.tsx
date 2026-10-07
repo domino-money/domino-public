@@ -17,6 +17,7 @@ import { readWithin } from '../lib/read/screens/screenRead'
 import { CopyButton } from '../components/read/screens/CopyButton'
 import { IconChevronDown } from '../components/icons'
 import { Button, LinkButton, Pill } from '../components/ui'
+import { shortDate, shortTime } from '../lib/format/time'
 
 type Receipt = NonNullable<ExecutionItem['receipt']>
 type AmountField = Exclude<keyof Receipt['sources'][number], 'sourceId' | 'currency'>
@@ -72,7 +73,7 @@ async function fromChain(addresses: readonly string[]): Promise<Array<[string, T
  * three more times, 5 s, 10 s then 20 s later, and only while the tab is
  * visible. Decimals are never guessed: anything else leaves the token unknown.
  */
-function useTokenDetails(addresses: readonly string[]): ReadonlyMap<string, TokenDetail> {
+export function useTokenDetails(addresses: readonly string[]): ReadonlyMap<string, TokenDetail> {
   const source = useReadSource()
   const [details, setDetails] = useState<ReadonlyMap<string, TokenDetail>>(() => new Map(known))
   const [tick, setTick] = useState(0)
@@ -183,11 +184,11 @@ const chip = (state: ExecutionItem['state']): readonly [string, 'in' | 'out' | '
   state === 'reconciled' ? ['Done', 'in'] : state === 'cancelled' ? ['Cancelled', 'neutral'] : state === 'reverted' ? ['Failed', 'out'] : state === 'attention' ? ['On hold', 'neutral'] : ['In progress', 'neutral']
 
 /** A row's summary and its toggle: the chip, what happened, what it added. */
-function Summary({ state, what, children }: { state: ExecutionItem['state']; what: string; children?: React.ReactNode }) {
+function Summary({ state, what, at, children }: { state: ExecutionItem['state']; what: string; at?: number | null; children?: React.ReactNode }) {
   const [label, tone] = chip(state)
   return <summary>
     <Pill tone={tone} dot className="dm-rcpt-chip" title={EXECUTION_STATE_TEXT[state]}>{label}</Pill>
-    <span className="dm-rcpt-what">{what}</span>
+    <span className="dm-rcpt-what">{what}{at !== undefined && <span className="dm-activity-time">{at === null ? 'Date unavailable' : <time dateTime={new Date(at * 1000).toISOString()}>{`${shortDate(at)} ${shortTime(at)}`}</time>}</span>}</span>
     {children}
     <IconChevronDown size={16} className="dm-rcpt-chevron" />
   </summary>
@@ -195,14 +196,14 @@ function Summary({ state, what, children }: { state: ExecutionItem['state']; wha
 
 // Changed on purpose (the owner, 2026-09-27, round 6): one plain phrase everywhere, the position page's "Fees added back"
 // (it was "Fees re-added" here and "Re-added" on Managed positions).
-function ReceiptRow({ item, refreshFailed, tokens }: { item: ExecutionItem; refreshFailed: string | undefined; tokens: ReadonlyMap<string, TokenDetail> }) {
+export function ExecutionReceiptRow({ item, refreshFailed, tokens, at }: { item: ExecutionItem; refreshFailed: string | undefined; tokens: ReadonlyMap<string, TokenDetail>; at?: number | null }) {
   const receipt = item.receipt
   const title = [item.reason ? words(item.reason) : null, refreshFailed ? `Last refresh failed: ${words(refreshFailed)}` : null].filter(Boolean).join('. ')
   const transaction = receipt?.transactionHash ?? item.attempts.at(-1)?.transactionHash
   return <li title={title || undefined} data-execution-intent={item.intentId} data-execution-state={item.state}
     data-execution-reason={item.reason || undefined} data-execution-can-cancel={item.canCancel ? 'true' : 'false'} data-execution-refresh-reason={refreshFailed}>
     <details className="dm-rcpt-row">
-      <Summary state={item.state} what={item.state === 'reconciled' ? 'Fees added back' : item.state === 'reverted' ? 'Fees not added back' : 'Adding fees back'}>
+      <Summary state={item.state} at={at} what={item.state === 'reconciled' ? 'Fees added back' : item.state === 'reverted' ? 'Fees not added back' : 'Adding fees back'}>
         {receipt && <span className="dm-rcpt-amount tnum" data-receipt-added=""><Amounts pairs={sums(receipt, ['liquidityAddedRaw'])} tokens={tokens} /></span>}
       </Summary>
       <div className="dm-rcpt-detail">
@@ -228,7 +229,7 @@ function ReceiptRow({ item, refreshFailed, tokens }: { item: ExecutionItem; refr
 }
 
 /** Every receipt cancelled before anything was sent, as one row; each one's id is inside, its reason in its title. */
-function CancelledRow({ items }: { items: readonly ExecutionItem[] }) {
+export function CancelledRow({ items }: { items: readonly ExecutionItem[] }) {
   const one = items.length === 1
   return <li data-execution-cancelled={items.length}>
     <details className="dm-rcpt-row">
@@ -281,6 +282,16 @@ const controller = createExecutionController({ session: livePort, fetch: financi
 // Hidden or stopped, it reads nothing and keeps what it shows.
 const watch = sharedStart(controller)
 
+/** The private source shared by the unified feed and the V1 fallback. Authentication, cache isolation and pacing
+ * remain owned by the existing controller; public activity never receives this data or unlocks its reads. */
+export function useExecutionHistory() {
+  const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
+  const session = useSyncExternalStore(livePort.subscribe, livePort.getSnapshot)
+  useEffect(watch, [])
+  const early = useKeptWhileChecking(view.state === 'checking', keptReceipts)
+  return { view, session, items: view.state === 'checking' ? early ?? [] : view.items, nextPage: controller.nextPage }
+}
+
 /** Rows the receipts page shows at first, and adds on each Show more. */
 const PAGE_ROWS = 10
 
@@ -298,17 +309,10 @@ const PAGE_ROWS = 10
  * card links the full page); the full page shows ten rows, and ten more on
  * each Show more, reading on past the receipts read when it runs out.
  */
-export default function Execution({ limit, onShows, publicReceipts = false }: { limit?: number; onShows?: (shows: CardShows | null) => void; publicReceipts?: boolean }) {
-  const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
+export default function Execution({ limit, onShows }: { limit?: number; onShows?: (shows: CardShows | null) => void }) {
+  const { view, session, items } = useExecutionHistory()
   // Why there is no session, said as itself (2026-10-01, audit D2): sign-in may be switched off, the wallet elsewhere.
-  const session = useSyncExternalStore(livePort.subscribe, livePort.getSnapshot)
-  const out = signedOutLine(session.kind, publicReceipts ? 'history' : 'receipts')
-  useEffect(watch, [])
-  const early = useKeptWhileChecking(view.state === 'checking', keptReceipts)
-  const items = view.state === 'checking' ? early ?? [] : view.items
-  // A public receipt is already useful without sign-in. Keep the additional private history reachable,
-  // without placing a full empty-state plate above rows the person can already read.
-  const compactEmpty = publicReceipts && items.length === 0
+  const out = signedOutLine(session.kind, 'receipts')
   // What this card has to show, for Positions (2026-10-01, audit D2, lib/automationCards.ts): nothing while signed out or
   // once read with none yet; a line of its own when the receipts could not be read; null while it is still being decided.
   // Told after every render; the page keeps what it was told before when this says the same.
@@ -331,18 +335,18 @@ export default function Execution({ limit, onShows, publicReceipts = false }: { 
     data-execution-rows={rows.length}>
     <h2 className="sr-only">Execution receipts</h2>
     {/* One plain line; the rule for uncertain transactions is its title, and each receipt's chip says where it stands. */}
-    <p className="dm-acct-desc" title="An uncertain or reorganized transaction is never shown as completed.">{publicReceipts ? 'Activity for your positions.' : 'What automation did for your positions.'}</p>
+    <p className="dm-acct-desc" title="An uncertain or reorganized transaction is never shown as completed.">What automation did for your positions.</p>
     {/* Loading, empty and unavailable are different states; an unread history is never described as empty. */}
-    {view.state === 'signed_out' ? <div className={compactEmpty ? 'dm-rcpt-session' : 'dm-acct-quiet'} data-signed-out={session.kind}>
+    {view.state === 'signed_out' ? <div className="dm-acct-quiet" data-signed-out={session.kind}>
       <p>{out.text}</p>
       {out.action && <Button variant="outline" size="sm" onClick={openWalletDialog}>{out.action}</Button>}
     </div>
-      : items.length === 0 ? <p className={compactEmpty ? 'dm-rcpt-note' : 'dm-acct-quiet'} role="status" title={view.reason ? `Receipts could not be read: ${words(view.reason)}` : undefined}>{view.state === 'ready' ? (compactEmpty ? 'No additional automation history yet.' : 'Nothing yet. Each time automation adds your fees back, its receipt shows here.') : view.state === 'checking' ? 'Checking wallet sign-in…' : view.state === 'loading' ? (compactEmpty ? 'Loading more automation history…' : 'Loading receipts…') : compactEmpty ? 'More automation history is unavailable right now.' : 'Receipts are unavailable right now.'}</p>
+      : items.length === 0 ? <p className="dm-acct-quiet" role="status" title={view.reason ? `Receipts could not be read: ${words(view.reason)}` : undefined}>{view.state === 'ready' ? 'Nothing yet. Each time automation adds your fees back, its receipt shows here.' : view.state === 'checking' ? 'Checking wallet sign-in…' : view.state === 'loading' ? 'Loading receipts…' : 'Receipts are unavailable right now.'}</p>
       : <>
         {updateNote && <p className="dm-rcpt-note" role="status" data-receipts-update={view.state}>{updateNote}</p>}
         <ol className="dm-rcpt-list">{rows.map(row => row[0].state === 'cancelled'
           ? <CancelledRow key="cancelled" items={row} />
-          : <ReceiptRow key={row[0].intentId} item={row[0]} refreshFailed={view.refreshFailed[row[0].intentId]} tokens={tokens} />)}</ol>
+          : <ExecutionReceiptRow key={row[0].intentId} item={row[0]} refreshFailed={view.refreshFailed[row[0].intentId]} tokens={tokens} />)}</ol>
         {limit === undefined && (hidden || view.more) && <Button className="justify-self-center" variant="ghost" size="sm" disabled={view.busy && !hidden}
           onClick={() => { setShown(shown + PAGE_ROWS); if (all.length <= shown + PAGE_ROWS) controller.nextPage() }}>{view.busy && !hidden ? 'Loading more…' : 'Show more'}</Button>}
       </>}

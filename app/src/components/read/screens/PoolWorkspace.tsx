@@ -18,6 +18,7 @@ import { APR_SLIVER } from '../../../lib/format/apr'
 import { feeChipText } from '../../../lib/format/fee'
 import { useLoadMilestone } from '../../../lib/useLoadMilestone'
 import { MetricCell, TurnoverCell } from '../../explore/MetricCell'
+import { DataFreshness } from '../../DataFreshness'
 import { PoolTokenLabel } from '../../PoolCatalogueIdentity'
 import { TokenMarkPair } from '../../TokenIcon'
 import { FigureDash, Skeleton, Stat, StatStrip } from '../../ui'
@@ -390,13 +391,13 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
           </Stat>
         )}
         {/* The price as a person says it, "1 PONS = 0.6175 USDG": a ratio between the two tokens, read on chain. */}
-        <Stat label={price.state === 'usable' && price.stale ? 'Saved pool price' : 'Pool price'} info="What one token costs in the other at the block read. It changes with every swap." className="dm-pool-stat" sub={priceNow ? <>for 1 <SymbolText token={base} /></> : price.state === 'usable' ? undefined : COPY.range.problems[price.problem]}>
+        <Stat label="Pool price" info="What one token costs in the other at the block read. It changes with every swap." className="dm-pool-stat" sub={priceNow ? <>for 1 <SymbolText token={base} /></> : price.state === 'usable' ? undefined : COPY.range.problems[price.problem]}>
           {priceNow
             ? <span className="dm-pool-price-now" data-pool-price-now="" title={`Pool price from on-chain state at block ${price.state === 'usable' ? price.block : ''}. A ratio between the two tokens.${price.state === 'usable' && price.stale ? ' Read more than 5 minutes ago on this page.' : ''}`}>{priceNow} <span className="dm-pool-price-side"><SymbolText token={quote} /></span></span>
             : <FigureDash reason={price.state === 'usable' ? 'The price can’t be written as a plain number.' : COPY.range.problems[price.problem]} />}
         </Stat>
       </StatStrip>
-      {savedMetrics.length > 0 && <p className="dm-pool-saved" data-saved-data="figures" title={observation}>Saved figures: {savedMetrics.join(', ')}. Sources and times in Details.</p>}
+      <DataFreshness active={savedMetrics.length > 0 || (price.state === 'usable' && price.stale)} scope={poolId} detail={observation} />
       <p role="status" aria-live="polite" className="sr-only" data-pool-status={loading ? 'loading' : failure ? failure.state : 'none'}>
         {loading ? 'Reading pool figures…' : failed && !shown ? failed : ''}
       </p>

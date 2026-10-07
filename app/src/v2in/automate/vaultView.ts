@@ -310,8 +310,8 @@ export function vaultActions(view: VaultView): VaultActionKind[] {
   // The rearm (decision #5): the root not armed for a reason the owner can undo (not burned, not withdrawn by auto-exit).
   const ended = (reason: number | 'unknown') => reason === 3 || reason === 6 || (reason === 7 && exit === null)
   if (exit !== 'on' && view.armed === false && view.rootClosed !== true && view.disarm && !ended(view.disarm.reason)) actions.push('rearm')
-  if (exit === null && view.armed !== false && view.status === 'on') actions.push('pause')
-  if (exit === null && view.status === 'paused') actions.push('resume')
+  if (exit === null && (view.rootClosed !== true || view.successors.length > 0) && view.armed !== false && view.status === 'on') actions.push('pause')
+  if (exit === null && (view.rootClosed !== true || view.successors.length > 0) && view.status === 'paused') actions.push('resume')
   if (view.successors.length > 0) actions.push('withdraw-child')
   if (view.status !== 'off' || view.successors.length > 0 || offer.withdraw) actions.push('leave')
   // After automation ended for the root (§5.6): what still links it to the vault, on the owner's own position, once the
@@ -393,3 +393,74 @@ export const sinceWords = (since: number | null, nowSeconds: number): string | n
  * paused with its module off stays Auto-exit's while Auto-exit is listed on its root (../autoexit/standing.ts exitVaultOf).
  */
 export const protectionVault = (view: Pick<VaultView, 'exit'>): boolean => view.exit !== null
+
+/** NFT identity, independent of the number of vaults created for it. */
+export function automationPositionKey(view: Pick<VaultView, 'chainId' | 'dex' | 'rootTokenId'>): string {
+  const chain = v2Chain(view.chainId)
+  const manager = view.dex === 3 ? chain.uniswap.v3.positionManager : chain.uniswap.v4.positionManager
+  return `${view.chainId}|${manager.toLowerCase()}|${view.rootTokenId}`
+}
+
+/**
+ * The NFT's present approval/subscription wins over an older vault's recorded state. Otherwise prefer an active
+ * automation, then the latest creation. Index order is historical and must never choose the current control.
+ */
+export function currentVaultFirst(views: readonly VaultView[], body: PortfolioResponse): VaultView[] {
+  const rank = (view: VaultView): number => {
+    if (view.links.approved === true && view.links.ownerHolds !== false) return 6
+    if (view.links.subscribed === true && view.links.ownerHolds !== false) return 5
+    if (view.exit === 'on' || view.exit === 'paused') return 4
+    if (view.armed === true && view.rootClosed !== true) return 3
+    if (view.successors.length > 0) return 2
+    return 1
+  }
+  const nonce = (view: VaultView): bigint => {
+    const listed = body.vaults.find((vault) => vault.chainId === view.chainId && vault.address.toLowerCase() === view.vault)
+    return BigInt(listed?.ownerNonce ?? '0')
+  }
+  return [...views].sort((a, b) => {
+    const difference = rank(b) - rank(a)
+    if (difference) return difference
+    const left = nonce(a), right = nonce(b)
+    return left === right ? a.vault.localeCompare(b.vault) : left > right ? -1 : 1
+  })
+}
+
+export const automationMode = (view: VaultView): string => view.exit !== null ? 'Auto-exit' : view.mode === 2 ? 'Domino-compound' : view.mode === 1 ? 'Auto-compound' : 'Automation'
+
+export function automationStanding(view: VaultView): string {
+  if (view.exit === 'closed') return 'Closed by Auto-exit'
+  if (view.rootClosed === true) return 'Closed'
+  if (view.exit !== null) return view.exit === 'on' ? 'On' : view.exit === 'paused' ? 'Paused' : 'Off'
+  if (view.status === 'on') return 'On'
+  if (view.status === 'paused') return 'Paused'
+  if (view.status === 'off') return 'Off'
+  return 'State unavailable'
+}
+
+export interface AutomatedPosition {
+  key: string
+  current: VaultView
+  vaults: readonly VaultView[]
+  /** Keep unknown balances visible: an unread balance is not zero. */
+  recovery: boolean
+  active: boolean
+}
+
+export function automatedPositions(views: readonly VaultView[], body: PortfolioResponse): AutomatedPosition[] {
+  const groups = new Map<string, VaultView[]>()
+  for (const view of views) {
+    const key = automationPositionKey(view)
+    const group = groups.get(key) ?? []
+    group.push(view)
+    groups.set(key, group)
+  }
+  return [...groups].map(([key, group]) => {
+    const vaults = currentVaultFirst(group, body)
+    const current = vaults[0]
+    const recovery = vaults.some((view) => !view.reserves.known || view.reserves.held || view.successors.length > 0)
+    const active = current.rootClosed !== true && (current.exit === 'on' || current.exit === 'paused' || (current.exit === null && (current.status === 'on' || current.status === 'paused')))
+    const pending = current.status === null || vaultActions(current).includes('rearm')
+    return { key, current, vaults, recovery, active: active || recovery || pending }
+  }).sort((a, b) => Number(b.active) - Number(a.active) || a.key.localeCompare(b.key))
+}

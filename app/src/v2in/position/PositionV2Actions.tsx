@@ -9,7 +9,6 @@ import { ApprovalFact, useZapApproval } from './Approval'
 import { SUCCESSOR_BLOCKED_COPY } from './constants'
 import { COPY } from './copy'
 import { findPosition, fromWalletPosition, positionVault, tokensOfWalletPosition, vaultReservesOf, type ActionPosition, type VaultReserves } from './model'
-import { askExitOrder, useExitOrderOffered } from '../autoexit/entry'
 import { MoreActions, positionMenuItems, type MoreAction } from './MoreActions'
 import { PositionDialog, type PositionMode } from './PositionDialog'
 import { portfolioFor } from './source'
@@ -67,7 +66,6 @@ export default function PositionV2Actions({ position, owner, onChanged }: Positi
   // Under live only: whether a Domino vault administers this position, from read-v6 (before the deploy no vault exists).
   const tokenId = base?.tokenId ?? null
   // Whether the page's automation panel can turn Auto-exit on for it (../autoexit/entry.ts).
-  const protect = useExitOrderOffered(tokenId === null ? null : String(tokenId))
   useEffect(() => {
     if (!open || open.mode !== 'live' || tokenId === null) return
     let alive = true
@@ -98,8 +96,8 @@ export default function PositionV2Actions({ position, owner, onChanged }: Positi
   if (!open || !action) return null
   // The entries (./MoreActions.tsx); a vault's successor has none: its sentence, and no button. Auto-exit opens the
   // automation panel's own dialog; the others, this page's action dialog.
-  const items = positionMenuItems(action, protect)
-  const pick = (key: MoreAction['key']) => (key === 'protect' ? askExitOrder(String(action.tokenId)) : setMode(key))
+  const items = positionMenuItems(action, false)
+  const pick = (key: MoreAction['key']) => { if (key !== 'protect') setMode(key) }
   return (
     <>
       {/* Where this component sits (after V1's row): unseen; the button itself goes into V1's row. */}

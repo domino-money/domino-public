@@ -22,7 +22,7 @@ const row = (poolId) => ({ poolId, tokens: { base: token('1'), quote: token('2')
 const Container = ({ children }) => React.createElement('div', null, children)
 const stub = (name) => Object.defineProperty(() => null, 'displayName', { value: name })
 const parts = Object.fromEntries([
-  'PoolPicker', 'PoolSelectionDialog', 'PoolWorkspace', 'TokenPicker', 'TokenLookup', 'CatalogueCandidates', 'WalletCandidates', 'PoolPriceChart', 'PoolHistoryChart', 'PoolRangeControls',
+  'PoolPicker', 'PoolSelectionDialog', 'PoolWorkspace', 'TokenPicker', 'TokenLookup', 'CatalogueCandidates', 'WalletCandidates', 'PoolPriceChart', 'PoolHistoryChart', 'PoolRangeControls', 'DataFreshness',
   'PoolAprEstimate', 'IconChevronLeft', 'PoolCatalogueIdentity', 'PoolTokenLabel', 'TokenMark', 'TokenMarkPair', 'SymbolText', 'Address', 'MetricCell', 'TurnoverCell', 'Tabs', 'Skeleton',
   'CopyButton', 'ProviderFigure', 'EmptyState', 'LinkButton', 'SelectedPoolsTable', 'MarketsTable', 'TokensTable', 'SearchField', 'PageHeader', 'PoolActivityCard', 'PoolPositionsCard',
   // 2026-09-27 (round 6, the pool page for beginners): its new cards (src/components/pool/), each checked for real below.
@@ -1668,7 +1668,7 @@ test('round 6: the earnings estimate says a month, a year and a day at the pool�
   assert.match(shared, /You could earn about \$140\.55 a month/, '$1,000 in a $13.4K pool: 1.8125 × 13,400 × 1,000 / 14,400')
   assert.match(shared, /\$1,687 a year/)
   assert.match(shared, /At the pool’s recent rate, about 181% a year, shared with the \$13\.4K already in the pool\./)
-  assert.match(text({ apr: 100, tvl: null, loading: false, saved: true }), /Estimate from saved figures/)
+  assert.match(text({ apr: 100, tvl: null, loading: false, saved: true }), /At the pool’s saved rate/, 'the estimate keeps its provenance in its disclosure')
   // Changed on purpose (2026-09-28, round 6 review): with no rate there is nothing to type, and no "yet": a rate refused
   // for a lasting reason (a protocol fee, say) never comes.
   const none = renderToStaticMarkup(React.createElement(PoolEarnings, { apr: null, tvl: 13_400, loading: false }))
@@ -1814,26 +1814,51 @@ test('round 6: the page opens with what the pool is and what it earns, and gives
   usable.unmount()
 })
 
-test('saved-data labels name only retained displayed figures; missing, partial and qualified values do not become saved data', async () => {
+test('one section notice tracks retained figures without repeated cache labels; missing and qualified values remain distinct', async () => {
   for (const [state, value, expected] of [['stale', '42', true], ['stale', null, false], ['unavailable', '42', false], ['partial', '42', false], ['qualified', '0', false]]) {
     const fixture = workspace({ dependencies: { projectMarketRow: ({ market }) => ({ ...row(market.data.poolId), tvlUsd: { ...metric, state, value }, feeAprEstimate: { data: { feeAprEstimate24hPercent: '10' }, receivedAt: 0 } }) } })
     const host = mount(fixture.PoolWorkspace, fixture.props)
     fixture.reads[0].resolve(ok()); await flush(); host.render()
-    const label = elements(host.tree, (node) => node.props?.['data-saved-data'] === 'figures')
-    assert.equal(label.length, expected ? 1 : 0, `${state}, ${value}`)
+    const freshness = part(host, 'DataFreshness')
+    assert.equal(freshness.props.active, expected, `${state}, ${value}`)
+    assert.doesNotMatch(visibleText(host), /Saved figures|Saved pool price/)
     assert.equal(part(host, 'PoolEarnings').props.saved, expected, 'only a retained input actually used by the estimate is labelled saved')
     if (expected) {
-      assert.match(renderToStaticMarkup(label[0]), /Saved figures: TVL\./)
-      assert.match(label[0].props.title, /retrieved 12 s ago/, 'the original observation time remains accessible')
+      assert.match(freshness.props.detail, /retrieved 12 s ago/, 'the original observation time remains accessible')
     }
     host.unmount()
   }
   const stalePrice = workspace({ dependencies: { poolPrice: () => ({ state: 'usable', tick: 0, tickSpacing: 60, text: '≈1', base: token('1'), quote: token('2'), inverted: false, decimals: [18, 18], block: 700, stale: true, partial: false }) } })
   const host = mount(stalePrice.PoolWorkspace, stalePrice.props)
-  assert.match(visibleText(host), /Saved pool price/, 'the on-chain price has its own freshness label')
+  assert.match(visibleText(host), /Pool price/, 'the metric name remains stable during refresh')
+  assert.equal(part(host, 'DataFreshness').props.active, true)
   assert.equal(part(host, 'PoolRangeGuide').props.saved, true)
   assert.equal(elements(host.tree, (node) => node.props?.['data-saved-data'] === 'figures').length, 0, 'a saved price never labels unrelated figures as saved')
   host.unmount()
+})
+
+test('background refresh is quiet, a sustained delay is disclosed, and changing sections clears the old notice', () => {
+  const before = globalThis.window
+  const timers = new Map()
+  let next = 0
+  globalThis.window = {
+    setTimeout(run, ms) { const id = ++next; timers.set(id, { run, ms }); return id },
+    clearTimeout(id) { timers.delete(id) },
+  }
+  const { DataFreshness } = load('src/components/DataFreshness.tsx', {})
+  const host = mount(DataFreshness, { active: true, scope: 'pool-a', detail: 'Read at block 42' })
+  try {
+    assert.equal(host.tree, null, 'no visual change for a routine read')
+    const [timer] = timers.values()
+    assert.equal(timer.ms, 15_000)
+    timer.run(); host.render()
+    assert.match(visibleText(host), /taking longer to update/)
+    assert.equal(host.tree.props.title, 'Read at block 42')
+    host.props = { active: true, scope: 'pool-b' }; host.render()
+    assert.equal(host.tree, null, 'a previous pool never supplies this pool’s delay state')
+    host.props = { active: false, scope: 'pool-b' }; host.render()
+    assert.equal(host.tree, null, 'fresh data clears the notice')
+  } finally { host.unmount(); globalThis.window = before }
 })
 
 test('round 6: the pool page’s button is “Create a position”, into the same New position flow with the pool chosen', async () => {

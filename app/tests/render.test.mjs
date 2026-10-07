@@ -201,8 +201,8 @@ test('every route in the header renders', async (t) => {
     [`/pool/0x${'2'.repeat(64)}`, /Open this pool from Markets[\s\S]*This link doesn’t say which token to check the pool with\./],
     ['/explore', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
     ['/pools', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
-    ['/positions', /Positions[\s\S]*Managed positions/],
-    ['/app', /Positions[\s\S]*Managed positions/],
+    ['/positions', /Positions[\s\S]*Automated positions/],
+    ['/app', /Positions[\s\S]*Automated positions/],
     ['/portfolio', /Wallet/],
     ['/new', /New position/],
     ['/automate', /Automate[\s\S]*Auto-compound[\s\S]*Domino-compound/],
@@ -1251,7 +1251,7 @@ test('the positions screen is an honest empty state: no cards, totals or private
   // to every visitor, sign-in available or not. Connecting is the header's and the list's own Connect wallet, so the
   // cards add no third and fourth (tests/session.browser.test.mjs drives the Sign in each card offers once connected).
   // Changed on purpose 2026-10-01 (audit D2 follow-up): the two cards' sentences are one, in one card.
-  assert.match(text, /Managed positions and receipts\s+Connect your wallet to see your automated positions and their receipts\./);
+  assert.match(text, /Automated positions and activity\s+Connect your wallet to see your automated positions and their receipts\./);
   assert.doesNotMatch(text, /Connect your wallet to see your (automated positions|receipts)\./, 'not said twice');
   assert.equal(await page.locator('[data-automation-cards="merged"]').count(), 1);
   assert.equal(await merged.locator('button').count(), 0, 'connecting is the header’s and the list’s own Connect wallet');
@@ -1301,7 +1301,7 @@ test('the receipts page keeps Positions lit, and with no wallet asks for one and
   assert.deepEqual(nav, [['Markets', null], ['Positions', 'page'], ['Automate', null]]);
   assert.deepEqual(await page.locator('main a').evaluateAll((els) => els.map((a) => [a.textContent.trim(), a.getAttribute('href')])), [['Positions', '#/positions']], 'one way back, and the page does not link itself');
   const text = await page.locator('main').innerText();
-  assert.doesNotMatch(text, /Managed positions|Your positions|\$\s?\d|0x[0-9a-fA-F]{4}/, 'the receipts alone (no other card), and no figure or hash signed out');
+  assert.doesNotMatch(text, /Automated positions|Your positions|\$\s?\d|0x[0-9a-fA-F]{4}/, 'the receipts alone (no other card), and no figure or hash signed out');
   assert.equal(await page.getByRole('button', { name: 'Connect wallet' }).count(), 1, 'the header keeps the one wallet control');
   assert.deepEqual(apiOf(page), [[]], 'the receipts page reads nothing by itself');
   clean(page, 'receipts page');

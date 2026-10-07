@@ -172,3 +172,47 @@ test('item 8 (5 Oct): a reserves return someone else sent is in the vault\'s his
   assert.equal(words.lines.length, 1);
   assert.match(words.lines[0].value, /^Returned to your wallet: /);
 });
+
+test('one automation row per NFT: the current approval wins over index order; older funds remain recoverable', () => {
+  const body = fixture('portfolio.json');
+  const seed = vaultView.vaultViewFromListing(body.vaults.find((v) => v.address === VAULT), body, WALLET, NOW);
+  const old = { ...seed, vault: MOVED, rootClosed: true, armed: false, status: 'off', exit: 'closed', links: { approved: false, subscribed: false, ownerHolds: true } };
+  const current = { ...seed, exit: null, rootClosed: false, armed: true, status: 'on', links: { approved: true, subscribed: true, ownerHolds: true }, reserves: { known: true, held: false, list: [] } };
+  for (const input of [[old, current], [current, old]]) {
+    const rows = vaultView.automatedPositions(input, body);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].current.vault, VAULT);
+    assert.equal(rows[0].recovery, true, 'the older closed vault still holds funds');
+    assert.equal(rows[0].vaults.length, 2, 'both recovery identities retained');
+    assert.equal(vaultView.automationStanding(rows[0].current), 'On');
+  }
+});
+
+test('automation identity includes network and NFT manager; same token number alone never merges positions', () => {
+  const body = fixture('portfolio.json');
+  const seed = vaultView.vaultViewFromListing(body.vaults.find((v) => v.address === VAULT), body, WALLET, NOW);
+  const views = [seed, { ...seed, dex: seed.dex === 4 ? 3 : 4 }, { ...seed, chainId: 8453 }];
+  const rows = vaultView.automatedPositions(views, body);
+  assert.equal(rows.length, 3);
+  assert.equal(new Set(rows.map((row) => row.key)).size, 3);
+});
+
+test('inactive automation is hidden by default only when its known balances and successors are empty', () => {
+  const body = fixture('portfolio.json');
+  const seed = vaultView.vaultViewFromListing(body.vaults.find((v) => v.address === VAULT), body, WALLET, NOW);
+  const closed = { ...seed, status: 'off', armed: false, rootClosed: true, exit: 'closed', successors: [], reserves: { known: true, held: false, list: [] } };
+  assert.equal(vaultView.automatedPositions([closed], body)[0].active, false);
+  assert.equal(vaultView.automatedPositions([{ ...closed, reserves: { known: false, reason: 'unavailable' } }], body)[0].active, true);
+  assert.equal(vaultView.automatedPositions([{ ...closed, reserves: seed.reserves }], body)[0].active, true);
+  const pausedClosed = { ...closed, status: 'paused', exit: null };
+  assert.equal(vaultView.vaultActions(pausedClosed).includes('resume'), false, 'an empty closed NFT has no resume');
+});
+
+test('with no current NFT link, the most recently created setup wins over oldest-first portfolio ordering', () => {
+  const body = fixture('portfolio.json');
+  const seed = vaultView.vaultViewFromListing(body.vaults.find((v) => v.address === VAULT), body, WALLET, NOW);
+  const old = { ...seed, vault: MOVED, links: { approved: null, subscribed: null, ownerHolds: null } };
+  const latest = { ...old, vault: VAULT };
+  const listing = { ...body, vaults: [{ chainId: 4663, address: MOVED, ownerNonce: '1' }, { chainId: 4663, address: VAULT, ownerNonce: '2' }] };
+  assert.equal(vaultView.currentVaultFirst([old, latest], listing)[0].vault, VAULT);
+});

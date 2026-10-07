@@ -1,0 +1,17 @@
+@layer components {
+  .dm-activity-time { display: block; margin-top: 0.25rem; font-size: 0.8125rem; font-weight: 400; line-height: 1.35; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+  .dm-activity-history { display: grid; min-width: 0; gap: 0.875rem; }
+  .dm-activity-history .dm-rcpt-what { min-width: 0; }
+  .dm-activity-internal { min-width: 0; border-top: 0.0625rem solid var(--border); padding-top: 0.75rem; }
+  .dm-activity-internal > summary { cursor: pointer; color: var(--fg-muted); font-size: 0.875rem; }
+  .dm-activity-internal > summary:focus-visible { outline: 0.125rem solid var(--accent); outline-offset: 0.25rem; border-radius: var(--radius-sm); }
+  .dm-activity-internal[open] > summary { margin-bottom: 0.875rem; }
+  .dm-activity-internal .dm-rcpt-ids { max-height: 16rem; overflow-y: auto; }
+  .dm-activity-divider { padding: 0.75rem 1rem; color: var(--fg-muted); font-size: 0.8125rem; }
+  .dm-activity-list > .dm-fees-act { padding: 0.875rem 1rem; }
+  .dm-activity-footer { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; align-items: center; }
+  .dm-acct-card:has([data-unified-activity]) .dm-rcpt-all { display: inline-flex; }
+  @container dm-rcpt (max-width: 22rem) {
+    .dm-activity-list .dm-rcpt-row > summary { grid-template-columns: 4.375rem minmax(0, 1fr) 0.875rem; column-gap: 0.5rem; }
+  }
+}

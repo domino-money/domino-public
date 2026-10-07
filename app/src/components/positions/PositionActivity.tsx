@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import { automationImpact, useVaultRecord, type AutoAdd } from '../../lib/automationImpact'
 import type { AutomationView } from '../../lib/automationState'
 import { useFeeHistory } from '../../lib/fees/useFeeHistory'
@@ -6,6 +6,8 @@ import { AUTOMATION_NAME } from './visual/AutomationImpact'
 import { FeesActivity } from './visual/FeesActivity'
 import { feesEvents } from './visual/model'
 import { basisOf } from './visual/value'
+
+const PositionHistory = __DOMINO_V2__ ? lazy(() => import('../../v2in/lists/PositionHistory')) : null
 
 /** The automation's re-adds into the position (each its transaction and what it put back), and the automation's name. */
 export type AutomaticAdds = { adds: readonly Pick<AutoAdd, 'tx' | 'value'>[]; by: string }
@@ -45,7 +47,7 @@ export function useAutomaticAdds(tokenId: string, automation: AutomationView): A
  * (RPC-SPEC §11.4): a ledger that cannot measure the fees earned (an owner's add or withdrawal) still lists the
  * settlements it found, with no figure where it has none.
  */
-export function PositionActivity({ tokenId, automatic }: { tokenId: string; automatic?: AutomaticAdds | null }) {
+export function PositionActivity({ tokenId, automatic, owner }: { tokenId: string; automatic?: AutomaticAdds | null; owner?: string }) {
   const fees = useFeeHistory(tokenId)
   const events = useMemo(() => {
     const list = fees.phase === 'verified' ? fees.history.events : fees.phase === 'unclaimed-only' ? fees.events : null
@@ -53,8 +55,7 @@ export function PositionActivity({ tokenId, automatic }: { tokenId: string; auto
     const basis = basisOf(fees.state)
     return basis && feesEvents(tokenId, list, basis, fees.state.currencies)
   }, [fees, tokenId])
-  if (!events || events.length === 0 || automatic === null) return null
-  return (
+  const legacy = !events || events.length === 0 || automatic === null ? null : (
     <section className="dm-card dm-pos-card dm-pos-activity" aria-labelledby="position-activity-title" data-position-activity="">
       <h2 id="position-activity-title" className="dm-title">
         Activity
@@ -62,4 +63,5 @@ export function PositionActivity({ tokenId, automatic }: { tokenId: string; auto
       <FeesActivity events={events} bare automatic={automatic} />
     </section>
   )
+  return PositionHistory ? <Suspense fallback={legacy}><PositionHistory wallet={owner ?? null} position={{ chainId: 4663, dex: 4, tokenId }} events={automatic === null ? [] : events ?? []} automatic={automatic} /></Suspense> : legacy
 }

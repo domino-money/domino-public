@@ -316,7 +316,7 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
 
   return (
     <>
-      <SequenceSwitch tokenId={tokenId} holder={owner} liquid={!empty} fallback={automate} />
+      {!__DOMINO_V2__ && <SequenceSwitch tokenId={tokenId} holder={owner} liquid={!empty} fallback={automate} />}
       <div className="dm-position-base-actions" data-position-actions={hooked ? 'hooks' : ''}>
         {/* One primary (2026-09-27, Domino's buttons): Collect fees for a plain position; for one of Domino's sequences,
             which collects and re-adds its fees itself, outlined, and the sequence's own Turn on is the primary. */}

@@ -1193,7 +1193,11 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // kB and one more, as Linux builds measure a few hundred bytes apart.
     // 2026-10-06 (the same answer's Ethereum and OP Mainnet balances and its misc items merged in): Domino V2's own family
     // measured 645,073 B: 645,000 -> 647,000, the next kB and one more.
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 190_000], ['session/public reads', base, 166_000], ['financial', financial, 346_000], ['all lazy', allLazy, 383_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 6_000], ['domino v2', v2, 647_000]]) {
+    // 2026-10-07 (the owner's unified automation and activity history): shared private receipt dates, the wallet/position
+    // history pager, current-setup selection and reviewed gas recovery add opt-in code. Windows gzip level 9 measured
+    // financial 346,052 B and Domino V2 649,841 B after removing the obsolete two-block receipt variant. Ceilings move
+    // to 347,000 and 651,000, keeping about 1 kB for platform gzip variation. Initial entry and all other limits stay.
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 190_000], ['session/public reads', base, 166_000], ['financial', financial, 347_000], ['all lazy', allLazy, 383_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 6_000], ['domino v2', v2, 651_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir === WALLET && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

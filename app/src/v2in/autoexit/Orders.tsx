@@ -99,7 +99,6 @@ type Dialog =
    */
   | { kind: 'module-on'; vault: Address; id: Hex; triggers: ExitTriggers | null }
 
-const WORD = { active: 'On', expired: 'Expired', revoked: 'Turned off', executed: 'Closed the position' } as const
 /** The protection-only automation's actions this card offers (Pause and Resume never apply to it): one in view, the rest under Details. */
 const CARD_ACTIONS: ReadonlySet<VaultActionKind> = new Set<VaultActionKind>(['withdraw', 'return', 'rearm', 'leave', 'unsubscribe', 'revoke', 'recover-token', 'recover-position'])
 /** The one in view, by state (as the automation card's primary way out, ../automate/VaultCard.tsx). */
@@ -238,7 +237,6 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
   // Changed on purpose 2026-10-06 (the owner's point 5: no "trigger" on screen); anything else it waits for is said.
   const normal = active?.waiting ? active.waiting.reason === 'trigger_not_reached' || active.waiting.error === 'TriggerNotReached' : false
   const waiting = active && state.kind !== 'paused' && !normal ? waitingWords(active.waiting, target.chainId, nowSeconds, null, AUTO_EXIT_WAITING_TEXT) : null
-  const history = orders.filter((order) => order.mandateHash.toLowerCase() !== (state.kind === 'off' ? '' : state.id))
   // Changed on purpose 2026-10-06 (the integration review, rugged-literal #1): on or paused, never a way to cut the
   // position from its automation (an exit needs the approval); the rearm only where it is the fix, for a lost approval or
   // as the first part of turning Auto-exit on while none is on.
@@ -333,8 +331,8 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
       )}
       {credits.length > 0 && (
         <div className="dm-inset dm-acct-perf-form" data-claim="">
-          <h3 className="dm-acct-subtitle">Waiting for you to claim</h3>
-          <p className="dm-hint">Auto-exit could not deliver these to your wallet. They are kept for you until you claim them.</p>
+          <h3 className="dm-acct-subtitle">Funds available to your wallet</h3>
+          <p className="dm-hint">Auto-exit could not deliver these funds. This balance may include other positions on this network.</p>
           <KeyValueList>
             {credits.map((credit) => {
               const token = target.tokens.find((t) => t.address === credit.token) ?? null
@@ -375,7 +373,7 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
           ))}
         </div>
       )}
-      {(active || history.length > 0 || more.length > 0) && (
+      {(active || more.length > 0) && (
         <Details data-exit-details="">
           <div className="grid gap-3">
             {active?.terms && (
@@ -396,21 +394,6 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
             {active && state.kind === 'paused' && state.reasons.slice(1).map((key) => (
               <p key={key} className="dm-acct-note" data-order-condition={key}>{conditionWords(key, chain.name)}</p>
             ))}
-            {history.length > 0 && (
-              <ul className="dm-mp-list" data-exit-history="">
-                {history.map((order) => {
-                  const status = order.status === 'active' ? (order.expired ? 'expired' : 'active') : order.status
-                  return (
-                    <li key={order.mandateHash} className="dm-mp-row" data-order={order.mandateHash.toLowerCase()} data-order-status={status}>
-                      <div className="dm-mp-head">
-                        <span className="dm-mp-name">{dateWords(order.registered.snapshot.timestamp)}</span>
-                        <Pill tone="neutral" data-order-pill="">{WORD[status]}</Pill>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
             {more.length > 0 && (
               <div className="dm-v2in-advanced" data-exit-vault-actions="">
                 {more.map((kind) => (

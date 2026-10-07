@@ -57,7 +57,7 @@ export function PoolRangeGuide({ guide, day, unit, saved = false }: { guide: Ran
       </div>
       <ul className="dm-pool-guide-key" aria-hidden="true">
         <li data-key="band">Starting range</li>
-        <li data-key="now">{saved ? 'Saved price' : 'Pool price'}</li>
+        <li data-key="now">Pool price</li>
         {moved && <li data-key="day">Last day</li>}
       </ul>
       <details className="dm-pool-disclosure" data-pool-range-basis="">

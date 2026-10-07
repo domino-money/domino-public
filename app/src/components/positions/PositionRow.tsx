@@ -91,7 +91,7 @@ function Apr({ apr, quality, ledger }: { apr: RowApr | null; quality: LoadQualit
     figure = (
       <>
         <span className="dm-own-fig">{apr.text}</span>
-        {apr.saved && <span className="dm-own-est">saved</span>}
+        {apr.saved && <span className="sr-only"> · Last available history</span>}
       </>
     )
   } else if (apr?.kind === 'missing') {

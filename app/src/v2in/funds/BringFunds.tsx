@@ -22,16 +22,37 @@ import { FUNDS_TEXT, senderCopy } from './copy'
 import { DepositStatus, PendingDeposit, type TrackedDeposit } from './DepositStatus'
 import { runDeposit, type FlowStage } from './flow'
 import { balanceChainsRequest, balancesRequest, holdingsFromChainBalances, kindOf, mergeBalances, nativeOn, originCandidate, originName, originToken, quoteBudgetWait, requestFailure, sendable, type Lack } from './model'
-import { freezeFunding, fundingStorageKey, outstandingLegs, parseFunding, planFunding, requestForLeg, respectsLeg, type FundingIntent, type PricedLeg } from './fundingIntent'
+import { freezeFunding, fundingSpendable, fundingStorageKey, gasRecoveryKey, outstandingLegs, parseFunding, planFunding, planGasRecovery, requestForLeg, respectsLeg, withGasFailure, type FundingIntent, type PricedLeg } from './fundingIntent'
 import type { FundsServices } from './services'
 
 const ZERO = '0x0000000000000000000000000000000000000000'
 const rawValue = (raw: string | null) => raw !== null && /^\d+$/.test(raw) ? BigInt(raw) : null
 type Screen = 'checking' | 'quoting' | 'ready' | 'running' | 'tracking' | 'paused' | 'empty' | 'unavailable'
-type Proposal = { intent: FundingIntent; quotes: PricedLeg[] }
+type Proposal = { intent: FundingIntent; quotes: PricedLeg[]; recoveryFrom?: string }
+const GAS_RECOVERY_COPY = 'Ethereum needs more ETH for its network fee. Review another way to fund this position; your position amount stays the same.'
 class FundingError extends Error {
   constructor(readonly copy: string, readonly code: string) { super(code) }
 }
+function findHoldings(answer: ChainBalancesResponse | null, chainId: V2ChainId, closedKey: string, target: string | null): Holding[] {
+  if (!answer) return []
+  const closed = new Set(closedKey.split(',').filter(Boolean).map(Number))
+  const out: Holding[] = []
+  for (const profile of CANDIDATE_ORIGINS) {
+    const candidate = originCandidate(profile.chainId)
+    if (!candidate || candidate.chainId === chainId || closed.has(candidate.chainId)) continue
+    const gas = nativeOn(answer, candidate.chainId)
+    if (gas === null || gas <= 0n) continue
+    out.push(...(holdingsFromChainBalances(answer, candidate)?.holdings ?? []).filter((holding) => sendable(holding) > 0n))
+  }
+  return out.sort((a, b) => {
+    const sameA = kindOf(a.chainId, a.token) === kindOf(chainId, target ?? '')
+    const sameB = kindOf(b.chainId, b.token) === kindOf(chainId, target ?? '')
+    if (sameA !== sameB) return sameA ? -1 : 1
+    const av = sendable(a) * 10n ** BigInt(b.decimals), bv = sendable(b) * 10n ** BigInt(a.decimals)
+    return av > bv ? -1 : av < bv ? 1 : a.chainId - b.chainId
+  })
+}
+
 export interface BringFundsProps {
   gate: Exclude<V2Gate, { mode: 'off' }>
   services: FundsServices | null
@@ -105,7 +126,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const target = targetLack?.token ?? lacks[0]?.token ?? null
   const need = targetLack?.shortRaw ?? null
   const wantedKey = `${scope}|${target}|${need?.toString() ?? ''}`
-  const proposal = prepared?.intent.scope === scope && prepared.intent.requiredRaw === need?.toString() ? prepared : null
+  const proposal = prepared?.intent.scope === scope && (prepared.recoveryFrom ? intent !== null && prepared.recoveryFrom === gasRecoveryKey(intent) : prepared.intent.requiredRaw === need?.toString()) ? prepared : null
   const displayScreen = screen === 'ready' && !proposal && !intent ? 'checking' : screen
   const held = unsettled.list(wallet)
   const closedKey = held.map((entry) => entry.originChainId).join(',')
@@ -183,26 +204,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     setRevision((n) => n + 1)
   }), [storage, readIntent, chainId, wallet, journal])
 
-  const findHoldings = () => {
-    if (!balances) return []
-    const closed = new Set(closedKey.split(',').filter(Boolean).map(Number))
-    const out: Holding[] = []
-    for (const profile of CANDIDATE_ORIGINS) {
-      const candidate = originCandidate(profile.chainId)
-      if (!candidate || candidate.chainId === chainId || closed.has(candidate.chainId)) continue
-      const gas = nativeOn(balances, candidate.chainId)
-      if (gas === null || gas <= 0n) continue
-      out.push(...(holdingsFromChainBalances(balances, candidate)?.holdings ?? []).filter((holding) => sendable(holding) > 0n))
-    }
-    return out.sort((a, b) => {
-      const sameA = kindOf(a.chainId, a.token) === kindOf(chainId, target ?? '')
-      const sameB = kindOf(b.chainId, b.token) === kindOf(chainId, target ?? '')
-      if (sameA !== sameB) return sameA ? -1 : 1
-      const av = sendable(a) * 10n ** BigInt(b.decimals), bv = sendable(b) * 10n ** BigInt(a.decimals)
-      return av > bv ? -1 : av < bv ? 1 : a.chainId - b.chainId
-    })
-  }
-  const holdings = findHoldings()
+  const holdings = findHoldings(balances, chainId, closedKey, target)
   const quote = useCallback(async (request: CrosschainRequests['quote'], current: () => boolean): Promise<Omit<PricedLeg, 'holding'>> => {
     if (!services) throw new FundingError(FUNDS_TEXT.locked, 'not_deployed')
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -239,7 +241,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       if (!current()) return
       if (!quoted) { setScreen('empty'); setNotice({ copy: 'No available transfer covers this amount and its costs. Choose a smaller amount or check again.', code: 'funding_insufficient' }); return }
       const next = freezeFunding({ id: crypto.randomUUID(), owner: wallet.toLowerCase(), destinationChainId: chainId,
-        destinationToken: targetLack.token, scope, requiredRaw: need.toString(), createdAt: Date.now() }, quoted)
+        destinationToken: targetLack.token, scope, requiredRaw: need.toString(), createdAt: Math.max(...quoted.map((entry) => entry.quote.retrievedAt)) * 1_000 }, quoted)
       setProposal({ intent: next, quotes: quoted }); setScreen('ready')
     } catch (error) {
       if (!current()) return
@@ -247,23 +249,51 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       setNotice({ copy: failure.copy, code: failure.code }); setScreen('unavailable')
     }
   }
-  const prepareRef = useRef(prepare)
+  const prepareRef = useRef<(() => Promise<void>) | null>(null)
   useEffect(() => { prepareRef.current = prepare })
   const invalidatePreparation = useCallback(() => { generation.current++ }, [])
   useEffect(() => {
     if (!readDone || !ready || !need || intent || foreignPending || run) return
-    const timer = setTimeout(() => void prepareRef.current(), FUNDS_TYPED_QUOTE_DEBOUNCE_MS)
+    const timer = setTimeout(() => void prepareRef.current?.(), FUNDS_TYPED_QUOTE_DEBOUNCE_MS)
     return () => { clearTimeout(timer); invalidatePreparation() }
   }, [wantedKey, readDone, ready, need, intent, foreignPending, revision, run, invalidatePreparation])
   useEffect(() => {
     if (!proposal || !services || run || intent) return
     const expires = Math.min(...proposal.quotes.map((leg) => quoteDeadlineMono(leg.quote, leg.timing))) - services.clock.monoMs() - SEND_MARGIN_MS
-    return services.deadlineTimer(() => { setProposal(null); void prepareRef.current() }, Math.max(1_000, expires))
+    return services.deadlineTimer(() => { setProposal(null); void prepareRef.current?.() }, Math.max(1_000, expires))
   }, [proposal, services, run, intent])
+
+  const prepareGasRecovery = async () => {
+    if (!live || !services || !ready || running.current) return
+    const mine = ++generation.current
+    const current = () => mounted.current && generation.current === mine && latest.current.scope === scope
+    setScreen('quoting'); setNotice(null); setProposal(null)
+    try {
+      const before = readIntent(true)
+      if (!before?.gasRecovery?.reviewNeeded || before.scope !== scope || before.legs.some((leg) => leg.state === 'unknown' || leg.state === 'sending')) { setScreen('paused'); return }
+      const fresh = await read()
+      if (!fresh) throw new FundingError('Could not check your balances. Try again shortly.', 'funding_gas_retry')
+      const reply = await services.client.origins({ destinationChainId: chainId, destinationToken: before.destinationToken }, { owner: wallet })
+      if (!current()) return
+      if (!reply.ok) throw new FundingError('Could not check the available transfers. Try again shortly.', 'funding_gas_retry')
+      setListing(reply.data.origins)
+      const available = findHoldings(fresh, chainId, closedKey, before.destinationToken).filter((holding) => originToken(reply.data.origins, holding.chainId, holding.token)?.decimals === holding.decimals)
+      const revised = await planGasRecovery(before, available, (request) => quote(request, current), () => !current(), crypto.randomUUID())
+      if (!current()) return
+      if (!revised) throw new FundingError(before.gasRecovery.mode === 'token'
+        ? 'No other network can cover this amount right now. Add ETH on Ethereum for its network fee, or wait for a lower fee.'
+        : 'Keeping more ETH for the network fee leaves too little for this position. Add funds, choose a smaller position amount, or wait for a lower fee.', 'funding_gas_retry')
+      setProposal(revised); setScreen('ready')
+    } catch (error) {
+      if (!current()) return
+      setNotice({ copy: error instanceof FundingError ? error.copy : 'Could not update your transfer. Try again shortly.', code: 'funding_gas_retry' }); setScreen('paused')
+    }
+  }
 
   const execute = async () => {
     if (!services || !ready || running.current) return
-    const chosen = intentRef.current ?? proposal?.intent
+    const recovery = proposal?.recoveryFrom ? proposal : null
+    const chosen = recovery?.intent ?? intentRef.current ?? proposal?.intent
     if (!chosen || chosen.scope !== latest.current.scope || hasUnknown) return
     if (!intentRef.current && chosen.requiredRaw !== need?.toString()) return
     running.current = true; setRun(true); setScreen('running'); setNotice(null)
@@ -274,7 +304,9 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
         const stored = readIntent(true)
         if (stored && (stored.id !== chosen.id || stored.scope !== chosen.scope)) throw new FundingError('This transfer is being handled in another tab.', 'funding_other_tab')
         if (stored?.legs.some((leg) => leg.state === 'unknown' || leg.state === 'sending')) throw new FundingError('Check the open request in your wallet before continuing.', 'funding_unknown')
-        let accepted = stored ?? chosen
+        if (recovery && (!stored || recovery.recoveryFrom !== gasRecoveryKey(stored))) throw new FundingError('Your transfer changed. Review the remaining amount again.', 'funding_gas_retry')
+        if (stored?.gasRecovery?.reviewNeeded && !recovery) throw new FundingError(GAS_RECOVERY_COPY, 'funding_gas_retry')
+        let accepted = recovery ? chosen : stored ?? chosen
         const remaining = outstandingLegs(accepted)
         if (!remaining.length) return
         const fresh = await read()
@@ -284,12 +316,17 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
           const candidate = originCandidate(leg.originChainId)
           const heldNow = fresh && candidate ? holdingsFromChainBalances(fresh, candidate)?.holdings.find((holding) => holding.token === leg.originToken) : null
           const native = fresh ? nativeOn(fresh, leg.originChainId) : null
-          if (!heldNow || sendable(heldNow) < BigInt(leg.maxInputRaw) || native === null || native <= 0n) throw new FundingError(`Your balance on ${originName(leg.originChainId)} changed. Review your transfer again.`, 'funding_balance_changed')
+          if (!heldNow || fundingSpendable(heldNow, leg) < BigInt(leg.maxInputRaw) || native === null || native <= 0n) throw new FundingError(`Your balance on ${originName(leg.originChainId)} changed. Review your transfer again.`, 'funding_balance_changed')
           const remembered = leg.state === 'ready' && proposal?.intent.id === accepted.id ? proposal.quotes.find((entry) => entry.holding.chainId === leg.originChainId && entry.holding.token === leg.originToken) : null
           const checked = remembered && quoteDeadlineMono(remembered.quote, remembered.timing) > services.clock.monoMs() + SEND_MARGIN_MS + 15_000 ? remembered : await quote(requestForLeg(accepted, leg), current)
           if (!respectsLeg(accepted, leg, checked.quote)) throw new FundingError('Transfer costs changed. Your spending limit is unchanged. Review before continuing.', 'funding_quote_changed')
           const fee = checked.quote.candidates.find((candidate) => candidate.provider === checked.quote.decision)?.originGas?.feeRaw
-          if (fee != null && native < BigInt(fee) + (leg.originToken === ZERO ? BigInt(leg.maxInputRaw) : 0n)) throw new FundingError(`There is not enough ETH on ${originName(leg.originChainId)} for the network fee.`, 'funding_gas_short')
+          if (fee != null && native < BigInt(fee) + (leg.originToken === ZERO ? BigInt(leg.maxInputRaw) : 0n)) {
+            // A revised proposal is not accepted until every source passes preflight.
+            const retry = !recovery && withGasFailure(accepted, leg.id, 'funding_gas_short', false)
+            if (retry) save(retry)
+            throw new FundingError(retry ? GAS_RECOVERY_COPY : `There is not enough ETH on ${originName(leg.originChainId)} for the network fee.`, retry ? 'funding_gas_retry' : 'funding_gas_short')
+          }
           priced.set(leg.id, checked)
         }
         if (!current()) return
@@ -316,15 +353,19 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
             accepted = { ...accepted, legs: accepted.legs.map((entry) => entry.id === leg.id ? { ...entry, state: 'sent', depositTxHash: record.depositTxHash } : entry) }; save(accepted, leg.id)
           } else {
             const unknown = result.kind === 'sent' || (result.kind === 'aborted' && depositOffered) || (result.kind === 'error' && result.offered)
-            accepted = { ...accepted, legs: accepted.legs.map((entry) => entry.id === leg.id ? { ...entry, state: unknown ? 'unknown' : 'stopped', depositTxHash: result.kind === 'sent' ? result.sent.hash : entry.depositTxHash } : entry) }; save(accepted, leg.id)
+            accepted = { ...accepted, legs: accepted.legs.map((entry) => entry.id === leg.id ? { ...entry, state: unknown ? 'unknown' : 'stopped', depositTxHash: result.kind === 'sent' ? result.sent.hash : entry.depositTxHash } : entry) }
+            const retry = result.kind === 'error' ? withGasFailure(accepted, leg.id, result.code, result.offered) : null
+            if (retry) accepted = retry
+            save(accepted, leg.id)
             const code = result.kind === 'error' ? result.code : result.kind === 'switch' ? `switch_${result.outcome}` : result.kind
-            throw new FundingError(unknown ? 'Check the open request in your wallet. We will not send it again while its result is unknown.' : result.kind === 'expired' ? 'Your quote expired while the wallet was open. Continue to refresh it within the same spending limit.' : result.kind === 'error' ? senderCopy(result.code, { origin: originName(leg.originChainId), native: 'ETH' }) : 'Transfer paused. Received funds stay in your wallet.', code)
+            throw new FundingError(retry ? GAS_RECOVERY_COPY : unknown ? 'Check the open request in your wallet. We will not send it again while its result is unknown.' : result.kind === 'expired' ? 'Your quote expired while the wallet was open. Continue to refresh it within the same spending limit.' : result.kind === 'error' ? senderCopy(result.code, { origin: originName(leg.originChainId), native: 'ETH' }) : 'Transfer paused. Received funds stay in your wallet.', retry ? 'funding_gas_retry' : code)
           }
         }
       }, () => { throw new FundingError('This transfer is being handled in another tab. Return there to continue.', 'funding_other_tab') })
       if (mounted.current) setScreen('tracking')
     } catch (error) {
       if (mounted.current) {
+        if (recovery && intentRef.current?.gasRecovery?.reviewNeeded) setProposal(null)
         const failure = error instanceof FundingError ? error : error instanceof Error && error.message === 'funding_storage_unavailable'
           ? new FundingError('This browser could not save your transfer progress. No further transfer will be sent. Keep this page open to follow anything already sent.', 'funding_storage_unavailable')
           : new FundingError(error instanceof OriginStepError ? senderCopy(error.code, { origin: 'this network', native: 'ETH' }) : 'Your transfer is paused. No further transfer will be sent.', error instanceof OriginStepError ? error.code : 'funding_paused')
@@ -352,14 +393,15 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   }
 
   const changed = intent !== null && intent.scope !== scope
-  const proposed = intent ?? proposal?.intent
+  const proposed = proposal?.recoveryFrom ? proposal.intent : intent ?? proposal?.intent
   const selected = proposed?.legs ?? []
   const networks = [...new Set(selected.map((leg) => originName(leg.originChainId)))]
   const available = [...new Set(holdings.map((holding) => originName(holding.chainId)))]
   const names = (values: readonly string[]) => values.length > 1 ? `${values.slice(0, -1).join(', ')} and ${values.at(-1)}` : values[0] ?? ''
   const receiptAmount = proposed ? shortAmountText(proposed.requiredRaw, proposed.destinationToken, targetLack ?? name.book(chainId, proposed.destinationToken), 'up') : null
   const resume = intent !== null && outstandingLegs(intent).length > 0 && !hasUnknown && !changed
-  const needsReview = notice?.code === 'funding_quote_changed' || notice?.code === 'funding_balance_changed'
+  const gasReview = intent?.gasRecovery?.reviewNeeded === true
+  const needsReview = notice?.code === 'funding_quote_changed' || notice?.code === 'funding_balance_changed' || gasReview && !proposal?.recoveryFrom
   const unknownOrigin = intent?.legs.find((leg) => leg.state === 'unknown')?.originChainId ?? held.find((entry) => entry.state === 'open')?.originChainId
   if (!lacks.length && !gasOnly && !intent && !deposits.length && !pending.length && !held.length) {
     if (!discreet || !readDone || !holdings.length) return null
@@ -367,7 +409,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   }
   return <section className="dm-funds-offer dm-funding" data-funds-offer="" data-funds-mode={gate.mode} data-funds-services={services?.source ?? 'none'} data-funds-token={target} data-funding-state={displayScreen} aria-label="Fund this position">
     <div className="dm-funds-heading"><span className="dm-funds-icon" aria-hidden="true">↗</span><div>
-      <h4 data-funds-title="">{run ? 'Getting your funds ready' : intent || foreignPending ? 'Your transfer' : proposal ? `Use your funds on ${names(networks)}` : 'Your funds, together'}</h4>
+      <h4 data-funds-title="">{run ? 'Getting your funds ready' : proposal?.recoveryFrom ? 'Your updated transfer' : intent || foreignPending ? 'Your transfer' : proposal ? `Use your funds on ${names(networks)}` : 'Your funds, together'}</h4>
       <p data-funds-lack={targetLack ? 'short' : undefined} data-funds-lack-raw={targetLack?.shortRaw?.toString()}>{!live ? FUNDS_TEXT.locked : changed ? 'Your position changed. Transfers already sent continue to your wallet.' : hasUnknown ? 'Waiting for a clear answer from your wallet.' : intent || foreignPending ? 'Funds arrive in your wallet. Your position amount stays the same.' : proposal ? `Move ${receiptAmount ?? 'the missing funds'} to ${destination.name} to continue.` : !readDone || screen === 'quoting' ? 'Finding the funds for this position…' : holdings.length ? `You have funds on ${names(available)}.` : 'Checking the networks supported by Domino.'}</p>
     </div></div>
     <div className="dm-funds-body" data-funds-body="">
@@ -375,6 +417,8 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       {live && !readDone && <p role="status" data-funds-checking="" className="dm-funds-status">Checking your wallet…</p>}
       {live && screen === 'quoting' && !run && <p role="status" className="dm-funds-status" data-funds-quote-loading="">Checking transfer costs…</p>}
       {notice && <p role="status" className="dm-funding-notice" data-funds-run-notice="" data-error-code={notice.code}>{notice.copy}</p>}
+      {gasReview && !notice && !proposal?.recoveryFrom && screen !== 'quoting' && <p className="dm-funding-notice" data-funds-gas-recovery="">{GAS_RECOVERY_COPY}</p>}
+      {proposal?.recoveryFrom && <p className="dm-hint" data-funds-gas-recovery="">{proposal.intent.legs.some((leg) => leg.reserveRaw) ? 'Keep 0.006 ETH on Ethereum for network fees. ' : 'Use another available network. '}Your position amount stays the same. Confirm the amounts below before continuing.</p>}
       {live && readDone && !proposal && !intent && !foreignPending && screen !== 'quoting' && !notice && <p className="dm-hint" data-funds-nothing="">{balances === null ? 'Wallet balances are temporarily unavailable.' : holdings.length === 0 ? 'No available funds found on the supported networks. Add funds or choose a smaller amount.' : need === null ? 'Enter an amount in the token you want to use. We will find a supported transfer.' : !ready ? 'Sign in to prepare your transfer. This does not move funds.' : 'No transfer can cover this amount right now.'}</p>}
       {proposed && <div className="dm-funding-summary" data-funds-quote="" data-funding-sources={selected.length}>
         {selected.map((leg) => <div className="dm-funding-leg" key={leg.id} data-funds-network={leg.originChainId} data-funding-leg-state={leg.state}>
@@ -383,7 +427,8 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
         </div>)}
       </div>}
       {stage && <p role="status" className="dm-funds-status" data-funds-run-status={stage.value.stage}>{stage.value.stage === 'switching' ? `Your wallet needs ${originName(stage.origin)} for this transfer.` : stage.value.stage === 'batch_wallet' ? 'Confirm approval and transfer together in your wallet.' : stage.value.stage === 'approval_wallet' ? 'Approve the token in your wallet.' : stage.value.stage === 'deposit_wallet' ? 'Confirm the transfer in your wallet.' : `Preparing your transfer from ${originName(stage.origin)}…`}</p>}
-      {live && !run && ready && !changed && !hasUnknown && !needsReview && ((!intent && proposal) || resume) && <Button variant="accent" className="dm-funds-go" data-funds-deposit-button="" onClick={() => void execute()}>{resume ? 'Continue remaining transfer' : 'Use these funds'}</Button>}
+      {live && !run && ready && !changed && !hasUnknown && !needsReview && ((!intent && proposal) || resume) && <Button variant="accent" className="dm-funds-go" data-funds-deposit-button="" onClick={() => void execute()}>{proposal?.recoveryFrom ? 'Use this updated transfer' : resume ? 'Continue remaining transfer' : 'Use these funds'}</Button>}
+      {live && !run && ready && !changed && !hasUnknown && gasReview && !proposal?.recoveryFrom && screen !== 'quoting' && <Button variant="accent" data-funds-gas-review="" onClick={() => void prepareGasRecovery()}>Review transfer</Button>}
       {live && !ready && !run && lacks.length > 0 && !hasUnknown && <Button variant="accent" data-funds-signin="" onClick={openWalletDialog}>Continue with wallet</Button>}
       {live && !run && unknownOrigin !== undefined && <Button variant="outline" size="sm" data-funds-run-forget="" onClick={() => void resolveUnknown(unknownOrigin)}>I cancelled the request in my wallet</Button>}
       {live && !run && ready && !intent && !foreignPending && !proposal && !needsReview && readDone && (screen === 'unavailable' || screen === 'paused' || notice?.code === 'funding_insufficient') && <Button variant="outline" size="sm" data-funds-renew="" onClick={() => { setNotice(null); setRevision((n) => n + 1) }}>Check again</Button>}
@@ -409,7 +454,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
           onSettled={() => { setSettled((previous) => new Set(previous).add(deposit.record.depositTxHash)); const leg = intentRef.current?.legs.find((leg) => leg.depositTxHash === deposit.record.depositTxHash); if (leg) observe(leg.id, 'settled', deposit.record.depositTxHash); setRevision((n) => n + 1) }}
           onRemove={() => { journal?.drop(wallet, deposit.record); setDeposits((previous) => previous.filter((entry) => entry.record.depositTxHash !== deposit.record.depositTxHash)) }} />)}
       </div>}
-      {intent && !run && !hasUnknown && !activeDeposits.length && !pending.length && !held.length && (changed || needsReview || intent.legs.every((leg) => leg.state === 'settled') && lacks.length > 0) && <Button variant="outline" size="sm" data-funding-review="" onClick={() => {
+      {intent && !run && !hasUnknown && (!gasReview || changed) && !activeDeposits.length && !pending.length && !held.length && (changed || needsReview || intent.legs.every((leg) => leg.state === 'settled') && lacks.length > 0) && <Button variant="outline" size="sm" data-funding-review="" onClick={() => {
         void withFundingLock(wallet, async () => { save(null); setProposal(null); setNotice(null); setRevision((n) => n + 1) }, () => { throw new Error('busy') }).catch(() => setNotice({ copy: 'This transfer is being handled in another tab. Return there to continue.', code: 'funding_other_tab' }))
       }}>Review remaining amount</Button>}
     </div>
