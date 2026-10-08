@@ -35,14 +35,14 @@ const PILL_TONE = { on: 'in', paused: 'wait', protection: 'neutral', off: 'out' 
  * alone: the pill, its tone and the one line. Changed on purpose 2026-10-06 (the review of point 5: after "Turn off", an
  * expiry or an exit the vault stays paused with its module on, and said "Auto-exit" as if it were on).
  */
-const EXIT_STATUS = { on: 'Auto-exit', paused: 'Auto-exit paused', off: 'Auto-exit off', closed: 'Closed by Auto-exit' } as const
+const EXIT_STATUS = { on: 'Auto-exit', paused: 'Auto-exit paused', off: 'Auto-exit off', closed: 'Auto-exit completed' } as const
 const EXIT_TONE = { on: 'in', paused: 'wait', off: 'neutral', closed: 'neutral' } as const
 // Changed on purpose 2026-10-06 (the integration review's second pass): drawn only on the position's own page (a row of
 // Managed positions has no line), where the page has not drawn the Auto-exit card, so it never sends the person there.
 const EXIT_LINE = {
   paused: 'Auto-exit is paused for this position.',
   off: 'Auto-exit is off for this position.',
-  closed: 'Auto-exit closed this position.',
+  closed: 'View the result in Activity.',
 } as const
 const MEMBER_TONE: Readonly<Record<VaultMemberView['state'], 'in' | 'out' | 'neutral'>> = { armed: 'in', active: 'in', disarmed: 'out', exited: 'neutral', withdrawn: 'neutral', inactive: 'neutral', unknown: 'neutral' }
 /** The spec's own sentence for a running vault (F7 rev4 §2.13), as written. */

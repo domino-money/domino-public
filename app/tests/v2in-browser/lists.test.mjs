@@ -426,6 +426,42 @@ test('position Activity can continue when the first wallet page contains no matc
   } finally { await s.close(); }
 });
 
+test('an empty Auto-exit is one compact receipt, with details on demand, also inside position Activity', async () => {
+  const whole = fixture('activity.json');
+  const exited = whole.items.find(item => item.kind === 'auto_exit');
+  Object.assign(exited, { tokenId: V1_OPEN, withdrawn: ['0', '0'], delivered: ['0', '0'], deferred: [], reservesReturned: [], legs: [], tariffs: [] });
+  whole.items = [exited];
+  whole.nextCursor = null;
+  const portfolio = fixture('portfolio.json');
+  portfolio.vaults.find(vault => vault.address === exited.vault).dex = 4;
+  const s = await scenario({ hooks: LIVE, hash: '#/positions/receipts', readV6: routeOn((route) => ({ status: 200, body: about(route, route === 'portfolio' ? portfolio : whole, OWNER) })) });
+  try {
+    const row = s.page.locator(`[data-v2-receipt="${exited.id}"]`);
+    await row.waitFor();
+    assert.equal(await s.page.locator('[data-v2-receipt]').count(), 1);
+    assert.match(await row.locator('summary').innerText(), /Auto-exit: nothing to withdraw from #3135288/);
+    assert.doesNotMatch(await row.locator('summary').innerText(), /0\.2%|raw units|0 USDG|0 MANY/);
+    assert.equal(await row.locator('details').evaluate(node => node.open), false);
+    await row.locator('summary').click();
+    assert.match(await row.locator('[data-receipt-line="empty-exit"]').innerText(), /No tokens were withdrawn or sent to your wallet/);
+    assert.equal(await row.locator('[data-receipt-fee]').count(), 0);
+    await row.locator('[data-v2-explorer]').waitFor();
+    await row.locator('summary').click();
+    await s.page.setViewportSize({ width: 390, height: 844 });
+    await row.screenshot({ path: join(shots(), 'autoexit-empty-receipt-mobile.png'), animations: 'disabled' });
+    assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await s.page.setViewportSize({ width: 1320, height: 1000 });
+    await s.page.goto(`${s.page.url().split('#')[0]}#/positions/${V1_OPEN}`);
+    const activity = s.page.locator('[data-position-activity]');
+    await activity.locator(`[data-position-activity-item="${exited.id}"]`).waitFor();
+    assert.match(await activity.innerText(), /Auto-exit: nothing to withdraw from #3135288/);
+    assert.equal(await s.page.locator('[data-v2-receipt]').count(), 1, 'one result on the position page');
+    assert.equal(await activity.locator('[data-v2-receipt]').count(), 1, 'that result belongs to Activity');
+    await activity.screenshot({ path: join(shots(), 'autoexit-empty-position-activity.png'), animations: 'disabled' });
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
 test('a public route disabled after loading keeps the unified rows visible with an update warning', async () => {
   let disabled = false;
   const s = await scenario({ hooks: LIVE, refresh: true, hash: '#/positions/receipts', readV6: routeOn((route) =>

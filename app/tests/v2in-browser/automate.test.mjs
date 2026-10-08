@@ -628,7 +628,7 @@ test('live: a root closed directly on Uniswap, the vault paused: Managed positio
     assert.equal(await card.locator('[data-vault-held] [data-reserves="held"]').innerText(), '0.002 ETH + 5 USDG');
     // Nothing waits: §5.4's sentence is THE sentence, with its reason.
     assert.equal(await card.locator('[data-vault-state]').getAttribute('data-disarm-reason'), '2');
-    assert.match(await card.locator('[data-vault-state]').innerText(), /^This position was changed outside Domino\. Automation stopped for it\. · since /);
+    assert.match(await card.locator('[data-vault-state]').innerText(), /^This position was changed outside Domino\. · since /);
     // §5.6's second figure, the idle part (here everything is idle), under Details with the return hint.
     assert.match(await card.locator('[data-vault-details] [data-vault-idle]').textContent(), /Not used by automation\s*0\.002 ETH \+ 5 USDG/);
     assert.ok(await card.locator('[data-vault-details] [data-return-hint]').count());
@@ -1264,9 +1264,8 @@ test('live, a wallet that cannot batch: another vault takes the nonce after the 
   } finally { await s.close(); }
 });
 
-// Added 2026-10-06 (rugged's answer of 6 Oct, §4 item 7: after an exit nobody needs to clean up; "show 'Closed by Auto-exit'
-// with the values, and never offer to resume").
-test('live: once Auto-exit closed the position, its card says "Closed by Auto-exit" with what it delivered, and nothing offers it again', async () => {
+// The current control is compact. Completed financial operations belong in Receipts/Activity, not a second result card.
+test('live: a completed Auto-exit keeps its result in Activity and never offers the mandate again', async () => {
   const chain = createVaultChain({ chainId: 4663, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -201060, tickUpper: -198060, liquidity: 10n ** 18n }] });
   const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, startPaused: true });
   chain.setExitModule(vault, AUTO_EXIT);
@@ -1283,9 +1282,9 @@ test('live: once Auto-exit closed the position, its card says "Closed by Auto-ex
     const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="closed"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.equal(await card.locator('h2').innerText(), 'Auto-exit');
-    assert.equal(await card.locator('[data-exit-pill]').innerText(), 'Closed');
-    assert.equal(await card.locator('[data-v2in-exit-line="closed"]').innerText(), 'Closed by Auto-exit. The tokens were sent to your wallet.');
-    assert.equal(await card.locator('[data-order-result]').innerText(), 'You received, after the 0.2% fee: 0.5 ETH + 1,250 USDG');
+    assert.equal(await card.locator('[data-exit-pill]').innerText(), 'Completed');
+    assert.equal(await card.locator('[data-v2in-exit-line="closed"]').innerText(), 'View the result in Activity.');
+    assert.equal(await card.locator('[data-order-result]').count(), 0, 'no duplicated result or assumed 0.2% charge outside Activity');
     // Never offered again: no Turn on, no Turn back on, no rearm, nothing to turn off; no Auto-exit among the page's actions.
     assert.equal(await card.locator('[data-v2in-open="mandate"], [data-order-module-on], [data-vault-open="rearm"], [data-vault-more="rearm"], [data-exit-off]').count(), 0);
     assert.doesNotMatch(await card.innerText(), /Turn on|Turn back on|Approve again|Turn off/);

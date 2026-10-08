@@ -16,6 +16,9 @@ import * as runtime from '../../../api-contracts/read-v6/runtime.mjs';
 
 const require = createRequire(import.meta.url);
 const model = require('../../.test-build/app/src/v2in/lists/model.js');
+const { exitReceiptOutcome } = require('../../.test-build/app/src/v2in/autoexit/receipt.js');
+const { historyWords } = require('../../.test-build/app/src/v2in/automate/portfolio.js');
+const { v2Chain } = require('../../.test-build/app/src/v2/chains.js');
 
 const CONTRACTS = resolve(import.meta.dirname, '../../../api-contracts');
 const fixture = (name) => JSON.parse(readFileSync(join(CONTRACTS, 'read-v6', 'fixtures', 'valid', name), 'utf8'));
@@ -27,6 +30,50 @@ const ALL = () => true;
 const WALLET = '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1';
 const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
 const MANY = '0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a';
+
+test('an Auto-exit with no value remains a receipt without claiming a withdrawal, delivery or fee', () => {
+  const answer = fixture('activity.json');
+  const exited = answer.items.find((item) => item.kind === 'auto_exit');
+  Object.assign(exited, { withdrawn: ['0', '0'], delivered: ['0', '0'], deferred: [], reservesReturned: [], legs: [], tariffs: [] });
+  answer.items = [exited];
+  const [view] = model.receiptViews(valid('activity', answer), ALL, valid('portfolio', fixture('portfolio.json')));
+  assert.equal(view.what, `Auto-exit: nothing to withdraw from #${exited.tokenId}`);
+  assert.equal(view.amount, null, 'no misleading zero-dollar result in the collapsed summary');
+  assert.deepEqual(view.fees, [], 'no invented 0.2% charge');
+  assert.deepEqual(view.lines, [{ label: 'Result', value: 'No tokens were withdrawn or sent to your wallet.', data: 'empty-exit' }]);
+  assert.equal(view.hash, exited.tx.hash, 'the executed transaction remains inspectable');
+  const history = historyWords(exited, { chain: v2Chain(4663), owner: WALLET, pool: null, meta: () => null });
+  assert.equal(history.title, view.what, 'the same outcome in automation history');
+  assert.equal(history.lines[0].value, view.lines[0].value);
+});
+
+test('zero delivered is not an empty exit when value was withdrawn, deferred, returned, converted or charged', () => {
+  const original = fixture('activity.json').items.find((item) => item.kind === 'auto_exit');
+  const empty = { ...original, withdrawn: ['0', '0'], delivered: ['0', '0'], deferred: [], reservesReturned: [], legs: [], tariffs: [] };
+  for (const change of [
+    { withdrawn: ['1', '0'] },
+    { delivered: ['0', '1'] },
+    { deferred: [{ token: USDG, amount: '1' }] },
+    { reservesReturned: [{ token: USDG, amount: '1' }] },
+    { legs: [{ amountIn: '1', amountOut: '0' }] },
+    { tariffs: [{ amount: '0', deferred: '1' }] },
+  ]) {
+    const item = { ...empty, ...change };
+    assert.equal(exitReceiptOutcome(item).empty, false, JSON.stringify(change));
+    assert.doesNotMatch(exitReceiptOutcome(item).title, /nothing to withdraw/);
+  }
+  assert.match(exitReceiptOutcome({ ...empty, deferred: [{ token: USDG, amount: '1' }] }).title, /^Auto-exit executed/);
+});
+
+test('an external position change does not claim its separate Auto-exit mandate was turned off', () => {
+  const answer = fixture('activity.json');
+  answer.items = answer.items.filter((item) => item.kind === 'vault_event' && item.events.some((event) => event.event === 'RootDisarmed' && event.reason === 'changed_outside_domino'));
+  assert.equal(answer.items.length, 1);
+  const [view] = model.receiptViews(valid('activity', answer), ALL);
+  assert.equal(view.what, 'This position was changed outside Domino.');
+  const history = historyWords(answer.items[0], { chain: v2Chain(4663), owner: WALLET, pool: null, meta: () => null });
+  assert.equal(history.title, view.what);
+});
 
 test('each read-v6 position is a row: chain and DEX named, its own page, open or closed, its state, token amounts only', () => {
   const body = valid('portfolio', fixture('portfolio.json'));
@@ -135,7 +182,7 @@ test('receipts: what moved, the fee with its kind, rate, token, amount and defer
     ['auto_exit_event', 'Claimed'],
     ['auto_exit', 'Auto-exit: position #8 withdrawn'],
     ['auto_exit_event', 'Auto-exit turned on for position #8'],
-    ['vault_event', 'This position was changed outside Domino. Automation stopped for it.'],
+    ['vault_event', 'This position was changed outside Domino.'],
     ['vault_event', 'Automation settings saved: Domino-compound'],
     ['vault_execution', 'Automated run: position #8 opened'],
     ['s1_action', 'Withdrew from position #9'],
@@ -205,7 +252,7 @@ test('rev4 §2.13: a reserves return the automation sent is "Returned to your wa
 
 // Added 2026-10-06 (the review of the owner's point 5): Auto-exit's own vault (paused, its module on) is said by its root's
 // orders, before its custody (an exit disarms the root), and never by a compounding name.
-test('a row in Auto-exit\'s own vault: "Auto-exit" while one is on, else Off, Paused or Closed the position', () => {
+test('a row in Auto-exit\'s own vault: "Auto-exit" while one is on, else Off, Paused or Completed', () => {
   const base = valid('portfolio', fixture('portfolio.json'));
   const vaultAt = base.vaults.findIndex((vault) => vault.rootTokenId === '7');
   const rowOf = (vaultFields, mandates) => {
@@ -222,7 +269,7 @@ test('a row in Auto-exit\'s own vault: "Auto-exit" while one is on, else Off, Pa
   assert.deepEqual(rowOf({}, () => []), { role: 'root', name: 'Auto-exit', word: 'Off', running: false }, 'turned off, or none: the vault stays paused with its module on');
   assert.deepEqual(rowOf({}, (vault) => [order(vault, { expired: true })]), { role: 'root', name: 'Auto-exit', word: 'Off', running: false }, 'expired');
   assert.deepEqual(rowOf({}, (vault) => [order(vault, { blockedBy: ['module_disabled'] })]), { role: 'root', name: 'Auto-exit', word: 'Paused', running: false });
-  assert.deepEqual(rowOf({ custody: { ...base.vaults[vaultAt].custody, armed: false, reason: 'auto_exit' } }, (vault) => [order(vault, { status: 'executed' })]), { role: 'root', name: 'Auto-exit', word: 'Closed the position', running: false }, 'closed by it: never "Automation off" or a compounding name');
+  assert.deepEqual(rowOf({ custody: { ...base.vaults[vaultAt].custody, armed: false, reason: 'auto_exit' } }, (vault) => [order(vault, { status: 'executed' })]), { role: 'root', name: 'Auto-exit', word: 'Completed', running: false }, 'execution is complete; the row does not claim it withdrew value');
   // Changed on purpose 2026-10-06 (the integration review, rugged-literal #1): a root a Collect fees or an Add liquidity
   // disarmed (read-v6's custody.armed false) with its order unblocked still closes at its range's end: "Auto-exit".
   const disarmed = (reason) => ({ custody: { ...base.vaults[vaultAt].custody, armed: false, reason } });

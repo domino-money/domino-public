@@ -222,12 +222,12 @@ export function errorLabels(chainId: ErrorLabels['chainId'], name: (address: Add
 
 /** §5.4: what each `RootDisarmed` reason says. */
 export const DISARM_TEXT: Readonly<Record<number, string>> = Object.freeze({
-  1: 'This position left your wallet or Domino was unsubscribed. Automation stopped for it.',
-  2: 'This position was changed outside Domino. Automation stopped for it.',
+  1: 'This position left your wallet or Domino was unsubscribed.',
+  2: 'This position was changed outside Domino.',
   3: 'This position was closed. Its automation has ended.',
   4: 'Domino no longer has permission on this position, or it left your wallet.',
   5: 'This position changed outside Domino.',
-  6: 'Auto-exit withdrew this position.',
+  6: 'Auto-exit executed.',
   7: 'You ended your automation.',
 })
 /**

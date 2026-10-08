@@ -68,16 +68,11 @@ export function onLine(edges: readonly EdgeWords[], tokens: readonly [TokenView,
   return where ? `Closes at ${where}` : 'Closes at the ends of your range'
 }
 
-/**
- * What the card says once Auto-exit closed the position (Added 2026-10-06, the review of point 5): that the tokens were
- * sent only when nothing waits to be claimed; otherwise where they are. Changed on purpose 2026-10-06 (rugged's answer of
- * 6 Oct, §4 item 7: "show 'Closed by Auto-exit' with the values, and never offer to resume"): in his words, the values
- * on the line under it (./Orders.tsx).
- */
+/** Current controls only: an executed mandate may have withdrawn zero. The financial result belongs in Activity. */
 export function closedLine(unclaimed: boolean): string {
   return unclaimed
-    ? "Closed by Auto-exit. Some tokens couldn't be sent to your wallet: claim them below."
-    : 'Closed by Auto-exit. The tokens were sent to your wallet.'
+    ? 'You have tokens available to claim below.'
+    : 'View the result in Activity.'
 }
 
 /**

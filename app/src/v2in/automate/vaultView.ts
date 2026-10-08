@@ -429,7 +429,7 @@ export function currentVaultFirst(views: readonly VaultView[], body: PortfolioRe
 export const automationMode = (view: VaultView): string => view.exit !== null ? 'Auto-exit' : view.mode === 2 ? 'Domino-compound' : view.mode === 1 ? 'Auto-compound' : 'Automation'
 
 export function automationStanding(view: VaultView): string {
-  if (view.exit === 'closed') return 'Closed by Auto-exit'
+  if (view.exit === 'closed') return 'Completed'
   if (view.rootClosed === true) return 'Closed'
   if (view.exit !== null) return view.exit === 'on' ? 'On' : view.exit === 'paused' ? 'Paused' : 'Off'
   if (view.status === 'on') return 'On'

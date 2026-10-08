@@ -152,9 +152,9 @@ test('the edges in the app\'s price words, the falling one first, in either orie
   assert.equal(words.closesAtWords(blind, unknown, 'token1PerToken0'), null);
   assert.equal(words.onLine(blind, unknown, 'token1PerToken0'), 'Closes at the ends of your range');
   // Closed: the tokens were sent only when nothing waits to be claimed. Changed on purpose 2026-10-06 (rugged's answer of
-  // 6 Oct, §4 item 7: "show 'Closed by Auto-exit' with the values"): in his words.
-  assert.equal(words.closedLine(false), 'Closed by Auto-exit. The tokens were sent to your wallet.');
-  assert.match(words.closedLine(true), /^Closed by Auto-exit\. Some tokens couldn't be sent to your wallet: claim them below\.$/);
+  // 7 Oct: only current controls here; execution results belong in Activity, and zero does not prove delivery.
+  assert.equal(words.closedLine(false), 'View the result in Activity.');
+  assert.equal(words.closedLine(true), 'You have tokens available to claim below.');
   assert.equal(words.receiveWords(0, ETH, TOKENS), 'Both tokens');
   assert.match(words.triggerWords('triggerBelowSqrtPriceX96', edges.triggerBelowSqrtPriceX96, TOKENS, 'token1PerToken0'), /^Closes if the price falls to [\d,.]+ USDG per ETH$/);
 });

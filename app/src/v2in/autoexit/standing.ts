@@ -5,7 +5,7 @@ import type { Mandate, Vault } from 'api-contracts/read-v6/types'
  * its root, never from the vault alone: its pause and its module stay after a "Turn off", an expiry or an exit. Added
  * 2026-10-06 (the review of the owner's point 5), for the Positions rows' badge (../lists/model.ts) and the automation's
  * cards (../automate/vaultView.ts). Pure, types only, so the lists need nothing else of the automation screens.
- *   - `closed`: Auto-exit closed the position (its root disarmed by it, or one of its orders executed);
+ *   - `closed`: Auto-exit completed (its root disarmed by it, or one of its orders executed); not proof of value withdrawn;
  *   - `on`: one of its root's orders is active and not expired, nothing keeping it from closing;
  *   - `paused`: one is, but something keeps it from closing (§4.5: the approval lost, auto-exit off, a halt);
  *   - `off`: none is.

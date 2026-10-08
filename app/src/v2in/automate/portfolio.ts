@@ -6,6 +6,7 @@ import { v2Chain, type V2Chain } from '../../v2/chains'
 import { AUTO_EXIT_WAITING, decodeRevertData } from '../../v2/errors'
 import { chainState, coverageNote } from '../../v2/read/v6'
 import { ZERO_ADDRESS, type Address, type V2ChainId } from '../../v2/types'
+import { exitReceiptOutcome } from '../autoexit/receipt'
 import { DISARM_TEXT } from './copy'
 import { amountWords, tokenView, type TokenMeta, type TokenView } from './tokens'
 
@@ -515,12 +516,15 @@ export function historyWords(item: HistoryItem, ctx: HistoryContext): HistoryWor
       return { ...base, title, lines }
     }
     case 'auto_exit': {
-      const lines: HistoryLine[] = [{ label: 'Sent to your wallet', value: pairOf(ctx, item.delivered) }]
+      const outcome = exitReceiptOutcome(item)
+      const lines: HistoryLine[] = outcome.empty
+        ? [{ label: 'Result', value: 'No tokens were withdrawn or sent to your wallet.' }]
+        : [{ label: 'Sent to your wallet', value: pairOf(ctx, item.delivered) }]
       const fee = item.tariffs.filter((t) => t.kind === 'auto_exit')
       if (fee.length) lines.push({ label: 'Auto-exit fee (0.2%)', value: tariffsOf(ctx, fee) })
       if (item.deferred.length) lines.push({ label: 'Waiting for you to claim', value: item.deferred.map((d) => amountOf(ctx, d.token, d.amount)).join(' + ') })
       if (item.reservesReturned.length) lines.push({ label: 'Returned from your automation, no fee', value: item.reservesReturned.map((d) => amountOf(ctx, d.token, d.amount)).join(' + ') })
-      return { ...base, title: `Auto-exit: position #${item.tokenId} withdrawn`, lines }
+      return { ...base, title: outcome.title, lines }
     }
     case 'vault_created':
       return { ...base, title: `Automation set up for position #${item.rootTokenId}`, lines: [] }

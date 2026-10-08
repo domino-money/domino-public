@@ -87,7 +87,7 @@ test('a listed vault as the screens show it: on, off with §5.4\'s reason, the r
   const exited = view(EXITED);
   assert.equal(exited.armed, false);
   assert.equal(exited.disarm.reason, 6);
-  assert.equal(exited.disarm.text, 'Auto-exit withdrew this position.');
+  assert.equal(exited.disarm.text, 'Auto-exit executed.');
   assert.equal(exited.rootClosed, true);
   assert.equal(exited.reserves.known, false);
   const moved = view(MOVED);

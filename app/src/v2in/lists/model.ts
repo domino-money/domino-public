@@ -9,6 +9,7 @@ import { coverageNote } from '../../v2/read/v6'
 import { ZERO_ADDRESS, type Address, type V2ChainId } from '../../v2/types'
 import { USD_SHOWN } from '../position/constants'
 import { protectionStanding, type ProtectionStanding } from '../autoexit/standing'
+import { exitReceiptOutcome } from '../autoexit/receipt'
 import { v2PositionHref } from '../route'
 import { rawAmounts, usdOfRaw } from '../usd'
 
@@ -225,13 +226,13 @@ const UNREADABLE = 'This position can’t be read right now.'
 const NOT_READ = 'This position hasn’t been read yet.'
 
 /** What the badge of Auto-exit's own vault adds to its name, by where its Auto-exit stands (nothing while it is on). */
-const EXIT_WORD: Readonly<Record<ProtectionStanding, string | null>> = { on: null, paused: 'Paused', off: 'Off', closed: 'Closed the position' }
+const EXIT_WORD: Readonly<Record<ProtectionStanding, string | null>> = { on: null, paused: 'Paused', off: 'Off', closed: 'Completed' }
 
 /**
  * A vault's automation as a row's badge (§5.1, §5.3, §5.4; decision #25: a paused vault with auto-exit on is the
  * protection-only one). Changed on purpose 2026-10-06 (the owner's point 5): it is Auto-exit's, and named so. Changed on
  * purpose 2026-10-06 (the review of point 5): said by its root's orders (../autoexit/standing.ts), before its custody,
- * which an exit disarms: "Auto-exit" while one is on, else "Auto-exit · Off", "· Paused" or "· Closed the position",
+ * which an exit disarms: "Auto-exit" while one is on, else "Auto-exit · Off", "· Paused" or "· Completed",
  * never a compounding name (it records Auto-compound's mode with one position). Changed on purpose 2026-10-06 (the
  * integration review, rugged-literal #1 and #2): "Paused" only when its order is blocked (§4.5's `blockedBy`), never for a
  * root a Collect fees or an Add liquidity disarmed while the exit can still fire; and still Auto-exit's after Leave
@@ -415,12 +416,12 @@ const S1_WHAT: Readonly<Record<'create' | 'increase' | 'change_range' | 'exit', 
 
 /** §5.4's words for a disarm reason (rev3 §2.13). */
 const DISARM_TEXT: Readonly<Record<string, string>> = {
-  unsubscribed_or_transferred: 'This position left your wallet or Domino was unsubscribed. Automation stopped for it.',
-  changed_outside_domino: 'This position was changed outside Domino. Automation stopped for it.',
+  unsubscribed_or_transferred: 'This position left your wallet or Domino was unsubscribed.',
+  changed_outside_domino: 'This position was changed outside Domino.',
   burned: 'This position was closed. Its automation has ended.',
   custody_lost: 'Domino no longer has permission on this position, or it left your wallet.',
   v3_checkpoint_mismatch: 'This position changed outside Domino.',
-  auto_exit: 'Auto-exit withdrew this position.',
+  auto_exit: 'Auto-exit executed.',
   exit_all: 'You ended your automation.',
 }
 
@@ -515,14 +516,17 @@ function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer
     }
     case 'auto_exit': {
       const tokens = vaultTokens(item.vault)
-      const lines: ReceiptLine[] = [
+      const outcome = exitReceiptOutcome(item)
+      const lines: ReceiptLine[] = outcome.empty ? [
+        { label: 'Result', value: 'No tokens were withdrawn or sent to your wallet.', data: 'empty-exit' },
+      ] : [
         { label: 'Withdrawn from the position', value: pairWords(item.withdrawn, tokens), data: 'withdrawn' },
         { label: 'Sent to your wallet', value: pairWords(item.delivered, tokens), data: 'delivered' },
       ]
       for (const leg of item.legs) lines.push({ label: 'Converted', value: `${amountWords(leg.amountIn, token(leg.tokenIn))} → ${amountWords(leg.amountOut, token(leg.tokenOut))}`, data: 'converted' })
       if (item.deferred.length) lines.push({ label: 'Waiting for you to claim', value: item.deferred.map((d) => amountWords(d.amount, token(d.token))).join(' + '), data: 'deferred' })
       if (item.reservesReturned.length) lines.push({ label: 'Returned from your automation, no fee', value: item.reservesReturned.map((d) => amountWords(d.amount, token(d.token))).join(' + '), data: 'reserves-returned' })
-      return { ...base, what: `Auto-exit: position #${item.tokenId} withdrawn`, amount: pairWords(item.delivered, tokens), lines, fees: feesOf(item.tariffs, token) }
+      return { ...base, what: outcome.title, amount: item.delivered.some((amount) => BigInt(amount) > 0n) ? pairWords(item.delivered, tokens) : null, lines, fees: feesOf(item.tariffs, token) }
     }
     case 'vault_created':
       return {

@@ -48,11 +48,8 @@ import { closedLine, conditionWords, edgesOf, onLine, receiveWords, triggerWords
  * ways back on of a paused one (its module here, its approval in the automation's dialog) read the pool's price first: an
  * end the price already passed is said before the wallet opens, with a tick to go on anyway and "Turn off instead".
  *
- * Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §4 item 7: after an exit nobody needs to clean up; "show
- * 'Closed by Auto-exit' with the values, and never offer to resume"): once it closed the position the card says "Closed
- * by Auto-exit" with what it delivered (read-v6's executed order: after the 0.2% fee), its pill "Closed", and offers no
- * way back on: none of "Turn on", "Turn back on" or the rearm (the emptied position is offered no Auto-exit, and its
- * automation's rearm ends with reason 6, ../automate/vaultView.ts vaultActions).
+ * 7 Oct: the owner keeps completed operations in Receipts/Activity. The current control says Completed without
+ * claiming a withdrawal or fee: an executed mandate can deliver zero. It still never offers that mandate again.
  */
 
 /**
@@ -270,14 +267,13 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
 
   const pill = state.kind === 'on' ? <Pill tone="in" dot data-exit-pill="on">On</Pill>
     : state.kind === 'paused' ? <Pill tone="wait" dot data-exit-pill="paused">Paused</Pill>
-      : state.kind === 'closed' ? <Pill tone="neutral" data-exit-pill="closed">Closed</Pill>
+      : state.kind === 'closed' ? <Pill tone="neutral" data-exit-pill="closed">Completed</Pill>
         : v1Automated ? null : <Pill tone="neutral" data-exit-pill="off">Off</Pill>
   const line = state.kind === 'on' ? onLine(edges, target.tokens, orientation)
     : state.kind === 'paused' ? conditionWords(state.reasons[0], chain.name)
       : state.kind === 'closed' ? closedLine(credits.length > 0)
         : v1Automated ? 'Auto-exit is available once this position leaves its current automation.'
           : canTurnOn ? 'Auto-exit is off. Turn it on to close this position at the end of its range.' : 'Auto-exit is off for this position.'
-  const delivered = state.kind === 'closed' && state.delivered && state.delivered.length === 2 ? state.delivered : null
 
   return (
     // One title, one pill, one line, one button (the owner, 2026-10-03: few words; the rest under Details).
@@ -310,11 +306,6 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
         {line}
       </p>
       {waiting && <p className="dm-acct-note" data-order-waiting={waiting.code}>{waiting.text}</p>}
-      {delivered && (
-        <p className="dm-acct-note" data-order-result="">
-          You received, after the 0.2% fee: {amountWords(delivered[0], target.tokens[0]).text} + {amountWords(delivered[1], target.tokens[1]).text}
-        </p>
-      )}
       {state.kind === 'paused' && state.moduleOff && vault && (
         <div className="dm-exit-card-actions" data-orders-module-off="">
           <Button type="button" variant="primary" size="sm" onClick={() => setDialog({ kind: 'module-on', vault, id: state.id, triggers: state.triggers })} data-order-module-on="">
