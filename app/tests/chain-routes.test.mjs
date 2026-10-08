@@ -16,6 +16,7 @@ import { fakeNode } from './support/fake-node.mjs';
 import { browserChain, RPC_URL } from './support/browser-chain.mjs';
 import { addressTopic, fakeChain as feesChain, memoryCache, rpcLog, topicOf, word } from './support/fees/fake-chain.mjs';
 import { ledgerWorld } from './support/fees/ledger-world.mjs';
+import { txOf } from './support/fees/ledger-chain.mjs';
 import { KEY, OWNER, POOL, TOKEN, USDG } from './owned-chain.mjs';
 
 const require = createRequire(import.meta.url);
@@ -437,7 +438,7 @@ function historyChain(more = {}) {
 test('ledger: a position’s ledger and its state at one block, what the page’s parser takes; kept half a minute, a fresh question two seconds', async () => {
   const world = ledgerWorld();
   const { ask, asked, routeLines, clock } = edge({ fetch: (_url, init) => world.chain.fetch(RPC_URL, init) });
-  const question = { tokenIds: ['3325113'] };
+  const question = { tokenIds: ['3325113'], mintHints: [{ tokenId: '3325113', block: world.spec.mint.block, tx: txOf(world.spec.mint.block) }] };
   const response = await ask('ledger', question);
   assert.equal(response.status, 200, await response.clone().text());
   const value = await response.json();

@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PortfolioResponse } from 'api-contracts/read-v6/types'
-import { Button } from '../../components/ui'
-import { AutomateEntry } from '../../components/positions/AutomateEntry'
-import { SequenceSwitch } from '../../components/positions/SequenceSwitch'
+import { Button, LinkButton } from '../../components/ui'
+import { sequenceHref } from '../../components/explore/routes'
 import { askAutoExitOnArrival, takeAutoExitAsk } from '../../lib/automate/autoExitAsk'
-import { useAutomation } from '../../lib/automationState'
 import type { WalletPosition } from '../../lib/walletPositions'
 import type { VaultSnapshot } from '../../finance/v2/vault'
 import { useWalletIdentity } from '../../lib/walletIdentity'
@@ -22,7 +20,8 @@ import { gateOpen, useGate } from './gate'
 import { onVaultOffered, takeVault } from './handoff'
 import { IndexStatus } from './IndexStatus'
 import { chainView, creditsOn, mandatesOf, mergeCredits, tokenMetaOf, vaultsOfPosition } from './portfolio'
-import { routeQuiet, usePortfolio } from './read6'
+import { usePortfolio } from './read6'
+import { setupEligibility } from './setupPositions'
 import { approvedAt, automationState, exitModuleSet, sessionMandates, sessionRevoked, subscribeAutomation } from './store'
 import { poolTokens, shortAddress, walletTokenMeta } from './tokens'
 import { ReservesWords, VAULT_ACTION_LABEL, VaultCard } from './VaultCard'
@@ -105,9 +104,6 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   const [turnOff, setTurnOff] = useState(0)
   // The vaults this page acted on, as read on chain right after (./vaultView.ts shownVaultView), by address.
   const [fresh, setFresh] = useState<ReadonlyMap<string, VaultSnapshot>>(() => new Map())
-  // V1's own reading of the NFT's subscriber: a plain position is offered the protection-only path; one in V1's
-  // automation, or tied to another app, is not (the vault would refuse it: ForeignSubscriber).
-  const v1 = useAutomation(!indexed && position ? tokenId : null)
   const chain = v2Chain(chainId)
 
   const store = useSyncExternalStore(subscribeAutomation, automationState, automationState)
@@ -116,7 +112,8 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   // automation's actions say the new standing at once (../autoexit/card.ts withExitModules). Changed on purpose 2026-10-06
   // (the final check F2's review): and with the Auto-exits this page turned off (withRevoked), so its automation's word
   // agrees with the card's: after "Turn back on" then "Turn off", "Turn on" (its rearm first) is offered again at once.
-  const listed = indexed?.portfolio ?? (answer && answer.reply.kind === 'ok' ? answer.reply.body : null)
+  const received = indexed?.portfolio ?? (answer && answer.reply.kind === 'ok' ? answer.reply.body : null)
+  const listed = connected && received?.wallet.toLowerCase() === connected ? received : null
   // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, §4 item 6): and with the approvals this page gave back,
   // while the index's read of the position is older (../autoexit/card.ts withApprovals): "Approve again" done, the card
   // says "On".
@@ -186,13 +183,13 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   const member = protection && protection.armed === true && protection.ownedByWallet ? protection : null
   const liquid = position !== null && position.liquidity !== '0'
   const holds = connected !== null && holder !== null && holder.toLowerCase() === connected
-  const plainCustody = indexed ? indexed.subscriber === null || indexed.subscriber === ZERO_ADDRESS : v1.phase === 'ready' && v1.state.automation === 'plain'
+  // Changed on purpose 2026-10-07: V2 setup and the detail use the same current portfolio/custody authority. A missing
+  // position, failed custody read or a foreign subscriber never means "plain". V1's release/state cannot enable it.
+  const listedPosition = body?.positions.find((item) => item.chainId === chainId && item.dex === dex && item.tokenId === tokenId) ?? null
+  const eligibility = body && connected && listedPosition ? setupEligibility(body, connected, listedPosition) : 'unavailable'
   // A vault made from this page that the index does not list yet is no plain position any more.
   const madeHere = mine.length > 0
-  const plain = !rootView && !memberView && !madeHere && holds && liquid && pagePool !== null && pagePool.hooks === ZERO_ADDRESS && plainCustody
-  // Under V1's own automation (its vault holds the NFT's one individual approval, §1.5): the option is said, not offered;
-  // Domino's new vault takes a position over once the person leaves V1's automation (spec §1.1: no migration flow).
-  const v1Automated = !indexed && !rootView && !memberView && holds && liquid && pagePool !== null && v1.phase === 'ready' && v1.state.automation !== 'plain'
+  const plain = !rootView && !memberView && !madeHere && holds && liquid && pagePool !== null && pagePool.hooks === ZERO_ADDRESS && eligibility === 'eligible'
   const orderGate = member ? (gateOpen(exitGate) ? exitGate : null) : joined(vaultGate, exitGate)
   const pagePrice = positionExitPrice(position, priceContext)
   // Added 2026-10-06 (the owner's point 5): the range is Auto-exit's edges.
@@ -221,9 +218,8 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
     setVersion((n) => n + 1)
     onChanged?.()
   }
-  // The read about the connected wallet failed (not answering, or an answer the validator refused): said, never "no
-  // automation". A route simply not on yet (before the deploy) is nothing to say: the page is V1's.
-  const unread = connected !== null && answer !== null && answer.reply.kind !== 'ok' && !routeQuiet(answer)
+  // An unavailable route or an unread custody record is not proof that automation is off.
+  const unread = connected !== null && answer !== null && answer.reply.kind !== 'ok'
 
   // The page's actions row offers "Auto-exit" while it can be turned on here, and a press there opens this panel's own
   // dialog (../autoexit/entry.ts; the owner, 2026-10-04: inside the position, as a button there).
@@ -254,31 +250,32 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   if (!gateOpen(vaultGate) && !gateOpen(exitGate)) return null
 
   const reading = connected !== null && body === null
-  const legacy = !current && v1.phase === 'ready' && 'paused' in v1.state ? v1.state : null
-  const label = current ? automationMode(current) : legacy ? legacy.automation === 'domino' ? 'Domino-compound' : 'Auto-compound' : mine.length > 0 ? 'Auto-exit' : 'Automation'
-  const standing = unread ? 'State unavailable' : legacy ? legacy.paused ? 'Paused' : legacy.active ? 'On' : 'Off' : current ? automationStanding(current) : mine.length > 0 ? 'On' : reading ? answer === null ? 'Loading' : 'State unavailable' : liquid ? 'Off' : position ? 'Closed' : 'State unavailable'
+  const stateUnavailable = unread || (body !== null && chainState?.state !== 'current') || (eligibility === 'unavailable' && mine.length === 0 && current?.rootClosed !== true) || (body?.truncated.mandates === true && protection !== null && !exitOn)
+  const label = current ? automationMode(current) : mine.length > 0 ? 'Auto-exit' : 'Automation'
+  const standing = reading && answer === null ? 'Loading' : stateUnavailable ? 'State unavailable' : current ? automationStanding(current) : mine.length > 0 ? 'On' : eligibility === 'closed' || (position && !liquid) ? 'Closed' : eligibility === 'subscribed' ? 'Managed elsewhere' : eligibility === 'unsupported' ? 'Not supported' : eligibility === 'eligible' ? 'Not available' : 'State unavailable'
   const recovery = views.filter(({ view }) => view.vault !== current?.vault)
   const fundsPending = views.some(({ view }) => (view.reserves.known && view.reserves.held) || view.successors.length > 0) || (showExit && credits.length > 0)
   const canShow = connected !== null && (holds || views.length > 0 || mine.length > 0 || reading || unread)
   if (!canShow) return null
+  const setupLink = plain && chainId === 4663 && dex === 4 && gateOpen(vaultGate)
+  const setupExit = plain && !setupLink && target !== null
 
   return (
     <div className="dm-position-automation" data-v2in-position={tokenId} data-v2in-mode={mode ?? 'off'}>
-      <Button type="button" variant="outline" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={`automation-controls-${chainId}-${dex}-${tokenId}`} data-automation-control="">
-        {label} · {standing}{fundsPending ? ' · Funds available' : ''}
-      </Button>
+      {setupLink ? <LinkButton href={sequenceHref(tokenId)} variant="primary" data-automation-control="" data-automation-setup="" data-automate-entry={tokenId}>Set up automation</LinkButton>
+        : setupExit ? <Button type="button" variant="primary" onClick={() => setOpen({ kind: 'mandate', target })} data-automation-control="" data-automation-setup="" data-v2in-open="mandate">Set up automation</Button>
+          : <Button type="button" variant="outline" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={`automation-controls-${chainId}-${dex}-${tokenId}`} data-automation-control="">
+            {label} · {standing}{fundsPending ? ' · Funds available' : ''}
+          </Button>}
+      {(setupLink || setupExit) && fundsPending && <Button type="button" variant="outline" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={`automation-controls-${chainId}-${dex}-${tokenId}`} data-automation-recovery-toggle="">Recover funds</Button>}
       <div id={`automation-controls-${chainId}-${dex}-${tokenId}`} hidden={!expanded} className="dm-automation-panel" data-automation-panel="">
       {/* The chain's status before any figure of it: behind or unavailable, and §5.3's halt banner (the owner's actions stay). */}
       {body && views.length > 0 && chainState && (chainState.state !== 'current' || chainState.halted === true) && <IndexStatus chains={body.chains} chainId={chainId} what="Your automation" />}
       {unread && answer && answer.reply.kind !== 'ok' && <IndexStatus failed={answer.reply} chainId={chainId} what="Your automation" />}
       {body && (body.truncated.vaults || body.truncated.mandates) && <p role="status" className="dm-acct-note">Some automation records are not included in this read. Available balances and recovery remain below.</p>}
       {current && (!protection || !showExit) && <VaultCard view={current} tokens={tokensOfView(current)} variant="page" nowSeconds={now} onAction={(kind, subject) => setOpen({ kind, vault: current, subject: subject ?? null })} />}
-      {plain && <div className="dm-automation-choices">
-        <p className="dm-acct-note">Choose one service for this position: compounding or Auto-exit.</p>
-        {chainId === 4663 && dex === 4 && <AutomateEntry tokenId={tokenId} open variant="action" />}
-        {target && <Button type="button" variant="primary" size="sm" onClick={() => setOpen({ kind: 'mandate', target })} data-v2in-open="mandate">Turn on Auto-exit</Button>}
-      </div>}
-      {legacy && holder && <SequenceSwitch tokenId={tokenId} holder={holder} liquid={liquid} fallback={<p className="dm-acct-note">This position uses an earlier automation. Its controls depend on that service being available.</p>} />}
+      {!current && !plain && !reading && <p role="status" className="dm-acct-note" data-automation-eligibility={eligibility}>{eligibility === 'subscribed' ? 'This position is linked to another service.' : eligibility === 'unsupported' ? 'Automation is not supported for this position.' : stateUnavailable ? 'Automation data is unavailable. Refresh to check again.' : null}</p>}
+      {stateUnavailable && <Button type="button" variant="outline" size="sm" onClick={() => changed()} data-automation-refresh="">Refresh</Button>}
       {showExit && cardTarget && gateOpen(exitGate) && (
         <AutoExitCard
           target={cardTarget}
@@ -291,7 +288,7 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
           nowSeconds={now}
           offer={target ? (target.vault ? 'member' : 'plain') : null}
           protection={protection}
-          v1Automated={v1Automated}
+          stateAvailable={!stateUnavailable}
           turnOff={turnOff}
           onTurnOn={() => {
             if (target) setOpen({ kind: 'mandate', target })

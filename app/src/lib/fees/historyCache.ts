@@ -93,8 +93,8 @@ function snapshot(v: unknown, now: number): CachedFeeHistory {
   // Age is from the actual chain snapshot as well as the save, never reset by a restore.
   if (st.timestamp * 1_000 > s.savedAt + 60_000 || now - st.timestamp * 1_000 >= HISTORY_MAX_AGE_MS) invalid()
   const h = requireObject(s.history, ['mintedAt', 'earned', 'collected', 'points', 'events', 'through'])
-  const mint = requireObject(h.mintedAt, ['block', 'timestamp'])
-  const mintedAt = { block: number(mint.block, st.block), timestamp: number(mint.timestamp, st.timestamp) }
+  const mint = requireObject(h.mintedAt, ['block', 'timestamp', 'sqrtPriceX96'])
+  const mintedAt = { block: number(mint.block, st.block), timestamp: number(mint.timestamp, st.timestamp), ...(mint.sqrtPriceX96 === undefined ? {} : { sqrtPriceX96: price(mint.sqrtPriceX96).toString() }) }
   const earned = pair(h.earned), collected = pair(h.collected)
   if (earned.some((n, i) => n !== collected[i] + st.unclaimed[i])) invalid()
   let lastBlock = -1, lastTime = 0

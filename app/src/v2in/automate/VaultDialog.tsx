@@ -250,7 +250,19 @@ export interface VaultDialogProps {
   onChanged: (snapshot?: VaultSnapshot) => void
 }
 
-export function VaultDialog({ kind, view, tokens, gate, subject = null, exit, onTurnOff, onClose, onChanged }: VaultDialogProps) {
+function sameTokenPair(a: VaultDialogProps['tokens'], b: VaultDialogProps['tokens']): boolean {
+  return a === b || (a !== null && b !== null && a.every((token, index) => {
+    const next = b[index]
+    return token.address === next.address && token.label === next.label && token.decimals === next.decimals && token.known === next.known
+  }))
+}
+
+export function VaultDialog({ kind, view, tokens: receivedTokens, gate, subject = null, exit, onTurnOff, onClose, onChanged }: VaultDialogProps) {
+  // A portfolio/credit refresh can recreate an identical pair while a wallet confirmation is pending. Preserve that
+  // pair's identity so display-only churn cannot replace the review or abandon the running step. Real token changes
+  // still replace it, and action/session/review changes retain their existing resets and on-chain checks.
+  const [tokens, setTokens] = useState(receivedTokens)
+  if (!sameTokenPair(tokens, receivedTokens)) setTokens(receivedTokens)
   const locked = gate.mode === 'preview'
   const live = useLiveSession(!locked, view.chainId, gate.contracts)
   const session = live.session

@@ -11,12 +11,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
-import { keccak256, toBytes } from 'viem';
+import { keccak256, toBytes, numberToHex, pad, encodeAbiParameters } from 'viem';
 import { fakeNode } from './support/fake-node.mjs';
 import { RPC_URL } from './support/browser-chain.mjs';
 import { memoryCache } from './support/fees/fake-chain.mjs';
 import { HEAD, HOLDER, KEY, OWNER_MINT, OWNER_STATE, OWNER_STEPS, USDG, VAULT, ledgerWorld } from './support/fees/ledger-world.mjs';
-import { positionLogs, txOf } from './support/fees/ledger-chain.mjs';
+import { positionLogs, txOf, word } from './support/fees/ledger-chain.mjs';
 
 const require = createRequire(import.meta.url);
 const routes = require('../.test-build/app/functions/_lib/chainRoutes.js');
@@ -32,6 +32,20 @@ const ORIGIN = 'https://domino.money';
 const ENV = { LOCAL_RPC_URL: 'https://rpc.domino.money/test-token-0123456789abcdef/' };
 const FLOOR = 69_249_061;
 const ID = '3325113';
+const V2_HEAD = 82_880_000;
+const V2_MINT = { block: V2_HEAD - 1_000, liquidity: OWNER_MINT.liquidity };
+const v2Event = (address, topics, values, block, tx = txOf(block), index = 100) => ({ address, topics, data: `0x${values.map((value) => word(value).slice(2)).join('')}`, blockNumber: numberToHex(block), logIndex: numberToHex(index), transactionHash: tx, blockHash: `0x${'cd'.repeat(32)}`, transactionIndex: '0x0', removed: false });
+const v2Mint = (id = ID, mint = V2_MINT) => v2Event(ledger.V2_ZAP, [ledger.V2_ACTION, word(1n), pad(HOLDER), word(id)], [0n, mint.liquidity, 0n], mint.block);
+const mintHint = (id = ID, mint = V2_MINT) => ({ tokenId: String(id), block: mint.block, tx: mint.tx ?? txOf(mint.block) });
+const v2Step = (block, delta, amounts, id = ID) => v2Event(ledger.V2_ZAP, [ledger.V2_STEP, word(0n), pad(HOLDER), word(id)], [4n, KEY.currency0, KEY.currency1, KEY.fee, KEY.tickSpacing, KEY.hooks, delta, ...amounts], block);
+const v2World = (overrides = {}) => ledgerWorld({ vault: null, setup: false, mint: V2_MINT, steps: [], head: V2_HEAD, extraLogs: [v2Mint()], ...overrides });
+const mintSwap = (poolId, price = OWNER_STATE.sqrtPriceX96, index = 200) => v2Event(fees.POOL_MANAGER, [ledger.MINT_SWAP, poolId, pad(HOLDER)], [-1n, 1n, price, 1_000n, 1n, 3_000n], V2_MINT.block, txOf(V2_MINT.block), index);
+const prunedNode = (world, swapLogs) => ({ fetch: async (url, init) => {
+  const call = JSON.parse(init.body);
+  if (call.method === 'eth_call' && Number(call.params[1]) === V2_MINT.block) return new Response(JSON.stringify({ jsonrpc: '2.0', id: call.id, error: { code: -32000, message: 'historical state unavailable: pruned' } }));
+  if (swapLogs !== undefined && call.method === 'eth_getLogs' && call.params[0].topics[0] === ledger.MINT_SWAP) return new Response(JSON.stringify({ jsonrpc: '2.0', id: call.id, result: swapLogs }));
+  return world.chain.fetch(url, init);
+} });
 
 /** The routes over `chain` as one isolate with one edge cache, on a clock of their own. */
 function edge(chain, clock = { time: 1_000_000 }) {
@@ -47,12 +61,28 @@ function edge(chain, clock = { time: 1_000_000 }) {
     memory: routes.chainRouteMemory(),
     log: (line) => lines.push(JSON.parse(line)),
   };
-  const ask = async (body, headers = {}) => {
+  const askOnce = async (body, headers = {}) => {
     const request = new Request(`${ORIGIN}/api/fees/v2/ledger`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN, 'Sec-Fetch-Site': 'same-origin', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
     const response = await routes.answerChainRoute('ledger', { request, env: ENV }, runtime);
     return { status: response.status, body: await response.json(), headers: response.headers };
   };
-  return { ask, lines, stored, clock, runtime };
+  // Existing accounting fixtures follow the bounded discovery cursor. Stop at the lookup/byte budget so those
+  // tests still exercise a single settlement step; new cursor tests use askOnce explicitly.
+  const ask = async (body, headers = {}) => {
+    for (let attempt = 0; attempt < 25; attempt++) {
+      const result = await askOnce(body, headers);
+      let discovery = false;
+      for (const position of result.body.positions ?? []) {
+        if (!position.ok || position.why !== 'reading') continue;
+        const kept = stored.get(`${ORIGIN}/api/fees/v1/cache/c1/ledger2/${position.tokenId}/0`);
+        const saved = kept ? await kept.clone().json() : null;
+        if (saved && saved.scanned === position.through && saved.scanned < result.body.block) discovery = true;
+      }
+      if (!discovery) return result;
+    }
+    throw new Error('bounded discovery did not complete');
+  };
+  return { ask, askOnce, lines, stored, clock, runtime };
 }
 
 /** Every eth_getLogs the node got (after the transport's windows), and every one of the PoolManager's. */
@@ -89,6 +119,432 @@ test('the engine, its two events and the vault’s checkpoint are the deployment
   assert.equal(ledger.LEDGER_FLOOR, FLOOR);
 });
 
+test('V2 pins match the verified deployment and event ABI signatures', () => {
+  assert.equal(ledger.MINT_SWAP, keccak256(toBytes('Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24)')));
+  const deployment = JSON.parse(readFileSync(new URL('../../docs/deployments/v2-robinhood-4663-2026-10-04/deployment.json', import.meta.url), 'utf8'));
+  assert.equal(ledger.V2_ZAP, deployment.contracts['zap.v4']);
+  assert.equal(ledger.V2_FACTORY, deployment.contracts['vaultFactory.v4']);
+  for (const [topic, signature] of [
+    [ledger.V2_ACTION, 'PositionActionExecuted(uint8,address,uint256,uint256,uint128,bytes32)'],
+    [ledger.V2_STEP, 'PositionLiquidityChanged(bytes32,address,uint256,(uint8,address,address,uint24,int24,address),int256,int256,int256)'],
+    [ledger.V2_VAULT_CREATED, 'VaultCreated(address,address,uint256,uint8,uint256)'],
+    [ledger.V2_COLLECTED, 'FeesCollected(uint256,uint256,uint256)'],
+    [ledger.V2_COMPOUNDED, 'Compounded(uint256,uint128,uint256,uint256,uint256,uint256,uint64)'],
+  ]) assert.equal(topic, keccak256(toBytes(signature)));
+});
+
+test('a verified indexed V2 mint completes on its first read, with exact mint and no fabricated previous fees', async () => {
+  const { chain } = v2World();
+  const result = await edge(chain).askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+  assert.equal(result.status, 200);
+  assert.ok(isLedgerResponse(result.body));
+  const [position] = result.body.positions;
+  assert.equal(position.exact, true, position.why);
+  assert.equal(position.mint.block, V2_MINT.block);
+  assert.ok(position.mint.t > 0);
+  assert.equal(position.mint.sqrtPriceX96, OWNER_STATE.sqrtPriceX96.toString());
+  assert.deepEqual(position.entries.map((entry) => [entry.kind, entry.fees]), [['mint', ['0', '0']]]);
+  assert.ok(logReads(chain).every((filter) => Number(filter.fromBlock) >= V2_MINT.block));
+  assert.equal(folded(result.body).phase, 'verified');
+});
+
+test('a hint is an exact PM mint proof, never authority to skip history on a wrong tx, token or block', async () => {
+  for (const hint of [mintHint(ID, { ...V2_MINT, tx: txOf(V2_MINT.block, 9) }), { ...mintHint(), block: V2_MINT.block + 1 }]) {
+    const { chain } = v2World();
+    const result = await edge(chain).askOnce({ tokenIds: [ID], mintHints: [hint] });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.positions[0].why, 'reading');
+    assert.equal(result.body.positions[0].mint, null);
+    assert.ok(logReads(chain).some((filter) => Number(filter.fromBlock) === FLOOR));
+  }
+  for (const hint of [{ ...mintHint(), tokenId: '9' }, { ...mintHint(), extra: 1 }, { ...mintHint(), block: 1 }, { ...mintHint(), tx: '0x1234' }]) {
+    assert.equal(ledger.ledgerRequestOf({ tokenIds: [ID], mintHints: [hint] }), null);
+  }
+});
+
+test('cold discovery advances bounded windows and a newly supplied valid mint bypasses the earlier incomplete answer', async () => {
+  const { chain } = v2World();
+  const e = edge(chain);
+  const first = await e.askOnce({ tokenIds: [ID] });
+  assert.equal(first.body.positions[0].why, 'reading');
+  assert.equal(first.body.positions[0].through, FLOOR + ledger.LEDGER_SCAN_BLOCKS - 1);
+  const second = await e.askOnce({ tokenIds: [ID] });
+  assert.ok(second.body.positions[0].through > first.body.positions[0].through);
+  assert.ok(logReads(chain).every((filter) => Number(filter.toBlock) - Number(filter.fromBlock) < ledger.LEDGER_SCAN_BLOCKS));
+  const ready = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+  assert.equal(ready.body.positions[0].exact, true, ready.body.positions[0].why);
+});
+
+test('a previous unhinted failure does not hide a valid indexed mint in the failure cache', async () => {
+  const world = v2World();
+  const e = edge(world.chain);
+  const digest = await fees.sha256(`${ID}|${ledger.LEDGER_ANSWER_VERSION}|`);
+  e.stored.set(`${ORIGIN}/api/fees/v1/cache/c1/ledgerFail2/${digest}/0`, new Response(JSON.stringify({ outcome: 'rpc_unavailable', seconds: 60 }), { headers: { 'X-Fees-Stored-At': String(e.clock.time) } }));
+  const old = await e.askOnce({ tokenIds: [ID] });
+  assert.equal(old.status, 502);
+  const indexed = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+  assert.equal(indexed.status, 200);
+  assert.equal(indexed.body.positions[0].exact, true);
+});
+
+test('a late cold response cannot overwrite the mint and complete ledger of the newer hinted response', async () => {
+  const world = v2World();
+  let release, started;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const began = new Promise((resolve) => { started = resolve; });
+  const node = { fetch: async (url, init) => {
+    const question = JSON.parse(init.body);
+    if (question.method === 'eth_getLogs' && Number(question.params[0].fromBlock) === FLOOR) { started(); await gate; }
+    return world.chain.fetch(url, init);
+  } };
+  const e = edge(node);
+  const cold = e.askOnce({ tokenIds: [ID] });
+  await began;
+  try {
+    const ready = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+    assert.equal(ready.body.positions[0].exact, true);
+  } finally { release(); }
+  assert.equal((await cold).body.positions[0].why, 'reading');
+  const saved = await e.stored.get(`${ORIGIN}/api/fees/v1/cache/c1/ledger2/${ID}/0`).clone().json();
+  assert.equal(saved.scanned, V2_HEAD);
+  assert.equal(saved.through, V2_HEAD);
+  assert.equal(saved.mint.block, V2_MINT.block);
+  assert.equal(saved.entries.length, 1);
+});
+
+test('a recent hinted mint is not starved by a second NFT still discovering its older history', async () => {
+  const older = more(2);
+  const { chain } = v2World({ extraLogs: [v2Mint(), ...older.extraLogs], extraPositions: older.extraPositions });
+  const result = await edge(chain).askOnce({ tokenIds: older.ids, mintHints: [mintHint()] });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.positions.find((p) => p.tokenId === ID).exact, true);
+  assert.equal(result.body.positions.find((p) => p.tokenId !== ID).why, 'reading');
+  assert.ok(logReads(chain).every((filter) => Number(filter.toBlock) - Number(filter.fromBlock) < ledger.LEDGER_SCAN_BLOCKS));
+});
+
+test('bounded discovery waits for a later V2 factory proof instead of permanently rejecting a not-yet-proven holder', async () => {
+  const factoryBlock = V2_MINT.block + ledger.LEDGER_SCAN_BLOCKS + 100;
+  const factory = v2Event(ledger.V2_FACTORY, [ledger.V2_VAULT_CREATED, pad(HOLDER), pad(VAULT), word(ID)], [4n, 0n], factoryBlock);
+  const { chain } = v2World({ head: factoryBlock + 500, extraLogs: [factory] });
+  const e = edge(chain);
+  let result;
+  for (let i = 0; i < 8; i++) {
+    result = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+    assert.equal(result.status, 200);
+    assert.notEqual(result.body.positions[0].why, 'unseen');
+    if (result.body.positions[0].exact) break;
+  }
+  assert.equal(result.body.positions[0].exact, true, JSON.stringify(result.body));
+  assert.ok(logReads(chain).every((filter) => Number(filter.toBlock) - Number(filter.fromBlock) < ledger.LEDGER_SCAN_BLOCKS));
+});
+
+test('a V2 fee-only collect is exact; an S1 add or withdrawal never counts its principal as fees', async () => {
+  const block = V2_MINT.block + 100;
+  for (const [kind, delta, amounts, exact] of [ ['collect', 0n, [123n, 456n], true], ['increase', 10n, [-1_000n, -2_000n], false], ['decrease', 10n, [1_000n, 2_000n], false] ]) {
+    const signed = kind === 'decrease' ? -delta : delta;
+    const { chain } = v2World({ steps: [{ block, kind, delta, fees: [123n, 456n] }], extraLogs: [v2Mint(), v2Step(block, signed, amounts)] });
+    const result = await edge(chain).askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+    const position = result.body.positions[0];
+    assert.equal(position.exact, exact, JSON.stringify(position));
+    assert.deepEqual(position.entries.at(-1).fees, exact ? ['123', '456'] : null);
+  }
+});
+
+test('V2 vault fees use FeesCollected once; Compounded consumed amounts and aggregate service fees are not fresh NFT income', async () => {
+  const block = V2_MINT.block + 100;
+  const factory = v2Event(ledger.V2_FACTORY, [ledger.V2_VAULT_CREATED, pad(HOLDER), pad(VAULT), word(ID)], [4n, 0n], V2_MINT.block);
+  const collected = v2Event(VAULT, [ledger.V2_COLLECTED, word(ID)], [123n, 456n], block);
+  const compound = v2Event(VAULT, [ledger.V2_COMPOUNDED, word(ID)], [10n, 8_000n, 9_000n, 50n, 60n, 1n], block, txOf(block), 101);
+  const { chain, logs } = v2World({ vault: VAULT, steps: [{ block, kind: 'compound', delta: 10n, fees: [123n, 456n] }], extraLogs: [v2Mint(), factory, collected, compound] });
+  // The fixture's compound shape supplies PM collect/add and payment logs, but its old V1 engine logs are absent.
+  for (let i = logs.length - 1; i >= 0; i--) if ([ledger.ENGINE, VAULT].includes(logs[i].address) && ![ledger.V2_COLLECTED, ledger.V2_COMPOUNDED].includes(logs[i].topics[0])) logs.splice(i, 1);
+  const result = await edge(chain).askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+  assert.equal(result.status, 200);
+  const position = result.body.positions[0];
+  assert.equal(position.exact, true, JSON.stringify(position));
+  assert.deepEqual(position.entries.map((entry) => entry.fees), [['0', '0'], ['123', '456'], ['0', '0']]);
+  assert.ok(position.entries.every((entry) => entry.service === undefined));
+});
+
+test('old unseen V2 verdicts rebuild from their verified mint; old V1 warm history keeps its trusted owner', async () => {
+  const world = v2World();
+  const e = edge(world.chain);
+  const key = `${ORIGIN}/api/fees/v1/cache/c1/ledger2/${ID}/0`;
+  const old = { v: 2, poolId: world.poolId, through: V2_HEAD, scanned: V2_HEAD, mint: { ...mintHint(), t: world.timeAt(V2_MINT.block) }, holders: [HOLDER], trusted: [], vaults: [], entries: [], final: 'unseen', pending: { candidates: [], realized: [], service: [], paidIn: [], paidOut: [] } };
+  e.stored.set(key, new Response(JSON.stringify(old), { headers: { 'X-Fees-Stored-At': String(e.clock.time) } }));
+  const repaired = await e.askOnce({ tokenIds: [ID] });
+  assert.equal(repaired.body.positions[0].exact, true, repaired.body.positions[0].why);
+  assert.ok(logReads(world.chain).every((filter) => Number(filter.fromBlock) >= V2_MINT.block));
+  const saved = await e.stored.get(key).clone().json();
+  assert.equal(saved.v, 3);
+
+  const legacy = ledgerWorld({ vault: null, steps: [] });
+  const oldEdge = edge(legacy.chain);
+  const initial = await oldEdge.ask({ tokenIds: [ID] });
+  assert.equal(initial.body.positions[0].exact, true);
+  const kept = await oldEdge.stored.get(key).clone().json();
+  kept.v = 2;
+  kept.scanned = 80_200_000;
+  kept.through = kept.scanned;
+  oldEdge.stored.set(key, new Response(JSON.stringify(kept), { headers: { 'X-Fees-Stored-At': String(oldEdge.clock.time) } }));
+  legacy.chain.head = 80_210_000;
+  legacy.chain.log.length = 0;
+  oldEdge.clock.time += 60_000;
+  const migrated = await oldEdge.askOnce({ tokenIds: [ID] });
+  assert.equal(migrated.body.positions[0].exact, true, migrated.body.positions[0].why);
+  assert.ok(logReads(legacy.chain).every((filter) => Number(filter.fromBlock) > OWNER_MINT.block));
+  assert.deepEqual(migrated.body.positions[0].entries, initial.body.positions[0].entries);
+});
+
+test('the opening anchor is a fixed pool read at the verified mint block, even when fee settlements are inexact', async () => {
+  const block = V2_MINT.block + 100;
+  const world = v2World({ steps: [{ block, kind: 'increase', delta: 10n }], extraLogs: [v2Mint(), v2Step(block, 10n, [-1_000n, -2_000n])] });
+  const e = edge(world.chain);
+  const result = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.positions[0].exact, false);
+  assert.equal(result.body.positions[0].mint.sqrtPriceX96, OWNER_STATE.sqrtPriceX96.toString());
+  const historical = world.chain.log.filter((call) => call.method === 'eth_call' && Number(call.params[1]) === V2_MINT.block);
+  assert.equal(historical.length, 1);
+  assert.ok(historical[0].params[0].data.includes(fees.SELECTOR.getSlot0));
+  assert.equal(e.lines.find((line) => line.event === 'ledger_mint_price').read, 1);
+});
+
+test('opening prices are deduplicated by pool and block and final values survive ledger refreshes', async () => {
+  const other = more(2, { at: V2_MINT.block - 1_000 });
+  const world = v2World({ head: V2_HEAD + fees.SAFE_DEPTH, extraLogs: [v2Mint(), ...other.extraLogs], extraPositions: other.extraPositions });
+  const e = edge(world.chain);
+  const question = { tokenIds: other.ids, mintHints: other.ids.map((id) => mintHint(id)) };
+  const first = await e.askOnce(question);
+  assert.ok(first.body.positions.every((position) => position.mint.sqrtPriceX96 === OWNER_STATE.sqrtPriceX96.toString()));
+  const atMint = () => world.chain.log.filter((call) => call.method === 'eth_call' && Number(call.params[1]) === V2_MINT.block);
+  assert.equal(atMint().length, 1, 'same pool and block: one getSlot0');
+  e.clock.time += 60_000;
+  await e.askOnce({ ...question, fresh: true });
+  assert.equal(atMint().length, 1, 'a finalized anchor needs no second archive read');
+});
+
+test('recent opening prices are rechecked, and read once more when their block becomes final', async () => {
+  const world = v2World();
+  const e = edge(world.chain);
+  const question = { tokenIds: [ID], mintHints: [mintHint()] };
+  await e.askOnce(question);
+  const atMint = () => world.chain.log.filter((call) => call.method === 'eth_call' && Number(call.params[1]) === V2_MINT.block).length;
+  assert.equal(atMint(), 1);
+  e.clock.time += 3_000;
+  await e.askOnce({ ...question, fresh: true });
+  assert.equal(atMint(), 1, 'brief provisional cache');
+  e.clock.time += 10_000;
+  await e.askOnce({ ...question, fresh: true });
+  assert.equal(atMint(), 2, 'recent block rechecked');
+  world.chain.head += fees.SAFE_DEPTH;
+  e.clock.time += 3_000;
+  await e.askOnce({ ...question, fresh: true });
+  assert.equal(atMint(), 3, 'provisional value is not silently promoted to finalized');
+});
+
+test('unavailable archive state omits the anchor, keeps the ledger exact, and briefly cools down only that pool/block', async () => {
+  const world = v2World();
+  let attempts = 0;
+  const node = { fetch: async (url, init) => {
+    const call = JSON.parse(init.body);
+    if (call.method === 'eth_call' && Number(call.params[1]) === V2_MINT.block) {
+      attempts++;
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: call.id, error: { code: -32000, message: 'missing trie node' } }));
+    }
+    return world.chain.fetch(url, init);
+  } };
+  const e = edge(node);
+  const question = { tokenIds: [ID], mintHints: [mintHint()] };
+  const result = await e.askOnce(question);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.positions[0].exact, true);
+  assert.equal(result.body.positions[0].mint.sqrtPriceX96, undefined);
+  const diagnostic = e.lines.find((line) => line.event === 'ledger_mint_price');
+  assert.equal(diagnostic.rpc, 1);
+  assert.equal(diagnostic.rpcCode, -32000);
+  assert.equal(diagnostic.rpcClass, 'historical_unavailable');
+  assert.equal(diagnostic.swapEmpty, 1);
+  assert.ok(!JSON.stringify(diagnostic).includes('missing trie node'));
+  e.clock.time += 3_000;
+  await e.askOnce({ ...question, fresh: true });
+  assert.equal(attempts, 1);
+  assert.equal(e.lines.filter((line) => line.event === 'ledger_mint_price').at(-1).cooldown, 1);
+});
+
+test('a pruned historical state uses the last real Swap of the verified mint block only', async () => {
+  const world = v2World({ head: V2_HEAD + fees.SAFE_DEPTH });
+  const first = OWNER_STATE.sqrtPriceX96 - 100n;
+  const last = OWNER_STATE.sqrtPriceX96 - 50n;
+  world.logs.push(mintSwap(world.poolId, last, 205), mintSwap(world.poolId, first, 105));
+  const e = edge(prunedNode(world));
+  const question = { tokenIds: [ID], mintHints: [mintHint()] };
+  const result = await e.askOnce(question);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.positions[0].exact, true);
+  assert.equal(result.body.positions[0].mint.sqrtPriceX96, last.toString());
+  const asks = world.asked.filter((filter) => filter.topics[0] === ledger.MINT_SWAP);
+  assert.equal(asks.length, 1);
+  assert.deepEqual(asks[0], { address: fees.POOL_MANAGER, from: V2_MINT.block, to: V2_MINT.block, topics: [ledger.MINT_SWAP, world.poolId] });
+  const metric = e.lines.find((line) => line.event === 'ledger_mint_price');
+  assert.equal(metric.rpcClass, 'historical_unavailable');
+  assert.equal(metric.swapRead, 1);
+  e.clock.time += 60_000;
+  const again = await e.askOnce({ ...question, fresh: true });
+  assert.equal(again.body.positions[0].mint.sqrtPriceX96, last.toString());
+  assert.equal(world.asked.filter((filter) => filter.topics[0] === ledger.MINT_SWAP).length, 1, 'final end-block price is shared in the anchor cache');
+});
+
+test('the mint-block Swap fallback rejects the whole pool answer on any unexpected or malformed log', async () => {
+  const world = v2World();
+  const good = mintSwap(world.poolId);
+  for (const [label, bad] of [
+    ['other pool', { ...good, topics: [ledger.MINT_SWAP, `0x${'ef'.repeat(32)}`, pad(HOLDER)] }],
+    ['other contract', { ...good, address: ledger.V2_ZAP }],
+    ['other block', { ...good, blockNumber: numberToHex(V2_MINT.block + 1) }],
+    ['removed', { ...good, removed: true }],
+    ['duplicate log index', { ...good }],
+    ['different block hash', { ...good, logIndex: '0xff', blockHash: `0x${'de'.repeat(32)}` }],
+    ['malformed ABI', { ...good, data: '0x' }],
+    ['zero price', mintSwap(world.poolId, 0n, 201)],
+    ['out-of-range price', mintSwap(world.poolId, 1n << 160n, 201)],
+    ['noncanonical signed amount', { ...mintSwap(world.poolId, OWNER_STATE.sqrtPriceX96, 201), data: `0x${word(1n << 128n).slice(2)}${good.data.slice(66)}` }],
+    ['inconsistent transaction index', { ...good, logIndex: '0xff', transactionIndex: '0x1' }],
+  ]) {
+    routes.resetChainRouteMemory();
+    const e = edge(prunedNode(world, [good, bad]));
+    const result = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+    assert.equal(result.status, 200, label);
+    assert.equal(result.body.positions[0].exact, true, label);
+    assert.equal(result.body.positions[0].mint.sqrtPriceX96, undefined, label);
+    assert.equal(e.lines.find((line) => line.event === 'ledger_mint_price').swapInvalid, 1, label);
+  }
+  routes.resetChainRouteMemory();
+  const e = edge(prunedNode(world, [good, { ...good, logIndex: '0xff', transactionIndex: '0x1', transactionHash: txOf(V2_MINT.block + 1) }, { ...good, logIndex: '0x100', transactionIndex: '0x2' }]));
+  const repeated = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+  assert.equal(repeated.body.positions[0].mint.sqrtPriceX96, undefined, 'a transaction hash cannot recur at another index after an intervening transaction');
+  assert.equal(e.lines.find((line) => line.event === 'ledger_mint_price').swapInvalid, 1);
+});
+
+test('historical call and exact-block Swap fallback share the same optional deadline', async () => {
+  const world = v2World();
+  let firstStarted;
+  let fallbackSignal;
+  const node = { fetch: async (url, init) => {
+    const call = JSON.parse(init.body);
+    if (call.method === 'eth_call' && Number(call.params[1]) === V2_MINT.block) {
+      firstStarted = performance.now();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: call.id, error: { code: -32000, message: 'historical state unavailable' } }));
+    }
+    if (call.method === 'eth_getLogs' && call.params[0].topics[0] === ledger.MINT_SWAP) {
+      fallbackSignal = init.signal;
+      return new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+    }
+    return world.chain.fetch(url, init);
+  } };
+  const e = edge(node);
+  const start = performance.now();
+  const result = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.positions[0].exact, true);
+  assert.equal(result.body.positions[0].mint.sqrtPriceX96, undefined);
+  assert.equal(fallbackSignal.aborted, true);
+  assert.equal(fallbackSignal.reason.name, 'AbortError');
+  assert.ok(performance.now() - firstStarted < ledger.MINT_PRICE_TIMEOUT_MS + 200, 'the fallback gets only what remains of the initial deadline');
+  assert.ok(performance.now() - start < ledger.MINT_PRICE_TIMEOUT_MS + 800);
+  assert.ok(!e.lines.some((line) => ['local_rpc_rest', 'local_rpc_down'].includes(line.event)));
+});
+
+test('optional anchor diagnostics distinguish a failed subcall from a noncanonical three-word response', async () => {
+  for (const success of [false, true]) {
+    const world = v2World();
+    const node = { fetch: async (url, init) => {
+      const call = JSON.parse(init.body);
+      if (call.method === 'eth_call' && Number(call.params[1]) === V2_MINT.block) {
+        const data = success ? `0x${[OWNER_STATE.sqrtPriceX96, 1n, 0n].map((value) => word(value).slice(2)).join('')}` : '0x';
+        const result = encodeAbiParameters([{ type: 'tuple[]', components: [{ type: 'bool', name: 'success' }, { type: 'bytes', name: 'returnData' }] }], [[{ success, returnData: data }]]);
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: call.id, result }));
+      }
+      return world.chain.fetch(url, init);
+    } };
+    const e = edge(node);
+    const result = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.positions[0].exact, true);
+    assert.equal(result.body.positions[0].mint.sqrtPriceX96, undefined);
+    const diagnostic = e.lines.find((line) => line.event === 'ledger_mint_price');
+    assert.equal(diagnostic.subcall, success ? 0 : 1);
+    assert.equal(diagnostic.words3, success ? 1 : 0);
+    assert.equal(diagnostic.invalid, success ? 1 : 0);
+    assert.ok(!JSON.stringify(diagnostic).includes(OWNER_STATE.sqrtPriceX96.toString()));
+    assert.ok(!JSON.stringify(diagnostic).includes(world.poolId));
+  }
+});
+
+test('malformed or out-of-range historical prices never become chart anchors', async () => {
+  for (const price of [0n, 1n << 160n]) {
+    const world = v2World();
+    const node = { fetch: async (url, init) => {
+      const call = JSON.parse(init.body);
+      if (call.method === 'eth_call' && Number(call.params[1]) === V2_MINT.block) {
+        const data = `0x${[price, 1n, 0n, 3_000n].map((value) => word(value).slice(2)).join('')}`;
+        const result = encodeAbiParameters([{ type: 'tuple[]', components: [{ type: 'bool', name: 'success' }, { type: 'bytes', name: 'returnData' }] }], [[{ success: true, returnData: data }]]);
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: call.id, result }));
+      }
+      return world.chain.fetch(url, init);
+    } };
+    const result = await edge(node).askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.positions[0].exact, true);
+    assert.equal(result.body.positions[0].mint.sqrtPriceX96, undefined);
+  }
+});
+
+test('a late optional failure preserves a finalized pool/block anchor saved by another request', async () => {
+  const world = v2World({ head: V2_HEAD + fees.SAFE_DEPTH });
+  const key = fees.cacheUrl(ORIGIN, 'mintPrice1', world.poolId, V2_MINT.block);
+  let e;
+  const node = { fetch: async (url, init) => {
+    const call = JSON.parse(init.body);
+    if (call.method === 'eth_call' && Number(call.params[1]) === V2_MINT.block) {
+      e.stored.set(key, new Response(JSON.stringify({ sqrtPriceX96: OWNER_STATE.sqrtPriceX96.toString(), finalized: true }), { headers: { 'X-Fees-Stored-At': String(e.clock.time) } }));
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: call.id, error: { code: -32000, message: 'missing trie node' } }));
+    }
+    return world.chain.fetch(url, init);
+  } };
+  e = edge(node);
+  const result = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.positions[0].exact, true);
+  const saved = await e.stored.get(key).clone().json();
+  assert.deepEqual(saved, { sqrtPriceX96: OWNER_STATE.sqrtPriceX96.toString(), finalized: true });
+});
+
+test('an optional archive read is cancelled within its short budget without resting unrelated node reads', async () => {
+  const world = v2World();
+  let observedSignal;
+  const node = { fetch: async (url, init) => {
+    const call = JSON.parse(init.body);
+    if (call.method === 'eth_call' && Number(call.params[1]) === V2_MINT.block) {
+      observedSignal = init.signal;
+      return new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+    }
+    return world.chain.fetch(url, init);
+  } };
+  const e = edge(node);
+  const start = performance.now();
+  const result = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.positions[0].exact, true);
+  assert.equal(result.body.positions[0].mint.sqrtPriceX96, undefined);
+  assert.equal(observedSignal.aborted, true);
+  assert.equal(observedSignal.reason.name, 'AbortError');
+  assert.equal(e.lines.find((line) => line.event === 'ledger_mint_price').deadline, 1);
+  assert.ok(performance.now() - start < ledger.MINT_PRICE_TIMEOUT_MS + 1_000);
+  assert.ok(!e.lines.some((line) => ['local_rpc_rest', 'local_rpc_down'].includes(line.event)));
+});
+
 // ---------------------------------------------------------------------------
 // What a ledger says
 // ---------------------------------------------------------------------------
@@ -105,7 +561,7 @@ test('the owner’s Auto-compound position: every compound’s exact fees and se
   assert.equal(position.why, undefined);
   assert.equal(position.through, HEAD);
   assert.equal(position.vault, VAULT);
-  assert.deepEqual(position.mint, { block: OWNER_MINT.block, tx: txOf(OWNER_MINT.block), t: position.mint.t });
+  assert.deepEqual(position.mint, { block: OWNER_MINT.block, tx: txOf(OWNER_MINT.block), t: position.mint.t, sqrtPriceX96: OWNER_STATE.sqrtPriceX96.toString() });
   assert.deepEqual(position.entries.map((entry) => [entry.kind, entry.block, entry.delta, entry.fees, entry.auto === true]), [
     ['mint', 73_233_307, '36560795792617752', ['0', '0'], false],
     ['increase', 73_468_040, '330426593119223', ['13102257', '1126639544530725964113'], true],
@@ -303,7 +759,7 @@ function more(count, { owner = HOLDER, at = 73_300_000 } = {}) {
   return { extraLogs: logs, extraPositions: positions, ids: [ID, ...positions.map((p) => String(p.tokenId))] };
 }
 
-test('eight positions read cold: one log read for their own events and one for their owners’ transfers, from the floor and the mints, not two each', async () => {
+test('eight positions read cold: each bounded discovery window shares one own-event read across all eight', async () => {
   const many = more(8);
   const { chain } = ledgerWorld({ extraLogs: many.extraLogs, extraPositions: many.extraPositions });
   const { status, body } = await edge(chain).ask({ tokenIds: many.ids });
@@ -311,10 +767,11 @@ test('eight positions read cold: one log read for their own events and one for t
   assert.ok(body.positions.every((one) => one.ok && one.exact), JSON.stringify(body.positions.map((one) => one.why)));
   const reads = scans(chain);
   const own = reads.filter((filter) => [filter.address].flat().includes(owned.POSITION_MANAGER));
-  assert.equal(own.length, 1, 'round one: one read for the eight');
-  assert.deepEqual([own[0].address].flat().sort(), [owned.POSITION_MANAGER, ledger.ENGINE, owned.SETUP_CONTRACT].sort());
+  assert.equal(own.length, Math.ceil((HEAD - FLOOR + 1) / (ledger.LEDGER_SCAN_BLOCKS - fees.SAFE_DEPTH)), 'one shared read per bounded discovery window');
+  assert.deepEqual([own[0].address].flat().sort(), [owned.POSITION_MANAGER, ledger.ENGINE, owned.SETUP_CONTRACT, ledger.V2_ZAP, ledger.V2_FACTORY].sort());
   assert.equal(Number(own[0].fromBlock), FLOOR);
   assert.equal(own[0].topics[3].length, 8, 'its eight ids in one place');
+  assert.ok(own.every((filter) => filter.topics[3].length === 8 && Number(filter.toBlock) - Number(filter.fromBlock) < ledger.LEDGER_SCAN_BLOCKS));
   const paid = reads.filter((filter) => filter.topics[0] === owned.TRANSFER_TOPIC);
   assert.equal(paid.length, 1, 'round two: one read of the owners’ transfers, both ways');
   assert.equal(Number(paid[0].fromBlock), OWNER_MINT.block, 'from the earliest mint');

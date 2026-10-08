@@ -7,7 +7,8 @@ import { Pill } from '../../ui'
 import { TokenLabel } from '../../read/TokenLabel'
 import { nearestIndex } from '../../../lib/chart/inspect'
 import { linePath } from '../../../lib/chart/paths'
-import { figureWidth, historyLine, placeLabels, priceDomain, readablePrice, statusWords, type HistoryVerdict, type LabelAsk, type RangeFacts } from '../../../lib/chart/priceRange'
+import { figureWidth, historyLine, observedPriceLine, placeLabels, priceDomain, readablePrice, statusWords, type HistoryVerdict, type LabelAsk, type RangeFacts } from '../../../lib/chart/priceRange'
+import type { PoolPriceObservations } from '../../../lib/chart/positionOpened'
 import { logScale } from '../../../lib/chart/scale'
 import { shortDate, shortTime } from '../../../lib/format/time'
 import { useMediaQuery } from '../../../lib/useMediaQuery'
@@ -33,7 +34,7 @@ function historyNote(history: PoolHistory, verdict: HistoryVerdict | null, opene
   if (enabled && openedAt === null) return 'Opening time isn’t available yet. Showing the price now.'
   if (verdict?.kind === 'line') {
     const window = verdict.history.start === openedAt ? 'Since opened' : 'Last 7 days'
-    return verdict.history.missing ? `${window} · Some hours are missing.` : `${window} · Hourly prices`
+    return verdict.history.missing ? `${window} · Some hours are missing.` : `${window} · ${verdict.history.observed ? 'Measured prices' : 'Hourly prices'}`
   }
   if (verdict?.kind === 'none') {
     if (verdict.reason === 'not_built') return 'Price history is still being collected.'
@@ -66,19 +67,23 @@ function historyNote(history: PoolHistory, verdict: HistoryVerdict | null, opene
  * This module is its own chunk, loaded on a position's page only (PositionRange.tsx); its status and its box are
  * RangeStatus.tsx's, which the page draws in its place for the moment it loads.
  */
-export function PriceVsRange({ history = null, openedAt = null }: { history?: PoolHistoryAsk | null; openedAt?: number | null }) {
+export function PriceVsRange({ history = null, openedAt = null, observations = null }: { history?: PoolHistoryAsk | null; openedAt?: number | null; observations?: PoolPriceObservations | null }) {
   const facts = useContext(RangeFactsContext)
-  return facts ? <PriceChart facts={facts} ask={history} openedAt={openedAt} /> : null
+  return facts ? <PriceChart facts={facts} ask={history} openedAt={openedAt} observations={observations} /> : null
 }
 
-function PriceChart({ facts, ask, openedAt }: { facts: RangeFacts; ask: PoolHistoryAsk | null; openedAt: number | null }) {
+function PriceChart({ facts, ask, openedAt, observations }: { facts: RangeFacts; ask: PoolHistoryAsk | null; openedAt: number | null; observations: PoolPriceObservations | null }) {
   const { base, quote, lower, upper, lowerText, upperText, now, nowText, where } = facts
   const phone = useMediaQuery('(max-width: 767px)')
   const knownMint = openedAt !== null && Number.isSafeInteger(openedAt) && openedAt > 0 ? openedAt : null
   const history = usePoolHistory(knownMint === null ? null : ask)
   const verdict = useMemo<HistoryVerdict | null>(
-    () => (history.phase === 'answered' ? historyLine(history.data, { base: base.address, quote: quote.address }, { lower, upper }, history.at / 1000, knownMint) : null),
-    [history, base.address, quote.address, lower, upper, knownMint],
+    () => {
+      const data = history.phase === 'answered' ? history.data : null
+      const stored = history.phase === 'answered' ? historyLine(history.data, { base: base.address, quote: quote.address }, { lower, upper }, history.at / 1000, knownMint) : null
+      return ask ? observedPriceLine(stored, data, ask, { lower, upper }, knownMint, observations) : stored
+    },
+    [history, ask, base.address, quote.address, lower, upper, knownMint, observations],
   )
   const line = verdict?.kind === 'line' ? verdict.history : null
   const points = useMemo(() => line?.points ?? [], [line])
@@ -312,7 +317,7 @@ function PriceChart({ facts, ask, openedAt }: { facts: RangeFacts; ask: PoolHist
             Price now
           </span>
         )}
-        <span className="dm-pvr-note" title={knownMint ? `Opened ${shortDate(knownMint)} ${shortTime(knownMint)}` : undefined}>{historyNote(history, verdict, knownMint, ask !== null)}</span>
+        <span className="dm-pvr-note" title={line?.observed ? 'Pool price at the opening block and later measurements. Lines between measurements are guides.' : knownMint ? `Opened ${shortDate(knownMint)} ${shortTime(knownMint)}` : undefined}>{historyNote(history, verdict, knownMint, ask !== null)}</span>
       </div>
     </div>
   )

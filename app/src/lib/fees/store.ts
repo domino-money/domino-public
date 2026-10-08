@@ -28,9 +28,9 @@
  */
 import { LEDGER_READING_MS, MAX_LEDGER_IDS, MAX_STATE_IDS, STATE_REFRESH_MS } from './constants'
 import { HISTORY_MAX_AGE_MS, savedHistoryMatches, type HistoryCache } from './historyCache'
-import { agreement, foldLedger, type LedgerRead } from './ledger'
+import { agreement, foldLedger, ledgerMint, type LedgerRead } from './ledger'
 import type { Reading, Readings } from './readings'
-import type { FeeHistoryView, FeesReason, FeesScope, LedgerResponse, PositionState, RelayAnswer, StatePositionOk, StateResponse } from './types'
+import type { FeeHistoryView, FeesReason, FeesScope, LedgerMintHint, LedgerResponse, PositionState, RelayAnswer, StatePositionOk, StateResponse } from './types'
 
 export interface StoreDeps {
   historyCache?: HistoryCache
@@ -48,7 +48,7 @@ export interface StoreDeps {
    */
   postState: (tokenIds: readonly string[], signal?: AbortSignal, background?: boolean) => Promise<RelayAnswer<StateResponse>>
   /** The ledger read of up to eight ids (client.ts chainLedger); `fresh` after a settlement the kept one does not hold. */
-  postLedger: (tokenIds: readonly string[], fresh: boolean, signal?: AbortSignal) => Promise<RelayAnswer<LedgerResponse>>
+  postLedger: (tokenIds: readonly string[], fresh: boolean, signal?: AbortSignal, mintHints?: readonly LedgerMintHint[]) => Promise<RelayAnswer<LedgerResponse>>
   /** Calls `run` once `ms` have passed and the page is visible; returns a cancel. */
   later: (ms: number, run: () => void) => () => void
   /** A plain timer (for letting go of an id a moment after its last screen leaves); returns a cancel. */
@@ -76,6 +76,8 @@ export interface FeesStore {
   refresh(ids: readonly string[]): void
   /** 2026-09-28 (speed wave B, item 16): a /state read made elsewhere (a position's page's own), taken as the store's. */
   offer(answer: RelayAnswer<StateResponse>): void
+  /** Public indexed mint evidence; only the edge's verified answer can qualify history. */
+  offerMint(hint: LedgerMintHint): void
   /** The newest /state position read for `id` and its block (the page's header follows it), or null. */
   position(id: string): Readonly<{ position: StatePositionOk; block: number }> | null
   /**
@@ -146,6 +148,9 @@ interface Entry {
   ledger: LedgerRead | null
   /** A ledger read of this id on its way. */
   asking: boolean
+  mintHint?: LedgerMintHint
+  /** A hinted read supersedes an already-running cold scan for this NFT only. */
+  ledgerEpoch: number
   /** A reason no further ledger read changes (not_found, hooked_pool, a ledger too large). */
   settled: FeesReason | null
   /** Ledger reads in a row that could not reach the chain (RETRY_MS), and the cancel of the next one's wait. */
@@ -201,7 +206,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   const entry = (id: string): Entry => {
     let found = entries.get(id)
     if (!found) {
-      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, restored: false, state: null, read: null, stateReason: null, answered: false, stateFailures: 0, stateRetry: null, view: IDLE, ledger: null, asking: false, settled: null, failures: 0, retry: null, reading: 0, freshFor: 0, release: null, trace: NO_TRACE }
+      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, restored: false, state: null, read: null, stateReason: null, answered: false, stateFailures: 0, stateRetry: null, view: IDLE, ledger: null, asking: false, ledgerEpoch: 0, settled: null, failures: 0, retry: null, reading: 0, freshFor: 0, release: null, trace: NO_TRACE }
       entries.set(id, found)
     }
     return found
@@ -265,7 +270,8 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     }
     // Still being read: what it shows so far waits (the store asks again in a moment).
     if (ledger.position.why === 'reading') {
-      if (e.view.phase === 'idle' || e.view.phase === 'unavailable' || (e.view.phase === 'loading' && e.view.state !== state)) setView(e, { phase: 'loading', state })
+      const mintedAt = ledgerMint(ledger.position.mint, state)
+      if (e.view.phase === 'idle' || e.view.phase === 'unavailable' || (e.view.phase === 'loading' && (e.view.state !== state || e.view.mintedAt?.block !== mintedAt?.block || e.view.mintedAt?.sqrtPriceX96 !== mintedAt?.sqrtPriceX96))) setView(e, { phase: 'loading', state, ...(mintedAt ? { mintedAt } : {}) })
       return
     }
     const agrees = agreement(ledger, e.read.position, e.read.block)
@@ -306,6 +312,8 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
         const ids = batch.filter(([, isFresh]) => isFresh === fresh).map(([id]) => id)
         for (let i = 0; i < ids.length; i += MAX_LEDGER_IDS) {
           const part = ids.slice(i, i + MAX_LEDGER_IDS)
+          const epochs = new Map(part.map((id) => [id, entries.get(id)?.ledgerEpoch]))
+          const mintHints = part.flatMap((id) => entries.get(id)?.mintHint ? [entries.get(id)!.mintHint!] : [])
           for (const id of part) {
             const one = entries.get(id)
             if (!one) continue
@@ -315,13 +323,13 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
           const stop = new AbortController()
           const late = new Promise<RelayAnswer<LedgerResponse>>((done) => stop.signal.addEventListener('abort', () => done(UNANSWERED), { once: true }))
           const cancel = deps.timer(LEDGER_WAIT_MS, () => stop.abort())
-          Promise.race([deps.postLedger(part, fresh, stop.signal), late])
+          Promise.race([deps.postLedger(part, fresh, stop.signal, mintHints.length ? mintHints : undefined), late])
             .catch((): RelayAnswer<LedgerResponse> => UNANSWERED)
             .then((answer) => {
               cancel()
               for (const id of part) {
                 const one = entries.get(id)
-                if (one) ledgerAnswered(one, answer)
+                if (one && one.ledgerEpoch === epochs.get(id)) ledgerAnswered(one, answer)
               }
             })
         }
@@ -601,6 +609,23 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     },
     offer(answer) {
       if (answer.ok) for (const position of answer.value.positions) applyState(entry(position.tokenId), answer)
+    },
+    offerMint(hint) {
+      if (!/^[1-9][0-9]*$/.test(hint.tokenId) || !Number.isSafeInteger(hint.block) || hint.block <= 0 || !/^0x[0-9a-f]{64}$/i.test(hint.tx)) return
+      const e = entry(hint.tokenId)
+      const tx = hint.tx.toLowerCase()
+      if (e.mintHint?.block === hint.block && e.mintHint.tx === tx) return
+      e.mintHint = { tokenId: hint.tokenId, block: hint.block, tx }
+      // Exact history already has stronger evidence; don't restart it just because Activity arrived later.
+      if (e.ledger?.position.exact || e.settled === 'hooked_pool') return
+      e.ledgerEpoch++
+      e.asking = false
+      e.retry?.()
+      e.retry = null
+      e.settled = null
+      e.failures = 0
+      e.reading = 0
+      askLedger(e, true)
     },
     position: (id) => entries.get(id)?.read ?? null,
     redraw(id) {

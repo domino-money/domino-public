@@ -31,8 +31,9 @@ test('the list’s APR is the page’s own: the same history, the same arithmeti
   assert.equal(expected.ok, true);
   assert.deepEqual(aprOfView(view), { kind: 'rate', text: aprText(expected.rate) });
   assert.equal(aprOfView(view), aprOfView(view), 'worked out once per history');
-  // Under six hours: no rate, and the page's own reason.
-  assert.deepEqual(aprOfView(drawn('verified', 3)), { kind: 'missing', words: APR_MISSING.short });
+  const young = drawn('verified', 3);
+  assert.deepEqual(aprOfView(young), { kind: 'rate', text: aprText(positionApr(young.history, young.state, 1, 'all').rate) }, 'a verified young position uses its measured rate');
+  assert.deepEqual(aprOfView(drawn('verified', 0)), { kind: 'missing', words: APR_MISSING.short }, 'no elapsed time cannot be annualized');
   for (const phase of ['idle', 'loading', 'unclaimed-only', 'unavailable']) assert.equal(aprOfView({ phase, state: null, reason: 'rpc_unavailable' }), null);
 });
 
@@ -42,7 +43,7 @@ test('a saved history keeps the same calculation but carries its original age an
   const expected = positionApr(view.history, view.state, 1, 'all');
   assert.equal(expected.ok, true);
   assert.deepEqual(aprOfView(view), { kind: 'rate', text: aprText(expected.rate), saved: { at: view.savedAt, block: view.state.block, timestamp: view.state.timestamp } });
-  const short = { ...drawn('cached', 3), savedAt: view.savedAt, source: view.source };
+  const short = { ...drawn('cached', 0), savedAt: view.savedAt, source: view.source };
   assert.deepEqual(aprOfView(short), { kind: 'missing', words: `Saved history: ${APR_MISSING.short}. Not current.` });
 });
 

@@ -13,7 +13,7 @@ import { CASES, OWNER, TOKENS, decimalText, historyFor, rangeCase } from './supp
 
 const require = createRequire(import.meta.url);
 const chart = require('../.test-build/app/src/lib/chart/priceRange.js');
-const { ledgerOpenedAt, activityOpenedAt } = require('../.test-build/app/src/lib/chart/positionOpened.js');
+const { ledgerOpenedAt, activityOpenedAt, activityMint } = require('../.test-build/app/src/lib/chart/positionOpened.js');
 const { spacedTimeTicks } = require('../.test-build/app/src/components/positions/visual/ticks.js');
 const { walletCard } = require('../.test-build/app/src/lib/walletCards.js');
 const { chainPoolPrice } = require('../.test-build/app/src/lib/read/screens/positions.js');
@@ -232,6 +232,49 @@ const END = 1_790_000_000 - (1_790_000_000 % HOUR) + 1_200;
 const BODY = (item) => ({ poolId: item.poolId, currency: item.base.address, windowSeconds: 604_800, resolutionSeconds: HOUR });
 const range = (facts) => ({ lower: facts.lower, upper: facts.upper });
 
+test('first-hour history starts at the measured creation-block price, including when hourly history has not arrived', () => {
+  const item = CASES.inside;
+  const { facts } = factsOf(item);
+  const data = historyFor(item, BODY(item), { end: END });
+  const mint = END - 900;
+  const observations = {
+    poolId: item.poolId, currencies: [item.pool.currency0, item.pool.currency1],
+    opened: { t: mint, sqrtPriceX96: item.spec.position.sqrtPriceX96 },
+    current: { t: END + 20, sqrtPriceX96: item.spec.position.sqrtPriceX96 },
+  };
+  const ask = { poolId: item.poolId, base: item.base.address, quote: item.quote.address };
+  const stored = historyLine(data, ask, range(facts), END, mint);
+  assert.equal(stored.history.points.length, 1, 'hourly closes alone produced the screenshot’s lone point');
+  const result = chart.observedPriceLine(stored, data, ask, range(facts), mint, observations).history;
+  assert.equal(result.points[0].t, mint);
+  assert.equal(result.points.at(-1).t, END + 20);
+  assert.equal(result.runs.length, 1);
+  assert.equal(result.runs[0][0].t, mint);
+  assert.ok(Math.abs(result.points[0].price / facts.now - 1) < 0.0002, 'chain order and decimals match the displayed orientation');
+  assert.ok(result.runs[0].length >= 2, 'an actual line, not two isolated right-edge dots');
+  assert.equal(result.observed, true);
+  const fallback = chart.observedPriceLine(null, null, ask, range(facts), mint, observations).history;
+  assert.deepEqual(fallback.points.map(p => p.t), [mint, END + 20]);
+  assert.equal(fallback.runs.length, 1);
+  assert.equal(chart.observedPriceLine(stored, data, ask, range(facts), mint, null), stored, 'missing archive result does not invent an anchor');
+  assert.equal(chart.observedPriceLine(stored, data, { ...ask, poolId: 'other' }, range(facts), mint, observations), stored);
+  assert.equal(chart.observedPriceLine(stored, data, ask, range(facts), mint + 1, observations), stored);
+});
+
+test('observed prices preserve missing intervals and validate decimals, orientation and uint160', () => {
+  const currencies = [{ address: 'a', decimals: 18 }, { address: 'b', decimals: 6 }];
+  const sqrt = (2n ** 96n).toString();
+  const observed = { poolId: 'pool', currencies, opened: { t: END - 900, sqrtPriceX96: sqrt }, current: { t: END, sqrtPriceX96: sqrt } };
+  const run = (patch = {}, ask = { poolId: 'pool', base: 'a', quote: 'b' }) => chart.observedPriceLine(null, null, ask, { lower: 0, upper: Infinity }, observed.opened.t, { ...observed, ...patch });
+  assert.equal(run().history.points[0].price, 1e12);
+  assert.equal(run({}, { poolId: 'pool', base: 'b', quote: 'a' }).history.points[0].price, 1e-12);
+  assert.equal(run({ currencies: [{ ...currencies[0], decimals: null }, currencies[1]] }), null);
+  for (const invalid of ['0', '-1', 'not-a-price', (1n << 160n).toString()]) assert.equal(run({ opened: { ...observed.opened, sqrtPriceX96: invalid } }), null);
+  const gap = run({ current: { t: END + 7200, sqrtPriceX96: sqrt } }).history;
+  assert.deepEqual(gap.runs.map(r => r.length), [1, 1], 'two snapshots cannot invent hours of missing history');
+  assert.equal(gap.missing, true);
+});
+
 test('root cause (c): the line is the pool’s stored hourly closes (read-v3 history), in the page’s orientation, never altered', () => {
   const item = CASES.inside;
   const { facts } = factsOf(item);
@@ -362,9 +405,23 @@ test('an unknown mint, or a mint newer than stored prices, never produces a posi
 test('the V1 opening time is the ledger mint, including a ledger with inexact settlements; never the current read or first visible event', () => {
   assert.equal(ledgerOpenedAt({ phase: 'verified', history: { mintedAt: { timestamp: END } } }), END);
   assert.equal(ledgerOpenedAt({ phase: 'cached', history: { mintedAt: { timestamp: END } } }), END);
+  assert.equal(ledgerOpenedAt({ phase: 'unclaimed-only', mintedAt: { block: 80000000, timestamp: END }, events: [] }), END, 'an inexact fees verdict does not discard the verified mint');
+  assert.equal(ledgerOpenedAt({ phase: 'loading', mintedAt: { block: 80000000, timestamp: END } }), END, 'the price chart can start while financial history continues');
   assert.equal(ledgerOpenedAt({ phase: 'unclaimed-only', events: [{ kind: 'increase', timestamp: END + 1 }, { kind: 'mint', timestamp: END }] }), END);
   assert.equal(ledgerOpenedAt({ phase: 'unclaimed-only', state: { timestamp: END }, events: [{ kind: 'increase', timestamp: END }] }), null);
   for (const phase of ['idle', 'loading', 'unavailable']) assert.equal(ledgerOpenedAt({ phase, state: { timestamp: END } }), null);
+});
+
+test('only an identified V2 creation with a valid block and transaction supplies a ledger hint', () => {
+  const position = { chainId: 4663, dex: 4, tokenId: 42n, vault: null };
+  const hash = `0x${'ab'.repeat(32)}`;
+  const create = { kind: 's1_action', chainId: 4663, action: 'create', tokenId: '42', tx: { hash, snapshot: { timestamp: END, number: '82863189' } }, steps: [{ tokenId: '42', pool: { dex: 4 } }] };
+  assert.deepEqual(activityMint({ items: [create] }, position), { tokenId: '42', block: 82863189, tx: hash, timestamp: END });
+  assert.equal(activityMint({ items: [create] }, { ...position, chainId: 8453 }), null);
+  assert.equal(activityMint({ items: [create] }, { ...position, dex: 3 }), null);
+  assert.equal(activityMint({ items: [{ ...create, action: 'increase' }] }, position), null);
+  for (const number of ['0', '-1', 'NaN', '9007199254740992']) assert.equal(activityMint({ items: [{ ...create, tx: { ...create.tx, snapshot: { ...create.tx.snapshot, number } } }] }, position), null);
+  assert.equal(activityMint({ items: [{ ...create, tx: { ...create.tx, hash: 'unknown' } }] }, position), null);
 });
 
 test('V2 creation is matched by chain, DEX and new token ID; vault registration and the previous range are never its mint', () => {

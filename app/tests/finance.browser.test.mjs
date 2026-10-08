@@ -31,6 +31,7 @@ import { createPositionChain } from './support/position-chain.mjs';
 // 2026-10-02 (RPC-SPEC §11.4): a position and its own events, for the fees ledger's scenarios.
 import { OWNER_STEPS, TOKENS as LEDGER_TOKENS, ledgerWorld } from './support/fees/ledger-world.mjs';
 import { POOL_MANAGER as LEDGER_PM } from './support/fees/ledger-chain.mjs';
+import { LEDGER_FLOOR, LEDGER_SCAN_BLOCKS } from '../.test-build/app/functions/_lib/feesLedger.js';
 // 2026-09-27: how far back a later scan of the same wallet reads its logs, for the refresh tests.
 import { REREAD_BLOCKS } from '../.test-build/app/functions/_lib/walletPositions.js';
 import * as runtime from '../../api-contracts/performance-v2/runtime.mjs';
@@ -6741,6 +6742,12 @@ test('a position’s page keeps its header through refreshes that fail or find n
     await s.page.waitForTimeout(300);
     await drawn('0.000000633825300114');
     assert.deepEqual(await header(), [String(chain.head), '0.000000633825300114']);
+    // A cold ledger now discovers bounded windows, each carrying newer state. Finish that independent read first:
+    // this scenario measures the header's own refresh/retry schedule, not a concurrently advancing ledger cursor.
+    await s.page.waitForFunction(() => {
+      const last = document.querySelector('[data-history-source]')?.getAttribute('data-ledger-last');
+      return last && !['reading', 'unanswered', 'unavailable', 'rate_limited'].includes(last);
+    }, undefined, { timeout: 15_000 });
     await watchDetail(s.page);
     const refused = [];
     const down = () => { chain.outage = (call) => (refused.push(call.method), 500); };
@@ -7565,6 +7572,7 @@ test('Your positions: each open row’s Your APR is its own ledger’s, asked wi
   const read = createReadStub({ reads: 'nft-positions', answer: (route, body) => { pastAsked.push(body); return world.pastAnswer(body.blockNumber); } });
   const s = await scenario({ chain, routes: [site.route, (request, url) => (url.pathname.startsWith('/api/read/') ? read.handle(request, url) : undefined)] });
   const ledgers = [];
+  const coldReads = Math.ceil((chain.head - LEDGER_FLOOR + 1) / LEDGER_SCAN_BLOCKS);
   s.page.on('request', (request) => { if (new URL(request.url()).pathname === '/api/fees/v2/ledger') ledgers.push(JSON.parse(request.postData() ?? '{}')); });
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
@@ -7591,7 +7599,8 @@ test('Your positions: each open row’s Your APR is its own ledger’s, asked wi
     assert.ok(ledgers.every((body) => body.tokenIds.length <= 8));
     // 2026-10-02 (review of the chart's tabs, finding 1): the cell says, in data attributes, how many ledger requests this
     // visit made for the row and how the last ended.
-    assert.deepEqual([await apr.getAttribute('data-ledger-asks'), await apr.getAttribute('data-ledger-last')], ['1', 'exact']);
+    assert.deepEqual([await apr.getAttribute('data-ledger-asks'), await apr.getAttribute('data-ledger-last')], [String(coldReads), 'exact']);
+    assert.equal(ledgers.filter((body) => body.tokenIds.includes('3325113')).length, coldReads, 'one request per bounded discovery window, without duplicate retries');
     assert.equal(await s.page.locator('[data-position-detail]').count(), 0, 'no page was opened for it');
     assert.deepEqual(pastAsked, [], 'the list reads no position at a past block');
     // A row whose ledger cannot measure its fees (here: none of its events on the node) keeps a dash and says why; its
@@ -7600,7 +7609,7 @@ test('Your positions: each open row’s Your APR is its own ledger’s, asked wi
     await dash.waitFor({ timeout: 10_000 });
     assert.equal((await dash.innerText()).replace(/\s+/g, ' ').trim(), 'Your APR not measured');
     assert.equal(await dash.getAttribute('title'), 'Not measured for this position');
-    assert.equal(await dash.getAttribute('data-ledger-asks'), '1');
+    assert.equal(await dash.getAttribute('data-ledger-asks'), String(coldReads));
     assert.match(await dash.getAttribute('data-ledger-last'), /^(?!exact$)[a-z_]+$/, 'its ledger’s why');
     assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /\best\./, 'no estimate');
     // Nothing moved: the figures stand where they were first drawn, now that the APR is in.
@@ -7614,9 +7623,9 @@ test('Your positions: each open row’s Your APR is its own ledger’s, asked wi
     const pageApr = detail.locator('[data-cell="apr"][data-apr="ready"]');
     await pageApr.waitFor({ timeout: 15_000 });
     const figure = (await pageApr.locator('.dm-pos-apr').innerText()).trim().split(/\s/)[0];
-    // Its Details: the list's one request served the page too (finding 1's data attributes).
+    // Its Details: the list's completed discovery serves the page too, without starting another history scan.
     const source = detail.locator('[data-history-source="ledger"]');
-    assert.deepEqual([await source.getAttribute('data-ledger-asks'), await source.getAttribute('data-ledger-last')], ['1', 'exact']);
+    assert.deepEqual([await source.getAttribute('data-ledger-asks'), await source.getAttribute('data-ledger-last')], [String(coldReads), 'exact']);
     // The other position's page says plainly that its fees earned can't be measured, its fees ready to collect exact.
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
     const quiet = s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"][data-fees-reason="not_exact"]');
@@ -7652,13 +7661,15 @@ test('a row whose ledger answered `reading` as the owner opened another row is a
   // The first ledger answer as the deployment gives a first read it could not finish: every row `reading`.
   const own = edgeRoutes({ fetch: (_url, init) => chain.fetch(RPC_URL, init) });
   const ledgers = [];
+  const coldReads = Math.ceil((chain.head - LEDGER_FLOOR + 1) / LEDGER_SCAN_BLOCKS);
   await s.context.route((url) => url.pathname === '/api/fees/v2/ledger', async (route) => {
     const body = JSON.parse(route.request().postData() ?? '{}');
     ledgers.push(body.tokenIds);
-    if (ledgers.length > 1) return route.fallback();
+    // All requests use this same edge/cache, as on the deployment. Falling back after the first answer would switch
+    // to scenario's separate edge and make the second request start discovery from the floor again.
     const real = await own(new Request('https://edge.test/api/fees/v2/ledger', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://edge.test', 'sec-fetch-site': 'same-origin' }, body: JSON.stringify(body) }));
     const value = await real.json();
-    value.positions = value.positions.map((one) => (one.ok ? { ...one, exact: false, why: 'reading' } : one));
+    if (ledgers.length === 1) value.positions = value.positions.map((one) => (one.ok ? { ...one, exact: false, why: 'reading' } : one));
     return route.fulfill({ status: 200, contentType: 'application/json; charset=utf-8', headers: { 'Cache-Control': 'no-store' }, body: JSON.stringify(value) });
   });
   const asked = (id) => ledgers.filter((ids) => ids.includes(id)).length;
@@ -7680,7 +7691,7 @@ test('a row whose ledger answered `reading` as the owner opened another row is a
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
     await s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`).waitFor({ timeout: 15_000 });
     await s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"][data-fees-reason="not_exact"]').waitFor({ timeout: 15_000 });
-    assert.equal(asked(OWNED_OPEN), 2, 'asked again by its page');
+    assert.equal(asked(OWNED_OPEN), coldReads, 'its page resumes the bounded cursor saved by the list, without restarting discovery');
     // Back on the list: its row says why there is no figure, never a skeleton for the visit.
     await s.page.evaluate(() => { location.hash = '#/positions'; });
     await s.page.locator(`[data-position-row="${OWNED_OPEN}"] [data-cell="apr"][data-apr="missing"]`).waitFor({ timeout: 15_000 });

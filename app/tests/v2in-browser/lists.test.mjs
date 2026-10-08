@@ -17,11 +17,14 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { zeroAddress } from 'viem';
-import { browserChain, routeChain } from '../support/browser-chain.mjs';
+import { browserChain, routeChain, RPC_URL } from '../support/browser-chain.mjs';
 import { closeBrowser } from '../support/close-browser.mjs';
+import { edgeFetch } from '../support/edge-routes.mjs';
 import { createFakeSession } from '../support/fake-session.mjs';
+import { ledgerWorld, OWNER_STATE, TOKENS as LEDGER_TOKENS, UFG, USDG } from '../support/fees/ledger-world.mjs';
 import { ACCOUNTS, installWallets } from '../support/mock-wallet.mjs';
 import { ARTWORK } from '../support/new-position.mjs';
+import { historyFor } from '../support/price-range-cases.mjs';
 import { FIXTURE_TOKEN, createReadStub } from '../support/read-stub.mjs';
 import { launchBrowser } from '../support/s1-browser.mjs';
 import { contractsFor } from '../support/v2-chain.mjs';
@@ -75,17 +78,23 @@ after(async () => {
  * Positions of wallet-test-v2, Test Wallet A connected on Robinhood Chain with one open V1 position. `hooks`: the page's
  * `window.__dominoV2Test`; `readV6(method, route, body)`: the site's read-v6 route ({ status, body, contract }), recorded.
  */
-async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positions', privateReceipts = null, sessionDisabled = false, refresh = false } = {}) {
+async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positions', privateReceipts = null, sessionDisabled = false, refresh = false, chainOptions = {}, stored = undefined, ledgerReply = null, connect = true } = {}) {
   const fake = createFakeSession();
   fake.controls.disabled = sessionDisabled;
-  const chain = browserChain({ positions: [onChain(V1_OPEN)], tokens: TOKENS });
-  const read = createReadStub();
+  const chain = browserChain({ positions: [onChain(V1_OPEN)], tokens: TOKENS, ...chainOptions });
+  const read = createReadStub({ stored });
   const asked = [];
+  const ledgerAsked = [];
+  const planAsked = [];
   const server = createWalletServer({
     fake,
     dist: WALLET_V2_DIST,
     routes: [
       async (request, url) => {
+        if (url.pathname === '/api/position-plan/v1/capabilities') {
+          planAsked.push(request.method);
+          return Response.json({ error: 'not_found' }, { status: 404 });
+        }
         if (privateReceipts !== null && url.pathname === '/api/execution/v1/list') {
           assert.ok(request.headers.get('cookie')?.includes('__Host-domino-session='));
           assert.ok(request.headers.get('X-Domino-CSRF'));
@@ -98,7 +107,7 @@ async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positio
         const route = url.pathname.split('/').at(-1);
         const body = request.method === 'POST' ? JSON.parse(await request.text()) : null;
         asked.push({ method: request.method, route, body, contract: request.headers.get('x-domino-read-contract') });
-        const answer = readV6(request.method, route, body);
+        const answer = await readV6(request.method, route, body);
         return Response.json(answer.body, { status: answer.status, headers: answer.contract ? { 'X-Domino-Read-Contract': CONTRACT } : {} });
       },
       (request, url) => read.handle(request, url),
@@ -112,6 +121,12 @@ async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positio
   await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await routeChain(context, chain);
+  if (ledgerReply) await context.route('**/api/fees/v2/ledger', async route => {
+    const body = route.request().postDataJSON();
+    ledgerAsked.push(body);
+    const reply = await ledgerReply(body);
+    await route.fulfill({ status: reply.status, contentType: 'application/json', body: JSON.stringify(reply.body) });
+  });
   const wallet = await installWallets(context);
   if (hooks) await context.addInitScript((value) => { window.__dominoV2Test = value; }, hooks);
   if (refresh) await context.addInitScript(() => { window.__dominoRefresh = true; });
@@ -121,13 +136,17 @@ async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positio
   await page.goto(`${origin}/${hash}`);
   // Test Wallet A, from the header's dialog, on Robinhood Chain, without signing in.
   await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
-  await page.locator('header [aria-haspopup="dialog"]').click();
-  await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
-  await page.waitForFunction(expected => window.__dominoSessionProbe?.view().status === expected, sessionDisabled ? 'blocked' : 'signed_out');
-  await page.keyboard.press('Escape');
+  if (connect) {
+    await page.locator('header [aria-haspopup="dialog"]').click();
+    await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
+    await page.waitForFunction(expected => window.__dominoSessionProbe?.view().status === expected, sessionDisabled ? 'blocked' : 'signed_out');
+    await page.keyboard.press('Escape');
+  }
   return {
     page,
     asked,
+    ledgerAsked,
+    planAsked,
     wallet,
     async close() {
       await context.close();
@@ -140,6 +159,63 @@ async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positio
 }
 
 const text = (locator) => locator.innerText().then((value) => value.replace(/\s+/g, ' ').trim());
+
+for (const connect of [false, true]) test(`Robinhood V4 prefixed links load public fees and APR with S1 unavailable, wallet ${connect ? 'connected' : 'disconnected'}`, async () => {
+  const tokenId = '3659830';
+  const head = 71_700_000;
+  const end = Math.floor(Date.now() / 1000);
+  const openedAt = end - 40 * 60;
+  const world = ledgerWorld({
+    tokenId: BigInt(tokenId), holder: OWNER, vault: null, steps: [], head,
+    now: end, mint: { block: head - 24_000, liquidity: 36_560_795_792_617_752n },
+    tokens: { ...LEDGER_TOKENS, [UFG]: { symbol: 'PONS', decimals: 18 } },
+  });
+  const ledger = edgeFetch({ fetch: (_url, init) => world.chain.fetch(RPC_URL, init) });
+  const historyReads = [];
+  const s = await scenario({
+    hooks: { originOpen: true }, hash: `#/positions/robinhood-v4-${tokenId}`, connect, chainOptions: world.chain,
+    ledgerReply: async request => {
+      const response = await ledger('/api/fees/v2/ledger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
+      const body = await response.json();
+      const position = body.positions?.find(item => item.tokenId === tokenId);
+      if (position?.mint) position.mint.sqrtPriceX96 = String(BigInt(position.state.sqrtPriceX96) * 101n / 100n);
+      return { status: response.status, body };
+    },
+    stored: (route, body) => {
+      assert.equal(route, 'history');
+      const now = 1e12 / (Number(OWNER_STATE.sqrtPriceX96) / 2 ** 96) ** 2;
+      const answer = historyFor({ id: Number(tokenId), now, quote: { address: USDG } }, body, { end });
+      answer.candles = answer.candles.slice(-1); // The first hour supplies only its one current close.
+      historyReads.push(answer);
+      return JSON.stringify(answer);
+    },
+  });
+  try {
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${tokenId}"]`);
+    await detail.locator('[data-fees-card][data-fees-state="verified"]').waitFor();
+    await detail.locator('[data-cell="apr"][data-apr="ready"]').waitFor();
+    assert.match(await detail.locator('h1').innerText(), /PONS/);
+    assert.match(await detail.locator('[data-cell="apr"]').innerText(), /Since opened \(40 minutes\)/);
+    assert.doesNotMatch(await detail.innerText(), /Not measured on this network yet/);
+    assert.equal(await s.page.locator('[data-position-v2]').count(), 0, 'the write gate never selects a different read page');
+    const range = detail.locator('[data-pvr-where][data-pvr-line]');
+    await range.locator('.dm-pvr-line').first().waitFor();
+    assert.equal(Number(await range.getAttribute('data-pvr-first')), openedAt, 'the price line starts at the verified mint measurement');
+    assert.equal(Number(await range.getAttribute('data-pvr-start')), openedAt);
+    const width = await range.evaluate(node => ({
+      line: Math.max(...[...node.querySelectorAll('.dm-pvr-line')].map(path => path.getBBox().width)),
+      plot: node.querySelector('svg').viewBox.baseVal.width || node.querySelector('svg').getBoundingClientRect().width,
+    }));
+    assert.ok(width.line > width.plot * 0.6, `a real price path spans the first-hour plot (${width.line}/${width.plot}), not just a dot`);
+    assert.ok(historyReads.length > 0 && historyReads.every(answer => answer.candles.length === 1));
+    assert.equal(s.wallet.state.signed.length, 0, 'public figures require no wallet signature');
+    if (connect) {
+      await detail.locator('[data-position-v2-mount="preview"]').waitFor({ state: 'attached' });
+      assert.ok(s.planAsked.length > 0, 'S1 capabilities were unavailable and its actions remain preview-only');
+    } else assert.equal(await s.page.locator('[data-position-actions]').count(), 0, 'public reads do not grant owner actions');
+  } finally { await s.close(); }
+});
+
 const tabs = async (page) => {
   await page.getByRole('tab').first().waitFor();
   return page.getByRole('tab').allInnerTexts().then((all) => all.map((value) => value.replace(/\s+/g, ' ').trim()));
@@ -268,10 +344,17 @@ test('live: the person’s own positions from the site’s route join V1’s gri
 });
 
 test('live, the site’s route not deployed: V1 remains available without an empty V2 section or test data', async () => {
-  const s = await scenario({ hooks: LIVE, readV6: routeMissing });
+  let releaseCapabilities;
+  const capabilities = new Promise(resolve => { releaseCapabilities = resolve; });
+  const s = await scenario({ hooks: LIVE, readV6: async () => { await capabilities; return routeMissing(); } });
   try {
     await v1RowAsItIs(s.page);
-    // V1's NFT can render before the independent V2 capabilities read settles.
+    // V1 and the merged signed-out card can render before the independent receipts probe finishes. The transient
+    // loading scaffold is not a failed-read notice. Hold the probe so this order is exercised on every runner.
+    const loading = s.page.locator('[data-v2-own-receipts="loading"]');
+    await loading.waitFor({ state: 'attached' });
+    releaseCapabilities();
+    await loading.waitFor({ state: 'detached' });
     await s.page.locator('[data-automation-cards="merged"]').waitFor();
     await s.page.waitForFunction(() => document.querySelector('[data-owned-rows="open"] [data-position-row]'));
     assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 0']);
@@ -280,6 +363,7 @@ test('live, the site’s route not deployed: V1 remains available without an emp
     assert.equal(await s.page.locator('.dm-rcpt-session').count(), 0, 'no compact public-history treatment without public rows');
     assert.deepEqual([...new Set(s.asked.map((entry) => `${entry.method} ${entry.route}`))], ['GET capabilities'], 'only the capabilities are asked: nothing is posted to a route that is not there');
   } finally {
+    releaseCapabilities();
     await s.close();
   }
 });
@@ -422,6 +506,76 @@ test('position Activity can continue when the first wallet page contains no matc
     await activity.getByRole('button', { name: 'Show more', exact: true }).click();
     await activity.locator(`[data-position-activity-item="${created.id}"]`).waitFor();
     assert.ok(s.asked.some(ask => ask.route === 'activity' && ask.body?.cursor === cursor));
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+test('a matching creation receipt dates the position price chart and retries the ledger without inventing fees or APR', { timeout: 60_000 }, async () => {
+  const whole = fixture('activity.json');
+  const created = structuredClone(whole.items.find(item => item.kind === 's1_action' && item.action === 'create'));
+  const end = Math.floor(Date.now() / 1000);
+  const openedAt = end - 3 * 3_600 - 137;
+  const mintBlock = 71_699_000;
+  created.tokenId = V1_OPEN;
+  created.id = `4663:${mintBlock}:6`;
+  Object.assign(created.tx.snapshot, { number: mintBlock, timestamp: openedAt });
+  for (const step of created.steps) step.tokenId = V1_OPEN;
+  // An equal numeric NFT on another chain or manager is not this position's creation.
+  const otherChain = structuredClone(created);
+  otherChain.chainId = 8453;
+  otherChain.tx.finality = 'unfinalized';
+  otherChain.id = `8453:${mintBlock + 2}:6`;
+  Object.assign(otherChain.tx.snapshot, { number: mintBlock + 2, timestamp: openedAt + 20 });
+  const otherDex = structuredClone(created);
+  otherDex.id = `4663:${mintBlock + 1}:6`;
+  Object.assign(otherDex.tx.snapshot, { number: mintBlock + 1, timestamp: openedAt + 10 });
+  for (const step of otherDex.steps) step.pool.dex = 3;
+  const cursor = [otherDex.tx.snapshot.timestamp, otherDex.chainId, otherDex.tx.snapshot.number, 6].join('.');
+  const priceReads = [];
+  let firstLedger;
+  const ledgerFailed = new Promise(resolve => { firstLedger = resolve; });
+  const s = await scenario({
+    hooks: LIVE, hash: `#/positions/${V1_OPEN}`, chainOptions: { timestamp: end },
+    ledgerReply: () => { firstLedger(); return { status: 502, body: { v: 1, error: 'rpc_unavailable' } }; },
+    readV6: async (method, route, request) => {
+      if (method === 'GET') return { status: 200, body: CAPABILITIES, contract: true };
+      if (route === 'activity') await ledgerFailed;
+      const body = route === 'portfolio' ? fixture('portfolio.json') : { ...whole, items: request.cursor ? [created] : [otherChain, otherDex], nextCursor: request.cursor ? null : cursor };
+      return { status: 200, body: about(route, body, OWNER), contract: true };
+    },
+    stored: (route, body) => {
+      assert.equal(route, 'history');
+      const answer = historyFor({ id: 3135288, now: 1e-12, quote: { address: zeroAddress } }, body, { end });
+      priceReads.push(answer);
+      return JSON.stringify(answer);
+    },
+  });
+  try {
+    const activity = s.page.locator('[data-position-activity]');
+    await activity.getByRole('button', { name: 'Show more', exact: true }).waitFor();
+    await s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"][data-fees-reason="rpc_unavailable"]').waitFor();
+    const range = s.page.locator('[data-pvr-where]');
+    assert.equal(await range.getAttribute('data-pvr-history'), 'unknown_mint');
+    assert.equal(await range.getAttribute('data-pvr-opened'), null);
+    assert.equal(await activity.locator('[data-position-activity-item]').count(), 0);
+    assert.equal(priceReads.length, 0, 'unrelated receipts never request pre-position pool history');
+    assert.ok(s.ledgerAsked.length > 0);
+    assert.ok(s.ledgerAsked.every(request => !request.mintHints), 'neither unrelated identity supplies a mint hint');
+
+    const hinted = s.page.waitForRequest(request => request.url().endsWith('/api/fees/v2/ledger') && !!request.postDataJSON()?.mintHints, { timeout: 15_000 });
+    await activity.getByRole('button', { name: 'Show more', exact: true }).click();
+    await activity.locator(`[data-position-activity-item="${created.id}"]`).waitFor();
+    const retry = (await hinted).postDataJSON();
+    assert.deepEqual(retry.mintHints, [{ tokenId: V1_OPEN, block: mintBlock, tx: created.tx.hash }]);
+    assert.equal(retry.fresh, true, 'new mint evidence retries the failed ledger');
+    await s.page.locator('[data-pvr-where][data-pvr-line]').waitFor();
+    assert.equal(Number(await range.getAttribute('data-pvr-opened')), openedAt);
+    assert.equal(Number(await range.getAttribute('data-pvr-start')), openedAt);
+    assert.ok(Number(await range.getAttribute('data-pvr-first')) >= openedAt, 'the price line contains no point before mint');
+    assert.ok(priceReads.some(answer => answer.candles.some(candle => candle.startTimestamp < openedAt)), 'the full pool history actually contained older candles to exclude');
+    await s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"][data-fees-reason="rpc_unavailable"]').waitFor();
+    assert.equal(await s.page.locator('[data-cell="apr"][data-apr="ready"]').count(), 0, 'a creation date never fabricates fee accounting or APR');
+    assert.doesNotMatch(await s.page.locator('[data-cell="apr"]').innerText(), /[\d,.]+%/);
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
 });

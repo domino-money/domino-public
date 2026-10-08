@@ -167,7 +167,8 @@ test('(b) live on Base: the same page from read-v6, no USD and no APR; Domino\'s
     // V1's row (review #5): one primary Collect fees, then the "···" menu with the three other actions.
     const automation = detail.locator('[data-automation-control]');
     await automation.waitFor();
-    assert.equal(await automation.getAttribute('aria-expanded'), 'false');
+    assert.equal(await automation.innerText(), 'Set up automation');
+    assert.equal(await automation.getAttribute('data-automation-setup'), '');
     assert.deepEqual(await detail.locator('[data-position-actions] [data-position-v2-action]').evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-position-v2-action'))), ['collect', 'increase', 'changeRange', 'exit']);
     assert.equal(await detail.locator('[data-position-actions] [data-position-v2-actions="live"] [data-position-v2-more]').count(), 1);
     const { menu, entries } = await openMenu(detail);
@@ -659,7 +660,7 @@ test('(g) preview (the gate open, no live set): the same page from read-v6, ever
 // (the review of point 5): live, the edges a review arms are chosen against the pool's own price, read through the wallet
 // (tests/v2in-browser/automate.test.mjs); under the preview, where nothing is armed and no wallet is asked, the page's
 // read draws them, a stale one too (marked so), never a dialog waiting for a read that is not coming.
-test('V2 Auto-exit on Base, preview: exactly the range\'s two edges against the page\'s read, a stale one marked so; no wallet is asked to switch', async () => {
+test('V2 Auto-exit on Base, preview: current custody opens the range\'s exact edges; stale custody offers no setup and no wallet is asked to switch', async () => {
   for (const stale of [false, true]) {
     const chain = createV2Chain({ chainId: 4663, timestamp: now() });
     const read6 = { portfolio: portfolioOf({ wallet: OWNER, tokens: TOKENS, positions: [live(5_100_005, { stale })] }) };
@@ -667,8 +668,13 @@ test('V2 Auto-exit on Base, preview: exactly the range\'s two edges against the 
     try {
       const page = s.page;
       const detail = page.locator('[data-position-detail][data-position-v2="base-v4"]');
-      await detail.locator('[data-automation-control]').click();
-      await detail.locator('[data-automation-panel] [data-v2in-open="mandate"]:visible').click();
+      if (stale) {
+        assert.match(await text(detail.locator('[data-automation-control]')), /State unavailable/);
+        assert.equal(await detail.locator('[data-automation-setup]').count(), 0, 'stale custody cannot enable a new automation');
+        assert.equal(chain.sends.length, 0);
+        continue;
+      }
+      await detail.locator('[data-automation-setup]').click();
       const dialog = page.locator('[data-v2in-dialog="mandate"]');
       await dialog.waitFor();
       // The price (tick -199,020) inside the range (-201,060 to -197,040): both edges, exactly TickMath's integers.

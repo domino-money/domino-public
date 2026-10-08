@@ -83,7 +83,7 @@ function YourApr({ tokenId }: { tokenId: string }) {
     )
     sub = (
       <span className="dm-pos-lines">
-        <span>Since opened ({spanText(all.seconds)})</span>
+        <span title={`Measured from ${shortDate(all.from.t)} ${shortTime(all.from.t)}, block ${all.from.block}, over ${spanText(all.seconds)}`}>Since opened ({spanText(all.seconds)})</span>
         {saved && <span className="sr-only">Through {shortDate(saved.state.timestamp)} {shortTime(saved.state.timestamp)} · not current</span>}
         {day.ok && (
           <span data-apr-day="" title={`Measured from ${shortDate(day.from.t)} ${shortTime(day.from.t)}, block ${day.from.block}, to now (${spanText(day.seconds)})`}>
@@ -96,7 +96,7 @@ function YourApr({ tokenId }: { tokenId: string }) {
   return (
     <Stat
       label="Your APR"
-      info="This position’s own fees, as a yearly rate on the money in it, at today’s prices. Not a promise of future earnings."
+      info="This position’s own fees so far, annualized at today’s prices over the money in it. Short periods can change quickly. Not a forecast of future earnings."
       className="dm-pos-stat"
       data-cell="apr"
       data-apr={rates ? (rates.all.ok ? 'ready' : rates.all.reason) : fees.phase}

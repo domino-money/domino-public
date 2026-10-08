@@ -140,6 +140,8 @@ export interface FeesRuntime {
   deps: FeesDeps
   cache: FeesCache | null
   waitUntil?: (work: Promise<unknown>) => void
+  /** Internal metrics only: callers emit fixed event codes/counts, never chain payloads or provider messages. */
+  onDiagnostic?: (fields: Record<string, string | number>) => void
   /**
    * Whether this question was refused the node for its visitor's spent share (functions/_lib/chainRoutes.ts, localRpc.ts
    * refused()). A unit it offered (shared) is then never taken by a question that joined it: the node refused this

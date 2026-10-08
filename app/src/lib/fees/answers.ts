@@ -70,6 +70,7 @@ function ledgerPosition(value: unknown, head: number): value is LedgerPosition {
   if (p.ok !== true || !block(p.through) || p.through > head || !position(p.state) || (p.state as StatePositionOk).ok !== true || (p.state as StatePositionOk).tokenId !== p.tokenId) return false
   const mint = p.mint as Record<string, unknown> | null
   if (mint !== null && (!mint || typeof mint !== 'object' || !block(mint.block) || typeof mint.tx !== 'string' || !HASH.test(mint.tx) || !block(mint.t))) return false
+  if (mint?.sqrtPriceX96 !== undefined && (typeof mint.sqrtPriceX96 !== 'string' || !DECIMAL.test(mint.sqrtPriceX96) || BigInt(mint.sqrtPriceX96) <= 0n || BigInt(mint.sqrtPriceX96) >= (1n << 160n))) return false
   if (!Array.isArray(p.entries) || !p.entries.every((one) => entry(one, p.through as number))) return false
   const entries = p.entries as LedgerEntry[]
   // Oldest first, never before the mint.

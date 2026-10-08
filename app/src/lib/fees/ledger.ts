@@ -14,7 +14,7 @@
  * changes one of them, and the store then asks the ledger again, fresh. A state older than the ledger takes the ledger's
  * settlements up to its own block. Pure and Node-safe.
  */
-import type { FeeEvent, FeeHistory, FeeHistoryView, FeePoint, LedgerPosition, PositionState, StatePositionOk } from './types'
+import type { FeeEvent, FeeHistory, FeeHistoryView, FeePoint, LedgerPosition, PositionMint, PositionState, StatePositionOk } from './types'
 import type { Reading } from './readings'
 
 /** A ledger that answered, with the block and time its state was read at (the answer's). */
@@ -27,6 +27,11 @@ export interface LedgerRead {
 const ZERO: readonly [bigint, bigint] = [0n, 0n]
 const add = (a: readonly [bigint, bigint], b: readonly [bigint, bigint]): readonly [bigint, bigint] => [a[0] + b[0], a[1] + b[1]]
 const atMost = (a: readonly [bigint, bigint], b: readonly [bigint, bigint]) => a[0] <= b[0] && a[1] <= b[1]
+
+export function ledgerMint(mint: LedgerRead['position']['mint'], state: PositionState): PositionMint | undefined {
+  return mint && mint.block <= state.block && mint.t > 0 && mint.t <= state.timestamp
+    ? { block: mint.block, timestamp: mint.t, ...(mint.sqrtPriceX96 ? { sqrtPriceX96: mint.sqrtPriceX96 } : {}) } : undefined
+}
 
 /** The ledger's settlements as the screens' events, oldest first (fees null where it cannot tell them). */
 export function eventsOf(ledger: LedgerRead['position']): FeeEvent[] {
@@ -66,8 +71,9 @@ export function foldLedger(ledger: LedgerRead, state: PositionState, readings: r
   const { position } = ledger
   const events = eventsOf(position).filter((event) => event.block <= state.block)
   const mint = position.mint
-  if (!position.exact || !mint || events.some((event) => event.fees === null)) {
-    return { phase: 'unclaimed-only', state, reason: 'not_exact', ...(position.why ? { why: position.why } : {}), events }
+  const mintedAt = ledgerMint(mint, state)
+  if (!position.exact || !mint || !mintedAt || events.some((event) => event.fees === null)) {
+    return { phase: 'unclaimed-only', state, reason: 'not_exact', ...(position.why ? { why: position.why } : {}), events, ...(mintedAt ? { mintedAt } : {}) }
   }
   const points: FeePoint[] = [{ block: mint.block, t: mint.t, earned: ZERO, collected: ZERO, kind: 'opened' }]
   let settled: readonly [bigint, bigint] = ZERO
@@ -102,6 +108,6 @@ export function foldLedger(ledger: LedgerRead, state: PositionState, readings: r
   const measured = kept.filter((point, i) => point.kind !== 'reading' || (i + 1 >= kept.length || atMost(point.earned, kept[i + 1].earned)))
   if (measured[measured.length - 1].block >= now.block) measured.pop()
   measured.push(now)
-  const history: FeeHistory = { mintedAt: { block: mint.block, timestamp: mint.t }, earned, collected: settled, points: measured, events, through: Math.min(ledger.block, state.block) }
+  const history: FeeHistory = { mintedAt, earned, collected: settled, points: measured, events, through: Math.min(ledger.block, state.block) }
   return { phase: 'verified', state, history }
 }

@@ -187,7 +187,7 @@ export function sessionExits(mandates: readonly SessionMandate[], orders: readon
   return mandates.filter((m) => m.registered && m.tokenId === tokenId && !listed.has(m.id))
 }
 
-export function AutoExitCard({ target, orders, mine, credits, gate, owner, orientation, nowSeconds, offer, protection, v1Automated, turnOff = 0, onTurnOn, onVaultAction, onChanged }: {
+export function AutoExitCard({ target, orders, mine, credits, gate, owner, orientation, nowSeconds, offer, protection, stateAvailable, turnOff = 0, onTurnOn, onVaultAction, onChanged }: {
   /** The position as the card names it: its chain, pool, tokens, and the vault its orders are in (or null). */
   target: ExitTarget
   /** read-v6's orders of this position, in whichever of its vaults holds them. */
@@ -205,8 +205,8 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
   offer: 'plain' | 'member' | null
   /** The protection-only automation this position is the root of, for its own actions. */
   protection: VaultView | null
-  /** Still in Domino V1's automation: said, never offered. */
-  v1Automated: boolean
+  /** No failed or incomplete position/custody read is presented as proof that Auto-exit is off. */
+  stateAvailable: boolean
   /**
    * Added 2026-10-06 (the integration review, money #4): moves when the automation's own dialog asks for "Turn off
    * instead" (the price already past an end); this card's Turn off opens then.
@@ -257,7 +257,7 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
   // Off, with Auto-exit to turn on here: offered at once, or after its automation takes the position back (the rearm).
   const canTurnOn = offer !== null || fixInHead === 'rearm'
   // Nothing to say on a plain position with none on: the page's actions row has the button (no empty card).
-  const quiet = state.kind === 'off' && orders.length === 0 && credits.length === 0 && held.length === 0 && !v1Automated && protection === null
+  const quiet = state.kind === 'off' && orders.length === 0 && credits.length === 0 && held.length === 0 && protection === null
   // "Turn off instead" from the automation's own dialog (money #4): this card's Turn off opens.
   const [askedOff, setAskedOff] = useState(turnOff)
   if (askedOff !== turnOff) {
@@ -268,11 +268,11 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
   const pill = state.kind === 'on' ? <Pill tone="in" dot data-exit-pill="on">On</Pill>
     : state.kind === 'paused' ? <Pill tone="wait" dot data-exit-pill="paused">Paused</Pill>
       : state.kind === 'closed' ? <Pill tone="neutral" data-exit-pill="closed">Completed</Pill>
-        : v1Automated ? null : <Pill tone="neutral" data-exit-pill="off">Off</Pill>
+        : !stateAvailable ? <Pill tone="neutral" data-exit-pill="unknown">State unavailable</Pill> : <Pill tone="neutral" data-exit-pill="off">Off</Pill>
   const line = state.kind === 'on' ? onLine(edges, target.tokens, orientation)
     : state.kind === 'paused' ? conditionWords(state.reasons[0], chain.name)
       : state.kind === 'closed' ? closedLine(credits.length > 0)
-        : v1Automated ? 'Auto-exit is available once this position leaves its current automation.'
+        : !stateAvailable ? 'Auto-exit data is unavailable. Your recoverable funds remain below.'
           : canTurnOn ? 'Auto-exit is off. Turn it on to close this position at the end of its range.' : 'Auto-exit is off for this position.'
 
   return (
@@ -302,7 +302,7 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
           </Button>
         )}
       </div>
-      <p className="text-body text-fg-muted dm-exit-card-line" data-v2in-exit-line={state.kind === 'off' ? (v1Automated ? 'v1' : canTurnOn ? 'open' : 'off') : state.kind}>
+      <p className="text-body text-fg-muted dm-exit-card-line" data-v2in-exit-line={state.kind === 'off' ? (!stateAvailable ? 'unknown' : canTurnOn ? 'open' : 'off') : state.kind}>
         {line}
       </p>
       {waiting && <p className="dm-acct-note" data-order-waiting={waiting.code}>{waiting.text}</p>}

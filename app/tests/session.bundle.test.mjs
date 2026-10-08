@@ -1022,11 +1022,17 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // wallet build: a financial root like the position actions, in a build that carries them.
     const reserveRoots = js.filter((file) => /^FeeReserves-/.test(file));
     assert.equal(reserveRoots.length, positionRoots.includes('HeldDeposits') ? 1 : 0, 'the fees waiting in a vault come with the position actions, or not at all');
-    const financialRoots = js.filter((file) => /^(Setup|Sequence|Execution|Performance|DepositAmounts|PositionActions|HeldDeposits|PositionLab|FeeReserves)-/.test(file));
-    assert.equal(financialRoots.length, 5 + positionRoots.length + reserveRoots.length, 'the four P2 financial screens, New position\'s Create position, the position actions and the fees waiting in a vault are explicit lazy roots');
+    // The V1 setup implementation exists only in the legacy fixture build; V2 cannot import it as a fallback.
+    const legacyRoots = js.filter((file) => /^SequenceLegacy-/.test(file));
+    assert.equal(legacyRoots.length, dir === WALLET ? 1 : 0, 'only the legacy wallet test carries the V1 sequence setup');
+    const financialRoots = js.filter((file) => /^(Setup|Sequence|SequenceLegacy|Execution|Performance|DepositAmounts|PositionActions|HeldDeposits|PositionLab|FeeReserves)-/.test(file));
+    assert.equal(financialRoots.length, 5 + positionRoots.length + reserveRoots.length + legacyRoots.length, 'the financial screens, actions and legacy-only sequence setup are explicit lazy roots');
     assert.equal(readRoots.filter((file) => file.startsWith('index-')).length, 1, 'include the public read screen, even though Vite calls it index');
     const base = new Set([...staticClosure(dir, [...island, ...readRoots])].filter((file) => !initial.has(file)));
     const financial = new Set([...staticClosure(dir, financialRoots)].filter((file) => !initial.has(file)));
+    const sharedFinancial = staticClosure(dir, financialRoots.filter((file) => !legacyRoots.includes(file)));
+    const legacyOnly = [...staticClosure(dir, legacyRoots)].filter((file) => !initial.has(file) && !base.has(file) && !sharedFinancial.has(file));
+    const legacyBytes = legacyOnly.reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
     for (const file of financialRoots) assert.ok(!base.has(file) && !initial.has(file), `${file} must remain opt-in`);
     const allLazy = new Set([...base, ...financial]);
     // 2026-09-24 (P6, DESIGN-V2 §18, R-12): the fees replay worker (src/lib/fees/feesReplay.worker.ts, created only by
@@ -1197,14 +1203,26 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // history pager, current-setup selection and reviewed gas recovery add opt-in code. Windows gzip level 9 measured
     // financial 346,052 B and Domino V2 649,841 B after removing the obsolete two-block receipt variant. Ceilings move
     // to 347,000 and 651,000, keeping about 1 kB for platform gzip variation. Initial entry and all other limits stay.
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 190_000], ['session/public reads', base, 166_000], ['financial', financial, 347_000], ['all lazy', allLazy, 383_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 6_000], ['domino v2', v2, 651_000]]) {
+    // 2026-10-07 (V2 position history recovery): indexed mint hints, independent chart dates and first-reading APR
+    // add about 1 kB to deferred code, with no new dependency or initial-entry growth. The pre-optimization Windows
+    // build measured all-lazy at 383,529 B; its ceiling moves by 1 kB only. All other families retain their limits.
+    // 2026-10-08 (first-hour position charts): validated creation-block price observations add no dependency or
+    // initial-entry code. Windows gzip level 9 measured public reads 166,022 B and the chart 6,511 B. Allow 500 B
+    // more for the shared optional wire field and 1 kB for the deferred chart; all other budgets remain unchanged.
+    // V2-only automation discovery (2026-10-08): removing the legacy setup's static imports redistributes shared
+    // chunks. Windows gzip 9: routes 190,155 B, public reads 166,496 B, financial 330,987 B, all lazy 368,517 B,
+    // V2 616,443 B (previous V2 650,823 B). Round only the two nearly-full shared families up for platform/name
+    // variation; keep the entry and every financial/V2 ceiling. All legacy code still counts in absolute budgets.
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['all lazy', allLazy, 384_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 651_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir === WALLET && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);
       if (dir === DIST) productionBytes.set(family, total);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);
-      if (testOnly) assert.ok(total - productionBytes.get(family) <= 3_000, `${family}: wallet test-only overhead exceeds 3 kB`);
+      // V2 intentionally omits the legacy setup UI. Its exclusive closure remains in the absolute budget above,
+      // but is a real legacy feature, not a test probe; compare only the actual fixture overhead with production.
+      if (testOnly) assert.ok(total - legacyBytes - productionBytes.get(family) <= 3_000, `${family}: wallet test-only overhead exceeds 3 kB`);
       assert.ok(total <= budget, `${label} ${family} is ${total} bytes gzip, over the ${budget} budget`);
     }
   }

@@ -25,7 +25,7 @@ import { answerOwnerAsked, bodyWithin, ownerFrom, refuse, type AnswerCache, type
 import { scanWallet } from './walletPositions'
 import { idsFrom, scanAutomation } from './automation'
 import { STATE_BODY_BYTES, bodyOf, resetRelayMemory, stateAnswer, stateRequestOf, type FeesRuntime } from './fees'
-import { LEDGER_BODY_BYTES, ledgerAnswer, ledgerRequestOf } from './feesLedger'
+import { LEDGER_BODY_BYTES, ledgerAnswer, ledgerHintKey, ledgerRequestOf } from './feesLedger'
 import { EDGE_LOG_LIMITS, createLocalRpc, localRpcEndpoint, localRpcMemory, resetLocalRpcMemory, type LocalRpc, type LocalRpcMemory } from './localRpc'
 import { resetMintWalks, walkMints } from './ownedMints'
 import { SHARED_STALE_MS, outlast } from './sharedWork'
@@ -464,9 +464,9 @@ export function ledgerVerdicts(text: string): string {
 }
 
 /** The route's checks of method, origin, type, size and shape (in that order): the question, or the refusal. */
-async function askedOf(name: ChainRouteName, request: Request, url: URL, waitUntil: ((work: Promise<unknown>) => void) | undefined, runtime: Required<Pick<ChainRouteRuntime, 'now' | 'sleep'>> & { cache: AnswerCache | null; mintWaitMs?: number }): Promise<Asked | Response> {
+async function askedOf(name: ChainRouteName, request: Request, url: URL, waitUntil: ((work: Promise<unknown>) => void) | undefined, runtime: Required<Pick<ChainRouteRuntime, 'now' | 'sleep'>> & { cache: AnswerCache | null; mintWaitMs?: number; log?: ChainRouteRuntime['log'] }): Promise<Asked | Response> {
   const { now, sleep, cache } = runtime
-  const fees = (rpc: LocalRpc): FeesRuntime => ({ deps: { fetch: rpc.fetch, sleep, now, logLimits: EDGE_LOG_LIMITS }, cache, waitUntil, refused: rpc.refused })
+  const fees = (rpc: LocalRpc): FeesRuntime => ({ deps: { fetch: rpc.fetch, sleep, now, logLimits: EDGE_LOG_LIMITS }, cache, waitUntil, refused: rpc.refused, onDiagnostic: (fields) => logLine(runtime, fields) })
   switch (name) {
     case 'owned': {
       const asked = await ownerFrom(request, url)
@@ -513,7 +513,7 @@ async function askedOf(name: ChainRouteName, request: Request, url: URL, waitUnt
       if (body instanceof Response) return body
       const asked = ledgerRequestOf(body)
       if (!asked) return failed(name, 'bad_request', 400)
-      return { key: `ledger|${asked.ids.join(',')}|${asked.fresh ? 'fresh' : ''}`, read: (rpc) => ledgerAnswer(request, fees(rpc), asked) }
+      return { key: `ledger|${asked.ids.join(',')}|${asked.fresh ? 'fresh' : ''}|${ledgerHintKey(asked)}`, read: (rpc) => ledgerAnswer(request, fees(rpc), asked) }
     }
     case 'record': {
       const body = await bodyOf(request, url, RECORD_BODY_BYTES)
@@ -575,7 +575,7 @@ async function handle(name: ChainRouteName, context: ChainRouteContext, runtime:
   // kept for anyone else).
   let rpc: LocalRpc | null = null
   const routeCache: AnswerCache | null = cache && { match: (key) => cache.match(key), put: (key, value) => (rpc?.refused() ? Promise.resolve() : cache.put(key, value)) }
-  const asked = await askedOf(name, request, url, keepAlive, { now, sleep, cache: routeCache, mintWaitMs: runtime.mintWaitMs })
+  const asked = await askedOf(name, request, url, keepAlive, { now, sleep, cache: routeCache, mintWaitMs: runtime.mintWaitMs, log: runtime.log })
   if (asked instanceof Response) return { response: asked, outcome: 'bad_request', cache: 'none', rpc: null }
   const visitor = await visitorOf(memory, request)
   const wait = admitted(memory, visitor, CLASS_OF[name], now())

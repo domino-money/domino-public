@@ -38,7 +38,7 @@ export const feesStore = createFeesStore({
   // The chart's period starts too old for the readings to keep (a 30D start), held for the visit.
   pastReadings: (id) => pastReads.held(id),
   postState: (tokenIds, signal, background) => chainState(tokenIds, signal, background === true),
-  postLedger: (tokenIds, fresh, signal) => chainLedger(tokenIds, fresh, signal),
+  postLedger: (tokenIds, fresh, signal, mintHints) => chainLedger(tokenIds, fresh, signal, mintHints),
   later: whenVisibleAfter,
   timer,
 })

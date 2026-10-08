@@ -48,6 +48,47 @@ function history({ hours, perHour = () => 1, events = [] }) {
 
 const close = (actual, expected, what) => assert.ok(Math.abs(actual - expected) <= Math.abs(expected) * 1e-9, `${what}: ${actual} against ${expected}`);
 
+function firstReading(seconds, earned = [0n, 1n]) {
+  const h = history({ hours: 0 });
+  h.earned = earned;
+  h.points.push({ block: 2, t: T0 + seconds, earned, collected: [0n, 0n], kind: 'now' });
+  return h;
+}
+
+test('the first verified positive interval has its measured APR, without waiting six hours', () => {
+  assert.equal(APR_MIN_SECONDS, 1, 'only zero elapsed chain time is excluded');
+  const immediate = positionApr(firstReading(0), stateAt(T0), 1, 'all');
+  assert.deepEqual(immediate, { ok: false, reason: 'short', seconds: 0 });
+  for (const seconds of [1, 30, 60, 5 * HOUR]) {
+    const apr = positionApr(firstReading(seconds), stateAt(T0 + seconds), 1, 'all');
+    assert.equal(apr.ok, true);
+    assert.equal(apr.seconds, seconds);
+    assert.deepEqual(apr.from, { t: T0, block: 1 });
+    close(apr.rate, (0.000001 * YEAR) / (worth(L) * seconds), `${seconds} seconds`);
+  }
+});
+
+test('measured zero fees with capital and elapsed time are zero APR, not missing data', () => {
+  for (const seconds of [1, 60, 12 * HOUR]) {
+    const apr = positionApr(firstReading(seconds, [0n, 0n]), stateAt(T0 + seconds), 1, 'all');
+    assert.equal(apr.ok, true);
+    assert.equal(apr.rate, 0);
+    assert.equal(aprText(apr.rate), '0%');
+  }
+  const zeroDay = history({ hours: 48, perHour: (i) => i < 24 ? 1 : 0 });
+  const apr = positionApr(zeroDay, stateAt(T0 + 48 * HOUR), 1, '24h');
+  assert.equal(apr.ok, true);
+  assert.equal(apr.rate, 0, 'the measured last day earned zero although the first day earned fees');
+});
+
+test('capital added during the first minute is weighted only over its actual exposure', () => {
+  const h = firstReading(60, [0n, 1_000_000n]);
+  h.events.push({ kind: 'increase', block: 2, timestamp: T0 + 30, tx: '0x2', fees: [0n, 0n], liquidityDelta: L });
+  const apr = positionApr(h, stateAt(T0 + 60), 1, 'all');
+  assert.equal(apr.ok, true);
+  close(apr.rate, YEAR / (worth(L) * 30 + worth(2n * L) * 30), 'first-minute exposure');
+});
+
 test('a steady position: the fees over its value, annualised', () => {
   const h = history({ hours: 48 });
   const state = stateAt(T0 + 48 * HOUR);
@@ -109,33 +150,48 @@ test('every amount is valued at today’s price: the fees and the money in the p
 });
 
 test('no rate, with its reason, when it cannot honestly be said', () => {
-  // Under six hours of history.
-  const young = positionApr(history({ hours: 5 }), stateAt(T0 + 5 * HOUR), 1, 'all');
-  assert.deepEqual(young, { ok: false, reason: 'short', seconds: 5 * HOUR });
-  assert.equal(positionApr(history({ hours: 6 }), stateAt(T0 + 6 * HOUR), 1, 'all').ok, true, 'six hours is enough');
-  assert.equal(APR_MIN_SECONDS, 6 * HOUR);
   // A token whose decimals were not read.
   const unknown = { ...stateAt(T0 + 12 * HOUR), currencies: [currencies[0], { ...currencies[1], decimals: null }] };
   assert.equal(positionApr(history({ hours: 12 }), unknown, 1, 'all').reason, 'no_price');
   // A price of zero.
   assert.equal(positionApr(history({ hours: 12 }), stateAt(T0 + 12 * HOUR, 0n), 1, 'all').reason, 'no_price');
-  // Nothing earned.
-  assert.equal(positionApr(history({ hours: 12, perHour: () => 0 }), stateAt(T0 + 12 * HOUR), 1, 'all').reason, 'zero');
   // Closed a day ago: nothing in the position over the last day.
   const closed = history({ hours: 48, perHour: (i) => (i < 20 ? 1 : 0), events: [{ at: 20 * HOUR, delta: -L }] });
   assert.equal(positionApr(closed, stateAt(T0 + 48 * HOUR), 1, '24h').reason, 'empty');
   assert.equal(positionApr(closed, stateAt(T0 + 48 * HOUR), 1, 'all').ok, true, 'but it earned while it was open');
   // No points at all.
   assert.equal(positionApr({ mintedAt: { block: 1, timestamp: T0 }, points: [], events: [], earned: [0n, 0n] }, stateAt(T0), 1, 'all').reason, 'short');
-  for (const reason of ['short', 'no_price', 'empty', 'zero', 'no_point']) assert.match(APR_MISSING[reason], /^[A-Z][a-z0-9 ]+$/, `plain words for ${reason}`);
+  for (const reason of ['short', 'no_price', 'empty', 'unavailable', 'no_point']) assert.match(APR_MISSING[reason], /^[A-Z][a-z0-9 ]+$/, `plain words for ${reason}`);
+});
+
+test('unusable prices, overflow and inconsistent amounts never become zero or infinite APR', () => {
+  const h = firstReading(60, [0n, 1_000_000n]);
+  const state = stateAt(T0 + 60);
+  assert.equal(positionApr(h, { ...state, sqrtPriceX96: 10n ** 1_000n }, 1, 'all').reason, 'no_price');
+  assert.equal(positionApr(h, { ...state, tickUpper: Infinity }, 1, 'all').reason, 'no_price');
+  assert.equal(positionApr(h, { ...state, currencies: [{ ...currencies[0], decimals: NaN }, currencies[1]] }, 1, 'all').reason, 'no_price');
+  const overflow = { ...h, events: [{ ...h.events[0], liquidityDelta: 10n ** 1_000n }] };
+  assert.equal(positionApr(overflow, state, 1, 'all').reason, 'unavailable');
+  assert.equal(positionApr({ ...h, earned: [0n, 10n ** 1_000n] }, state, 1, 'all').reason, 'unavailable');
+  assert.equal(positionApr({ ...h, earned: [0n, -1n] }, state, 1, 'all').reason, 'unavailable');
+  const noTime = { ...h, points: [{ ...h.points[1], t: NaN }] };
+  assert.equal(positionApr(noTime, state, 1, 'all').reason, 'unavailable');
+  const overdrawn = { ...h, events: [...h.events, { ...h.events[0], timestamp: T0 + 30, liquidityDelta: -2n * L }] };
+  assert.equal(positionApr(overdrawn, state, 1, 'all').reason, 'unavailable');
 });
 
 test('the rate and the window in words', () => {
+  assert.equal(aprText(0), '0%');
   assert.equal(aprText(0.382), '38.2%');
   assert.equal(aprText(0.04), '4.0%');
   assert.equal(aprText(0.0004), '<0.1%');
   assert.equal(aprText(1.234), '123%');
   assert.equal(aprText(12.345), '1,235%');
+  assert.equal(spanText(0), '0 seconds');
+  assert.equal(spanText(1), '1 second');
+  assert.equal(spanText(59), '59 seconds');
+  assert.equal(spanText(60), '1 minute');
+  assert.equal(spanText(300), '5 minutes');
   assert.equal(spanText(HOUR), '1 hour');
   assert.equal(spanText(18 * HOUR), '18 hours');
   assert.equal(spanText(47 * HOUR), '47 hours');

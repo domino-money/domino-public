@@ -15,6 +15,7 @@ import { edgeFetch } from './support/edge-routes.mjs';
 import { RPC_URL } from './support/browser-chain.mjs';
 import { withEdge } from './support/fees/edge.mjs';
 import { ledgerWorld } from './support/fees/ledger-world.mjs';
+import { txOf } from './support/fees/ledger-chain.mjs';
 import { feesDefault } from './support/fees/stub.mjs';
 
 const require = createRequire(import.meta.url);
@@ -37,10 +38,10 @@ async function until(check, what) {
 /** The routes' own answers for one world (its /state and its ledger), read once at the edge. */
 async function answersOf(options = {}) {
   routes.resetChainRouteMemory();
-  const { chain } = ledgerWorld(options);
+  const { chain, spec } = ledgerWorld(options);
   const fetch = edgeFetch({ fetch: (_url, init) => chain.fetch(RPC_URL, init), now: () => 1_000_000, sleep: async () => {} });
   const post = async (path, body) => (await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
-  return { state: await post('/api/fees/v1/state', { tokenIds: [ID], automation: true }), ledger: await post('/api/fees/v2/ledger', { tokenIds: [ID] }), chain };
+  return { state: await post('/api/fees/v1/state', { tokenIds: [ID], automation: true }), ledger: await post('/api/fees/v2/ledger', { tokenIds: [ID], mintHints: [{ tokenId: ID, block: spec.mint.block, tx: spec.mint.tx ?? txOf(spec.mint.block) }] }), chain };
 }
 const ANSWERS = await answersOf();
 
@@ -105,7 +106,7 @@ function storeWith({ svc = service(), storage = null, now = () => ANSWERS.state.
   const readings = storage ? createReadings(() => storage) : null;
   const store = createFeesStore({
     postState: (ids) => svc.postState(ids),
-    postLedger: (ids, fresh, signal) => svc.postLedger(ids, fresh, signal),
+    postLedger: (ids, fresh, signal, hints) => svc.postLedger(ids, fresh, signal, hints),
     later: time.later,
     timer: time.timer,
     now,
@@ -114,6 +115,47 @@ function storeWith({ svc = service(), storage = null, now = () => ANSWERS.state.
   });
   return { store, svc, time, readings };
 }
+
+test('indexed mint evidence supersedes a slow cold read without letting its later failure overwrite the result', async () => {
+  const svc = service();
+  const pending = [];
+  svc.postLedger = (ids, fresh, signal, hints) => new Promise(resolve => pending.push({ ids, fresh, signal, hints, resolve }));
+  const { store } = storeWith({ svc });
+  const stop = store.subscribeHistory([ID], 'page', () => {});
+  await until(() => pending.length === 1, 'cold read');
+  const mint = ANSWERS.ledger.positions.find(item => item.tokenId === ID).mint;
+  const hint = { tokenId: ID, block: mint.block, tx: mint.tx };
+  store.offerMint({ ...hint, block: -1 });
+  store.offerMint({ ...hint, tx: 'unknown' });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(pending.length, 1, 'malformed hints start nothing');
+  store.offerMint(hint);
+  await until(() => pending.length === 2, 'hinted read starts without waiting for cold timeout');
+  assert.deepEqual(pending[1].hints, [hint]);
+  assert.equal(pending[1].fresh, true);
+  store.offerMint(hint);
+  pending[1].resolve({ ok: true, value: ANSWERS.ledger, bytes: 100 });
+  await until(() => store.view(ID).phase === 'verified', 'hinted history');
+  const verified = store.view(ID);
+  pending[0].resolve({ ok: false, failure: 'unavailable', retryAfterMs: 0 });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(store.view(ID), verified, 'obsolete failure does not replace financial history');
+  assert.equal(pending.length, 2, 'same indexed event never loops');
+  stop();
+});
+
+test('a new indexed mint retries a previously unqualified ledger without declaring the hint exact', async () => {
+  const svc = service();
+  svc.ledger = { ...svc.ledger, positions: svc.ledger.positions.map(item => item.ok ? { ...item, exact: false, why: 'unseen', entries: [] } : item) };
+  const { store } = storeWith({ svc });
+  const stop = store.subscribeHistory([ID], 'page', () => {});
+  await until(() => store.view(ID).phase === 'unclaimed-only', 'old unqualified ledger');
+  const mint = ANSWERS.ledger.positions.find(item => item.tokenId === ID).mint;
+  store.offerMint({ tokenId: ID, block: mint.block, tx: mint.tx });
+  await until(() => svc.ledgers.length === 2, 'retry with mint');
+  assert.equal(store.view(ID).phase, 'unclaimed-only', 'only the server can qualify the financial history');
+  stop();
+});
 
 test('one position: loading with its on-chain state, then verified from its ledger; one /state read and one ledger read', async () => {
   const { store, svc } = storeWith();
@@ -401,7 +443,7 @@ test('watch hears every change to the ids it names and asks nothing for them', a
 
 test('client.ts: no request in a build without the chain; the site’s own state and ledger routes, same origin, the routes’ answers checked; a failure is unavailable', async () => {
   const client = require('../.test-build/app/src/lib/fees/client.js');
-  const { chain } = ledgerWorld();
+  const { chain, spec } = ledgerWorld();
   routes.resetChainRouteMemory();
   const deps = { fetch: (url, init) => chain.fetch(url, init), sleep: async () => {}, now: () => Date.now() };
   const UNAVAILABLE = { ok: false, failure: 'unavailable', retryAfterMs: 0 };
@@ -412,10 +454,11 @@ test('client.ts: no request in a build without the chain; the site’s own state
     assert.deepEqual(none.result, [UNAVAILABLE, UNAVAILABLE]);
     assert.equal(none.sent.length, 0, 'fixture and bridge-test builds ask nothing');
     globalThis.__DOMINO_DEPLOYABLE__ = true;
-    const { result, sent } = await withEdge(deps, () => client.chainLedger([ID]));
+    const mintHints = [{ tokenId: ID, block: spec.mint.block, tx: txOf(spec.mint.block) }];
+    const { result, sent } = await withEdge(deps, () => client.chainLedger([ID], false, undefined, mintHints));
     assert.equal(result.ok, true);
     assert.equal(result.value.positions[0].exact, true);
-    assert.deepEqual(sent.map((one) => [one.path, one.body]), [['/api/fees/v2/ledger', { tokenIds: [ID] }]]);
+    assert.deepEqual(sent.map((one) => [one.path, one.body]), [['/api/fees/v2/ledger', { tokenIds: [ID], mintHints }]]);
     assert.deepEqual({ ...sent[0].init, body: undefined, signal: undefined }, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: undefined, signal: undefined, credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
     const fresh = await withEdge(deps, () => client.chainLedger([ID], true));
     assert.deepEqual(fresh.sent.map((one) => one.body), [{ tokenIds: [ID], fresh: true }]);

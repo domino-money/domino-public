@@ -42,6 +42,7 @@ test('each route posts JSON to its own fixed path, with this site’s cookies, n
     // 2026-10-02 (RPC-SPEC §11.4): a position's ledger, in place of the fees replay's log units; fresh after a settlement.
     [(o) => routes.postLedger(['7', '3'], false, o), '/api/fees/v2/ledger', { tokenIds: ['7', '3'] }],
     [(o) => routes.postLedger(['7'], true, o), '/api/fees/v2/ledger', { tokenIds: ['7'], fresh: true }],
+    [(o) => routes.postLedger(['7'], true, o, [{ tokenId: '7', block: 82863189, tx: `0x${'ab'.repeat(32)}` }]), '/api/fees/v2/ledger', { tokenIds: ['7'], fresh: true, mintHints: [{ tokenId: '7', block: 82863189, tx: `0x${'ab'.repeat(32)}` }] }],
     [(o) => routes.postAutomation(['1', '2'], o), '/api/automation/v1/state', { tokenIds: ['1', '2'] }],
     [(o) => routes.postVaultRecord({ vault: `0x${'5a'.repeat(20)}`, tokenId: '7', currencies: [`0x${'01'.repeat(20)}`, `0x${'02'.repeat(20)}`], from: 1, to: 2 }, o), '/api/automation/v1/record', { vault: `0x${'5a'.repeat(20)}`, tokenId: '7', currencies: [`0x${'01'.repeat(20)}`, `0x${'02'.repeat(20)}`], from: 1, to: 2 }],
     [(o) => routes.postSimulate({ owner: OWNER, calls: [{ to: `0x${'01'.repeat(20)}`, data: '0x', value: '0x0', extra: 1 }] }, o), '/api/chain/v1/simulate', { owner: OWNER, calls: [{ to: `0x${'01'.repeat(20)}`, data: '0x', value: '0x0' }] }],

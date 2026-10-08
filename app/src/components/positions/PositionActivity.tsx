@@ -47,7 +47,7 @@ export function useAutomaticAdds(tokenId: string, automation: AutomationView): A
  * (RPC-SPEC §11.4): a ledger that cannot measure the fees earned (an owner's add or withdrawal) still lists the
  * settlements it found, with no figure where it has none.
  */
-export function PositionActivity({ tokenId, automatic, owner }: { tokenId: string; automatic?: AutomaticAdds | null; owner?: string }) {
+export function PositionActivity({ tokenId, automatic, owner, onMint }: { tokenId: string; automatic?: AutomaticAdds | null; owner?: string; onMint?: (mint: import('../../lib/chart/positionOpened').ActivityMint) => void }) {
   const fees = useFeeHistory(tokenId)
   const events = useMemo(() => {
     const list = fees.phase === 'verified' ? fees.history.events : fees.phase === 'unclaimed-only' ? fees.events : null
@@ -63,5 +63,5 @@ export function PositionActivity({ tokenId, automatic, owner }: { tokenId: strin
       <FeesActivity events={events} bare automatic={automatic} />
     </section>
   )
-  return PositionHistory ? <Suspense fallback={legacy}><PositionHistory wallet={owner ?? null} position={{ chainId: 4663, dex: 4, tokenId }} events={automatic === null ? [] : events ?? []} automatic={automatic} /></Suspense> : legacy
+  return PositionHistory ? <Suspense fallback={legacy}><PositionHistory wallet={owner ?? null} position={{ chainId: 4663, dex: 4, tokenId }} events={automatic === null ? [] : events ?? []} automatic={automatic} onMint={onMint} /></Suspense> : legacy
 }

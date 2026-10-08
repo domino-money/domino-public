@@ -12,7 +12,7 @@
  * Pure and small: no DOM, no storage, no build flag; the network call is handed in by tests (RouteOptions.fetch).
  */
 import type { AutomationAnswer } from '../automationState'
-import type { RelayAnswer } from '../fees/types'
+import type { LedgerMintHint, RelayAnswer } from '../fees/types'
 import type { WalletAnswer } from '../walletPositions'
 
 export const ROUTES = Object.freeze({
@@ -169,7 +169,7 @@ export const postState = (tokenIds: readonly string[], automation = false, optio
  * the answer's block. `fresh`: the page saw a settlement its ledger does not hold yet, so the route takes no answer it kept
  * from before it.
  */
-export const postLedger = (tokenIds: readonly string[], fresh = false, options?: RouteOptions) => postRoute('ledger', { tokenIds: [...tokenIds], ...(fresh ? { fresh: true } : {}) }, options)
+export const postLedger = (tokenIds: readonly string[], fresh = false, options?: RouteOptions, mintHints?: readonly LedgerMintHint[]) => postRoute('ledger', { tokenIds: [...tokenIds], ...(fresh ? { fresh: true } : {}), ...(mintHints?.length ? { mintHints } : {}) }, options)
 /** Plain, Auto-compound or Domino-compound, paused or active, for up to 100 positions (RPC-SPEC §2.5.4). */
 export const postAutomation = (tokenIds: readonly string[], options?: RouteOptions) => postRoute('automation', { tokenIds: [...tokenIds] }, options)
 /** An automation vault's executions and the transfers out of it in their blocks (RPC-SPEC §2.5.5). */

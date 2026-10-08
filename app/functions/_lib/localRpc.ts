@@ -43,7 +43,7 @@
  */
 import { CHAIN_ID, MULTICALL3, REPLY_CUT, RPC_URL, SELECTOR, SETUP_DEPLOY_BLOCK, SETUP_MINTED_TOPIC, bodyWithin, hex } from './owned'
 import { POOL_MANAGER, TOPIC } from './fees'
-import { BUDGET_APPLIED, FEES_REALIZED } from './feesLedger'
+import { BUDGET_APPLIED, FEES_REALIZED, V2_ACTION, V2_STEP, V2_VAULT_CREATED, V2_COLLECTED, V2_COMPOUNDED, MINT_SWAP } from './feesLedger'
 import { EXECUTION_COMPLETED } from './vaultRecord'
 import { outlast } from './sharedWork'
 import { SIMULATE_CALLS, simulateGas } from './simulate'
@@ -127,7 +127,7 @@ export interface LocalRpc {
  * (rugged97's rule 2: never a pool's whole history): a pool's Initialize, Swap, Donate and ProtocolFeeUpdated, which only
  * the retired fees replay read, are refused; and the PoolManager's logs (ModifyLiquidity) are read one block at a time.
  */
-export const LOG_TOPICS: readonly string[] = Object.freeze([TOPIC.Transfer, TOPIC.ModifyLiquidity, SETUP_MINTED_TOPIC, EXECUTION_COMPLETED, FEES_REALIZED, BUDGET_APPLIED])
+export const LOG_TOPICS: readonly string[] = Object.freeze([TOPIC.Transfer, TOPIC.ModifyLiquidity, SETUP_MINTED_TOPIC, EXECUTION_COMPLETED, FEES_REALIZED, BUDGET_APPLIED, V2_ACTION, V2_STEP, V2_VAULT_CREATED, V2_COLLECTED, V2_COMPOUNDED])
 
 /** What each purpose (each route) may ask of the node; the simulation's method for its own route alone. */
 export const PURPOSE_METHODS: Readonly<Record<Purpose, readonly string[]>> = Object.freeze({
@@ -258,7 +258,7 @@ const isWord = (value: unknown): value is string => typeof value === 'string' &&
 const isEvent = (value: unknown): value is string => typeof value === 'string' && LOG_TOPICS.includes(value)
 
 /** An eth_getLogs filter the chain code may send, with its range, or null. */
-function logFilter(params: unknown[]): { filter: Record<string, unknown>; from: number; to: number } | null {
+function logFilter(params: unknown[], purpose?: Purpose): { filter: Record<string, unknown>; from: number; to: number } | null {
   if (params.length !== 1 || !isObject(params[0])) return null
   const filter = params[0]
   if (!exactKeys(filter, ['address', 'fromBlock', 'toBlock', 'topics'])) return null
@@ -272,6 +272,9 @@ function logFilter(params: unknown[]): { filter: Record<string, unknown>; from: 
   if (addresses.includes(POOL_MANAGER) && to !== from) return null
   const topics = filter.topics
   if (!Array.isArray(topics) || topics.length < 1 || topics.length > 4) return null
+  // Optional opening-price anchor only: the ledger already proved this mint block. Never admit a Swap range,
+  // wildcard pool, mixed topic/address list or any other purpose. Swap stays out of the general event allowlist.
+  if (topics[0] === MINT_SWAP) return purpose === 'ledger' && filter.address === POOL_MANAGER && from === to && topics.length === 2 && isWord(topics[1]) ? { filter, from, to } : null
   if (!isEvent(topics[0]) && !list(topics[0], 8, isEvent)) return null
   if (!topics.slice(1).every((topic) => topic === null || isWord(topic) || list(topic, 8, isWord))) return null
   return { filter, from, to }
@@ -324,7 +327,7 @@ function permitted(envelope: Envelope, purpose: Purpose): boolean {
       return to === MULTICALL3 && typeof data === 'string' && DATA.test(data) && data.startsWith(AGGREGATE3) && data.length >= 138 && BigInt(`0x${data.slice(74, 138)}`) <= BigInt(LOCAL_RPC_BATCH_ITEMS) && (params[1] === 'latest' || quantity(params[1]) !== null)
     }
     case 'eth_getLogs':
-      return logFilter(params) !== null
+      return logFilter(params, purpose) !== null
     case 'eth_getBlockByNumber':
       return params.length === 2 && quantity(params[0]) !== null && params[1] === false
     case 'eth_simulateV1':
@@ -731,7 +734,7 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
     const empty = new Set<number>()
     for (const [logical, envelope] of envelopes.entries()) {
       const logs = envelope.method === 'eth_getLogs'
-      const asked = logs ? logFilter(envelope.params) : null
+      const asked = logs ? logFilter(envelope.params, purpose) : null
       if (asked && asked.to < LOCAL_RPC_LOG_FLOOR) {
         empty.add(logical)
         continue

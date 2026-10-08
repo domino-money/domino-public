@@ -90,7 +90,8 @@ async function signIn(page) {
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
   await page.fill('#password', PASSWORD);
   leaving(page);
-  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.click('button[type="submit"]')]);
+  const [response] = await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.click('button[type="submit"]')]);
+  return response;
 }
 
 test('a visitor without the password sees only the access page', async () => {
@@ -283,6 +284,26 @@ test('the whole workspace works behind the gate, not only the landing', async ()
   );
   assert.equal(images, 0, 'token images failed to load behind the gate');
   assert.deepEqual(log.errors.filter((e) => !/status of 401/.test(e)), []);
+  await closeContext(context);
+});
+
+test('the app allows a response-nonced detection script and still blocks unmarked inline scripts', async () => {
+  const { context, page } = await visitor();
+  const response = await signIn(page);
+  const policy = response.headers()['content-security-policy'];
+  const nonce = /'nonce-([^']+)'/.exec(policy)?.[1];
+  assert.ok(nonce, 'Cloudflare can read the nonce from this document response header');
+  const result = await page.evaluate((nonce) => {
+    const allowed = document.createElement('script');
+    allowed.nonce = nonce;
+    allowed.textContent = 'document.documentElement.dataset.nonceCheck = "allowed"';
+    document.head.appendChild(allowed);
+    const blocked = document.createElement('script');
+    blocked.textContent = 'document.documentElement.dataset.unmarkedCheck = "allowed"';
+    document.head.appendChild(blocked);
+    return { matched: document.documentElement.dataset.nonceCheck, unmarked: document.documentElement.dataset.unmarkedCheck ?? null };
+  }, nonce);
+  assert.deepEqual(result, { matched: 'allowed', unmarked: null });
   await closeContext(context);
 });
 

@@ -44,8 +44,8 @@ export type FeesReason = 'rpc_unavailable' | 'not_exact' | 'hooked_pool' | 'not_
  */
 export type FeeHistoryView =
   | { phase: 'idle' }
-  | { phase: 'loading'; state: PositionState | null }
-  | { phase: 'unclaimed-only'; state: PositionState; reason: FeesReason; why?: LedgerWhy; events?: ReadonlyArray<FeeEvent> }
+  | { phase: 'loading'; state: PositionState | null; mintedAt?: PositionMint }
+  | { phase: 'unclaimed-only'; state: PositionState; reason: FeesReason; why?: LedgerWhy; events?: ReadonlyArray<FeeEvent>; mintedAt?: PositionMint }
   | { phase: 'verified'; state: PositionState; history: FeeHistory }
   /** A previous visit's public history, presentation only; never an authoritative current state. */
   | CachedFeeHistory
@@ -126,8 +126,15 @@ export interface FeePoint {
 }
 
 /** The verified history of one position NFT since its mint: its ledger, folded with the chain's state now (lib/fees/ledger.ts). */
+export interface PositionMint {
+  block: number
+  timestamp: number
+  /** Pool price at the end of the verified creation block, when the archive read answered. */
+  sqrtPriceX96?: string
+}
+
 export interface FeeHistory {
-  mintedAt: { block: number; timestamp: number }
+  mintedAt: PositionMint
   /** Collected + unclaimed since the mint (unclaimed = the chain's figure now). */
   earned: readonly [bigint, bigint]
   /** Settled since the mint: every settlement's fees, exactly. */
@@ -247,7 +254,8 @@ export type LedgerPosition =
       /** Every settlement up to this block is in `entries`. */
       through: number
       state: StatePositionOk
-      mint: { block: number; tx: Hex32; t: number } | null
+      /** Optional price is the pool's measured state at the end of this verified mint block. */
+      mint: { block: number; tx: Hex32; t: number; sqrtPriceX96?: string } | null
       entries: LedgerEntry[]
       exact: boolean
       why?: LedgerWhy
@@ -275,6 +283,13 @@ export interface MintHint {
   block: number
   /** The mint's transaction, when the hint's source had it. */
   tx?: string
+}
+
+/** Indexed mint evidence, verified against the NFT's on-chain Transfer before bounding a ledger read. */
+export interface LedgerMintHint {
+  tokenId: string
+  block: number
+  tx: string
 }
 
 /** How much of the store one subscriber asks: a position page (state and ledger), or the Positions list (the ledger alone). */

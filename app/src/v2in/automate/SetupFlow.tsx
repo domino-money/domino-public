@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { PortfolioResponse } from 'api-contracts/read-v6/types'
 import { CompoundPreview } from '../../components/automate/CompoundPreview'
 import { ModeArt } from '../../components/automate/ModeArt'
 import { ModeSummary } from '../../components/automate/ModeSummary'
@@ -9,7 +10,6 @@ import { positionHref } from '../../components/explore/routes'
 import { Button, Card, LinkButton } from '../../components/ui'
 import { automationFeeText, VAULT_TEXT, type VaultCreateBatch, type VaultCreateReview } from '../../finance/v2/vault'
 import { preselected } from '../../lib/automate/picker'
-import { useAutomation } from '../../lib/automationState'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import { CREATE } from '../../lib/create/copy'
 import { SEQUENCE_DEFAULTS, type SequenceForm } from '../../lib/create/sequenceDefaults'
@@ -26,7 +26,6 @@ import { describeError, errorLabels, STEPS_INSTEAD, type ErrorView } from './cop
 import { bpsText, defaultSettingsForm, intervalWords, observationAgeWords, settingsFrom, type VaultSettingsForm } from './form'
 import { gateOpen } from './gate'
 import { LimitsFields } from './LimitsFields'
-import { usePortfolio } from './read6'
 import { openAutomation, type AutomationSession } from './session'
 import { automationState, recordVaultEvents, rememberVault, sessionMandates, sessionRevoked, subscribeAutomation } from './store'
 import { useStepsRun, WalletSteps, type WalletStep } from './steps'
@@ -49,9 +48,8 @@ import type { SetupMode } from './intent'
  *     paused), its auto-exit module on and its order registered, all in Auto-exit's own dialog
  *     (../autoexit/MandateDialog.tsx): one signature, then one confirmation when the wallet batches.
  *
- * All three are the vault's under `preview` (the preview alias, the development server: each runs up to its review and
- * the locked sentence; the owner, 2026-10-02 night) and under `live` (through the closed vault client). V1's own sequence
- * is production's, where the gate is off (./SetupEntry.tsx).
+ * All three follow the V2 gate. The picker receives only eligible read-v6 NFTs; every live review rechecks their
+ * ownership and custody on chain before preparing an approval or transaction.
  */
 
 
@@ -62,7 +60,7 @@ const MODES: readonly { key: SetupMode; title: string; line: string; fee: string
   { key: 'protection', title: 'Auto-exit', line: 'Domino closes this position at the end of its range and sends the tokens to your wallet. 0.2% only if it closes.', fee: null },
 ]
 
-/** The pool of a V1 position, in pool order (by address, whichever way V1's read lists the pair); null when the read is not one. */
+/** The picker position's pool in canonical currency order. */
 function poolOf(position: WalletPosition): ExitTarget['pool'] | null {
   const [a, b] = position.currencies.map((c) => c.address.toLowerCase() as Address).sort((x, y) => (BigInt(x) < BigInt(y) ? -1 : BigInt(x) > BigInt(y) ? 1 : 0))
   if (!/^0x[0-9a-f]{40}$/.test(a) || !/^0x[0-9a-f]{40}$/.test(b) || BigInt(a) >= BigInt(b)) return null
@@ -85,10 +83,11 @@ function quoteIsCurrency0(pool: { currency0: Address; currency1: Address }): boo
   return false
 }
 
-export function SetupFlow({ positions, intent, gate, exitGate }: {
+export function SetupFlow({ positions, portfolio, intent, gate, exitGate }: {
   positions: readonly WalletPosition[]
+  portfolio: PortfolioResponse
   intent: { mode: SetupMode | null; tokenId: string | null }
-  /** The vault's gate on Robinhood Chain (V1's positions are there). */
+  /** The vault's gate on Robinhood Chain. */
   gate: Exclude<V2Gate, { mode: 'off' }>
   /** The auto-exit's gate there (Auto-exit needs both). */
   exitGate: V2Gate | null
@@ -104,20 +103,16 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
   const [created, setCreated] = useState<{ vault: Address; tokenId: string; mode: 1 | 2 } | null>(null)
   const chain = v2Chain(4663)
   const position = positions.find((entry) => entry.tokenId === tokenId) ?? null
-  const automation = useAutomation(position?.tokenId ?? null)
-  // A position already automated (V1's sequence) or tied to another app cannot take a vault: said before anything else.
-  const taken = automation.phase === 'ready' && automation.state.automation !== 'plain'
-  const usable = taken ? null : position
+  const usable = position
   // Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "auto-exit has no fee compounding"): a position with
   // Auto-exit (read-v6's word, or turned on or off in this tab) is offered no compounding, and no second Auto-exit; one
   // whose Auto-exit is off but whose protection-only vault stays is turned back on from its own page (in that vault).
   const identity = useWalletIdentity()
   const connected = identity.kind === 'connected' ? (identity.address.toLowerCase() as Address) : null
-  const indexed = usePortfolio(connected, gate)
   const store = useSyncExternalStore(subscribeAutomation, automationState, automationState)
   const revoked = sessionRevoked(store, 4663)
   const turnedOnHere = usable !== null && connected !== null && sessionMandates(store, 4663, connected).some((m) => m.registered && m.tokenId === BigInt(usable.tokenId) && !revoked.has(m.id))
-  const exitStanding: AutoExitStanding = turnedOnHere ? 'on' : usable !== null && indexed?.reply.kind === 'ok' ? autoExitStanding(indexed.reply.body, 4663, usable.tokenId, 4, revoked) : null
+  const exitStanding: AutoExitStanding = turnedOnHere ? 'on' : usable !== null ? autoExitStanding(portfolio, 4663, usable.tokenId, 4, revoked) : null
   const exitHeld = exitStanding !== null
   const pool = usable ? poolOf(usable) : null
   const tokens = useMemo(() => (pool && usable ? poolTokens(chain, pool, walletTokenMeta(usable.currencies)) : null), [pool, usable, chain])
@@ -283,9 +278,7 @@ export function SetupFlow({ positions, intent, gate, exitGate }: {
   const consentText = settings.mode === null ? null : VAULT_TEXT.vault_consent_uncollected_fees.replace('{fee}', automationFeeText(settings.mode))
   const reason = !position
     ? 'Choose one of your positions.'
-    : taken
-      ? 'This position already has automation. Choose another one.'
-      : !chosen
+    : !chosen
         ? 'Choose what Domino does for it.'
         : exitStanding !== null
           ? mode !== 'protection'

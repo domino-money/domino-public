@@ -23,6 +23,9 @@
  * price over the last 7 days from the read service's stored history (read-v3 `history`, `scenario`'s `history`); where
  * the deployment lists none, the band and the price now alone, and one short line says so. Every case at every price:
  * tests/price-range.browser.test.mjs.
+ *
+ * Changed on purpose 2026-10-08: verified creation/current block prices supplement the stored hourly series. Without
+ * stored history, measurements more than an hour apart stay isolated; before the mint is verified only Now is shown.
  */
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
@@ -172,6 +175,27 @@ const rangeCard = (page) => page.locator('section.dm-pos-card:has([data-range])'
 /** A range end's figure on the chart, as the key figures write it (2026-10-03: its word "Max" or "Min" over it). */
 const endFigure = (range, end) => range.locator(`[data-pvr-end="${end}"] .dm-pvr-label-fig`).innerText();
 
+/** Without stored history these day-old fixtures have exactly two real observations, with no invented path between. */
+async function assertIsolatedBlockPrices(range, world) {
+  const opened = world.timeAt(world.spec.mint.block);
+  assert.equal(await range.getAttribute('data-pvr-line'), '', 'verified block observations can be inspected');
+  assert.equal(Number(await range.getAttribute('data-pvr-opened')), opened);
+  assert.equal(Number(await range.getAttribute('data-pvr-start')), opened, 'nothing is drawn before the mint');
+  assert.equal(Number(await range.getAttribute('data-pvr-first')), opened, 'the first observation is the creation block');
+  assert.equal(await range.locator('path.dm-pvr-line').count(), 0, 'unknown hours are never joined into a price trajectory');
+  assert.equal(await range.locator('.dm-pvr-lone[data-tone="in"]').count(), 2, 'only opening and current prices, clipped to the range');
+  assert.equal(await range.locator('.dm-pvr-lone[data-tone="out"]').count(), 2, 'the same two observations outside the range');
+  assert.equal(await range.locator('.dm-pvr-note').innerText(), 'Since opened · Some hours are missing.');
+  const chart = range.getByRole('slider');
+  assert.equal(await chart.getAttribute('aria-valuemax'), '2', 'no synthetic hourly points');
+  const stamp = (sec) => { const iso = new Date(sec * 1000).toISOString(); return `${iso.slice(5, 10)} ${iso.slice(11, 16)} UTC`; };
+  for (const [key, time] of [['Home', opened], ['End', world.timeAt(HEAD)]]) {
+    await chart.press(key);
+    assert.ok((await chart.getAttribute('aria-valuetext')).startsWith(`${stamp(time)}, `), `${key} inspects the actual block time`);
+  }
+  await chart.press('Escape');
+}
+
 /** The growth line's figure from the world's liquidity: the automation's re-adds against the owner's mint. */
 function growthOf(steps = OWNER_STEPS) {
   const auto = steps.filter((step) => step.kind === 'net' || step.kind === 'compound').reduce((sum, step) => sum + step.delta, 0n);
@@ -250,18 +274,18 @@ test('an automated position: the card says in two lines what Auto-compound put b
       await tip.waitFor({ state: 'detached', timeout: 5_000 });
     }
 
-    // The price range chart: in range, in plain words, the band and its two ends labelled, the price now; no line where
-    // the deployment lists no stored price history of the pool (this one lists read-v1 nft-positions alone).
+    // No stored pool history is listed here. The verified mint/current prices remain useful, but the unknown day
+    // between them must stay empty, rather than showing a fabricated trajectory.
     const range = page.locator('[data-pvr-where]');
     await range.waitFor();
     assert.equal(await range.getAttribute('data-pvr-where'), 'inside');
     await page.locator('[data-pvr-history="not_listed"]').waitFor({ timeout: 10_000 });
-    assert.equal(await range.getAttribute('data-pvr-line'), null, 'no line without a stored history: nothing else is read for it');
+    await assertIsolatedBlockPrices(range, world);
     assert.equal((await range.locator('.dm-pvr-says').textContent()).replace(/\s+/g, ' ').trim(), 'Earning fees — the price is inside your range');
     assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(page), 'one price now on the screen');
     const [low, high] = [await endFigure(range, 'min'), await endFigure(range, 'max')];
     assert.match(await page.locator('[data-stat="range"]').innerText(), new RegExp(`^${low.replaceAll('.', '[.]')}\\s+Your range\\s+${high.replaceAll('.', '[.]')}\\s`));
-    assert.deepEqual(await range.locator('.dm-pvr-legend > *').allInnerTexts(), ['Your range', 'Price now', 'Price history isn’t available yet.']);
+    assert.deepEqual(await range.locator('.dm-pvr-legend > *').allInnerTexts(), ['Your range', 'Price inside it', 'Since opened · Some hours are missing.']);
     assert.equal(await range.locator('.dm-pvr-unit').innerText(), 'USDG per UFG');
     assert.match(await page.locator('[data-stat="price"]').innerText(), /1 UFG =\s+0\.00\d+\s+USDG/);
     await rangeCard(page).screenshot({ path: join(shots(), 'desktop-price-range-in.png') });
@@ -379,11 +403,13 @@ test('the position’s page draws the pool’s last 7 days from the read service
     const s = await scenario(world, HASH, device, null, { history: (body) => historyFor(pool, body, { end: Math.floor(Date.now() / 1000) }) });
     try {
       const range = s.page.locator('[data-pvr-where]');
-      await s.page.locator('[data-pvr-line]').waitFor({ timeout: 30_000 });
+      await s.page.locator('[data-fees-card][data-fees-state="verified"]').waitFor({ timeout: 60_000 });
+      await s.page.locator('[data-pvr-line][data-pvr-history="answered"]').waitFor({ timeout: 30_000 });
       assert.equal(await range.getAttribute('data-pvr-where'), 'inside');
       assert.equal((await range.locator('.dm-pvr-says').textContent()).replace(/\s+/g, ' ').trim(), 'Earning fees — the price is inside your range');
       assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(s.page), 'one price now on the screen');
-      assert.equal(await range.locator('.dm-pvr-note').innerText(), 'Last 7 days · Hourly prices');
+      assert.equal(await range.locator('.dm-pvr-note').innerText(), 'Last 7 days · Measured prices');
+      assert.equal(await range.locator('.dm-pvr-note').getAttribute('title'), 'Pool price at the opening block and later measurements. Lines between measurements are guides.');
       assert.ok((await range.locator('.dm-pvr-line').count()) > 0, 'the line is drawn');
       assert.deepEqual(s.histories, [{ poolId: world.poolId, currency: UFG, windowSeconds: 604_800, resolutionSeconds: 3_600 }], 'asked once, for UFG’s price, the 7 days hour by hour');
       keptToTheRules(world);
@@ -590,10 +616,12 @@ test('while the ledger is read the card shows the chain’s unclaimed figure and
       assert.match(await loading.innerText(), /Fees earned[\s\S]*Ready to collect[\s\S]*\$[\d,]+\.\d\d/, 'the chain’s unclaimed figure, at once, in the key figures’ words');
       const skeleton = await loading.locator('.dm-fees-chart-skel').boundingBox();
       // The price range, from the page's own read: the status, the band and the price now, in the chart's final box, and
-      // no line (this deployment lists no stored price history of the pool).
+      // no historical observations before the held ledger verifies its mint.
       const range = s.page.locator('[data-pvr-where]');
       await range.waitFor({ timeout: 10_000 });
       assert.equal(await range.getAttribute('data-pvr-line'), null);
+      assert.equal(await range.getAttribute('data-pvr-first'), null, 'no opening price is invented while mint verification is pending');
+      assert.equal(await range.locator('path.dm-pvr-line, .dm-pvr-lone').count(), 0);
       assert.equal((await range.locator('.dm-pvr-says').textContent()).replace(/\s+/g, ' ').trim(), 'Not earning — the price is above your range');
       assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(s.page));
       assert.equal(await rangeCard(s.page).locator('.dm-acct-range-bar, .dm-pos-ends, .dm-pos-preview-wrap').count(), 0);
@@ -608,7 +636,7 @@ test('while the ledger is read the card shows the chain’s unclaimed figure and
       await s.page.waitForTimeout(500);
       const late = await rangeCard(s.page).boundingBox();
       assert.equal(Math.round(late.height), Math.round(early.height), 'the price range never moved');
-      assert.equal(await range.getAttribute('data-pvr-line'), null);
+      await assertIsolatedBlockPrices(range, world);
     } finally { await s.close(); }
   }
 });

@@ -16,7 +16,7 @@ import { Button, Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, 
 import { chainState, freshState, takeWarmState } from '../lib/fees/client'
 import { feesStore } from '../lib/fees/spawn'
 import { refreshFeeStates, useFeeHistory, useLedgerTraces } from '../lib/fees/useFeeHistory'
-import { ledgerOpenedAt } from '../lib/chart/positionOpened'
+import { ledgerOpenedAt, ledgerPriceObservations, type ActivityMint } from '../lib/chart/positionOpened'
 import { readKept } from '../finance/privateCards'
 import { KEPT_MAX_AGE_MS } from '../lib/browserCopies'
 import { createdHere } from '../lib/create/createProgress'
@@ -36,6 +36,9 @@ import { useWalletIdentity, walletKey } from '../lib/walletIdentity'
 import { keptPosition, parseWalletAnswer, walletChanged, type WalletPosition } from '../lib/walletPositions'
 import { readGatewayRow } from '../lib/positions/gatewayRow'
 import { loadReadSource } from '../lib/read/buildMode'
+
+// V2's own portfolio admits setup. Do not subscribe to the inactive catalogue even with a null owner.
+const useLegacyListing: typeof useListedPosition = __DOMINO_V2__ ? () => null : useListedPosition
 
 /**
  * What the owner's actions take (components/positions/PositionActions.tsx, the
@@ -304,14 +307,21 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
   // Read again after each of the owner's actions (`changes`), and never offered for a position this read shows closed:
   // after a Close, Automate and the Plain position pill go at once (2026-09-25, audit of 754014c: the wallet's list, read
   // before the Close, still offered them until the page was opened again).
-  const listed = useListedPosition(card.tokenId, mine ? card.owner.address : null, changes)
+  const listed = useLegacyListing(card.tokenId, mine ? card.owner.address : null, changes)
   const automatable = listed === true && card.hasLiquidity
   const usdgIndex = state ? usdgSide(state.currencies) : null
   const phone = useMediaQuery('(max-width: 767px)')
   const automation = useAutomation(card.tokenId)
   // What the automation put back, from its vault's own record: the only rows of Activity that name it (2026-09-27).
   const automatic = useAutomaticAdds(card.tokenId, automation)
-  const openedAt = ledgerOpenedAt(useFeeHistory(card.tokenId))
+  const [indexedMint, setIndexedMint] = useState<ActivityMint | null>(null)
+  const onMint = useCallback((mint: ActivityMint) => {
+    if (mint.tokenId !== card.tokenId) return
+    setIndexedMint((previous) => previous?.tokenId === mint.tokenId && previous.block === mint.block && previous.tx === mint.tx && previous.timestamp === mint.timestamp ? previous : mint)
+    feesStore.offerMint(mint)
+  }, [card.tokenId])
+  const feeHistory = useFeeHistory(card.tokenId)
+  const openedAt = ledgerOpenedAt(feeHistory) ?? (indexedMint?.tokenId === card.tokenId && indexedMint.block <= block ? indexedMint.timestamp : null)
   // The way on: Automate, or the docs on switching a sequence on. The owner's actions show it first, unless a
   // sequence's Turn on or Pause takes its place (2026-09-25), and it stands alone while their chunk loads.
   const entry = __DOMINO_V2__ ? null : <AutomateEntry tokenId={card.tokenId} open={automatable} variant="action" />
@@ -422,10 +432,10 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
               no line of the pool's past prices, which came from the fees replay's reads of the pool's history. Changed on
               purpose 2026-10-03 (the owner's point 10: "it doesn't show the history"): the line is back, from the read
               service's stored price history of the pool (read-v3 `history`, the last 7 days), never from a node. */}
-          <PositionRange card={card} price={price} variant="page" history openedAt={openedAt} />
+          <PositionRange card={card} price={price} variant="page" history openedAt={openedAt} observations={ledgerPriceObservations(feeHistory)} />
         </section>
 
-        <PositionActivity tokenId={card.tokenId} automatic={automatic} owner={card.owner.address} />
+        <PositionActivity tokenId={card.tokenId} automatic={automatic} owner={card.owner.address} onMint={onMint} />
 
         {/* Everything technical, at the end and closed until asked for (the owner, 2026-09-27): the main page stays practical. */}
         <details className="dm-card dm-pos-details" data-position-details="">

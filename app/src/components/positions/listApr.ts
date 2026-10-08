@@ -12,7 +12,7 @@ import { usdgSide } from './visual/value'
 export type RowApr =
   | { kind: 'rate'; text: string; saved?: { at: number; block: number; timestamp: number } }
   /**
-   * The history is drawn but says no rate (under 6 hours, nothing earned yet...): a dash, the reason in words. `short`: a
+   * The history is drawn but has no elapsed time or usable value: a dash, the reason in words. `short`: a
    * word shown beside the dash in place of "on its page", when its page has no figure either (2026-10-02, finding 11).
    */
   | { kind: 'missing'; words: string; short?: string }

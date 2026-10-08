@@ -1077,7 +1077,7 @@ test("the gate's own answers and the app's pages keep the headers they had", asy
   for (const path of ['/', '/apix', '//api/read/v1/capabilities']) {
     const page = await pages(call(path, { headers: { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' } }), env);
     assert.equal(page.status, 200, path);
-    assert.equal(page.headers.get('Content-Security-Policy'), APP_CSP, path);
+    assert.equal(page.headers.get('Content-Security-Policy').replace(/ 'nonce-[A-Za-z0-9+/]+={0,2}'/, ''), APP_CSP, path);
     assert.equal(page.headers.get('Cache-Control'), 'private, no-cache', path);
   }
   // Changed on purpose 2026-10-01 (platform workstream, D1): a path that names a file the deployment does not hold, which

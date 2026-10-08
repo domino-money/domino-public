@@ -35,6 +35,7 @@ const { POSITION_MANAGER, createPositionChain } = await import('../support/posit
 const { createFakeSession } = await import('../support/fake-session.mjs');
 const { createWalletServer } = await import('../support/wallet-server.mjs');
 const { launchBrowser } = await import('../support/s1-browser.mjs');
+const { plainPortfolio } = await import('../support/v2-plain-portfolio.mjs');
 
 const require = createRequire(import.meta.url);
 const position = require('../../.test-build/app/src/finance/position.js');
@@ -95,8 +96,8 @@ async function atPage() {
     return chain.request(method, params);
   });
   await context.exposeFunction('__dominoV1PageCsp', (line) => csp.push(line));
-  await context.addInitScript(() => {
-    window.__dominoV2Test = { originOpen: true };
+  await context.addInitScript((portfolio) => {
+    window.__dominoV2Test = { originOpen: true, read6: { portfolio } };
     document.addEventListener('securitypolicyviolation', (event) => window.__dominoV1PageCsp(`${event.violatedDirective} ${event.blockedURI}`));
     const provider = {
       async request({ method, params }) {
@@ -111,7 +112,7 @@ async function atPage() {
     const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail }));
     window.addEventListener('eip6963:requestProvider', announce);
     announce();
-  });
+  }, plainPortfolio(rpc, OWNER));
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   const s = {
@@ -153,7 +154,8 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     const control = detail.locator('[data-automation-control]');
     await control.waitFor({ timeout: 30_000 });
     assert.equal(await control.count(), 1);
-    assert.equal(await control.getAttribute('aria-expanded'), 'false');
+    assert.equal(await control.innerText(), 'Set up automation');
+    assert.equal(await control.getAttribute('href'), '#/sequence/3135288');
     await actions.locator('[data-position-action="close"]').waitFor({ timeout: 15_000 });
     const more = actions.locator('[data-position-v2-actions="preview"] [data-position-v2-more]');
     await more.waitFor({ timeout: 30_000 });
@@ -172,9 +174,7 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth),true,'position fits at '+width);
     }
     await page.setViewportSize({width:1180,height:900});
-    await control.click();
-    assert.equal(await control.getAttribute('aria-expanded'), 'true');
-    assert.equal(await detail.locator('[data-automation-panel]').isVisible(), true);
+    assert.equal(await detail.locator('[data-automation-panel]').isVisible(), false, 'plain positions go directly to setup');
     assert.equal(await actions.locator('[data-automate-entry], [data-position-v2-action="protect"]').count(), 0);
     /**
      * Opens the "···" menu, checks its entries, picks one (the menu closes on the pick). Changed on purpose 2026-10-04 (the

@@ -123,10 +123,10 @@ const MAX_FORM_BYTES = 1024
  * that needs a host adds one line to one list and merges never fight over one long string).
  *
  * - script-src: the site's own files, and the page's one inline script, the boot script, by its hash
- *   (functions/_lib/boot.ts). Nothing else inline runs: not 'unsafe-inline', no nonce. Cloudflare's Bot Fight Mode
- *   injects a script of its own (window.__CF$cv$params) into every page; it is refused here, which costs the page
- *   nothing (its job is the edge's bot score), and the console line it leaves goes away when the owner turns the
- *   zone's JavaScript detections off in the dashboard. The CSP is never loosened for it (decision of 2026-09-11).
+ *   (functions/_lib/boot.ts). Each HTML response also carries a fresh cryptographic nonce: Cloudflare reads it from
+ *   this header and applies it to its JavaScript Detection tags. This keeps that protection compatible with CSP
+ *   without unsafe-inline, extra hosts or trusting arbitrary inline scripts. The boot script still uses its hash;
+ *   neither its bytes nor the HTML need rewriting. See Cloudflare's JavaScript Detections CSP documentation.
  * - style-src, font-src: the site's own files; the fonts are its own since 2026-09-28 (src/styles/fonts.css), and no
  *   Google host is reached.
  * - img-src, connect-src: the two public DEX Screener hosts token artwork uses (the metadata endpoint's same GET also
@@ -195,6 +195,13 @@ export const APP_CSP_CHAIN2 = withChains(APP_CSP, SECTION_READS ? [ELYSIUM] : []
 
 /** The page's CSP in `env`: APP_CSP_CHAIN2 where CHAIN2_PREVIEW is exactly "true", APP_CSP everywhere else. */
 export const pageCspFor = (env: Chain2Env): string => (env.CHAIN2_PREVIEW === 'true' ? APP_CSP_CHAIN2 : APP_CSP)
+
+/** Cloudflare adds this response's nonce to the scripts it injects; never shared across responses or cached here. */
+function withDetectionNonce(policy: string): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  const nonce = btoa(String.fromCharCode(...bytes))
+  return policy.replace('script-src ', `script-src 'nonce-${nonce}' `)
+}
 
 /** The CSP for an API answer: JSON that renders nothing and frames nowhere. */
 export const API_CSP = "default-src 'none'; frame-ancestors 'none'"
@@ -455,7 +462,7 @@ function secured(response: Response, url: URL, pageCsp: string = APP_CSP): Respo
     out.headers.set('Cache-Control', url.pathname.startsWith(PUBLIC_READ_PREFIX) || CHAIN_ROUTE.test(url.pathname) ? 'no-store' : 'no-store, no-transform')
     out.headers.set('Content-Security-Policy', API_CSP)
   } else if (type.includes('text/html')) {
-    out.headers.set('Content-Security-Policy', pageCsp)
+    if (out.status !== 304) out.headers.set('Content-Security-Policy', withDetectionNonce(pageCsp))
     out.headers.set('Cache-Control', 'private, no-cache')
   } else if (hashed) {
     // Content-hashed by Vite, so safe to keep, but only in this browser.
@@ -468,6 +475,9 @@ function secured(response: Response, url: URL, pageCsp: string = APP_CSP): Respo
     // nothing on its next load. Its copy keeps the CSP it was served with.
     if (out.status !== 304) out.headers.set('Content-Security-Policy', STATIC_CSP)
   }
+  // A fresh nonce would not match the injected tags in the browser's retained HTML. A 304 keeps that document's
+  // original policy, even if the static origin returned a Content-Type or its own CSP with the validators.
+  if (!api && out.status === 304) out.headers.delete('Content-Security-Policy')
   // Only a file that is there is kept: a refusal or an error from the static files never is.
   if (!api && out.status >= 400) out.headers.set('Cache-Control', 'no-store')
   return out

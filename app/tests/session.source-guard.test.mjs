@@ -201,7 +201,7 @@ test('the wallet feature is reached only through the build flag', () => {
   // carries none of them. (The old #/v2 screens, v2ui/, were admitted the same way until item 6 removed them.)
   // Changed on purpose (2026-10-02, rugged97's spec rev3 §2.13): the fees waiting in a vault and their withdrawal
   // (components/positions/FeeReserves.tsx) sign through the wallet too; Positions and a position's page open it lazily.
-  const feature = /^(session|wallet|finance|components\/wallet|v2in)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate|PositionLab)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$|^components\/positions\/(PositionActions|HeldDeposits|SequenceSwitch|FeeReserves)(\.tsx)?$/;
+  const feature = /^(session|wallet|finance|components\/wallet|v2in)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate|SequenceLegacy|SequenceShell|PositionLab)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$|^components\/positions\/(PositionActions|HeldDeposits|SequenceSwitch|FeeReserves)(\.tsx)?$/;
   // The onboarding previews and the deposit consumer (#38, #40/#44) read the
   // session through session/port.ts, and the preview screen also through
   // session/livePort.ts. Their lab screens live in chunks of the consumer-test
@@ -244,7 +244,7 @@ test('the wallet feature is reached only through the build flag', () => {
   // `__DOMINO_V2__ ? lazy(() => import('…/v2in/…'))` (recovering() allowed), never a static import, types included.
   // Changed on purpose (data) 2026-10-02 (the lists): `deferred(...)` (components/Deferred.tsx, the same lazy opening without a
   // Suspense boundary) counts as lazy too; OwnedPositions.tsx and Positions.tsx open the lists' rows that way.
-  for (const { path, code } of ALL.filter(({ path }) => !feature.test(path) || /^screens\/(Sequence|SequenceCreate)\.tsx$/.test(path))) {
+  for (const { path, code } of ALL.filter(({ path }) => !feature.test(path) || /^screens\/(Sequence|SequenceCreate|SequenceLegacy|SequenceShell)\.tsx$/.test(path))) {
     const mentions = [...code.matchAll(/['"`]((?:\.\.?\/)+v2in\/[^'"`]+)['"`]/g)].length;
     if (mentions === 0) continue;
     const lazy = [...code.matchAll(/__DOMINO_V2__\s*\?\s*(?:lazy|deferred)(?:<[^\n]*?>)?\((?:recovering\()?\(\)\s*=>\s*import\('(?:\.\.?\/)+v2in\/[^']+'\)/g)].length;

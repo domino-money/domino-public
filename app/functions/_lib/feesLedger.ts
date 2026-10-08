@@ -49,17 +49,20 @@
  * The question's byte budget (fees.ts MAX_BYTES) running out is never a verdict (review of the rules, round 4): the NFTs
  * whose reads it did not cover are not answered this time (`reading`, nothing kept for them), and the page asks again.
  */
-import { POSITION_MANAGER, SETUP_CONTRACT, SETUP_DEPLOY_BLOCK, SETUP_MINTED_TOPIC, TRANSFER_TOPIC } from './owned'
+import { POSITION_MANAGER, SETUP_CONTRACT, SETUP_DEPLOY_BLOCK, SETUP_MINTED_TOPIC, TRANSFER_TOPIC, MULTICALL3, encodeAggregate3, decodeAggregate3 } from './owned'
 import { AUTOMATION_SELECTOR, SEQUENCE_FACTORY } from './automation'
 import {
   FAILURE_SECONDS,
   FINAL_SECONDS,
+  DEADLINE_MS,
   HASH,
   MAX_BYTES,
   MAX_HEADERS,
   POOL_MANAGER,
   RelayError,
   SAFE_DEPTH,
+  SELECTOR,
+  STATE_VIEW,
   TOPIC,
   addressWord,
   aggregate,
@@ -101,6 +104,16 @@ export const BUDGET_APPLIED = '0xf2afe26d0039071b4a9564bd91918c7d7adc90de4d80da4
 export const CHECKPOINT_SELECTOR = 'ed64bab2'
 /** DominoVaultV4.owner(): the person a vault of the factory's acts for (finding 1: a holder Domino's reads follow). */
 export const VAULT_OWNER_SELECTOR = '8da5cb5b'
+/** Verified Robinhood v4 deployment, docs/deployments/v2-robinhood-4663-2026-10-04/deployment.json. */
+export const V2_ZAP = '0x376b92929bbe778c6dd64e8d73f8688686288e8a'
+export const V2_FACTORY = '0xc71a561853514efc2271f1d10c13ec95834792ba'
+export const V2_ACTION = '0xa7c6a820069d8f01991283e8f527fa1678590447c17064fd43148892d2863a92'
+export const V2_STEP = '0xf6a97c0d2054864127258f1e392259b35bdb4e5360f3f78285bf30675b4b8b9a'
+export const V2_VAULT_CREATED = '0x575ce09d88fdbe87124d0a71fd63b9862b8e580f59ed6d38a8fe30cf2e951c33'
+export const V2_COLLECTED = '0xa54e6c2fc0861aa9c991b26891d71059d517983b9e84b91020f42609c452eb9d'
+export const V2_COMPOUNDED = '0x0957afbb4f3559d58b385bc7712b4c0a8189e62797dc67866a78faaeb73eed50'
+/** Earliest deployment receipt in the verified V2 profile; earlier settled entries need no reinterpretation. */
+const V2_FIRST_BLOCK = 80_189_516
 /** rugged97's rule 3: the lowest block any log is read from (DominoSetupV1's deploy). */
 export const LEDGER_FLOOR = SETUP_DEPLOY_BLOCK
 
@@ -109,7 +122,9 @@ export const LEDGER_FLOOR = SETUP_DEPLOY_BLOCK
 // ---------------------------------------------------------------------------
 
 export const MAX_LEDGER_IDS = 8
-export const LEDGER_BODY_BYTES = 512
+export const LEDGER_BODY_BYTES = 4_096
+/** A cold NFT advances at most this many blocks per answer; the cursor survives between questions. */
+export const LEDGER_SCAN_BLOCKS = 1_000_000
 /** How long a whole answer serves a question for the same ids; a fresh question takes one only within FRESH_LEDGER_MS. */
 export const LEDGER_SECONDS = 30
 export const FRESH_LEDGER_MS = 2_000
@@ -129,6 +144,15 @@ export const TOO_MANY_SECONDS = 3_600
  * and the headers are the chain's own facts, never a verdict: their keys stay.
  */
 export const LEDGER_KEYS = 2
+/** Whole answers refresh on the optional opening-price field; per-NFT accounting cursors are unchanged. */
+export const LEDGER_ANSWER_VERSION = 'v3-mint-price-2'
+/** PoolManager.Swap: used only for one verified mint block and one exact pool, never a history scan. */
+export const MINT_SWAP = '0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f'
+/** A slow archive read must not hold a usable ledger for the RPC's normal ten-second timeout. */
+export const MINT_PRICE_TIMEOUT_MS = 1_500
+const MINT_PRICE_RECENT_SECONDS = 10
+const MINT_PRICE_FAILURE_SECONDS = 30
+const MINT_PRICE_BYTES = 32_768
 /** The most one-block lookups one read makes; past it the ledger is kept as far as they reached, and says `reading`. */
 export const LEDGER_STEP = 200
 /** The most settlements one ledger keeps, and the most addresses that held one NFT. */
@@ -165,6 +189,8 @@ const chunks = <T>(list: readonly T[], size: number): T[][] => Array.from({ leng
 /** Round one's one read: the NFTs' own Transfer logs, the engine's FeesRealized and DominoSetupV1's SetupMinted for them. */
 const ROUND_ONE_ADDRESSES = [POSITION_MANAGER, ENGINE, SETUP_CONTRACT]
 const ROUND_ONE_TOPICS = [TRANSFER_TOPIC, FEES_REALIZED, SETUP_MINTED_TOPIC]
+const OWN_ADDRESSES = [...ROUND_ONE_ADDRESSES, V2_ZAP, V2_FACTORY]
+const OWN_TOPICS = [...ROUND_ONE_TOPICS, V2_ACTION, V2_STEP, V2_VAULT_CREATED]
 
 // ---------------------------------------------------------------------------
 // The question
@@ -175,15 +201,25 @@ export interface LedgerQuestion {
   ids: bigint[]
   /** The page saw a settlement the ledger it has does not hold: a kept answer counts only within FRESH_LEDGER_MS. */
   fresh: boolean
+  mintHints?: readonly { tokenId: string; block: number; tx: string }[]
 }
 
 /** A ledger body as its question, or null unless it is exactly {"tokenIds": [1..8 decimal ids]} and, at most, "fresh": true. */
 export function ledgerRequestOf(body: Record<string, unknown>): LedgerQuestion | null {
   if ('fresh' in body && body.fresh !== true) return null
-  const { fresh, ...rest } = body
+  const { fresh, mintHints, ...rest } = body
   const ids = stateIdsOf(rest)
-  return ids && ids.length <= MAX_LEDGER_IDS ? { ids, fresh: fresh === true } : null
+  if (!ids || ids.length > MAX_LEDGER_IDS) return null
+  if (mintHints !== undefined && (!Array.isArray(mintHints) || mintHints.length > ids.length || mintHints.some((hint) => {
+    if (!hint || typeof hint !== 'object' || Object.keys(hint).sort().join(',') !== 'block,tokenId,tx') return true
+    const h = hint as { tokenId?: unknown; block?: unknown; tx?: unknown }
+    return typeof h.tokenId !== 'string' || !ids.some((id) => id.toString() === h.tokenId) || !Number.isSafeInteger(h.block) || (h.block as number) < LEDGER_FLOOR || typeof h.tx !== 'string' || !HASH.test(h.tx)
+  }) || new Set(mintHints.map((hint) => hint.tokenId)).size !== mintHints.length)) return null
+  return { ids, fresh: fresh === true, ...(mintHints === undefined ? {} : { mintHints: mintHints as LedgerQuestion['mintHints'] }) }
 }
+
+/** Hints partition in-flight/failure answers too: a failed cold scan must not mask a newly supplied mint proof. */
+export const ledgerHintKey = (asked: LedgerQuestion): string => (asked.mintHints ?? []).map((hint) => `${hint.tokenId}:${hint.block}:${hint.tx}`).sort().join('|')
 
 // ---------------------------------------------------------------------------
 // Logs, checked
@@ -264,9 +300,13 @@ interface Facts {
   paidIn: Array<{ block: number; tx: string; amounts: [string, string] }>
   /** A transaction in which one of the addresses followed paid the PoolManager. */
   paidOut: Array<{ block: number; tx: string }>
+  /** A V2 zap collect: token-specific net outputs at zero liquidity delta, never an add/withdrawal's principal. */
+  collected?: Array<{ block: number; tx: string; amounts: [string, string] }>
+  /** V2 destination liquidity from Compounded, used to attest the add, never as newly earned income. */
+  v2Increased?: Array<{ block: number; tx: string; delta: string }>
 }
 
-const noFacts = (): Facts => ({ candidates: [], realized: [], service: [], paidIn: [], paidOut: [] })
+const noFacts = (): Facts => ({ candidates: [], realized: [], service: [], paidIn: [], paidOut: [], collected: [], v2Increased: [] })
 
 /** `facts` of the blocks `keepIt` keeps. */
 function factsWhere(facts: Facts, keepIt: (block: number) => boolean): Facts {
@@ -276,6 +316,8 @@ function factsWhere(facts: Facts, keepIt: (block: number) => boolean): Facts {
     service: facts.service.filter((fact) => keepIt(fact.block)),
     paidIn: facts.paidIn.filter((fact) => keepIt(fact.block)),
     paidOut: facts.paidOut.filter((fact) => keepIt(fact.block)),
+    collected: (facts.collected ?? []).filter((fact) => keepIt(fact.block)),
+    v2Increased: (facts.v2Increased ?? []).filter((fact) => keepIt(fact.block)),
   }
 }
 
@@ -285,7 +327,7 @@ const FINALS: readonly string[] = ['too_many', 'unseen', 'liquidity']
 
 /** An NFT's ledger as kept between reads. */
 interface Kept {
-  v: 2
+  v: 2 | 3
   poolId: string
   /** Every settlement up to this block is in `entries`. */
   through: number
@@ -298,6 +340,9 @@ interface Kept {
   trusted: string[]
   /** Those of them that are vaults the factory made. */
   vaults: string[]
+  v2Vaults?: string[]
+  /** Own-event discovery has not yet proved every holder; no transfers of unknown addresses were followed. */
+  trustPending?: boolean
   entries: LedgerEntry[]
   final: Final | null
   pending: Facts
@@ -321,6 +366,8 @@ const isFacts = (value: unknown): value is Facts => {
     facts.paidIn.every((fact) => isFact(fact, (one) => isPair(one.amounts))) &&
     Array.isArray(facts.paidOut) &&
     facts.paidOut.every((fact) => isFact(fact, () => true))
+    && (facts.collected === undefined || (Array.isArray(facts.collected) && facts.collected.every((fact) => isFact(fact, (one) => isPair(one.amounts)))))
+    && (facts.v2Increased === undefined || (Array.isArray(facts.v2Increased) && facts.v2Increased.every((fact) => isFact(fact, (one) => isText(one.delta)))))
   )
 }
 
@@ -328,7 +375,7 @@ const isKept = (value: unknown, poolId: string): value is Kept => {
   const kept = value as Kept | null
   return (
     !!kept &&
-    kept.v === 2 &&
+    (kept.v === 2 || kept.v === 3) &&
     kept.poolId === poolId &&
     isBlock(kept.through) &&
     isBlock(kept.scanned) &&
@@ -339,11 +386,31 @@ const isKept = (value: unknown, poolId: string): value is Kept => {
     kept.trusted.every(isText) &&
     Array.isArray(kept.vaults) &&
     kept.vaults.every(isText) &&
+    (kept.v2Vaults === undefined || (Array.isArray(kept.v2Vaults) && kept.v2Vaults.every(isText))) &&
+    (kept.trustPending === undefined || typeof kept.trustPending === 'boolean') &&
     Array.isArray(kept.entries) &&
     (kept.final === null || FINALS.includes(kept.final)) &&
     isFacts(kept.pending) &&
     (kept.mint === null || (typeof kept.mint === 'object' && isBlock(kept.mint.block) && isText(kept.mint.tx) && isBlock(kept.mint.t)))
   )
+}
+
+/** Different hint questions can finish out of order. Serialize this isolate's writes and retain the furthest verified
+ * cursor, so a late cold read cannot erase the mint and complete ledger a hinted read already saved. Cache remains a
+ * best-effort optimization across isolates; every returned answer is independently validated at its own head. */
+const writes = new WeakMap<NonNullable<FeesRuntime['cache']>, Map<string, Promise<void>>>()
+async function keepLedger(rt: FeesRuntime, url: string, value: Kept, seconds: number): Promise<void> {
+  if (!rt.cache) return
+  let queue = writes.get(rt.cache)
+  if (!queue) { queue = new Map(); writes.set(rt.cache, queue) }
+  const previous = queue.get(url) ?? Promise.resolve()
+  const task = previous.catch(() => undefined).then(async () => {
+    const newer = await kept<unknown>(rt, url)
+    if (newer && isKept(newer.value, value.poolId) && newer.value.v === 3 && newer.value.scanned >= value.scanned && newer.value.through > value.through && !(newer.value.final === 'too_many' && newer.ageMs >= TOO_MANY_SECONDS * 1000)) return
+    await keep({ ...rt, waitUntil: undefined }, url, value, seconds)
+  })
+  queue.set(url, task)
+  try { await task } finally { if (queue.get(url) === task) queue.delete(url) }
 }
 
 const keptUrl = (origin: string, id: bigint) => cacheUrl(origin, `ledger${LEDGER_KEYS}`, id.toString(), 0)
@@ -374,6 +441,10 @@ interface Work {
   holders: string[]
   trusted: Set<string>
   vaults: Set<string>
+  v2Vaults: Set<string>
+  trustPending: boolean
+  /** Once later own events establish trust, restart the bounded settlements pass from the actual mint. */
+  restart: boolean
   /** The SetupMinted log this read found for it: who Domino minted it for, and in which transaction. */
   minted: { owner: string; tx: string } | null
   /** The kept facts in [entriesFrom, logsFrom), then what this read's logs named. */
@@ -381,6 +452,8 @@ interface Work {
   /** The blocks to look into, ascending. */
   candidates: number[]
   through: number
+  /** This question's bounded log cursor, separate from settlements waiting for a one-block lookup. */
+  scanned: number
   final: Final | null
   /**
    * Not answered this time (round 4, 2026-10-02): the question's byte budget did not hold its read. Never a verdict and
@@ -433,6 +506,161 @@ async function headerTimes(rt: FeesRuntime, budget: Budget, origin: string, head
     }
   }
   return known
+}
+
+/**
+ * Optional chart anchor: fixed getSlot0 calls at the NFT's verified mint block, never an inferred execution price.
+ * Every unique pool/block is read once; different blocks share one bounded JSON-RPC POST. A pruned historical state can
+ * fall back to the last actual Swap of that exact pool in that verified mint block: the same end-of-block price.
+ * Both reads share one short optional deadline. No Swap in the block means no anchor, never an inferred price.
+ * Recent blocks are read again, including once after finality, rather than promoting a provisional price forever.
+ */
+async function mintPrices(rt: FeesRuntime, budget: Budget, origin: string, head: number, positions: LedgerPosition[]): Promise<void> {
+  type Priced = Extract<LedgerPosition, { ok: true }> & { mint: NonNullable<Extract<LedgerPosition, { ok: true }>['mint']> }
+  type PriceKept = { sqrtPriceX96: string | null; finalized: boolean }
+  type Need = { poolId: string; block: number; key: string; positions: Priced[]; finalized: boolean }
+  const valid = (price: unknown): price is string => typeof price === 'string' && /^[1-9]\d{0,48}$/.test(price) && BigInt(price) < 1n << 160n
+  const metrics = { eligible: 0, hit: 0, cooldown: 0, requested: 0, read: 0, rpc: 0, subcall: 0, invalid: 0, words3: 0, fields: 0, unavailable: 0, deadline: 0, budget: 0, swapRequested: 0, swapRead: 0, swapEmpty: 0, swapInvalid: 0 }
+  let rpcCode: number | undefined
+  let rpcClass: 'historical_unavailable' | 'reverted' | 'other' | 'mixed' | undefined
+  const rpcFailed = (error: { code?: unknown; message?: unknown }, count: number) => {
+    metrics.rpc += count
+    if (Number.isSafeInteger(error.code)) rpcCode = error.code as number
+    const message = typeof error.message === 'string' ? error.message.slice(0, 2048) : ''
+    const classified = /missing trie|historical state|state (?:is )?(?:not available|unavailable)|pruned|no state available|metadata is not found/i.test(message) ? 'historical_unavailable' : /revert/i.test(message) ? 'reverted' : 'other'
+    rpcClass = rpcClass && rpcClass !== classified ? 'mixed' : classified
+  }
+  const report = () => {
+    // No addresses, ids, amounts, provider text or response bodies enter this optional diagnostic.
+    try { rt.onDiagnostic?.({ event: 'ledger_mint_price', ...metrics, ...(rpcCode !== undefined ? { rpcCode } : {}), ...(rpcClass ? { rpcClass } : {}) }) } catch { /* Logging cannot change a ledger answer. */ }
+  }
+  const needed = new Map<string, Need>()
+  for (const position of positions) {
+    if (!position.ok || !position.mint || position.mint.block > head || position.mint.block < LEDGER_FLOOR) continue
+    metrics.eligible++
+    // Never reuse a value carried by an older per-NFT cache without checking the pool/block anchor's own finality.
+    delete position.mint.sqrtPriceX96
+    const { block } = position.mint
+    const key = cacheUrl(origin, 'mintPrice1', position.state.poolId, block)
+    const duplicate = needed.get(key)
+    if (duplicate) { duplicate.positions.push(position as Priced); continue }
+    const finalized = block <= head - SAFE_DEPTH
+    const saved = await kept<PriceKept>(rt, key)
+    if (saved && saved.value && typeof saved.value.finalized === 'boolean') {
+      if (saved.value.sqrtPriceX96 === null && saved.ageMs < MINT_PRICE_FAILURE_SECONDS * 1000) { metrics.cooldown++; continue }
+      if (valid(saved.value.sqrtPriceX96) && (saved.value.finalized && finalized || !saved.value.finalized && !finalized && saved.ageMs < MINT_PRICE_RECENT_SECONDS * 1000)) {
+        position.mint.sqrtPriceX96 = saved.value.sqrtPriceX96
+        metrics.hit++
+        continue
+      }
+    }
+    needed.set(key, { poolId: position.state.poolId, block, key, positions: [position as Priced], finalized })
+  }
+  if (!needed.size) { report(); return }
+  metrics.requested = needed.size
+  const remaining = DEADLINE_MS - (rt.deps.now() - budget.started)
+  if (remaining <= 0 || MAX_BYTES - budget.bytes < MINT_PRICE_BYTES) { metrics.budget = needed.size; report(); return }
+  const groups = new Map<number, Need[]>()
+  for (const need of needed.values()) groups.set(need.block, [...(groups.get(need.block) ?? []), need])
+  const plans = [...groups.entries()]
+  const payload = plans.map(([block, reads], id) => ({ jsonrpc: '2.0', id, method: 'eth_call', params: [{ to: MULTICALL3, data: encodeAggregate3(reads.map((read) => ({ target: STATE_VIEW, data: SELECTOR.getSlot0 + read.poolId.slice(2) }))) }, hex(block)] }))
+  const controller = new AbortController()
+  // This optional deadline is caller cancellation, not evidence that the node itself is down. localRpc distinguishes
+  // AbortError from TimeoutError, so an unavailable chart anchor does not rest unrelated balance/state reads.
+  const timer = setTimeout(() => controller.abort(new DOMException('Optional mint price read ended', 'AbortError')), Math.min(MINT_PRICE_TIMEOUT_MS, remaining))
+  const optional: FeesRuntime = { ...rt, deps: { ...rt.deps, fetch: (url, init) => rt.deps.fetch(url, { ...init, signal: controller.signal }) } }
+  const obtained = new Map<string, string>()
+  const fallback = new Set<Need>()
+  try {
+    // Deliberately no paced retry for this optional enrichment.
+    const response = await post(optional, budget, payload, false, MINT_PRICE_BYTES)
+    if (!Array.isArray(response) || response.length !== plans.length) { metrics.invalid = needed.size; return }
+    const ids = response.map((envelope) => envelope?.id)
+    if (ids.some((id) => !Number.isInteger(id) || id < 0 || id >= plans.length) || new Set(ids).size !== ids.length) { metrics.invalid = needed.size; return }
+    for (const envelope of response) {
+      const reads = plans[envelope.id][1]
+      if (envelope.error) {
+        rpcFailed(envelope.error, reads.length)
+        for (const read of reads) fallback.add(read)
+        continue
+      }
+      try {
+        const result = resultOf(envelope)
+        if (typeof result !== 'string') { metrics.invalid += reads.length; continue }
+        const values = decodeAggregate3(result)
+        if (values.length !== reads.length) { metrics.invalid += reads.length; continue }
+        values.forEach((value, index) => {
+          if (!value.success) { metrics.subcall++; fallback.add(reads[index]); return }
+          if (!/^[0-9a-f]{256}$/i.test(value.data)) { metrics.invalid++; if (/^[0-9a-f]{192}$/i.test(value.data)) metrics.words3++; return }
+          const data = `0x${value.data}`
+          const price = wordAt(data, 0).toString()
+          const tick = BigInt.asIntN(256, wordAt(data, 1))
+          if (!valid(price) || tick < -(1n << 23n) || tick >= 1n << 23n || wordAt(data, 2) >> 24n !== 0n || wordAt(data, 3) >> 24n !== 0n) { metrics.fields++; return }
+          obtained.set(reads[index].key, price)
+          metrics.read++
+        })
+      } catch { metrics.invalid += reads.length /* A bad block does not discard another block's successful anchor. */ }
+    }
+    if (fallback.size && !controller.signal.aborted && rt.deps.now() - budget.started < DEADLINE_MS && MAX_BYTES - budget.bytes >= MINT_PRICE_BYTES) {
+      const reads = [...fallback]
+      metrics.swapRequested = reads.length
+      // Only the mint's verified block, fixed PoolManager, scalar Swap topic and one scalar pool id. The transport
+      // independently enforces that shape; no wildcard, address list, event list or second block is admitted.
+      const response = await post(optional, budget, reads.map((read, id) => ({ jsonrpc: '2.0', id, method: 'eth_getLogs', params: [{ address: POOL_MANAGER, fromBlock: hex(read.block), toBlock: hex(read.block), topics: [MINT_SWAP, read.poolId] }] })), true, MINT_PRICE_BYTES)
+      if (!Array.isArray(response) || response.length !== reads.length || response.some((envelope) => !Number.isInteger(envelope?.id) || envelope.id < 0 || envelope.id >= reads.length) || new Set(response.map((envelope) => envelope.id)).size !== reads.length) { metrics.swapInvalid = reads.length; return }
+      for (const envelope of response) {
+        const read = reads[envelope.id]
+        if (envelope.error) { rpcFailed(envelope.error, 1); continue }
+        try {
+          const logs = resultOf(envelope)
+          if (!Array.isArray(logs)) throw new Error('invalid')
+          let last: { index: number; transaction: number; price: string } | null = null
+          let blockHash: string | null = null
+          const seen = new Set<number>()
+          const transactions = new Map<string, number>()
+          const ordered: Array<{ index: number; transaction: number; price: string; tx: string }> = []
+          for (const raw of logs) {
+            const log = logOf(raw, [POOL_MANAGER], read.block, read.block)
+            if (!log || raw.removed !== false || log.topics.length !== 3 || log.topics[0] !== MINT_SWAP || log.topics[1] !== read.poolId || !ADDRESS_WORD.test(log.topics[2]) || wordsIn(log.data) !== 6 || seen.has(log.index)) throw new Error('invalid')
+            const hash = typeof raw.blockHash === 'string' ? raw.blockHash.toLowerCase() : ''
+            if (!HASH.test(hash) || blockHash && blockHash !== hash) throw new Error('invalid')
+            blockHash = hash
+            seen.add(log.index)
+            const transaction = quantity(raw.transactionIndex)
+            if (transactions.has(log.tx) && transactions.get(log.tx) !== transaction) throw new Error('invalid')
+            transactions.set(log.tx, transaction)
+            const price = wordAt(log.data, 2).toString()
+            const tick = BigInt.asIntN(256, wordAt(log.data, 4))
+            const signed128 = (value: bigint) => BigInt.asIntN(128, value) === BigInt.asIntN(256, value)
+            if (!signed128(wordAt(log.data, 0)) || !signed128(wordAt(log.data, 1)) || !valid(price) || wordAt(log.data, 3) >> 128n !== 0n || tick < -887272n || tick > 887272n || wordAt(log.data, 5) > 1_000_000n) throw new Error('invalid')
+            ordered.push({ index: log.index, transaction, price, tx: log.tx })
+          }
+          ordered.sort((a, b) => a.index - b.index)
+          let tx: string | null = null
+          for (const log of ordered) {
+            if (last && (log.transaction < last.transaction || log.transaction === last.transaction && log.tx !== tx || log.transaction > last.transaction && log.tx === tx)) throw new Error('invalid')
+            last = log
+            tx = log.tx
+          }
+          if (last) { obtained.set(read.key, last.price); metrics.swapRead++ }
+          else metrics.swapEmpty++
+        } catch { metrics.swapInvalid++ }
+      }
+    }
+  } catch { if (controller.signal.aborted) metrics.deadline = needed.size; else metrics.unavailable = needed.size }
+  finally {
+    clearTimeout(timer)
+    report()
+    for (const need of needed.values()) {
+      const sqrtPriceX96 = obtained.get(need.key) ?? null
+      if (sqrtPriceX96) for (const position of need.positions) position.mint.sqrtPriceX96 = sqrtPriceX96
+      const newer = await kept<PriceKept>(rt, need.key)
+      // Another NFT/request can have established this shared anchor while our optional read was in flight. A late
+      // failure must not erase it; an older head must not downgrade a finalized anchor to a provisional cache entry.
+      if (newer?.value && valid(newer.value.sqrtPriceX96) && (newer.value.finalized && (sqrtPriceX96 === null || !need.finalized) || sqrtPriceX96 === null && newer.ageMs < MINT_PRICE_RECENT_SECONDS * 1000)) continue
+      await keep(rt, need.key, { sqrtPriceX96, finalized: need.finalized } satisfies PriceKept, sqrtPriceX96 === null ? MINT_PRICE_FAILURE_SECONDS : need.finalized ? FINAL_SECONDS : MINT_PRICE_RECENT_SECONDS)
+    }
+  }
 }
 
 /**
@@ -519,10 +747,10 @@ async function roundOne(rt: FeesRuntime, budget: Budget, works: Work[], head: nu
   const from = (list: Work[]) => Math.min(...list.map((work) => work.logsFrom))
   await together(
     works,
-    (list) => roundRead(rt, budget, [{ address: ROUND_ONE_ADDRESSES, fromBlock: hex(from(list)), toBlock: hex(head), topics: [ROUND_ONE_TOPICS, null, null, one(list.map((work) => work.word))] }]),
+    (list) => roundRead(rt, budget, [{ address: OWN_ADDRESSES, fromBlock: hex(from(list)), toBlock: hex(head), topics: [OWN_TOPICS, null, null, one(list.map((work) => work.word))] }]),
     (list, results) => {
       const byWord = new Map(list.map((work) => [work.word, work]))
-      const logs = (results[0] as unknown[]).map((raw) => logOf(raw, ROUND_ONE_ADDRESSES, from(list), head)).filter((log): log is Log => log !== null)
+      const logs = (results[0] as unknown[]).map((raw) => logOf(raw, OWN_ADDRESSES, from(list), head)).filter((log): log is Log => log !== null)
       for (const log of logs.sort(byOrder)) {
         const work = log.topics.length === 4 ? byWord.get(log.topics[3]) : undefined
         if (!work) throw new RelayError('fatal', 'invalid_log_topics')
@@ -545,6 +773,25 @@ async function roundOne(rt: FeesRuntime, budget: Budget, works: Work[], head: nu
         } else if (log.address === SETUP_CONTRACT && log.topics[0] === SETUP_MINTED_TOPIC) {
           if (wordsIn(log.data) !== 3 || !ADDRESS_WORD.test(log.topics[2])) throw new RelayError('fatal', 'invalid_log_topics')
           work.minted = { owner: addressOf(log.topics[2]), tx: log.tx }
+        } else if (log.address === V2_ZAP && log.topics[0] === V2_ACTION) {
+          if (wordsIn(log.data) !== 3 || !ADDRESS_WORD.test(log.topics[2])) throw new RelayError('fatal', 'invalid_v2_action')
+          const action = BigInt(log.topics[1])
+          if (action < 1n || action > 4n || wordAt(log.data, 1) >> 128n !== 0n) throw new RelayError('fatal', 'invalid_v2_action')
+          if (action === 1n || action === 3n) work.minted = { owner: addressOf(log.topics[2]), tx: log.tx }
+          work.facts.candidates.push(log.block)
+        } else if (log.address === V2_ZAP && log.topics[0] === V2_STEP) {
+          if (wordsIn(log.data) !== 9 || !ADDRESS_WORD.test(log.topics[2])) throw new RelayError('fatal', 'invalid_v2_step')
+          const key = work.state.poolKey
+          if (wordAt(log.data, 0) !== 4n || wordAt(log.data, 1) !== BigInt(key.currency0) || wordAt(log.data, 2) !== BigInt(key.currency1) || wordAt(log.data, 3) !== BigInt(key.fee) || BigInt.asIntN(256, wordAt(log.data, 4)) !== BigInt(key.tickSpacing) || wordAt(log.data, 5) !== BigInt(key.hooks)) throw new RelayError('fatal', 'invalid_v2_pool')
+          work.facts.candidates.push(log.block)
+          const delta = BigInt.asIntN(256, wordAt(log.data, 6))
+          const a0 = BigInt.asIntN(256, wordAt(log.data, 7)), a1 = BigInt.asIntN(256, wordAt(log.data, 8))
+          if (delta === 0n && a0 >= 0n && a1 >= 0n) (work.facts.collected ??= []).push({ block: log.block, tx: log.tx, amounts: [a0.toString(), a1.toString()] })
+        } else if (log.address === V2_FACTORY && log.topics[0] === V2_VAULT_CREATED) {
+          if (wordsIn(log.data) !== 2 || wordAt(log.data, 0) !== 4n || !ADDRESS_WORD.test(log.topics[1]) || !ADDRESS_WORD.test(log.topics[2])) throw new RelayError('fatal', 'invalid_v2_vault')
+          work.trusted.add(addressOf(log.topics[1]))
+          work.trusted.add(addressOf(log.topics[2]))
+          work.v2Vaults.add(addressOf(log.topics[2]))
         } else throw new RelayError('fatal', 'invalid_log_topics')
       }
       // Who Domino minted it for (DominoSetupV1 mints to the operation's own owner, its msg.sender), in its mint itself.
@@ -579,15 +826,24 @@ async function trust(rt: FeesRuntime, budget: Budget, works: Work[], head: numbe
       if (result.success && data.length >= 64 && BigInt(`0x${data.slice(0, 64)}`) === 1n) made.add(part[i])
     })
   }
+  const madeV2 = new Set<string>()
+  for (const part of chunks(unknown.filter((address) => !made.has(address)), 50)) {
+    const results = await aggregate(rt, budget, part.map((address) => ({ target: V2_FACTORY, data: AUTOMATION_SELECTOR.isVault + addressWord(address) })), head)
+    results.forEach((result, i) => {
+      const data = result.data.startsWith('0x') ? result.data.slice(2) : result.data
+      if (result.success && data.length === 64 && BigInt(`0x${data}`) === 1n) madeV2.add(part[i])
+    })
+  }
   for (const work of works) {
     for (const address of touching(work)) {
-      if (!made.has(address)) continue
+      if (!made.has(address) && !madeV2.has(address)) continue
       work.trusted.add(address)
-      work.vaults.add(address)
+      if (madeV2.has(address)) work.v2Vaults.add(address)
+      else work.vaults.add(address)
     }
   }
-  const left = works.filter((work) => work.holders.some((holder) => !work.trusted.has(holder)) && work.vaults.size > 0)
-  const vaults = unique(left.flatMap((work) => [...work.vaults]))
+  const left = works.filter((work) => work.holders.some((holder) => !work.trusted.has(holder)) && work.vaults.size + work.v2Vaults.size > 0)
+  const vaults = unique(left.flatMap((work) => [...work.vaults, ...work.v2Vaults]))
   const owners = new Map<string, string>()
   for (const part of chunks(vaults, 50)) {
     // A vault the factory made: its owner() is Domino's own code.
@@ -598,14 +854,56 @@ async function trust(rt: FeesRuntime, budget: Budget, works: Work[], head: numbe
     })
   }
   for (const work of left) {
-    for (const holder of work.holders) if ([...work.vaults].some((vault) => owners.get(vault) === holder)) work.trusted.add(holder)
+    for (const holder of work.holders) if ([...work.vaults, ...work.v2Vaults].some((vault) => owners.get(vault) === holder)) work.trusted.add(holder)
   }
-  for (const work of works) if (touching(work).some((address) => !work.trusted.has(address))) work.final = 'unseen'
+  for (const work of works) {
+    if (touching(work).some((address) => !work.trusted.has(address))) {
+      if (work.scanned >= head) work.final = 'unseen'
+      else work.trustPending = true
+    } else if (work.trustPending && work.mint) {
+      work.trustPending = false
+      work.restart = true
+      work.scanned = work.mint.block - 1
+      work.facts = noFacts()
+    }
+    if ((work.trustPending || work.restart) && work.mint) {
+      work.through = work.mint.block - 1
+      work.entriesFrom = work.mint.block
+    }
+  }
 }
 
 /** Where an NFT's followed addresses' transfers are read from this time: its logs' start, never before its mint. */
 const startOf = (work: Work) => Math.max(work.logsFrom, work.mint?.block ?? LEDGER_FLOOR)
 const tokensOf = (work: Work) => [work.state.poolKey.currency0, work.state.poolKey.currency1].filter((address) => address !== ZERO)
+
+/** Only factory-proven V2 vaults, only this NFT. FeesCollected is newly settled income;
+ * Compounded.fees0/1 is consumed capital and MUST NOT be counted as newly earned fees. */
+async function v2Collections(rt: FeesRuntime, budget: Budget, works: Work[], head: number): Promise<void> {
+  type Ask = { work: Work; addresses: string[]; from: number }
+  const asked = new Map<Work[], Ask[]>()
+  await together(works.filter((work) => work.v2Vaults.size > 0), async (list) => {
+    const asks = list.flatMap((work) => chunks([...work.v2Vaults], 8).map((addresses) => ({ work, addresses, from: startOf(work) })))
+    asked.set(list, asks)
+    return roundRead(rt, budget, asks.map(({ work, addresses, from }) => ({ address: one(addresses), fromBlock: hex(from), toBlock: hex(head), topics: [[V2_COLLECTED, V2_COMPOUNDED], work.word] })))
+  }, (list, results) => {
+    for (const [i, { work, addresses, from }] of (asked.get(list) ?? []).entries()) {
+      for (const raw of results[i] as unknown[]) {
+        const log = logOf(raw, addresses, from, head)
+        if (!log) continue
+        if (log.topics.length !== 2 || log.topics[1] !== work.word) throw new RelayError('fatal', 'invalid_v2_collection')
+        work.facts.candidates.push(log.block)
+        if (log.topics[0] === V2_COLLECTED && wordsIn(log.data) === 2) {
+          work.facts.realized.push({ block: log.block, tx: log.tx, vault: log.address, amounts: [wordAt(log.data, 0).toString(), wordAt(log.data, 1).toString()] })
+        } else if (log.topics[0] === V2_COMPOUNDED && wordsIn(log.data) === 6) {
+          if (wordAt(log.data, 0) >> 128n !== 0n || wordAt(log.data, 5) >> 64n !== 0n) { throw new RelayError('fatal', 'invalid_v2_collection') }
+          // The service amounts aggregate every source budget; attributing them to the destination would be false.
+          (work.facts.v2Increased ??= []).push({ block: log.block, tx: log.tx, delta: wordAt(log.data, 0).toString() })
+        } else throw new RelayError('fatal', 'invalid_v2_collection')
+      }
+    }
+  })
+}
 
 /**
  * Round two, for every NFT of `works` together (finding 7): the ERC-20 transfers of their pools' currencies between the
@@ -628,7 +926,7 @@ async function roundTwo(rt: FeesRuntime, budget: Budget, works: Work[], head: nu
         }
       }
     }
-    const fresh = list.flatMap((work) => work.facts.realized.filter((fact) => fact.block >= work.logsFrom))
+    const fresh = list.flatMap((work) => work.facts.realized.filter((fact) => fact.block >= work.logsFrom && !work.v2Vaults.has(fact.vault)))
     if (fresh.length > 0) {
       const [lo, hi] = [Math.min(...fresh.map((fact) => fact.block)), Math.max(...fresh.map((fact) => fact.block))]
       for (const part of chunks(unique(fresh.map((fact) => `0x${addressWord(fact.vault)}`)), 8)) {
@@ -719,6 +1017,15 @@ function entriesOf(work: Work, found: Map<number, Modify[]>, running: bigint): {
   const realized = sums(facts.realized)
   const service = sums(facts.service)
   const paidIn = sums(facts.paidIn)
+  const collected = sums(facts.collected ?? [])
+  const ambiguous = new Set<string>()
+  for (const tx of unique([...collected.keys(), ...facts.realized.filter((fact) => work.v2Vaults.has(fact.vault)).map((fact) => fact.tx)])) {
+    const modifications = own.filter((modify) => modify.tx === tx)
+    const ownCollected = facts.realized.filter((fact) => fact.tx === tx && work.v2Vaults.has(fact.vault))
+    const count = ownCollected.length || (facts.collected ?? []).filter((fact) => fact.tx === tx).length
+    const added = (facts.v2Increased ?? []).filter((fact) => fact.tx === tx).reduce((sum, fact) => sum + BigInt(fact.delta), 0n)
+    if (modifications.filter((modify) => BigInt(modify.delta) === 0n).length !== count || modifications.some((modify) => BigInt(modify.delta) < 0n) || modifications.reduce((sum, modify) => sum + BigInt(modify.delta), 0n) !== added) ambiguous.add(tx)
+  }
   const paidOut = new Set(facts.paidOut.map((fact) => fact.tx))
   const native = state.poolKey.currency0 === ZERO || state.poolKey.currency1 === ZERO
   const seenTx = new Set<string>()
@@ -734,10 +1041,12 @@ function entriesOf(work: Work, found: Map<number, Modify[]>, running: bigint): {
     const kind: LedgerEntry['kind'] = work.mint && modify.tx === work.mint.tx && first && delta > 0n ? 'mint' : delta === 0n ? 'collect' : delta > 0n ? 'increase' : liquidity === 0n ? 'close' : 'decrease'
     const base = { block: modify.block, index: modify.index, tx: modify.tx, kind, delta: delta.toString() }
     if (kind === 'mint') entries.push({ ...base, fees: ['0', '0'] })
+    else if (ambiguous.has(modify.tx)) entries.push({ ...base, fees: null, why: 'shared' })
     else if (auto) {
       const paid = first ? service.get(modify.tx) : undefined
       entries.push({ ...base, fees: first ? [auto[0].toString(), auto[1].toString()] : ['0', '0'], auto: true, ...(paid ? { service: [paid[0].toString(), paid[1].toString()] as [string, string] } : {}) })
     } else if (delta !== 0n) entries.push({ ...base, fees: null, why: 'manual' })
+    else if (collected.has(modify.tx)) entries.push({ ...base, fees: first ? collected.get(modify.tx)!.map(String) as [string, string] : ['0', '0'] })
     else if (native) entries.push({ ...base, fees: null, why: 'native' })
     else if (others.has(modify.tx) || paidOut.has(modify.tx) || !first) entries.push({ ...base, fees: null, why: 'shared' })
     else {
@@ -747,12 +1056,12 @@ function entriesOf(work: Work, found: Map<number, Modify[]>, running: bigint): {
     }
   }
   // A compound the engine names whose own ModifyLiquidity was not found: something this read did not see.
-  const unseen = [...realized.keys()].some((tx) => !own.some((modify) => modify.tx === tx))
+  const unseen = [...realized.keys(), ...collected.keys()].some((tx) => !own.some((modify) => modify.tx === tx))
   return { entries, unseen, broken: false }
 }
 
 /** The ledger of each of `ids` at the node's head (LedgerResponse). `origin`: the edge cache's prefix. */
-export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string, ids: readonly bigint[]): Promise<LedgerResponse> {
+export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string, ids: readonly bigint[], hints: LedgerQuestion['mintHints'] = []): Promise<LedgerResponse> {
   const state = await readState(rt, budget, ids, true)
   const head = state.block
   const vaults = new Map((state.automation ?? []).filter((one): one is typeof one & { vault: string } => 'vault' in one && typeof one.vault === 'string').map((one) => [one.tokenId, one.vault]))
@@ -767,13 +1076,28 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
     // A node behind the blocks kept (a restart, a catch-up; finding 8): read on from where it stands, the kept ledger kept.
     // One rolled back past the mint itself is read anew.
     if (was?.mint && was.mint.block > head) was = null
+    // v2 records predate V2 event support. Preserve old V1 history, but rebuild discarded verdicts from their proven
+    // mint, and only reinterpret the V2-era suffix of a surviving ledger. Merely clearing `final` would lose its entries.
+    if (was?.v === 2 && was.final !== 'too_many' && (was.final === 'unseen' || was.final === 'liquidity' || was.scanned >= V2_FIRST_BLOCK)) {
+      const restart = was.final ? was.mint?.block ?? LEDGER_FLOOR : Math.max(was.mint?.block ?? LEDGER_FLOOR, V2_FIRST_BLOCK)
+      was = { ...was, v: 3, through: restart - 1, scanned: restart - 1, entries: was.final ? [] : was.entries.filter((entry) => entry.block < restart), holders: was.final ? [] : was.holders, trusted: was.final ? [] : was.trusted, vaults: was.final ? [] : was.vaults, v2Vaults: [], pending: noFacts(), final: null }
+    }
+    // An indexed mint only saves a history scan after the node proves this exact NFT's zero-address Transfer. A caller
+    // cannot assert its owner, timestamp or fees, or shorten the history with an arbitrary transaction/block hint.
+    let provenStart: number | null = null
+    const hint = hints?.find((item) => item.tokenId === position.tokenId && item.block <= head)
+    if (!was?.mint && hint) {
+      const results = await logsBatch(rt, budget, [{ address: POSITION_MANAGER, fromBlock: hex(hint.block), toBlock: hex(hint.block), topics: [TRANSFER_TOPIC, word(0n), null, word(id)] }], ROUND_BYTES)
+      const matches = (results[0] as unknown[]).map((raw) => logOf(raw, [POSITION_MANAGER], hint.block, hint.block)).filter((log): log is Log => log !== null && log.tx === hint.tx && log.topics.length === 4 && log.topics[0] === TRANSFER_TOPIC && log.topics[1] === word(0n) && ADDRESS_WORD.test(log.topics[2]) && log.topics[3] === word(id) && log.data === '0x')
+      if (matches.length === 1) provenStart = hint.block
+    }
     const through = was ? Math.min(was.through, head) : 0
     const scanned = was ? Math.min(was.scanned, head) : 0
     const start = was?.mint?.block ?? LEDGER_FLOOR
     // The logs from the last SAFE_DEPTH blocks they were read through (a reorganised tail is read again); the settlements
     // from the first block not worked out, the kept facts filling in between.
-    const logsFrom = was ? Math.max(start, scanned + 1 - SAFE_DEPTH, LEDGER_FLOOR) : LEDGER_FLOOR
-    const entriesFrom = was ? Math.max(start, Math.min(through + 1, logsFrom), LEDGER_FLOOR) : LEDGER_FLOOR
+    const logsFrom = provenStart ?? (was ? Math.max(start, scanned + 1 - SAFE_DEPTH, LEDGER_FLOOR) : LEDGER_FLOOR)
+    const entriesFrom = provenStart ?? (was ? Math.max(start, Math.min(through + 1, logsFrom), LEDGER_FLOOR) : LEDGER_FLOOR)
     works.push({
       id,
       key: position.tokenId,
@@ -788,32 +1112,52 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
       holders: [...(was?.holders ?? [])],
       trusted: new Set(was?.trusted ?? []),
       vaults: new Set(was?.vaults ?? []),
+      v2Vaults: new Set(was?.v2Vaults ?? []),
+      trustPending: was?.trustPending === true,
+      restart: false,
       minted: null,
       facts: was ? factsWhere(was.pending, (block) => block >= entriesFrom && block < logsFrom) : noFacts(),
       candidates: [],
       through: head,
+      scanned: head,
       final: was?.final ?? null,
       unanswered: false,
     })
   }
   const live = () => works.filter((work) => !work.final && !work.unanswered)
+  // Group nearby cursors, instead of forcing a newly proven mint to wait for another NFT's old discovery scan.
+  const groups: Array<{ works: Work[]; to: number }> = []
+  for (const work of live().sort((a, b) => a.logsFrom - b.logsFrom)) {
+    let group = groups.at(-1)
+    if (!group || work.logsFrom > group.to) {
+      group = { works: [], to: Math.min(head, work.logsFrom + LEDGER_SCAN_BLOCKS - 1) }
+      groups.push(group)
+    }
+    group.works.push(work)
+    work.through = group.to
+    work.scanned = group.to
+  }
   await checkpointsAt(rt, budget, live(), head)
-  await roundOne(rt, budget, live().filter((work) => !(work.kept && work.kept.mint === null)), head)
+  for (const group of groups) await roundOne(rt, budget, group.works.filter((work) => !work.final && !work.unanswered), group.to)
   for (const work of live()) if (work.holders.length > MAX_HOLDERS) work.final = 'too_many'
   await trust(rt, budget, live().filter((work) => work.mint), head)
-  await roundTwo(rt, budget, live().filter((work) => work.mint), head)
+  for (const group of groups) {
+    const settled = () => group.works.filter((work) => !work.final && !work.unanswered && !work.trustPending && !work.restart && work.mint)
+    await v2Collections(rt, budget, settled(), group.to)
+    await roundTwo(rt, budget, settled(), group.to)
+  }
   // A verdict is kept at once (finding 14): a later failure of this question does not make the next one read it again.
   // `too_many` for an hour only (round 4), the others KEPT_SECONDS.
   const told = new Set<Work>()
   for (const work of works) {
     if (!work.final || work.kept?.final) continue
-    await keep(rt, keptUrl(origin, work.id), verdict(work, work.final, work.mint, head), lifeOf(work.final))
+    await keepLedger(rt, keptUrl(origin, work.id), verdict(work, work.final, work.mint, head), lifeOf(work.final))
     told.add(work)
   }
 
   // The blocks to look into: the mint's, the burns', the compounds' and the payments'.
   for (const work of works) {
-    if (!work.mint || work.final || work.unanswered) continue
+    if (!work.mint || work.final || work.unanswered || work.trustPending || work.restart) continue
     const blocks = new Set<number>(work.facts.candidates)
     if (work.mint.block >= work.entriesFrom) blocks.add(work.mint.block)
     for (const fact of [...work.facts.realized, ...work.facts.paidIn, ...work.facts.paidOut]) blocks.add(fact.block)
@@ -885,27 +1229,30 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
     const value: Kept = work.final
       ? verdict(work, work.final, mint, head)
       : {
-          v: 2,
+          v: 3,
           poolId: work.state.poolId,
           through: work.through,
-          scanned: head,
+          scanned: work.scanned,
           mint,
           holders: work.holders,
           trusted: [...work.trusted],
           vaults: [...work.vaults],
+          v2Vaults: [...work.v2Vaults],
+          trustPending: work.trustPending,
           entries: all,
           final: null,
           pending: factsWhere({ ...work.facts, candidates: work.candidates }, (block) => block > work.through),
         }
-    await keep(rt, keptUrl(origin, work.id), value, lifeOf(work.final))
+    await keepLedger(rt, keptUrl(origin, work.id), value, lifeOf(work.final))
   }
   const positions = state.positions.map((position): LedgerPosition => (position.ok ? (built.get(position.tokenId) as LedgerPosition) : { tokenId: position.tokenId, ok: false, reason: position.reason }))
+  await mintPrices(rt, budget, origin, head, positions)
   return { v: 1, block: head, timestamp: state.timestamp, positions }
 }
 
 /** `work`'s ledger kept as `final`, its verdict: nothing more is read for it while it is kept (lifeOf). */
 function verdict(work: Work, final: Final, mint: Work['mint'], head: number): Kept {
-  return { v: 2, poolId: work.state.poolId, through: head, scanned: head, mint, holders: work.holders, trusted: [...work.trusted], vaults: [...work.vaults], entries: [], final, pending: noFacts() }
+  return { v: 3, poolId: work.state.poolId, through: head, scanned: head, mint, holders: work.holders, trusted: [...work.trusted], vaults: [...work.vaults], v2Vaults: [...work.v2Vaults], entries: [], final, pending: noFacts() }
 }
 
 /** Why a ledger is not exact (src/lib/fees/types.ts LedgerWhy), or null when it is. */
@@ -949,7 +1296,7 @@ type FailureKept = { outcome: 'rate_limited' | 'rpc_unavailable' | 'too_large'; 
  */
 export async function ledgerAnswer(request: Request, rt: FeesRuntime, asked: LedgerQuestion): Promise<Response> {
   const { origin } = new URL(request.url)
-  const digest = await sha256(asked.ids.join(','))
+  const digest = await sha256(`${asked.ids.join(',')}|${LEDGER_ANSWER_VERSION}|${ledgerHintKey(asked)}`)
   const key = cacheUrl(origin, `ledgerAnswer${LEDGER_KEYS}`, digest, 0)
   const failKey = cacheUrl(origin, `ledgerFail${LEDGER_KEYS}`, digest, 0)
   const hit = await kept<AnswerKept>(rt, key)
@@ -966,7 +1313,7 @@ export async function ledgerAnswer(request: Request, rt: FeesRuntime, asked: Led
   const budget = newBudget(rt)
   try {
     // A fresh read never joins one that started before it (it may predate the settlement the page saw).
-    const value = await shared(rt, asked.fresh ? `${key}#fresh` : key, () => readLedger(rt, budget, origin, asked.ids))
+    const value = await shared(rt, asked.fresh ? `${key}#fresh` : key, () => readLedger(rt, budget, origin, asked.ids, asked.mintHints))
     const text = JSON.stringify(value)
     const complete = value.positions.every((position) => !position.ok || (position.through === value.block && position.why !== 'reading'))
     if (complete) await keep(rt, key, { text, complete } satisfies AnswerKept, LEDGER_SECONDS)

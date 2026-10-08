@@ -38,6 +38,25 @@ function ledgerRead({ entries, exact = true, why, block = B0 + 100_000, state = 
 }
 const stateAt = (read, patch = {}) => ({ block: read.block, timestamp: read.timestamp, unclaimed: [5n, 6n], sqrtPriceX96: 2n ** 96n, tick: 0, tickLower: -6000, tickUpper: 6000, liquidity: 3000n, poolId: POOL, owner: `0x${'11'.repeat(20)}`, currencies: read.position.state.currencies, ...patch });
 
+test('an inexact ledger preserves its on-chain mint date independently from financial qualification', () => {
+  const read = ledgerRead({ entries: [], exact: false, why: 'unseen' });
+  const view = foldLedger(read, stateAt(read));
+  assert.equal(view.phase, 'unclaimed-only');
+  assert.deepEqual(view.mintedAt, { block: B0, timestamp: at(B0) });
+  assert.equal(view.history, undefined, 'knowing creation does not invent earned fees or APR');
+  assert.equal(foldLedger(read, stateAt(read, { block: B0 - 1 })).mintedAt, undefined, 'a state before mint cannot claim that date');
+});
+
+test('the measured opening-block price survives exact and inexact financial histories', () => {
+  for (const exact of [true, false]) {
+    const read = ledgerRead({ exact, ...(exact ? {} : { why: 'unseen' }) });
+    read.position.mint.sqrtPriceX96 = (2n ** 96n).toString();
+    const view = foldLedger(read, stateAt(read));
+    const mint = exact ? view.history.mintedAt : view.mintedAt;
+    assert.equal(mint.sqrtPriceX96, read.position.mint.sqrtPriceX96);
+  }
+});
+
 test('an exact ledger folded with the state: Fees earned is every settlement’s fees plus the fees ready to collect, and the chart’s points are measured ones', () => {
   const read = ledgerRead();
   const view = foldLedger(read, stateAt(read));
@@ -220,11 +239,12 @@ test('Your APR over the last 24 hours only from a measured point 20 to 28 hours 
   const none = positionApr({ ...h, points: [h.points[0], h.points[1], h.points[3]] }, STATE, 1, '24h');
   assert.deepEqual(none, { ok: false, reason: 'no_point', seconds: 0 });
   assert.equal(APR_MISSING.no_point, 'Not measured a day ago');
-  // Under six hours since opened; nothing earned; no price; nothing in the position.
+  // No elapsed time; confirmed zero earned; no price; nothing in the position.
   const young = history({ events: [mintEvent(L)], points: [point(T0, [0n, 0n], 'opened'), point(T0 + APR_MIN_SECONDS - 1, [1n, 1n], 'now')], earned: [1n, 1n] });
   assert.equal(positionApr(young, STATE, 1, 'all').reason, 'short');
   const zero = history({ events: [mintEvent(L)], points: [point(T0, [0n, 0n], 'opened'), point(now, [0n, 0n], 'now')], earned: [0n, 0n] });
-  assert.equal(positionApr(zero, STATE, 1, 'all').reason, 'zero');
+  assert.equal(positionApr(zero, STATE, 1, 'all').ok, true);
+  assert.equal(positionApr(zero, STATE, 1, 'all').rate, 0);
   assert.equal(positionApr(h, { ...STATE, currencies: [STATE.currencies[0], { ...STATE.currencies[1], decimals: null }] }, 1, 'all').reason, 'no_price');
   const empty = history({ events: [mintEvent(0n)], points: h.points, earned });
   assert.equal(positionApr(empty, STATE, 1, 'all').reason, 'empty');

@@ -20,7 +20,7 @@ import { postLedger, postState } from '../edge/chainRoutes'
 import { UNAVAILABLE, chainRead, checked, isLedgerResponse, isStateResponse } from './answers'
 import { noteAnswered, parseAutomationAnswer } from '../automationState'
 import { noteTokens } from '../chainTokens'
-import type { LedgerResponse, RelayAnswer, StateResponse } from './types'
+import type { LedgerMintHint, LedgerResponse, RelayAnswer, StateResponse } from './types'
 
 export { isLedgerResponse, isStateResponse } from './answers'
 
@@ -37,10 +37,10 @@ export function forgetChainMemory(): void {
  * field. `fresh`: the page's state shows a settlement the ledger it has does not hold, so the route takes no answer it kept
  * from before it. Not shared between askers: the store asks each set of ids once at a time itself.
  */
-export async function chainLedger(tokenIds: readonly string[], fresh = false, signal?: AbortSignal): Promise<RelayAnswer<LedgerResponse>> {
+export async function chainLedger(tokenIds: readonly string[], fresh = false, signal?: AbortSignal, mintHints?: readonly LedgerMintHint[]): Promise<RelayAnswer<LedgerResponse>> {
   if (!chainRead() || signal?.aborted) return UNAVAILABLE
   try {
-    const answer = await postLedger(tokenIds, fresh, { signal })
+    const answer = await postLedger(tokenIds, fresh, { signal }, mintHints)
     if (!answer.ok) return answer
     const value = answer.value as LedgerResponse
     // Every id asked, and only those.

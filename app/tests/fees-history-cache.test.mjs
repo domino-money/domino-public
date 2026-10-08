@@ -33,6 +33,21 @@ test('a verified ledger history round-trips as cached public presentation, never
   for (const field of ['owner', 'checkpoint', 'growth', 'wallet', 'session', 'automation']) assert.ok(!text.includes(`"${field}"`), field);
   assert.equal(f.cache.load('1'), null, 'a different tokenId cannot select the snapshot');
 });
+
+test('optional opening-block price round-trips without accepting malformed uint160 values', () => {
+  const f = fixtureCache();
+  const priced = structuredClone(verified);
+  priced.history.mintedAt.sqrtPriceX96 = (2n ** 96n).toString();
+  f.cache.save(ID, priced);
+  assert.equal(f.cache.load(ID).history.mintedAt.sqrtPriceX96, priced.history.mintedAt.sqrtPriceX96);
+  for (const bad of ['0', '-1', (1n << 160n).toString(), 'unknown']) {
+    const value = JSON.parse(f.values.get(HISTORY_CACHE_KEY));
+    value.entries[0].snapshot.history.mintedAt.sqrtPriceX96 = bad;
+    f.values.set(HISTORY_CACHE_KEY, JSON.stringify(value));
+    assert.equal(f.cache.load(ID), null);
+    f.cache.save(ID, priced);
+  }
+});
 test('nothing but a verified history is saved, and missing decimals remain missing, never guessed', () => {
   const f = fixtureCache();
   f.cache.save('1', { ...verified, phase: 'unclaimed-only' });

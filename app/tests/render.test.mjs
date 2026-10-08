@@ -1005,7 +1005,7 @@ test('the landing reads through the bridge, and with no /api behind this server 
 
 const SELECTED = readFileSync(resolve(import.meta.dirname, '../src/config/selectedPools.ts'), 'utf8').match(/0x[0-9a-f]{64}/g);
 
-test('selected pool screens ask the featured list, check each needed namespace once and post nothing else when disconnected; New position asks the list; owner screens ask only their release; other routes ask nothing', async () => {
+test('selected pools and New position read their public catalogue; disconnected V2 automation asks no legacy release or wallet data', async () => {
   const seen = [];
   const dex = [];
   for (const route of ROUTES) {
@@ -1035,9 +1035,9 @@ test('selected pool screens ask the featured list, check each needed namespace o
     ['/settings', [[], []]],
     ['/docs', [[], []]],
     ['/docs/non-custodial', [[], []]],
-    // Each owner screen reads its public release profile once per document, a GET with no wallet and no session.
+    // The retained setup route reads its public release. V2 automation waits for a wallet and never reads V1's release.
     ['/setup', [['GET /api/setup/v1/release'], ['GET /api/setup/v1/release']]],
-    ['/sequence', [['GET /api/setup/v1/sequence-release'], ['GET /api/setup/v1/sequence-release']]],
+    ['/sequence', [[], []]],
   ]);
 });
 

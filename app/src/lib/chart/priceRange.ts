@@ -19,6 +19,7 @@
  */
 import type { HistoryResponse } from 'api-contracts/read-v3/types'
 import { numberFormat } from '../format/numberFormat'
+import type { PoolPriceObservations } from './positionOpened'
 import { SUBSCRIPT, SUPERSCRIPT, readablePrice } from './priceFacts'
 
 // The page's figures, its range and its status (lib/chart/priceFacts.ts), for the chart and its tests in one place.
@@ -159,6 +160,52 @@ export interface PriceHistory {
   missing: boolean
   /** The service's snapshot is older than two minutes. */
   stale: boolean
+  /** Includes actual block-price observations; the segments between measurements are guides. */
+  observed?: boolean
+}
+
+/** Add actual creation/current block prices in the chart's orientation. Never project the current price back to mint,
+ * bridge an uncollected history gap, or join isolated snapshots more than one hour apart. */
+export function observedPriceLine(verdict: HistoryVerdict | null, data: HistoryResponse | null, ask: { poolId: string; base: string; quote: string }, range: { lower: number; upper: number }, openedAt: number | null, observations: PoolPriceObservations | null): HistoryVerdict | null {
+  if (!observations || observations.poolId.toLowerCase() !== ask.poolId.toLowerCase() || observations.opened.t !== openedAt) return verdict
+  const { currencies, opened, current } = observations
+  const [a, b] = currencies
+  if (a.decimals === null || b.decimals === null || !(current.t > opened.t) || !Number.isSafeInteger(opened.t) || opened.t <= 0 || !Number.isSafeInteger(current.t)) return verdict
+  const forward = a.address.toLowerCase() === ask.base.toLowerCase() && b.address.toLowerCase() === ask.quote.toLowerCase()
+  const reverse = b.address.toLowerCase() === ask.base.toLowerCase() && a.address.toLowerCase() === ask.quote.toLowerCase()
+  if (!forward && !reverse) return verdict
+  const sample = (value: typeof opened): PricePoint | null => {
+    if (!/^[1-9][0-9]{0,48}$/.test(value.sqrtPriceX96) || BigInt(value.sqrtPriceX96) >= (1n << 160n)) return null
+    const ratio = (Number(value.sqrtPriceX96) / 2 ** 96) ** 2 * 10 ** (a.decimals! - b.decimals!)
+    const price = forward ? ratio : 1 / ratio
+    return usable(price) ? { t: value.t, price, text: priceFigure(price), exact: numberFormat({ maximumSignificantDigits: 6 }).format(price), inRange: price >= range.lower && price < range.upper } : null
+  }
+  const first = sample(opened), last = sample(current)
+  if (!first || !last) return verdict
+  const old = verdict?.kind === 'line' ? verdict.history : null
+  if (!old) {
+    const joined = last.t - first.t <= HISTORY_RESOLUTION_SECONDS
+    return { kind: 'line', history: { start: first.t, end: last.t, points: [first, last], runs: joined ? [[first, last]] : [[first], [last]], missing: !joined, stale: false, observed: true } }
+  }
+  const points = [...old.points], runs = old.runs.map((run) => [...run])
+  if (first.t === old.start && first.t < points[0].t) {
+    const next = points[0]
+    const covered = data?.covered.some((span) => span.startTimestamp <= first.t && span.endTimestamp >= next.t)
+    if (next.t - first.t <= HISTORY_RESOLUTION_SECONDS && covered) runs[0].unshift(first)
+    else runs.unshift([first])
+    points.unshift(first)
+  }
+  const prior = points[points.length - 1]
+  if (last.t > Math.max(prior.t, runs[runs.length - 1].at(-1)!.t)) {
+    // Only extend the recent tail. A missing interval stays visibly broken.
+    const gap = data?.gaps.some((span) => span.endTimestamp > prior.t && span.startTimestamp < last.t)
+    if (last.t - prior.t <= HISTORY_RESOLUTION_SECONDS && !gap) {
+      const tail = runs[runs.length - 1].filter((point) => point.t < last.t)
+      runs[runs.length - 1] = [...tail, last]
+    } else runs.push([last])
+    points.push(last)
+  }
+  return { kind: 'line', history: { ...old, end: Math.max(old.end, last.t), points, runs, observed: true } }
 }
 
 export type HistoryVerdict =

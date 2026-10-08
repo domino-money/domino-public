@@ -869,7 +869,8 @@
 
 /* One automation control at the top, apart from actions on liquidity. */
 .dm-position-automation { margin: 0 0 1.25rem; padding: 0.25rem 0 0.75rem; }
-.dm-position-automation > button { max-width: 100%; white-space: normal; text-align: left; }
+.dm-position-automation > :is(button, a) { max-width: 100%; white-space: normal; text-align: left; }
+.dm-position-automation > [data-automation-recovery-toggle] { margin-left: 0.625rem; }
 .dm-automation-panel:not([hidden]) { display: grid; gap: 1rem; margin-top: 0.75rem; padding: 1rem; border: 0.0625rem solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1); }
 .dm-automation-panel > .dm-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
 .dm-automation-panel > .dm-card[hidden] { display: none; }

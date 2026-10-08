@@ -448,12 +448,13 @@ function PositionsList() {
  * included: there is no lookup any more) is the list.
  */
 export function Positions({ param = '' }: { param?: string }) {
-  const detail = param === 'receipts' ? null : positionDetailId(param)
+  // Robinhood V4 aliases use the same public read page as numeric ids, even when S1 writes are unavailable.
+  const detail = positionDetailId(__DOMINO_V2__ ? param.replace(/^robinhood-v4-/, '') : param)
   useWarmPositions(detail)
   // The tab's name (lib/routeTitle.ts, audit E11): the list, its receipts, or one position by its number.
   useRouteTitle(param === 'receipts' ? 'Receipts' : detail ? `Position #${detail}` : 'Positions')
   if (param === 'receipts') return <ReceiptsPage />
-  if (__DOMINO_V2__ && V2Position && /^(robinhood|base|arbitrum)-v[34]-[1-9][0-9]{0,77}$/.test(param)) return <V2Position param={param} list={<PositionsList />} fallback={<DetailWaiting />} />
+  if (!detail && __DOMINO_V2__ && V2Position && /^(robinhood|base|arbitrum)-v[34]-[1-9][0-9]{0,77}$/.test(param)) return <V2Position param={param} list={<PositionsList />} fallback={<DetailWaiting />} />
   if (!detail) return <PositionsList />
   return (
     <Suspense fallback={<DetailWaiting />}>

@@ -16,6 +16,8 @@ const { BOOT_SCRIPT, BOOT_SCRIPT_HASH } = require('../.test-build/app/functions/
 const { createHash } = require('node:crypto');
 /** A CSP hash source for an inline script's exact text. */
 const hashOf = (text) => `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`;
+/** Remove only the response's nonce when comparing the fixed policy. */
+const withoutNonce = (policy) => policy.replace(/ 'nonce-[A-Za-z0-9+/]+={0,2}'/, '');
 
 const PASSWORD = 'correct-horse-battery-staple-42';
 const KEY = 'q3VfK9mJx7Rt2WbN5cYp8LhD4sGa6ZeU1oTiQwErTyA';
@@ -292,7 +294,7 @@ test('with a valid cookie the app is served, with the security headers', async (
   const response = await run(navigate('/', { Cookie: cookie }));
   assert.equal(response.status, 200);
   assert.equal(served, 1);
-  assert.equal(response.headers.get('Content-Security-Policy'), APP_CSP);
+  assert.equal(withoutNonce(response.headers.get('Content-Security-Policy')), APP_CSP);
   assert.equal(response.headers.get('Cache-Control'), 'private, no-cache');
   assert.equal(response.headers.get('Strict-Transport-Security'), 'max-age=31536000');
   assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff');
@@ -440,13 +442,13 @@ test('the page reaches this site, and no chain RPC; there is no worker policy; n
 // 2026-10-01, platform workstream: the page's CSP as data, its one inline script by hash (F1, F3).
 // ---------------------------------------------------------------------------
 
-test('the page’s CSP is its directives’ lists, and admits exactly one inline script, the boot script, by its hash', () => {
+test('the page’s fixed CSP admits the boot script by its exact hash', () => {
   assert.equal(APP_CSP, cspOf(APP_CSP_SOURCES));
   // 2026-10-01 (audit C3, the wallets workstream): and frame-src, WalletConnect's Verify API frame alone.
   assert.deepEqual(Object.keys(APP_CSP_SOURCES), ['default-src', 'script-src', 'style-src', 'font-src', 'img-src', 'connect-src', 'frame-src', 'object-src', 'frame-ancestors', 'base-uri', 'form-action']);
   assert.deepEqual(APP_CSP_SOURCES['script-src'], ["'self'", BOOT_SCRIPT_HASH]);
   assert.equal(BOOT_SCRIPT_HASH, hashOf(BOOT_SCRIPT), 'the hash is the boot script’s own');
-  assert.doesNotMatch(APP_CSP, /'unsafe-inline'|'unsafe-eval'|'nonce-|'strict-dynamic'/, 'nothing else inline runs, Cloudflare’s injected script included');
+  assert.doesNotMatch(APP_CSP, /'unsafe-inline'|'unsafe-eval'|'nonce-|'strict-dynamic'/, 'no shared nonce or broad inline permission');
   for (const [directive, list] of Object.entries(APP_CSP_SOURCES)) {
     assert.equal(new Set(list).size, list.length, `${directive} names a source twice`);
     // A host is an https origin; the one wss origin is WalletConnect's relay, in connect-src (2026-10-01, audit C3).
@@ -775,14 +777,14 @@ test('the preview\'s page CSP where CHAIN2_PREVIEW is "true" names no public nod
   assert.doesNotMatch(APP_CSP, /elysium|kinetiq/, 'production\'s policy names no host of the second chain');
   assert.doesNotMatch(APP_CSP_CHAIN2, /elysium|kinetiq/, 'nor the preview\'s');
   const cookie = await signIn();
-  const csp = async (env, request = navigate('/', { Cookie: cookie })) => (await onRequest({ request, env, next })).headers.get('Content-Security-Policy');
+  const csp = async (env, request = navigate('/', { Cookie: cookie })) => withoutNonce((await onRequest({ request, env, next })).headers.get('Content-Security-Policy'));
   assert.equal(await csp(ENV), APP_CSP, 'unset: production\'s');
   assert.equal(await csp({ ...ENV, CHAIN2_PREVIEW: 'true' }), APP_CSP_CHAIN2, '"true": the preview\'s');
   for (const value of ['TRUE', 'True', '1', 'yes', ' true', 'true ', '', 'false']) assert.equal(await csp({ ...ENV, CHAIN2_PREVIEW: value }), APP_CSP, `"${value}": production's`);
-  // A page the browser revalidates gets the same, and nothing that is not a page changes: the files stay inert (the fees
+  // A page the browser revalidates keeps its original nonce and CSP; non-pages stay unchanged: the files stay inert (the fees
   // worker's name too, since 2026-10-02), API answers render nothing.
   const revalidated = await onRequest({ request: navigate('/', { Cookie: cookie }), env: { ...ENV, CHAIN2_PREVIEW: 'true' }, next: async () => new Response(null, { status: 304, headers: { 'Content-Type': 'text/html; charset=utf-8' } }) });
-  assert.equal(revalidated.headers.get('Content-Security-Policy'), APP_CSP_CHAIN2);
+  assert.equal(revalidated.headers.get('Content-Security-Policy'), null);
   const asset = (path, type) => onRequest({ request: fetchLike(path, { Cookie: cookie }), env: { ...ENV, CHAIN2_PREVIEW: 'true' }, next: async () => new Response('x', { headers: { 'Content-Type': type } }) });
   assert.equal((await asset('/assets/feesReplay.worker-CdlBbZHL.js', 'text/javascript')).headers.get('Content-Security-Policy'), STATIC_CSP);
   assert.equal((await asset('/assets/index-abc123.js', 'text/javascript')).headers.get('Content-Security-Policy'), STATIC_CSP);
@@ -928,11 +930,40 @@ test('a 304 never carries a CSP other than the one its copy was served with', as
   assert.equal(page.status, 304);
   assert.equal(page.headers.get('Content-Security-Policy'), null, 'the page keeps its own CSP');
   assert.equal(page.headers.get('Cache-Control'), 'private, no-cache');
-  assert.equal((await revalidated('/', { 'Content-Type': 'text/html; charset=utf-8' })).headers.get('Content-Security-Policy'), APP_CSP);
+  assert.equal((await revalidated('/', { 'Content-Type': 'text/html; charset=utf-8' })).headers.get('Content-Security-Policy'), null);
+  const typed = await revalidated('/', { 'Content-Type': 'text/html', ETag: '"index"', 'Content-Security-Policy': "script-src 'self'" });
+  assert.equal(typed.headers.get('Content-Security-Policy'), null, 'an upstream policy cannot replace the retained nonce');
+  assert.equal(typed.headers.get('ETag'), '"index"');
   const icon = await onRequest({ request: fetchLike('/tokens/weth.svg', { Cookie: cookie }), env: ENV, next: async () => new Response(null, { status: 304 }) });
   assert.equal(icon.headers.get('Content-Security-Policy'), null);
   assert.equal(icon.headers.get('Cache-Control'), ICON_CACHE);
   const favicon = await onRequest({ request: fetchLike('/favicon.ico'), env: ENV, next: async () => new Response(null, { status: 304 }) });
   assert.equal(favicon.status, 304);
   assert.equal(favicon.headers.get('Content-Security-Policy'), null);
+});
+
+test('each app HTML response gives Cloudflare a fresh nonce without changing the document, validators or other policies', async () => {
+  const cookie = await signIn();
+  const document = `<!doctype html><script>${BOOT_SCRIPT}</script>`;
+  const nonces = new Set();
+  for (let i = 0; i < 3; i++) {
+    const response = await onRequest({
+      request: navigate('/', { Cookie: cookie }), env: ENV,
+      next: async () => new Response(document, { headers: { 'Content-Type': 'text/html', ETag: '"index"', 'Last-Modified': 'Wed, 07 Oct 2026 12:00:00 GMT' } }),
+    });
+    const policy = response.headers.get('Content-Security-Policy');
+    const matches = [...policy.matchAll(/'nonce-([A-Za-z0-9+/]+={0,2})'/g)];
+    assert.equal(matches.length, 1);
+    assert.equal(Buffer.from(matches[0][1], 'base64').length, 16, '128 bits from Web Crypto');
+    nonces.add(matches[0][1]);
+    assert.match(policy.split('; ').find((part) => part.startsWith('script-src ')), /'nonce-/);
+    assert.equal(withoutNonce(policy), APP_CSP, 'only the script nonce is added');
+    assert.equal(await response.text(), document, 'boot still runs by hash; no HTML rewriting');
+    assert.equal(response.headers.get('ETag'), '"index"');
+    assert.equal(response.headers.get('Last-Modified'), 'Wed, 07 Oct 2026 12:00:00 GMT');
+    assert.equal(response.headers.get('Cache-Control'), 'private, no-cache');
+    assert.match(response.headers.get('Vary'), /Cookie/);
+  }
+  assert.equal(nonces.size, 3, 'a nonce is never reused between responses');
+  assert.equal((await run(navigate('/'))).headers.get('Content-Security-Policy'), gate.PAGE_CSP, 'the beta gate keeps its separate policy');
 });

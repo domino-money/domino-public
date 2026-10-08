@@ -14,8 +14,9 @@
  * has one; otherwise no figure. Since 2026-10-02 (the chart's periods back, lib/fees/periods.ts) that point is the card's
  * own 24H start (`periodStart`), one rule for both, and may be a read of the position a day ago (lib/fees/pastReads.ts).
  * Values are in USDG for a pair with USDG, else in the side `into`; the rate has no unit.
- * A historical figure, never a forecast. Honest when it cannot be said: under six hours of history, no price, nothing in
- * the position, or nothing earned give a reason instead of a rate. Pure and Node-safe.
+ * A historical figure, never a forecast. Available after the first measured positive interval, without a six-hour wait.
+ * No elapsed time, usable price or capital exposure gives a reason instead of a rate; measured zero fees give zero APR.
+ * Short intervals can move sharply and are explained by the tile's existing information tooltip. Pure and Node-safe.
  */
 import type { FeeHistory, PositionState } from './fees/types'
 import { PERIODS, periodStart } from './fees/periods'
@@ -23,16 +24,16 @@ import { aprDigitsOf } from './format/apr'
 
 /** The Fees earned card's two windows: the last 24 hours, and since the position was opened. */
 export type AprWindow = '24h' | 'all'
-/** Why there is no rate: too little history, no usable price, nothing in the position, nothing earned, no point a day ago. */
-export type AprMissing = 'short' | 'no_price' | 'empty' | 'zero' | 'no_point'
+/** Why there is no rate: no elapsed interval, usable price, capital exposure, usable arithmetic or point a day ago. */
+export type AprMissing = 'short' | 'no_price' | 'empty' | 'unavailable' | 'no_point'
 /** `from`: where the window starts, its time (Unix seconds) and its block (2026-10-02: the tile's line says so in its title). */
 export type PositionApr = { ok: true; rate: number; seconds: number; from: { t: number; block: number } } | { ok: false; reason: AprMissing; seconds: number }
 
 const HOUR = 3_600
 const DAY = 86_400
 const YEAR = 365 * DAY
-/** Less history than this gives no rate: a few hours of fees annualised say nothing about a year. */
-export const APR_MIN_SECONDS = 6 * HOUR
+/** Chain timestamps are whole seconds: zero elapsed time cannot be annualised. No additional waiting period. */
+export const APR_MIN_SECONDS = 1
 /** The last 24 hours start at a measured point this old, at the least and at the most: the card's 24H window. */
 export const DAY_POINT_SECONDS = PERIODS['24h'].window
 const Q96 = 2 ** 96
@@ -61,35 +62,43 @@ export function positionApr(
     before = day.earned
   }
   const seconds = Math.max(0, end - from)
+  if (!Number.isFinite(seconds)) return { ok: false, reason: 'unavailable', seconds: 0 }
   if (seconds < APR_MIN_SECONDS) return { ok: false, reason: 'short', seconds }
   const [d0, d1] = [state.currencies[0].decimals, state.currencies[1].decimals]
   const sqrtP = Number(state.sqrtPriceX96) / Q96
-  if (d0 === null || d1 === null || !(sqrtP > 0)) return { ok: false, reason: 'no_price', seconds }
+  if (d0 === null || d1 === null || ![d0, d1].every((d) => Number.isInteger(d) && d >= 0 && d <= 255) || !Number.isFinite(sqrtP) || !(sqrtP > 0)) return { ok: false, reason: 'no_price', seconds }
   // The other side's price in whole tokens of `into`, now.
   const price = sqrtP * sqrtP * Math.pow(10, d0 - d1)
   const value = (a0: number, a1: number) => (into === 1 ? a1 + a0 * price : a0 + a1 / price)
   const sqrtA = Math.pow(1.0001, state.tickLower / 2)
   const sqrtB = Math.pow(1.0001, state.tickUpper / 2)
+  if (![price, sqrtA, sqrtB].every((n) => Number.isFinite(n) && n > 0) || sqrtA >= sqrtB) return { ok: false, reason: 'no_price', seconds }
   const p = Math.min(Math.max(sqrtP, sqrtA), sqrtB)
-  const worth = (liquidity: number) => value((liquidity * (sqrtB - p)) / (p * sqrtB) / 10 ** d0, (liquidity * (p - sqrtA)) / 10 ** d1)
+  const worth = (liquidity: bigint) => value((Number(liquidity) * (sqrtB - p)) / (p * sqrtB) / 10 ** d0, (Number(liquidity) * (p - sqrtA)) / 10 ** d1)
 
   // The liquidity on each stretch from `from` to `end`, changing at each settlement.
+  if (history.events.some((event) => !Number.isFinite(event.timestamp))) return { ok: false, reason: 'unavailable', seconds }
   const events = [...history.events].sort((a, b) => a.timestamp - b.timestamp || a.block - b.block)
-  let next = 0
-  let liquidity = 0
-  for (; next < events.length && events[next].timestamp <= from; next++) liquidity = Math.max(0, liquidity + Number(events[next].liquidityDelta))
+  let liquidity = 0n
   let t = from
   let weighted = 0
-  for (; next < events.length && events[next].timestamp <= end; next++) {
-    weighted += worth(liquidity) * Math.max(0, events[next].timestamp - t)
-    t = Math.max(t, events[next].timestamp)
-    liquidity = Math.max(0, liquidity + Number(events[next].liquidityDelta))
+  for (const event of events) {
+    if (event.timestamp > end) break
+    const at = Math.max(from, event.timestamp)
+    if (at > t) weighted += worth(liquidity) * (at - t)
+    t = at
+    liquidity += event.liquidityDelta
+    if (liquidity < 0n) return { ok: false, reason: 'unavailable', seconds }
   }
   weighted += worth(liquidity) * Math.max(0, end - t)
-  const earned = value(Number(history.earned[0] - before[0]) / 10 ** d0, Number(history.earned[1] - before[1]) / 10 ** d1)
+  const amounts = [history.earned[0] - before[0], history.earned[1] - before[1]]
+  const earned = value(Number(amounts[0]) / 10 ** d0, Number(amounts[1]) / 10 ** d1)
+  if (amounts.some((amount) => amount < 0n) || !Number.isFinite(weighted) || !Number.isFinite(earned)) return { ok: false, reason: 'unavailable', seconds }
   if (!(weighted > 0)) return { ok: false, reason: 'empty', seconds }
-  if (!(earned > 0)) return { ok: false, reason: 'zero', seconds }
-  return { ok: true, rate: (earned * YEAR) / weighted, seconds, from: { t: from, block } }
+  const rate = (earned * YEAR) / weighted
+  // Never turn an overflow, underflow or unusable denominator into a zero or an infinite advertised return.
+  if (!Number.isFinite(rate * 100) || (rate === 0 && amounts.some((amount) => amount > 0n))) return { ok: false, reason: 'unavailable', seconds }
+  return { ok: true, rate, seconds, from: { t: from, block } }
 }
 
 /**
@@ -98,21 +107,23 @@ export function positionApr(
  * 99.96% read "100.0%", and now reads "100%".
  */
 export function aprText(rate: number): string {
-  return `${aprDigitsOf(rate * 100)}%`
+  return rate === 0 ? '0%' : `${aprDigitsOf(rate * 100)}%`
 }
 
 /** Why there is no rate, in a few plain words. */
 export const APR_MISSING: Readonly<Record<AprMissing, string>> = {
-  short: 'Shows after 6 hours',
+  short: 'Waiting for the first reading',
   no_price: 'No price to measure it',
   empty: 'Nothing in the position',
-  zero: 'No fees earned yet',
+  unavailable: 'Not measured yet',
   no_point: 'Not measured a day ago',
 }
 
-/** How long a window is, as a person says it: hours under two days, days after. */
+/** How long a measured window is: do not describe a position seconds or minutes old as an hour old. */
 export function spanText(seconds: number): string {
   const hours = Math.max(1, Math.round(seconds / HOUR))
-  if (hours < 48) return `${hours} hour${hours === 1 ? '' : 's'}`
-  return `${Math.round(seconds / DAY)} days`
+  const [n, unit] = seconds < 60 ? [Math.max(0, Math.floor(seconds)), 'second']
+    : seconds < HOUR ? [Math.floor(seconds / 60), 'minute']
+      : hours < 48 ? [hours, 'hour'] : [Math.round(seconds / DAY), 'day']
+  return `${n} ${unit}${n === 1 ? '' : 's'}`
 }

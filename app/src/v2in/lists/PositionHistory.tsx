@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { activityMint, type ActivityMint } from '../../lib/chart/positionOpened'
 import { Button } from '../../components/ui'
 import type { AutomaticAdds } from '../../components/positions/PositionActivity'
 import { FeesActivity } from '../../components/positions/visual/FeesActivity'
@@ -17,8 +18,8 @@ const NO_EVENTS: readonly FeesEvent[] = []
  * one financial operation with the same position and transaction can carry them inside its receipt; ambiguous matches
  * stay independent. No wallet-wide cancellation is attributed to a position merely because the wallet matches.
  */
-export default function PositionHistory({ wallet, position, events = NO_EVENTS, automatic }: {
-  wallet: string | null; position: ActivityPosition; events?: readonly FeesEvent[]; automatic?: AutomaticAdds | null
+export default function PositionHistory({ wallet, position, events = NO_EVENTS, automatic, onMint }: {
+  wallet: string | null; position: ActivityPosition; events?: readonly FeesEvent[]; automatic?: AutomaticAdds | null; onMint?: (mint: ActivityMint) => void
 }) {
   const gate = useListsGate()
   const live = anyIn(gate, 'live') && wallet !== null
@@ -29,6 +30,11 @@ export default function PositionHistory({ wallet, position, events = NO_EVENTS, 
   const [page, setPage] = useState({ scope, shown: 5 })
   const shown = page.scope === scope ? page.shown : 5
   const matching = useMemo(() => positionActivity(history.answer?.items ?? [], position, portfolio), [history.answer, position, portfolio])
+  const mint = useMemo(() => {
+    const own = portfolio?.positions.find((item) => item.chainId === position.chainId && item.dex === position.dex && item.tokenId === position.tokenId)
+    return activityMint({ items: matching }, { ...position, vault: own?.vault ?? null })
+  }, [matching, portfolio, position])
+  useEffect(() => { if (mint) onMint?.(mint) }, [mint, onMint])
   const receipts = useMemo(() => history.answer ? receiptViews({ ...history.answer, items: matching }, chainsIn(gate, 'live'), portfolio) : [], [history.answer, matching, gate, portfolio])
   const rows = useMemo(() => {
     const attached = new Map<string, FeesEvent[]>()

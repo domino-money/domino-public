@@ -71,7 +71,7 @@ export function PositionPicker({ positions, selected, onSelect, disabled = false
               <span className="dm-seq-pick-meta">
                 <span className="dm-chip">{feeWords(feeText(position.fee))}</span>
                 <span className="dm-seq-pick-id">#{position.tokenId}</span>
-                {note ? <span className="dm-seq-pick-note">{note}</span> : <PickAutomation tokenId={position.tokenId} />}
+                {note ? <span className="dm-seq-pick-note">{note}</span> : !__DOMINO_V2__ && <PickAutomation tokenId={position.tokenId} />}
               </span>
             </span>
             <span className="dm-seq-pick-range" aria-hidden="true">

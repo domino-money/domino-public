@@ -221,9 +221,15 @@ test('every envelope must be one of the fixed reads its purpose makes; one that 
     ['ledger', 'a header with transactions', envelope('eth_getBlockByNumber', ['0x10', true])],
     ['ledger', 'a header by tag', envelope('eth_getBlockByNumber', ['latest', false])],
     ['ledger', 'eth_blockNumber under ledger', envelope('eth_blockNumber', [])],
-    // Changed on purpose 2026-10-02 (rugged97's rule 2): never a pool's history: no Swap, no Initialize, and the
-    // PoolManager's logs one block at a time only, however its address is named.
-    ['ledger', 'a pool’s swaps', envelope('eth_getLogs', [{ address: fees.POOL_MANAGER, fromBlock: hex(70_000_000), toBlock: hex(70_000_000), topics: [SWAP, POOL] }])],
+    // Swap is admitted only as an exact-pool, one-block opening anchor under ledger, never a history scan.
+    ['ledger', 'a pool’s swaps across two blocks', envelope('eth_getLogs', [{ address: fees.POOL_MANAGER, fromBlock: hex(70_000_000), toBlock: hex(70_000_001), topics: [SWAP, POOL] }])],
+    ['owned', 'a Swap under another purpose', envelope('eth_getLogs', [{ address: fees.POOL_MANAGER, fromBlock: hex(70_000_000), toBlock: hex(70_000_000), topics: [SWAP, POOL] }])],
+    ['ledger', 'a Swap at another contract', envelope('eth_getLogs', [{ address: TOKEN_A, fromBlock: hex(70_000_000), toBlock: hex(70_000_000), topics: [SWAP, POOL] }])],
+    ['ledger', 'a Swap wildcard pool', envelope('eth_getLogs', [{ address: fees.POOL_MANAGER, fromBlock: hex(70_000_000), toBlock: hex(70_000_000), topics: [SWAP, null] }])],
+    ['ledger', 'a Swap pool list', envelope('eth_getLogs', [{ address: fees.POOL_MANAGER, fromBlock: hex(70_000_000), toBlock: hex(70_000_000), topics: [SWAP, [POOL]] }])],
+    ['ledger', 'a Swap address list', envelope('eth_getLogs', [{ address: [fees.POOL_MANAGER], fromBlock: hex(70_000_000), toBlock: hex(70_000_000), topics: [SWAP, POOL] }])],
+    ['ledger', 'a Swap event list', envelope('eth_getLogs', [{ address: fees.POOL_MANAGER, fromBlock: hex(70_000_000), toBlock: hex(70_000_000), topics: [[SWAP], POOL] }])],
+    ['ledger', 'a Swap narrowed to a sender omits later swaps', envelope('eth_getLogs', [{ address: fees.POOL_MANAGER, fromBlock: hex(70_000_000), toBlock: hex(70_000_000), topics: [SWAP, POOL, OWNER_TOPIC] }])],
     ['ledger', 'a pool’s Initialize', envelope('eth_getLogs', [{ address: fees.POOL_MANAGER, fromBlock: hex(70_000_000), toBlock: hex(70_000_000), topics: [INITIALIZE, POOL] }])],
     ['ledger', 'the PoolManager’s ModifyLiquidity over two blocks', envelope('eth_getLogs', [{ address: fees.POOL_MANAGER, fromBlock: hex(70_000_000), toBlock: hex(70_000_001), topics: [fees.TOPIC.ModifyLiquidity, POOL] }])],
     ['ledger', 'the PoolManager in a list, over two blocks', envelope('eth_getLogs', [{ address: [TOKEN_A, fees.POOL_MANAGER], fromBlock: hex(70_000_000), toBlock: hex(70_000_001), topics: [fees.TOPIC.Transfer] }])],
@@ -268,6 +274,7 @@ test('every envelope must be one of the fixed reads its purpose makes; one that 
     ['ledger', envelope('eth_getBlockByNumber', ['0x10', false])],
     ['ledger', call()],
     ['ledger', call(undefined, hex(70_000_000))],
+    ['ledger', envelope('eth_getLogs', [{ address: fees.POOL_MANAGER, fromBlock: hex(70_000_000), toBlock: hex(70_000_000), topics: [SWAP, POOL] }])],
     // The ledger's reads (functions/_lib/feesLedger.ts): one block of the PoolManager, an NFT's transfers, the holders'
     // token transfers with the PoolManager, and the engine's two events.
     ['ledger', envelope('eth_getLogs', [{ address: fees.POOL_MANAGER, fromBlock: hex(70_000_000), toBlock: hex(70_000_000), topics: [fees.TOPIC.ModifyLiquidity, null, `0x${'0'.repeat(24)}${'03'.repeat(20)}`] }])],
@@ -288,9 +295,9 @@ test('every envelope must be one of the fixed reads its purpose makes; one that 
 
 // Changed on purpose 2026-10-02 (RPC-SPEC §11.4, rugged97's rule 2): six, and none a pool's own history (no Swap, Donate,
 // Initialize or ProtocolFeeUpdated): the fees ledger reads a position's own events and the engine's.
-test('the six events a log read may name are the chain code’s own, and none is a pool’s history', () => {
-  assert.deepEqual([...local.LOG_TOPICS].sort(), [fees.TOPIC.Transfer, fees.TOPIC.ModifyLiquidity, owned.SETUP_MINTED_TOPIC, vaultRecord.EXECUTION_COMPLETED, ledger.FEES_REALIZED, ledger.BUDGET_APPLIED].sort());
-  assert.equal(new Set(local.LOG_TOPICS).size, 6);
+test('the fixed V1 and V2 events a log read may name are the chain code’s own, and none is a pool’s history', () => {
+  assert.deepEqual([...local.LOG_TOPICS].sort(), [fees.TOPIC.Transfer, fees.TOPIC.ModifyLiquidity, owned.SETUP_MINTED_TOPIC, vaultRecord.EXECUTION_COMPLETED, ledger.FEES_REALIZED, ledger.BUDGET_APPLIED, ledger.V2_ACTION, ledger.V2_STEP, ledger.V2_VAULT_CREATED, ledger.V2_COLLECTED, ledger.V2_COMPOUNDED].sort());
+  assert.equal(new Set(local.LOG_TOPICS).size, 11);
   for (const topic of [SWAP, INITIALIZE]) assert.ok(!local.LOG_TOPICS.includes(topic));
   assert.deepEqual(local.PURPOSE_METHODS.simulate, ['eth_simulateV1']);
   for (const purpose of ['owned', 'state', 'ledger', 'automation', 'record']) assert.ok(!local.PURPOSE_METHODS[purpose].includes('eth_simulateV1'), purpose);

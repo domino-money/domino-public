@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/types'
-import { positionHref, positionsHref } from '../../components/explore/routes'
+import { positionsHref } from '../../components/explore/routes'
 import { IconChevronDown, IconChevronLeft, IconSearch } from '../../components/icons'
 import { PositionRange, chainCardPrice, preloadPriceChart } from '../../components/positions/PositionRange'
 import { activityOpenedAt } from '../../lib/chart/positionOpened'
@@ -122,11 +122,6 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
   const chain = v2Chain(target.chainId)
   const id = target.tokenId.toString()
   useRouteTitle(`Position #${id}`)
-
-  // A real Robinhood v4 position under `live` is V1's own page (its fees history and APR are read there): one address for it.
-  useEffect(() => {
-    if (gate.mode === 'live' && target.chainId === 4663 && target.dex === 4) window.location.replace(positionHref(id))
-  }, [gate.mode, target.chainId, target.dex, id])
 
   useEffect(() => {
     if (needsWallet) return
