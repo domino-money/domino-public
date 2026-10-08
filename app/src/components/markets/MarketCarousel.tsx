@@ -227,7 +227,11 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
         </div>
       )}
       {railed && (
-        <div id="market-rail" ref={rail} role="region" aria-label={featured.source === 'server' ? 'Top pools, last 24 hours' : 'Selected pools, last 24 hours'} className="dm-mkt-rail" onScroll={onScroll}>
+        <div id="market-rail" ref={rail} role="region" aria-label={featured.source === 'server' ? 'Top pools, last 24 hours' : 'Selected pools, last 24 hours'} className="dm-mkt-rail" onScroll={onScroll}
+          data-featured-list-id={listed ? featured.listId ?? undefined : undefined}
+          data-featured-revision={listed ? featured.revision ?? undefined : undefined}
+          data-featured-selection-date={listed ? featured.selectionDate ?? undefined : undefined}
+          data-featured-effective-at={listed ? featured.effectiveAt ?? undefined : undefined}>
           {listings.map((listing, index) => {
             const ask = asks[index] ?? null
             const own = ask ? reads.get(ask.key) : undefined

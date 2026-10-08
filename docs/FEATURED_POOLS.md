@@ -10,11 +10,13 @@ sets the phase:
   during the day, and served to the site by read-v5
   (`POST /v5/read/featured-pools`).
 
-## Policy v2 (28/09/2026)
+## Policy v2 (28/09/2026, depth floor restored 04/10/2026)
 
 The owner's choice after the first live list: the highest APR today, above
 US$ 1M of 24 h volume and US$ 100k of liquidity, with every safety rule
-(upgradeable and protected tokens stay out) and no other market rule.
+(upgradeable and protected tokens stay out). On 4 October the owner restored
+the US$ 10k reference depth floor: depth below that floor or unmeasurable
+depth makes a pool ineligible for ranking. The other market rules stay off.
 `featured_policy.json` states it with three switches and null thresholds:
 
 | Key | v1 | v2 |
@@ -23,7 +25,8 @@ US$ 1M of 24 h volume and US$ 100k of liquidity, with every safety rule
 | `persistence` | `true` (eligible the day before too, E17b) | `false` |
 | `fill` | `["carried", "fallback"]` | `["fallback"]` (the embedded list only) |
 | `minVolume24hUsd`, `minTvlUsd` | 250000, 250000 | 1000000, 100000 |
-| depth, APR and turnover ceilings, age, activity, fading volume, price move, provider price | set | `null` (off) |
+| `minReferenceDepthUsd` | 10000 | 10000 (restored 04/10/2026) |
+| APR and turnover ceilings, age, activity, fading volume, price move, provider price | set | `null` (off) |
 | `hysteresis` | 0.7, 1.2, 2 swaps a day | 1, 1, 6: the day's best replace yesterday's |
 
 A null threshold turns its rule off everywhere: in the listing screen, in the
@@ -184,6 +187,22 @@ app's consumption are the bridge side's (featured-pools v1 §10.3).
 The gateway serves the route only with `--enable-v5` and
 `DOMINO_BRIDGE_V5_READS=featured-pools`; otherwise it answers 404.
 
+### Open pages follow the daily publication
+
+Home and Markets share one list, refreshed with the markets' normal 60-second
+read while the page is active. A new server selection date adopts the complete
+published order without reopening the page. Re-ranking does not guarantee different
+pools: eligible incumbents, pins and fallback slots can remain.
+
+`listId` identifies ordered pool identities, not the day's evidence. Even when it
+stays unchanged, the app replaces selection figures, revision and publication times.
+Intra-day repairs remove withdrawn pools immediately and admit replacements;
+an order-only change within that day keeps the existing 30-minute/remount behavior.
+Safety validation and the neutral title for carried-over or stale lists still apply.
+The table and cards expose publication metadata as DOM data attributes for diagnosis,
+without adding visible labels. `effectiveAt` distinguishes a fresh publication from
+a carried-over list whose `selectionDate` alone may have advanced.
+
 ## Rules
 
 Safety rules are never relaxed, not for pins: verified identity, no hook,
@@ -309,10 +328,11 @@ minutes behind them).
 
 - Volume and liquidity are the provider's. Wash trading on-chain is real
   trading, and positions are cheap to split across addresses: the reference
-  depth (real ETH, WETH or USDG within 10%) is the rule that costs capital,
-  and v2 turns it off, with the APR and turnover ceilings. A pool with bought
-  volume above the two floors can rank; the safety rules and the owner's
-  exclusions and veto are what stays.
+  depth (real ETH, WETH or USDG within 10%) is the rule that costs capital.
+  Since 4 October v2 requires US$ 10k of measured reference depth, while the
+  APR and turnover ceilings stay off. A pool with bought volume can still
+  rank if it meets the volume, liquidity and depth floors and the safety
+  rules; the owner's exclusions and veto remain available.
 - The depth is measured once, at selection; the selection minute is public.
 - The universe is the listing's top pools by volume (`coverage.truncated`).
 - Age comes from the catalogue's Initialize block when the catalogue has the

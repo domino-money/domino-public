@@ -474,8 +474,8 @@ export function MarketsTable({
 
   const lean = markets.length > 0 && markets.every((m) => m.provenance?.metrics === 'not_requested')
   // A filter that changes which pools are listed remounts the rows, so they cross-fade in rather than jump;
-  // a keystroke that leaves the same pools listed changes nothing.
-  const filtering = full ? matches.map((listing) => listing.poolId).join(',') : 'all'
+  // A daily reorder keeps those rows mounted, preserving focus on a surviving pool.
+  const filtering = full ? matches.map((listing) => listing.poolId).sort().join(',') : 'all'
   const nothingMatches = full && total > 0 && matchCount === 0
 
   const notice = diagnostics && (fixtures || result?.notice) && (
@@ -499,7 +499,14 @@ export function MarketsTable({
       label={title}
       className="dm-mkt-table"
       title={full ? undefined : unsettled ? <Skeleton className="dm-mkt-title-skel h-5 w-40" /> : title}
-      data={{ 'featured-source': unsettled ? 'pending' : listed ? featured.source : 'bundled', ...(nothingMatches ? { 'filter-empty': '' } : {}) }}
+      data={{
+        'featured-source': unsettled ? 'pending' : listed ? featured.source : 'bundled',
+        ...(listed && featured.listId !== null ? { 'featured-list-id': featured.listId } : {}),
+        ...(listed && featured.revision !== null ? { 'featured-revision': String(featured.revision) } : {}),
+        ...(listed && featured.selectionDate !== null ? { 'featured-selection-date': featured.selectionDate } : {}),
+        ...(listed && featured.effectiveAt !== null ? { 'featured-effective-at': String(featured.effectiveAt) } : {}),
+        ...(nothingMatches ? { 'filter-empty': '' } : {}),
+      }}
       titleRef={full ? undefined : heading}
       action={
         full ? undefined : (

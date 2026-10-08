@@ -483,7 +483,7 @@ test('an answer with X-Domino-Edge-Cache: hit, through the bridge source and the
   assert.deepEqual((await run({ 'X-Domino-Edge-Cache': 'miss' })).kept.tokens, GATEWAY_BUDGET.burst - 1, 'only `hit` is the edge');
 });
 
-// --- the refresh: the list on screen changes only as §11.1 says ---
+// --- refresh: publication and figures stay current; a new selection day adopts its ranking ---
 
 /** A clock whose monotonic time only a test moves. */
 function steadyClock() {
@@ -499,7 +499,7 @@ function scripted(...answers) {
   return { store, clock, reads };
 }
 
-test('refresh: the same listId changes nothing; reorders wait, admissions and removals apply at once, and a failure keeps the list', async () => {
+test('refresh: an identical publication changes nothing; intra-day reorders wait, admissions and removals apply at once, and a failure keeps the list', async () => {
   const first = answered(answer([A, B, C], { listId: listId('01') }));
   const reordered = answered(answer([C, A, B], { listId: listId('02') }));
   const entered = answered(answer([A, B, C, pool(id('d4'), addr('d4'), 'TKND')], { listId: listId('03') }));
@@ -511,9 +511,9 @@ test('refresh: the same listId changes nothing; reorders wait, admissions and re
   assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, B.poolId, C.poolId]);
   assert.equal(store.getSnapshot().settled, true);
   await store.refresh();
-  assert.equal(seen.length, 1, 'the same listId: nothing changed');
+  assert.equal(seen.length, 1, 'the same publication and content: nothing changed');
   await store.refresh();
-  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, B.poolId, C.poolId], 'no reorder on refresh');
+  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, B.poolId, C.poolId], 'an intra-day reorder waits');
   await store.refresh();
   assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, B.poolId, C.poolId, id('d4')], 'a newly admitted pool appears on the same refresh');
   await store.refresh();
@@ -521,6 +521,110 @@ test('refresh: the same listId changes nothing; reorders wait, admissions and re
   await store.refresh();
   assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, C.poolId], 'the removal at once, on the refresh that saw it');
   assert.equal(store.getSnapshot().source, 'server');
+});
+
+/** Another valid daily publication; listId deliberately stays the same unless its ordered identities change. */
+function nextDay(pools, patch = {}) {
+  const day = 24 * 3600;
+  return answer(pools.map((entry) => ({ ...entry, ...(entry.rankInputs ? { rankInputs: { ...entry.rankInputs, evaluatedAt: entry.rankInputs.evaluatedAt + day } } : {}) })), {
+    revision: CURRENT.revision + 1,
+    selectionDate: new Date((CURRENT.effectiveAt + day) * 1000).toISOString().slice(0, 10),
+    generatedAt: CURRENT.generatedAt + day,
+    effectiveAt: CURRENT.effectiveAt + day,
+    validUntil: CURRENT.validUntil + day,
+    servedAt: CURRENT.servedAt + day,
+    window: { start: CURRENT.window.start + day, end: CURRENT.window.end + day },
+    ...patch,
+  });
+}
+
+test('the same listId refreshes publication and selection figures, and notifies only when displayed content changes', async () => {
+  const first = answer([A, B]);
+  const changed = clone(A);
+  changed.rankInputs = { ...changed.rankInputs, rankApr: '72', freshApr: '72', reportedLiquidityUsd: '654321', volume24hUsd: '3456789', evaluatedAt: changed.rankInputs.evaluatedAt + 60 };
+  const revised = answer([changed, B], { revision: first.revision + 1, effectiveAt: first.effectiveAt + 60, servedAt: first.servedAt + 60 });
+  const tomorrow = nextDay([changed, B], { revision: revised.revision + 1 });
+  const same = { ...clone(tomorrow), servedAt: tomorrow.servedAt + 60 };
+  const relabelled = clone(same);
+  relabelled.pools[0].tokens.find((token) => token.symbol === 'TKNA').symbol = 'TKNA2';
+  for (const body of [first, revised, tomorrow, same, relabelled]) assert.ok(featured.validateFeatured(v5, body), 'a valid publication');
+  assert.equal(first.listId, tomorrow.listId, 'pool identities and order stayed the same across days');
+  const { store } = scripted(...[first, revised, tomorrow, same, relabelled].map(answered));
+  const seen = [];
+  store.subscribe(() => seen.push(store.getSnapshot()));
+  const original = await store.ensure();
+  await store.refresh();
+  let current = store.getSnapshot();
+  assert.deepEqual([current.revision, current.selectionDate, current.effectiveAt], [revised.revision, revised.selectionDate, revised.effectiveAt]);
+  assert.deepEqual(current.entries[0].selection, { tvlUsd: '654321', volume24hUsd: '3456789', apr: '72', evaluatedAt: changed.rankInputs.evaluatedAt });
+  assert.equal(current.entries[0].rankApr, '72');
+  assert.notEqual(original.entries[0].selection.evaluatedAt, current.entries[0].selection.evaluatedAt, 'the prior snapshot remains unchanged');
+  await store.refresh();
+  current = store.getSnapshot();
+  assert.deepEqual([current.revision, current.selectionDate, current.effectiveAt], [tomorrow.revision, tomorrow.selectionDate, tomorrow.effectiveAt]);
+  assert.equal(current.entries[0].selection.evaluatedAt, tomorrow.pools[0].rankInputs.evaluatedAt, 'today’s fallback figures reach the open page');
+  assert.equal(seen.length, 3);
+  await store.refresh();
+  assert.equal(store.getSnapshot(), current, 'a later servedAt alone does not replace the snapshot');
+  assert.equal(seen.length, 3, 'an identical publication does not notify');
+  await store.refresh();
+  assert.ok(store.getSnapshot().entries[0].labels.includes('TKNA2'), 'entry content is compared even under the same revision');
+  assert.equal(seen.length, 4);
+});
+
+test('a new selection day adopts the complete ranking immediately, including survivors when another pool enters', async () => {
+  const D = pool(id('d4'), addr('d4'), 'TKND');
+  for (const pools of [[C, A, B], [D, C, A]]) {
+    const daily = nextDay(pools, { listId: listId('02') });
+    assert.ok(featured.validateFeatured(v5, daily));
+    const { store } = scripted(answered(answer([A, B, C], { listId: listId('01') })), answered(daily), answered(daily));
+    await store.ensure();
+    await store.refresh();
+    assert.deepEqual(idsOf(store.getSnapshot()), pools.map((entry) => entry.poolId), 'server order without remount or thirty-minute wait');
+    await store.refresh();
+    assert.deepEqual(idsOf(store.getSnapshot()), pools.map((entry) => entry.poolId), 'same-ID refresh keeps the adopted daily ranking');
+  }
+  const today = answer([D, C, A], { listId: listId('02'), status: 'repaired' });
+  const tomorrow = nextDay([D, C, A], { listId: today.listId });
+  const { store } = scripted(answered(answer([A, B, C], { listId: listId('01') })), answered(today), answered(tomorrow));
+  await store.ensure();
+  await store.refresh();
+  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, C.poolId, D.poolId], 'today’s intra-day repair keeps survivors in place');
+  await store.refresh();
+  assert.equal(store.getSnapshot().listId, today.listId, 'the daily publication may have exactly the same listId');
+  assert.deepEqual(idsOf(store.getSnapshot()), [D.poolId, C.poolId, A.poolId], 'that ID cannot keep survivors in the previous day’s order');
+});
+
+test('intra-day admissions retain the pending server order through same-ID metadata refreshes', async () => {
+  const D = pool(id('d4'), addr('d4'), 'TKND');
+  const replacement = answer([D, C, A], { listId: listId('02'), revision: CURRENT.revision + 1, status: 'repaired' });
+  const updated = clone(replacement);
+  updated.pools[1].rankInputs.freshApr = '81';
+  updated.pools[1].rankInputs.rankApr = '81';
+  const { store, clock } = scripted(answered(answer([A, B, C], { listId: listId('01') })), answered(replacement), answered(updated), answered(updated));
+  await store.ensure();
+  await store.refresh();
+  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, C.poolId, D.poolId], 'the withdrawal and verified admission take effect together');
+  await store.refresh();
+  assert.equal(store.getSnapshot().entries[1].selection.apr, '81', 'survivors receive new metadata while their order waits');
+  clock.advance(featured.FEATURED_REMOUNT_MS);
+  store.remount();
+  assert.deepEqual(idsOf(store.getSnapshot()), [D.poolId, C.poolId, A.poolId], 'the desired order was not discarded after admitting D');
+  assert.equal(store.getSnapshot().entries[1].selection.apr, '81', 'remount does not restore the older metadata');
+  await store.refresh();
+  assert.deepEqual(idsOf(store.getSnapshot()), [D.poolId, C.poolId, A.poolId]);
+});
+
+test('same-publication metadata updates cannot readmit a pool whose own read did not bind', async () => {
+  const body = answer([A, B, C]);
+  const updated = clone(body);
+  updated.pools[0].rankInputs.freshApr = '82';
+  const { store } = scripted(answered(body), answered(updated));
+  await store.ensure();
+  store.unbind([B.poolId]);
+  await store.refresh();
+  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, C.poolId]);
+  assert.equal(store.getSnapshot().entries[0].selection.apr, '82');
 });
 
 test('refresh: a removal and its admitted replacement apply together without reload or a thirty-minute wait', async () => {
@@ -699,7 +803,7 @@ function marketsOver(lists) {
   return { provider, store, settle, rows, calls, minute };
 }
 
-test('the list first, then the markets of its pools; a refresh never reorders, applies a removal, and none switches to the embedded list', async () => {
+test('the list first, then its markets; intra-day refresh defers reordering, applies removals, and none switches to the embedded list', async () => {
   const [P, Q, R] = [storedPool(id('a1')), storedPool(id('b2')), storedPool(id('c3'))];
   const { provider, store, settle, rows, calls, minute } = marketsOver([
     answer([P, Q, R], { listId: listId('01') }),
@@ -725,6 +829,25 @@ test('the list first, then the markets of its pools; a refresh never reorders, a
   assert.equal(store.getSnapshot().source, 'bundled');
   assert.deepEqual(calls.filter((c) => c.path === '/api/read/v3/overview').at(-1).body.poolIds, SELECTED_POOLS, 'none: the embedded list is read at once');
   assert.deepEqual(rows(), SELECTED_POOLS);
+});
+
+test('the markets provider follows the next day’s ranking in an open page on its ordinary refresh', async () => {
+  const [P, Q, R] = [storedPool(id('a1')), storedPool(id('b2')), storedPool(id('c3'))];
+  const daily = nextDay([R, Q, P], { listId: listId('02') });
+  const { provider, store, settle, rows, calls, minute } = marketsOver([
+    answer([P, Q, R], { listId: listId('01') }), daily,
+  ]);
+  let done = settle();
+  provider.ensure();
+  await done;
+  minute();
+  done = settle();
+  provider.refresh();
+  await done;
+  assert.deepEqual(rows(), [R.poolId, Q.poolId, P.poolId]);
+  assert.deepEqual(calls.filter((call) => call.path === '/api/read/v3/overview').at(-1).body.poolIds, [R.poolId, Q.poolId, P.poolId]);
+  assert.equal(store.getSnapshot().revision, daily.revision);
+  assert.equal(store.getSnapshot().selectionDate, daily.selectionDate);
 });
 
 test('a row whose read is another pool than its entry names is dropped, and with none left the embedded list is read', async () => {

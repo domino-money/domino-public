@@ -27,11 +27,12 @@
  * storage.
  *
  * Read again with the markets' 60 s refresh, a new answer changes the list on
- * screen only this way: the same listId changes nothing but the title; pools
+ * screen only this way: the same listId refreshes its selection figures and publication; pools
  * that left the list leave at once; `none` or a route that is off switch to
  * the embedded list at once (how a rollback reaches open tabs); valid new pools
- * enter at once after the surviving pools in their existing order. A reorder
- * alone waits for a remount after 30 minutes; a failure keeps the list.
+ * enter at once after the surviving pools in their existing order. A new selection
+ * day takes the server's order at once; an intra-day reorder waits for a remount
+ * after 30 minutes. A failure keeps the list.
  *
  * Changed 2026-09-28 (speed wave, item 8): a first read that found no answer
  * (its deadline passed, the service was busy, an edge page) put the embedded
@@ -81,7 +82,7 @@ export const FEATURED_FIRST_DEADLINE_MS = 3_500
 export const FEATURED_RETRY_MS: readonly number[] = [3_000, 6_000, 12_000]
 /** A list served this long after it was generated is not shown at all (§11.2). */
 export const FEATURED_MAX_AGE_SECONDS = 72 * 3600
-/** A list with new pools or a new order waits until the one on screen is this old and a screen showing it mounts. */
+/** An intra-day reorder waits until the list on screen is this old and a screen showing it mounts. */
 export const FEATURED_REMOUNT_MS = 30 * 60_000
 
 /**
@@ -243,12 +244,16 @@ export interface FeaturedList {
   entries: readonly PoolCatalogueEntry[]
   /** The server's listId; null for the embedded list. */
   listId: string | null
+  /** The publication, independent of listId (which identifies only the ordered pool identities). */
+  revision: number | null
+  selectionDate: string | null
+  effectiveAt: number | null
   /** How many pools the list's rules ask for (its rules.size); null for the embedded list or a list without rules. */
   size?: number | null
 }
 
 /** The embedded list: config/selectedPools.ts with its labels. */
-export const BUNDLED_LIST: FeaturedList = Object.freeze({ source: 'bundled', entries: SELECTED_POOL_CATALOGUE, listId: null, size: null })
+export const BUNDLED_LIST: FeaturedList = Object.freeze({ source: 'bundled', entries: SELECTED_POOL_CATALOGUE, listId: null, revision: null, selectionDate: null, effectiveAt: null, size: null })
 
 /** Bundled artwork for a token by its exact address: the main tokens', else the embedded list's; none for any other token. */
 function artworkAt(address: string) {
@@ -306,7 +311,8 @@ export function listFrom(answer: FeaturedAnswer): FeaturedList {
   const current = (body.status === 'current' || body.status === 'repaired') && servedAt <= validUntil
   // The criterion title only for a list that names the rules it was ranked by. The method line that spelled them out
   // under the title was removed 2026-09-28 (the owner: "Não precisa ter essa descrição"); the docs page says how.
-  return { source: current && body.rules !== null ? 'server' : 'server_neutral', entries: pools.map(entryOf), listId: body.listId, size: body.rules?.size ?? null }
+  return { source: current && body.rules !== null ? 'server' : 'server_neutral', entries: pools.map(entryOf), listId: body.listId,
+    revision: body.revision, selectionDate: body.selectionDate, effectiveAt: body.effectiveAt, size: body.rules?.size ?? null }
 }
 
 /**
@@ -337,8 +343,18 @@ export function nextList(shown: FeaturedList, waiting: FeaturedList | null, answ
   const candidate = listFrom(answer)
   if (candidate.source === 'bundled') return { shown: BUNDLED_LIST, waiting: null }
   if (shown.source === 'bundled') return { shown: candidate, waiting: null }
-  // The same list: its pools and order stay; its title follows the answer (a list gone stale says so).
-  if (candidate.listId === shown.listId) return { shown: { ...shown, source: candidate.source, size: candidate.size ?? null }, waiting: null }
+  // The daily ranking must reach an open tab too, even when only the order changed. Pool-id React keys keep the
+  // surviving rows/cards and their local state. The date is the server's, not the browser's calendar.
+  if (candidate.selectionDate !== null && (shown.selectionDate === null || candidate.selectionDate > shown.selectionDate)) return { shown: candidate, waiting: null }
+  // A listId excludes the publication and selection figures. Update those without readmitting a row this page
+  // unbound, or discarding a pending intra-day order. Candidate entries have passed the latest app safety checks.
+  if (candidate.listId === shown.listId) {
+    const entries = shown.entries.flatMap((entry) => candidate.entries.filter((next) => next.poolId === entry.poolId))
+    if (entries.length === 0) return { shown: BUNDLED_LIST, waiting: null }
+    const ids = new Set(entries.map((entry) => entry.poolId))
+    const pending = waiting?.listId === candidate.listId ? { ...candidate, entries: candidate.entries.filter((entry) => ids.has(entry.poolId)) } : null
+    return { shown: { ...candidate, entries }, waiting: pending && idsOf(pending).join() !== entries.map((entry) => entry.poolId).join() ? pending : null }
+  }
   const ids = idsOf(candidate)
   if (onlyRemovals(idsOf(shown), ids)) return { shown: candidate, waiting: null }
   // Replacements cannot wait for a remount: remove departed pools, keep survivors
@@ -346,10 +362,12 @@ export function nextList(shown: FeaturedList, waiting: FeaturedList | null, answ
   const before = new Set(idsOf(shown))
   const added = candidate.entries.filter((entry) => !before.has(entry.poolId))
   const kept = shown.entries.flatMap((entry) => candidate.entries.filter((next) => next.poolId === entry.poolId))
-  if (added.length) return { shown: { ...candidate, entries: [...kept, ...added] }, waiting: null }
+  if (added.length) {
+    const next = { ...candidate, entries: [...kept, ...added] }
+    return { shown: next, waiting: idsOf(next).join() === ids.join() ? null : candidate }
+  }
   if (kept.length === 0) return { shown: candidate, waiting: null }
-  if (kept.length < shown.entries.length) return { shown: { ...shown, entries: kept }, waiting: candidate }
-  return { shown, waiting: candidate }
+  return { shown: { ...candidate, entries: kept }, waiting: candidate }
 }
 
 /** The list as the page holds it. */
@@ -376,7 +394,7 @@ export interface FeaturedStore {
   ensure(): Promise<FeaturedSnapshot>
   /** Reads the list again and applies the refresh rules (the header). Never rejects. */
   refresh(signal?: AbortSignal): Promise<FeaturedSnapshot>
-  /** A screen that shows the list mounted: a list waiting for its turn takes it once the one on screen is 30 min old. */
+  /** A screen mounted: a pending intra-day order takes its turn once the list on screen is 30 min old. */
   remount(): void
   /** Rows whose read did not bind to their entry (§11.3): they leave the list; with none left, the embedded list. */
   unbind(poolIds: readonly string[]): void
@@ -421,9 +439,11 @@ export function createFeaturedStore({ read, clock = realClock }: {
     if (ids !== idsOf(snapshot).join()) shownAt = clock.monotonic()
     const reasons = [...withdrawn.reasons].join()
     const same = snapshot.settled && ids === idsOf(snapshot).join() && shown.listId === snapshot.listId && shown.source === snapshot.source
+      && shown.revision === snapshot.revision && shown.selectionDate === snapshot.selectionDate && shown.effectiveAt === snapshot.effectiveAt
+      && JSON.stringify(shown.entries) === JSON.stringify(snapshot.entries)
       && (shown.size ?? null) === (snapshot.size ?? null) && reasons === [...(snapshot.withdrawnReasons ?? NO_REASONS)].join()
     if (same) return
-    snapshot = { source: shown.source, entries: shown.entries, listId: shown.listId, size: shown.size ?? null, settled: true, withdrawn: withdrawn.safety, withdrawnReasons: withdrawn.reasons }
+    snapshot = { ...shown, size: shown.size ?? null, settled: true, withdrawn: withdrawn.safety, withdrawnReasons: withdrawn.reasons }
     for (const listener of listeners) listener()
   }
   type Withdrawn = { safety: ReadonlySet<string>; reasons: ReadonlyMap<string, string> }

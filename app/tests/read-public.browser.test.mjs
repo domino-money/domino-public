@@ -14,7 +14,7 @@ import { withPendingPools, withStalePools } from './support/stale-store.mjs'
 // 2026-09-28 (speed wave): the read-v1 fixture pool and the contract versions, for New position's link tests below.
 import { FIXTURE_POOL } from './support/read-stub.mjs'
 import { CONTRACT_VERSION as READ_V1 } from '../../api-contracts/read-v1/runtime.mjs'
-import { CONTRACT_VERSION as READ_V5 } from '../../api-contracts/read-v5/runtime.mjs'
+import { CONTRACT_VERSION as READ_V5, validateResponse as validFeatured } from '../../api-contracts/read-v5/runtime.mjs'
 
 const fixture = name => JSON.parse(readFileSync(new URL(`../../api-contracts/read-v3/fixtures/${name}.json`, import.meta.url), 'utf8'))
 const TOKEN = '0x1111111111111111111111111111111111111111'
@@ -519,6 +519,112 @@ const LINK_ENV = { APP_ORIGIN: APP, READ_BRIDGE_ENABLED: 'true', ENABLED_READS: 
 const gatewayV1 = name => readFileSync(new URL(`../../api-contracts/read-v1/fixtures/gateway/${name}.json`, import.meta.url), 'utf8')
 const featuredV5 = name => JSON.parse(readFileSync(new URL(`../../api-contracts/read-v5/fixtures/valid/${name}.json`, import.meta.url), 'utf8'))
 const verification = token => ({ token, maxPools: 1, poolIds: [FIXTURE_POOL] })
+
+// A list ID identifies membership/order, not its daily figures. Both surfaces must adopt the next publication
+// while still open, including a later reorder, through the real provider's quiet refresh (no reload or test hook).
+test('Home and Markets adopt daily featured publications, fresh figures and order without reloading', { timeout: 60000 }, async () => {
+  if (!existsSync(join(DIST, 'index.html'))) throw new Error('dist/index.html is missing. Run `npm run build` before this test.')
+  const { RECORDED, recordedOverview } = await import('./support/markets-latency.mjs')
+  const start = Math.floor(Date.now() / 1000)
+  const base = featuredV5('current')
+  const entries = SELECTED.map((poolId, i) => {
+    const pool = RECORDED.pools.find(entry => entry.poolId === poolId).value.market.pool
+    return { ...base.pools[1], poolId, slot: i + 1, poolKey: pool.poolKey,
+      tokens: pool.currencies.map(address => {
+        const asset = RECORDED.tokens.find(entry => entry.address === address).value.asset
+        return { address, symbol: asset.symbol, decimals: asset.decimals }
+      }) }
+  })
+  const publication = generation => {
+    const now = start + generation * 86400
+    const order = generation === 2 ? [...entries].reverse() : entries
+    const body = { ...base, revision: 41 + generation, selectionDate: new Date(now * 1000).toISOString().slice(0, 10),
+      generatedAt: now - 400, effectiveAt: now - 300, validUntil: now + 86400, servedAt: now,
+      window: { start: now - 86800, end: now - 400 },
+      listId: generation === 2 ? `0x${'c'.repeat(64)}` : base.listId,
+      pools: order.map((entry, i) => ({ ...entry, slot: i + 1, rankInputs: { ...base.pools[1].rankInputs,
+        evaluatedAt: now - 400, freshApr: String(200 + generation * 100 - i), rankApr: String(200 + generation * 100 - i),
+        reportedLiquidityUsd: String(200000 + generation * 200000), volume24hUsd: String(2000000 + generation * 1000000) } })) }
+    assert.ok(validFeatured('featured-pools', body), 'each publication obeys the read-v5 contract')
+    return body
+  }
+  for (const hash of ['#/', '#/markets']) {
+    let current = publication(0), featuredReads = 0
+    const worker = createWorker({ getClientIp: () => '198.51.100.35', fetch: async (url, init) => {
+      const route = new URL(url).pathname.split('/').at(-1), request = JSON.parse(init.body)
+      let body
+      if (route === 'featured-pools') { featuredReads += 1; body = current }
+      else if (route === 'overview') {
+        // A temporary provider refusal makes the selection's own figures visible. It catches the former same-ID
+        // bug even if publication metadata alone changes successfully: real TVL/volume/APR must change too.
+        body = withStalePools(recordedOverview(request), request.poolIds)
+      } else if (route === 'history') body = historyFor(request, { built: false, nowSeconds: current.servedAt })
+      else body = fixture(route)
+      return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json',
+        'X-Domino-Read-Contract': route === 'featured-pools' ? body.contractVersion : '3.0.0-rc.1' } })
+    } })
+    const site = createGatedServer({ dist: DIST,
+      env: { BETA_PASSWORD: PASSWORD, BETA_COOKIE_KEY: 'BrowserPublicFixtureKey_0123456789_abcdefgh' },
+      api: async request => {
+        const url = new URL(request.url), headers = new Headers(request.headers)
+        if (headers.get('origin') === url.origin) headers.set('origin', APP)
+        headers.delete('host')
+        return worker.fetch(new Request(new URL(url.pathname, APP), { method: request.method, headers,
+          body: request.method === 'POST' ? await request.text() : undefined }),
+        { ...env, READ_V5_BRIDGE_ENABLED: 'true', ENABLED_V5_READS: 'featured-pools' })
+      },
+    })
+    await new Promise(resolve => site.listen(0, '127.0.0.1', resolve))
+    const at = `http://127.0.0.1:${site.address().port}`
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } }), page = await context.newPage()
+    const errors = [], navigations = []
+    try {
+      page.on('pageerror', error => errors.push(error.message))
+      page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations.push(frame.url()) })
+      await context.route('**/*', route => route.request().url().startsWith(at) ? route.continue() : route.abort())
+      const login = await context.request.post(`${at}/__beta/login`, { form: { password: PASSWORD }, headers: { Origin: at }, maxRedirects: 0 })
+      assert.equal(login.status(), 303)
+      await page.clock.install({ time: new Date(start * 1000) })
+      await page.goto(`${at}/${hash}`)
+      const table = page.locator('[data-featured-source]'), rows = table.locator('tbody tr.dm-mkt-row')
+      const rowOrder = () => rows.locator('a.dm-mkt-name').evaluateAll(links => links.map(link => link.getAttribute('href').split('/')[2]))
+      const assertPublication = async expected => {
+        await page.waitForFunction(revision => [...document.querySelectorAll('[data-featured-revision]')].length > 0
+          && [...document.querySelectorAll('[data-featured-revision]')].every(node => node.dataset.featuredRevision === String(revision)), expected.revision)
+        assert.equal(await table.getAttribute('data-featured-list-id'), expected.listId)
+        assert.equal(await table.getAttribute('data-featured-selection-date'), expected.selectionDate)
+        assert.equal(await table.getAttribute('data-featured-effective-at'), String(expected.effectiveAt))
+        assert.deepEqual(await rowOrder(), expected.pools.map(pool => pool.poolId))
+        if (hash === '#/markets') {
+          assert.equal(await page.locator('#market-rail').getAttribute('data-featured-list-id'), expected.listId)
+          assert.deepEqual(await page.locator('#market-rail [data-market-card]').evaluateAll(cards => cards.map(card => card.dataset.marketCard)), expected.pools.map(pool => pool.poolId))
+        }
+      }
+      await assertPublication(current)
+      await page.waitForFunction(() => document.querySelectorAll('[data-featured-source] tbody tr.dm-mkt-row td:nth-child(3)').length === 6
+        && [...document.querySelectorAll('[data-featured-source] tbody tr.dm-mkt-row td:nth-child(3)')].every(cell => cell.innerText === '$200.0K'))
+      if (hash === '#/markets') await page.getByRole('searchbox', { name: 'Filter selected pools by pair name' }).fill('USDG')
+      const keptLink = await rows.locator('a.dm-mkt-name').first().elementHandle()
+      await keptLink.focus()
+      for (const generation of [1, 2]) {
+        current = publication(generation)
+        await page.clock.fastForward(86400000)
+        await assertPublication(current)
+        await page.waitForFunction(expected => [...document.querySelectorAll('[data-featured-source] tbody tr.dm-mkt-row td:nth-child(3)')]
+          .every(cell => cell.innerText === expected), `$${200 + generation * 200}.0K`)
+        assert.equal(await rows.first().locator('td').nth(4).innerText(), `${200 + generation * 100}% est.`)
+        assert.equal(await keptLink.evaluate(node => node.isConnected && node === document.activeElement), true, 'refresh and reorder retain the focused row link')
+        if (hash === '#/markets') assert.equal(await page.getByRole('searchbox', { name: 'Filter selected pools by pair name' }).inputValue(), 'USDG')
+      }
+      assert.equal(featuredReads, 3, 'initial publication and two automatic refreshes')
+      assert.deepEqual(navigations, [`${at}/${hash}`], 'the document stayed mounted')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+      await new Promise(resolve => { site.close(resolve); site.closeAllConnections() })
+    }
+  }
+})
 
 /**
  * The deployable build at `hash`, the featured list answering `featured` once released, and a pools read the gateway
