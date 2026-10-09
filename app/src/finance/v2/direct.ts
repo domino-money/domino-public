@@ -1,15 +1,16 @@
-import { decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, getContractAddress, keccak256, parseAbi, type Abi, type Address, type Hex } from 'viem'
+import { decodeAbiParameters, decodeEventLog, decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, getContractAddress, keccak256, parseAbi, type Abi, type Address, type Hex } from 'viem'
 import v3FactoryAbi from '../../../../api-contracts/v2/abi/IUniswapV3FactoryMinimal.json'
 import v3PoolAbi from '../../../../api-contracts/v2/abi/IUniswapV3PoolMinimal.json'
 import v4StateViewAbi from '../../../../api-contracts/v2/abi/IV4StateViewMinimal.json'
 import { isV2ChainId, v2Chain, type V2Chain } from '../../v2/chains'
 import { V2_FIXTURE_SETS_TAKEN } from '../../v2/flag'
 import { ZERO_ADDRESS, type Dex, type PoolRef, type V2ChainId } from '../../v2/types'
-import { closeData, closeMinimums, collectData, decodePositionInfo, feesOwed, principalAt, MAX_TICK, MIN_TICK } from '../position'
+import { closeData, closeMinimums, collectData, decodePositionInfo, decreaseParameters, takePairParameters, unlockParameters, feesOwed, principalAt, MAX_TICK, MIN_TICK } from '../position'
 import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS } from '../slippage'
 import { STEP_DEADLINE_S } from '../setup'
 import { V3_POSITION_MANAGER_ABI, V4_POSITION_MANAGER_ABI } from './abi'
 import { gasCost, type GasCost } from './receipt'
+import { pendingClose } from './closeJournal'
 import { refuseUnlessLive } from './liveLock'
 import { WalletNotAsked, createTransactor, refused, revertIn, type PreparedV2, type Rpc, type V2GasBudget, type V2Receipt, type V2Wallet } from './transact'
 
@@ -103,6 +104,30 @@ export interface DirectPrepared {
   vaultRoot: Address | null
 }
 
+// Two NFTs leave room in the existing bounded wallet read budget for ownership, pool and automation checks.
+export const MAX_CLOSE_POSITIONS = 2
+/** One atomic owner call to one verified position manager; every NFT remains in the owner's wallet. */
+export interface DirectCloseMany {
+  chainId: V2ChainId
+  dex: Dex
+  positions: readonly DirectPosition[]
+  minimums: readonly (readonly [bigint, bigint])[]
+  receive: readonly (readonly [bigint, bigint])[]
+  deadline: bigint
+  pausesAutomation: readonly Address[]
+  vaultRoots: readonly Address[]
+  step: PreparedV2
+}
+export interface DirectCloseRecovery {
+  dex: Dex
+  tokenIds: readonly bigint[]
+  data: Hex
+  nonce: Hex
+  hash: Hex
+  originalHash?: Hex
+}
+export type DirectCloseDescription = Pick<DirectCloseMany, 'chainId' | 'dex' | 'positions'>
+
 /** Whether an address is a Domino V2 vault of this chain, read at `block` through the rpc it is handed (the zap client's `vaultProbe`). */
 export type VaultProbe = (rpc: Rpc, address: Address, block: Hex | 'latest') => Promise<boolean>
 /**
@@ -158,6 +183,7 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
   const owner = t.owner
   const verified = new Set<Dex>()
   const ownPrepared = new WeakSet<DirectPrepared>()
+  const ownGroups = new WeakSet<DirectCloseMany>()
   const pauseAcknowledged = new WeakSet<DirectPrepared>()
   /**
    * Review fix F2: a direct exit is not idempotent (a second partial withdrawal or collect would run), and Uniswap consumes
@@ -166,10 +192,15 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
    * amounts or the block of its review, so a fresh review cannot slip past it), let go only when the wallet was never
    * asked or refused definitely, or once its receipt is read back on chain (included or reverted).
    */
-  const inFlight = new Map<string, { kind: DirectKind; liquidity: bigint; block: bigint; hash: Hex | null }>()
+  const inFlight = new Map<string, { kind: DirectKind; liquidity: bigint; block: bigint; hash: Hex | null; data?: Hex; nonce?: Hex }>()
   const flightKey = (dex: Dex, tokenId: bigint) => `${chain.chainId}|${owner}|${dex}|${tokenId}`
 
   const managerOf = (dex: Dex): Address => (dex === 3 ? chain.uniswap.v3.positionManager : chain.uniswap.v4.positionManager)
+  const heldByJournal = (dex: Dex, ids: readonly bigint[]): boolean => {
+    if (typeof localStorage === 'undefined') return false
+    const pending = pendingClose(owner)
+    return !!pending && pending.chainId === chain.chainId && pending.dex === dex && ids.some((id) => pending.tokenIds.includes(String(id)))
+  }
   async function read<T>(rpc: Rpc, to: Address, abi: Abi, functionName: string, args: readonly unknown[], block: Hex | 'latest', from?: Address): Promise<T> {
     const data = encodeFunctionData({ abi, functionName, args })
     return decodeFunctionResult({ abi, functionName, data: await t.call(rpc, to, data, block, from) }) as T
@@ -191,11 +222,11 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
   }
 
   /** The position now, every read pinned to the latest block; the wallet must hold it. */
-  async function readPosition(rpc: Rpc, dex: Dex, tokenId: bigint): Promise<DirectPosition> {
-    await t.identity(rpc)
+  async function readPosition(rpc: Rpc, dex: Dex, tokenId: bigint, at?: Awaited<ReturnType<typeof t.latestBlock>>, groupVerified = false): Promise<DirectPosition> {
+    if (!groupVerified) await t.identity(rpc)
     if ((dex !== 3 && dex !== 4) || typeof tokenId !== 'bigint' || tokenId <= 0n || tokenId > MAX_UINT256) return fail('invalid_position_id')
-    await verify(rpc, dex)
-    const block = await t.latestBlock(rpc)
+    if (!groupVerified) await verify(rpc, dex)
+    const block = at ?? await t.latestBlock(rpc)
     const manager = managerOf(dex)
     let holder: Address
     try {
@@ -262,8 +293,71 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
     })
   }
 
+  async function automationOf(rpc: Rpc, state: DirectPosition): Promise<{ pausesAutomation: Address | null; vaultRoot: Address | null }> {
+    if (!vaultProbe) return { pausesAutomation: null, vaultRoot: null }
+    const block = `0x${state.blockNumber.toString(16)}` as Hex
+    for (const candidate of [state.approved, state.subscriber]) {
+      if (candidate === null || candidate === ZERO_ADDRESS || !(await vaultProbe(rpc, candidate, block))) continue
+      const root = rootProbe ? await rootProbe(rpc, candidate, state.dex, state.tokenId, block) : { armed: true }
+      if (root) return { pausesAutomation: root.armed ? candidate : null, vaultRoot: candidate }
+    }
+    return { pausesAutomation: null, vaultRoot: null }
+  }
+
+  // Both official managers implement multicall(bytes[]) by delegatecall. Every inner close pays only its own
+  // liquidity delta to the owner. No sweep/refund, conversion, native value, or exitAll is composed here.
+  function inspectGroup(reply: Hex, count: number): void {
+    const results = decodeFunctionResult({ abi: V3_MULTICALL_ABI, functionName: 'multicall', data: reply }) as readonly Hex[]
+    if (results.length !== count) fail('invalid_wallet_reply')
+  }
+
+  const groupAutomation = new WeakMap<DirectCloseMany, readonly { pausesAutomation: Address | null; vaultRoot: Address | null }[]>()
+  /** Share only immutable reads at one explicit block, within this single bounded operation.
+   * Identity, latest/pending nonces, balances and simulations are always live and never cached. */
+  async function readGroup(rpc: Rpc, dex: Dex, ids: readonly bigint[]) {
+    await t.identity(rpc)
+    await verify(rpc, dex)
+    const block = await t.latestBlock(rpc)
+    const cache = new Map<string, Promise<unknown>>()
+    const pinned: Rpc = (method, params, onRefusal, answerKept) => {
+      if ((method !== 'eth_call' && method !== 'eth_getCode') || params[1] !== block.tag) return rpc(method, params, onRefusal, answerKept)
+      const key = JSON.stringify([method, params])
+      let value = cache.get(key)
+      if (!value) { value = rpc(method, params, onRefusal, answerKept); cache.set(key, value) }
+      return value
+    }
+    const positions = await Promise.all(ids.map((id) => readPosition(pinned, dex, id, block, true)))
+    const automation = await Promise.all(positions.map((position) => automationOf(pinned, position)))
+    return { block, positions, automation }
+  }
+  async function prepareCloseMany(dex: Dex, tokenIds: readonly bigint[], slippageBps: number, gas: V2GasBudget | null = null): Promise<DirectCloseMany> {
+    if (tokenIds.length === 0 || tokenIds.length > MAX_CLOSE_POSITIONS || new Set(tokenIds.map(String)).size !== tokenIds.length) fail('invalid_position_id')
+    if (!Number.isSafeInteger(slippageBps) || slippageBps < SLIPPAGE_MIN_BPS || slippageBps > SLIPPAGE_MAX_BPS) fail('invalid_slippage')
+    if (heldByJournal(dex, tokenIds) || tokenIds.some((id) => inFlight.has(flightKey(dex, id)))) fail('review_already_sent')
+    return t.bounded(async (rpc) => {
+      const { block, positions, automation } = await readGroup(rpc, dex, tokenIds)
+      if (positions.some((position) => position.liquidity === 0n)) fail('position_already_empty')
+      if (dex === 4 && positions.some((position) => position.pool.currency0 === ZERO_ADDRESS) && !(await t.acceptsNativeEth(rpc))) fail('native_eth_refused')
+      const deadline = block.timestamp + BigInt(STEP_DEADLINE_S)
+      const minimums = positions.map((position) => Object.freeze(closeMinimums(position.sqrtPriceX96, position.tickLower, position.tickUpper, position.liquidity, slippageBps)))
+      const calls = positions.map((position, index) => dex === 4
+        ? closeData(position.tokenId, position.liquidity, minimums[index][0], minimums[index][1], position.pool.currency0, position.pool.currency1, owner, deadline)
+        : v3CloseData(position.tokenId, position.liquidity, minimums[index][0], minimums[index][1], owner, deadline))
+      const data = encodeFunctionData({ abi: V3_MULTICALL_ABI, functionName: 'multicall', args: [calls] })
+      const step = await t.prepare(rpc, { kind: 'direct-close-many', to: managerOf(dex), value: 0n, data,
+        summary: [`Close positions ${tokenIds.join(', ')} at Uniswap, returning both tokens to ${owner}. No Domino fee.`] }, gas, (reply) => inspectGroup(reply, positions.length))
+      const prepared: DirectCloseMany = Object.freeze({ chainId: chain.chainId, dex, positions: Object.freeze(positions), minimums: Object.freeze(minimums),
+        receive: Object.freeze(positions.map((position) => Object.freeze([position.principal[0] + position.fees[0], position.principal[1] + position.fees[1]] as const))),
+        deadline, step, pausesAutomation: Object.freeze([...new Set(automation.flatMap((entry) => entry.pausesAutomation ? [entry.pausesAutomation] : []))]),
+        vaultRoots: Object.freeze([...new Set(automation.flatMap((entry) => entry.vaultRoot ? [entry.vaultRoot] : []))]) })
+      ownGroups.add(prepared)
+      groupAutomation.set(prepared, automation)
+      return prepared
+    })
+  }
+
   async function prepare(kind: DirectKind, dex: Dex, tokenId: bigint, slippageBps: number | null, gas: V2GasBudget | null, part?: bigint): Promise<DirectPrepared> {
-    if (inFlight.has(flightKey(dex, tokenId))) return fail('review_already_sent')
+    if (heldByJournal(dex, [tokenId]) || inFlight.has(flightKey(dex, tokenId))) return fail('review_already_sent')
     if (kind === 'close' && (slippageBps === null || !Number.isSafeInteger(slippageBps) || slippageBps < SLIPPAGE_MIN_BPS || slippageBps > SLIPPAGE_MAX_BPS)) return fail('invalid_slippage')
     return t.bounded(async (rpc) => {
       const state = await readPosition(rpc, dex, tokenId)
@@ -343,6 +437,83 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
      * slippage, and pay principal and fees. The NFT stays.
      */
     prepareClose: (dex: Dex, tokenId: bigint, slippageBps: number, gas: V2GasBudget | null = null, liquidity?: bigint) => prepare('close', dex, tokenId, slippageBps, gas, liquidity),
+    prepareCloseMany,
+    /** A persisted request is a hint, never permission to send. Decode our exact recipes,
+     * and match the transaction/receipt on chain through the existing bounded wallet transport. */
+    recoverCloseMany: async (hint: DirectCloseRecovery): Promise<{ receipt: V2Receipt; description: DirectCloseDescription | null; replaced: boolean; replacementFinal: boolean }> => {
+      if (!/^0x[0-9a-f]{64}$/.test(hint.hash) || !/^0x[0-9a-f]+$/.test(hint.nonce) || hint.data.length > 65_536 || hint.tokenIds.length < 1 || hint.tokenIds.length > MAX_CLOSE_POSITIONS || new Set(hint.tokenIds.map(String)).size !== hint.tokenIds.length) fail('invalid_position_id')
+      const outer = decodeFunctionData({ abi: V3_MULTICALL_ABI, data: hint.data })
+      if (outer.functionName !== 'multicall' || outer.args[0].length !== hint.tokenIds.length) fail('transaction_does_not_match_review')
+      outer.args[0].forEach((data, index) => {
+        const tokenId = hint.tokenIds[index]
+        let canonical: Hex
+        if (hint.dex === 4) {
+          const call = decodeFunctionData({ abi: V4_POSITION_MANAGER_ABI, data })
+          if (call.functionName !== 'modifyLiquidities') return fail('transaction_does_not_match_review')
+          const [unlock, deadline] = call.args as readonly [Hex, bigint]
+          const [actions, params] = decodeAbiParameters(unlockParameters, unlock)
+          if (actions !== '0x0111' || params.length !== 2) return fail('transaction_does_not_match_review')
+          const [id, liquidity, min0, min1, hookData] = decodeAbiParameters(decreaseParameters, params[0])
+          const [token0, token1, recipient] = decodeAbiParameters(takePairParameters, params[1])
+          if (id !== tokenId || liquidity <= 0n || hookData !== '0x' || lower(recipient) !== owner) return fail('transaction_does_not_match_review')
+          canonical = closeData(id, liquidity, min0, min1, lower(token0), lower(token1), owner, deadline)
+        } else {
+          const inner = decodeFunctionData({ abi: V3_MULTICALL_ABI, data }).args[0]
+          if (inner.length !== 2) return fail('transaction_does_not_match_review')
+          const call = decodeFunctionData({ abi: V3_POSITION_MANAGER_ABI, data: inner[0] })
+          if (call.functionName !== 'decreaseLiquidity') return fail('transaction_does_not_match_review')
+          const [args] = call.args as readonly [{ tokenId: bigint; liquidity: bigint; amount0Min: bigint; amount1Min: bigint; deadline: bigint }]
+          if (args.tokenId !== tokenId || args.liquidity <= 0n) return fail('transaction_does_not_match_review')
+          canonical = v3CloseData(args.tokenId, args.liquidity, args.amount0Min, args.amount1Min, owner, args.deadline)
+        }
+        if (canonical !== data.toLowerCase()) fail('transaction_does_not_match_review')
+      })
+      const reviewed = { from: owner, to: managerOf(hint.dex), data: hint.data, value: '0x0' as Hex, nonce: hint.nonce, chainId: `0x${chain.chainId.toString(16)}` as Hex }
+      const recovered = hint.originalHash !== hint.hash ? await t.replacement(hint.originalHash ?? null, hint.hash, reviewed) : { receipt: await t.receipt(hint.hash, reviewed), replaced: false, final: false }
+      const { receipt } = recovered
+      if (recovered.replaced ? recovered.final : receipt.state === 'finalized' || receipt.state === 'reverted') for (const id of hint.tokenIds) {
+        const key = flightKey(hint.dex, id), flight = inFlight.get(key)
+        if (flight?.data === hint.data && flight.nonce !== undefined && BigInt(flight.nonce) === BigInt(hint.nonce) && (flight.hash === null || flight.hash === hint.hash || flight.hash === hint.originalHash)) inFlight.delete(key)
+      }
+      // A later transfer or burn cannot erase proof of a confirmed withdrawal. Current position metadata is optional;
+      // without it the UI records only the proven transaction and NFT IDs, never inferred token quantities.
+      let description: DirectCloseDescription | null = null
+      if (!recovered.replaced && (receipt.state === 'included' || receipt.state === 'finalized')) {
+        const positions = await t.bounded(async (rpc) => {
+          const block = await t.latestBlock(rpc)
+          return Promise.all(hint.tokenIds.map((id) => readPosition(rpc, hint.dex, id, block)))
+        }).catch(() => null)
+        if (positions) description = { chainId: chain.chainId, dex: hint.dex, positions }
+      }
+      return { receipt, description, replaced: recovered.replaced, replacementFinal: recovered.final }
+    },
+    sendCloseMany: async (prepared: DirectCloseMany, acknowledged: boolean, acknowledgePause = false, onRefusal?: () => Promise<void>): Promise<Hex> => {
+      if (!ownGroups.has(prepared)) fail('wallet_review_required')
+      if (prepared.pausesAutomation.length && !acknowledgePause) fail('automation_pause_unacknowledged')
+      const keys = prepared.positions.map((position) => flightKey(prepared.dex, position.tokenId))
+      if (keys.some((key) => inFlight.has(key))) fail('review_already_sent')
+      const flights = prepared.positions.map((position) => ({ kind: 'close' as const, liquidity: position.liquidity, block: position.blockNumber, hash: null as Hex | null, data: prepared.step.transaction.data, nonce: prepared.step.transaction.nonce }))
+      keys.forEach((key, index) => inFlight.set(key, flights[index]))
+      try {
+        const hash = await t.send(prepared.step, acknowledged, async (rpc) => {
+          if (BigInt(Math.floor(now())) >= prepared.deadline) fail('wallet_review_expired')
+          const { positions: current, automation } = await readGroup(rpc, prepared.dex, prepared.positions.map((position) => position.tokenId))
+          const previous = groupAutomation.get(prepared)!
+          current.forEach((position, index) => {
+            const before = prepared.positions[index]
+            if (position.liquidity !== before.liquidity || position.approved !== before.approved || position.subscriber !== before.subscriber ||
+              position.tickLower !== before.tickLower || position.tickUpper !== before.tickUpper || JSON.stringify(position.pool) !== JSON.stringify(before.pool) ||
+              automation[index].pausesAutomation !== previous[index].pausesAutomation || automation[index].vaultRoot !== previous[index].vaultRoot) fail('wallet_review_required')
+          })
+        }, { inspect: (reply) => inspectGroup(reply, prepared.positions.length), onRefusal: async () => { keys.forEach((key) => inFlight.delete(key)); await onRefusal?.() } })
+        flights.forEach((flight) => { flight.hash = hash })
+        return hash
+      } catch (error) {
+        if (refused(error) || error instanceof WalletNotAsked || !t.wasOffered(prepared.step)) keys.forEach((key) => inFlight.delete(key))
+        throw error
+      }
+    },
+    wasGroupOffered: (prepared: DirectCloseMany) => t.wasOffered(prepared.step),
     /**
      * Offers a prepared exit to the wallet once (the shared sender's discipline: simulated again, the chain read last),
      * holding its position's in-flight latch (fix F2) from before the wallet is asked.
@@ -353,6 +524,7 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
     },
     send: async (prepared: DirectPrepared, acknowledged: boolean): Promise<Hex> => {
       if (!ownPrepared.has(prepared)) return fail('wallet_review_required')
+      if (heldByJournal(prepared.dex, [prepared.tokenId])) return fail('review_already_sent')
       if (prepared.pausesAutomation !== null && !pauseAcknowledged.has(prepared)) return fail('automation_pause_unacknowledged')
       const key = flightKey(prepared.dex, prepared.tokenId)
       if (inFlight.has(key)) return fail(t.wasOffered(prepared.step) ? 'wallet_review_required' : 'review_already_sent')
@@ -463,4 +635,31 @@ export function readDirectReceipt(input: { chainId: V2ChainId; kind: DirectKind;
     paid: Object.freeze([paidIn(input.pool.currency0), paidIn(input.pool.currency1)] as const),
     gas: costs,
   })
+}
+
+/** A group receipt counts gas once. V4 transfers identify tokens, never the NFT they came from. */
+export function readDirectCloseManyReceipt(prepared: DirectCloseDescription, owner: Address, receipt: V2Receipt): { paid: readonly DirectPaid[]; gas: GasCost; tokenIds: readonly bigint[] } {
+  if (receipt.state !== 'included' && receipt.state !== 'finalized') fail('receipt_not_included')
+  const confirmed = receipt as Extract<V2Receipt, { logs: unknown }>
+  const chain = v2Chain(prepared.chainId)
+  const totals = new Map<Address, bigint | null>()
+  if (prepared.dex === 3) {
+    for (const position of prepared.positions) {
+      const entry = readDirectReceipt({ chainId: prepared.chainId, kind: 'close', dex: 3, tokenId: position.tokenId, owner, pool: position.pool, receipt })
+      for (const { token, amount } of entry.paid) totals.set(token, amount === null ? null : (totals.get(token) ?? 0n) + amount)
+    }
+  } else {
+    const transferTopic = keccak256(new TextEncoder().encode('Transfer(address,address,uint256)'))
+    for (const position of prepared.positions) for (const token of [position.pool.currency0, position.pool.currency1]) totals.set(token, token === ZERO_ADDRESS ? null : 0n)
+    for (const log of confirmed.logs) {
+      if (!totals.has(log.address) || log.topics.length !== 3 || log.topics[0] !== transferTopic) continue
+      let args
+      try { args = decodeEventLog({ abi: TRANSFER_EVENT, data: log.data, topics: log.topics as [Hex, ...Hex[]], strict: true }).args }
+      catch { return fail('receipt_invalid') }
+      if (args.from.toLowerCase() === chain.uniswap.v4.poolManager && args.to.toLowerCase() === owner.toLowerCase()) totals.set(log.address, (totals.get(log.address) ?? 0n) + args.value)
+    }
+  }
+  return Object.freeze({ paid: Object.freeze([...totals].map(([token, amount]) => Object.freeze({ token, amount }))),
+    gas: gasCost(chain.chainId, { gasUsed: confirmed.gasUsed, effectiveGasPrice: confirmed.effectiveGasPrice, l1Fee: confirmed.l1Fee }),
+    tokenIds: Object.freeze(prepared.positions.map((position) => position.tokenId)) })
 }

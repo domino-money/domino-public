@@ -3,7 +3,8 @@ import type { ReactNode } from 'react'
 import { Figure } from '../../components/positions/Figure'
 import { QuietMarkPair } from '../../components/positions/visual/QuietMarks'
 import { IconChevronRight } from '../../components/icons'
-import { Badge, Pill } from '../../components/ui'
+import { Badge, Pill, Skeleton } from '../../components/ui'
+import type { RowApr } from '../../components/positions/listApr'
 import type { AmountShown, PositionRowView, TokenName } from './model'
 
 /*
@@ -91,7 +92,7 @@ function RowStatus({ row }: { row: PositionRowView }) {
   if (row.state === 'unread') {
     return (
       <Pill data-position-status="unread" title={row.unread ?? undefined}>
-        {row.status === 'unavailable' ? 'Unavailable' : 'Not read yet'}
+        {row.stale === 'Updating' ? 'Updating' : row.status === 'unavailable' ? 'Unavailable' : 'Not read yet'}
       </Pill>
     )
   }
@@ -160,19 +161,19 @@ function Marks({ tokens }: { tokens: readonly [TokenName, TokenName] | null }) {
 /** The vault's automation over the row's Automation column, as V1's badge (AutomateEntry.tsx `.dm-own-badge`). */
 function VaultColumn({ row }: { row: PositionRowView }) {
   const vault = row.vault
-  if (!vault || !vault.name) return null
+  if (!vault) return null
   return (
-    <div className="dm-own-auto" data-v2-vault-role={vault.role}>
+    <span className="dm-collection-auto" data-v2-vault-role={vault.role}>
       <span className="dm-own-badge" data-running={vault.running ? '' : undefined}>
-        {vault.name}
+        {vault.name ?? 'Automation'}
       </span>
       {vault.word && <span className="dm-own-badge-word">{vault.word}</span>}
-    </div>
+    </span>
   )
 }
 
 /** One of the person's own positions read from read-v6, as a row of Your positions. */
-export function V2PositionRow({ row }: { row: PositionRowView }) {
+export function V2PositionRow({ row, apr = null }: { row: PositionRowView; apr?: RowApr | null }) {
   const pair: ReactNode = row.tokens ? (
     <>
       <TokenText token={row.tokens[0]} /> / <TokenText token={row.tokens[1]} />
@@ -182,7 +183,7 @@ export function V2PositionRow({ row }: { row: PositionRowView }) {
   )
   return (
     <div className="dm-own-item" data-v2-position-item={row.key}>
-      <a href={row.href} className="dm-own-row" data-v2-position-row={row.key} data-v2-row-status={row.status}>
+      <a href={row.href} className="dm-own-row" data-v2-position-row={row.key} data-v2-row-status={row.status} data-position-block={row.block ?? undefined}>
         <span className="dm-own-pool">
           <Marks tokens={row.tokens} />
           <span className="dm-own-name">
@@ -202,20 +203,28 @@ export function V2PositionRow({ row }: { row: PositionRowView }) {
             </span>
             <span className="dm-own-state flex-wrap gap-1.5">
               <RowStatus row={row} />
-              {row.stale && <StaleBadge age={row.stale} />}
+              <VaultColumn row={row} />
+              {row.stale && <span className="sr-only" data-v2-stale={row.stale}>{row.stale}</span>}
             </span>
+            {row.family && (row.family.successors > 0 || row.family.reserves !== null) && <span className="dm-collection-family">{[
+              row.family.successors > 0 ? `${row.family.successors} linked position${row.family.successors === 1 ? '' : 's'}` : '',
+              row.family.reserves === 'available' ? 'Funds available in automation' : row.family.reserves === 'unknown' ? 'Checking automation funds' : '',
+            ].filter(Boolean).join(' · ')}</span>}
           </span>
         </span>
         <span className="dm-own-figs">
           <Amounts amounts={row.value} which="principal" label="Value" unread={row.unread} usd={row.valueUsd} />
-          <Amounts amounts={row.fees} which="fees" label="Fees ready to collect" unread={row.unread} usd={row.feesUsd} />
+          <Amounts amounts={row.fees} which="fees" label="Fees" unread={row.unread} usd={row.feesUsd} />
+          <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : apr?.kind ?? 'none'}>
+            <span className="dm-own-label">Your APR</span>
+            {apr?.kind === 'loading' ? <Skeleton className="dm-collection-apr-loading" /> : apr?.kind === 'rate' ? <span className="dm-own-fig" title={apr.saved ? 'Last verified position history. Updating automatically.' : 'Annualized fees earned by this position since it opened.'}>{apr.text}</span> : <span className="dm-own-dash" title={apr?.kind === 'missing' ? apr.words : 'The position’s verified fee history is not available yet.'}>—</span>}
+          </span>
         </span>
         <span className="dm-own-chev">
           <IconChevronRight size={16} />
           <span className="sr-only">Details</span>
         </span>
       </a>
-      <VaultColumn row={row} />
     </div>
   )
 }

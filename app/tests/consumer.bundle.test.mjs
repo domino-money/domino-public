@@ -183,6 +183,8 @@ function productionClosures() {
   assert.ok(importsSetup(trees.get(entry[0])), 'the entry opens Setup through a dynamic import');
   assert.deepEqual([...new Set([...shared, ...setupClosure])].sort(), scripts, 'every production module belongs to an admitted screen closure');
   const entryClosure = reach(entry);
+  const collection = scripts.find((file) => file.startsWith('OwnedRows-'));
+  assert.ok(collection && !entryClosure.has(collection), 'V2 collection and its stylesheet stay outside the entry closure');
   const amountsClosure = reach(amounts);
   assert.ok(!entryClosure.has(amounts[0]) && !entryClosure.has(setup[0]), 'neither Create position nor Setup is loaded statically by the entry');
   const opens = (node, file) => {
@@ -240,10 +242,11 @@ test('production excludes preview/deposit labs and confines the live deposit cli
 });
 
 test('the default stylesheets load nothing from elsewhere (BUN-2)', (t) => {
-  // Changed on purpose 2026-10-01 (platform workstream, F8): two stylesheets, the site's and the screens'
-  // (src/styles/screens.css), checked together.
+  // V2 collection styles are a lazy production chunk; the consumer lab remains V2-free below.
   const css = readdirSync(join(DIST, 'assets')).filter((file) => file.endsWith('.css'));
-  assert.deepEqual(css.map((file) => file.split('-')[0]).sort(), ['index', 'screens']);
+  assert.deepEqual(css.map((file) => file.split('-')[0]).sort(), ['OwnedRows', 'index', 'screens']);
+  const html = readFileSync(join(DIST, 'index.html'), 'utf8');
+  assert.ok(!/<link\b[^>]*href="[^\"]*OwnedRows[^\"]*\.css/.test(html), 'entry HTML never preloads the collection styles');
   const text = css.map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
   // Changed on purpose 2026-09-28 (speed wave, item 35): the stylesheet now names the site's own fonts
   // (src/styles/fonts.css, until then Google Fonts' stylesheet in index.html), each a content-hashed woff2 file under

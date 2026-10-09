@@ -192,6 +192,70 @@ test('the deposit origins the session is kept across are crosschain-v1 pins as o
   assert.equal(m.CROSSCHAIN_ORIGIN_CHAIN_IDS.includes(99801), false);
 });
 
+test('a held V2 session renews and recovers after me fails without switching chains or signing again', () => {
+  const m = withV2(true, `${BUILD}session/machine.js`);
+  const env = { origin: ORIGIN, checksum: getAddress, chains: m.sessionChains(ORIGIN) };
+  for (const chainId of [8453, 42161, 1, 10]) {
+    const away = then(m, env, signedIn(m, env), { type: 'identity', identity: wallet(chainId) });
+    const checking = then(m, env, away, { type: 'recheck', cause: 'visible' });
+    assert.deepEqual(routes(checking.effects), ['me']);
+    assert.equal(m.heldAway(checking.machine, env), true, 'background reads do not hide the held session');
+    const down = then(m, env, checking, result(code('me', 'session_store_unavailable')));
+    assert.equal(down.machine.session, away.machine.session);
+    assert.equal(m.heldAway(down.machine, env), true);
+    assert.ok(down.effects.some((effect) => effect.type === 'check_failed'));
+    const refreshing = then(m, env, down, { type: 'refresh' });
+    assert.deepEqual(routes(refreshing.effects), ['refresh']);
+    assert.equal(m.heldAway(refreshing.machine, env), true);
+    const done = then(m, env, refreshing, result(ok('refresh', sessionBody)));
+    assert.equal(done.machine.epoch, away.machine.epoch);
+    assert.equal(m.heldAway(done.machine, env), true);
+    assert.ok(done.effects.some((effect) => effect.type === 'renewed'));
+    assert.ok(!done.effects.some((effect) => effect.type === 'sign' || effect.type === 'clear_private'));
+    const expired = then(m, env, done, { type: 'refresh' }, result(code('refresh', 'session_required')));
+    assert.equal(expired.machine.session, null, 'the server absolute expiry remains authoritative');
+  }
+});
+
+test('a reload while the wallet is on a V2 funding chain restores its own cookie without a signature', () => {
+  const m = withV2(true, `${BUILD}session/machine.js`);
+  const env = { origin: ORIGIN, checksum: getAddress, chains: m.sessionChains(ORIGIN) };
+  const start = walk(m, env, { type: 'identity', identity: wallet(8453) });
+  assert.deepEqual(routes(start.effects), ['me']);
+  const restored = then(m, env, start, result(ok('me', sessionBody)));
+  assert.equal(m.heldAway(restored.machine, env), true);
+  assert.ok(!restored.effects.some((effect) => effect.type === 'sign'));
+});
+
+test('the V2 controller keeps both renewal and expiry checks scheduled after moving away', async () => {
+  const { createSessionController } = withV2(true, `${BUILD}session/controller.js`, [`${BUILD}session/machine.js`]);
+  const timers = [];
+  const calls = [];
+  let now = Date.parse('2026-09-10T12:00:00Z');
+  const api = Object.fromEntries(['me', 'refresh', 'logout'].map((route) => [route, async () => { calls.push(route); return ok(route, sessionBody); }]));
+  const controller = createSessionController({ api, origin: ORIGIN, checksum: getAddress, now: () => now,
+    sign: async () => { assert.fail('keepalive must never sign'); }, clearPrivate() {}, storePrivate() {}, broadcast() {}, broadcastRenewal() {},
+    isVisible: () => true, setTimer(fn, ms, purpose) { const timer = { fn, at: now + ms, purpose, cancelled: false }; timers.push(timer); return () => { timer.cancelled = true; }; },
+  });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  controller.dispatch({ type: 'identity', identity: wallet() });
+  await flush();
+  controller.dispatch({ type: 'identity', identity: wallet(8453) });
+  assert.equal(controller.getSnapshot().away, true);
+  const renewal = timers.filter((timer) => !timer.cancelled && timer.purpose === 'refresh').at(-1);
+  assert.ok(renewal);
+  now = renewal.at;
+  renewal.cancelled = true;
+  renewal.fn();
+  assert.equal(controller.getSnapshot().away, true, 'background refresh keeps the held identity usable');
+  await flush();
+  assert.ok(calls.includes('refresh'));
+  assert.ok(timers.some((timer) => !timer.cancelled && timer.purpose === 'check'));
+  assert.ok(timers.some((timer) => !timer.cancelled && timer.purpose === 'refresh'));
+  assert.equal(controller.getSnapshot().away, true);
+  assert.equal(calls.includes('logout'), false);
+});
+
 // Added 2026-10-05 (the owner, testing a deposit from another network: "it keeps asking me to sign in"): the session held on
 // Base or Arbitrum One is usable there (session/machine.ts heldAway; the controller lends its CSRF, finance/v2/http.ts
 // counts it), for its own account only, at rest only, and only in a build that carries V2.

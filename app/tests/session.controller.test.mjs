@@ -284,14 +284,15 @@ test('the published snapshot never holds a credential', async () => {
   for (const secret of [PREAUTH, CSRF_A, FIXTURES.requests.verify.signature]) assert.ok(!text.includes(secret));
 });
 
-test('503 at me keeps the user informed and signed-in data off screen', async () => {
+test('503 at me keeps the verified identity and private data while a bounded read retry recovers', async () => {
   const h = harness();
   await signIn(h);
   h.controller.dispatch({ type: 'recheck', cause: 'visible' });
   const clears = h.log.clears;
   await h.answer('me', code('me', 'session_store_unavailable', 503));
-  assert.equal(h.view().failure, 'store_unavailable');
-  assert.equal(h.log.clears, clears + 1);
+  assert.equal(h.view().status, 'signed_in');
+  assert.equal(h.log.clears, clears);
+  assert.equal(h.log.signs.length, 1, 'only the original user-started login signed');
 });
 
 test("a sign-out broadcast that arrives during the other tab's own me is not lost", async () => {

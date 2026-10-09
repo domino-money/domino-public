@@ -71,6 +71,7 @@ document.addEventListener('visibilitychange', () => {
 // Taking focus is a return too (owner, 2026-09-25): a window brought back
 // from behind another one may never have been hidden.
 window.addEventListener('focus', () => sessionController.wake())
+window.addEventListener('online', () => sessionController.wake())
 
 // The contract runtime validates messages with String#isWellFormed (Chrome
 // 111, Safari 16.4, Firefox 119). Changed on purpose 2026-10-01 (audit C12):

@@ -6510,7 +6510,7 @@ test('a read that fails is never “no positions”: the loading rows and one qu
 });
 
 // 2026-09-27, the owner's OK ("pode fazer") on the study of 7074cbd: Your positions reads itself again every 30 s and a
-// position's page every 60 s, while the tab is visible, with no reload: only the figures change, in place. These three
+// position's page every 5 s, while the tab is visible, with no reload: only the figures change, in place. These three
 // run with the refresh on (scenario's `refresh`, window.__dominoRefresh in test builds only) on Playwright's clock, so
 // one jump past a refresh's time is one refresh.
 
@@ -6625,7 +6625,7 @@ test('Your positions and a position’s page read themselves again while the tab
     assert.equal(await s.page.locator('[data-owned]').getAttribute('data-owned-block'), String(drawn), 'the same answer is not drawn again');
     assert.deepEqual(await inPlace(s.page), { loading: [], same: true });
 
-    // A position's page: its header reads itself again a minute later, in place.
+    // A position's page shares the state reader and refreshes after five seconds, in place.
     const asked = chain.asked.get(OWNED_OPEN) ?? 0;
     await s.page.locator(`a[data-position-row="${OWNED_OPEN}"]`).click();
     const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
@@ -6642,10 +6642,10 @@ test('Your positions and a position’s page read themselves again while the tab
     await watchDetail(s.page);
     chain.head += 120;
     open.unclaimed = [2_535_301_200_456n, 0n];
-    await jump(s.page, '00:31');
+    await jump(s.page, '00:02');
     await s.page.waitForTimeout(300);
-    assert.equal(await detail.getAttribute('data-snapshot'), read, 'not before a minute');
-    await jump(s.page, '00:31');
+    assert.equal(await detail.getAttribute('data-snapshot'), read, 'not before the five-second refresh');
+    await jump(s.page, '00:04');
     await s.page.waitForFunction((block) => document.querySelector('[data-position-detail]')?.getAttribute('data-snapshot') === String(block), chain.head);
     await s.page.waitForFunction(() => document.querySelector('[data-position-detail] [data-stat="fees"] [data-amount]')?.getAttribute('title') === '0.000002535301200456');
     assert.deepEqual(await detailInPlace(s.page), { loading: [], same: true }, 'the same page, never the skeleton');
@@ -6684,11 +6684,11 @@ test('a failed refresh keeps the figures: no loading rows, no line and no reason
   try {
     await recordList(s.page);
     await watchInPlace(s.page);
-    const refused = [];
-    chain.outage = (call) => (refused.push(call.method), 500);
+    const ownedReads = () => chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length;
+    chain.outage = 500;
     // 2026-10-02 (RPC fix round 2): the route keeps the first answer 25 s, so the refresh 30 s later reaches the node.
     await jump(s.page, '00:31');
-    await until(() => refused.length === 1, 'the refresh the chain refused');
+    await until(() => ownedReads() === 2, 'the inventory refresh the chain refused');
     await s.page.waitForTimeout(500);
     const card = s.page.locator('[data-owned]');
     assert.deepEqual([await card.getAttribute('data-owned'), await card.getAttribute('data-owned-reason'), await card.getAttribute('data-owned-block')], ['ready', null, String(chain.head)]);
@@ -6701,7 +6701,7 @@ test('a failed refresh keeps the figures: no loading rows, no line and no reason
     await jump(s.page, '00:31');
     await s.page.waitForTimeout(500);
     // Changed on purpose 2026-09-28 (speed wave B, item 23): the list's first call is its head and nonce's aggregate3.
-    assert.deepEqual(refused, ['eth_call'], 'not asked again before 60 s');
+    assert.equal(ownedReads(), 2, 'inventory is not asked again before 60 s; independent fee reads do not alter its retry');
     // Past 60 s: asked again, and this time the chain answers.
     chain.outage = null;
     chain.head += 120;
@@ -6717,9 +6717,9 @@ test('a failed refresh keeps the figures: no loading rows, no line and no reason
 
 // The review of 2026-09-27: a position's page stopped reading itself for good after a short outage (its tick fell back
 // to the 3/12/30 s waits, then ended), which left its header stale for the rest of the visit. Once it shows a position,
-// a refresh that fails or finds nothing now keeps the header and is asked again after 60 s, then every 120 s, for as long
-// as the page is open, whatever the reason.
-test('a position’s page keeps its header through refreshes that fail or find nothing: asked again after 60 s, never sooner, then every 120 s with no end, and drawn in place once the chain answers', async () => {
+// a failed refresh keeps its header while the shared reader retries with bounded backoff. Retry-After remains
+// authoritative even when the normal five-second poll is due.
+test('a position’s page keeps its header through failures and missing reads, honors Retry-After, and recovers in place without ending its retries', async () => {
   const open = onChain(OWNED_OPEN);
   const chain = browserChain({ positions: [open], tokens: TOKENS });
   const { s } = await refreshing(chain);
@@ -6749,6 +6749,13 @@ test('a position’s page keeps its header through refreshes that fail or find n
       return last && !['reading', 'unanswered', 'unavailable', 'rate_limited'].includes(last);
     }, undefined, { timeout: 15_000 });
     await watchDetail(s.page);
+    let stateUnavailable = false;
+    let stateRequests = 0;
+    await s.context.route((url) => url.pathname === '/api/fees/v1/state', async (route) => {
+      stateRequests++;
+      if (stateUnavailable) return route.fulfill({ status: 503, headers: { 'Retry-After': '10', 'Cache-Control': 'no-store' }, contentType: 'application/json', body: JSON.stringify({ v: 1, error: 'source_unavailable' }) });
+      return route.fallback();
+    });
     const refused = [];
     const down = () => { chain.outage = (call) => (refused.push(call.method), 500); };
     /** From now on, whether one more read was refused, or asked for the NFT (ownerOf). */
@@ -6761,23 +6768,23 @@ test('a position’s page keeps its header through refreshes that fail or find n
       await s.page.waitForTimeout(1_000);
     };
 
-    // The minute's refresh is refused, and the chain answers again at once: not asked before 60 s (the old waits were
-    // 3, 12 and 30 s), then asked, and drawn.
-    down();
-    await leap('01:01', refusedOnce());
+    // A ten-second Retry-After must beat the five-second poll even when the service recovers immediately.
+    stateUnavailable = true;
+    await leap('00:06', () => stateRequests === 1);
     const shown = await header();
-    chain.outage = null;
+    stateUnavailable = false;
     chain.head += 120;
     open.unclaimed = [1_267_650_600_228n, 0n];
-    await leap('00:31');
-    assert.deepEqual(await header(), shown, 'not asked again before 60 s');
-    await jump(s.page, '00:31');
+    await leap('00:04');
+    assert.equal(stateRequests, 1, 'the normal poll does not bypass Retry-After');
+    assert.deepEqual(await header(), shown, 'verified figures stay during the required wait');
+    await jump(s.page, '00:06');
     await drawn('0.000001267650600228');
 
     // Eight refreshes in a row that fail: the RPC's 500s, then four reads of an NFT its node does not know (not_found),
     // then the 500s three more times. The old page ended its reads at the fourth not_found (after three quick asks), and
-    // at the fourth failure (its tick and three retries); this one keeps asking, 60 s after the first and every 120 s
-    // after that, and draws the chain's answer in place once there is one.
+    // at the fourth failure (its tick and three retries); bounded retry backoff keeps asking and eventually draws the
+    // chain's answer in place. Each leap is beyond the maximum applicable wait, with no fabricated zero in between.
     const kept = await header();
     down();
     await leap('01:01', refusedOnce());
@@ -7599,8 +7606,8 @@ test('Your positions: each open row’s Your APR is its own ledger’s, asked wi
     assert.ok(ledgers.every((body) => body.tokenIds.length <= 8));
     // 2026-10-02 (review of the chart's tabs, finding 1): the cell says, in data attributes, how many ledger requests this
     // visit made for the row and how the last ended.
-    assert.deepEqual([await apr.getAttribute('data-ledger-asks'), await apr.getAttribute('data-ledger-last')], [String(coldReads), 'exact']);
-    assert.equal(ledgers.filter((body) => body.tokenIds.includes('3325113')).length, coldReads, 'one request per bounded discovery window, without duplicate retries');
+    assert.deepEqual([await apr.getAttribute('data-ledger-asks'), await apr.getAttribute('data-ledger-last')], ['1', 'exact']);
+    assert.equal(ledgers.filter((body) => body.tokenIds.includes('3325113')).length, 1, 'verified mint discovery qualifies the known NFT in one request, without a historical floor walk');
     assert.equal(await s.page.locator('[data-position-detail]').count(), 0, 'no page was opened for it');
     assert.deepEqual(pastAsked, [], 'the list reads no position at a past block');
     // A row whose ledger cannot measure its fees (here: none of its events on the node) keeps a dash and says why; its
@@ -7625,7 +7632,7 @@ test('Your positions: each open row’s Your APR is its own ledger’s, asked wi
     const figure = (await pageApr.locator('.dm-pos-apr').innerText()).trim().split(/\s/)[0];
     // Its Details: the list's completed discovery serves the page too, without starting another history scan.
     const source = detail.locator('[data-history-source="ledger"]');
-    assert.deepEqual([await source.getAttribute('data-ledger-asks'), await source.getAttribute('data-ledger-last')], [String(coldReads), 'exact']);
+    assert.deepEqual([await source.getAttribute('data-ledger-asks'), await source.getAttribute('data-ledger-last')], ['1', 'exact']);
     // The other position's page says plainly that its fees earned can't be measured, its fees ready to collect exact.
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
     const quiet = s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"][data-fees-reason="not_exact"]');
@@ -8106,7 +8113,13 @@ test('the site’s chain routes without their node, then with it: Your positions
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
     await s.page.locator('[data-empty="position-unread"]').waitFor({ timeout: 30_000 });
     assert.match(await s.page.locator('[data-empty="position-unread"]').innerText(), /Its details could not be read just now\./);
-    assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
+    const feeFrame = s.page.locator('[data-fees-card]');
+    await feeFrame.locator('[data-pending-plot]').waitFor();
+    assert.equal(await feeFrame.locator('[aria-label="Fees not available yet"]').innerText(), '—', 'a failed read is not zero earned');
+    assert.equal(await feeFrame.locator('.dm-chart-line, [data-fees-zero]').count(), 0, 'no invented fee series');
+    assert.doesNotMatch(await s.page.locator('main').evaluate((root) => {
+      const rest = root.cloneNode(true); rest.querySelectorAll('[data-fees-card]').forEach((card) => card.remove()); return rest.textContent;
+    }), FORBIDDEN);
     assert.ok(chain.edgeLog.includes('/api/owned/v2/positions'), 'the list asked the site’s route');
 
     // The node is there: the page's next reads draw the position, its figures and its fees card, then the list.
@@ -8164,8 +8177,14 @@ test('a position’s page with the site’s chain routes without their node: the
     assert.equal(await waiting.isVisible(), true, 'the owner is told why the actions are unavailable');
     assert.equal(await waiting.innerText(), 'Actions are temporarily unavailable while we refresh this position’s data. We’ll keep trying automatically.');
     assert.deepEqual(nftReads(read), [[OWNED_OPEN]], 'the gateway asked once');
-    // The owner’s recovery notice above is intentional; the rest of the page keeps its existing copy guard.
-    assert.doesNotMatch((await s.page.locator('main').innerText()).replace(await waiting.innerText(), ''), FORBIDDEN);
+    // The existing owner notice and the neutral pending fee frame explain only the unavailable data.
+    const feeFrame = detail.locator('[data-fees-card]');
+    await feeFrame.locator('[data-pending-plot]').waitFor();
+    assert.equal(await feeFrame.locator('[aria-label="Fees not available yet"]').innerText(), '—');
+    assert.equal(await feeFrame.locator('.dm-chart-line, [data-fees-zero]').count(), 0, 'the gateway row does not invent a fee history');
+    assert.doesNotMatch(await s.page.locator('main').evaluate((root) => {
+      const rest = root.cloneNode(true); rest.querySelectorAll('[data-fees-card], [data-position-actions-waiting]').forEach((item) => item.remove()); return rest.textContent;
+    }), FORBIDDEN);
 
     // The node is there: the page's own read, at the head, in place of the row, and the owner's actions with it.
     chain.edge = 'up';

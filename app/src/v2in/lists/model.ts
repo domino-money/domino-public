@@ -12,6 +12,8 @@ import { protectionStanding, type ProtectionStanding } from '../autoexit/standin
 import { exitReceiptOutcome } from '../autoexit/receipt'
 import { v2PositionHref } from '../route'
 import { rawAmounts, usdOfRaw } from '../usd'
+import { positionOfState } from '../../lib/walletCards'
+import { minimumPositionBlock, positionBurn, positionKey, positionObservation } from './positionSync'
 
 /**
  * What the Positions screen's two lists take from read-v6 (spec F7 rev4 §6.2, §6.3, §2.11; the integration brief's data
@@ -190,8 +192,10 @@ export interface VaultBadge {
 }
 
 export interface PositionRowView {
-  /** `<chainId>:<dex>:<tokenId>`: the row's identity (chain + DEX + NFT id). */
+  /** Network, position manager and NFT. Numeric ids alone are not globally unique. */
   key: string
+  positionManager: string
+  block: number | null
   chainId: V2ChainId
   chain: string
   dex: 3 | 4
@@ -199,8 +203,8 @@ export interface PositionRowView {
   tokenId: string
   href: string
   status: 'live' | 'unavailable' | 'not_read'
-  /** Open while it holds liquidity, or while it could not be read (it is listed, so not burned); closed at zero liquidity. */
-  tab: 'open' | 'closed'
+  /** Unknown liquidity is pending, never counted as an open position. */
+  tab: 'open' | 'closed' | 'pending'
   tokens: readonly [TokenName, TokenName] | null
   /** The pool's fee tier as V1's rows write it ("0.30%", lib/read/screens/fee.ts), when read. */
   fee: string | null
@@ -220,6 +224,17 @@ export interface PositionRowView {
   vault: VaultBadge | null
   /** A v4 pool with a hook: shown, but nothing is offered on it (decision #6). */
   hooked: boolean
+  family: { successors: number; reserves: 'available' | 'unknown' | null } | null
+}
+
+/** A proved burn ends the NFT; its old token amounts are not presented as the wallet's present balance. */
+export function withTerminalEvidence(row: PositionRowView): PositionRowView {
+  const burn = positionBurn(row)
+  if (burn && burn.block >= (row.block ?? 0)) return { ...row, block: burn.block, status: 'live', tab: 'closed', state: 'closed', value: null, fees: null, valueUsd: null, feesUsd: null, stale: null, unread: 'This position was closed and its NFT was burned.' }
+  // Retain known amounts while the index catches up, but never classify a pre-confirmation
+  // snapshot as a currently open NFT (including an older inventory merged into read-v6).
+  if ((row.block ?? 0) < minimumPositionBlock(row)) return { ...row, tab: 'pending', state: 'unread', stale: 'Updating', unread: 'Updating after your transaction.' }
+  return row
 }
 
 const UNREADABLE = 'This position can’t be read right now.'
@@ -243,6 +258,7 @@ function vaultBadge(position: V6Position, vaults: readonly Vault[], mandates: re
   const vault = vaults.find((v) => v.chainId === position.chainId && v.address.toLowerCase() === position.vault!.address.toLowerCase()) ?? null
   const role = position.vault.role
   if (!vault) return { role, name: null, word: null, running: false }
+  if (vault.state.status !== 'read' || vault.custody.armed === null || vault.state.snapshot.number < minimumPositionBlock(position)) return { role, name: null, word: 'Updating', running: false }
   const exit = protectionStanding(vault, mandates)
   if (exit !== null) return { role, name: 'Auto-exit', word: EXIT_WORD[exit], running: exit === 'on' }
   const name = vault.state.status === 'read' ? (vault.state.policy.mode === 'domino' ? 'Domino-compound' : 'Auto-compound') : null
@@ -258,8 +274,16 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
   const chain = answer.chains.find((c) => c.chainId === chainId)
   const chainStale = chain?.status === 'stale' ? (chainNotes({ chains: [chain], servedAt: answer.servedAt })[0]?.age ?? 'stale') : null
   const tokenId = position.tokenId
+  const observed = positionObservation(position)
+  const live = position.state.status === 'live' ? position.state : null
+  const ownRead = observed && (!live || observed.block >= live.snapshot.number) ? observed : null
+  const families = answer.vaults.filter((vault) => vault.chainId === chainId && vault.dex === position.dex && vault.rootTokenId === tokenId)
+  const successors = new Set(families.flatMap((vault) => vault.members.filter((member) => member.role === 'successor' && member.status === 'active').map((member) => member.tokenId))).size
+  const reserves = families.some((vault) => vault.state.status === 'read' && vault.state.reserves.some((reserve) => BigInt(reserve.total) > 0n)) ? 'available' as const : families.some((vault) => vault.state.status !== 'read') ? 'unknown' as const : null
   const base = {
-    key: `${chainId}:${position.dex}:${tokenId}`,
+    key: positionKey(position),
+    positionManager: position.positionManager.toLowerCase(),
+    block: ownRead?.block ?? live?.snapshot.number ?? null,
     chainId,
     chain: chainName(chainId),
     dex: position.dex,
@@ -267,14 +291,25 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
     tokenId,
     href: v2PositionHref({ chainId, dex: position.dex, tokenId: BigInt(tokenId) }),
     vault: vaultBadge(position, answer.vaults, answer.mandates ?? []),
+    family: families.length ? { successors, reserves } : null,
   }
-  const state = position.state
+  // /state has no block hash. Use its validated amounts as a frontend observation, never forge a read-v6 snapshot.
+  const wallet = ownRead ? positionOfState(ownRead.position) : null
+  const state = ownRead && wallet ? {
+    status: 'live' as const,
+    pool: { ...ownRead.position.poolKey, dex: 4 as const },
+    liquidity: wallet.liquidity,
+    inRange: ownRead.position.tick >= ownRead.position.tickLower && ownRead.position.tick < ownRead.position.tickUpper,
+    principalAtSpot: wallet.principal ?? [],
+    feesOwed: [ownRead.position.unclaimed0, ownRead.position.unclaimed1],
+    freshness: { status: answer.servedAt - ownRead.timestamp > 60 ? 'stale' as const : 'fresh' as const, ageSeconds: Math.max(0, answer.servedAt - ownRead.timestamp) },
+  } : position.state
   if (state.status !== 'live') {
     const own = state.status === 'unavailable' && state.freshness.status === 'stale' ? `updated ${agoWords(state.freshness.ageSeconds)}` : null
     return {
       ...base,
       status: state.status,
-      tab: 'open',
+      tab: 'pending',
       tokens: null,
       fee: null,
       state: 'unread',
@@ -290,7 +325,8 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
   const tokens = [name(chainId, state.pool.currency0), name(chainId, state.pool.currency1)] as const
   const liquidity = BigInt(state.liquidity)
   const pair = (values: readonly string[]) => (values.length === 2 ? ([amountShown(values[0], tokens[0]), amountShown(values[1], tokens[1])] as const) : null)
-  const fresh = state.freshness.status === 'fresh' && chainStale === null
+  const pending = (base.block ?? 0) < minimumPositionBlock(position)
+  const fresh = state.freshness.status === 'fresh' && chainStale === null && !pending
   const usdOf = (values: readonly string[]) => {
     const raws = fresh && values.length === 2 ? rawAmounts(values) : null
     return raws ? usdOfRaw(raws.map((raw, index) => ({ raw, decimals: tokens[index].decimals, usd: tokens[index].usd }))) : null
@@ -307,7 +343,7 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
     fees: pair(state.feesOwed),
     valueUsd: usdOf(state.principalAtSpot),
     feesUsd: usdOf(state.feesOwed),
-    stale: chainStale ?? (state.freshness.status === 'stale' ? `updated ${agoWords(state.freshness.ageSeconds)}` : null),
+    stale: pending ? 'Updating' : chainStale ?? (state.freshness.status === 'stale' ? `updated ${agoWords(state.freshness.ageSeconds)}` : null),
     hooked: state.pool.dex === 4 && state.pool.hooks.toLowerCase() !== ZERO_ADDRESS,
   }
 }
@@ -331,7 +367,7 @@ export function positionRows(answer: Pick<PortfolioResponse, 'chains' | 'tokens'
     const row = rowOf(position, answer, name)
     if (!row || seen.has(row.key)) continue
     seen.add(row.key)
-    out.push(row)
+    out.push(withTerminalEvidence(row))
   }
   return out
 }

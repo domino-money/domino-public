@@ -3,6 +3,9 @@
    builders style only their own prefix in their own partial. */
 
 @layer components {
+  .dm-info-tip-trigger { display: inline-flex; align-items: center; color: inherit; font: inherit; text-align: inherit; cursor: help; border-radius: 0.25rem; }
+  .dm-info-tip-trigger:focus-visible { outline: 2px solid var(--primary-line); outline-offset: 0.1875rem; }
+  .dm-info-tip { position: fixed; z-index: 100; width: min(16rem, calc(100vw - 1.5rem)); padding: 0.65rem 0.8rem; border: 1px solid var(--border); border-radius: 0.65rem; background: var(--surface-2); color: var(--fg-muted); font-size: 0.75rem; line-height: 1.4; box-shadow: 0 0.4rem 1.4rem #0004; }
   /* ---- Page frame (§2.7): one 1200px container; the width aliases stay in the DOM ------------------ */
   .dm-page { width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); margin-inline: auto; padding: 1.5rem var(--gutter) 0; animation: dm-page-in var(--dur-page) var(--ease-std) backwards; }
   /* The page is at least the screen under the header (2026-10-01, platform workstream, E1): while a screen's code or

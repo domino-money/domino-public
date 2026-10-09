@@ -29,6 +29,9 @@
     "src/v2in/position/card.ts",
     "src/v2in/journey/model/*.ts",
     "src/v2in/lists/model.ts",
+    "src/v2in/lists/positionCollection.ts",
+    "src/v2in/lists/closeGroups.ts",
+    "src/v2in/lists/positionSync.ts",
     "src/v2in/lists/activityModel.ts",
     "src/v2in/lists/activityHistory.ts",
     "src/v2in/lists/read.ts"

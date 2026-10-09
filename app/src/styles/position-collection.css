@@ -1,0 +1,29 @@
+/* One compact, four-column collection for every supported NFT. */
+.dm-own-collection .dm-own-list { display: block; }
+.dm-collection-head,
+.dm-own-collection .dm-own-row { display: grid; grid-template-columns: minmax(12rem, 2.4fr) minmax(6rem, 1fr) minmax(6rem, 1fr) minmax(5rem, .8fr); gap: 1rem; }
+.dm-collection-head { padding: .625rem 1rem; color: var(--fg-subtle); font-size: .75rem; background: var(--surface-2); border-radius: var(--radius); }
+.dm-collection-head > :not(:first-child) { text-align: right; }
+.dm-own-collection .dm-own-item { display: block; position: relative; }
+.dm-own-collection .dm-own-row { padding: 1rem; position: relative; min-height: 5rem; align-items: center; }
+.dm-own-collection .dm-own-pool { display: flex; grid-column: auto; gap: .75rem; min-width: 0; }
+.dm-own-collection .dm-own-name { display: block; min-width: 0; }
+.dm-own-collection .dm-own-figs { display: contents; position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+.dm-own-collection .dm-own-cell { text-align: right; min-width: 0; }
+.dm-own-collection .dm-own-chev { display: none; }
+.dm-own-collection .dm-own-split { display: none; }
+.dm-own-collection .dm-own-row:focus-visible .dm-own-split,
+.dm-own-collection .dm-own-row:hover .dm-own-split { display: block; }
+.dm-collection-auto { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .25rem; font-size: .6875rem; line-height: 1rem; color: var(--fg-muted); }
+.dm-collection-auto .dm-own-badge { max-width: none; }
+.dm-collection-family { display: block; font-size: .6875rem; line-height: 1rem; color: var(--fg-muted); margin-top: .25rem; }
+.dm-collection-apr-loading { display: inline-block; width: 3.5rem; height: .875rem; border-radius: .25rem; }
+@container acct-nft (max-width: 44rem) {
+  .dm-collection-head { display: none; }
+  .dm-own-collection .dm-own-row { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto; grid-row: auto; gap: .875rem .5rem; padding: .875rem .625rem; }
+  .dm-own-collection .dm-own-pool { grid-column: 1 / -1; }
+  .dm-own-collection .dm-own-cell[data-cell] { grid-column: auto; justify-items: start; align-self: start; text-align: left; }
+  .dm-own-collection .dm-own-label { display: block; font-size: .6875rem; }
+  .dm-own-collection .dm-own-fig { font-size: .875rem; }
+  .dm-own-collection .dm-acct-amount { font-size: .75rem; }
+}

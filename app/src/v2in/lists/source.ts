@@ -1,53 +1,29 @@
 import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/types'
 import { V2_CHAINS } from '../../v2/chains'
-import { v2Gate, type V2Gate } from '../../v2/gate'
+import { v2OriginOpen } from '../../v2/gate'
 import type { V2ChainId } from '../../v2/types'
-import { v2PageProbe, v2Transports } from '../transports'
+import { v2ReadTransports } from '../transports'
 import { createKeyedReader, createListsReads, readAgainAfter, type ListsReply, type ListsTransports } from './read'
+import { reconcilePortfolio, subscribePositionChanges } from './positionSync'
 
 /**
  * The lists' one read-v6 source in the page (Domino V2 builds only: the lists' chunks are opened behind `__DOMINO_V2__`).
- * Each chain's gate (src/v2/gate.ts) decides; the integrated screens' shared transports (src/v2in/transports.ts) read the
- * site's own route, about the wallet the list is for, on every open chain (`preview` or `live`: Changed on purpose
- * (data) 2026-10-02, the owner: real data only, no example rows). A test build's suite scripts the answers through
+ * Origin admission and the read route's capabilities decide, independently of transaction gates. Shared transports read
+ * the site's own route, about the wallet the list is for; no example rows. A test build's suite scripts the answers through
  * `window.__dominoV2Test.read6`, which the shared transports read.
  */
 
 export type ListsMode = 'off' | 'live'
 export type ListsGate = Readonly<Record<V2ChainId, ListsMode>>
 
-const SERVICES = ['s1', 'vault', 'autoExit'] as const
-const OFF: V2Gate = Object.freeze({ mode: 'off' })
+const readsOpen = () => v2OriginOpen(typeof location === 'undefined' ? '' : location.origin)
 
-let gates: Promise<{ modes: ListsGate; live: V2Gate | null }> | null = null
-
-/**
- * Each chain's mode for the lists: `live` when any V2 service is open there (`live` or `preview`: the route is read
- * either way, and what it answers is the person's own), else `off`; and one open gate, for the transports. Off
- * everywhere but the preview alias and the development server (and a test build that opens it): there the lists are
- * exactly V1's, and nothing of read-v6 is read.
- */
-function chainGates() {
-  gates ??= (async () => {
-    const modes = {} as Record<V2ChainId, ListsMode>
-    let live: V2Gate | null = null
-    for (const chain of V2_CHAINS) {
-      const found = await Promise.all(SERVICES.map((service) => v2Gate(service, chain.chainId, undefined, v2PageProbe).catch(() => OFF)))
-      const open = found.find((gate) => gate.mode === 'live') ?? found.find((gate) => gate.mode === 'preview') ?? null
-      modes[chain.chainId] = open ? 'live' : 'off'
-      live ??= open
-    }
-    return { modes: Object.freeze(modes), live }
-  })()
-  return gates
-}
-
-export const listsGate = (): Promise<ListsGate> => chainGates().then((found) => found.modes)
+/** Origin/build admission only. The read route checks its own capability on every request; write gates stay separate. */
+export const listsGate = async (): Promise<ListsGate> => Object.freeze(Object.fromEntries(V2_CHAINS.map((chain) => [chain.chainId, readsOpen() ? 'live' : 'off'])) as Record<V2ChainId, ListsMode>)
 
 /** The transports of one open chain (read-v6 is one answer for the three chains). */
 async function listsTransports(): Promise<ListsTransports> {
-  const { live } = await chainGates()
-  return { live: live ? v2Transports(live) : null }
+  return { live: readsOpen() ? v2ReadTransports() : null }
 }
 
 export const LISTS_SOURCE = createListsReads(listsTransports)
@@ -65,6 +41,14 @@ const failed = <T>(reply: ListsReply<T>) => reply.kind !== 'ok'
 export const ACTIVITY_PAGE = 20
 
 /** The person's own portfolio, from the site's route, by wallet (lowercase). */
-export const OWN_PORTFOLIO = createKeyedReader<ListsReply<PortfolioResponse>>((wallet) => LISTS_SOURCE.ownPortfolio(wallet), { next: again, failed })
+export const OWN_PORTFOLIO = createKeyedReader<ListsReply<PortfolioResponse>>(async (wallet) => {
+  const answer = await LISTS_SOURCE.ownPortfolio(wallet)
+  return answer.kind === 'ok' ? { ...answer, body: reconcilePortfolio(answer.body) } : answer
+}, { next: (reply, failures) => reply.kind === 'ok' && REFRESH ? 30_000 : again(reply, failures), failed })
 /** The first page of the person's own receipts, by wallet (lowercase). */
 export const OWN_ACTIVITY = createKeyedReader<ListsReply<ActivityResponse>>((wallet) => LISTS_SOURCE.ownActivity(wallet, { limit: ACTIVITY_PAGE }), { next: again, failed })
+
+subscribePositionChanges((change) => {
+  if (change.kind === 'state') OWN_PORTFOLIO.update((value) => value.kind === 'ok' ? { ...value, body: reconcilePortfolio(value.body) } : value)
+  else OWN_PORTFOLIO.again(change.wallet)
+})

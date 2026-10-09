@@ -149,7 +149,7 @@ test('the reading finds each kind of text the rules are for, so a rule cannot pa
   assert.ok(automate.some(([text, onScreen]) => text === 'Automate' && onScreen), 'a prop’s words (PageHeader title="Automate" is a heading, not a hover title)');
   // Changed on purpose 2026-10-01 (audit E4): the card's words, rewritten. Changed on purpose 2026-10-04 (the owner's
   // ChatGPT UI round): the Auto-compound card's points reworded; the reading is checked on the first of them.
-  assert.ok(automate.some(([text]) => text === 'Adds earned fees back into the same position.'), 'an array of words in a prop (points)');
+  assert.ok(read('components/automate/copy.ts').some(([text]) => text === 'Adds earned fees back into the same position, in the same range.'), 'the shared automation card’s copy');
   assert.ok(!automate.some(([text]) => /improving your fees APR|consumed/.test(text)), 'no promise, no "consumed"');
   const fees = read('components/positions/visual/FeesCard.tsx');
   assert.ok(fees.some(([text, onScreen]) => text === 'Ready to collect' && onScreen), 'either side of a choice in a JSX child');

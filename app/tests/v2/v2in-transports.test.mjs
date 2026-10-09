@@ -132,3 +132,16 @@ test('the wiring: transports.ts hands in the page\'s routes, the package\'s runt
   const code = core.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(code, /\bfetch\(|\.request\(|\bwindow\b/, 'no fetch, no wallet, no page');
 });
+
+test('public read transport is independent of write gates and still refuses an unavailable read capability', async () => {
+  const { createV2ReadTransports } = require(`${BUILD}/v2in/dataSource.js`);
+  const routes = liveRoutes({ readV6: { on: true, routes: ['portfolio', 'activity'] }, plan: { on: false, reason: 'disabled' } });
+  const read = createV2ReadTransports({ runtimes: RUNTIMES, live: routes.live, script: () => null });
+  await read.read.post('portfolio', { wallet: CONNECTED });
+  assert.deepEqual(routes.asked, ['readV6']);
+  assert.equal('plan' in read, false);
+  const off = liveRoutes({ readV6: { on: false, reason: 'not_deployed' } });
+  const unavailable = createV2ReadTransports({ runtimes: RUNTIMES, live: off.live, script: () => null });
+  await assert.rejects(unavailable.read.post('activity', { wallet: CONNECTED }), /route_off_not_deployed/);
+  assert.equal(off.reached.length, 0);
+});

@@ -3,7 +3,7 @@ import v3PoolAbi from '../../../../api-contracts/v2/abi/IUniswapV3PoolMinimal.js
 import v4StateViewAbi from '../../../../api-contracts/v2/abi/IV4StateViewMinimal.json'
 import type { V2Chain } from '../../v2/chains'
 import { RECEIVE_MODE, ZERO_ADDRESS, type Address, type Dex, type ExitMandate, type Hex, type ReceiveMode, type V2ChainId, type V2Component, type V2Contracts } from '../../v2/types'
-import { atomicStatus, batchCallsStatus, simulateBatch, type AtomicStatus, type BatchCall } from '../batch'
+import { atomicStatus, batchCallsStatus, simulateBatch, type AtomicStatus, type BatchCall, type BatchSimulator } from '../batch'
 import { readAccountCode } from '../delegates'
 import { AUTO_EXIT_ABI, REGISTRY_ABI, V3_POSITION_MANAGER_ABI, V4_POSITION_MANAGER_ABI, VAULT_ABI, VAULT_FACTORY_ABI } from './abi'
 import { AUTO_EXIT_EVENTS_ABI, VAULT_EVENTS_ABI, VAULT_FACTORY_EVENTS_ABI } from './implementations'
@@ -441,8 +441,9 @@ export function signedNothing(error: unknown): boolean {
   return refused(error) || error instanceof WalletNotAsked || (error instanceof Error && SIGNER_BEFORE_PROMPT.has(error.message))
 }
 
-export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Contracts, now: () => number = () => Date.now() / 1000, random: () => bigint = randomNonce) {
+export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Contracts, now: () => number = () => Date.now() / 1000, random: () => bigint = randomNonce, simulator?: BatchSimulator) {
   const contracts = v2ContractsFor(chain, supplied)
+  const batchSimulator = chain.chainId === 4663 ? simulator : undefined
   // Changed on purpose (data) 2026-10-02 (Domino V2 integration): every step, signature and batch of this client only with
   // live contracts (./liveLock.ts), refused before any wallet request.
   const t = createTransactor(wallet, chain, now, () => refuseUnlessLive(chain.chainId, contracts))
@@ -706,7 +707,7 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
       await verify(rpc, batchComponents(review))
       const calls = await registerBatchCalls({ rpc, block: 'latest' }, review)
       // `gas` null: the budget read here, through this bounded port; Base's L1 data fee ceiling in the cost (F8, F5).
-      const { gasUsed, networkFeeWei } = await simulateV2Batch(rpc, chain, owner, calls, gas)
+      const { gasUsed, networkFeeWei } = await simulateV2Batch(rpc, chain, owner, calls, gas, batchSimulator)
       const batch: MandateBatch = Object.freeze({
         chainId: chain.chainId,
         owner,
@@ -741,7 +742,7 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
         await verify(rpc, batchComponents(review))
         const calls = await registerBatchCalls({ rpc, block: 'latest' }, review)
         if (calls.length !== batch.calls.length || calls.some((call, i) => call.to !== batch.calls[i].to || call.data !== batch.calls[i].data)) fail('mandate_review_stale')
-        await simulateBatch((method, params) => rpc(method, params), owner, batch.calls)
+        await simulateBatch((method, params) => rpc(method, params), owner, batch.calls, batchSimulator)
         if (batch.expiresAt <= now()) fail('wallet_review_expired')
         // Immediately before the wallet is asked: the same chain, still (spec §1.3).
         if (quantity(await rpc('eth_chainId', [])) !== BigInt(chain.chainId)) fail('wallet_wrong_chain')
@@ -800,7 +801,7 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
       await verify(rpc, batchComponents(review))
       const derived = await protectBatchCalls({ rpc, block: 'latest' }, review, create)
       // `gas` null: the budget read here, through this bounded port; Base's L1 data fee ceiling in the cost (F8, F5).
-      const { gasUsed, networkFeeWei } = await simulateV2Batch(rpc, chain, owner, derived.calls, gas)
+      const { gasUsed, networkFeeWei } = await simulateV2Batch(rpc, chain, owner, derived.calls, gas, batchSimulator)
       const batch: ProtectBatch = Object.freeze({
         chainId: chain.chainId,
         owner,
@@ -838,7 +839,7 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
         await verify(rpc, batchComponents(origin.review))
         const { calls } = await protectBatchCalls({ rpc, block: 'latest' }, origin.review, origin.create)
         if (calls.length !== batch.calls.length || calls.some((call, i) => call.to !== batch.calls[i].to || call.data !== batch.calls[i].data)) fail('mandate_review_stale')
-        await simulateBatch((method, params) => rpc(method, params), owner, batch.calls)
+        await simulateBatch((method, params) => rpc(method, params), owner, batch.calls, batchSimulator)
         if (batch.expiresAt <= now()) fail('wallet_review_expired')
         // Immediately before the wallet is asked: the same chain, still (spec §1.3).
         if (quantity(await rpc('eth_chainId', [])) !== BigInt(chain.chainId)) fail('wallet_wrong_chain')

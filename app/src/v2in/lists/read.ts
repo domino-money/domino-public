@@ -1,7 +1,7 @@
 import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/types'
 import { readActivity, readPortfolio, type ReadV6Reply } from '../../v2/read/v6'
 import { routeServes } from '../../v2/routes'
-import type { V2Transports } from '../dataSource'
+import type { V2ReadTransports } from '../transports'
 
 /**
  * Where the Positions screen's lists read read-v6 from (spec F7 rev4 §6.2), through the integrated screens' one source
@@ -17,7 +17,7 @@ export type ListsReply<T> = ReadV6Reply<T> | { kind: 'unavailable'; reason: stri
 
 /** The transports the lists read through: an open chain's (the site's route); null for none. */
 export interface ListsTransports {
-  live: V2Transports | null
+  live: V2ReadTransports | null
 }
 
 export interface ListsSource {
@@ -38,7 +38,7 @@ const ROUTE_QUIET: ReadonlySet<string> = new Set(['gate_off', 'route_not_availab
 export const routeQuiet = <T,>(reply: ListsReply<T> | null): boolean => reply !== null && reply.kind === 'unavailable' && ROUTE_QUIET.has(reply.reason)
 
 /** Whether the live route serves `read` now; its reason when it does not (src/v2/routes.ts V2RouteOff). */
-async function served(t: V2Transports, read: 'portfolio' | 'activity'): Promise<string | null> {
+async function served(t: V2ReadTransports, read: 'portfolio' | 'activity'): Promise<string | null> {
   const state = await t.routeState('readV6')
   if (routeServes(state, read)) return null
   return state.on ? 'route_not_available' : state.reason
@@ -70,8 +70,12 @@ export interface KeyedReader<T> {
   subscribe(key: string, listener: () => void): () => void
   /** The last answer for `key` (the same object until the next one arrives), or null before the first. */
   get(key: string): T | null
+  /** Latest attempt, including a failure while get() preserves the last good answer. */
+  getLatest(key: string): T | null
   /** Asks `key` again now (after something the page did). */
-  again(key: string): void
+  again(key?: string): void
+  /** Reprojects already known data without starting another network request. */
+  update(project: (value: T, key: string) => T): void
 }
 
 export interface ReaderTimers {
@@ -81,12 +85,28 @@ export interface ReaderTimers {
   visible(): boolean
   /** Calls `run` once, the next time the page becomes visible; returns the cancel. */
   onVisible(run: () => void): () => void
+  now?(): number
+  /** Visibility, focus and reconnect share the reader's active-key refresh. */
+  onWake?(run: () => void): () => void
 }
 
 const browserTimers: ReaderTimers = {
   set: (run, ms) => setTimeout(run, ms),
   clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   visible: () => typeof document === 'undefined' || !document.hidden,
+  now: () => Date.now(),
+  onWake(run) {
+    if (typeof window === 'undefined') return () => undefined
+    const wake = () => { if (!document.hidden) run() }
+    window.addEventListener('focus', wake)
+    window.addEventListener('online', wake)
+    document.addEventListener('visibilitychange', wake)
+    return () => {
+      window.removeEventListener('focus', wake)
+      window.removeEventListener('online', wake)
+      document.removeEventListener('visibilitychange', wake)
+    }
+  },
   onVisible(run) {
     if (typeof document === 'undefined') return () => undefined
     const wake = () => {
@@ -106,18 +126,27 @@ const browserTimers: ReaderTimers = {
  * Retry button: a read that failed is asked again by the page.
  */
 export function createKeyedReader<T>(read: (key: string) => Promise<T>, policy: { next: (answer: T, failures: number) => number | null; failed: (answer: T) => boolean }, timers: ReaderTimers = browserTimers): KeyedReader<T> {
-  interface Entry { value: T | null; listeners: Set<() => void>; timer: unknown; reading: boolean; failures: number; due: boolean; waking: (() => void) | null }
+  interface Entry { value: T | null; latest: T | null; listeners: Set<() => void>; timer: unknown; reading: boolean; failures: number; due: boolean; generation: number; notBefore: number; waking: (() => void) | null }
   const entries = new Map<string, Entry>()
+  const now = () => timers.now?.() ?? Date.now()
+  let stopWake: (() => void) | null = null
   const entry = (key: string): Entry => {
     let found = entries.get(key)
     if (!found) {
-      found = { value: null, listeners: new Set(), timer: null, reading: false, failures: 0, due: true, waking: null }
+      found = { value: null, latest: null, listeners: new Set(), timer: null, reading: false, failures: 0, due: true, generation: 0, notBefore: 0, waking: null }
       entries.set(key, found)
     }
     return found
   }
+  const schedule = (key: string, e: Entry, ms: number) => {
+    if (e.timer !== null) timers.clear(e.timer)
+    e.timer = null
+    if (e.listeners.size === 0) { e.due = true; return }
+    e.timer = timers.set(() => { e.timer = null; start(key, e) }, ms)
+  }
   const start = (key: string, e: Entry) => {
     if (e.reading || e.listeners.size === 0) return
+    if (e.notBefore > now()) { schedule(key, e, e.notBefore - now()); return }
     if (!timers.visible()) {
       // Hidden: asked once the page is visible again.
       e.due = true
@@ -131,35 +160,48 @@ export function createKeyedReader<T>(read: (key: string) => Promise<T>, policy: 
     }
     e.due = false
     e.reading = true
+    const generation = e.generation
     void read(key).then(
       (value) => {
         e.reading = false
-        e.value = value
-        e.failures = policy.failed(value) ? e.failures + 1 : 0
-        for (const listener of e.listeners) listener()
+        const failed = policy.failed(value)
+        e.failures = failed ? e.failures + 1 : 0
         const wait = policy.next(value, e.failures)
-        if (wait !== null && e.listeners.size > 0) {
-          e.timer = timers.set(() => {
-            e.timer = null
-            start(key, e)
-          }, wait)
-        } else if (wait !== null) e.due = true
+        e.notBefore = failed && wait !== null ? now() + wait : 0
+        // A confirmation during this request cannot be consumed by its older response.
+        if (generation === e.generation) {
+          e.latest = value
+          if (!failed || e.value === null || policy.failed(e.value)) e.value = value
+          for (const listener of e.listeners) listener()
+        }
+        if (e.due || generation !== e.generation) {
+          if (failed && wait !== null) schedule(key, e, wait)
+          else start(key, e)
+        } else if (wait !== null) schedule(key, e, wait)
       },
       () => {
         // The reads here never throw (they answer `unavailable`); a throw is asked again like a failure.
         e.reading = false
         e.failures += 1
-        e.timer = timers.set(() => {
-          e.timer = null
-          start(key, e)
-        }, 5_000)
+        e.notBefore = now() + 5_000
+        schedule(key, e, 5_000)
       },
     )
+  }
+  const again = (key?: string) => {
+    const targets = key === undefined ? [...entries].filter(([, e]) => e.listeners.size > 0) : [[key, entry(key)] as const]
+    for (const [name, e] of targets) {
+      if (e.timer !== null) { timers.clear(e.timer); e.timer = null }
+      e.generation++
+      e.due = true
+      start(name, e)
+    }
   }
   return {
     subscribe(key, listener) {
       const e = entry(key)
       e.listeners.add(listener)
+      stopWake ??= timers.onWake?.(() => again()) ?? null
       if (e.due && e.timer === null) start(key, e)
       return () => {
         e.listeners.delete(listener)
@@ -173,17 +215,21 @@ export function createKeyedReader<T>(read: (key: string) => Promise<T>, policy: 
           e.waking()
           e.waking = null
         }
+        if (![...entries.values()].some((item) => item.listeners.size)) { stopWake?.(); stopWake = null }
       }
     },
     get: (key) => entries.get(key)?.value ?? null,
-    again(key) {
-      const e = entry(key)
-      if (e.timer !== null) {
-        timers.clear(e.timer)
-        e.timer = null
+    getLatest: (key) => entries.get(key)?.latest ?? null,
+    again,
+    update(project) {
+      for (const [key, e] of entries) {
+        if (e.value === null) continue
+        const next = project(e.value, key)
+        if (next === e.value) continue
+        if (e.latest === e.value) e.latest = next
+        e.value = next
+        for (const listener of e.listeners) listener()
       }
-      e.due = true
-      start(key, e)
     },
   }
 }

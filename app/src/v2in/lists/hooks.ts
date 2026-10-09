@@ -30,3 +30,10 @@ export function useKeyed<T>(reader: KeyedReader<T>, key: string | null): T | nul
   const snapshot = useCallback(() => (key === null ? null : reader.get(key)), [reader, key])
   return useSyncExternalStore(subscribe, snapshot, () => null)
 }
+
+/** Last attempt separately from the retained good value, so a refresh failure never masquerades as current data. */
+export function useKeyedLatest<T>(reader: KeyedReader<T>, key: string | null): T | null {
+  const subscribe = useCallback((listener: () => void) => key === null ? () => undefined : reader.subscribe(key, listener), [reader, key])
+  const snapshot = useCallback(() => key === null ? null : reader.getLatest(key), [reader, key])
+  return useSyncExternalStore(subscribe, snapshot, () => null)
+}

@@ -309,3 +309,22 @@ export function PlainArt({ className }: { className?: string }) {
     </svg>
   )
 }
+
+/** The two non-compounding choices use the same tiles, palette and visibility-aware loop as ModeArt. */
+export function PositionChoiceArt({ kind }: { kind: 'plain' | 'protection' }) {
+  const [ref, seen] = useInView<SVGSVGElement>(0.4)
+  const id = `dm-choice-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+  return <svg ref={ref} className={cx('dm-art dm-mode-art dm-position-choice-art', seen && 'is-running')} data-choice={kind}
+    width={rem(240)} height={rem(100)} viewBox="0 0 240 100" aria-hidden="true" focusable="false">
+    <Ground id={id} at={[8, 91.5, 224]} />
+    <rect className="choice-band" x="24" y="62" width={kind === 'plain' ? 192 : 122} height="30" rx="10" />
+    <path className="choice-price" d={kind === 'plain' ? 'M 40 81 L 63 77 L 84 83 L 108 73 L 134 77 L 160 70' : 'M 36 82 L 60 77 L 77 81 L 98 71 L 116 74 L 143 62'} />
+    <g transform={`translate(${kind === 'plain' ? 108 : 66} 30.5)`}><g className="tile-solid"><ArtTile w={18} layout={[2, 1]} /></g></g>
+    {kind === 'plain' ? [0, 1, 2].map((n) => <circle key={n} className={`choice-fee choice-fee-${n}`} cx="184" cy={56 - n * 9} r="3.5" />) : <>
+      <line className="choice-edge" x1="146" x2="146" y1="33" y2="86" />
+      <circle className="choice-tip" r="3.5" style={route('M 36 82 L 60 77 L 77 81 L 98 71 L 116 74 L 143 62')} />
+      <path className="choice-wallet" d="M 184 49 H 216 A 5 5 0 0 1 221 54 V 78 A 5 5 0 0 1 216 83 H 184 A 5 5 0 0 1 179 78 V 54 A 5 5 0 0 1 184 49 Z M 221 60 H 208 V 72 H 221" />
+      {[0, 1].map((n) => <g key={n} className={`choice-transfer choice-transfer-${n}`} style={route(`M 136 ${72 + n * 8} C 157 42, 179 42, 198 ${61 + n * 10}`)}><circle r="3" /></g>)}
+    </>}
+  </svg>
+}

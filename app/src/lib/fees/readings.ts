@@ -3,8 +3,8 @@
  * earned chart between its settlements (lib/fees/ledger.ts). Each is a block, its time and the exact unclaimed figure the
  * state read gave there; with the ledger's settlements up to that block it is exactly what the position had earned then.
  *
- * At most one an hour per NFT (`note`; a read at a past block for the chart's periods, `insert`, takes its place among
- * them), kept 30 days and at most MAX_READINGS per NFT and MAX_NFTS NFTs, in this browser's storage
+ * Each new block is available immediately in a bounded live buffer. Compact hourly anchors (and measured past
+ * period starts) are kept 30 days, at most MAX_READINGS per NFT and MAX_NFTS NFTs, in this browser's storage
  * per chain and PositionManager: public chain data, no wallet address. Every read and write is behind try/catch; anything
  * that does not validate is let go. Pure apart from the storage handed in.
  */
@@ -17,6 +17,8 @@ export const READING_EVERY_SECONDS = 3_600
 export const READING_MAX_AGE_SECONDS = 30 * 86_400
 export const MAX_READINGS = 720
 export const MAX_NFTS = 32
+/** Recent confirmed blocks stay in memory without writing browser storage on every refresh. */
+export const MAX_LIVE_READINGS = 240
 const IDENTITY = `1:4663:${POSITION_MANAGER}`
 const ID = /^[1-9]\d{0,77}$/
 const UINT = /^(?:0|[1-9]\d{0,77})$/
@@ -33,7 +35,7 @@ export interface Reading {
 export interface Readings {
   /** `id`'s readings, oldest first. */
   get(id: string): Reading[]
-  /** Keeps `reading` for `id` when the last one kept is at least an hour older (chain time); returns whether it did. */
+  /** Keeps each new confirmed block in memory; persists compact hourly anchors. */
   note(id: string, reading: Reading): boolean
   /**
    * 2026-10-02 (the chart's periods, lib/fees/pastReads.ts): keeps a read of `id` at a PAST block in its place among the
@@ -51,6 +53,7 @@ const isRow = (value: unknown): value is Row =>
 
 export function createReadings(storage: () => Storage | null): Readings {
   let memory: Map<string, Row[]> | null = null
+  const live = new Map<string, Row[]>()
   const load = (): Map<string, Row[]> => {
     if (memory) return memory
     memory = new Map()
@@ -71,25 +74,35 @@ export function createReadings(storage: () => Storage | null): Readings {
   }
   const save = () => {
     try {
-      const target = storage()
-      if (!target || !memory) return
+      if (!memory) return
       // The NFTs read most recently first, at most MAX_NFTS.
       const nfts = [...memory.entries()].sort((a, b) => (b[1].at(-1)?.[1] ?? 0) - (a[1].at(-1)?.[1] ?? 0)).slice(0, MAX_NFTS)
-      target.setItem(READINGS_KEY, JSON.stringify({ identity: IDENTITY, nfts: Object.fromEntries(nfts) }))
+      memory = new Map(nfts)
+      storage()?.setItem(READINGS_KEY, JSON.stringify({ identity: IDENTITY, nfts: Object.fromEntries(nfts) }))
     } catch {
       // Storage may be full, private or blocked: readings are a convenience.
     }
   }
   return {
     get(id) {
-      return (load().get(id) ?? []).map(([block, t, a, b]) => ({ block, t, unclaimed: [BigInt(a), BigInt(b)] as const }))
+      const rows = new Map<number, Row>()
+      for (const row of [...(load().get(id) ?? []), ...(live.get(id) ?? [])]) rows.set(row[0], row)
+      return [...rows.values()].sort((a, b) => a[0] - b[0]).map(([block, t, a, b]) => ({ block, t, unclaimed: [BigInt(a), BigInt(b)] as const }))
     },
     note(id, reading) {
       if (!ID.test(id) || !Number.isSafeInteger(reading.block) || reading.block <= 0 || !Number.isSafeInteger(reading.t) || reading.t <= 0) return false
+      if (reading.unclaimed[0] < 0n || reading.unclaimed[1] < 0n) return false
       const all = load()
       const rows = all.get(id) ?? []
       const last = rows.at(-1)
-      if (last && (reading.block <= last[0] || reading.t - last[1] < READING_EVERY_SECONDS)) return false
+      const recent = live.get(id) ?? []
+      const newest = recent.at(-1) ?? last
+      if (newest && (reading.block <= newest[0] || reading.t < newest[1])) return false
+      const row: Row = [reading.block, reading.t, reading.unclaimed[0].toString(), reading.unclaimed[1].toString()]
+      live.delete(id)
+      live.set(id, [...recent.filter((one) => reading.t - one[1] < READING_MAX_AGE_SECONDS), row].slice(-MAX_LIVE_READINGS))
+      while (live.size > MAX_NFTS) live.delete(live.keys().next().value!)
+      if (last && reading.t - last[1] < READING_EVERY_SECONDS) return true
       const kept = [...rows.filter((row) => reading.t - row[1] < READING_MAX_AGE_SECONDS), [reading.block, reading.t, reading.unclaimed[0].toString(), reading.unclaimed[1].toString()] as Row].slice(-MAX_READINGS)
       all.set(id, kept)
       save()

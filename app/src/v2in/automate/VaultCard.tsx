@@ -29,7 +29,7 @@ import { memberStateWords, reservesOffer, sinceWords, splitReserves, VAULT_ADVAN
  * Each button opens its dialog (./VaultDialog.tsx).
  */
 
-const PILL_TONE = { on: 'in', paused: 'wait', protection: 'neutral', off: 'out' } as const
+const PILL_TONE = { on: 'in', paused: 'wait', protection: 'neutral', off: 'out', unknown: 'neutral' } as const
 /**
  * Auto-exit's own vault by where its Auto-exit stands (../autoexit/standing.ts), never by the vault's pause
  * alone: the pill, its tone and the one line. Changed on purpose 2026-10-06 (the review of point 5: after "Turn off", an
@@ -60,6 +60,7 @@ const ADVANCED_TEXT = 'Rarely needed: take back something your automation holds 
 const PRIMARY_ORDER: readonly VaultDialogKind[] = ['return', 'rearm', 'withdraw', 'unsubscribe', 'revoke']
 
 export function statusWords(view: VaultView): string {
+  if (view.status === 'unknown' && view.rootClosed !== true && view.exit !== 'closed') return 'State unavailable'
   if (view.exit) return EXIT_STATUS[view.exit]
   if (view.rootClosed === true) return 'Closed'
   switch (view.status) {

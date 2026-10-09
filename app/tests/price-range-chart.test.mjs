@@ -13,12 +13,29 @@ import { CASES, OWNER, TOKENS, decimalText, historyFor, rangeCase } from './supp
 
 const require = createRequire(import.meta.url);
 const chart = require('../.test-build/app/src/lib/chart/priceRange.js');
-const { ledgerOpenedAt, activityOpenedAt, activityMint } = require('../.test-build/app/src/lib/chart/positionOpened.js');
+const { ledgerClosedAt, ledgerOpenedAt, activityOpenedAt, activityMint } = require('../.test-build/app/src/lib/chart/positionOpened.js');
 const { spacedTimeTicks } = require('../.test-build/app/src/components/positions/visual/ticks.js');
 const { walletCard } = require('../.test-build/app/src/lib/walletCards.js');
 const { chainPoolPrice } = require('../.test-build/app/src/lib/read/screens/positions.js');
 const { sqrtPriceAtTick } = require('../.test-build/app/src/lib/read/screens/poolRange.js');
 const { readablePrice, priceFigure, rangeFacts, statusWords, moveText, priceDomain, placeLabels, figureWidth, historyLine, EDGE_ROOM, MIN_SPAN } = chart;
+
+test('closed NFT history stops at its confirmed final zero-liquidity interval; later pool trades never extend it', () => {
+  const view = { phase: 'verified', state: { liquidity: 0n }, history: { events: [
+    { liquidityDelta: 10n, timestamp: 100 }, { liquidityDelta: -10n, timestamp: 200 },
+    { liquidityDelta: 20n, timestamp: 300 }, { liquidityDelta: -20n, timestamp: 400 },
+  ] } };
+  assert.equal(ledgerClosedAt(view), 400, 'a reopened NFT uses its later close');
+  assert.equal(ledgerClosedAt({ ...view, state: { liquidity: 1n } }), null);
+  assert.equal(ledgerClosedAt({ phase: 'unavailable' }), null, 'absence is not a close');
+  const points = [100, 200, 300, 500].map(t => ({ t, price: t, exact: String(t), text: String(t), inRange: true }));
+  const verdict = { kind: 'line', history: { start: 100, end: 600, points, runs: [points], stale: false, missing: false } };
+  const clipped = chart.closedPriceLine(verdict, 400);
+  assert.equal(clipped.history.end, 400);
+  assert.deepEqual(clipped.history.points.map(p => p.t), [100, 200, 300]);
+  assert.ok(clipped.history.runs.flat().every(p => p.t <= 400));
+  assert.deepEqual(chart.closedPriceLine(verdict, 99), { kind: 'none', reason: 'no_position_history' });
+});
 
 /** The card and the page's price of a case, exactly as a position's page makes them (chainCardPrice's own read). */
 function factsOf(item) {

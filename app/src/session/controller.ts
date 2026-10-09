@@ -206,6 +206,8 @@ export function createSessionController(ports: ControllerPorts): SessionControll
   // Server clock minus local clock, from the last response's Date header.
   let skew = 0
   let lastExpiresAt: string | null = null
+  let checkFailures = 0
+  let checkRetryAt = 0
 
   // Refresh bookkeeping, reset for every new epoch (a new session or identity).
   // Local-clock time of the last renewal this tab knows of, its own or
@@ -254,9 +256,18 @@ export function createSessionController(ports: ControllerPorts): SessionControll
       notBefore = 0
       refreshRefused = false
       retriesExhausted = false
+      checkFailures = 0
+      checkRetryAt = 0
+      if (step.machine.session === null) lastExpiresAt = null
+    }
+    if (event.type === 'result' && event.epoch === machine.epoch && event.outcome.ok && (event.outcome.route === 'me' || event.outcome.route === 'refresh')) {
+      checkFailures = 0
+      checkRetryAt = 0
     }
     machine = step.machine
     for (const effect of step.effects) run(effect)
+    // Moving to a supported funding network clears chain-scoped reads, not the cookie's expiry/renewal schedule.
+    if (heldAway(machine, env) && cancelExpiry === null && lastExpiresAt !== null) schedule(lastExpiresAt, false)
     const next = snapshotOf(machine)
     if (JSON.stringify(next) !== JSON.stringify(snapshot)) {
       snapshot = next
@@ -267,7 +278,7 @@ export function createSessionController(ports: ControllerPorts): SessionControll
 
   /** Whether this tab has a reason to renew the session it shows: it shows one, and nothing stopped its refreshes. */
   function refreshWanted(): boolean {
-    return machine.view.status === 'signed_in' && machine.flow.kind === 'idle' && !refreshRefused && !retriesExhausted
+    return (machine.view.status === 'signed_in' || heldAway(machine, env)) && machine.flow.kind === 'idle' && !refreshRefused && !retriesExhausted
   }
 
   /**
@@ -442,11 +453,26 @@ export function createSessionController(ports: ControllerPorts): SessionControll
         }
         if (refreshFailures >= REFRESH_RETRY_MS.length) {
           retriesExhausted = true
+          notBefore = ports.now() + Math.max(SESSION_CHECK_MS, (effect.retryAfterS ?? 0) * 1000)
           return
         }
         const wait = Math.max(REFRESH_RETRY_MS[refreshFailures], (effect.retryAfterS ?? 0) * 1000)
         refreshFailures += 1
         notBefore = ports.now() + wait
+        return
+      }
+      case 'check_failed': {
+        cancelExpiry?.()
+        cancelExpiry = null
+        // Three short retries; an established session then checks at the normal interval. A never-restored session
+        // waits for focus/online after those attempts. No signature, logout, or cookie assumption is made here.
+        const delay = REFRESH_RETRY_MS[checkFailures] ?? (machine.session ? SESSION_CHECK_MS : null)
+        checkFailures += 1
+        checkRetryAt = ports.now() + Math.max(delay ?? SESSION_CHECK_MS, (effect.retryAfterS ?? 0) * 1000)
+        if (delay !== null) cancelExpiry = ports.setTimer(() => {
+          cancelExpiry = null
+          dispatch({ type: 'recheck', cause: 'expiry' })
+        }, Math.min(checkRetryAt - ports.now(), MAX_TIMER_MS), 'check')
         return
       }
     }
@@ -456,14 +482,19 @@ export function createSessionController(ports: ControllerPorts): SessionControll
     dispatch,
     wake() {
       const now = ports.now()
+      if (checkFailures > 0 && now >= checkRetryAt) dispatch({ type: 'recheck', cause: 'visible' })
+      if (retriesExhausted && now >= notBefore) {
+        retriesExhausted = false
+        refreshFailures = 0
+      }
       // Kept until a refresh is asked (a me check the return started may run first) or a renewal lands.
-      if (machine.view.status === 'signed_in' && (renewedAt === null || now - renewedAt >= RETURN_REFRESH_MS)) returnedAt = now
+      if ((machine.view.status === 'signed_in' || heldAway(machine, env)) && (renewedAt === null || now - renewedAt >= RETURN_REFRESH_MS)) returnedAt = now
       maybeRefresh()
     },
     renewedElsewhere() {
       // The same cookie, so the same session: its idle deadline moved. No
       // request: that is what keeps two tabs from both refreshing.
-      if (machine.view.status !== 'signed_in' || lastExpiresAt === null) return
+      if ((machine.view.status !== 'signed_in' && !heldAway(machine, env)) || lastExpiresAt === null) return
       // A new renewal window, so the outage retries start over. A refusal
       // stays: it is about this session, not about one window.
       refreshFailures = 0

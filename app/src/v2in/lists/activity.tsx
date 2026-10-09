@@ -1,6 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import { createActivityHistory } from './activityHistory'
 import { LISTS_SOURCE } from './source'
+import { subscribePositionChanges } from './positionSync'
 
 const refresh = !(__DOMINO_TEST_HOOKS__ && typeof window !== 'undefined' && !(window as { __dominoRefresh?: boolean }).__dominoRefresh)
 export const ACTIVITY_HISTORY = createActivityHistory((wallet, page) => LISTS_SOURCE.ownActivity(wallet, page), {
@@ -13,6 +14,13 @@ export const ACTIVITY_HISTORY = createActivityHistory((wallet, page) => LISTS_SO
     return () => document.removeEventListener('visibilitychange', wake)
   },
 }, refresh)
+subscribePositionChanges((change) => { if (change.kind !== 'state') ACTIVITY_HISTORY.refresh(change.wallet?.toLowerCase()) })
+if (refresh && typeof window !== 'undefined') {
+  const wake = () => { if (!document.hidden) ACTIVITY_HISTORY.refresh() }
+  window.addEventListener('focus', wake)
+  window.addEventListener('online', wake)
+  document.addEventListener('visibilitychange', wake)
+}
 const EMPTY = { answer: null, error: null, loading: false, more: false, catchingUp: false } as const
 
 export function useActivityHistory(wallet: string | null) {

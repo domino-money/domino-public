@@ -43,6 +43,13 @@ export const feesStore = createFeesStore({
   timer,
 })
 
+if (typeof window !== 'undefined') {
+  const resume = () => { if (document.visibilityState !== 'hidden') feesStore.resume() }
+  window.addEventListener('focus', resume)
+  window.addEventListener('online', resume)
+  document.addEventListener('visibilitychange', resume)
+}
+
 /**
  * 2026-10-02 (the chart's periods back): a position's state at a past block, from read-v1 `nft-positions` through the
  * page's one scheduled read source (its pacing and its budget, shared with every other read), for a period's start or a

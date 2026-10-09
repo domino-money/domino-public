@@ -9,7 +9,7 @@ import { test } from 'node:test';
 
 const require = createRequire(import.meta.url);
 const { agreement, eventsOf, foldLedger } = require('../.test-build/app/src/lib/fees/ledger.js');
-const { MAX_NFTS, MAX_READINGS, READINGS_KEY, READING_EVERY_SECONDS, READING_MAX_AGE_SECONDS, createReadings } = require('../.test-build/app/src/lib/fees/readings.js');
+const { MAX_NFTS, MAX_READINGS, MAX_LIVE_READINGS, READINGS_KEY, READING_EVERY_SECONDS, READING_MAX_AGE_SECONDS, createReadings } = require('../.test-build/app/src/lib/fees/readings.js');
 const { APR_MIN_SECONDS, APR_MISSING, positionApr } = require('../.test-build/app/src/lib/positionApr.js');
 
 const HASH = (n) => `0x${n.toString(16).padStart(64, '0')}`;
@@ -37,6 +37,15 @@ function ledgerRead({ entries, exact = true, why, block = B0 + 100_000, state = 
   return { position: { tokenId: '7', ok: true, through: block, state, mint: { block: B0, tx: HASH(B0), t: at(B0) }, entries: list, exact, ...(why ? { why } : {}) }, block, timestamp: at(block) };
 }
 const stateAt = (read, patch = {}) => ({ block: read.block, timestamp: read.timestamp, unclaimed: [5n, 6n], sqrtPriceX96: 2n ** 96n, tick: 0, tickLower: -6000, tickUpper: 6000, liquidity: 3000n, poolId: POOL, owner: `0x${'11'.repeat(20)}`, currencies: read.position.state.currencies, ...patch });
+
+test('live readings retain a one-atom fee immediately, stay bounded, and never accept an older or negative observation', () => {
+  const readings = createReadings(() => null);
+  for (let i = 0; i < MAX_LIVE_READINGS + 100; i++) readings.note('7', { block: B0 + i, t: T0 + i, unclaimed: [BigInt(i), 0n] });
+  assert.ok(readings.get('7').length <= MAX_LIVE_READINGS + 1, 'bounded live points plus the first compact anchor');
+  assert.equal(readings.get('7').at(-1).unclaimed[0], BigInt(MAX_LIVE_READINGS + 99));
+  assert.equal(readings.note('7', { block: B0 - 1, t: T0 + 1000, unclaimed: [1n, 0n] }), false);
+  assert.equal(readings.note('7', { block: B0 + 1000, t: T0 + 1000, unclaimed: [-1n, 0n] }), false);
+});
 
 test('an inexact ledger preserves its on-chain mint date independently from financial qualification', () => {
   const read = ledgerRead({ entries: [], exact: false, why: 'unseen' });
@@ -125,15 +134,17 @@ test('a state agrees with its ledger when it shows the same liquidity and fee gr
   assert.deepEqual(older.history.earned, [11n, 21n]);
 });
 
-test('readings: at most one an hour per NFT, kept thirty days, at most so many; a storage that fails or holds another chain’s is let go', () => {
+test('readings: every confirmed block is visible immediately; only hourly anchors are persisted, bounded to thirty days', () => {
   const items = new Map();
   const storage = { getItem: (key) => items.get(key) ?? null, setItem: (key, value) => void items.set(key, value), removeItem: (key) => void items.delete(key) };
   const readings = createReadings(() => storage);
   assert.equal(readings.note('7', { block: 100, t: T0, unclaimed: [1n, 2n] }), true);
-  assert.equal(readings.note('7', { block: 200, t: T0 + READING_EVERY_SECONDS - 1, unclaimed: [1n, 2n] }), false, 'within the hour');
+  const savedBefore = items.get(READINGS_KEY);
+  assert.equal(readings.note('7', { block: 200, t: T0 + READING_EVERY_SECONDS - 1, unclaimed: [1n, 2n] }), true, 'a new block is immediately measurable');
+  assert.equal(items.get(READINGS_KEY), savedBefore, 'no storage write for each refresh');
   assert.equal(readings.note('7', { block: 90, t: T0 + READING_EVERY_SECONDS, unclaimed: [1n, 2n] }), false, 'an older block');
   assert.equal(readings.note('7', { block: 300, t: T0 + READING_EVERY_SECONDS, unclaimed: [3n, 4n] }), true);
-  assert.deepEqual(readings.get('7'), [{ block: 100, t: T0, unclaimed: [1n, 2n] }, { block: 300, t: T0 + READING_EVERY_SECONDS, unclaimed: [3n, 4n] }]);
+  assert.deepEqual(readings.get('7').map((one) => one.block), [100, 200, 300]);
   // A month later the first ones go.
   readings.note('7', { block: 400, t: T0 + READING_EVERY_SECONDS + READING_MAX_AGE_SECONDS + 1, unclaimed: [5n, 5n] });
   assert.deepEqual(readings.get('7').map((one) => one.block), [400]);
@@ -186,7 +197,8 @@ test('readings.insert: a past read in block order, one per block, under the thir
   assert.equal(readings.insert('x', { block: 100, t: now, unclaimed: [1n, 1n] }, now), false);
   assert.equal(readings.insert('7', { block: 100, t: now, unclaimed: [-1n, 1n] }, now), false);
   // The newest stays the newest: the hourly reading after it is measured from it.
-  assert.equal(readings.note('7', { block: 950, t: now, unclaimed: [9n, 9n] }), false, 'within the hour of the last one');
+  assert.equal(readings.note('7', { block: 950, t: now, unclaimed: [9n, 9n] }), true, 'a live sample does not wait for the persistence interval');
+  assert.deepEqual(readings.get('7').map((one) => one.block), [500, 700, 900, 950]);
   assert.deepEqual(createReadings(() => storage).get('7').map((one) => one.block), [500, 700, 900], 'stored as kept');
 });
 

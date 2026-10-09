@@ -201,8 +201,8 @@ test('every route in the header renders', async (t) => {
     [`/pool/0x${'2'.repeat(64)}`, /Open this pool from Markets[\s\S]*This link doesn’t say which token to check the pool with\./],
     ['/explore', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
     ['/pools', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
-    ['/positions', /Positions[\s\S]*Automated positions/],
-    ['/app', /Positions[\s\S]*Automated positions/],
+    ['/positions', /Positions[\s\S]*Your positions[\s\S]*Receipts/],
+    ['/app', /Positions[\s\S]*Your positions[\s\S]*Receipts/],
     ['/portfolio', /Wallet/],
     ['/new', /New position/],
     ['/automate', /Automate[\s\S]*Auto-compound[\s\S]*Domino-compound/],
@@ -1144,8 +1144,8 @@ test('Settings is gone: an old link opens the docs with no error, and neither th
   await close(page);
 });
 
-// Changed on purpose (qa:visual, Automate): the info panel under the two cards is gone, and the cards' ways in are one size, outline beside filled.
-test('Automate shows the plain position, then its two cards and nothing under them, and each card’s way in is the same size', async () => {
+// Four compact alternatives lead to their existing guarded flows; no extra explanation panel or control is added.
+test('Automate shows four compact choices with exact fees and equally sized entries; unavailable Auto-exit stays guarded', async () => {
   const page = await open('/automate');
   const ways = await Promise.all(['Set up Auto-compound', 'Set up Domino-compound'].map((name) =>
     page.getByRole('link', { name, exact: true }).evaluate((link) => ({ height: link.getBoundingClientRect().height, outline: link.classList.contains('dm-btn--outline'), sm: link.classList.contains('dm-btn--sm') }))));
@@ -1154,16 +1154,19 @@ test('Automate shows the plain position, then its two cards and nothing under th
   assert.equal(await page.locator('main .dm-inset, main .dm-acct-auto-note').count(), 0, 'no panel under the cards');
   assert.doesNotMatch(await page.locator('main').innerText(), /Setup checks the deployment/, 'no note under the cards');
   // Changed on purpose 2026-10-01 (audit E4, live note L12): plain words, no "consumed", and no promise about the APR.
-  assert.equal(await page.locator('[data-automation-card="compound"] .dm-acct-auto-fee dd').innerText(), '2% of the fees it uses, once');
-  assert.equal(await page.locator('[data-automation-card="domino"] .dm-acct-auto-fee dd').innerText(), '4% of the fees it uses, once');
-  assert.deepEqual(await page.locator('[data-automation-card="compound"] .dm-acct-auto-points li').allInnerTexts(), ['Adds earned fees back into the same position.', 'Keeps the same price range. Uses earned fees only.']);
+  assert.deepEqual(await page.locator('main .dm-automation-choice-fee').allInnerTexts(), ['No automation fee', '0.2% of the position, only when it closes', '2% of earned fees used, once', '4% of earned fees used, once']);
+  assert.equal(await page.locator('[data-automation-card="compound"] .dm-automation-choice-description').innerText(), 'Adds earned fees back into the same position, in the same range.');
+  assert.equal(await page.locator('main .dm-automation-choice-description').count(), 4, 'one short explanation per choice');
   assert.doesNotMatch(await page.locator('main').innerText(), /improving|consumed|hold’s/, 'no broken possessive, no "consumed", no promise');
-  // 2026-09-24 (the three features): the plain position leads the page, one line and one way in, New position, before the
-  // two automations that start from it.
   const plain = page.locator('main [data-feature="plain"]');
-  assert.match(await plain.innerText(), /^Plain position\s+Fees wait in the position until you collect them\.\s+New position$/);
+  assert.match(await plain.innerText(), /^Plain position\s+Earn fees and collect them when you choose\.\s+No automation fee\s+New position$/);
+  assert.doesNotMatch(await plain.innerText(), /\bfree\b/i, 'no claim that a plain position has no costs');
   assert.deepEqual(await plain.getByRole('link').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [['New position', '#/new']]);
-  assert.deepEqual(await page.locator('main [data-feature="plain"], main [data-automation-card]').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-feature') ?? card.getAttribute('data-automation-card'))), ['plain', 'compound', 'domino']);
+  assert.deepEqual(await page.locator('main [data-automation-card]').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-automation-card'))), ['plain', 'protection', 'compound', 'domino']);
+  const protection = page.locator('[data-automation-card="protection"]');
+  await protection.getByRole('button', { name: 'Unavailable right now', exact: true }).waitFor();
+  assert.equal(await protection.getByRole('button').isDisabled(), true, 'a missing execution capability never becomes an actionable Auto-exit entry');
+  assert.equal(await protection.getByRole('link').count(), 0);
   clean(page, 'automate');
   await close(page);
 });
@@ -1229,34 +1232,25 @@ test('the landing never shows an invented figure: catalogue labels in every row,
 // Changed on purpose (owner, 2026-09-24): Positions lists the connected wallet's positions itself. With no wallet it says
 // so in one empty state whose button opens the header's wallet dialog. Later the same day: the lookup by NFT id is gone
 // (the owner: typing an NFT id must not exist), and nothing about positions is kept in the browser.
-test('the positions screen is an honest empty state: no cards, totals or private figures, a sign-in for the managed side, and a way back to the pools', async () => {
+test('the positions screen without a wallet shows one receipts summary, no managed wall or private figures, and a way back to the pools', async () => {
   const page = await open('/app');
   assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Positions');
   // The list arrives with its own chunk: with no wallet it asks for one, and reads nothing.
   const empty = page.locator('[data-empty="owned-connect"]');
   await empty.waitFor();
   assert.equal(await page.locator('[data-owned]').getAttribute('data-owned'), 'no-wallet');
-  // Changed on purpose 2026-10-01 (audit D2 follow-up): with nothing to show for the same reason, here no wallet, Managed
-  // positions and Receipts are one calm line in one card, where two large empty cards said it twice.
-  const merged = page.locator('[data-automation-empty="no_wallet"]');
-  await merged.waitFor();
+  const receipts = page.locator('section[aria-labelledby="receipts-title"]');
+  await receipts.locator('[data-signed-out="no_wallet"]').waitFor();
   const text = await page.locator('#root').innerText();
   assert.match(text, /Your positions\s+Connect a wallet to see your positions\s+Connect wallet/);
   assert.doesNotMatch(text, /Look up|Position NFTs|Enter its ID|NFT ids?\b/i, 'no typed ids asked for, anywhere');
   assert.equal(await page.locator('details[data-lookup-disclosure], #nft-ids, #chain-lookup').count(), 0, 'no lookup by NFT id at all');
-  // The managed side asks for a wallet session and shows nothing private without one.
-  // Changed on purpose (owner, 2026-09-27, round 5: plain words for people new to pools): the two sign-in sentences and the
-  // two lines under the titles say what is there, with no "private", "execution" or "sequences".
-  // Changed on purpose 2026-10-01 (audit D2): each card says why there is no session, here no wallet; "Sign in" was said
-  // to every visitor, sign-in available or not. Connecting is the header's and the list's own Connect wallet, so the
-  // cards add no third and fourth (tests/session.browser.test.mjs drives the Sign in each card offers once connected).
-  // Changed on purpose 2026-10-01 (audit D2 follow-up): the two cards' sentences are one, in one card.
-  assert.match(text, /Automated positions and activity\s+Connect your wallet to see your automated positions and their receipts\./);
-  assert.doesNotMatch(text, /Connect your wallet to see your (automated positions|receipts)\./, 'not said twice');
-  assert.equal(await page.locator('[data-automation-cards="merged"]').count(), 1);
-  assert.equal(await merged.locator('button').count(), 0, 'connecting is the header’s and the list’s own Connect wallet');
-  // The two cards stay on the page, hidden, and go on reading: either takes its place again once it has something.
-  assert.deepEqual(await Promise.all(['managed-title', 'receipts-title'].map((id) => page.locator(`section[aria-labelledby="${id}"]`).isVisible())), [false, false]);
+  assert.equal(await receipts.getByText('Connect your wallet to see your receipts.', { exact: true }).count(), 1);
+  assert.doesNotMatch(text, /Automated positions and activity|Connect your wallet to see your automated positions/);
+  assert.equal(await page.locator('[data-automation-cards="integrated"]').count(), 1);
+  assert.equal(await receipts.locator('button').count(), 0, 'connecting is the header’s and the list’s own Connect wallet');
+  assert.equal(await page.locator('section[aria-labelledby="managed-title"]').count(), 0, 'automation state is integrated into positions, without an empty managed wall');
+  assert.equal(await receipts.isVisible(), true);
   // 2026-10-01 (audit D2): with no session there is nothing to list, so See all is not shown (it opened an empty page).
   assert.equal(await page.locator('[data-receipts-all]').isVisible(), false);
   // 2026-09-27 (round 5): the Receipts card is a short Recent list; its See all opens every receipt on a page of its own.
@@ -1286,8 +1280,7 @@ test('the positions screen is an honest empty state: no cards, totals or private
 // list), so the page is opened by its address here; with no wallet in this suite, it says to connect one.
 test('the receipts page keeps Positions lit, and with no wallet asks for one and reads nothing', async () => {
   const page = await open('/positions');
-  // Changed on purpose 2026-10-01 (audit D2 follow-up): the cards' one line for both, with no wallet.
-  await page.locator('[data-automation-empty="no_wallet"]').waitFor();
+  await page.locator('section[aria-labelledby="receipts-title"] [data-signed-out="no_wallet"]').waitFor();
   assert.equal(await page.locator('[data-receipts-all]').isVisible(), false, 'no See all with nothing to list');
   await page.evaluate(() => { location.hash = '#/positions/receipts'; });
   await page.waitForFunction(() => location.hash === '#/positions/receipts');

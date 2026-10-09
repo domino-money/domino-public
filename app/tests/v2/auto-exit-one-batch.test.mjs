@@ -74,7 +74,7 @@ function memoryLatch() {
   };
 }
 
-function setup({ atomic = 'ready', simulateV1 = true } = {}) {
+function setup({ atomic = 'ready', simulateV1 = true, simulateOnNode = false } = {}) {
   forgetV2DeploymentChecks();
   const chain = createVaultChain({ chainId: 4663, timestamp: NOW, atomic, simulateV1, positions: [
     { dex: 4, tokenId: PLAIN, pool: ETH_USDG, tickLower: -201060, tickUpper: -198060 },
@@ -83,12 +83,46 @@ function setup({ atomic = 'ready', simulateV1 = true } = {}) {
   ] });
   chain.setPrice(4, ETH_USDG_KEY, INSIDE);
   const wallet = walletOf(chain);
+  const localSimulations = [];
+  const nodeRequest = wallet.request;
+  const simulator = simulateOnNode ? async (params) => {
+    localSimulations.push(params);
+    const reply = await nodeRequest('eth_simulateV1', params);
+    // Our Cloudflare route returns status/gas, not the contracts' returnData.
+    return reply.map((block) => ({ calls: block.calls.map(({ status, gasUsed }) => ({ status, gasUsed })) }));
+  } : undefined;
+  if (simulateOnNode) wallet.request = (method, params) => method === 'eth_simulateV1'
+    ? Promise.reject(Object.assign(new Error('Method not supported'), { code: -32601 })) : nodeRequest(method, params);
   let draw = 71n;
-  const client = auto.createAutoExitClient(wallet, chains.v2Chain(4663), vaultContracts(4663), () => NOW, () => draw++);
-  const vaults = createVaultClient(wallet, chains.v2Chain(4663), vaultContracts(4663), () => NOW);
-  return { chain, wallet, client, vaults };
+  const client = auto.createAutoExitClient(wallet, chains.v2Chain(4663), vaultContracts(4663), () => NOW, () => draw++, simulator);
+  const vaults = createVaultClient(wallet, chains.v2Chain(4663), vaultContracts(4663), () => NOW, simulator);
+  return { chain, wallet, client, vaults, localSimulations };
 }
 const sendCalls = (chain) => chain.log.filter((method) => method === 'wallet_sendCalls').length;
+
+test('Robinhood Auto-exit uses the site node when the batch wallet lacks simulateV1, at review and again before sending', async () => {
+  const { chain, client, vaults, localSimulations } = setup({ simulateOnNode: true });
+  const created = await vaults.reviewCreate(create());
+  const review = await client.reviewMandate(order(created.vault));
+  await client.signMandate(review);
+  const batch = await client.prepareProtectBatch(review, create(), GAS);
+  assert.equal(localSimulations.length, 1);
+  assert.equal(sendCalls(chain), 0);
+  await client.sendProtectBatch(batch, true, () => memoryLatch());
+  assert.equal(localSimulations.length, 2, 'the exact calls are re-simulated before the wallet is asked');
+  assert.deepEqual(localSimulations[0], localSimulations[1]);
+  assert.equal(sendCalls(chain), 1);
+  assert.equal(chain.log.filter((method) => method === 'eth_signTypedData_v4').length, 1);
+});
+
+test('the Robinhood simulation fallback is never used for another chain', async () => {
+  const { simulateV2Batch } = require('../../.test-build/app/src/finance/v2/vault.js');
+  let offered = false;
+  const rpc = async () => { throw Object.assign(new Error('Method not supported'), { code: -32601 }); };
+  await assert.rejects(simulateV2Batch(rpc, chains.v2Chain(8453), OWNER, [{ to: FACTORY, data: '0x', value: '0x0' }], GAS,
+    async () => { offered = true; return [{ calls: [{ status: '0x1', gasUsed: '0x5208' }] }]; }), /batch_simulation_unavailable/);
+  assert.equal(offered, false);
+});
 
 test('a plain position: the order is reviewed and signed for the predicted vault, then ONE batch creates the protection-only vault, turns Auto-exit on and registers it', async () => {
   const { chain, wallet, client, vaults } = setup();

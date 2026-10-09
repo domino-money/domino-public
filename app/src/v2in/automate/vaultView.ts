@@ -431,6 +431,7 @@ export const automationMode = (view: VaultView): string => view.exit !== null ? 
 export function automationStanding(view: VaultView): string {
   if (view.exit === 'closed') return 'Completed'
   if (view.rootClosed === true) return 'Closed'
+  if (view.status === 'unknown' || view.status === null) return 'State unavailable'
   if (view.exit !== null) return view.exit === 'on' ? 'On' : view.exit === 'paused' ? 'Paused' : 'Off'
   if (view.status === 'on') return 'On'
   if (view.status === 'paused') return 'Paused'
@@ -460,7 +461,7 @@ export function automatedPositions(views: readonly VaultView[], body: PortfolioR
     const current = vaults[0]
     const recovery = vaults.some((view) => !view.reserves.known || view.reserves.held || view.successors.length > 0)
     const active = current.rootClosed !== true && (current.exit === 'on' || current.exit === 'paused' || (current.exit === null && (current.status === 'on' || current.status === 'paused')))
-    const pending = current.status === null || vaultActions(current).includes('rearm')
+    const pending = current.status === null || current.status === 'unknown' || vaultActions(current).includes('rearm')
     return { key, current, vaults, recovery, active: active || recovery || pending }
   }).sort((a, b) => Number(b.active) - Number(a.active) || a.key.localeCompare(b.key))
 }

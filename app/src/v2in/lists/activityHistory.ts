@@ -1,5 +1,6 @@
 import type { ActivityResponse, IndexedToken } from 'api-contracts/read-v6/types'
 import { readAgainAfter, type ListsReply, type ReaderTimers } from './read'
+import { compareChronology, logIndexOf } from './chronology'
 
 export type ActivityItem = ActivityResponse['items'][number]
 type Failure = Exclude<ListsReply<ActivityResponse>, { kind: 'ok' }>
@@ -18,8 +19,8 @@ const EMPTY: ActivityHistory = Object.freeze({ answer: null, error: null, loadin
 
 /** The backend's chronological key, with a stable tie-breaker; never sort by transaction hash or status. */
 export function compareActivity(a: ActivityItem, b: ActivityItem): number {
-  return b.tx.snapshot.timestamp - a.tx.snapshot.timestamp || b.chainId - a.chainId || b.tx.snapshot.number - a.tx.snapshot.number
-    || Number(b.id.split(':').at(-1)) - Number(a.id.split(':').at(-1)) || a.id.localeCompare(b.id)
+  const key = (item: ActivityItem) => ({ id: item.id, at: item.tx.snapshot.timestamp, chainId: item.chainId, block: item.tx.snapshot.number, logIndex: logIndexOf(item.id) })
+  return compareChronology(key(a), key(b))
 }
 
 export function mergeTokens(older: readonly IndexedToken[], newer: readonly IndexedToken[]): IndexedToken[] {
@@ -34,12 +35,14 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
   interface Entry {
     value: ActivityHistory; listeners: Set<() => void>; timer: unknown; waking: (() => void) | null
     tail: string | null; bridge: string | null; inFlight: boolean; failures: number; retry: Job | null
+    dirty: boolean; bridgePages: number; restarted: boolean; restarting: boolean; cursors: Set<string>
   }
   const entries = new Map<string, Entry>()
   const entry = (wallet: string): Entry => {
     let e = entries.get(wallet)
     if (!e) {
-      e = { value: EMPTY, listeners: new Set(), timer: null, waking: null, tail: null, bridge: null, inFlight: false, failures: 0, retry: null }
+      e = { value: EMPTY, listeners: new Set(), timer: null, waking: null, tail: null, bridge: null, inFlight: false, failures: 0, retry: null,
+        dirty: false, bridgePages: 0, restarted: false, restarting: false, cursors: new Set() }
       entries.set(wallet, e)
     }
     return e
@@ -65,10 +68,22 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
     catch { reply = { kind: 'unavailable', reason: 'upstream_unavailable' } }
     e.inFlight = false
     if (reply.kind !== 'ok') {
+      if (job.cursor && reply.kind === 'unavailable' && ['invalid_or_expired_cursor', 'catalogue_revision_changed'].includes(reply.reason) && !e.restarted) {
+        e.restarted = true; e.restarting = true; e.cursors.clear(); e.tail = null; e.bridge = null
+        publish(e, { error: reply, loading: false })
+        schedule(wallet, e, { kind: 'head' }, 1_000)
+        return
+      }
       e.retry = job
       e.failures++
       publish(e, { error: reply, loading: false })
       if (e.listeners.size) schedule(wallet, e, job, readAgainAfter(reply, e.failures) ?? 60_000)
+      return
+    }
+    if (e.dirty && job.kind === 'head') {
+      e.dirty = false; e.retry = null
+      publish(e, { loading: false })
+      void run(wallet, e, { kind: 'head' })
       return
     }
     const previous = e.value.answer
@@ -86,19 +101,26 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
       }
     }
     for (const item of reply.body.items) known.set(item.id, item)
-    if (!previous) e.tail = reply.body.nextCursor
+    if (job.kind === 'head') { e.cursors.clear(); e.bridgePages = 0 }
+    if (job.cursor) e.cursors.add(job.cursor)
+    const stalled = reply.body.nextCursor !== null && e.cursors.has(reply.body.nextCursor)
+    if (!previous || e.restarting) { e.tail = reply.body.nextCursor; e.restarting = false }
     else if (job.kind === 'head') e.bridge = overlaps ? null : reply.body.nextCursor
     else if (job.kind === 'older') e.tail = reply.body.nextCursor
     else e.bridge = overlaps ? null : reply.body.nextCursor
     if ((job.kind === 'head' || job.kind === 'bridge') && reply.body.nextCursor === null) e.tail = null
+    if (stalled) { e.tail = null; e.bridge = null }
+    if (job.kind === 'bridge') e.bridgePages++
+    if (job.cursor && !stalled) e.restarted = false
     e.failures = 0
     e.retry = null
     const answer = { ...(job.kind === 'head' || !previous ? reply.body : previous), items: [...known.values()].sort(compareActivity),
       tokens: mergeTokens(previous?.tokens ?? [], reply.body.tokens), nextCursor: e.bridge ?? e.tail }
-    publish(e, { answer, error: null, loading: false })
+    publish(e, { answer, error: stalled ? { kind: 'unavailable', reason: 'pagination_stalled' } : null, loading: false })
     if (e.listeners.size) {
-      if (e.bridge) schedule(wallet, e, { kind: 'bridge', cursor: e.bridge }, 1_000)
-      else if (refresh) schedule(wallet, e, { kind: 'head' }, 60_000)
+      if (!e.bridge && e.dirty) { e.dirty = false; void run(wallet, e, { kind: 'head' }) }
+      else if (e.bridge && e.bridgePages < 3) schedule(wallet, e, { kind: 'bridge', cursor: e.bridge }, 1_000)
+      else if (!e.bridge && refresh) schedule(wallet, e, { kind: 'head' }, 60_000)
     }
   }
   return {
@@ -109,8 +131,8 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
       if (!e.inFlight && e.timer === null && e.waking === null) {
         if (!e.value.answer) void run(wallet, e, e.retry ?? { kind: 'head' })
         else if (e.retry) schedule(wallet, e, e.retry, readAgainAfter(e.value.error!, e.failures) ?? 60_000)
-        else if (e.bridge) schedule(wallet, e, { kind: 'bridge', cursor: e.bridge }, 1_000)
-        else if (refresh) schedule(wallet, e, { kind: 'head' }, 60_000)
+        else if (e.bridge && e.bridgePages < 3) schedule(wallet, e, { kind: 'bridge', cursor: e.bridge }, 1_000)
+        else if (!e.bridge && refresh) schedule(wallet, e, { kind: 'head' }, 60_000)
       }
       return () => {
         e.listeners.delete(listener)
@@ -130,12 +152,13 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
       e.timer = null
       void run(wallet, e, { kind: e.bridge ? 'bridge' : 'older', cursor })
     },
-    refresh(wallet: string) {
-      const e = entry(wallet)
-      if (e.inFlight || e.retry) return
-      if (e.timer !== null) timers.clear(e.timer)
-      e.timer = null
-      void run(wallet, e, { kind: 'head' })
+    refresh(wallet?: string) {
+      for (const [key, e] of wallet ? [[wallet, entry(wallet)] as const] : entries) {
+        if (e.inFlight || e.retry) { e.dirty = true; continue }
+        if (e.timer !== null) timers.clear(e.timer)
+        e.timer = null
+        void run(key, e, e.bridge ? { kind: 'bridge', cursor: e.bridge } : { kind: 'head' })
+      }
     },
   }
 }

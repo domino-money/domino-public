@@ -1,4 +1,4 @@
-import { Children, cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { drop, keep, readKept } from '../../finance/privateCards'
 import { recovering } from '../../lib/staleRelease'
 import { deferred } from '../Deferred'
@@ -30,32 +30,11 @@ export type DepositsSlot = (props: { owner: string; deposits: readonly WalletDep
 
 /** Rows shown at a time, before Show more. */
 const PAGE_SIZE = 10
-
-/**
- * Changed on purpose 2026-10-02 (Domino V2 integration, lists): in a build that carries V2 only, the person's own positions
- * from read-v6 on a chain whose V2 gate is live join this list (src/v2in/lists/OwnedRows.tsx): rows inside its grid, its
- * other states, its tabs. Each is opened lazily behind the bare define (components/Deferred.tsx: drawn as soon as its chunk
- * is in) and draws V1's own element until it has something of its own, so the list is exactly V1's wherever no chain is
- * live, and V1's rows are never mounted again. Every deployable build,
- * where `__DOMINO_V2__` is false, folds all of it away and is byte for byte what it was. Should that chunk be gone, V1's
- * own elements stay until the page reloads.
- */
-type V2Slot = { owner: string; tab: Status; v1Ids: readonly string[] }
-const V2Rows = __DOMINO_V2__ ? deferred<V2Slot>(recovering(() => import('../../v2in/lists/OwnedRows').then((m) => ({ default: m.OwnedRows })), () => ({ default: V2Nothing }))) : null
-type V2BodySlot = V2Slot & { v1: ReactNode; v1State: 'loading' | 'unread' | 'none' | 'tab-none' }
-type V2TabsSlot = V2Slot & { v1: ReactNode; chosen: boolean; onTab: (tab: Status) => void; v1Counts: { open: number; closed: number } | null; unread: boolean }
-const V2Body = __DOMINO_V2__ ? deferred<V2BodySlot>(recovering(() => import('../../v2in/lists/OwnedRows').then((m) => ({ default: m.OwnedBody })), () => ({ default: V1Only }))) : null
-const V2Tabs = __DOMINO_V2__ ? deferred<V2TabsSlot>(recovering(() => import('../../v2in/lists/OwnedRows').then((m) => ({ default: m.OwnedTabs })), () => ({ default: V1Only }))) : null
-if (__DOMINO_V2__ && V2Rows && V2Body && V2Tabs) {
-  V2Rows.preload()
-  V2Body.preload()
-  V2Tabs.preload()
-}
-function V2Nothing() {
-  return null
-}
-function V1Only({ v1 }: { v1: ReactNode }) {
-  return <>{v1}</>
+type OwnedCollectionProps = { owner: string; readOnly?: boolean; deposits: DepositsSlot | null; onEmptyAction?: (shown: boolean) => void }
+const V2Collection = __DOMINO_V2__ ? deferred<OwnedCollectionProps>(recovering(() => import('../../v2in/lists/OwnedRows').then((m) => ({ default: m.OwnedCollection })), () => ({ default: CollectionUnavailable }))) : null
+if (__DOMINO_V2__ && V2Collection) V2Collection.preload()
+function CollectionUnavailable() {
+  return <Frame><p className="dm-own-note">Your positions couldn’t be read right now. Please reload this page.</p></Frame>
 }
 
 /**
@@ -174,8 +153,13 @@ export interface OwnedPositionsProps {
  * the list's display copy (copyName below).
  */
 export default function OwnedPositions({ identity, deposits, onEmptyAction, viewed }: OwnedPositionsProps) {
+  // Keep the build-time branch explicit so a V2 release omits the obsolete collection's runtime.
   // 2026-10-01 (audit V7): another address the page views: its positions, read-only, whatever the wallet is doing.
   if (viewed && /^0x[0-9a-f]{40}$/.test(viewed) && !(identity.kind === 'connected' && identity.address.toLowerCase() === viewed)) {
+    if (__DOMINO_V2__) {
+      const Collection = V2Collection!
+      return <Collection key={`viewed:${viewed}`} owner={viewed} readOnly deposits={null} />
+    }
     return <YourPositions key={`viewed:${viewed}`} owner={viewed} deposits={null} readOnly />
   }
   if (identity.kind === 'unknown') {
@@ -204,7 +188,7 @@ export default function OwnedPositions({ identity, deposits, onEmptyAction, view
       </Frame>
     )
   }
-  if (identity.chainId !== CHAIN_ID) {
+  if (!__DOMINO_V2__ && identity.chainId !== CHAIN_ID) {
     return (
       <Frame data={{ 'data-owned': 'other-network' }}>
         <EmptyState
@@ -222,6 +206,10 @@ export default function OwnedPositions({ identity, deposits, onEmptyAction, view
     )
   }
   const owner = identity.address.toLowerCase()
+  if (__DOMINO_V2__) {
+    const Collection = V2Collection!
+    return <Collection key={owner} owner={owner} deposits={deposits} onEmptyAction={onEmptyAction} />
+  }
   return <YourPositions key={owner} owner={owner} deposits={deposits} onEmptyAction={onEmptyAction} />
 }
 
@@ -354,19 +342,6 @@ function YourPositions({ owner, deposits, onEmptyAction, readOnly = false }: Omi
       </div>
     )
   }
-  // Domino V2 integration (2026-10-02, lists), in a build that carries V2 only: the person's live rows join V1's grid after
-  // its own rows (which stay its elements, keyed the same from the first draw); any other state of V1's is drawn by V1 itself
-  // until the person has live rows.
-  if (__DOMINO_V2__ && V2Rows && V2Body) {
-    const v1Ids = rows ? rows.map((row) => row.card.tokenId) : []
-    if (tabs && shown.length > 0) {
-      const grid = body as ReactElement<{ children?: ReactNode }>
-      body = cloneElement(grid, undefined, ...Children.toArray(grid.props.children), <V2Rows key="v2-rows" owner={owner} tab={tab} v1Ids={v1Ids} />)
-    } else {
-      body = <V2Body fallback={body} owner={owner} tab={tab} v1={body} v1State={!tabs ? (unread ? 'unread' : 'loading') : total === 0 ? 'none' : 'tab-none'} v1Ids={v1Ids} />
-    }
-  }
-
   return (
     <>
       <Frame
@@ -378,26 +353,7 @@ function YourPositions({ owner, deposits, onEmptyAction, readOnly = false }: Omi
           'data-owned-viewed': readOnly ? owner : undefined,
         }}
         tabs={
-          __DOMINO_V2__ && V2Tabs ? (
-            // V1's own tabs below, drawn by V2Tabs until the person has live rows to count in (and until its chunk is in).
-            (() => {
-              const v1 =
-                tabs && total > 0 ? (
-                  <Tabs
-                    label="Positions by state"
-                    value={tab}
-                    onChange={setChosen}
-                    items={[
-                      { key: 'open', label: 'Open', count: tabs.open.length },
-                      { key: 'closed', label: 'Closed', count: tabs.closed.length },
-                    ]}
-                  />
-                ) : !tabs && !unread ? (
-                  <Skeleton className="dm-own-skel-tabs" />
-                ) : undefined
-              return <V2Tabs fallback={v1} v1={v1} owner={owner} tab={tab} chosen={chosen !== null} onTab={setChosen} v1Counts={tabs ? { open: tabs.open.length, closed: tabs.closed.length } : null} unread={unread} v1Ids={rows ? rows.map((row) => row.card.tokenId) : []} />
-            })()
-          ) : tabs && total > 0 ? (
+          tabs && total > 0 ? (
             <Tabs
               label="Positions by state"
               value={tab}

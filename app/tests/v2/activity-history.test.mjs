@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { createActivityHistory } = require('../../.test-build/app/src/v2in/lists/activityHistory.js');
+const { createActivityHistory, compareActivity } = require('../../.test-build/app/src/v2in/lists/activityHistory.js');
 const { privateTimes, positionActivity, timelineRows } = require('../../.test-build/app/src/v2in/lists/activityModel.js');
 const fixture = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/valid/activity.json', import.meta.url)));
 const portfolio = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/valid/portfolio.json', import.meta.url)));
@@ -14,6 +14,7 @@ const flush = async () => { for (let n = 0; n < 8; n++) await Promise.resolve();
 const item = (n, extra = {}) => ({ ...structuredClone(fixture.items[0]), id: `4663:${n}:1`, chainId: 4663,
   tx: { ...structuredClone(fixture.items[0].tx), hash: `0x${n.toString(16).padStart(64, '0')}`, snapshot: { number: n, hash: `0x${n.toString(16).padStart(64, '0')}`, timestamp: n }, finality: 'finalized' }, ...extra });
 const range = (top, bottom) => Array.from({ length: top - bottom + 1 }, (_, i) => item(top - i));
+const viewsOf = items => items.map(event => ({ id: event.id, kind: event.kind, chainId: event.chainId, block: event.tx.snapshot.number, at: event.tx.snapshot.timestamp, hash: event.tx.hash }));
 const page = (items, cursor = null, extra = {}) => ({ kind: 'ok', body: { ...structuredClone(fixture), items, nextCursor: cursor, ...extra } });
 function clock() {
   let now = 0, visible = true;
@@ -145,4 +146,125 @@ test('position history includes compound, exit and settings by proven chain/DEX/
   assert.equal(positionActivity(fixture.items, { ...target, dex: 3 }, portfolio).length, 0);
   const withoutPortfolio = positionActivity(fixture.items, { ...target, tokenId: '7' }, null);
   assert.ok(withoutPortfolio.some(x => x.kind === 'vault_event'), 'old creation receipt establishes the vault identity without the bounded portfolio');
+});
+
+test('both history and operation rows order numeric log indexes 10 before 2 at the same block', () => {
+  const two = item(40, { id: '4663:40:2' });
+  const ten = item(40, { id: '4663:40:10' });
+  assert.deepEqual([two, ten].sort(compareActivity).map(x => x.id), [ten.id, two.id]);
+  assert.deepEqual(timelineRows(viewsOf([two, ten]), []).map(x => x.receipt.id), [ten.id, two.id]);
+});
+
+test('setup auxiliary events share one operation; distinct effects in the same transaction survive and gas appears once', () => {
+  const created = structuredClone(fixture.items.find(x => x.kind === 'vault_created'));
+  const armed = structuredClone(fixture.items.find(x => x.kind === 'vault_event'));
+  armed.tx = structuredClone(created.tx); armed.id = `${created.chainId}:${created.tx.snapshot.number}:10`;
+  let rows = timelineRows(viewsOf([created, armed]), [], new Map(), [created, armed]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].receipts.length, 2);
+  assert.equal(rows[0].showGas, true);
+  const run = structuredClone(fixture.items.find(x => x.kind === 'vault_execution'));
+  const other = structuredClone(run); other.id = '4663:73394000:10'; other.planHash = '0x' + 'e'.repeat(64);
+  rows = timelineRows(viewsOf([run, other]), [], new Map(), [run, other]);
+  assert.equal(rows.length, 2, 'a shared tx does not erase a second execution');
+  assert.equal(rows.filter(row => row.showGas).length, 1);
+  assert.equal(rows[0].receipt.id, other.id);
+});
+
+test('private reconciliation requires the same chain, transaction, block, liquidity and exact currency fees', () => {
+  const run = structuredClone(fixture.items.find(x => x.kind === 'vault_execution'));
+  const signed = { ...wire.responses['status.reserved'].item, state: 'reconciled', receipt: {
+    transactionHash: run.tx.hash, blockHash: run.tx.snapshot.hash, blockNumberRaw: String(run.tx.snapshot.number),
+    liquidityIncreaseRaw: run.compounded.liquidityAdded, serviceFeeBps: 400,
+    sources: run.tariffs.map(fee => ({ currency: fee.token, serviceFeeRaw: fee.amount })),
+  } };
+  const rows = event => timelineRows(viewsOf([event]), [signed], new Map(), [event]);
+  assert.equal(rows(run).length, 1);
+  assert.equal(rows(run)[0].evidence.length, 1);
+  for (const altered of [
+    { ...run, chainId: 8453 },
+    { ...run, tx: { ...run.tx, hash: '0x' + 'e'.repeat(64) } },
+    { ...run, compounded: { ...run.compounded, liquidityAdded: '1' } },
+    { ...run, tariffs: run.tariffs.map((fee, i) => i ? fee : { ...fee, amount: '1' }) },
+  ]) assert.equal(rows(altered).length, 2, 'unproven records remain separately inspectable');
+});
+
+test('a repeated cursor stops the walk, preserves rows and reports incomplete history', async () => {
+  const time = clock(); let asks = 0;
+  const history = createActivityHistory(async () => ++asks === 1 ? page([item(3)], 'same') : page([item(2)], 'same'), time.timers, false);
+  const stop = history.subscribe(wallet, () => {}); await flush(); history.more(wallet); await flush();
+  assert.deepEqual(history.get(wallet).answer.items.map(x => x.tx.snapshot.number), [3, 2]);
+  assert.equal(history.get(wallet).more, false);
+  assert.equal(history.get(wallet).error.reason, 'pagination_stalled');
+  history.more(wallet); await time.tick(60_000);
+  assert.equal(asks, 2); stop();
+});
+
+test('an expired cursor restarts once with loaded rows intact, then uses the new cursor', async () => {
+  const time = clock(), asks = [];
+  const history = createActivityHistory(async (_, request) => {
+    asks.push(request);
+    if (asks.length === 1) return page([item(4)], 'expired');
+    if (asks.length === 2) return { kind: 'unavailable', reason: 'invalid_or_expired_cursor' };
+    return request.cursor ? page([item(3)]) : page([item(4)], 'fresh');
+  }, time.timers, false);
+  const stop = history.subscribe(wallet, () => {}); await flush(); history.more(wallet); await flush();
+  assert.equal(history.get(wallet).answer.items.length, 1);
+  await time.tick(1_000); history.more(wallet); await flush();
+  assert.equal(asks[3].cursor, 'fresh');
+  assert.deepEqual(history.get(wallet).answer.items.map(x => x.tx.snapshot.number), [4, 3]); stop();
+});
+
+test('confirmation during an in-flight head queues a fresh read and does not publish the obsolete reply', async () => {
+  const time = clock(); let resolveFirst, asks = 0;
+  const history = createActivityHistory(async () => ++asks === 1 ? new Promise(resolve => { resolveFirst = resolve; }) : page([item(9)]), time.timers, false);
+  const stop = history.subscribe(wallet, () => {}); await flush(); history.refresh(wallet); resolveFirst(page([item(1)])); await flush();
+  assert.equal(asks, 2);
+  assert.deepEqual(history.get(wallet).answer.items.map(x => x.tx.snapshot.number), [9]); stop();
+});
+
+test('local confirmed closes survive reload by wallet, stay one transaction and never invent native payouts or a date', () => {
+  const { createLocalReceiptStore, validLocalClose } = require('../../.test-build/app/src/v2in/lists/localReceipts.js');
+  const { v2Chain } = require('../../.test-build/app/src/v2/chains.js');
+  const kept = new Map();
+  const storage = { getItem: key => kept.get(key) ?? null, setItem: (key, value) => kept.set(key, value) };
+  const store = createLocalReceiptStore(storage);
+  const receipt = { wallet, chainId: 4663, dex: 4, positionManager: v2Chain(4663).uniswap.v4.positionManager,
+    hash: '0x' + 'd'.repeat(64), block: 234, blockHash: '0x' + 'b'.repeat(64), tokenIds: ['7', '8'],
+    amounts: [{ token: '0x' + '0'.repeat(40), amount: null }], at: null, state: 'included' };
+  assert.equal(validLocalClose(receipt), true);
+  store.record(receipt); store.record({ ...receipt, state: 'finalized' });
+  assert.equal(store.get(wallet).length, 1);
+  assert.equal(store.get(wallet)[0].state, 'finalized');
+  const reloaded = createLocalReceiptStore(storage);
+  assert.equal(reloaded.get(wallet)[0].amounts[0].amount, null);
+  assert.equal(reloaded.get(wallet)[0].at, null);
+  assert.equal(reloaded.get('0x' + 'e'.repeat(40)).length, 0);
+  assert.equal(validLocalClose({ ...receipt, positionManager: v2Chain(4663).uniswap.v3.positionManager }), false);
+  store.record({ ...receipt, block: NaN });
+  assert.equal(store.get(wallet).length, 1);
+  assert.equal(timelineRows([], [], new Map(), [], reloaded.get(wallet))[0].at, null);
+  reloaded.forget(wallet, 4663, receipt.positionManager, receipt.hash);
+  assert.equal(reloaded.get(wallet).length, 0, 'a reorg removes the orphaned confirmation');
+  assert.equal(createLocalReceiptStore(storage).get(wallet).length, 0, 'the correction survives reload');
+});
+
+test('local close and indexed activity correlate only with matching PM, chain, block hash, NFT exits and complete token totals', () => {
+  const { publicCloseProves } = require('../../.test-build/app/src/v2in/lists/localReceipts.js');
+  const { v2Chain } = require('../../.test-build/app/src/v2/chains.js');
+  const event = structuredClone(fixture.items.find(item => item.kind === 's1_action'));
+  event.action = 'exit'; event.steps = [{ ...event.steps[0], tokenId: '7', liquidityDelta: '-1' }];
+  event.steps[0].pool.dex = 4;
+  const token = v2Chain(4663).wrappedNative.address;
+  event.refunds = [{ token, amount: '200' }];
+  const local = { wallet, chainId: 4663, dex: 4, positionManager: v2Chain(4663).uniswap.v4.positionManager,
+    hash: event.tx.hash, block: event.tx.snapshot.number, blockHash: event.tx.snapshot.hash,
+    tokenIds: ['7'], amounts: [{ token, amount: '200' }], at: null, state: 'included' };
+  assert.equal(publicCloseProves(local, [event]), true);
+  assert.equal(timelineRows(viewsOf([event]), [], new Map(), [event], [local]).length, 1);
+  for (const changed of [
+    { ...local, chainId: 8453 }, { ...local, blockHash: '0x' + 'f'.repeat(64) },
+    { ...local, tokenIds: ['8'] }, { ...local, amounts: [{ token, amount: null }] },
+    { ...local, amounts: [{ token, amount: '201' }] },
+  ]) assert.equal(publicCloseProves(changed, [event]), false);
 });

@@ -11,6 +11,21 @@ export function ledgerOpenedAt(view: FeeHistoryView): number | null {
   return null
 }
 
+/** A final zero-liquidity interval, proved by this NFT's settlements. Missing state is never a close. */
+export function ledgerClosedAt(view: FeeHistoryView): number | null {
+  if (view.phase !== 'verified' && view.phase !== 'cached') return null
+  if (view.state.liquidity !== 0n) return null
+  let liquidity = 0n
+  let closed: number | null = null
+  for (const event of view.history.events) {
+    liquidity += event.liquidityDelta
+    if (liquidity < 0n) return null
+    if (liquidity > 0n) closed = null
+    else if (event.liquidityDelta < 0n) closed = timestamp(event.timestamp)
+  }
+  return liquidity === 0n ? closed : null
+}
+
 export interface PoolPriceObservations {
   poolId: string
   currencies: readonly [StateCurrency, StateCurrency]

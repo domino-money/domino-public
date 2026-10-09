@@ -173,20 +173,20 @@ test('/state names what it cannot read: not found, a hooked pool, a bytes32 or u
   assert.equal(fees.decodeSymbol(encodeFunctionResult({ abi: erc20Abi, functionName: 'symbol', result: 'été' })), 'été');
 });
 
-test('/state is kept 10 s per id set and a failure 5 s; a rate limit is waited out, then answered 429 with Retry-After', async () => {
+test('/state is kept 5 s per id set and a failure 5 s; a rate limit is waited out, then answered 429 with Retry-After', async () => {
   const fixture = loadCase('3136705');
   const [position] = fixture.state.positions;
   const chain = stateChain(position, { head: fixture.state.block, timestamp: fixture.state.timestamp });
   const { cache, stored } = memoryCache();
   assert.equal((await askState(chain, { tokenIds: [position.tokenId] }, cache)).status, 200);
   const calls = chain.log.length;
-  chain.deps.time += 9_000;
+  chain.deps.time += 4_000;
   assert.equal((await askState(chain, { tokenIds: [position.tokenId] }, cache)).status, 200);
   assert.equal(chain.log.length, calls, 'kept');
   assert.deepEqual([...stored.keys()].map((url) => url.replace(/[0-9a-f]{64}/, '<sha256>')), [`${ORIGIN}/api/fees/v1/cache/c1/state/<sha256>/0`]);
   chain.deps.time += 2_000;
   assert.equal((await askState(chain, { tokenIds: [position.tokenId] }, cache)).status, 200);
-  assert.ok(chain.log.length > calls, 'read again after 10 s');
+  assert.ok(chain.log.length > calls, 'read again after 5 s');
 
   fees.resetRelayMemory();
   const limited = fakeChain({ script: { eth_call: Array.from({ length: 4 }, () => new Response('slow down', { status: 429, headers: { 'Retry-After': '1' } })) } });

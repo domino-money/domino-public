@@ -181,7 +181,7 @@ export function listedMembers(vault: Vault): readonly VaultMemberView[] {
   return Object.freeze(out.sort((a, b) => (a.role === 'root' ? -1 : b.role === 'root' ? 1 : 0)))
 }
 
-export type VaultStatus = 'protection' | 'on' | 'paused' | 'off'
+export type VaultStatus = 'protection' | 'on' | 'paused' | 'off' | 'unknown'
 
 /** Whether the listed vault is paused: its state's `paused` when read, else `pausedBy` (null only while it runs). */
 export const listedPaused = (vault: Vault): boolean => (vault.state.status === 'read' ? vault.state.paused : vault.pausedBy !== null)
@@ -194,12 +194,14 @@ export function vaultStatus(vault: Vault): VaultStatus {
   // Off first: the root disarmed (read live, or the index's reason while live custody is unread). A protection-only
   // vault whose root was withdrawn protects nothing any more.
   if (vault.custody.armed === false || (vault.custody.armed === null && vault.custody.reason !== null)) return 'off'
+  if (vault.custody.armed !== true || vault.state.status !== 'read') return 'unknown'
   if (listedPaused(vault) && vault.autoExitEnabled) return 'protection'
   return listedPaused(vault) ? 'paused' : 'on'
 }
 
 /** What a status says on screen; a paused vault says who paused it when the index knows (§5.3). */
 export function statusWords(status: VaultStatus, pausedBy: Vault['pausedBy'] = null): string {
+  if (status === 'unknown') return 'State unavailable'
   if (status === 'protection') return 'Auto-exit'
   if (status === 'off') return 'Automation off'
   if (status === 'on') return 'Automation on'

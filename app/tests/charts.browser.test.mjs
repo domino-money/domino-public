@@ -614,7 +614,9 @@ test('while the ledger is read the card shows the chain’s unclaimed figure and
       const loading = s.page.locator('[data-fees-card][data-fees-state="loading"]');
       await loading.waitFor({ timeout: 20_000 });
       assert.match(await loading.innerText(), /Fees earned[\s\S]*Ready to collect[\s\S]*\$[\d,]+\.\d\d/, 'the chain’s unclaimed figure, at once, in the key figures’ words');
-      const skeleton = await loading.locator('.dm-fees-chart-skel').boundingBox();
+      const skeleton = await loading.locator('[data-pending-plot]').boundingBox();
+      assert.equal(await loading.locator('[data-pending-plot] svg').count(), 1, 'the chart frame is already mounted');
+      assert.equal(await loading.locator('path.dm-series-line, .dm-fees-flat').count(), 0, 'unknown history never draws a zero-fee series');
       // The price range, from the page's own read: the status, the band and the price now, in the chart's final box, and
       // no historical observations before the held ledger verifies its mint.
       const range = s.page.locator('[data-pvr-where]');
@@ -639,6 +641,35 @@ test('while the ledger is read the card shows the chain’s unclaimed figure and
       await assertIsolatedBlockPrices(range, world);
     } finally { await s.close(); }
   }
+});
+
+test('a measured zero remains a full chart, then the first atomic fee and APR appear automatically without a reload', async () => {
+  const world = plain({ mint: { block: HEAD - 200, liquidity: 1_000_000_000_000n }, steps: [], unclaimed: [0n, 0n] });
+  const s = await scenario(world, HASH, PHONE, () => { window.__dominoRefresh = true; });
+  try {
+    const { page } = s;
+    const card = page.locator('[data-fees-card][data-fees-state="verified"]');
+    await card.waitFor({ timeout: 20_000 });
+    const chart = card.locator('.dm-fees-chart');
+    await chart.waitFor();
+    assert.equal(await card.locator('.dm-fees-hero').innerText(), '$0.00');
+    const zeroBox = await chart.boundingBox();
+    assert.ok(zeroBox.height >= 170, 'a proven zero keeps the complete chart frame');
+    assert.match(await page.locator('[data-cell="apr"]').innerText(), /0%/);
+    const url = page.url();
+    world.chain.head += 50;
+    world.chain.timestamp = world.timeAt(world.chain.head);
+    world.chain.positions[0].unclaimed = [0n, 1n];
+    await page.waitForFunction(() => document.querySelector('[data-fees-card] .dm-fees-hero')?.textContent?.includes('<$0.01'), null, { timeout: 20_000 });
+    assert.equal(page.url(), url, 'no reload or navigation is needed');
+    assert.equal(await chart.count(), 1, 'the same chart remains mounted');
+    assert.equal(Math.round((await chart.boundingBox()).height), Math.round(zeroBox.height));
+    assert.match(await page.locator('[data-cell="apr"][data-apr="ready"]').innerText(), /<0\.1%/);
+    await chart.press('End');
+    assert.match(await chart.locator('.dm-chart-tooltip').innerText(), /<\$0\.01/);
+    assert.ok(await chart.locator('.dm-series-line').count() > 0, 'positive raw fees draw a measured series below the money display precision');
+    keptToTheRules(world);
+  } finally { await s.close(); }
 });
 
 test('an automated position fills in without a jump: its chart draws before attribution and the reserved lines keep everything below stable', { timeout: 120_000 }, async () => {
@@ -731,7 +762,7 @@ test('a position eight days old: 24H, 7D, 30D and All; 7D first, its start read 
     await card.waitFor({ timeout: 60_000 });
     assert.deepEqual(await card.getByRole('radio').allInnerTexts(), ['24H', '7D', '30D', 'All']);
     assert.equal(await card.getAttribute('data-fees-period'), '7d', 'past 36 hours: 7D first');
-    await page.locator('[data-fees-card][data-fees-period="7d"][data-fees-period-state="reading"] [data-fees-plot="reading"] .dm-fees-chart-skel').waitFor({ timeout: 20_000 });
+    await page.locator('[data-fees-card][data-fees-period="7d"][data-fees-period-state="reading"] [data-pending-plot]').waitFor({ timeout: 20_000 });
     assert.match(await card.locator('.dm-fees-hero').innerText(), /\$[\d,]+\.\d\d/, 'the hero is exact while the start is read');
     const skeleton = await plotBox(card);
     assert.equal(await card.locator('.dm-fees-delta').count(), 0);

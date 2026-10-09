@@ -35,11 +35,8 @@ const couldNotLoad = () => ({ default: CouldNotLoad })
 type TellShows = (shows: CardShows | null) => void
 const Performance = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ onShows?: TellShows }>>(recovering(() => import('./Performance'), couldNotLoad)) : null
 const Execution = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ limit?: number; onShows?: TellShows }>>(recovering(() => import('./Execution').then(({ default: View }) => ({ default: View })), couldNotLoad)) : null
-// Changed on purpose 2026-10-02 (Domino V2 integration, lists): in a build that carries V2 only, Receipts draws V1's own
-// receipts and then read-v6's (src/v2in/lists/Receipts.tsx, which renders Execution itself), lazily and behind the bare
-// define; every deployable build, where `__DOMINO_V2__` is false, folds it away and opens Execution as before.
-// A chunk that cannot load leaves Execution itself (2026-10-03, review #7): V1's receipts, never a "couldn't load" line.
-const V2Receipts = __DOMINO_WALLET_SESSION__ && __DOMINO_V2__ ? lazy<ComponentType<{ limit?: number; onShows?: TellShows }>>(recovering(() => import('../v2in/lists/Receipts'), () => ({ default: ({ limit, onShows }: { limit?: number; onShows?: TellShows }) => (Execution ? <Execution limit={limit} onShows={onShows} /> : null) }))) : null
+// V2 uses one chronological public/private history. A failed chunk cannot silently substitute a partial old history.
+const V2Receipts = __DOMINO_WALLET_SESSION__ && __DOMINO_V2__ ? lazy<ComponentType<{ limit?: number; onShows?: TellShows }>>(recovering(() => import('../v2in/lists/Receipts'), couldNotLoad)) : null
 // The deposits the wallet has not turned into a position, each with its refund: its own chunk, in wallet builds only.
 // Typed from the slot's own props, so this screen names nothing of that chunk but its lazy import.
 const HeldDeposits = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<Parameters<DepositsSlot>[0]>>(recovering(() => import('../components/positions/HeldDeposits'), couldNotLoad)) : null
@@ -55,7 +52,7 @@ const FeeReserves = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ owner: stri
 // its own line, as the other private cards do, where V1's Performance stood in for it (2026-10-03, review #7). `receipts`:
 // what the Receipts card says, which the vaults' card says too while it lists nothing of its own.
 type ManagedProps = { onShows?: TellShows; receipts?: CardShows | null }
-const V2Managed = __DOMINO_V2__ ? lazy<ComponentType<ManagedProps>>(recovering(() => import('../v2in/automate/ManagedVaults'), couldNotLoad)) : null
+const V2Managed = __DOMINO_V2__ ? lazy<ComponentType<ManagedProps>>(recovering(() => import('../v2in/automate/ManagedVaults'), () => ({ default: () => <CouldNotLoad /> }))) : null
 
 // Your positions and a position's own page: chunks of their own, loaded only on Positions, so no other page pays for
 // them. The list exists only where a wallet can connect; the page is public chain data and opens in every build.
@@ -258,6 +255,10 @@ function AutomationPair() {
   const tellReceipts = useCallback<TellShows>((next) => setReceipts((old) => (sameShows(old, next) ? old : next)), [])
   const layout = Performance && Execution ? automationLayout(managed, receipts) : ({ kind: 'merged', line: { kind: 'none', reason: 'unavailable', text: NO_SIGN_IN_BOTH, action: null } } as const)
   const merged = layout.kind === 'merged'
+  if (__DOMINO_V2__) return <div className="dm-acct-v2-history" data-automation-cards="integrated">
+    {V2Managed && <Suspense fallback={null}><V2Managed /></Suspense>}
+    <ReceiptsCard limit={RECENT} />
+  </div>
   return (
     <div className="dm-acct-pair" data-automation-cards={layout.kind}>
       {merged && <OneLine line={layout.line} />}

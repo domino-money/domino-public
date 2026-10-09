@@ -18,6 +18,7 @@ import type { LiveCard } from '../../lib/walletCards'
 import { TokenLabel } from '../read/TokenLabel'
 import { Button, RangeBar, cx } from '../ui'
 import { RangeChartWaiting, RangeFactsContext } from './visual/RangeStatus'
+import { PendingPlot } from './visual/PendingPlot'
 
 /**
  * The Price range chart's own code (its axis, labels, line and the pool's history: visual/PriceVsRange.tsx), a chunk of
@@ -112,7 +113,7 @@ export function rangeWords(card: LiveCard, price: CardPrice) {
  * `chart` and `missing` props it replaces had no caller since 2026-10-02. The range's ends are written as the key
  * figures write prices (readablePrice: "0.0₆7101"), the page's exact text in their title.
  */
-export function PositionRange({ card, price, variant = 'bar', history = false, openedAt = null, observations = null }: { card: LiveCard; price: CardPrice; variant?: 'bar' | 'page'; history?: boolean; openedAt?: number | null; observations?: PoolPriceObservations | null }) {
+export function PositionRange({ card, price, variant = 'bar', history = false, openedAt = null, closedAt = null, observations = null }: { card: LiveCard; price: CardPrice; variant?: 'bar' | 'page'; history?: boolean; openedAt?: number | null; closedAt?: number | null; observations?: PoolPriceObservations | null }) {
   const { state, scale } = price
   // The app's one way round (2026-09-28): the priced token, the one it is priced in, and the range's lowest and highest price.
   const { base, quote, low, high } = shownCardRange(card)
@@ -173,11 +174,12 @@ export function PositionRange({ card, price, variant = 'bar', history = false, o
           </div>
         )}
         {/* One place for the chart, with or without its line, so the line fills in where the chart already stands. */}
+        {page && !charted && <PendingPlot label="Position price range" busy={asking} note={asking ? 'Updating price…' : 'Price is temporarily unavailable. Retrying automatically.'} />}
         {charted && (
           <div className="dm-pos-chart">
             {/* While the chart's own code loads (a moment, the first time), its status and its box stand in its place. */}
             <Suspense fallback={<RangeChartWaiting facts={facts} />}>
-              <PriceVsRange history={history ? { poolId: card.poolId, base: base.address, quote: quote.address } : null} openedAt={openedAt} observations={observations} />
+              <PriceVsRange history={history ? { poolId: card.poolId, base: base.address, quote: quote.address } : null} openedAt={openedAt} closedAt={closedAt} observations={observations} />
             </Suspense>
           </div>
         )}

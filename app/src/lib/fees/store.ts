@@ -11,8 +11,8 @@
  *   again, fresh). Folded with the newest state into the view (foldLedger): verified when exact, Fees ready to collect
  *   only otherwise. A ledger still being read (`reading`) is asked again in a moment; one that could not be read is asked
  *   again after 2, 10, 30, 60 and 120 s (RETRY_MS), only while the page is visible, the card keeping what it shows.
- * - The Positions list asks the ledgers alone ('list'): its rows' Your APR from each ledger's own state, no /state read.
- * - A position's page records the state reads it gets (readings.ts, at most hourly): measured points of its chart; since
+ * - The Positions list shares state and ledger reads with the detail, at its slower visible-list interval.
+ * - A position's page records each valid state read in a bounded live series (readings.ts); hourly samples are persisted. Since
  *   2026-10-02 every ledger answer records its own state too (the list's only for a position whose page this browser
  *   keeps readings of), and the chart's period starts read at past blocks (pastReads.ts) are folded in with them
  *   (`redraw`; `pastReadings` for those too old to keep).
@@ -26,7 +26,7 @@
  * Views are immutable objects replaced on change, so useSyncExternalStore can compare them by identity. Nothing here
  * reads a clock or renders, but the readings' and the cache's own `now`.
  */
-import { LEDGER_READING_MS, MAX_LEDGER_IDS, MAX_STATE_IDS, STATE_REFRESH_MS } from './constants'
+import { LEDGER_READING_MS, LIST_STATE_REFRESH_MS, MAX_LEDGER_IDS, MAX_STATE_IDS, STATE_REFRESH_MS } from './constants'
 import { HISTORY_MAX_AGE_MS, savedHistoryMatches, type HistoryCache } from './historyCache'
 import { agreement, foldLedger, ledgerMint, type LedgerRead } from './ledger'
 import type { Reading, Readings } from './readings'
@@ -56,7 +56,7 @@ export interface StoreDeps {
 }
 
 export interface FeesStore {
-  /** Shows the histories of `ids` to `listener` until the returned function is called ('list': the ledger alone). */
+  /** Shows the shared histories and current states of `ids` until the returned function is called. */
   subscribeHistory(ids: readonly string[], scope: FeesScope, listener: () => void): () => void
   /** Shows the /state of `ids` (no history) to `listener` until the returned function is called. */
   subscribeStates(ids: readonly string[], listener: () => void): () => void
@@ -73,7 +73,9 @@ export interface FeesStore {
    * include it yet): after the owner's Collect or Close changed them. A state that then shows the settlement asks the
    * ledger again, fresh.
    */
-  refresh(ids: readonly string[]): void
+  refresh(ids: readonly string[], minBlock?: number): void
+  /** Revalidate visible entries after focus/online without discarding their last good values. */
+  resume(): void
   /** 2026-09-28 (speed wave B, item 16): a /state read made elsewhere (a position's page's own), taken as the store's. */
   offer(answer: RelayAnswer<StateResponse>): void
   /** Public indexed mint evidence; only the edge's verified answer can qualify history. */
@@ -143,11 +145,14 @@ interface Entry {
   answered: boolean
   stateFailures: number
   stateRetry: (() => void) | null
+  minBlock: number
+  pollElapsed: number
   view: FeeHistoryView
   /** The last ledger that answered for this id, and how the history may use it. */
   ledger: LedgerRead | null
   /** A ledger read of this id on its way. */
   asking: boolean
+  ledgerFreshPending: boolean
   mintHint?: LedgerMintHint
   /** A hinted read supersedes an already-running cold scan for this NFT only. */
   ledgerEpoch: number
@@ -194,10 +199,12 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   const stateMaps = new Map<string, { parts: Array<PositionState | null | undefined>; map: ReadonlyMap<string, PositionState | null> | null }>()
   const traceMaps = new Map<string, { parts: LedgerTrace[]; map: ReadonlyMap<string, LedgerTrace> }>()
   let refresh: (() => void) | null = null
+  let refreshDelay = LIST_STATE_REFRESH_MS
   const asking = new Set<string>()
   const stateReads = new Map<string, { ids: readonly string[]; stop: AbortController; retained: boolean }>()
   /** An explicit after-action refresh also serves the store's cache when no screen is currently subscribed. */
   const retainedState = new Set<string>()
+  const dirtyStates = new Set<string>()
   let queued: string[] = []
   let flushing = false
   const ledgerQueue = new Map<string, boolean>()
@@ -206,7 +213,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   const entry = (id: string): Entry => {
     let found = entries.get(id)
     if (!found) {
-      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, restored: false, state: null, read: null, stateReason: null, answered: false, stateFailures: 0, stateRetry: null, view: IDLE, ledger: null, asking: false, ledgerEpoch: 0, settled: null, failures: 0, retry: null, reading: 0, freshFor: 0, release: null, trace: NO_TRACE }
+      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, restored: false, state: null, read: null, stateReason: null, answered: false, stateFailures: 0, stateRetry: null, minBlock: 0, pollElapsed: 0, view: IDLE, ledger: null, asking: false, ledgerFreshPending: false, ledgerEpoch: 0, settled: null, failures: 0, retry: null, reading: 0, freshFor: 0, release: null, trace: NO_TRACE }
       entries.set(id, found)
     }
     return found
@@ -218,8 +225,8 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
    * later screen from asking). askLedger itself skips an id whose read is on its way or whose retry waits.
    */
   const needsLedger = (e: Entry) => !e.settled && (!e.ledger || e.ledger.position.why === 'reading')
-  /** Whose state is read from /state: a position's page, or a state's subscriber (a list-only history reads its ledger alone). */
-  const reads = (e: Entry) => e.pageRefs + e.stateRefs > 0
+  /** Detail, list and state-only consumers share the same batched current-state reads. */
+  const reads = (e: Entry) => e.pageRefs + e.stateRefs + e.listRefs > 0
   const shown = (e: Entry) => historyRefs(e) + e.stateRefs > 0
   const notify = (e: Entry) => {
     // A copy: a listener may unsubscribe while the others are called.
@@ -295,6 +302,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
 
   /** Asks `e`'s ledger with the next batch (eight ids a request), unless one is on its way or waits for its retry. */
   function askLedger(e: Entry, fresh = false): void {
+    if (e.asking && fresh) e.ledgerFreshPending = true
     if (e.asking || e.retry || e.settled || historyRefs(e) === 0) return
     e.asking = true
     // 2026-10-02 (review of the rules, finding 11): a list's row has no state until its ledger answers (the list asks no
@@ -329,7 +337,14 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
               cancel()
               for (const id of part) {
                 const one = entries.get(id)
-                if (one && one.ledgerEpoch === epochs.get(id)) ledgerAnswered(one, answer)
+                if (one && one.ledgerEpoch === epochs.get(id)) {
+                  ledgerAnswered(one, answer)
+                  if (one.ledgerFreshPending) {
+                    one.ledgerFreshPending = false
+                    // A transient failure keeps its Retry-After; the retry will use the newest state.
+                    if (!one.retry) askLedger(one, true)
+                  }
+                }
               }
             })
         }
@@ -343,6 +358,12 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     const last = answer === UNANSWERED ? 'unanswered' : !answer.ok ? answer.failure : !position ? 'unavailable' : !position.ok ? position.reason : position.exact ? 'exact' : (position.why ?? 'inexact')
     e.trace = { asks: e.trace.asks, last }
     notify(e)
+    // A node/cache answer from before a confirmed action cannot establish a terminal absence. A successful older
+    // history can still supplement a newer state, but an older refusal cannot invalidate that proven state either.
+    if (answer.ok && (answer.value.block < e.minBlock || (position && !position.ok && e.read && answer.value.block < e.read.block))) {
+      scheduleRetry(e, 0, true)
+      return
+    }
     if (answer.ok && position && position.ok) {
       e.failures = 0
       const read: LedgerRead = { position, block: answer.value.block, timestamp: answer.value.timestamp }
@@ -354,7 +375,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       // the list only for a position this browser already keeps readings of (its page was opened): readings keep the
       // MAX_NFTS positions read last, so a list of more than that pushed out the points its pages had kept.
       if (e.pageRefs > 0 || (deps.readings?.get(e.id).length ?? 0) > 0) deps.readings?.note(e.id, { block: read.block, t: read.timestamp, unclaimed: [BigInt(position.state.unclaimed0), BigInt(position.state.unclaimed1)] })
-      if (!e.read || read.block > e.read.block) {
+      if (read.block >= e.minBlock && (!e.read || read.block > e.read.block)) {
         e.read = { position: position.state, block: read.block }
         e.state = stateOf(position.state, read.block, read.timestamp)
         e.stateReason = null
@@ -389,19 +410,28 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   }
 
   /** The next ledger read after a failure: the ladder's wait, never sooner than the route's Retry-After. */
-  function scheduleRetry(e: Entry, wait: number): void {
+  function scheduleRetry(e: Entry, wait: number, fresh = false): void {
     if (historyRefs(e) === 0 || e.retry) return
     const after = retryAfter(e.failures)
     e.failures = Math.min(e.failures + 1, RETRY_MS.length)
     e.retry = deps.later(Math.max(after, Number.isFinite(wait) ? wait : 0), () => {
       e.retry = null
-      askLedger(e)
+      askLedger(e, fresh)
     })
   }
 
   // --- /state ----------------------------------------------------------------
 
   function applyState(e: Entry, answer: RelayAnswer<StateResponse>): void {
+    // A request begun before a confirmed action cannot undo that action when it arrives late.
+    if (answer.ok && answer.value.block < e.minBlock) {
+      if (!e.stateRetry) {
+        e.stateRetry = deps.later(retryAfter(e.stateFailures), () => { e.stateRetry = null; ask([e.id], true) })
+        e.stateFailures = Math.min(e.stateFailures + 1, RETRY_MS.length)
+      }
+      return
+    }
+    if (answer.ok && e.read && answer.value.block < e.read.block) return
     const position = answer.ok ? answer.value.positions.find((p) => p.tokenId === e.id) : undefined
     e.answered = true
     if (!answer.ok || !position || (!position.ok && position.reason === 'rpc_unavailable')) {
@@ -410,15 +440,15 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
         e.stateReason = 'rpc_unavailable'
         if (historyRefs(e) > 0 && e.view.phase !== 'cached' && !e.ledger) setView(e, { phase: 'unavailable', reason: 'rpc_unavailable' })
         notify(e)
+      }
         if (!e.stateRetry && shown(e)) {
           const wait = answer.ok ? 0 : answer.retryAfterMs
           e.stateRetry = deps.later(Math.max(retryAfter(e.stateFailures), Number.isFinite(wait) ? wait : 0), () => {
             e.stateRetry = null
-            if (shown(e) && !e.state) ask([e.id])
+            if (shown(e)) ask([e.id])
           })
           e.stateFailures = Math.min(e.stateFailures + 1, RETRY_MS.length)
         }
-      }
       return
     }
     e.stateRetry?.()
@@ -444,6 +474,8 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     e.read = { position, block }
     e.state = state
     e.stateReason = null
+    // A newly proven NFT can outlive an earlier not-found answer while the local node was catching up.
+    if (e.settled === 'not_found') e.settled = null
     // A position's page keeps its reads: the measured points between its settlements.
     if (e.pageRefs > 0) deps.readings?.note(e.id, { block, t: state.timestamp, unclaimed: state.unclaimed })
     notify(e)
@@ -458,7 +490,10 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
         if (read) read.retained = true
         else retainedState.add(id)
       }
-      if (asking.has(id)) continue
+      if (asking.has(id)) {
+        if (retain) dirtyStates.add(id)
+        continue
+      }
       asking.add(id)
       queued.push(id)
     }
@@ -487,23 +522,35 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
               asking.delete(id)
               const e = entries.get(id)
               if (e) applyState(e, answer)
+              if (dirtyStates.delete(id)) ask([id], true)
             }
           })
       }
     })
   }
 
-  function refreshNow(): void {
-    const ids = [...entries.values()].filter(reads).map((e) => e.id)
-    if (ids.length === 0) return
-    ask(ids, false, true)
+  function refreshNow(elapsed: number): void {
+    const ids = [...entries.values()].filter((e) => {
+      if (!reads(e)) return false
+      e.pollElapsed += elapsed
+      const due = e.pageRefs > 0 || e.stateRefs > 0 ? STATE_REFRESH_MS : LIST_STATE_REFRESH_MS
+      if (e.pollElapsed < due || e.stateRetry) return false
+      e.pollElapsed = 0
+      return true
+    }).map((e) => e.id)
+    if (ids.length > 0) ask(ids, false, true)
     scheduleRefresh()
   }
   function scheduleRefresh(): void {
-    if (refresh) return
-    refresh = deps.later(STATE_REFRESH_MS, () => {
+    const active = [...entries.values()].filter(reads)
+    if (!active.length) return
+    const delay = active.some((e) => e.pageRefs > 0 || e.stateRefs > 0) ? STATE_REFRESH_MS : LIST_STATE_REFRESH_MS
+    if (refresh && refreshDelay <= delay) return
+    refresh?.()
+    refreshDelay = delay
+    refresh = deps.later(delay, () => {
       refresh = null
-      refreshNow()
+      refreshNow(delay)
     })
   }
 
@@ -597,15 +644,21 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     view(id) {
       return entries.get(id)?.view ?? IDLE
     },
-    refresh(ids) {
+    refresh(ids, minBlock) {
       for (const id of ids) {
         deps.historyCache?.remove(id)
-        const e = entries.get(id)
+        const e = entry(id)
+        if (Number.isSafeInteger(minBlock) && minBlock! > 0) e.minBlock = Math.max(e.minBlock, minBlock!)
+        e.stateRetry?.()
+        e.stateRetry = null
         if (e?.view.phase === 'cached') setView(e, e.state ? { phase: 'loading', state: e.state } : IDLE)
       }
-      const known = (list: readonly string[]) => list.filter((id) => entries.get(id)?.answered)
-      ask(known(ids), true)
-      deps.timer(AFTER_ACTION_MS, () => ask(known(ids), true))
+      ask(ids, true)
+      deps.timer(AFTER_ACTION_MS, () => ask(ids, true))
+    },
+    resume() {
+      ask([...entries.values()].filter((e) => reads(e) && !e.stateRetry).map((e) => e.id), false, true)
+      scheduleRefresh()
     },
     offer(answer) {
       if (answer.ok) for (const position of answer.value.positions) applyState(entry(position.tokenId), answer)

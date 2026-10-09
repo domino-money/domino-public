@@ -1,7 +1,7 @@
 import type { ChainStatus } from 'api-contracts/read-v6/types'
 import { Badge, FigureDash } from '../../components/ui'
 import { v2Chain } from '../../v2/chains'
-import type { ReadV6Reply } from '../../v2/read/v6'
+import type { ListsReply } from '../lists/read'
 import type { V2ChainId } from '../../v2/types'
 import { chainView, haltWords } from './portfolio'
 
@@ -15,7 +15,7 @@ import { chainView, haltWords } from './portfolio'
 const STALE_TEXT = 'Your automation may be a few minutes behind.'
 const FAILED_TEXT = "Domino can't read your automation right now."
 
-export function IndexStatus({ chains, failed, chainId, what }: { chains?: readonly ChainStatus[]; failed?: Exclude<ReadV6Reply<unknown>, { kind: 'ok' }>; chainId: V2ChainId; what: string }) {
+export function IndexStatus({ chains, failed, chainId, what }: { chains?: readonly ChainStatus[]; failed?: Exclude<ListsReply<unknown>, { kind: 'ok' }>; chainId: V2ChainId; what: string }) {
   const name = v2Chain(chainId).name
   if (failed) {
     return (

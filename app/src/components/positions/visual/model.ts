@@ -14,7 +14,7 @@
  */
 import type { FeesPeriod } from '../../../lib/fees/periods'
 import type { FeeEvent, FeeHistory, FeePoint, FeeDisplayState as PositionState, StateCurrency } from '../../../lib/fees/types'
-import { type Basis, unitsNumber, valueUnits } from './value'
+import { type Basis, valueNumber, valueUnits } from './value'
 
 const ZERO: readonly [bigint, bigint] = [0n, 0n]
 
@@ -32,6 +32,7 @@ export interface FeesBucket {
   end: number
   /** Cumulative earned value at the stretch's end. */
   earned: bigint
+  earnedTokens: readonly [bigint, bigint]
   earnedIn: bigint
   tokensIn: readonly [bigint, bigint]
   collectedIn: bigint
@@ -140,9 +141,9 @@ export function periodView(view: FeesView, period: FeesPeriod, start: FeePoint):
     const [before, after] = [points[i - 1], points[i]]
     const earnedIn = sub(after.earned, before.earned)
     const collectedIn = sub(after.collected, before.collected)
-    buckets.push({ start: before.t, end: after.t, earned: valueUnits(basis, after.earned), earnedIn: valueUnits(basis, earnedIn), tokensIn: earnedIn, collectedIn: valueUnits(basis, collectedIn), collectedTokensIn: collectedIn })
+    buckets.push({ start: before.t, end: after.t, earned: valueUnits(basis, after.earned), earnedTokens: after.earned, earnedIn: valueUnits(basis, earnedIn), tokensIn: earnedIn, collectedIn: valueUnits(basis, collectedIn), collectedTokensIn: collectedIn })
   }
-  const line = points.map((point) => ({ t: point.t, v: unitsNumber(valueUnits(basis, point.earned)), c: unitsNumber(valueUnits(basis, point.collected)) }))
+  const line = points.map((point) => ({ t: point.t, v: valueNumber(basis, point.earned), c: valueNumber(basis, point.collected) }))
   const base = valueUnits(basis, start.earned)
   // Each settlement on the line where it happened: its measured point (right after it). One at the start itself is in
   // the floor already, so only the mint's pip sits there, where the period starts at the mint.
@@ -151,7 +152,7 @@ export function periodView(view: FeesView, period: FeesPeriod, start: FeePoint):
     .filter((event) => (event.timestamp > start.t || (opened && event.timestamp === start.t)) && event.timestamp <= end)
     .map((event) => {
       const at = points.find((point) => point.t >= event.timestamp)
-      return { t: event.timestamp, v: event.kind === 'mint' ? unitsNumber(base) : unitsNumber(valueUnits(basis, at?.earned ?? history.earned)), kind: event.kind, tx: event.tx }
+      return { t: event.timestamp, v: event.kind === 'mint' ? valueNumber(basis, start.earned) : valueNumber(basis, at?.earned ?? history.earned), kind: event.kind, tx: event.tx }
     })
     .reverse()
   return { period, from: { block: start.block, t: start.t, kind: start.kind }, start: start.t, end, base, last: view.earned, points: line, buckets, events }

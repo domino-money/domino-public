@@ -213,6 +213,15 @@ export type HistoryVerdict =
   /** Why no line: still being collected, not available for this pool, no trade in the window, or an answer the chart cannot use. */
   | { kind: 'none'; reason: 'not_built' | 'unavailable' | 'no_trades' | 'mismatch' | 'unreadable' | 'unknown_mint' | 'no_position_history' }
 
+/** The pool keeps trading after an NFT closes. Its later prices are not this position's history. */
+export function closedPriceLine(verdict: HistoryVerdict | null, closedAt: number | null): HistoryVerdict | null {
+  if (verdict?.kind !== 'line' || closedAt === null || !Number.isSafeInteger(closedAt) || closedAt <= 0) return verdict
+  const history = verdict.history
+  const points = history.points.filter((point) => point.t <= closedAt)
+  if (!points.length) return { kind: 'none', reason: 'no_position_history' }
+  return { kind: 'line', history: { ...history, end: Math.min(history.end, closedAt), points, runs: history.runs.map((run) => run.filter((point) => point.t <= closedAt)).filter((run) => run.length > 0) } }
+}
+
 /**
  * The pool's stored price history (read-v3 `history`: the pool's own ratio, built by the read service from its Swaps on
  * Robinhood Chain, never read from a node by the page) as the chart's line, in the page's orientation: the history is

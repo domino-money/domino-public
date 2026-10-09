@@ -162,15 +162,20 @@ test('a hint is an exact PM mint proof, never authority to skip history on a wro
   }
 });
 
-test('cold discovery advances bounded windows and a newly supplied valid mint bypasses the earlier incomplete answer', async () => {
+test('a cold recent V2 NFT discovers its indexed mint immediately and scans settlements only during its life', async () => {
   const { chain } = v2World();
   const e = edge(chain);
   const first = await e.askOnce({ tokenIds: [ID] });
-  assert.equal(first.body.positions[0].why, 'reading');
-  assert.equal(first.body.positions[0].through, FLOOR + ledger.LEDGER_SCAN_BLOCKS - 1);
+  assert.equal(first.body.positions[0].exact, true, first.body.positions[0].why);
+  assert.equal(first.body.positions[0].mint.block, V2_MINT.block);
+  assert.equal(first.body.positions[0].through, V2_HEAD);
+  const discovery = logReads(chain).filter((filter) => filter.address === owned.POSITION_MANAGER && filter.topics[1] === word(0n));
+  assert.equal(discovery.length, 1);
+  assert.ok(Number(discovery[0].toBlock) - Number(discovery[0].fromBlock) < ledger.MINT_DISCOVERY_BLOCKS);
+  assert.ok(logReads(chain).filter((filter) => !discovery.includes(filter)).every((filter) => Number(filter.fromBlock) >= V2_MINT.block));
   const second = await e.askOnce({ tokenIds: [ID] });
-  assert.ok(second.body.positions[0].through > first.body.positions[0].through);
-  assert.ok(logReads(chain).every((filter) => Number(filter.toBlock) - Number(filter.fromBlock) < ledger.LEDGER_SCAN_BLOCKS));
+  assert.equal(second.body.positions[0].through, V2_HEAD);
+  assert.equal(logReads(chain).filter((filter) => filter.address === owned.POSITION_MANAGER && filter.topics[1] === word(0n)).length, 1, 'cached accounting avoids repeating discovery');
   const ready = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
   assert.equal(ready.body.positions[0].exact, true, ready.body.positions[0].why);
 });
@@ -194,7 +199,7 @@ test('a late cold response cannot overwrite the mint and complete ledger of the 
   const began = new Promise((resolve) => { started = resolve; });
   const node = { fetch: async (url, init) => {
     const question = JSON.parse(init.body);
-    if (question.method === 'eth_getLogs' && Number(question.params[0].fromBlock) === FLOOR) { started(); await gate; }
+    if (question.method === 'eth_getLogs' && question.params[0].address === owned.POSITION_MANAGER && question.params[0].topics[1] === word(0n) && Number(question.params[0].toBlock) > Number(question.params[0].fromBlock)) { started(); await gate; }
     return world.chain.fetch(url, init);
   } };
   const e = edge(node);
@@ -204,7 +209,7 @@ test('a late cold response cannot overwrite the mint and complete ledger of the 
     const ready = await e.askOnce({ tokenIds: [ID], mintHints: [mintHint()] });
     assert.equal(ready.body.positions[0].exact, true);
   } finally { release(); }
-  assert.equal((await cold).body.positions[0].why, 'reading');
+  assert.equal((await cold).body.positions[0].exact, true);
   const saved = await e.stored.get(`${ORIGIN}/api/fees/v1/cache/c1/ledger2/${ID}/0`).clone().json();
   assert.equal(saved.scanned, V2_HEAD);
   assert.equal(saved.through, V2_HEAD);
@@ -219,7 +224,7 @@ test('a recent hinted mint is not starved by a second NFT still discovering its 
   assert.equal(result.status, 200);
   assert.equal(result.body.positions.find((p) => p.tokenId === ID).exact, true);
   assert.equal(result.body.positions.find((p) => p.tokenId !== ID).why, 'reading');
-  assert.ok(logReads(chain).every((filter) => Number(filter.toBlock) - Number(filter.fromBlock) < ledger.LEDGER_SCAN_BLOCKS));
+  assert.ok(logReads(chain).every((filter) => Number(filter.toBlock) - Number(filter.fromBlock) < (filter.address === owned.POSITION_MANAGER && filter.topics[1] === word(0n) ? ledger.MINT_DISCOVERY_BLOCKS : ledger.LEDGER_SCAN_BLOCKS)));
 });
 
 test('bounded discovery waits for a later V2 factory proof instead of permanently rejecting a not-yet-proven holder', async () => {
@@ -766,13 +771,16 @@ test('eight positions read cold: each bounded discovery window shares one own-ev
   assert.equal(status, 200);
   assert.ok(body.positions.every((one) => one.ok && one.exact), JSON.stringify(body.positions.map((one) => one.why)));
   const reads = scans(chain);
-  const own = reads.filter((filter) => [filter.address].flat().includes(owned.POSITION_MANAGER));
-  assert.equal(own.length, Math.ceil((HEAD - FLOOR + 1) / (ledger.LEDGER_SCAN_BLOCKS - fees.SAFE_DEPTH)), 'one shared read per bounded discovery window');
+  const discovery = reads.filter((filter) => filter.address === owned.POSITION_MANAGER && filter.topics[1] === word(0n));
+  assert.equal(discovery.length, 1, 'one indexed mint read shared by all eight NFTs');
+  assert.equal(discovery[0].topics[3].length, 8);
+  const own = reads.filter((filter) => [filter.address].flat().includes(owned.POSITION_MANAGER) && !discovery.includes(filter));
+  assert.equal(own.length, 1, 'settlement scan starts at the actual earliest mint');
   assert.deepEqual([own[0].address].flat().sort(), [owned.POSITION_MANAGER, ledger.ENGINE, owned.SETUP_CONTRACT, ledger.V2_ZAP, ledger.V2_FACTORY].sort());
-  assert.equal(Number(own[0].fromBlock), FLOOR);
+  assert.equal(Number(own[0].fromBlock), OWNER_MINT.block);
   assert.equal(own[0].topics[3].length, 8, 'its eight ids in one place');
   assert.ok(own.every((filter) => filter.topics[3].length === 8 && Number(filter.toBlock) - Number(filter.fromBlock) < ledger.LEDGER_SCAN_BLOCKS));
-  const paid = reads.filter((filter) => filter.topics[0] === owned.TRANSFER_TOPIC);
+  const paid = reads.filter((filter) => filter.topics[0] === owned.TRANSFER_TOPIC && !discovery.includes(filter));
   assert.equal(paid.length, 1, 'round two: one read of the owners’ transfers, both ways');
   assert.equal(Number(paid[0].fromBlock), OWNER_MINT.block, 'from the earliest mint');
   for (const filter of reads) assert.ok(Number(filter.toBlock) - Number(filter.fromBlock) + 1 <= local.LOCAL_RPC_LOG_BLOCKS);
@@ -879,7 +887,7 @@ test('the question’s byte budget running out is never a verdict: the NFTs it d
   const node = {
     fetch: async (url, init) => {
       const body = JSON.parse(init.body);
-      if (body.method === 'eth_getLogs' && heavyIds.some((id) => [body.params[0].topics[3]].flat().includes(idWord(id)))) {
+      if (body.method === 'eth_getLogs' && body.params[0].topics[1] !== word(0n) && heavyIds.some((id) => [body.params[0].topics[3]].flat().includes(idWord(id)))) {
         heavyReads += 1;
         return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [{ data: big }] }), { headers: { 'Content-Type': 'application/json' } });
       }
@@ -904,15 +912,15 @@ test('the question’s byte budget running out is never a verdict: the NFTs it d
   e.clock.time += 3_000;
   const second = await e.ask({ tokenIds: ids });
   assert.deepEqual(whys(second.body), { [ids[0]]: 'too_many', [ids[1]]: 'too_many', [ids[2]]: 'too_many', [ID]: 'exact' });
-  assert.equal(heavyReads, 5, 'together, then the third alone; the first two not read again');
+  assert.equal(heavyReads, 4, 'the third reads alone from its proven mint; the first two are not read again');
   // A `too_many` is kept an hour, then read again.
   e.clock.time += ledger.TOO_MANY_SECONDS * 1000 - 60_000;
   await e.ask({ tokenIds: [ids[0]] });
-  assert.equal(heavyReads, 5, 'within its hour: its verdict');
+  assert.equal(heavyReads, 4, 'within its hour: its verdict');
   e.clock.time += 60_000;
   const again = await e.ask({ tokenIds: [ids[0]] });
   assert.equal(again.body.positions[0].why, 'too_many');
-  assert.equal(heavyReads, 6, 'past its hour: read again');
+  assert.equal(heavyReads, 5, 'past its hour: read again');
 });
 
 test('the ledger’s keys are version 2: a verdict a spent budget kept under the old keys is never read', async () => {

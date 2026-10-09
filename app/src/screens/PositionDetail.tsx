@@ -16,7 +16,7 @@ import { Button, Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, 
 import { chainState, freshState, takeWarmState } from '../lib/fees/client'
 import { feesStore } from '../lib/fees/spawn'
 import { refreshFeeStates, useFeeHistory, useLedgerTraces } from '../lib/fees/useFeeHistory'
-import { ledgerOpenedAt, ledgerPriceObservations, type ActivityMint } from '../lib/chart/positionOpened'
+import { ledgerClosedAt, ledgerOpenedAt, ledgerPriceObservations, type ActivityMint } from '../lib/chart/positionOpened'
 import { readKept } from '../finance/privateCards'
 import { KEPT_MAX_AGE_MS } from '../lib/browserCopies'
 import { createdHere } from '../lib/create/createProgress'
@@ -34,6 +34,7 @@ import type { TokenDisplay } from '../lib/read/types'
 import { positionOfState, walletCard, walletState, type CurrencyView } from '../lib/walletCards'
 import { useWalletIdentity, walletKey } from '../lib/walletIdentity'
 import { keptPosition, parseWalletAnswer, walletChanged, type WalletPosition } from '../lib/walletPositions'
+import { notePositionConfirmation } from '../lib/positionEvidence'
 import { readGatewayRow } from '../lib/positions/gatewayRow'
 import { loadReadSource } from '../lib/read/buildMode'
 
@@ -173,6 +174,7 @@ export interface RangeLabSpec {
   /** As this page always does; false: as V2's page for a pool the read service keeps no history for. */
   history?: boolean
   openedAt?: number | null
+  closedAt?: number | null
 }
 
 /**
@@ -191,7 +193,7 @@ export const RangeLab = __DOMINO_TEST_HOOKS__
             <h2 id="position-range-title" className="dm-title">
               Price range
             </h2>
-            <PositionRange card={card} price={price} variant="page" history={spec.history !== false} openedAt={spec.openedAt ?? null} />
+            <PositionRange card={card} price={price} variant="page" history={spec.history !== false} openedAt={spec.openedAt ?? null} closedAt={spec.closedAt ?? null} />
           </section>
         </div>
       )
@@ -432,7 +434,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
               no line of the pool's past prices, which came from the fees replay's reads of the pool's history. Changed on
               purpose 2026-10-03 (the owner's point 10: "it doesn't show the history"): the line is back, from the read
               service's stored price history of the pool (read-v3 `history`, the last 7 days), never from a node. */}
-          <PositionRange card={card} price={price} variant="page" history openedAt={openedAt} observations={ledgerPriceObservations(feeHistory)} />
+          <PositionRange card={card} price={price} variant="page" history openedAt={openedAt} closedAt={ledgerClosedAt(feeHistory)} observations={ledgerPriceObservations(feeHistory)} />
         </section>
 
         <PositionActivity tokenId={card.tokenId} automatic={automatic} owner={card.owner.address} onMint={onMint} />
@@ -710,7 +712,8 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
           // (Positions after this page), so no answer the edge kept from before the action is drawn. RPC fix round 2: until
           // an answer is at or past the block the action was included in (a node behind its receipt answers from before it).
           walletChanged(included)
-          refreshFeeStates([tokenId])
+          notePositionConfirmation({ chainId: 4663, wallet: current.owner, tokenIds: [tokenId], block: included })
+          refreshFeeStates([tokenId], included === undefined ? undefined : Number(included))
         }}
       />
     )

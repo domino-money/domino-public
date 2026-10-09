@@ -1,6 +1,6 @@
-import { ExitThumb } from '../../components/home/Vignettes'
+import { AutomationChoice } from '../../components/automate/AutomationChoice'
 import { IconChevronRight } from '../../components/icons'
-import { Display, LinkButton } from '../../components/ui'
+import { Button, LinkButton } from '../../components/ui'
 import { gateOpen, useGate } from './gate'
 
 /**
@@ -22,22 +22,13 @@ export default function AutomateProtection() {
   const vault42161 = useGate('vault', 42161)
   const exit42161 = useGate('autoExit', 42161)
   const anywhere = (gateOpen(vault4663) && gateOpen(exit4663)) || (gateOpen(vault8453) && gateOpen(exit8453)) || (gateOpen(vault42161) && gateOpen(exit42161))
-  if (!anywhere) return null
+  const pending = [vault4663, exit4663, vault8453, exit8453, vault42161, exit42161].some((gate) => gate === null)
   return (
-    <section className="dm-card dm-auto-plain animate-rise" data-feature="protection" aria-labelledby="automate-protection">
-      <div className="dm-plate dm-dots-plate dm-auto-plain-plate" aria-hidden="true">
-        <ExitThumb />
-      </div>
-      <div className="dm-auto-plain-body">
-        <Display as="h2" id="automate-protection" className="dm-display-card">
-          Auto-exit
-        </Display>
-        <p className="dm-auto-plain-line">When the price reaches the end of your range, Domino closes the position and sends the tokens to your wallet. 0.2% only if it closes.</p>
-      </div>
-      <LinkButton href="#/positions" variant="outline" size="lg" className="dm-auto-plain-go" data-v2in-protection="">
+    <AutomationChoice kind="protection">
+      {anywhere ? <LinkButton href="#/positions" variant="outline" data-v2in-protection="">
         Choose a position
         <IconChevronRight />
-      </LinkButton>
-    </section>
+      </LinkButton> : <Button disabled>{pending ? 'Checking availability…' : 'Unavailable right now'}</Button>}
+    </AutomationChoice>
   )
 }

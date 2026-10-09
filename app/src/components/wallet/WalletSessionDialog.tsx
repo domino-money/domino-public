@@ -367,7 +367,7 @@ export function WalletSessionDialog({
           {view.status === 'signed_in' && (
             // Changed on purpose 2026-10-01 (audit E5): one plain sentence for what the session does; the docs' Sessions
             // and signing out says the rest.
-            <p className="text-caption text-fg-subtle">Signs you out after 30 minutes without use, and at the latest at the time above.</p>
+            <p className="text-caption text-fg-subtle">Stays signed in while Domino is open, for up to 12 hours. You may need to sign in again after closing the site or losing your connection.</p>
           )}
 
           {view.status === 'signed_in' && view.notice === 'refresh_unavailable' && (

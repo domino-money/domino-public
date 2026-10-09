@@ -158,8 +158,8 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   useEffect(() => {
     if (!done || told.current) return
     told.current = true
-    doneRef.current()
-  }, [done])
+    doneRef.current(usesDirect ? direct.includedBlock : view.receipt?.includedBlock)
+  }, [done, usesDirect, direct.includedBlock, view.receipt?.includedBlock])
 
   // Rev3/rev4 §2.13: an exit of a vault's root (armed or not) leaves the fees waiting to be reinvested in the vault. The
   // review says so with the vault's reserves; once the exit is on chain the automation panel opens at them.

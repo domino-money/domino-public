@@ -32,7 +32,7 @@ const PROFILES = {
 };
 export const OWNER_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const lower = (value) => String(value).toLowerCase();
-const V4_PM = [...abiOf('IV4PositionManagerMinimal')];
+const V4_PM = [...abiOf('IV4PositionManagerMinimal'), ...parseAbi(['function multicall(bytes[] data) payable returns (bytes[] results)'])];
 const STATE_VIEW = abiOf('IV4StateViewMinimal');
 const V3_NPM = [...abiOf('IUniswapV3PositionManagerMinimal'), ...parseAbi(['function multicall(bytes[] data) payable returns (bytes[] results)'])];
 const V3_POOL = abiOf('IUniswapV3PoolMinimal');
@@ -95,6 +95,7 @@ export function createDirectChain({ chainId = 4663, key = OWNER_KEY, v4 = [], v3
 
   function v4Manager(ctx, data) {
     const { functionName, args = [] } = decodeFunctionData({ abi: V4_PM, data });
+    if (functionName === 'multicall') return encodeFunctionResult({ abi: V4_PM, functionName, result: args[0].map((call) => v4Manager(ctx, call)) });
     const nft = ctx.w.v4.get(args[0]);
     switch (functionName) {
       case 'ownerOf': if (!nft) throw new Revert(errorString('NOT_MINTED')); return encodeFunctionResult({ abi: V4_PM, functionName, result: nft.owner });
@@ -132,7 +133,7 @@ export function createDirectChain({ chainId = 4663, key = OWNER_KEY, v4 = [], v3
 
   function stateView(ctx, data) {
     const { functionName, args } = decodeFunctionData({ abi: STATE_VIEW, data });
-    const nft = [...ctx.w.v4.values()].find((p) => poolIdOf(p.pool) === lower(args[0]));
+    const nft = functionName === 'getPositionInfo' ? ctx.w.v4.get(BigInt(args[4])) : [...ctx.w.v4.values()].find((p) => poolIdOf(p.pool) === lower(args[0]));
     if (!nft) throw new Error('unknown pool id');
     if (functionName === 'getSlot0') return encodeFunctionResult({ abi: STATE_VIEW, functionName, result: [nft.sqrtPriceX96, nft.tick, 0, nft.pool.fee] });
     if (functionName === 'getPositionInfo') return encodeFunctionResult({ abi: STATE_VIEW, functionName, result: [nft.liquidity, nft.growthLast[0], nft.growthLast[1]] });

@@ -30,9 +30,9 @@ import type { GateRoutes, V2Gate } from '../v2/gate'
 import type { S1PlanValidators } from '../v2/plan/types'
 import type { ReadV6Validators } from '../v2/read/v6'
 import type { V2RouteProbe } from '../v2/routes'
-import { createV2Transports, type V2DataScript, type V2Transports } from './dataSource'
+import { createV2ReadTransports, createV2Transports, type V2DataScript, type V2Transports, type V2ReadTransports } from './dataSource'
 
-export { type V2DataSource, type V2Transports } from './dataSource'
+export { type V2DataSource, type V2Transports, type V2ReadTransports } from './dataSource'
 
 declare const __DOMINO_TEST_HOOKS__: boolean | undefined
 const TEST_HOOKS: boolean = typeof __DOMINO_TEST_HOOKS__ === 'boolean' && __DOMINO_TEST_HOOKS__
@@ -58,6 +58,10 @@ export function v2Transports(gate: V2Gate): V2Transports | null {
     live: () => ({ read: liveReadV6Transport(), plan: livePlanTransport(), probe: (probe ??= v2RouteProbe()) }),
     script,
   })
+}
+
+export function v2ReadTransports(): V2ReadTransports {
+  return createV2ReadTransports({ runtimes: RUNTIMES, live: () => ({ read: liveReadV6Transport(), plan: livePlanTransport(), probe: (probe ??= v2RouteProbe()) }), script })
 }
 
 /** Forget the routes' kept answers (a session or page change that may change them). */

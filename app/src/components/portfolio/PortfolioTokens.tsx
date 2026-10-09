@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { WALLET_FALLBACK_TOKENS } from '../../config/selectedPoolCatalogue'
 import { formatUsd } from '../../lib/format/usd'
 import { scaledText } from '../../lib/format/decimal'
@@ -9,7 +9,8 @@ import { NATIVE_CURRENCY, parseAddressInput, shortAddress } from '../../lib/read
 import { quietTitle, reaskDelayMs, whenVisibleAfter } from '../../lib/read/screens/quietRead'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import { WALLET_PAGE_CAP, createWalletSession, type WalletSession, type WalletSnapshot } from '../../lib/read/screens/walletSession'
-import type { TokenDisplay } from '../../lib/read/types'
+import type { ReadOutcome, ReadSource, TokenDisplay } from '../../lib/read/types'
+import { createWalletReadGuard, subscribePositionEvidence } from '../../lib/positionEvidence'
 import { SHOWN_HOLDINGS, WHOLE_LIST, addressesToPrice, held, listGap, totalWithheld, walletHoldings, type Holding, type ListWholeness } from '../../lib/walletHoldings'
 import { NO_PRICES, bookQuotes, recallWallet, rememberWallet, withAnswer, type PriceBook, type RememberedList } from '../../lib/walletMemory'
 import { walletPrices } from '../../lib/walletPrices'
@@ -32,6 +33,8 @@ const SELECTED_TOKENS: string[] = [...WALLET_FALLBACK_TOKENS]
 
 /** How often the card reads the list again while the page is shown (round 6): the rows stay on screen meanwhile. */
 const REFRESH_MS = 300_000
+/** A local node catching up with a confirmed action is checked quietly, with a bounded request rate. */
+const CONFIRMED_RETRY_MS = [2_000, 10_000, 30_000, 60_000, 120_000] as const
 /**
  * On a first visit (nothing remembered), how long the card waits for the whole list and its prices before it draws
  * what it has: a list read in time appears once, in its final order, and a slow one still appears within this.
@@ -334,6 +337,33 @@ export function PortfolioTokens({ address }: { address: string }) {
   const quiet = useRef(0)
   // The assets this list's pages could not read, by key: the pager keeps only the last page's.
   const unreadKeys = useRef(new Set<string>())
+  const readGuard = useMemo(() => createWalletReadGuard(address), [address])
+  const lagged = useRef(false)
+  const confirmedRetry = useRef(0)
+  const cancelConfirmedRead = useRef<(() => void) | null>(null)
+  const refreshConfirmed = useCallback((wait = 0) => {
+    cancelConfirmedRead.current?.()
+    cancelConfirmedRead.current = whenVisibleAfter(readGuard.delay(Date.now(), wait), () => {
+      cancelConfirmedRead.current = null
+      setLoading(true)
+      setRound((n) => n + 1)
+    })
+  }, [readGuard])
+
+  // The neutral bus includes V2 actions, without importing their wallet/execution chunks into this card.
+  // Replay is coalesced: several retained receipts raise one barrier and schedule one new list, never one per receipt.
+  useEffect(() => {
+    const stop = subscribePositionEvidence((event) => {
+      if (event.kind !== 'confirmed' || !readGuard.confirm(event.value)) return
+      generation.current += 1
+      running.current?.abort()
+      checks.current?.abort()
+      session.current = null
+      confirmedRetry.current = 0
+      refreshConfirmed()
+    })
+    return () => { stop(); cancelConfirmedRead.current?.(); cancelConfirmedRead.current = null }
+  }, [readGuard, refreshConfirmed])
 
   /**
    * One step of the session, on its own signal, then the list's next pages on the same signal until there are
@@ -348,6 +378,16 @@ export function PortfolioTokens({ address }: { address: string }) {
     const mine = new AbortController()
     running.current = mine
     const stale = () => gen !== generation.current || mine.signal.aborted
+    const stopped = () => {
+      if (stale()) return true
+      if (!lagged.current) return false
+      if (running.current === mine) running.current = null
+      // The old good list remains intact; an aborted pre-receipt page is not an empty wallet.
+      setLoading(false)
+      const wait = CONFIRMED_RETRY_MS[Math.min(confirmedRetry.current++, CONFIRMED_RETRY_MS.length - 1)]
+      refreshConfirmed(wait)
+      return true
+    }
     // Every page's unreadable assets are kept until a later row answers them; a list read again from its first page starts over.
     const note = (after: WalletSnapshot) => {
       if (after.failure === null && after.view.pages === 1) unreadKeys.current.clear()
@@ -360,20 +400,22 @@ export function PortfolioTokens({ address }: { address: string }) {
     void (async () => {
       let asked: Step = step
       let after = await (step === 'first' ? current.first(mine.signal) : step === 'more' ? current.more(mine.signal) : current.restart(mine.signal))
+      if (stopped()) return
       note(after)
       while (!stale() && after.failure === null && after.canLoadMore) {
         // This page is drawn while the next one is read.
         setList({ snap: after, unread: unreadOf(after) })
         asked = 'more'
         after = await current.more(mine.signal)
+        if (stopped()) return
         note(after)
       }
-      if (stale()) return
+      if (stopped()) return
       // Pages skipped candidates: the selected pools' tokens the list lacks are checked once by address; nothing is said on screen.
       if (after.pendingCheck) {
         setList({ snap: after, unread: unreadOf(after) })
         after = await current.check(checks.current?.signal)
-        if (stale()) return
+        if (stopped()) return
       }
       if (running.current === mine) running.current = null
       const unread = unreadOf(after)
@@ -394,7 +436,7 @@ export function PortfolioTokens({ address }: { address: string }) {
       settled?.(after)
     })()
     return mine
-  }, [])
+  }, [refreshConfirmed])
 
   // The address whose empty listing was already followed by the verified-token check, so it happens once per address.
   const autoChecked = useRef<string | null>(null)
@@ -407,19 +449,38 @@ export function PortfolioTokens({ address }: { address: string }) {
   useEffect(() => {
     if (!source) return
     generation.current += 1
+    cancelConfirmedRead.current?.()
+    cancelConfirmedRead.current = null
     quiet.current = 0
     unreadKeys.current.clear()
+    lagged.current = false
     // The automatic second read after an empty list is a by-address check of
     // the selected pools' tokens — discovery already reported this address
     // holds nothing listed, so asking it to look again is work with a known
     // answer. Tokens someone typed keep discovery: walletSession's own note
     // says supplying addresses suppresses emptyHint on the assumption the
     // provider page still ran.
-    const current = createWalletSession(source, { wallet: address, tokens, fallbackTokens: SELECTED_TOKENS, discover: tokens !== SELECTED_TOKENS })
+    const gen = generation.current
+    const guarded: ReadSource = {
+      ...source,
+      async read(route, request, options) {
+        const outcome = await source.read(route, request, options)
+        if (gen !== generation.current || options?.signal?.aborted) return outcome
+        if (outcome.state === 'busy') readGuard.defer(outcome.retryAfterSeconds, Date.now())
+        if (route === 'wallet-assets' && outcome.state === 'ok' && !readGuard.accept(outcome.observation.block?.number)) {
+          lagged.current = true
+          // Nothing from before the receipt reaches the pager, its memory or the visible rows.
+          return { route, state: 'aborted', provenance: outcome.provenance } as ReadOutcome<typeof route>
+        }
+        return outcome
+      },
+    }
+    const current = createWalletSession(guarded, { wallet: address, tokens, fallbackTokens: SELECTED_TOKENS, discover: tokens !== SELECTED_TOKENS })
     session.current = current
     const listChecks = new AbortController()
     checks.current = listChecks
     const mine = read(current, 'first', tokens.length === 0 || tokens === SELECTED_TOKENS, (after) => {
+      if (after.failure === null) confirmedRetry.current = 0
       if (!after.emptyHint || tokens.length > 0 || autoChecked.current === address) return
       autoChecked.current = address
       setList(null)
@@ -433,7 +494,7 @@ export function PortfolioTokens({ address }: { address: string }) {
       running.current = null
       listChecks.abort()
     }
-  }, [source, address, tokens, round, read])
+  }, [source, address, tokens, round, read, readGuard, refreshConfirmed])
 
   const snap = list?.snap ?? null
 
@@ -465,11 +526,11 @@ export function PortfolioTokens({ address }: { address: string }) {
   // The list is read again every REFRESH_MS while the page is shown; what is on screen stays until the new read lands.
   useEffect(() => {
     if (loading || !snap) return
-    return whenVisibleAfter(REFRESH_MS, () => {
+    return whenVisibleAfter(readGuard.delay(Date.now(), REFRESH_MS), () => {
       setLoading(true)
       setRound((n) => n + 1)
     })
-  }, [loading, snap])
+  }, [loading, snap, readGuard])
 
   const view = snap?.view
   const freshRows = view?.rows ?? []

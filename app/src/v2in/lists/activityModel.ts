@@ -2,6 +2,8 @@ import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/
 import type { ExecutionItem } from '../../finance/execution'
 import type { ReceiptView } from './model'
 import type { ActivityItem } from './activityHistory'
+import { compareChronology, logIndexOf, type Chronology } from './chronology'
+import { localCloseKey, publicCloseProves, type LocalCloseReceipt } from './localReceipts'
 
 export interface ActivityPosition { chainId: number; dex: 3 | 4; tokenId: string }
 
@@ -43,8 +45,9 @@ export function positionActivity(items: readonly ActivityItem[], position: Activ
   })
 }
 
-export type TimelineRow = { id: string; at: number | null } & (
-  { kind: 'public'; receipt: ReceiptView } | { kind: 'private'; item: ExecutionItem }
+export type TimelineRow = Chronology & (
+  { kind: 'public'; receipt: ReceiptView; receipts: ReceiptView[]; evidence: ExecutionItem[]; events: ActivityItem[]; showGas: boolean }
+  | { kind: 'private'; item: ExecutionItem } | { kind: 'local'; item: LocalCloseReceipt }
 )
 
 /** A timestamp is reused only from the same chain/block/hash. No estimate from block number or browser receipt time. */
@@ -59,15 +62,85 @@ export function privateTimes(items: readonly ExecutionItem[], publicItems: reado
   return times
 }
 
-/** Each source's stable operation identity is deduplicated. Different logs of one transaction are never discarded. */
-export function timelineRows(receipts: readonly ReceiptView[], privateItems: readonly ExecutionItem[], times: ReadonlyMap<string, number> = new Map()): TimelineRow[] {
+const financial = (item: ActivityItem) => item.kind === 's1_action' || item.kind === 'vault_execution' || item.kind === 'auto_exit'
+const transactionKey = (item: ActivityItem) => `${item.chainId}:${item.tx.snapshot.hash.toLowerCase()}:${item.tx.hash.toLowerCase()}`
+const vaultOf = (item: ActivityItem) => 'vault' in item && item.vault ? item.vault.toLowerCase() : null
+const operationKey = (item: ActivityItem): string => item.kind === 's1_action' ? `s1:${item.intentHash}`
+  : item.kind === 'vault_execution' ? `run:${item.vault}:${item.planHash}`
+    : item.kind === 'auto_exit' ? `exit:${item.mandateHash}`
+      : item.kind === 'auto_exit_event' ? `exit-event:${item.mandateHash ?? item.id}:${item.event}`
+        : `vault:${vaultOf(item) ?? item.id}`
+
+/** Only one matching financial effect can absorb auxiliary settings. Separate operations in the same tx survive. */
+function operationOf(item: ActivityItem, siblings: readonly ActivityItem[]): string {
+  if (financial(item) || item.kind === 'auto_exit_event') return operationKey(item)
+  const vault = vaultOf(item)
+  if (vault) {
+    const matches = siblings.filter((other) => vaultOf(other) === vault && financial(other))
+    if (matches.length === 1) return operationKey(matches[0])
+    const registered = siblings.filter((other) => vaultOf(other) === vault && other.kind === 'auto_exit_event' && other.event === 'MandateRegistered')
+    if (matches.length === 0 && registered.length === 1 && (item.kind === 'vault_created' || item.kind === 'vault_event')) return operationKey(registered[0])
+  }
+  return operationKey(item)
+}
+
+/** Matching a tx alone is insufficient: this private compound must prove the same liquidity and currency fees. */
+function sameExecution(privateItem: ExecutionItem, item: ActivityItem): boolean {
+  const receipt = privateItem.receipt
+  if (privateItem.state !== 'reconciled' || !receipt || item.kind !== 'vault_execution' || item.chainId !== 4663 || item.tx.finality !== 'finalized'
+    || receipt.transactionHash.toLowerCase() !== item.tx.hash.toLowerCase() || receipt.blockHash.toLowerCase() !== item.tx.snapshot.hash.toLowerCase()
+    || receipt.blockNumberRaw !== String(item.tx.snapshot.number) || receipt.liquidityIncreaseRaw !== item.compounded.liquidityAdded) return false
+  const fees = new Map<string, bigint>()
+  for (const source of receipt.sources) fees.set(source.currency.toLowerCase(), (fees.get(source.currency.toLowerCase()) ?? 0n) + BigInt(source.serviceFeeRaw))
+  for (const tariff of item.tariffs) {
+    if (tariff.kind !== 'automation' || tariff.rateBps !== receipt.serviceFeeBps) return false
+    const token = tariff.token.toLowerCase()
+    fees.set(token, (fees.get(token) ?? 0n) - BigInt(tariff.amount))
+  }
+  return [...fees.values()].every((value) => value === 0n)
+}
+
+const importance = (view: ReceiptView) => ['auto_exit', 'vault_execution', 's1_action', 'auto_exit_event', 'vault_event', 'reserves_returned', 'vault_created'].indexOf(view.kind)
+
+/** Operations retain all original event identities. A group's gas is displayed once, never added per event. */
+export function timelineRows(receipts: readonly ReceiptView[], privateItems: readonly ExecutionItem[], times: ReadonlyMap<string, number> = new Map(), publicItems: readonly ActivityItem[] = [], local: readonly LocalCloseReceipt[] = []): TimelineRow[] {
   const rows = new Map<string, TimelineRow>()
-  for (const receipt of receipts) rows.set(`public:${receipt.id}`, { id: `public:${receipt.id}`, kind: 'public', at: receipt.at, receipt })
-  for (const item of privateItems) if (item.state !== 'cancelled') rows.set(`private:${item.intentId}`, { id: `private:${item.intentId}`, kind: 'private', at: times.get(item.intentId) ?? null, item })
-  return [...rows.values()].sort((a, b) => {
-    if (a.at === null || b.at === null) return a.at === null ? b.at === null ? a.id.localeCompare(b.id) : 1 : -1
-    return b.at - a.at || a.id.localeCompare(b.id)
-  })
+  const events = new Map(publicItems.map((item) => [item.id, item]))
+  const transactions = new Map<string, ActivityItem[]>()
+  for (const item of publicItems) {
+    const key = transactionKey(item)
+    transactions.set(key, [...(transactions.get(key) ?? []), item])
+  }
+  for (const receipt of new Map(receipts.map((view) => [view.id, view])).values()) {
+    const item = events.get(receipt.id)
+    const id = item ? `public:${transactionKey(item)}:${operationOf(item, transactions.get(transactionKey(item)) ?? [])}` : `public:${receipt.id}`
+    const found = rows.get(id)
+    const point = { id, at: receipt.at, chainId: receipt.chainId, block: receipt.block, logIndex: logIndexOf(receipt.id) }
+    if (found?.kind === 'public') {
+      found.receipts.push(receipt)
+      if (item) found.events.push(item)
+      if (importance(receipt) >= 0 && (importance(found.receipt) < 0 || importance(receipt) < importance(found.receipt))) found.receipt = receipt
+      if (compareChronology(point, found) < 0) Object.assign(found, point)
+    } else rows.set(id, { ...point, kind: 'public', receipt, receipts: [receipt], evidence: [], events: item ? [item] : [], showGas: true })
+  }
+  for (const item of new Map(privateItems.map((value) => [value.intentId, value])).values()) if (item.state !== 'cancelled') {
+    const matches = [...rows.values()].filter((row) => row.kind === 'public' && row.events.filter((event) => sameExecution(item, event)).length === 1)
+    if (matches.length === 1 && matches[0].kind === 'public') matches[0].evidence.push(item)
+    else rows.set(`private:${item.intentId}`, { id: `private:${item.intentId}`, kind: 'private', at: times.get(item.intentId) ?? null, chainId: 4663, block: item.receipt?.blockNumberRaw, item })
+  }
+  for (const item of local) if (!publicCloseProves(item, publicItems)) {
+    const block = publicItems.find((event) => event.chainId === item.chainId && event.tx.snapshot.number === item.block && event.tx.snapshot.hash.toLowerCase() === item.blockHash.toLowerCase())
+    const id = `local:${localCloseKey(item)}`
+    rows.set(id, { id, kind: 'local', item, at: item.at ?? block?.tx.snapshot.timestamp ?? null, chainId: item.chainId, block: item.block })
+  }
+  const sorted = [...rows.values()].sort(compareChronology)
+  const gasTransactions = new Set<string>()
+  for (const row of sorted) if (row.kind === 'public') {
+    const key = `${row.receipt.chainId}:${row.receipt.block}:${row.receipt.hash.toLowerCase()}`
+    row.showGas = !gasTransactions.has(key)
+    gasTransactions.add(key)
+  }
+  return sorted
 }
 
 /** Whole wallet activity remains available when a portfolio is bounded. Position attribution says when it is partial. */

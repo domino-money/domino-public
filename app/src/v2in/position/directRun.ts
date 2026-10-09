@@ -6,6 +6,8 @@ import { COPY } from './copy'
 import { actionError, type ActionError } from './errors'
 import type { ActionPosition } from './model'
 import { connectPosition, type OpenGate, type PositionConnection } from './wallet'
+import { positionChanged } from '../lists/positionSync'
+import { v2Chain } from '../../v2/chains'
 
 /**
  * The direct exits of a position (spec F7 §2.6.4 recommendation; finance/v2/direct.ts): both tokens, all or part, and
@@ -28,6 +30,7 @@ export interface DirectState {
   prepared: DirectPrepared | null
   error: ActionError | null
   receipt: DirectReceipt | null
+  includedBlock?: bigint
   /** A failed send that certainly did not go out may be confirmed again; a failed review may not. */
   retry: boolean
   /** Rev2 §2.13: the pause warning ticked (asked only when the exit pauses an armed root's automation). */
@@ -100,6 +103,7 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
       return
     }
     setState((now) => ({ ...now, stage: 'sent' }))
+    let announced = false
     while (gen === generation.current) {
       const receipt = await connection.direct.receipt(hash).catch(() => ({ state: 'pending' as const }))
       if (receipt.state === 'reverted') {
@@ -108,12 +112,17 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
         return
       }
       if (receipt.state === 'included' || receipt.state === 'finalized') {
+        if (!announced) {
+          announced = true
+          const chain = v2Chain(gate.chainId)
+          positionChanged({ chainId: gate.chainId, positionManager: position.dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager, tokenIds: [position.tokenId.toString()], wallet: connection.wallet.owner, block: receipt.blockNumber })
+        }
         try {
           const read = readDirectReceipt({ chainId: gate.chainId, kind: ask.kind, dex: position.dex, tokenId: position.tokenId, owner: connection.wallet.owner, pool: prepared.state.pool, receipt })
-          setState((now) => ({ ...now, stage: 'done', receipt: read }))
+          setState((now) => ({ ...now, stage: 'done', receipt: read, includedBlock: receipt.blockNumber }))
         } catch (error) {
           // On chain, but its logs cannot be read exactly: said so, nothing guessed, and never offered again.
-          setState((now) => ({ ...now, stage: 'done', error: { copy: COPY.receipt.unreadable, code: error instanceof Error ? error.message : 'receipt_invalid', recovery: 'none' } }))
+          setState((now) => ({ ...now, stage: 'done', includedBlock: receipt.blockNumber, error: { copy: COPY.receipt.unreadable, code: error instanceof Error ? error.message : 'receipt_invalid', recovery: 'none' } }))
         }
         if (receipt.state === 'finalized') return
       }

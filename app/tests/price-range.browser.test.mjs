@@ -92,7 +92,7 @@ async function open(site, name, device, { line = true, spec = {} } = {}) {
   // The first draw's wipe and the chip's pop.
   await page.waitForTimeout(900);
   const measured = await chart.evaluate((root) => {
-    const box = (node) => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom }; };
+    const box = (node) => { if (!node) return null; const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom }; };
     const frame = root.querySelector('.dm-pvr');
     const band = root.querySelector('.dm-pvr-band');
     const card = root.closest('section');
@@ -106,8 +106,10 @@ async function open(site, name, device, { line = true, spec = {} } = {}) {
       lines: [...root.querySelectorAll('.dm-pvr-line')].map((node) => node.getAttribute('data-tone')),
       keys: [...root.querySelectorAll('.dm-pvr-key')].map((node) => node.getAttribute('data-key')),
       where: root.getAttribute('data-pvr-where'),
-      chip: root.querySelector('[data-pvr-now]').textContent,
-      chipTone: root.querySelector('.dm-pvr-chip').getAttribute('data-tone'),
+      chip: root.querySelector('[data-pvr-now], [data-pvr-last]')?.textContent ?? null,
+      chipExact: root.querySelector('[data-pvr-now], [data-pvr-last]')?.getAttribute('data-pvr-price') ?? null,
+      chipWord: root.querySelector('.dm-pvr-chip-word')?.textContent ?? null,
+      chipTone: root.querySelector('.dm-pvr-chip')?.getAttribute('data-tone') ?? null,
       says: root.querySelector('.dm-pvr-says').textContent.replace(/\s+/g, ' ').trim(),
       move: root.querySelector('.dm-pvr-move')?.textContent ?? null,
       note: root.querySelector('.dm-pvr-note').textContent,
@@ -125,7 +127,8 @@ function checkCard({ item, measured: m, errors }, name, device) {
   const where = whereOf(name);
   assert.equal(m.where, where, what);
   assert.match(m.says, STATUS[where], `${what}: ${m.says}`);
-  assert.equal(m.chipTone, where === 'inside' ? 'in' : where === 'closed' ? 'closed' : 'out', `${what}: the chip in the status colour`);
+  if (m.dot) assert.equal(m.chipTone, where === 'inside' ? 'in' : where === 'closed' ? 'closed' : 'out', `${what}: the chip in the status colour`);
+  else { assert.equal(where, 'closed'); assert.equal(m.chip, null, 'a closed NFT never substitutes the current pool price'); }
   assert.equal(item.spec.position.status === 'closed', where === 'closed');
   // The plot: the band's own left and right are the plot's.
   const plot = { left: m.band.x, right: m.band.right, top: m.frame.y + PAD.top, bottom: m.frame.bottom - PAD.bottom };
@@ -133,11 +136,13 @@ function checkCard({ item, measured: m, errors }, name, device) {
   const finite = m.edges.length === 2;
   if (finite) assert.ok(m.band.h <= (plot.bottom - plot.top) * 0.8, `${what}: the band never fills the plot (${m.band.h} of ${plot.bottom - plot.top})`);
   // The price now's dot, whole inside the plot.
-  assert.ok(m.dot.x >= plot.left && m.dot.right <= plot.right, `${what}: the dot inside the plot horizontally (${m.dot.x}..${m.dot.right} in ${plot.left}..${plot.right})`);
-  assert.ok(m.dot.y >= plot.top - 1 && m.dot.bottom <= plot.bottom + 1, `${what}: the dot inside the plot vertically (${m.dot.y}..${m.dot.bottom} in ${plot.top}..${plot.bottom})`);
+  if (m.dot) {
+    assert.ok(m.dot.x >= plot.left && m.dot.right <= plot.right, `${what}: the dot inside the plot horizontally (${m.dot.x}..${m.dot.right} in ${plot.left}..${plot.right})`);
+    assert.ok(m.dot.y >= plot.top - 1 && m.dot.bottom <= plot.bottom + 1, `${what}: the dot inside the plot vertically (${m.dot.y}..${m.dot.bottom} in ${plot.top}..${plot.bottom})`);
+  }
   // The labels: Max, Min and the chip, clear of one another, inside the card.
   const keys = m.labels.map((label) => label.key).sort();
-  assert.deepEqual(keys, ['max', 'min', 'now'], `${what}: both ends and the price now are labelled`);
+  assert.deepEqual(keys, m.dot ? ['max', 'min', 'now'] : ['max', 'min'], `${what}: both ends and only a proven price are labelled`);
   for (const [index, a] of m.labels.entries()) {
     assert.ok(a.right <= m.card.right + 0.5 && a.x >= m.frame.x, `${what}: ${a.key} inside the card (${a.x}..${a.right}, card to ${m.card.right})`);
     for (const b of m.labels.slice(index + 1)) assert.ok(a.bottom <= b.y + 0.5 || b.bottom <= a.y + 0.5, `${what}: ${a.key} and ${b.key} apart (${a.y}..${a.bottom}, ${b.y}..${b.bottom})`);
@@ -164,7 +169,13 @@ test('with the pool’s stored history: every case draws its band, both ends, th
             assert.deepEqual([...new Set(m.lines)].sort(), ['in', 'out'], name);
             assert.ok(m.keys.includes(whereOf(name) === 'inside' ? 'in' : 'out'), `${name}: ${m.keys}`);
           }
-          assert.equal(m.note, 'Last 7 days · Hourly prices');
+          if (name === 'closed') {
+            assert.match(m.note, /^Until closed · /);
+            assert.equal(m.chipWord, 'Last');
+            const plot = card.page.locator('[data-range-lab] [data-pvr-where]');
+            assert.equal(Number(await plot.getAttribute('data-pvr-end')), card.item.spec.closedAt);
+            assert.equal(await plot.locator('[data-pvr-now]').count(), 0);
+          } else assert.equal(m.note, 'Last 7 days · Hourly prices');
           await card.page.locator('[data-range-lab] section').screenshot({ path: join(shots(), `price-range-${name}-${device}.png`) });
         } finally { await card.close(); }
       }
@@ -182,7 +193,7 @@ test('the owner’s cases in words and figures: tiny prices with their zeros cou
   const site = await lab((item, body) => historyFor(item, body, { end: Math.floor(Date.now() / 1000) }));
   try {
     const expect = {
-      closed: { chip: '0.0₆710148', move: null },
+      closed: { chip: /^0\.0₆\d+$/, move: null },
       tiny: { chip: /^0\.0₆71\d+$/, move: null },
       micro: { chip: /^0\.0₁₁3\d+$/, move: null },
       huge: { chip: /^120,3\d\d$/, move: null },
@@ -225,10 +236,14 @@ test('without a history: the band, its ends and the price now as a level across 
             checkCard(card, name, device);
             const m = card.measured;
             assert.equal(m.lines.length, 0, `${label} ${name}: no line`);
-            assert.equal(m.note, note, `${label} ${name}`);
+            if (name === 'closed') assert.match(m.note, /^Until closed · /);
+            else assert.equal(m.note, note, `${label} ${name}`);
             // The price now as a level across the plot.
-            const level = await card.page.locator('[data-range-lab] .dm-pvr-now-line').boundingBox();
-            assert.ok(level.width >= m.band.w - 1, `${label} ${name}: the price now across the plot`);
+            if (name === 'closed') assert.equal(await card.page.locator('[data-range-lab] .dm-pvr-now-line').count(), 0, 'closed positions cannot borrow the current price when history is unavailable');
+            else {
+              const level = await card.page.locator('[data-range-lab] .dm-pvr-now-line').boundingBox();
+              assert.ok(level.width >= m.band.w - 1, `${label} ${name}: the price now across the plot`);
+            }
             if (label === 'not-listed' || name === 'inside') await card.page.locator('[data-range-lab] section').screenshot({ path: join(shots(), `price-range-${name}-${device}-${label}.png`) });
           } finally { await card.close(); }
         }
@@ -280,9 +295,42 @@ test('a newly opened position starts at its mint; unknown mint keeps only the cu
         assert.equal(await unknown.page.locator('[data-pvr-where]').getAttribute('data-pvr-history'), 'unknown_mint');
         assert.equal(unknown.measured.lines.length, 0);
         assert.match(unknown.measured.note, /Opening time isn’t available/);
-        assert.equal(site.asked.length, reads, 'unknown mint does not request unrelated pool history');
+        assert.equal(site.asked.length, reads + 1, 'pool history loads independently; no line is attributed before the NFT mint is proven');
         await unknown.page.locator('[data-range-lab] section').screenshot({ path: join(shots(), `price-range-unknown-mint-${device}.png`) });
       } finally { await unknown.close(); }
     }
+  } finally { await site.close(); }
+});
+
+test('closed positions show only proven prices before closing; unknown close never borrows the current pool price', async () => {
+  const end = Math.floor(Date.now() / 1000);
+  const closedAt = end - 3 * 3600 + 97;
+  let served;
+  const site = await lab((item, body) => { served = historyFor(item, body, { end }); return served; });
+  try {
+    const closed = await open(site, 'closed', 'phone', { spec: { closedAt } });
+    try {
+      checkCard(closed, 'closed', 'phone');
+      const last = served.candles.filter(candle => Math.min(candle.startTimestamp + served.resolutionSeconds, end) <= closedAt).at(-1);
+      assert.ok(last && served.candles.some(candle => candle.startTimestamp > closedAt), 'fixture includes later pool prices which must be excluded');
+      assert.equal(closed.measured.chipWord, 'Last');
+      assert.equal(closed.measured.chipExact, new Intl.NumberFormat('en-US', { maximumSignificantDigits: 6 }).format(Number(last.close)));
+      const range = closed.page.locator('[data-range-lab] [data-pvr-where]');
+      assert.equal(Number(await range.getAttribute('data-pvr-end')), closedAt);
+      await range.locator('.dm-pvr').focus();
+      await closed.page.keyboard.press('End');
+      await range.locator('.dm-chart-tooltip').waitFor();
+      const date = new Date((last.startTimestamp + served.resolutionSeconds) * 1000);
+      const time = `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')} UTC`;
+      assert.match(await range.locator('.dm-chart-tooltip').innerText(), new RegExp(time));
+    } finally { await closed.close(); }
+    const unknown = await open(site, 'closed', 'phone', { line: false, spec: { closedAt: null } });
+    try {
+      checkCard(unknown, 'closed', 'phone');
+      assert.equal(unknown.measured.lines.length, 0);
+      assert.equal(unknown.measured.dot, null);
+      assert.equal(unknown.measured.chip, null);
+      assert.match(unknown.measured.note, /Updating this position’s closing history/);
+    } finally { await unknown.close(); }
   } finally { await site.close(); }
 });

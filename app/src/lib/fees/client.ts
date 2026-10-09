@@ -21,6 +21,7 @@ import { UNAVAILABLE, chainRead, checked, isLedgerResponse, isStateResponse } fr
 import { noteAnswered, parseAutomationAnswer } from '../automationState'
 import { noteTokens } from '../chainTokens'
 import type { LedgerMintHint, LedgerResponse, RelayAnswer, StateResponse } from './types'
+import { notePositionState } from '../positionEvidence'
 
 export { isLedgerResponse, isStateResponse } from './answers'
 
@@ -46,6 +47,7 @@ export async function chainLedger(tokenIds: readonly string[], fresh = false, si
     // Every id asked, and only those.
     if (!isLedgerResponse(value) || value.positions.length !== tokenIds.length || value.positions.some((position) => !tokenIds.includes(position.tokenId))) return UNAVAILABLE
     for (const position of value.positions) if (position.ok) noteTokens(position.state.currencies)
+    notePositionState({ v: 1, block: value.block, timestamp: value.timestamp, positions: value.positions.map((position) => position.ok ? position.state : position) })
     return checked(answer as RelayAnswer<LedgerResponse>, isLedgerResponse)
   } catch {
     return UNAVAILABLE
@@ -78,6 +80,7 @@ const statesAsked = new Map<string, { answer: Promise<RelayAnswer<StateResponse>
  */
 function noted(answer: RelayAnswer<StateResponse>): RelayAnswer<StateResponse> {
   if (!answer.ok) return answer
+  notePositionState(answer.value)
   for (const position of answer.value.positions) if (position.ok) noteTokens(position.currencies)
   const features: unknown = answer.value.automation
   const ids = Array.isArray(features) ? features.map((one: unknown) => (one && typeof one === 'object' ? (one as { tokenId?: unknown }).tokenId : null)) : null

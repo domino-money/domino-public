@@ -20,7 +20,7 @@ import { feesDefault } from './support/fees/stub.mjs';
 
 const require = createRequire(import.meta.url);
 const { AFTER_ACTION_MS, LEDGER_WAIT_MS, MAX_READING, RELEASE_MS, RETRY_MS, createFeesStore } = require('../.test-build/app/src/lib/fees/store.js');
-const { LEDGER_READING_MS, STATE_REFRESH_MS } = require('../.test-build/app/src/lib/fees/constants.js');
+const { LEDGER_READING_MS, STATE_REFRESH_MS, LIST_STATE_REFRESH_MS } = require('../.test-build/app/src/lib/fees/constants.js');
 const { createHistoryCache } = require('../.test-build/app/src/lib/fees/historyCache.js');
 const { createReadings } = require('../.test-build/app/src/lib/fees/readings.js');
 const routes = require('../.test-build/app/functions/_lib/chainRoutes.js');
@@ -71,6 +71,75 @@ function service(answers = ANSWERS) {
   };
   return s;
 }
+
+test('an action invalidated during an in-flight read queues a new read and rejects blocks before its receipt', async () => {
+  const svc = service();
+  const pending = [];
+  svc.postState = async (ids) => {
+    svc.asked.push([...ids]);
+    return new Promise((done) => pending.push(done));
+  };
+  const { store } = storeWith({ svc });
+  const stop = store.subscribeStates([ID], () => {});
+  await until(() => pending.length === 1, 'initial state');
+  const receiptBlock = ANSWERS.state.block + 100;
+  store.refresh([ID], receiptBlock);
+  pending[0]({ ok: true, value: ANSWERS.state, bytes: 100 });
+  await until(() => pending.length === 2, 'refresh queued after the in-flight request');
+  assert.equal(store.position(ID), null, 'pre-action snapshot cannot undo the receipt');
+  const closed = laterState(ANSWERS.state, 100, { liquidity: '0' });
+  pending[1]({ ok: true, value: closed, bytes: 100 });
+  await until(() => store.position(ID)?.block === receiptBlock, 'confirmed post-action snapshot');
+  store.offer({ ok: true, value: ANSWERS.state, bytes: 100 });
+  store.offer({ ok: true, value: { ...ANSWERS.state, positions: [{ tokenId: ID, ok: false, reason: 'not_found' }] }, bytes: 100 });
+  assert.equal(store.position(ID).position.liquidity, '0', 'late positive or missing answers cannot reopen/erase it');
+  stop();
+});
+
+test('a ledger refusal from before a receipt or newer state never settles the history as missing', async () => {
+  for (const confirmed of [false, true]) {
+    const svc = service();
+    let finish;
+    const postLedger = svc.postLedger;
+    svc.postLedger = async (ids, fresh) => {
+      if (svc.ledgers.length) return postLedger(ids, fresh);
+      svc.ledgers.push({ ids: [...ids], fresh });
+      return new Promise(done => { finish = done; });
+    };
+    const { store, time } = storeWith({ svc });
+    const stop = store.subscribeHistory([ID], 'page', () => {});
+    await until(() => finish && store.position(ID), 'current state and in-flight ledger');
+    const block = ANSWERS.state.block + 100;
+    svc.state = laterState(ANSWERS.state, 100);
+    svc.ledger = { ...ANSWERS.ledger, block, timestamp: svc.state.timestamp };
+    if (confirmed) store.refresh([ID], block);
+    else store.offer({ ok: true, value: svc.state, bytes: 100 });
+    finish({ ok: true, value: { ...ANSWERS.ledger, positions: [{ tokenId: ID, ok: false, reason: 'not_found' }] }, bytes: 10 });
+    await until(() => time.pending.some(one => !one.cancelled && one.kind === 'later' && one.ms === RETRY_MS[0]), 'bounded fresh retry');
+    assert.notEqual(store.view(ID).reason, 'not_found', 'last good state survives a late absence');
+    time.fire('later', RETRY_MS[0]);
+    await until(() => store.view(ID).phase === 'verified', 'new ledger is accepted');
+    assert.equal(svc.ledgers.at(-1).fresh, true, 'a stale cached refusal is bypassed');
+    stop();
+  }
+});
+
+test('detail refreshes every five seconds while list-only state refreshes in shared thirty-second batches', async () => {
+  const { store, svc, time } = storeWith();
+  const detail = store.subscribeHistory([ID], 'page', () => {});
+  const list = store.subscribeHistory(['999'], 'list', () => {});
+  await until(() => svc.asked.length === 1, 'initial shared batch');
+  svc.asked.length = 0;
+  assert.equal(STATE_REFRESH_MS, 5000);
+  assert.equal(LIST_STATE_REFRESH_MS, 30000);
+  for (let i = 0; i < 6; i++) {
+    assert.equal(time.fire('later', STATE_REFRESH_MS), 1);
+    await settle();
+  }
+  assert.equal(svc.asked.filter((ids) => ids.includes(ID)).length, 6);
+  assert.equal(svc.asked.filter((ids) => ids.includes('999')).length, 1, 'list refresh is not multiplied by detail ticks');
+  detail(); list();
+});
 
 /** Manual timers: `later` and `timer` calls are kept and fired by the test. */
 function clock() {
@@ -190,26 +259,27 @@ test('screens showing one id share one /state read and one ledger read; useFeeSt
   c();
 });
 
-test('the list asks the ledgers alone, eight ids a request, and draws each row from its ledger’s own state; no /state read', async () => {
+test('the list batches shared state and ledger reads, so current fees/APR do not wait for a historical refresh', async () => {
   const { store, svc } = storeWith();
   const ids = [ID, ...Array.from({ length: 9 }, (_, i) => String(100 + i))];
   const stop = store.subscribeHistory(ids, 'list', () => {});
   // 2026-10-02 (review of the rules, finding 11): each row is being read, with no state yet: its skeleton, not a dash.
   assert.deepEqual(store.view(ID), { phase: 'loading', state: null });
   await until(() => store.view(ID).phase === 'verified', 'the row’s history');
-  assert.deepEqual(svc.asked, [], 'the list reads no /state');
+  assert.deepEqual(svc.asked.map((ids) => ids.length), [8, 2], 'one shared state batch, never one request per row');
   assert.deepEqual(svc.ledgers.map((one) => one.ids.length), [8, 2]);
   assert.equal(store.view(ID).state.block, ANSWERS.ledger.block, 'the ledger’s own state');
   assert.equal(store.view('100').phase, 'unavailable', 'an id the chain does not know');
   stop();
 });
 
-test('a list row whose ledger read fails goes from its skeleton to a calm dash, and is asked again', async () => {
+test('a list row whose ledger read fails retains confirmed current fees and retries its history', async () => {
   const { store, svc, time } = storeWith();
   svc.scripted.push({ ok: false, failure: 'unavailable', retryAfterMs: 0 });
   const stop = store.subscribeHistory([ID], 'list', () => {});
   assert.equal(store.view(ID).phase, 'loading');
-  await until(() => store.view(ID).phase === 'unavailable', 'a calm dash');
+  await until(() => store.view(ID).phase === 'unclaimed-only', 'confirmed current fees');
+  assert.deepEqual(store.view(ID).state.unclaimed, ANSWERS.state.positions.map((p) => [BigInt(p.unclaimed0), BigInt(p.unclaimed1)])[0]);
   assert.equal(time.fire('later', RETRY_MS[0]), 1);
   await until(() => store.view(ID).phase === 'verified', 'verified');
   assert.equal(svc.ledgers.length, 2);

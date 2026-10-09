@@ -13,6 +13,7 @@ import { COPY } from './copy'
 import { SENT_CHECK_WALLET_COPY, STILL_PENDING_COPY, actionError, planFailure, type ActionError } from './errors'
 import { askLivePlan } from './source'
 import { connectPosition, onChain, type OpenGate, type PositionConnection } from './wallet'
+import { burnedPositionIds, positionChanged } from '../lists/positionSync'
 
 /**
  * One zap action on the position page (spec F7 §2.4, §2.5, §2.6, §2.10, §2.11), from the quote to the receipt, the
@@ -65,6 +66,7 @@ export interface ReceiptView {
   /** The receipt could not be read exactly: its code (nothing is guessed). */
   unreadable: string | null
   hash: Hex | null
+  includedBlock?: bigint
 }
 
 /** A reverted Permit2 action leaves its permit valid: cancelling its nonce is offered before any new quote (review F3). */
@@ -338,6 +340,7 @@ export function useActionRun(input: RunInput) {
   async function openReceipt(gen: number, hash: Hex | null, receipt: Extract<V2Receipt, { logs: unknown }>, again: () => Promise<V2Receipt | { state: 'not-included' } | { state: 'batch-reverted' }>): Promise<void> {
     const reviewed = live.current.reviewed
     if (!reviewed) return
+    let announced = false
     const show = (current: Extract<V2Receipt, { logs: unknown }>) => {
       let read: ZapReceipt | null = null
       let unreadable: string | null = null
@@ -346,7 +349,15 @@ export function useActionRun(input: RunInput) {
       } catch (error) {
         unreadable = error instanceof Error ? error.message : 'receipt_invalid'
       }
-      live.current.receipt = { state: current.state === 'reverted' ? 'reverted' : current.state, read, unreadable, hash }
+      if (current.state !== 'reverted' && !announced) {
+        announced = true
+        const chain = v2Chain(reviewed.review.chainId)
+        const intent = reviewed.review.plan.plan.intent
+        const tokenIds = [...new Set([intent.tokenId, read?.summary.tokenId, read?.summary.previousTokenId].filter((id): id is bigint => id !== undefined && id > 0n).map(String))]
+        const positionManager = intent.pool.dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager
+        positionChanged({ chainId: chain.chainId, positionManager, wallet: reviewed.review.owner, tokenIds, block: current.blockNumber, blockHash: current.blockHash, burnedTokenIds: burnedPositionIds(current.logs, positionManager) })
+      }
+      live.current.receipt = { state: current.state === 'reverted' ? 'reverted' : current.state, read, unreadable, hash, includedBlock: current.blockNumber }
       bump()
     }
     show(receipt)

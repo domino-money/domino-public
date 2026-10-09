@@ -22,6 +22,7 @@
     "src/lib/scenario.ts",
     "src/lib/geometry.ts",
     "src/lib/markets.ts",
+    "src/lib/read/poolAprPresentation.ts",
     "src/lib/loadTiming.ts",
     "src/lib/staleRelease.ts",
     "src/lib/browserCopies.ts",

@@ -10,6 +10,7 @@ const { createEstimateSource } = built('estimateSource');
 const { createScheduledSource } = built('scheduler');
 const { loadSelectedPools, retainAsStale } = built('marketsProvider');
 const { presentAprEstimate, estimateTitle, limitationText, ESTIMATE_SCOPE } = built('aprEstimate');
+const { poolAprPresentation } = built('poolAprPresentation');
 const { chartMatches, candleGeometry } = built('chart');
 const { interpretReply } = built('interpret');
 const fixture = (name) => JSON.parse(readFileSync(new URL(`../../api-contracts/read-v2/fixtures/producer/pool-market.${name}.json`, import.meta.url)));
@@ -70,6 +71,22 @@ test('available, exact zero, tiny positive and unavailable never replace one ano
   // T1.4: the equal-fee protocol fixture is available now — its adjusted value shows.
   assert.equal(presentAprEstimate(observe(fixture('protocol-fee').estimate), now(0)).text, '10.9');
   for (const name of ['zero-tvl', 'missing-tvl', 'invalid-protocol-fee', 'dynamic', 'expired']) assert.equal(presentAprEstimate(observe(fixture(name).estimate), now(0)).text, null, name);
+});
+
+test('Markets and Details choose the same qualified, estimated or fallback APR, including an exact zero', () => {
+  const fallback = { percent: '1428.4', asOf: 0, basis: { source: 'test' } };
+  const market = { figuresPending: true, feeAprPercent: { state: 'unavailable', value: null }, feeAprEstimate: null, aprFallback: fallback };
+  assert.equal(poolAprPresentation(market, now(0)).fallback, fallback);
+  assert.equal(poolAprPresentation(market, now(0)).pending, false);
+  const estimated = poolAprPresentation({ ...market, feeAprEstimate: observe(good.estimate) }, now(0));
+  assert.equal(estimated.estimate.text, '11.0');
+  assert.equal(estimated.fallback, null);
+  for (const state of ['qualified', 'stale']) {
+    const zero = poolAprPresentation({ ...market, feeAprPercent: { state, value: '0' }, feeAprEstimate: observe(good.estimate) }, now(0));
+    assert.equal(zero.qualified, true);
+    assert.equal(zero.fallback, null, 'no estimate replaces a measured zero');
+  }
+  assert.equal(poolAprPresentation({ ...market, aprFallback: null }, now(0)).pending, true);
 });
 
 test('estimates age on screen, expire after 300 seconds and ignore wall-clock jumps', () => {

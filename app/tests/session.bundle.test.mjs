@@ -98,17 +98,18 @@ function shape(dir) {
   return { js, entry, island };
 }
 
-test('the deployed build carries wallet sign-in as its own chunk, beside one entry and the two stylesheets', () => {
+test('the deployed build carries wallet sign-in and the positions collection as lazy chunks beside one entry', () => {
   const { js, entry, island } = shape(DIST);
   assert.equal(entry.length, 1, js.join(', '));
   assert.equal(island.length, 1, js.join(', '));
   // The read screens and the shared read source are lazy chunks of their own,
   // so a visitor who opens neither the figures nor the position lookup never
   // downloads them. What must not appear is a second entry or a second island.
-  // Changed on purpose 2026-10-01 (platform workstream, F8): two stylesheets, the site's (the page links it) and the
-  // screens' (src/styles/screens.css, which each screen's chunk loads), and no third.
+  // The V2 collection's selection/recovery styles load with OwnedRows, never on initial entry.
   const css = assets(DIST).filter((file) => file.endsWith('.css'));
-  assert.deepEqual(css.map((file) => file.split('-')[0]).sort(), ['index', 'screens'], css.join(', '));
+  assert.deepEqual(css.map((file) => file.split('-')[0]).sort(), ['OwnedRows', 'index', 'screens'], css.join(', '));
+  const collection = js.find((file) => file.startsWith('OwnedRows-'));
+  assert.ok(collection && !staticClosure(DIST, entry).has(collection), 'the collection stays outside the entry static closure');
   const html = readFileSync(join(DIST, 'index.html'), 'utf8');
   assert.deepEqual([...html.matchAll(/<link rel="stylesheet"[^>]*href="\/assets\/([^"]+)"/g)].map((match) => match[1]), css.filter((file) => file.startsWith('index-')), 'the page links the site’s stylesheet alone');
   // F4: React and the read contracts' runtimes are chunks of their own the page loads beside the entry, and nothing else is.

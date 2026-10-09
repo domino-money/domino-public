@@ -273,3 +273,21 @@ test('the fees chart’s periods: the points from each measured start on, its ea
   assert.equal(day.buckets[0].collectedIn, view.earned * 7n / 10n);
   assert.equal(day.buckets.at(-1).end, now);
 });
+
+test('a single atomic fee below the display fixed-point floor remains a positive chart point and never reads as zero', () => {
+  const { feesView, periodView } = require('../.test-build/app/src/components/positions/visual/model.js');
+  const { valueFigure } = require('../.test-build/app/src/components/positions/visual/value.js');
+  const now = 1790000005;
+  const currencies = [{ address: `0x${'01'.repeat(20)}`, decimals: 18, symbol: 'A' }, { address: `0x${'02'.repeat(20)}`, decimals: 18, symbol: 'B' }];
+  const basis = { kind: 'usd', into: 1, decimals: [18, 18], sqrtPriceX96: (2n ** 96n) / 10n, block: 1001, symbol: null };
+  const state = { block: 1001, timestamp: now, currencies, unclaimed: [1n, 0n] };
+  const opened = { block: 1000, t: now - 5, kind: 'opened', earned: [0n, 0n], collected: [0n, 0n] };
+  const history = { mintedAt: { block: 1000, timestamp: now - 5 }, earned: [1n, 0n], collected: [0n, 0n], events: [], points: [opened, { block: 1001, t: now, kind: 'now', earned: [1n, 0n], collected: [0n, 0n] }] };
+  const view = feesView({ id: '7', state, history, basis });
+  const period = periodView(view, 'all', opened);
+  assert.equal(view.zero, false);
+  assert.equal(view.earned, 0n, 'the monetary formatter never rounds the fee up');
+  assert.ok(period.points[1].v > 0 && period.points[1].v < 1e-18, 'geometry retains the actual positive rational value');
+  assert.equal(valueFigure(basis, view.earned, !view.zero), '<$0.01');
+  assert.deepEqual(period.buckets[0].earnedTokens, [1n, 0n]);
+});

@@ -317,7 +317,7 @@ test('owned: a busy node is chain_busy with its wait, which the client reads as 
 // fees/v1/state and automation/v1/state
 // ---------------------------------------------------------------------------
 
-test('state: up to eight positions at one block, with each one’s feature only when asked; kept 10 s, apart per question', async () => {
+test('state: up to eight positions at one block, with each one’s feature only when asked; kept 5 s, apart per question', async () => {
   const chain = wallet();
   const { ask, clock, asked, routeLines } = edge(deps(chain));
   const plain = await (await ask('state', { tokenIds: ['12', '11'] })).json();
@@ -328,13 +328,13 @@ test('state: up to eight positions at one block, with each one’s feature only 
   assert.ok(isStateResponse(withFeature));
   assert.deepEqual(withFeature.automation, [{ tokenId: '11', automation: 'compound', paused: false, active: true, vault: VAULT }]);
   const posts = asked.length;
-  clock.time += 9_999;
+  clock.time += 4_999;
   await ask('state', { tokenIds: ['11'], automation: true });
   assert.equal(asked.length, posts, 'kept');
   assert.equal(routeLines().at(-1).cache, 'hit');
   clock.time += 1;
   await ask('state', { tokenIds: ['11'], automation: true });
-  assert.ok(asked.length > posts, 'read again at 10 s');
+  assert.ok(asked.length > posts, 'read again at 5 s');
   // Two calls: the first at 'latest', which names its block; the second at that block.
   assert.ok(chain.log.filter((call) => call.method === 'eth_call').length >= 2);
 });

@@ -2,6 +2,7 @@ import { Suspense, useEffect, useRef, useState, type MouseEvent, type ReactNode 
 import { catalogueTokenLabel, poolListings, type PoolCatalogueEntry, type PoolListing } from '../config/selectedPoolCatalogue'
 import { agedMarket, feeLabel, presentMetric, providerStale, retrievedAgeSeconds, retrievedText, type FallbackApr as Fallback, type Instant, type Market, type MarketProvenance, type Metric } from '../lib/markets'
 import { presentAprEstimate } from '../lib/read/aprEstimate'
+import { poolAprPresentation } from '../lib/read/poolAprPresentation'
 import { FEE_VENUE_PREFIX, feeWords } from '../lib/format/fee'
 import { featuredTitle } from '../lib/read/featuredList'
 import { useFeatured } from '../lib/read/featuredSource'
@@ -20,6 +21,7 @@ import { useNow } from '../lib/read/useNow'
 import { useLoadMilestone } from '../lib/useLoadMilestone'
 import { MetricCell, PendingFigure } from './explore/MetricCell'
 import { DataFreshness } from './DataFreshness'
+import { InfoTip } from './InfoTip'
 import { marketsHref, poolHref } from './explore/routes'
 import { IconChevronRight, IconInfo } from './icons'
 import { PoolCatalogueIdentity, PoolTokenLabel } from './PoolCatalogueIdentity'
@@ -165,13 +167,14 @@ function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; 
   const href = poolHref(m.poolId, poolToken ?? null)
   const line = p ? provenanceLine(p, age, stale) : undefined
   // Domino's own qualified history when there is one; the attributed backend estimate otherwise, marked as one.
-  const qualified = m.feeAprPercent.value !== null && (m.feeAprPercent.state === 'qualified' || m.feeAprPercent.state === 'stale')
+  const apr = poolAprPresentation(m, now)
+  const qualified = apr.qualified
   // Figures the store is about to collect (marketsProvider.ts, catch-up): a quiet placeholder where they will land,
   // never "Unavailable" while they are coming. Only a figure that would say unavailable waits.
   const coming = (metric: Metric) => read.figuresPending === true && presentMetric(metric).kind === 'unavailable'
   // An estimate standing in for the read service's (audit V1, lib/read/figureFallback.ts), where its own has no figure.
-  const standIn = !qualified && presentAprEstimate(m.feeAprEstimate, now).text === null ? (m.aprFallback ?? null) : null
-  const aprComing = read.figuresPending === true && !qualified && standIn === null && presentAprEstimate(m.feeAprEstimate, now).text === null
+  const standIn = apr.fallback
+  const aprComing = apr.pending
   const tvlFigure = presentMetric(m.tvlUsd)
   const volumeFigure = presentMetric(m.volume24hUsd)
   const estimateFigure = presentAprEstimate(m.feeAprEstimate, now)
@@ -543,7 +546,7 @@ export function MarketsTable({
           </Th>
           <Th numeric className="dm-mkt-col-tvl">
             {/* What the letters stand for, in a title (audit E5, 2026-10-01): the pool page says it under its own TVL. */}
-            <span title="Total value locked: what all the money in the pool is worth now.">TVL</span>
+            <InfoTip label="About TVL" text="Estimated value held in this pool.">TVL</InfoTip>
             {lean && <span className="sr-only">{' reported by a market data provider'}</span>}
           </Th>
           <Th numeric col="wide" className="dm-mkt-col-volume">
@@ -551,7 +554,7 @@ export function MarketsTable({
           </Th>
           {/* APR stays on a phone: it is the figure people come for (DESIGN-V2 §8.4). */}
           <Th numeric className="dm-mkt-col-apr">
-            APR
+            <InfoTip label="About pool APR" text="Annualized pool fees from the last 24 hours. Estimates are marked ‘est.’ Not a forecast.">APR</InfoTip>
           </Th>
           <Th numeric className="dm-mkt-end">
             <span className="sr-only">Details</span>

@@ -1030,7 +1030,8 @@ test('an idle expiry is noticed while the tab stays in view, and the end time is
   assert.match(details, /Ends no later than/);
   assert.doesNotMatch(details, /Session ends/);
   // Changed on purpose 2026-10-01 (audit E5): one plain sentence instead of the paragraph on renewals and checks.
-  assert.match(await dialog(page).innerText(), /Signs you out after 30 minutes without use, and at the latest at the time above\./);
+  assert.match(await dialog(page).innerText(), /Stays signed in while Domino is open, for up to 12 hours\./);
+  assert.match(await dialog(page).innerText(), /after closing the site or losing your connection\./);
 
   // No visibility change, no other tab: the page's own checks find it.
   s.fake.advance(31 * 60_000);

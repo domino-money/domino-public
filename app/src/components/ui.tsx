@@ -11,6 +11,7 @@ import type {
 } from 'react'
 import { IconCheck, IconChevronDown, IconClose, IconInfo, IconMenu, IconSearch } from './icons'
 import { rem } from '../lib/rootScale'
+import { InfoTip } from './InfoTip'
 
 /*
  * Domino's primitives (DESIGN-V2 §3). Looks come from the component classes
@@ -346,8 +347,8 @@ export function Stat({
       <dt className="dm-kicker">
         {label}
         {info && (
-          <span role="img" title={info} aria-label={info} className="ml-1 inline-flex align-[-2px] text-fg-subtle">
-            <IconInfo size={12} />
+          <span className="ml-1 inline-flex align-[-2px] text-fg-subtle">
+            <InfoTip label={typeof label === 'string' ? `About ${label}` : 'About this figure'} text={info}><IconInfo size={12} /></InfoTip>
           </span>
         )}
       </dt>

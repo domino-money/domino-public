@@ -216,3 +216,16 @@ test('with no current NFT link, the most recently created setup wins over oldest
   const listing = { ...body, vaults: [{ chainId: 4663, address: MOVED, ownerNonce: '1' }, { chainId: 4663, address: VAULT, ownerNonce: '2' }] };
   assert.equal(vaultView.currentVaultFirst([old, latest], listing)[0].vault, VAULT);
 });
+
+test('unread custody or state is unknown, never inferred On or Off', () => {
+  const body = fixture('portfolio.json');
+  const original = body.vaults.find(v => v.address === VAULT);
+  for (const vault of [
+    { ...original, custody: { ...original.custody, armed: null } },
+    { ...original, state: { status: 'unknown', reason: 'upstream_unavailable' } },
+  ]) {
+    assert.equal(portfolio.vaultStatus(vault), 'unknown');
+    const view = vaultView.vaultViewFromListing(vault, body, WALLET, NOW);
+    assert.equal(vaultView.automationStanding(view), 'State unavailable');
+  }
+});

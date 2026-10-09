@@ -42,18 +42,22 @@ export function valueIn({
   decimals,
   into,
   sqrtPriceX96,
+  fractionDigits = PRICE_SCALE,
 }: {
   amounts: readonly [bigint, bigint]
   decimals: readonly [number, number]
   into: 0 | 1
   sqrtPriceX96: bigint
+  /** Extra precision for chart geometry of atomic fees, without rounding a positive amount up. */
+  fractionDigits?: number
 }): string {
   if (sqrtPriceX96 <= 0n) throw new RangeError('sqrtPriceX96 must be positive')
+  if (!Number.isInteger(fractionDigits) || fractionDigits < 0 || fractionDigits > 336) throw new RangeError('Invalid value precision')
   const square = sqrtPriceX96 * sqrtPriceX96
   const [raw0, raw1] = amounts
-  const scale = 10n ** BigInt(PRICE_SCALE)
+  const scale = 10n ** BigInt(fractionDigits)
   // Both amounts in `into`'s raw units, as a fraction numerator / denominator.
   const numerator = into === 1 ? raw1 * Q192 + raw0 * square : raw0 * square + raw1 * Q192
   const denominator = (into === 1 ? Q192 : square) * 10n ** BigInt(decimals[into])
-  return scaledText((numerator * scale) / denominator, PRICE_SCALE)
+  return scaledText((numerator * scale) / denominator, fractionDigits)
 }

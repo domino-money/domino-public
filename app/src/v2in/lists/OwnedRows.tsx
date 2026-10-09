@@ -1,11 +1,98 @@
-import { useEffect, useMemo, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { RowsHead } from '../../components/positions/PositionRow'
-import { EmptyState, Tabs } from '../../components/ui'
+import { Button, EmptyState, LinkButton, Tabs } from '../../components/ui'
 import { positionRows, partialSentence, type PositionRowView } from './model'
 import { V2PositionRow } from './parts'
-import { anyIn, chainsIn, useKeyed, useListsGate } from './hooks'
+import { anyIn, chainsIn, useKeyed, useKeyedLatest, useListsGate } from './hooks'
 import { routeQuiet } from './read'
 import { OWN_PORTFOLIO } from './source'
+import { hasPositionApr, historicalPositionRows, mergePositionRows, positionCounts } from './positionCollection'
+import { subscribePositionChanges } from './positionSync'
+import { feesStore } from '../../lib/fees/spawn'
+import type { FeeHistoryView } from '../../lib/fees/types'
+import { rowAprs } from '../../components/positions/listApr'
+import { PendingRows } from '../../components/positions/PositionRow'
+import { useWalletAnswer, walletChanged, type WalletAnswer } from '../../lib/walletPositions'
+import type { DepositsSlot } from '../../components/positions/OwnedPositions'
+import { shortAddress } from '../../lib/read/screens/identity'
+import { newPositionHref } from '../../components/explore/routes'
+import '../../styles/position-collection.css'
+import { BulkClosePositions } from './BulkClosePositions'
+
+const noViews: ReadonlyMap<string, FeeHistoryView> = new Map()
+const quiet = () => undefined
+const PAGE_SIZE = 10
+export interface OwnedCollectionProps { owner: string; readOnly?: boolean; deposits: DepositsSlot | null; onEmptyAction?: (shown: boolean) => void }
+
+function useCollectionAprs(ids: string, active: boolean) {
+  const watch = useCallback((listener: () => void) => ids ? feesStore.watch(ids.split(','), listener) : quiet, [ids])
+  const snapshot = useCallback(() => ids ? feesStore.views(ids.split(',')) : noViews, [ids])
+  const views = useSyncExternalStore(watch, snapshot, () => noViews)
+  useEffect(() => ids && active ? feesStore.subscribeHistory(ids.split(','), 'list', quiet) : undefined, [ids, active])
+  return useMemo(() => rowAprs(ids ? ids.split(',') : [], views), [ids, views])
+}
+
+/** One collection and one count for each NFT, independent of which inventory discovered it first. */
+export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyAction }: OwnedCollectionProps) {
+  const own = useOwnRows(owner, [])
+  const latest = useKeyedLatest(OWN_PORTFOLIO, own.live ? owner : null)
+  // Historical inventory discovers older valid NFTs. It does not poll or drive the newer inventory's loading state.
+  const [version, setVersion] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
+  useEffect(() => { busyRef.current = busy }, [busy])
+  const historical = useWalletAnswer(owner, version, null, busyRef, !readOnly)
+  const [kept, setKept] = useState<WalletAnswer | null>(null)
+  const current = historical.phase === 'ready' ? historical.answer : null
+  if (current !== null && current !== kept) setKept(current)
+  const retained = current ?? kept
+  useEffect(() => subscribePositionChanges((change) => {
+    if (change.kind !== 'state' && (!change.wallet || change.wallet === owner)) setVersion((value) => value + 1)
+  }), [owner])
+  const rows = useMemo(() => mergePositionRows(historicalPositionRows(retained, current !== null), own.rows), [retained, current, own.rows])
+  const counts = useMemo(() => positionCounts(rows), [rows])
+  const [chosen, setChosen] = useState<'open' | 'closed' | null>(null)
+  const tab = chosen ?? (counts.open === 0 && counts.closed > 0 ? 'closed' : 'open')
+  const [pages, setPages] = useState({ open: 1, closed: 1 })
+  const matches = rows.filter((row) => row.tab === tab || (tab === 'open' && row.tab === 'pending'))
+  const shown = matches.slice(0, pages[tab] * PAGE_SIZE)
+  const ids = shown.filter(hasPositionApr).map((row) => row.tokenId).join(',')
+  // One batched subscription for visible NFTs. No scan is launched from a row component.
+  const aprs = useCollectionAprs(ids, tab === 'open')
+  const note = ownNote(latest ?? own.reply)
+  const partial = own.reply?.kind === 'ok' && own.reply.body.truncated.positions
+  const settled = historical.phase === 'ready' && own.reply?.kind === 'ok'
+  const empty = settled && rows.length === 0 && !note && !partial
+  const failed = historical.phase === 'failed'
+  useLayoutEffect(() => {
+    onEmptyAction?.(empty && !readOnly)
+    return () => onEmptyAction?.(false)
+  }, [empty, readOnly, onEmptyAction])
+  const more = matches.length - shown.length
+  const held = historical.phase === 'ready' ? historical.answer.deposits : []
+  return <>
+    <section className="dm-card dm-acct-nft-card dm-own-card dm-own-collection" aria-labelledby="own-title" data-owned={own.reply?.kind === 'ok' || retained ? 'ready' : failed ? 'unlisted' : 'loading'} data-owned-viewed={readOnly ? owner : undefined}>
+      <div className="dm-own-head">
+        <h2 id="own-title" className="dm-title">{readOnly ? <>Positions of <span title={owner}>{shortAddress(owner)}</span></> : 'Your positions'}</h2>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {!readOnly && <BulkClosePositions key={owner} owner={owner} rows={rows} />}
+          <Tabs label="Positions by state" value={tab} onChange={setChosen} items={[{ key: 'open', label: 'Open', count: counts.open }, { key: 'closed', label: 'Closed', count: counts.closed }]} />
+        </div>
+      </div>
+      <p role="status" aria-live="polite" className="sr-only" data-owned-status="">{counts.open} open and {counts.closed} closed positions.{counts.pending ? ` ${counts.pending} positions still being checked.` : ''}</p>
+      {note && <Note note={note} inGrid={false} />}
+      {!note && (partial || failed) && <p className="dm-own-note">Some positions are still being checked. Available positions are shown below.</p>}
+      {shown.length ? <div className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
+        <div className="dm-collection-head" aria-hidden="true"><span>Pool</span><span>Value</span><span>Fees ready to collect</span><span>Your APR</span></div>
+        {shown.map((row) => <V2PositionRow key={row.key} row={row} apr={hasPositionApr(row) ? aprs.get(row.tokenId) ?? null : null} />)}
+      </div> : empty ? <EmptyState title={readOnly ? 'No positions at this address' : 'No positions yet'} action={!readOnly ? <LinkButton href={newPositionHref()}>New position</LinkButton> : undefined} className="dm-own-none" data-empty="owned-none" />
+        : rows.length ? <EmptyState title={tab === 'open' ? 'No open positions' : 'No closed positions'} data-empty={`owned-${tab}`} />
+          : !settled && !failed && !note ? <PendingRows loading /> : <p className="dm-own-note">Your positions couldn’t be read right now. We’ll keep checking.</p>}
+      {more > 0 && <div className="dm-own-more"><Button variant="ghost" size="sm" onClick={() => setPages((before) => ({ ...before, [tab]: before[tab] + 1 }))}>Show {Math.min(more, PAGE_SIZE)} more</Button></div>}
+    </section>
+    {deposits && held.length > 0 && deposits({ owner, deposits: held, onBusy: setBusy, onChanged: (block) => { walletChanged(block); setVersion((value) => value + 1) } })}
+  </>
+}
 
 /*
  * Your positions with the person's own positions from read-v6 in it (Domino V2 integration, 2026-10-02; spec F7 rev4

@@ -538,8 +538,10 @@ test('a waiting recheck is dropped by an identity change and never retries a fai
 
   const failing = then(signedIn(), { type: 'recheck', cause: 'visible' }, { type: 'recheck', cause: 'remote' });
   const down = then(failing, result(code('me', 'session_store_unavailable')));
-  assert.equal(down.machine.view.failure, 'store_unavailable');
-  assert.deepEqual(routes(down.effects), [], 'a blocked landing is not rechecked on its own');
+  assert.equal(down.machine.view.status, 'signed_in');
+  assert.deepEqual(routes(down.effects), [], 'a pending check never bypasses outage backoff');
+  assert.ok(down.effects.some((effect) => effect.type === 'check_failed'));
+  assert.ok(!down.effects.some((effect) => effect.type === 'clear_private'));
 
   const denied = then(verifying(), { type: 'recheck', cause: 'remote' }, result(code('verify', 'account_unsupported')));
   assert.deepEqual(denied.effects.filter((e) => e.type === 'sign'), [], 'no signature after account_unsupported');

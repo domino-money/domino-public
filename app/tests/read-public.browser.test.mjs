@@ -26,6 +26,73 @@ const env = { APP_ORIGIN: APP, READ_BRIDGE_ENABLED: 'true', ENABLED_READS: '',
   READ_V3_BRIDGE_ENABLED: 'true', ENABLED_V3_READS: 'overview,history,search',
   GATEWAY_ORIGIN: 'https://gateway.test', ACCESS_CLIENT_ID: 'fixture-client', ACCESS_CLIENT_SECRET: 'fixture-secret' }
 const calls = []
+
+test('Markets help works with hover, keyboard and touch; mobile tips fit and Details retains the row APR', { timeout: 30000 }, async () => {
+  const marketWorker = createWorker({ getClientIp: () => '198.51.100.39', fetch: async (url, init) => {
+    const route = new URL(url).pathname.split('/').at(-1), request = JSON.parse(init.body)
+    const body = route === 'overview' ? overviewFor(request) : route === 'history' ? historyFor(request) : fixture(route)
+    return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': '3.0.0-rc.1' } })
+  } })
+  const site = createGatedServer({ dist: DIST,
+    env: { BETA_PASSWORD: PASSWORD, BETA_COOKIE_KEY: 'BrowserPublicFixtureKey_0123456789_abcdefgh' },
+    api: async request => {
+      const url = new URL(request.url), headers = new Headers(request.headers)
+      if (headers.get('origin') === url.origin) headers.set('origin', APP)
+      headers.delete('host')
+      return marketWorker.fetch(new Request(new URL(url.pathname, APP), { method: request.method, headers,
+        body: request.method === 'POST' ? await request.text() : undefined }), env)
+    },
+  })
+  await new Promise(resolve => site.listen(0, '127.0.0.1', resolve))
+  const at = `http://127.0.0.1:${site.address().port}`
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, hasTouch: true }), page = await context.newPage(), errors = []
+  page.setDefaultTimeout(5000)
+  try {
+    page.on('pageerror', error => errors.push(error.message))
+    await context.route('**/*', route => route.request().url().startsWith(at) ? route.continue() : route.abort())
+    const login = await context.request.post(`${at}/__beta/login`, { form: { password: PASSWORD }, headers: { Origin: at }, maxRedirects: 0 })
+    assert.equal(login.status(), 303)
+    await page.goto(`${at}/#/markets`)
+    const tvl = page.getByRole('button', { name: 'About TVL', exact: true })
+    const apr = page.getByRole('button', { name: 'About pool APR', exact: true })
+    const tip = page.getByRole('tooltip')
+    await tvl.hover()
+    await tip.waitFor()
+    assert.equal(await tip.innerText(), 'Estimated value held in this pool.')
+    assert.equal(await tvl.getAttribute('aria-describedby'), await tip.getAttribute('id'))
+    await page.keyboard.press('Escape')
+    await tip.waitFor({ state: 'detached' })
+    await apr.focus()
+    await tip.waitFor()
+    assert.match(await tip.innerText(), /last 24 hours.*Not a forecast/)
+    assert.ok((await tip.innerText()).length < 140, 'the primary explanation stays short')
+    await page.keyboard.press('Escape')
+    await tip.waitFor({ state: 'detached' })
+
+    await page.setViewportSize({ width: 320, height: 760 })
+    for (const control of [tvl, apr]) {
+      await control.tap()
+      await tip.waitFor()
+      const bounds = await tip.boundingBox()
+      assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 320, 'the tooltip stays inside the narrow viewport')
+      await page.keyboard.press('Escape')
+      await tip.waitFor({ state: 'detached' })
+    }
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no document overflow at 320px')
+    const row = page.locator('tr.dm-mkt-row').first()
+    await page.waitForFunction(() => /[\d,.]+%/.test(document.querySelector('tr.dm-mkt-row .dm-mkt-apr')?.textContent ?? ''), null, { timeout: 5000 })
+    const value = (await row.locator('.dm-mkt-apr').innerText()).match(/[\d,.]+%/)?.[0]
+    assert.ok(value, 'the row has a qualified or attributed APR')
+    await row.locator('[data-pool-figures]').click()
+    const explanation = page.locator('[data-pool-figures-dialog] section[aria-labelledby="figures-estimate"]')
+    await explanation.waitFor()
+    assert.equal((await explanation.innerText()).match(/[\d,.]+%/)?.[0], value, 'Details explains the same APR as the row')
+    assert.deepEqual(errors, [])
+  } finally {
+    await context.close()
+    await new Promise(resolve => { site.close(resolve); site.closeAllConnections() })
+  }
+})
 let releaseHistory
 const worker = createWorker({ getClientIp: () => '198.51.100.31', fetch: async (url, init) => {
   const route = new URL(url).pathname.split('/').at(-1), request = JSON.parse(init.body)

@@ -4,13 +4,11 @@ import { Delta, LiveFigure, PeriodTabs, StackedBar, UsdText, type PeriodKey } fr
 import { TokenMarkPair } from '../../TokenIcon'
 import { DataFreshness } from '../../DataFreshness'
 import { cx } from '../../ui'
-import { ChartSkeleton } from '../../charts/ChartSkeleton'
 import { useFeeHistory } from '../../../lib/fees/useFeeHistory'
-import { usePastReads, usePastReadsListed } from '../../../lib/fees/usePastReads'
+import { usePastReads } from '../../../lib/fees/usePastReads'
 import { defaultPeriodFor, periodStart, periodsFor, type FeesPeriod } from '../../../lib/fees/periods'
 import type { FeeDisplayState as PositionState } from '../../../lib/fees/types'
 import { useLoadMilestone } from '../../../lib/useLoadMilestone'
-import { useMediaQuery } from '../../../lib/useMediaQuery'
 import { historyLoadQuality } from '../../../lib/fees/freshness'
 import { shortDate, shortTime } from '../../../lib/format/time'
 import { spanText } from '../../../lib/positionApr'
@@ -20,8 +18,8 @@ import { useAutomation } from '../../../lib/automationState'
 import { AUTOMATION_NAME, AutomationImpact } from './AutomationImpact'
 import { AutomationFrame } from './AutomationFrame'
 import { FeesActivity, TokenFigure } from './FeesActivity'
-import { CHART_BOX, FeesChart } from './FeesChart'
-import { FeesSkeleton } from './FeesSkeleton'
+import { FeesChart } from './FeesChart'
+import { PendingPlot } from './PendingPlot'
 import { feesView, periodView, type FeesView } from './model'
 import { anyPositive, basisOf, type Basis, growth, positive, stateToken, unitsNumber, unitsText, valueFigure, valueUnits } from './value'
 
@@ -63,10 +61,10 @@ function Amounts({ amounts, state }: { amounts: readonly [bigint, bigint] | null
 }
 
 /** A value with the quote token's symbol after it when the basis is not USD. */
-function Value({ basis, units, state }: { basis: Basis; units: bigint; state: PositionState }) {
+function Value({ basis, units, state, rawPositive = false }: { basis: Basis; units: bigint; state: PositionState; rawPositive?: boolean }) {
   return (
     <>
-      {valueFigure(basis, units)}
+      {valueFigure(basis, units, rawPositive)}
       {basis.kind === 'quote' && <span className="dm-fees-sym"> {symbolOf(state, basis.into)}</span>}
     </>
   )
@@ -129,7 +127,7 @@ function UnclaimedRow({ state, basis, large = false }: { state: PositionState; b
         <span className="dm-fees-compact-value">
           {basis && units !== null ? (
             <span className={cx('dm-fig-lg', earning && 'dm-fees-in')} title={title}>
-              <Value basis={basis} units={units} state={state} />
+              <Value basis={basis} units={units} state={state} rawPositive={earning} />
             </span>
           ) : null}
           <Amounts amounts={state.unclaimed} state={state} />
@@ -143,7 +141,7 @@ function UnclaimedRow({ state, basis, large = false }: { state: PositionState; b
       label="Ready to collect"
       money={earning}
       title={title}
-      value={basis && units !== null ? <Value basis={basis} units={units} state={state} /> : null}
+      value={basis && units !== null ? <Value basis={basis} units={units} state={state} rawPositive={earning} /> : null}
       amounts={<Amounts amounts={state.unclaimed} state={state} />}
     />
   )
@@ -158,10 +156,7 @@ function UnclaimedRow({ state, basis, large = false }: { state: PositionState; b
 function QuietPlot({ note, why }: { note?: string; why?: string }) {
   return (
     <div className="dm-fees-plot dm-fees-quiet" data-fees-quiet={why ?? ''}>
-      {note && <p className="dm-fees-quiet-note">{note}</p>}
-      <svg className="dm-fees-quiet-line" viewBox="0 0 100 2" preserveAspectRatio="none" focusable="false" aria-hidden="true">
-        <line x1="0" y1="1" x2="100" y2="1" className="dm-fees-flat" />
-      </svg>
+      <PendingPlot label="Fee history awaiting measurements" note={note ?? 'Updating fee history…'} />
     </div>
   )
 }
@@ -177,7 +172,7 @@ export function quietNote(reason: string | undefined): string {
   return 'Your fee history isn’t available here. Fees ready to collect is exact.'
 }
 
-/** The chart's place while it has fewer than three measured points (a new plain position, say): one calm line. */
+/** The chart's place before its first measured point. */
 export const FEW_POINTS_NOTE = 'The chart fills in as this position’s fees are measured.'
 
 /**
@@ -186,7 +181,7 @@ export const FEW_POINTS_NOTE = 'The chart fills in as this position’s fees are
  */
 export const PERIOD_NOTE = 'This period can’t be read right now. Fees earned above is exact.'
 
-const ALL_ONLY: readonly FeesPeriod[] = ['all']
+const INITIAL_PERIODS: readonly FeesPeriod[] = ['24h', '7d', 'all']
 
 /** A saved copy's time, as every date on the page is written (UTC, item D4). */
 const savedWhen = (timestamp: number) => `${shortDate(timestamp)} ${shortTime(timestamp)}`
@@ -217,21 +212,14 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
   const first = useFeeHistory(kind === 'plain' ? id : null, 'page')
   const [chosen, setChosen] = useState<FeesPeriod | null>(null)
   const [inspected, setInspected] = useState<number | null>(null)
-  const listed = usePastReadsListed()
-  const phone = useMediaQuery('(max-width: 767px)')
 
   const drawn = first.phase === 'verified' || first.phase === 'cached' ? first : null
   const basis = useMemo(() => (drawn ? basisOf(drawn.state, quoteIndex) : null), [drawn, quoteIndex])
   const view = useMemo(() => (drawn && basis ? feesView({ id, state: drawn.state, history: drawn.history, basis }) : null), [drawn, basis, id])
-  // The periods offered, where a past read can be made (assumed while that is asked: the deployed read service lists it,
-  // and a card that loses its tabs once drawn would jump): a verified history's; a saved copy's, only those its kept
-  // points start (it reads nothing); none with nothing earned.
+  // Period controls keep their place while measurements arrive; an unavailable start never fabricates a series.
   const offered = useMemo<readonly FeesPeriod[]>(() => {
-    if (!drawn || !view) return ALL_ONLY
-    const candidates = periodsFor(view.span, true)
-    if (drawn.phase === 'cached' || listed === false) return candidates.filter((one) => one === 'all' || periodStart(drawn.history, one) !== null)
-    return candidates
-  }, [drawn, view, listed])
+    return view ? periodsFor(view.span, true) : INITIAL_PERIODS
+  }, [view])
   const fallback = view ? defaultPeriodFor(view.span) : 'all'
   const period: FeesPeriod = chosen && offered.includes(chosen) ? chosen : offered.includes(fallback) ? fallback : 'all'
   const periodState = usePastReads(kind === 'plain' && drawn ? id : null, period)
@@ -266,8 +254,11 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
   const savedTitle = saved ? `A copy this browser saved of this position’s public history, through ${savedWhen(saved.state.timestamp)}. The chain is read again for the current one.` : undefined
   const reason = first.phase === 'unclaimed-only' || first.phase === 'unavailable' ? first.reason : undefined
   const why = first.phase === 'unclaimed-only' ? first.why : undefined
-  // A currency with unknown decimals: no guessed formatting, no card (§15.6).
-  if (state && (state.currencies[0].decimals === null || state.currencies[1].decimals === null)) return null
+  const tabs = (
+    <span className="dm-fees-tabs">
+      <PeriodTabs value={period as PeriodKey} onChange={(next) => { setChosen(next); setInspected(null) }} available={offered as PeriodKey[]} label="Fees earned" />
+    </span>
+  )
   // The period drawn (2026-10-02): which, whether its start is known, being read or unreadable, and the block it starts at.
   const periodData = drawn ? { 'data-fees-period': period, 'data-fees-period-state': periodState, 'data-fees-period-from': start?.block } : {}
   const root = (phase: string, children: ReactNode, className?: string) => (
@@ -276,18 +267,16 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
     </section>
   )
 
-  if (first.phase === 'idle') return null
-  // Not even the unclaimed figure could be read: the store reaches this only before the card was ever shown (its first
-  // /state read failed) or once the NFT is gone, so nothing that was on screen goes away.
-  if (first.phase === 'unavailable') return null
-
-  if (first.phase === 'loading') {
+  if (first.phase === 'idle' || first.phase === 'unavailable' || first.phase === 'loading' || (state && (state.currencies[0].decimals === null || state.currencies[1].decimals === null))) {
     const loadingBasis = state ? basisOf(state, quoteIndex) : null
     return root(
-      'loading',
+      first.phase,
       <>
-        <Head titleId={titleId} state={state} tokens={tokens} standalone={standalone} />
-        <FeesSkeleton unclaimed={state ? <UnclaimedRow state={state} basis={loadingBasis} /> : undefined} />
+        <Head titleId={titleId} state={state} tokens={tokens} standalone={standalone} tabs={tabs} />
+        <div className="dm-fees-body">
+          <div className="dm-fees-summary">{state ? <UnclaimedRow state={state} basis={loadingBasis} /> : <span className="dm-fig-hero" aria-label="Fees not available yet">—</span>}</div>
+          <PendingPlot label="Fee history awaiting measurements" busy={first.phase !== 'unavailable'} note={first.phase === 'unavailable' ? first.reason === 'rpc_unavailable' ? 'Fee history is temporarily unavailable. Retrying automatically.' : 'Fee history isn’t available for this position.' : 'Updating fee history…'} />
+        </div>
       </>,
     )
   }
@@ -297,7 +286,7 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
     return root(
       'unclaimed-only',
       <>
-        <Head titleId={titleId} state={first.state} tokens={tokens} standalone={standalone} />
+        <Head titleId={titleId} state={first.state} tokens={tokens} standalone={standalone} tabs={tabs} />
         <div className="dm-fees-body">
           <div className="dm-fees-summary">
             <UnclaimedRow state={first.state} basis={basisOf(first.state, quoteIndex)} large={!bandPresent} />
@@ -309,13 +298,13 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
     )
   }
 
-  if (!view || !basis) return null
+  if (!view || !basis) return root('unavailable', <><Head titleId={titleId} state={state} tokens={tokens} tabs={tabs} /><PendingPlot label="Fee history awaiting valuation" note="Updating fee values…" /></>)
   const lead = view.sources[0].state
   const blockTitle = savedTitle ?? `Pool price at block ${basis.block}`
   const bucket = inspected === null || !pv ? null : (pv.buckets[inspected] ?? null)
   // The hero: everything earned since the mint, or at the inspected point.
   const heroUnits = bucket ? bucket.earned : view.earned
-  const heroText = valueFigure(basis, heroUnits)
+  const heroText = valueFigure(basis, heroUnits, anyPositive(bucket?.earnedTokens ?? view.earnedTokens))
   // The period's growth beside it: hidden for All, and for a period that starts at the mint (it would repeat the hero).
   const periodGrowth = pv ? growth(pv.base, bucket ? bucket.earned : pv.last) : 0n
   const showDelta = pv !== null && period !== 'all' && pv.from.kind !== 'opened' && positive(periodGrowth)
@@ -323,23 +312,8 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
   const collectedShare = unitsNumber(view.collected)
   const unclaimedShare = unitsNumber(view.unclaimed)
   const split = positive(view.collected) && positive(view.unclaimed)
-  // The chart: from the mint, three measured points or more (a timeline with nothing earned yet: two); a period with a
-  // later start, its start and now.
-  const chart = pv !== null && (pv.from.kind === 'opened' ? view.measured >= 3 || (view.zero && view.measured >= 2) : pv.points.length >= 2)
-  const tabs =
-    offered.length > 1 ? (
-      <span className="dm-fees-tabs">
-        <PeriodTabs
-          value={period as PeriodKey}
-          onChange={(next) => {
-            setChosen(next)
-            setInspected(null)
-          }}
-          available={offered as PeriodKey[]}
-          label="Fees earned"
-        />
-      </span>
-    ) : undefined
+  // A single real measurement is already a chart point. There is no warm-up gate.
+  const chart = pv !== null && pv.points.length > 0
   let plot: ReactNode
   if (pv && chart) {
     plot = (
@@ -353,11 +327,7 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
   } else if (pv) plot = <QuietPlot note={FEW_POINTS_NOTE} why="few_points" />
   else if (periodState === 'reading') {
     // The period's start is being read: the plot keeps the drawn chart's box; the figures above are exact already.
-    plot = (
-      <div className="dm-fees-plot" data-fees-plot="reading" aria-busy="true">
-        <ChartSkeleton height={phone ? CHART_BOX.phone : CHART_BOX.desktop} head={false} className="dm-fees-chart-skel" />
-      </div>
-    )
+    plot = <PendingPlot label="Fee history for the selected period" note="Updating this period…" busy />
   } else plot = <QuietPlot note={PERIOD_NOTE} why="period_unavailable" />
 
   return root(
@@ -371,7 +341,7 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
           <p className="dm-fees-hero" title={blockTitle}>
             {bucket ? (
               // Inspecting: the point's value as plain text, instantly (no roll while scrubbing).
-              basis.kind === 'usd' ? (
+              basis.kind === 'usd' && !(heroUnits === 0n && !view.zero) ? (
                 <UsdText value={unitsText(heroUnits)} dimCents className="dm-fig-hero dm-tick-fig" />
               ) : (
                 <span className="dm-fig-hero dm-tick-fig">{heroText}</span>
@@ -424,7 +394,7 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
                   tone="collected"
                   label="Collected"
                   title={blockTitle}
-                  value={<Value basis={basis} units={view.collected} state={lead} />}
+                  value={<Value basis={basis} units={view.collected} state={lead} rawPositive={anyPositive(view.collectedTokens)} />}
                   amounts={<Amounts amounts={view.collectedTokens} state={lead} />}
                 />
                 <LegendRow
@@ -432,7 +402,7 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
                   label="Ready to collect"
                   title={blockTitle}
                   money={positive(view.unclaimed)}
-                  value={<Value basis={basis} units={view.unclaimed} state={lead} />}
+                  value={<Value basis={basis} units={view.unclaimed} state={lead} rawPositive={anyPositive(view.unclaimedTokens)} />}
                   amounts={<Amounts amounts={view.unclaimedTokens} state={lead} />}
                 />
               </div>

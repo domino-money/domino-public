@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from
 import { formatUsdCompact } from '../../../lib/read/decimal'
 import { reasonText } from '../../../lib/read/describe'
 import { compactUsd, percentText, presentMetric, readNow, type Market, type Metric } from '../../../lib/markets'
-import { presentAprEstimate } from '../../../lib/read/aprEstimate'
+import { poolAprPresentation } from '../../../lib/read/poolAprPresentation'
+import { MetricCell, fallbackTitle } from '../../explore/MetricCell'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { ACTIVITY_TOO_OLD, activityAge, activityFacts, activityStaleText, heldSeconds, type ActivityFacts, type AttributedFigure } from '../../../lib/read/screens/figures'
 import { useReadSource } from '../../../lib/read/screens/readContext'
@@ -16,6 +17,7 @@ import { Address } from './Address'
 import { duration } from './PoolActivityCard'
 import { ProviderFigure } from './ProviderFigure'
 import { PoolAprEstimate } from './PoolAprEstimate'
+import { FallbackApr } from './FallbackApr'
 import { PoolPriceChart } from './PoolPriceChart'
 
 /**
@@ -138,6 +140,7 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
   // Figures the store is collecting (marketsProvider.ts, `figuresPending`, added 2026-09-25): loading here as in the
   // row behind the dialog, never "no provider figure" while they are coming.
   const coming = market.figuresPending === true
+  const apr = poolAprPresentation(market, readNow())
   const loading = (label: string, data: Record<`data-${string}`, string>) => (
     <span className="inline-flex" {...data}>
       <Skeleton className="h-4 w-24" />
@@ -163,10 +166,15 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
         <IconButton label="Close" icon={<IconClose />} variant="ghost" size="sm" className="dm-dialog-close" onClick={onClose} />
 
         <div className="grid gap-3">
-          <Panel id="figures-estimate" heading="Estimated pool fee APR">
-            {coming && presentAprEstimate(market.feeAprEstimate, readNow()).text === null
-              ? loading('Estimated APR', { 'data-apr-estimate': 'pending' })
-              : <PoolAprEstimate observation={market.feeAprEstimate} now={readNow()} detailed />}
+          <Panel id="figures-estimate" heading="APR shown in Markets">
+            {apr.qualified ? <>
+              <MetricCell metric={market.feeAprPercent} percent tone="in" />
+              <p className="text-caption text-fg-muted">Annualized verified LP fees divided by time-weighted pool value over the last 24 hours. Not a position’s return or a forecast.</p>
+            </> : apr.pending ? loading('Estimated APR', { 'data-apr-estimate': 'pending' }) : apr.fallback ? <>
+              <FallbackApr apr={apr.fallback} />
+              <p className="text-caption text-fg-muted">{fallbackTitle(apr.fallback.basis, apr.fallback.asOf, 'estimate')}</p>
+              <p className="text-caption text-fg-muted">A pool estimate, not a position’s return or a forecast.</p>
+            </> : <PoolAprEstimate observation={market.feeAprEstimate} now={readNow()} detailed />}
           </Panel>
 
           <Panel id="figures-qualified" heading="Domino history, 24h" data-figures-qualified={qualified ? 'yes' : 'no'}>

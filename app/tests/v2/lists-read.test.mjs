@@ -80,6 +80,7 @@ function fakeTimers() {
   const wakers = new Set();
   return {
     timers: {
+      now: () => now,
       set: (run, ms) => {
         const handle = { at: now + ms, run };
         queue.push(handle);
@@ -153,4 +154,50 @@ test('the keyed reader: one read per key for every view, kept, asked again by it
   assert.equal(read.readAgainAfter({ kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 9 }, 1), 9_000);
   assert.equal(read.readAgainAfter({ kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 2 }, 1), 5_000, 'a shorter one changes nothing');
   assert.equal(read.readAgainAfter({ kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 30 }, 2), 30_000);
+});
+
+test('confirmation during a read is not lost and a failed refresh keeps the last good snapshot', async () => {
+  const clock = fakeTimers();
+  const requests = [];
+  const reader = read.createKeyedReader(() => new Promise((resolve) => requests.push(resolve)), { next: read.readAgainAfter, failed: (reply) => reply.kind !== 'ok' }, clock.timers);
+  const off = reader.subscribe('wallet', () => {});
+  reader.again('wallet');
+  reader.again('wallet');
+  requests[0]({ kind: 'ok', body: { block: 1 } });
+  await clock.advance(0);
+  assert.equal(reader.get('wallet'), null, 'pre-confirmation response never becomes the current snapshot');
+  assert.equal(requests.length, 2, 'coalesced invalidations cause one follow-up read');
+  requests[1]({ kind: 'ok', body: { block: 2 } });
+  await clock.advance(0);
+  reader.again('wallet');
+  requests[2]({ kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 30 });
+  await clock.advance(0);
+  assert.equal(reader.get('wallet').body.block, 2, 'failure does not erase known rows');
+  assert.equal(reader.getLatest('wallet').kind, 'unavailable', 'failure remains available for a quiet notice');
+  reader.again('wallet');
+  await clock.advance(29_999);
+  assert.equal(requests.length, 3, 'confirmation cannot bypass the upstream Retry-After');
+  await clock.advance(1);
+  assert.equal(requests.length, 4);
+  off();
+});
+
+test('shared wake refreshes active keys once and projects observed state without another network read', async () => {
+  const clock = fakeTimers();
+  let wake;
+  let wakesRemoved = 0;
+  let reads = 0;
+  clock.timers.onWake = (run) => { wake = run; return () => wakesRemoved++; };
+  const reader = read.createKeyedReader(async () => ({ kind: 'ok', body: ++reads }), { next: read.readAgainAfter, failed: (reply) => reply.kind !== 'ok' }, clock.timers);
+  const a = reader.subscribe('wallet', () => {});
+  const b = reader.subscribe('wallet', () => {});
+  await clock.advance(0);
+  wake();
+  await clock.advance(0);
+  assert.equal(reads, 2, 'one request shared by both consumers on focus/online');
+  reader.update((value) => ({ ...value, body: 99 }));
+  assert.equal(reader.get('wallet').body, 99);
+  assert.equal(reads, 2, 'public position evidence is projected locally');
+  a(); b();
+  assert.equal(wakesRemoved, 1, 'listeners leave no global wake handler behind');
 });

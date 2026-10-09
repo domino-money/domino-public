@@ -197,6 +197,8 @@ export type Effect =
    * `retryAfterS` when the service gave one.
    */
   | { type: 'refresh_failed'; final: boolean; retryAfterS: number | null }
+  /** A transient GET me failure: retry the read without discarding a previously verified session. */
+  | { type: 'check_failed'; retryAfterS: number | null }
 
 export type Event =
   | { type: 'identity'; identity: WalletIdentity }
@@ -280,11 +282,18 @@ export const keptChains = (): readonly number[] => (V2_ON ? withV2(REGISTRY_CHAI
  * and the deposit is followed, with no new signature.
  */
 export function heldAway(m: Machine, env: Env): boolean {
-  if (!V2_ON || m.view.status !== 'wrong_network' || m.session === null || m.flow.kind !== 'idle') return false
+  if (!V2_ON || m.view.status !== 'wrong_network' || m.session === null || (m.flow.kind !== 'idle' && !backgroundCheck(m))) return false
   const id = m.identity
   if (id.kind !== 'connected' || id.chainId === ROBINHOOD_CHAIN_ID) return false
   if (!V2_CHAIN_IDS.includes(id.chainId) && !CROSSCHAIN_ORIGIN_CHAIN_IDS.includes(id.chainId)) return false
   return (env.chains ?? [ROBINHOOD_CHAIN_ID]).includes(id.chainId) && lower(id.address) === lower(m.session.owner)
+}
+
+/** Reading an existing cookie needs no wallet network switch or new signature. */
+function readableIdentity(id: WalletIdentity, chains: readonly number[]): id is Connected {
+  if (id.kind !== 'connected') return false
+  return id.chainId === ROBINHOOD_ID || (V2_ON && chains.includes(id.chainId) &&
+    (V2_CHAIN_IDS.includes(id.chainId) || CROSSCHAIN_ORIGIN_CHAIN_IDS.includes(id.chainId)))
 }
 
 export interface Step {
@@ -408,7 +417,9 @@ function signedIn(m: Machine, body: SessionResponses['me'], announce: boolean, f
     flow: IDLE,
     preauthCsrf: null,
     session: { owner, csrf: body.csrfToken },
-    view: { status: 'signed_in', owner, expiresAt: body.expiresAt, ...(notice ? { notice } : {}) },
+    view: m.identity.kind === 'connected' && m.identity.chainId !== ROBINHOOD_ID
+      ? { status: 'wrong_network', chainId: m.identity.chainId }
+      : { status: 'signed_in', owner, expiresAt: body.expiresAt, ...(notice ? { notice } : {}) },
   }
   const effects: Effect[] = m.session !== null && !unchanged ? [{ type: 'clear_private' }, { type: 'cancel_expiry' }] : []
   effects.push(
@@ -509,7 +520,7 @@ function onIdentity(m: Machine, identity: WalletIdentity, chains: readonly numbe
   const before = m.identity
   if (before.kind === identity.kind && identityKey(before) === identityKey(identity)) return same(m)
   if (before.kind === 'connected') return (movedWithinRegistry(before, identity, chains) && moveChain(m, identity)) || switchIdentity(m, before, identity)
-  return settle({ ...m, identity, recheckPending: false })
+  return settle({ ...m, identity, recheckPending: false }, chains)
 }
 
 /**
@@ -550,12 +561,12 @@ function moveChain(m: Machine, identity: Connected): Step | null {
 }
 
 /** First known identity after reconnecting, or a connect from no wallet. */
-function settle(m: Machine): Step {
+function settle(m: Machine, chains: readonly number[]): Step {
   // A sign-out still running lands on the resting view for this identity.
   if (m.flow.kind !== 'idle') return same(m)
   if (m.view.status === 'blocked' && m.view.failure === 'browser_unsupported') return same(m)
   const id = m.identity
-  if (onRobinhood(id) && !m.locked.includes(lower(id.address))) {
+  if (readableIdentity(id, chains) && !m.locked.includes(lower(id.address))) {
     return checkSession({ ...m, epoch: m.epoch + 1 }, false, { status: 'checking' })
   }
   return same({ ...m, view: resting(m, 'none') })
@@ -695,16 +706,17 @@ function retry(m: Machine): Step {
 }
 
 /** Expiry, a tab coming back into view, or another tab's sign-in or sign-out. */
-function recheck(m: Machine): Step {
-  if (!onRobinhood(m.identity)) return same(m)
+function recheck(m: Machine, env: Env): Step {
+  if (!readableIdentity(m.identity, env.chains ?? [ROBINHOOD_ID])) return same(m)
   // Never dropped: a me already in flight may have been answered before
   // another tab's sign-out committed. The check runs again once this flow
   // ends (see runPendingRecheck).
   if (m.flow.kind !== 'idle') return m.recheckPending ? same(m) : same({ ...m, recheckPending: true })
   const v = m.view.status
-  if (v !== 'signed_in' && v !== 'signed_out' && v !== 'other_session') return same(m)
+  const recovering = m.view.status === 'blocked' && m.view.retry === 'check'
+  if (v !== 'signed_in' && v !== 'signed_out' && v !== 'other_session' && !heldAway(m, env) && !recovering) return same(m)
   // The view stays as it is while the check runs; a recheck is not a sign-in.
-  return checkSession(m, v === 'signed_in')
+  return checkSession(m, v === 'signed_in' || heldAway(m, env))
 }
 
 /**
@@ -712,9 +724,9 @@ function recheck(m: Machine): Step {
  * signed-in view for the connected account: never during another flow, never
  * for a session this tab does not show, never while signed out.
  */
-function startRefresh(m: Machine): Step {
+function startRefresh(m: Machine, env: Env): Step {
   const id = m.identity
-  if (m.flow.kind !== 'idle' || m.view.status !== 'signed_in' || !m.session || !onRobinhood(id)) return same(m)
+  if (m.flow.kind !== 'idle' || (m.view.status !== 'signed_in' && !heldAway(m, env)) || !m.session || id.kind !== 'connected') return same(m)
   if (m.session.owner !== lower(id.address)) return same(m)
   const next: Machine = { ...m, flow: { kind: 'refresh' } }
   return { machine: next, effects: [call(next, { route: 'refresh', csrf: m.session.csrf })] }
@@ -853,9 +865,9 @@ function afterVerify(m: Machine, address: string, o: RouteOutcome<'verify'>): St
   }
 }
 
-function afterMe(m: Machine, f: MeFlow, o: RouteOutcome<'me'>): Step {
+function afterMe(m: Machine, f: MeFlow, o: RouteOutcome<'me'>, env: Env): Step {
   const id = m.identity
-  const mine = o.ok && onRobinhood(id) && o.body.owner.address === lower(id.address)
+  const mine = o.ok && readableIdentity(id, env.chains ?? [ROBINHOOD_ID]) && o.body.owner.address === lower(id.address)
   switch (f.purpose) {
     case 'restore': {
       const wipe: Effect[] = f.wasSignedIn ? [{ type: 'clear_private' }, { type: 'cancel_expiry' }] : []
@@ -865,6 +877,12 @@ function afterMe(m: Machine, f: MeFlow, o: RouteOutcome<'me'>): Step {
         // declined signature, a sign-out): nothing changed for this tab.
         const view = f.wasSignedIn ? resting(m, 'session_ended') : m.view.status === 'signed_out' ? m.view : resting(m, 'none')
         return { machine: { ...m, flow: IDLE, session: null, view }, effects: wipe }
+      }
+      if (unavailable(o.failure)) {
+        // A failed read proves neither expiry nor a changed owner. Keep the last verified identity and drafts;
+        // the server still validates every private action. A bounded retry re-establishes authority, without signing.
+        const view = f.wasSignedIn && m.session ? m.view : blockedFor(o.failure)
+        return { machine: { ...m, flow: IDLE, view }, effects: [{ type: 'check_failed', retryAfterS: o.failure.kind === 'session_error' ? o.failure.retryAfterS : null }] }
       }
       // Unavailable is not signed out: the session CSRF is kept so the user can
       // check again or sign out, but nothing private stays on screen meanwhile.
@@ -950,13 +968,13 @@ function unavailable(failure: TransportFailure): boolean {
   }
 }
 
-function afterRefresh(m: Machine, o: RouteOutcome<'refresh'>): Step {
+function afterRefresh(m: Machine, o: RouteOutcome<'refresh'>, env: Env): Step {
   const wipe: Effect[] = [{ type: 'clear_private' }, { type: 'cancel_expiry' }]
   if (o.ok) {
     const id = m.identity
     // Refresh answers for the session whose CSRF it carried. Another owner
     // would be producer drift: show where this browser stands, keep nothing.
-    if (!onRobinhood(id) || o.body.owner.address !== lower(id.address)) return otherSession(m, o.body, wipe)
+    if (!readableIdentity(id, env.chains ?? [ROBINHOOD_ID]) || o.body.owner.address !== lower(id.address)) return otherSession(m, o.body, wipe)
     // Same CSRF and absolute expiry, a fresh account check and a new idle
     // deadline. A different CSRF would be a different session and would get
     // its own scope, exactly as with me.
@@ -1036,11 +1054,11 @@ function onResult(m: Machine, o: ApiOutcome, env: Env): Step {
     case 'verify':
       return o.route === 'verify' ? afterVerify(m, f.address, o) : same(m)
     case 'me':
-      return o.route === 'me' ? afterMe(m, f, o) : same(m)
+      return o.route === 'me' ? afterMe(m, f, o, env) : same(m)
     case 'logout':
       return o.route === 'logout' ? afterLogout(m, f, o) : same(m)
     case 'refresh':
-      return o.route === 'refresh' ? afterRefresh(m, o) : same(m)
+      return o.route === 'refresh' ? afterRefresh(m, o, env) : same(m)
     default:
       return same(m)
   }
@@ -1056,7 +1074,7 @@ function onStale(m: Machine, o: ApiOutcome): Step {
 }
 
 export function reduce(m: Machine, e: Event, env: Env): Step {
-  return runPendingRecheck(step(m, e, env))
+  return runPendingRecheck(step(m, e, env), env)
 }
 
 /**
@@ -1064,11 +1082,12 @@ export function reduce(m: Machine, e: Event, env: Env): Step {
  * landing is one a recheck applies to. Anything else (blocked, wrong network)
  * drops it: a recheck never retries a failure on its own.
  */
-function runPendingRecheck(s: Step): Step {
+function runPendingRecheck(s: Step, env: Env): Step {
   const m = s.machine
   if (!m.recheckPending || m.flow.kind !== 'idle') return s
   const cleared: Machine = { ...m, recheckPending: false }
-  const check = recheck(cleared)
+  if (s.effects.some((effect) => effect.type === 'check_failed')) return { ...s, machine: cleared }
+  const check = recheck(cleared, env)
   return { machine: check.machine, effects: [...s.effects, ...check.effects] }
 }
 
@@ -1085,9 +1104,9 @@ function step(m: Machine, e: Event, env: Env): Step {
     case 'retry':
       return retry(m)
     case 'recheck':
-      return recheck(m)
+      return recheck(m, env)
     case 'refresh':
-      return startRefresh(m)
+      return startRefresh(m, env)
     case 'renewed_elsewhere':
       return renewedElsewhere(m)
     case 'unsupported_browser':

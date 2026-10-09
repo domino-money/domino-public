@@ -3,6 +3,7 @@ import type { PreparedV2 } from '../../finance/v2/transact'
 import type { ErrorLabels } from '../../v2/errors'
 import { describeError, type ErrorView } from './copy'
 import { IDLE, OfferedStepError, SentBatchError, SentStepError, sendBatchStep, sendStep, watchFinality, type AutomationSession, type BatchClient, type IncludedReceipt, type StepPhase, type TxClient } from './session'
+import { positionChanged } from '../lists/positionSync'
 
 /**
  * A review's wallet steps in the look and the rhythm of Set up automation's own (screens/SequenceCreate.tsx): the list of
@@ -169,6 +170,7 @@ export function useStepsRun({ session, steps, context, labels, onStepDone, onAll
         if (!step.sign && receipt === null) return
         const outcome = { index, step, receipt }
         outcomes.push(outcome)
+        if (receipt) positionChanged({ chainId: session.chainId, wallet: session.owner, block: receipt.blockNumber })
         onStepDone?.(outcome)
       }
       if (alive()) onAllDone?.(outcomes)

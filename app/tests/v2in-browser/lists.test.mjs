@@ -45,6 +45,7 @@ const shots = () => {
 };
 const EXAMPLE_WALLET = '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1';
 const V1_OPEN = '3135288';
+const rowKey = (id) => `4663:${fixture('portfolio.json').positions[0].positionManager.toLowerCase()}:${id}`;
 const TOKENS = { [FIXTURE_TOKEN.toLowerCase()]: { symbol: 'TOKEN', decimals: 6 } };
 const STUB_KEY = { currency0: zeroAddress, currency1: FIXTURE_TOKEN.toLowerCase(), fee: 3000, tickSpacing: 60, hooks: zeroAddress };
 const onChain = (tokenId) => ({ tokenId, holder: OWNER, key: STUB_KEY, tickLower: -60, tickUpper: 60, liquidity: 2n ** 100n, unclaimed: [633825300114n, 0n] });
@@ -78,7 +79,7 @@ after(async () => {
  * Positions of wallet-test-v2, Test Wallet A connected on Robinhood Chain with one open V1 position. `hooks`: the page's
  * `window.__dominoV2Test`; `readV6(method, route, body)`: the site's read-v6 route ({ status, body, contract }), recorded.
  */
-async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positions', privateReceipts = null, sessionDisabled = false, refresh = false, chainOptions = {}, stored = undefined, ledgerReply = null, connect = true } = {}) {
+async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positions', privateReceipts = null, localCloses = [], sessionDisabled = false, refresh = false, chainOptions = {}, stored = undefined, ledgerReply = null, connect = true } = {}) {
   const fake = createFakeSession();
   fake.controls.disabled = sessionDisabled;
   const chain = browserChain({ positions: [onChain(V1_OPEN)], tokens: TOKENS, ...chainOptions });
@@ -128,6 +129,9 @@ async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positio
     await route.fulfill({ status: reply.status, contentType: 'application/json', body: JSON.stringify(reply.body) });
   });
   const wallet = await installWallets(context);
+  if (localCloses.length) await context.addInitScript((rows) => {
+    for (const owner of new Set(rows.map(row => row.wallet.toLowerCase()))) localStorage.setItem(`domino:confirmed-closes:v1:${owner}`, JSON.stringify(rows.filter(row => row.wallet.toLowerCase() === owner)));
+  }, localCloses);
   if (hooks) await context.addInitScript((value) => { window.__dominoV2Test = value; }, hooks);
   if (refresh) await context.addInitScript(() => { window.__dominoRefresh = true; });
   const page = await context.newPage();
@@ -222,26 +226,92 @@ const tabs = async (page) => {
 };
 /** V1's open row, as V1's own suite reads it (tests/finance.browser.test.mjs). */
 async function v1RowAsItIs(page) {
-  const row = page.locator(`a[data-position-row="${V1_OPEN}"]`);
+  const row = page.locator(`a[data-v2-position-row="${rowKey(V1_OPEN)}"]`);
   await row.waitFor();
-  assert.equal(await row.getAttribute('href'), `#/positions/${V1_OPEN}`);
-  assert.match(await row.innerText(), /ETH\s*\/\s*TOKEN\s+0\.30% fee\s+Position #3135288\s+In range/);
+  assert.equal(await row.getAttribute('href'), `#/positions/robinhood-v4-${V1_OPEN}`);
+  assert.match(await row.innerText(), /Position #3135288/);
+  assert.equal(await row.locator('[data-cell="apr"]').count(), 1, 'historical NFTs use the same APR column');
 }
 /** V1's two cards with nothing of V2 in them. */
 async function v1CardsExact(page) {
-  assert.equal(await page.locator('[data-owned] [data-v2-position-row], [data-owned] [data-v2-examples-band], [data-owned] [data-v2-own-note], [data-owned] [data-test-data]').count(), 0, 'Your positions is V1’s own');
+  assert.equal(await page.locator('[data-owned] [data-v2-position-row]').count(), 1, 'the historical NFT uses the unified collection');
+  assert.equal(await page.locator('[data-owned] [data-v2-examples-band], [data-owned] [data-test-data]').count(), 0);
   assert.equal(await page.locator('section[aria-labelledby="receipts-title"] [data-v2-receipt], section[aria-labelledby="receipts-title"] [data-test-data]').count(), 0, 'Receipts is V1’s own');
   assert.doesNotMatch(await text(page.locator('[data-owned]')), /Example|Test data/);
 }
 
-test('gate off: Positions is exactly V1’s, and nothing of read-v6 is asked or drawn', async () => {
+test('the unified collection follows external closure on reconnect, retains it through failure and fits narrow screens', async () => {
+  const own = about('portfolio', fixture('portfolio.json'), OWNER);
+  own.positions = [own.positions[0]];
+  own.positions[0].vault = null;
+  own.vaults = [];
+  own.mandates = [];
+  let failure = false;
+  const s = await scenario({ hooks: LIVE, readV6: routeOn((route) => route === 'portfolio' && failure ? { status: 503, body: { error: 'upstream_unavailable' } } : { status: 200, body: route === 'portfolio' ? own : about('activity', fixture('activity.json'), OWNER) }) });
+  try {
+    await s.page.getByRole('tab', { name: /^Open 2/ }).waitFor();
+    own.positions[0].state.liquidity = '0';
+    own.positions[0].state.principalAtSpot = ['0', '0'];
+    own.positions[0].state.snapshot.number += 10;
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await s.page.getByRole('tab', { name: /^Closed 1/ }).waitFor();
+    assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 1']);
+    await s.page.getByRole('tab', { name: /^Closed 1/ }).click();
+    await s.page.locator(`[data-v2-position-row="${rowKey('7')}"] [data-position-status="closed"]`).waitFor();
+    failure = true;
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor();
+    assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 1'], 'failed refresh never resurrects a closed position');
+    for (const width of [1024, 736, 390, 320]) {
+      await s.page.setViewportSize({ width, height: 980 });
+      assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `collection and wallet fit ${width}px`);
+      assert.equal(await s.page.locator('[data-owned] .dm-own-label').evaluateAll(labels => labels.every(label => label.getBoundingClientRect().right <= label.parentElement.getBoundingClientRect().right + 1)), true, `column labels stay in their cells at ${width}px`);
+    }
+    await s.page.locator('[data-owned]').screenshot({ path: join(shots(), 'positions-unified-closed-320.png'), animations: 'disabled' });
+    assert.equal(s.wallet.state.signed.length, 0, 'inventory refresh requires no wallet transaction');
+  } finally { await s.close(); }
+});
+
+test('the list and the detail display the same verified APR for a new V2 NFT', async () => {
+  const tokenId = '3659830';
+  const world = ledgerWorld({ tokenId: BigInt(tokenId), holder: OWNER, vault: null, steps: [] });
+  const ledger = edgeFetch({ fetch: (_url, init) => world.chain.fetch(RPC_URL, init) });
+  const own = about('portfolio', fixture('portfolio.json'), OWNER);
+  own.positions = [own.positions[0]];
+  own.positions[0].tokenId = tokenId;
+  own.positions[0].vault = null;
+  own.vaults = [];
+  own.mandates = [];
+  const s = await scenario({ hooks: LIVE, chainOptions: world.chain,
+    readV6: routeOn(route => ({ status: 200, body: route === 'portfolio' ? own : about('activity', fixture('activity.json'), OWNER) })),
+    ledgerReply: async request => {
+      const response = await ledger('/api/fees/v2/ledger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
+      return { status: response.status, body: await response.json() };
+    },
+  });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="${rowKey(tokenId)}"]`);
+    const apr = row.locator('[data-cell="apr"][data-apr="ready"]');
+    await apr.waitFor();
+    const listText = await apr.locator('.dm-own-fig').textContent();
+    assert.match(listText, /%/);
+    assert.ok(s.ledgerAsked.length > 0 && s.ledgerAsked.every(request => request.tokenIds.length <= 8));
+    await row.click();
+    const detail = s.page.locator('[data-position-detail] [data-cell="apr"][data-apr="ready"]');
+    await detail.waitFor();
+    assert.ok((await detail.innerText()).includes(listText), 'one qualified financial projection in both screens');
+  } finally { await s.close(); }
+});
+
+test('read gate off: historical NFTs remain in the unified collection and read-v6 is not asked', async () => {
   const s = await scenario();
   try {
     await s.page.locator('[data-owned="ready"]').waitFor();
     await v1RowAsItIs(s.page);
     assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 0']);
     await s.page.waitForTimeout(500);
-    assert.equal(await s.page.locator('[data-v2-position-row], [data-v2-examples], [data-v2-own-note], [data-v2-receipt]').count(), 0);
+    assert.equal(await s.page.locator('[data-v2-position-row]').count(), 1);
+    assert.equal(await s.page.locator('[data-v2-examples], [data-v2-own-note], [data-v2-receipt]').count(), 0);
     assert.deepEqual(s.asked, [], 'the site’s read-v6 route is never asked');
     assert.doesNotMatch(await s.page.locator('main').innerText(), /Test data|Example/);
   } finally {
@@ -256,9 +326,9 @@ test('preview with no read-v6 route: V1 stays intact, with no fixture positions 
     await v1RowAsItIs(s.page);
     await v1CardsExact(s.page);
     assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 0']);
-    await s.page.locator('[data-automation-cards="merged"]').waitFor();
-    await s.page.waitForFunction(() => document.querySelector('[data-owned-rows="open"] [data-position-row]'));
-    assert.equal(await s.page.locator('[data-v2-examples], [data-v2-position-row], [data-test-data]').count(), 0);
+    await s.page.locator('[data-automation-cards="integrated"]').waitFor();
+    await s.page.waitForFunction(() => document.querySelector('[data-owned-rows="open"] [data-v2-position-row]'));
+    assert.equal(await s.page.locator('[data-v2-examples], [data-test-data]').count(), 0);
     assert.doesNotMatch(await s.page.locator('main').innerText(), /Example positions|Test data/);
     assert.deepEqual([...new Set(s.asked.map(entry => entry.method + ' ' + entry.route))], ['GET capabilities']);
     assert.equal(s.wallet.state.signed.length, 0);
@@ -275,6 +345,7 @@ test('preview receipts with no route: no fixture history, no invented transactio
     assert.equal(s.wallet.state.signed.length, 0);
     assert.ok(!s.asked.some(entry => entry.method === 'POST'), 'missing capabilities never cause a portfolio or activity POST');
     assert.ok(s.asked.every(entry => entry.method === 'GET' && entry.route === 'capabilities'));
+    await s.page.locator('[data-execution="signed_out"] [data-signed-out] > summary').click();
     assert.equal(await s.page.locator('[data-execution="signed_out"]').getByRole('button', { name: 'Sign in', exact: true }).count(), 1);
   } finally { await s.close(); }
 });
@@ -284,9 +355,9 @@ test('preview reads the connected wallet from the site route and shows its parti
   const s = await scenario({ hooks: { originOpen: true }, readV6: routeOn(route => ({ status: 200, body: route === 'portfolio' ? own : about('activity', fixture('activity.json'), OWNER) })) });
   try {
     const note = s.page.locator('[data-owned] [data-v2-own-note="partial"]');
-    await note.waitFor();
+    await note.waitFor({ timeout: 5_000 }).catch(async () => assert.fail(JSON.stringify({ requests: s.asked, content: await s.page.locator('[data-owned]').innerText() })));
     assert.equal(await text(note), 'Showing Robinhood Chain. Base and Arbitrum One are unavailable right now.');
-    assert.equal(await s.page.locator('a[data-v2-position-row="4663:4:7"] [data-v2-stale]').getAttribute('data-v2-stale'), 'updated 15 min ago');
+    assert.equal(await s.page.locator(`a[data-v2-position-row="${rowKey('7')}"] [data-v2-stale]`).getAttribute('data-v2-stale'), 'updated 15 min ago');
     await v1RowAsItIs(s.page);
     assert.deepEqual(await tabs(s.page), ['Open 2', 'Closed 0']);
     assert.equal(await s.page.locator('[data-v2-examples], [data-test-data]').count(), 0);
@@ -297,19 +368,30 @@ test('preview reads the connected wallet from the site route and shows its parti
   } finally { await s.close(); }
 });
 
-test('live: the person’s own positions from the site’s route join V1’s grid and tabs, shown once, with no "Test data"', async () => {
+test('live: one collection merges both inventories and counts only positions with proven liquidity', async () => {
   const own = about('portfolio', fixture('portfolio.json'), OWNER);
   // The same NFT V1 lists (Robinhood Chain's v4 position manager, its id): shown once, as V1's row.
   own.positions[2].tokenId = V1_OPEN;
-  const s = await scenario({ hooks: LIVE, readV6: routeOn((route) => ({ status: 200, body: route === 'portfolio' ? own : about('activity', fixture('activity.json'), OWNER) })) });
+  let releasePortfolio;
+  const portfolioReady = new Promise(resolveReady => { releasePortfolio = resolveReady; });
+  const respond = routeOn((route) => ({ status: 200, body: route === 'portfolio' ? own : about('activity', fixture('activity.json'), OWNER) }));
+  const s = await scenario({ hooks: LIVE, readV6: async (method, route, body) => {
+    if (method === 'POST' && route === 'portfolio') await portfolioReady;
+    return respond(method, route, body);
+  } });
   try {
     const rows = s.page.locator('[data-owned-rows="open"] a[data-v2-position-row]');
     await rows.first().waitFor();
     await v1RowAsItIs(s.page);
-    assert.deepEqual(await rows.evaluateAll((all) => all.map((row) => row.getAttribute('data-v2-position-row'))), ['4663:4:7', '4663:4:8', '4663:4:12', '4663:4:13']);
-    assert.equal(await s.page.locator(`[data-position-row="${V1_OPEN}"], [data-v2-position-row="4663:4:${V1_OPEN}"]`).count(), 1);
-    await s.page.getByRole('tab', { name: /^Open 5/ }).waitFor();
-    assert.deepEqual(await tabs(s.page), ['Open 5', 'Closed 0'], 'the person’s own rows count');
+    assert.deepEqual(await rows.evaluateAll(all => all.map(row => row.getAttribute('data-v2-position-row').split(':').at(-1))), [V1_OPEN], 'historical rows stay visible while the independent portfolio read is pending');
+    releasePortfolio();
+    await rows.nth(4).waitFor();
+    assert.deepEqual((await rows.evaluateAll((all) => all.map((row) => row.getAttribute('data-v2-position-row').split(':').at(-1)))).sort(), ['7', '8', '12', '13', V1_OPEN].sort());
+    assert.equal(await s.page.locator(`[data-v2-position-row="${rowKey(V1_OPEN)}"]`).count(), 1);
+    await s.page.getByRole('tab', { name: /^Open 3/ }).waitFor();
+    assert.deepEqual(await tabs(s.page), ['Open 3', 'Closed 0'], 'unknown positions remain visible without being counted as Open');
+    assert.match(await s.page.locator('[data-owned-status]').innerText(), /3 open and 0 closed positions.*2 positions still being checked/);
+    assert.equal(await rows.locator('[data-cell="apr"]').count(), 5, 'every row has the qualified APR projection');
     assert.equal(await text(s.page.locator('[data-owned] [data-v2-own-note="partial"]')), 'Showing Robinhood Chain and Base. Arbitrum One is unavailable right now.');
     assert.equal(await s.page.locator('[data-v2-examples], [data-test-data]').count(), 0, 'no test data in a live list');
     const portfolio = s.asked.find((entry) => entry.route === 'portfolio');
@@ -320,10 +402,9 @@ test('live: the person’s own positions from the site’s route join V1’s gri
     await receipts.first().waitFor();
     assert.equal(await receipts.count(), 4);
     const privateEntry = s.page.locator('section[aria-labelledby="receipts-title"] [data-execution="signed_out"]');
-    await privateEntry.locator('[data-signed-out] > summary').click();
-    assert.match(await text(privateEntry), /Sign in with your wallet to see more automation history/);
+    assert.equal(await privateEntry.locator('[data-signed-out]').count(), 0, 'optional private-history explanation belongs in See all');
     assert.equal(await privateEntry.locator('.dm-acct-quiet').count(), 0, 'public receipts do not sit below a second empty-state plate');
-    assert.equal(await privateEntry.getByRole('button', { name: 'Sign in', exact: true }).count(), 1);
+    assert.equal(await privateEntry.getByRole('button', { name: 'Sign in', exact: true }).count(), 0);
     assert.equal(s.wallet.state.signed.length, 0, 'reading public activity does not ask for a signature');
     assert.deepEqual(s.asked.find((entry) => entry.route === 'activity').body, { wallet: OWNER, limit: 20 });
     if (process.env.DOMINO_RECEIPT_SHOTS) {
@@ -339,6 +420,7 @@ test('live: the person’s own positions from the site’s route join V1’s gri
     }
     await s.page.locator('main').screenshot({ path: join(shots(), 'v2-lists-live.png') });
   } finally {
+    releasePortfolio();
     await s.close();
   }
 });
@@ -355,11 +437,12 @@ test('live, the site’s route not deployed: V1 remains available without an emp
     await loading.waitFor({ state: 'attached' });
     releaseCapabilities();
     await loading.waitFor({ state: 'detached' });
-    await s.page.locator('[data-automation-cards="merged"]').waitFor();
-    await s.page.waitForFunction(() => document.querySelector('[data-owned-rows="open"] [data-position-row]'));
+    await s.page.locator('[data-automation-cards="integrated"] [data-activity-error]').waitFor();
+    await s.page.waitForFunction(() => document.querySelector('[data-owned-rows="open"] [data-v2-position-row]'));
     assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 0']);
-    assert.equal(await s.page.locator('[data-v2-position-row], [data-v2-examples], [data-test-data]').count(), 0);
-    assert.equal(await s.page.locator('[data-v2-own-note], [data-v2-own-receipts]').count(), 0, 'a family not deployed is quiet; it is not a failed read');
+    assert.equal(await s.page.locator('[data-v2-position-row]').count(), 1);
+    assert.equal(await s.page.locator('[data-v2-examples], [data-test-data]').count(), 0);
+    assert.equal(await s.page.locator('[data-v2-own-receipts="unavailable"]').count(), 1, 'unavailable public history never becomes a silent private-only fallback');
     assert.equal(await s.page.locator('.dm-rcpt-session').count(), 0, 'no compact public-history treatment without public rows');
     assert.deepEqual([...new Set(s.asked.map((entry) => `${entry.method} ${entry.route}`))], ['GET capabilities'], 'only the capabilities are asked: nothing is posted to a route that is not there');
   } finally {
@@ -413,7 +496,7 @@ test('explicit sign-in adds private automation receipts alongside public receipt
   } finally { await s.close(); }
 });
 
-test('one overview shows four total public/private rows, keeps unsigned cancellations in details, and See all opens the combined history', async () => {
+test('one overview shows four total operations; cancellations and optional sign-in stay in the full history', async () => {
   const wire = JSON.parse(readFileSync(join(CONTRACTS, 'execution-v1/fixtures/status-wire.json'), 'utf8'));
   const reserved = wire.responses['status.reserved'].item;
   const planned = { ...reserved, intentId: '0x' + '34'.repeat(32), state: 'planned' };
@@ -423,17 +506,19 @@ test('one overview shows four total public/private rows, keeps unsigned cancella
   try {
     const card = s.page.locator('section[aria-labelledby="receipts-title"]');
     await card.locator('[data-v2-receipt]').first().waitFor();
+    await card.locator('[data-receipts-all]').click();
     await card.locator('[data-signed-out] > summary').click();
     await card.getByRole('button', { name: 'Sign in', exact: true }).click();
     await s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Sign in', exact: true }).click();
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
     await s.page.keyboard.press('Escape');
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
     await card.locator('[data-execution="ready"]').waitFor();
     assert.equal(await card.locator('[data-activity-rows]').getAttribute('data-activity-rows'), '4');
     assert.equal(await card.locator('[data-activity-rows] > [data-v2-receipt]').count(), 3);
     assert.equal(await card.locator('[data-activity-rows] > [data-execution-intent]').count(), 1);
     assert.equal(await card.locator('[data-activity-rows] [data-execution-cancelled]').count(), 0);
-    assert.equal(await card.locator('[data-activity-internal]').getAttribute('open'), null);
+    assert.equal(await card.locator('[data-activity-internal]').count(), 0, 'the overview has no technical checks drawer');
     assert.equal(await card.locator('[data-activity-rows] time').count(), 3, 'known dates are visible without expanding a receipt');
     await card.locator('[data-receipts-all]').click();
     await s.page.locator('[data-activity-rows="5"]').waitFor();
@@ -558,7 +643,7 @@ test('a matching creation receipt dates the position price chart and retries the
     assert.equal(await range.getAttribute('data-pvr-history'), 'unknown_mint');
     assert.equal(await range.getAttribute('data-pvr-opened'), null);
     assert.equal(await activity.locator('[data-position-activity-item]').count(), 0);
-    assert.equal(priceReads.length, 0, 'unrelated receipts never request pre-position pool history');
+    assert.equal(await range.locator('.dm-pvr-line').count(), 0, 'pool history may prefetch, but no position line is drawn before mint is proven');
     assert.ok(s.ledgerAsked.length > 0);
     assert.ok(s.ledgerAsked.every(request => !request.mintHints), 'neither unrelated identity supplies a mint hint');
 
@@ -630,6 +715,71 @@ test('a public route disabled after loading keeps the unified rows visible with 
     await s.page.locator('[data-unified-activity] [data-activity-error]').waitFor();
     assert.deepEqual(await s.page.locator('[data-v2-receipt]').evaluateAll(rows => rows.map(row => row.dataset.v2Receipt)), ids);
     assert.match(await text(s.page.locator('[data-activity-error]')), /Showing loaded activity/);
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+test('setup is one human receipt with all effects, one gas cost and open details preserved after refresh', async () => {
+  const body = fixture('activity.json');
+  const created = structuredClone(body.items.find(item => item.kind === 'vault_created'));
+  const registered = structuredClone(body.items.find(item => item.kind === 'auto_exit_event' && item.event === 'MandateRegistered'));
+  const settings = structuredClone(body.items.find(item => item.kind === 'vault_event'));
+  const block = created.tx.snapshot.number;
+  for (const [index, item] of [created, settings, registered].entries()) {
+    item.tx = structuredClone(created.tx);
+    item.id = `4663:${block}:${index + 1}`;
+  }
+  body.items = [registered, settings, created]; body.nextCursor = null;
+  let head = body;
+  const s = await scenario({ hooks: { originOpen: true }, refresh: true, hash: '#/positions/receipts', readV6: routeOn(route => ({ status: 200, body: about(route, route === 'activity' ? head : fixture('portfolio.json'), OWNER) })) });
+  try {
+    const row = s.page.locator(`[data-v2-receipt="${registered.id}"]`);
+    await row.waitFor();
+    assert.equal(await s.page.locator('[data-v2-receipt]').count(), 1);
+    assert.equal(await row.getAttribute('data-receipt-effects'), '3');
+    await row.locator('summary').click();
+    assert.equal(await row.locator('[data-receipt-effect]').count(), 3);
+    assert.equal(await row.locator('[data-receipt-field="gas-used"]').count(), 1);
+    const extra = structuredClone(fixture('activity.json').items[0]);
+    head = { ...body, items: [extra, ...body.items] };
+    await s.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await s.page.waitForFunction(() => document.querySelectorAll('[data-v2-receipt]').length === 2);
+    assert.equal(await row.locator('details').getAttribute('open'), '', 'stable operation identity preserves the disclosure');
+    assert.equal(s.wallet.state.signed.length, 0, 'reading is independent from write gates and wallet signatures');
+    if (process.env.DOMINO_RECEIPT_SHOTS) {
+      mkdirSync(process.env.DOMINO_RECEIPT_SHOTS, { recursive: true });
+      for (const width of [1320, 390, 320]) {
+        await s.page.setViewportSize({ width, height: 960 });
+        assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        await s.page.locator('main').screenshot({ path: join(process.env.DOMINO_RECEIPT_SHOTS, `receipts-grouped-${width}.png`), animations: 'disabled' });
+      }
+    }
+  } finally { await s.close(); }
+});
+
+test('a local bulk-close confirmation is one receipt with aggregate amounts and no invented native payout or timestamp', async () => {
+  const owned = fixture('portfolio.json');
+  const position = owned.positions.find(item => item.chainId === 4663 && item.dex === 4);
+  const activity = { ...fixture('activity.json'), items: [], nextCursor: null };
+  const local = { wallet: OWNER, chainId: 4663, dex: 4, positionManager: position.positionManager,
+    hash: '0x' + 'd'.repeat(64), block: 9999, blockHash: '0x' + 'b'.repeat(64), tokenIds: ['7', '8'],
+    amounts: [{ token: zeroAddress, amount: null }], at: null, state: 'included',
+    gas: { gasUsed: '123456', effectiveGasPrice: '20000000', l1Fee: null } };
+  const s = await scenario({ hooks: { originOpen: true }, hash: '#/positions/receipts', localCloses: [local], readV6: routeOn(route => ({ status: 200, body: about(route, route === 'activity' ? activity : owned, OWNER) })) });
+  try {
+    const row = s.page.locator(`[data-local-close-receipt="${local.hash}"]`);
+    await row.waitFor();
+    assert.equal(await s.page.locator('[data-activity-rows]').getAttribute('data-activity-rows'), '1');
+    assert.match(await row.innerText(), /2 positions closed/);
+    assert.match(await row.innerText(), /Date unavailable/);
+    assert.equal(await row.locator('time').count(), 0);
+    await row.locator('summary').click();
+    assert.match(await row.innerText(), /ETH: amount not reported/);
+    assert.match(await row.innerText(), /saved on this device/);
+    assert.equal(await row.locator('[data-receipt-field="gas-used"]').count(), 1);
+    assert.equal(await row.locator('[data-local-close-token]').count(), 1);
+    await s.wallet.switchAccount('a', 1);
+    await row.waitFor({ state: 'detached' });
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
 });

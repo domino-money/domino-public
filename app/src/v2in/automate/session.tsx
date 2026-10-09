@@ -5,6 +5,7 @@ import { v2Wallet } from '../../finance/v2/wallet'
 import { v2Chain } from '../../v2/chains'
 import type { Address, Hex, V2ChainId, V2Contracts } from '../../v2/types'
 import { switchToChain, v2SwitchNotice } from '../../wallet/port'
+import { simulateOnChain } from '../../lib/walletReads'
 
 /**
  * The integrated automation screens' one way to the wallet, used only where a service's gate is `live` (src/v2/gate.ts:
@@ -53,8 +54,9 @@ export async function openAutomation(chainId: V2ChainId, contracts: V2Contracts)
   const known = sessions.get(key)
   if (known && known.current()) return known.session
   const chain = v2Chain(chainId)
-  const vault = createVaultClient(wallet, chain, contracts)
-  const autoExit = createAutoExitClient(wallet, chain, contracts)
+  const simulator = chainId === 4663 ? simulateOnChain : undefined
+  const vault = createVaultClient(wallet, chain, contracts, undefined, simulator)
+  const autoExit = createAutoExitClient(wallet, chain, contracts, undefined, undefined, simulator)
   let tail: Promise<unknown> = Promise.resolve()
   const serial = <T,>(work: () => Promise<T>): Promise<T> => {
     const run = tail.then(work, work)

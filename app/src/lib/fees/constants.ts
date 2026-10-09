@@ -67,6 +67,7 @@ export const SAFE_DEPTH = 18_000
 export const MAX_STATE_IDS = 8
 export const MAX_LEDGER_IDS = 8
 /** How often a visible page re-reads `/state`. */
-export const STATE_REFRESH_MS = 60_000
+export const STATE_REFRESH_MS = 5_000
+export const LIST_STATE_REFRESH_MS = 30_000
 /** A ledger still being read (`reading`) is asked again this soon. */
 export const LEDGER_READING_MS = 2_000

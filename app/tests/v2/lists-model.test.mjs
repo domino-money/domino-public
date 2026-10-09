@@ -78,7 +78,7 @@ test('an external position change does not claim its separate Auto-exit mandate 
 test('each read-v6 position is a row: chain and DEX named, its own page, open or closed, its state, token amounts only', () => {
   const body = valid('portfolio', fixture('portfolio.json'));
   const rows = model.positionRows(body, ALL);
-  assert.deepEqual(rows.map((row) => row.key), ['4663:4:7', '4663:4:8', '4663:4:9', '4663:4:12', '4663:4:13']);
+  assert.deepEqual(rows.map((row) => row.key), body.positions.map((position) => `${position.chainId}:${position.positionManager.toLowerCase()}:${position.tokenId}`));
   const [root, successor, plain, unavailable, unread] = rows;
   assert.equal(root.chain, 'Robinhood Chain');
   assert.equal(root.dexName, 'Uniswap v4');
@@ -100,14 +100,15 @@ test('each read-v6 position is a row: chain and DEX named, its own page, open or
   assert.deepEqual(root.vault, { role: 'root', name: 'Domino-compound', word: null, running: true });
   assert.equal(successor.vault.role, 'successor');
   assert.equal(plain.vault, null);
-  // A position the index could not read: a dash with the reason, never zeros; listed (not burned), so in Open.
+  // Unknown liquidity is visible, but does not count as Open or Closed.
   assert.equal(unavailable.state, 'unread');
   assert.equal(unavailable.value, null);
   assert.equal(unavailable.fees, null);
   assert.equal(unavailable.unread, 'This position can’t be read right now.');
   assert.equal(unread.status, 'not_read');
   assert.equal(unread.unread, 'This position hasn’t been read yet.');
-  assert.equal(unread.tab, 'open');
+  assert.equal(unread.tab, 'pending');
+  assert.equal(unavailable.tab, 'pending');
 });
 
 test('a stale read carries the stale badge with its age; a chain behind gives its own age to every row of it', () => {

@@ -490,14 +490,15 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
   }
 
   /** Where a step this transactor sent stands, with its logs and costs once included. */
-  function receipt(hash: Hex): Promise<V2Receipt> {
+  function receipt(hash: Hex, recovered?: Pick<V2Transaction, 'from' | 'to' | 'data' | 'value' | 'nonce' | 'chainId'>): Promise<V2Receipt> {
     return bounded(async (rpc): Promise<V2Receipt> => {
       await identity(rpc)
       const known = sent.get(hash)
-      if (!HASH.test(hash) || !known) return fail('receipt_not_from_this_review')
+      const reviewed = known?.transaction ?? recovered
+      // A recovered identity authorizes reads only: it is never added to issued/offered and cannot be sent.
+      if (!HASH.test(hash) || !reviewed || reviewed.from !== owner || quantity(reviewed.chainId) !== BigInt(chain.chainId)) return fail('receipt_not_from_this_review')
       const tx = (await rpc('eth_getTransactionByHash', [hash])) as Record<string, unknown> | null
       if (tx === null) return { state: 'pending' }
-      const reviewed = known.transaction
       if (!tx || String(tx.hash).toLowerCase() !== hash || String(tx.from).toLowerCase() !== owner || String(tx.to).toLowerCase() !== reviewed.to
         || String(tx.input).toLowerCase() !== reviewed.data.toLowerCase() || quantity(tx.value) !== BigInt(reviewed.value) || quantity(tx.nonce) !== BigInt(reviewed.nonce)) {
         return fail('transaction_does_not_match_review')
@@ -535,6 +536,33 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
     })
   }
 
+  /** A user-supplied replacement is read only. A different effect can release tracking only after canonical finality. */
+  async function replacement(originalHash: Hex | null, candidateHash: Hex, reviewed: Pick<V2Transaction, 'from' | 'to' | 'data' | 'value' | 'nonce' | 'chainId'>) {
+    const candidate = await bounded(async (rpc) => {
+      await identity(rpc)
+      if (originalHash !== null && !HASH.test(originalHash) || !HASH.test(candidateHash) || reviewed.from !== owner || quantity(reviewed.chainId) !== BigInt(chain.chainId)) return fail('receipt_not_from_this_review')
+      const original = originalHash ? await rpc('eth_getTransactionByHash', [originalHash]) as Record<string, unknown> | null : null
+      if (original !== null && (!original || String(original.hash).toLowerCase() !== originalHash || String(original.from).toLowerCase() !== owner || String(original.to).toLowerCase() !== reviewed.to
+        || String(original.input).toLowerCase() !== reviewed.data.toLowerCase() || quantity(original.value) !== BigInt(reviewed.value) || quantity(original.nonce) !== BigInt(reviewed.nonce))) return fail('transaction_does_not_match_review')
+      const tx = await rpc('eth_getTransactionByHash', [candidateHash]) as Record<string, unknown> | null
+      if (tx === null) return null
+      if (!tx || String(tx.hash).toLowerCase() !== candidateHash || String(tx.from).toLowerCase() !== owner || quantity(tx.nonce) !== BigInt(reviewed.nonce)
+        || typeof tx.to !== 'string' || !ADDRESS.test(tx.to.toLowerCase())) return fail('transaction_does_not_match_review')
+      return { ...reviewed, to: tx.to.toLowerCase() as Address, data: asHex(tx.input), value: numberToHex(quantity(tx.value)) }
+    })
+    if (!candidate) return { receipt: { state: 'pending' } as V2Receipt, replaced: false, final: false }
+    const same = candidate.to === reviewed.to && candidate.data.toLowerCase() === reviewed.data.toLowerCase() && BigInt(candidate.value) === BigInt(reviewed.value)
+    const found = await receipt(candidateHash, candidate)
+    let final = found.state === 'finalized'
+    if (found.state === 'reverted') final = await bounded(async (rpc) => {
+      const block = await rpc('eth_getBlockByNumber', ['finalized', false]) as { number?: string } | null
+      if (!block?.number || quantity(block.number) < found.blockNumber) return false
+      const canonical = await rpc('eth_getBlockByNumber', [numberToHex(found.blockNumber), false]) as { hash?: string } | null
+      return canonical?.hash?.toLowerCase() === found.blockHash
+    })
+    return { receipt: found, replaced: !same, final }
+  }
+
   return {
     chain,
     owner,
@@ -547,6 +575,7 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
     prepare,
     send,
     receipt,
+    replacement,
     /**
      * Changed on purpose (data) 2026-10-02 (Domino V2 PHASE B, post-B4 review item 3 for the vault's and the mandate's
      * EIP-5792 batches): the same check a step makes before it is offered, for a batch, as V1's setup does before its

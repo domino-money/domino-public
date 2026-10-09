@@ -83,6 +83,7 @@ export function rangeCase({ id, base, quote, low, high, now, spacing = 60, close
     spec: {
       owner: OWNER,
       openedAt: Math.floor(Date.now() / 1000) - 8 * 86_400,
+      closedAt: closed ? Math.floor(Date.now() / 1000) - 3600 : null,
       block: 74_000_000,
       position: {
         tokenId: String(id),

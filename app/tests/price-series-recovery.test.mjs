@@ -92,9 +92,9 @@ test('a history is drawn as it was stored: its last point is its own last close,
   assert.deepEqual(data, before, 'the stored answer is left as it came');
 });
 
-test('the price now is written exactly as the key figures write it, in its chip, and the range’s ends beside it', () => {
+test('an open position writes the current price exactly as the key figures, with the range ends beside it', () => {
   answer = { phase: 'reading' };
-  const chart = PriceChart({ openedAt: END - 8 * 86_400, facts: { ...facts, now: 7.10148e-7, nowText: '0.000000710148', lower: 3.66503e-7, upper: 7.99485e-7, lowerText: '0.000000366503', upperText: '0.000000799485', where: 'closed' }, ask });
+  const chart = PriceChart({ openedAt: END - 8 * 86_400, facts: { ...facts, now: 7.10148e-7, nowText: '0.000000710148', lower: 3.66503e-7, upper: 7.99485e-7, lowerText: '0.000000366503', upperText: '0.000000799485', where: 'inside' }, ask });
   const frame = [...walk(chart)].find((node) => node.type === 'chart-frame');
   const plot = { width: 600, height: 242, left: 0, right: 500, top: 16, bottom: 212 };
   const overlay = [...walk(frame.props.overlay(plot, null))];
@@ -102,7 +102,7 @@ test('the price now is written exactly as the key figures write it, in its chip,
   assert.equal(text(chip), '0.0₆710148');
   assert.equal(chip.props['data-pvr-price'], '0.000000710148');
   assert.deepEqual(overlay.filter((node) => node.props['data-pvr-end']).map((node) => node.props['data-pvr-end']), ['max', 'min']);
-  assert.equal(text([...walk(chart)].find((node) => node.props.className === 'dm-pvr-says')), 'Closed — this position no longer earns fees');
+  assert.equal(text([...walk(chart)].find((node) => node.props.className === 'dm-pvr-says')), 'Earning fees — the price is inside your range');
 });
 
 test('while the chart’s code loads, its place holds the same status and a box of the chart’s own height, and nothing that reads as the chart', () => {

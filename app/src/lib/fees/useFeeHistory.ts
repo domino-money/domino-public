@@ -40,9 +40,9 @@ const quiet = () => undefined
  * card nor the page takes an answer the route kept from before the action (client.ts freshState). A state that shows the
  * settlement then asks the ledger again, fresh (store.ts).
  */
-export function refreshFeeStates(tokenIds: readonly string[]): void {
+export function refreshFeeStates(tokenIds: readonly string[], minBlock?: number): void {
   freshState(tokenIds)
-  feesStore.refresh(tokenIds)
+  feesStore.refresh(tokenIds, minBlock)
 }
 
 const NO_TRACES: ReadonlyMap<string, LedgerTrace> = new Map()

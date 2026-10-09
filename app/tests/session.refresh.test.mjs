@@ -651,3 +651,43 @@ test('controller: a Sign out click during a refresh aborts it and logs out', asy
   assert.deepEqual(h.view(), { status: 'signed_out', reason: 'logged_out' });
   assert.equal(h.log.renewals, 0, 'the abandoned refresh renewed nothing here');
 });
+
+test('controller: a failed periodic me retries quietly, preserves data, honors Retry-After and still discovers expiry', async () => {
+  const h = harness();
+  await signIn(h);
+  const epoch = h.controller.getSnapshot().epoch;
+  const clears = h.log.clears;
+  h.controller.dispatch({ type: 'recheck', cause: 'visible' });
+  await h.answer('me', code('me', 'session_store_unavailable', 90));
+  assert.equal(h.view().status, 'signed_in');
+  assert.equal(h.controller.getSnapshot().epoch, epoch);
+  assert.equal(h.log.clears, clears);
+  await h.advance(60_000);
+  h.controller.wake();
+  assert.equal(h.pending('me'), undefined, 'focus cannot bypass Retry-After');
+  await h.advance(30_000);
+  assert.ok(h.pending('me'));
+  await h.answer('me', ok('me', session(ADDR_A)));
+  assert.equal(h.view().status, 'signed_in');
+  h.controller.dispatch({ type: 'recheck', cause: 'remote' });
+  await h.answer('me', code('me', 'session_required'));
+  assert.equal(h.view().status, 'signed_out');
+  assert.equal(h.log.clears, clears + 1);
+  assert.equal(h.log.signs.length, 1, 'recovery never signs again automatically');
+});
+
+test('controller: returning after the retry cooldown can recover a renewal outage without waiting for another tab', async () => {
+  const h = harness();
+  await signIn(h);
+  await untilRefresh(h, REFRESH_AFTER_MS);
+  for (let attempt = 0; attempt <= REFRESH_RETRY_MS.length; attempt += 1) {
+    await h.answer('refresh', code('refresh', 'session_store_unavailable'));
+    await untilRefresh(h, 3 * MINUTE);
+  }
+  await untilRefresh(h, 3 * MINUTE);
+  h.controller.wake();
+  assert.ok(h.pending('refresh'));
+  await h.answer('refresh', ok('refresh', session(ADDR_A)));
+  assert.equal(h.view().status, 'signed_in');
+  assert.equal(h.view().notice, undefined);
+});

@@ -88,3 +88,14 @@ export async function connectPosition(gate: OpenGate): Promise<PositionConnectio
   kept.set(key, connection)
   return connection
 }
+
+/** Checking an already offered close never depends on the planner's availability and exposes no sender. */
+export async function connectPositionReceipt(chainId: V2ChainId) {
+  const wallet = await v2Wallet()
+  if (wallet.chainId() !== chainId) {
+    const outcome = await switchToChain(chainId)
+    if (outcome !== 'switched') throw new WalletNotice(v2SwitchNotice(outcome, v2Chain(chainId).name), outcome)
+  }
+  const direct = createDirectClient(wallet, v2Chain(chainId), undefined, directCode(chainId), null, null)
+  return { chainId, wallet, recoverCloseMany: direct.recoverCloseMany }
+}

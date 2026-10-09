@@ -586,6 +586,8 @@ export interface StateQuestion {
 }
 /** How young a kept /state answer must be for a fresh question (2026-10-01): never one from before the action. */
 export const FRESH_STATE_MS = 2_000
+/** Shared current state may age at most one visible detail refresh. Other RPC caches keep their own TTLs. */
+export const LIVE_STATE_MS = 5_000
 
 type Outcome = 'rate_limited' | 'rpc_unavailable'
 
@@ -788,7 +790,7 @@ export async function stateAnswer(request: Request, rt: FeesRuntime, asked: Stat
   const hit = await kept<StateKept>(rt, key)
   // A fresh question takes a kept answer only when it is younger than FRESH_STATE_MS, and replaces it; a kept failure
   // stands for every question, fresh or not, so asking fresh in a loop is not a loop of node reads.
-  if (hit?.value.outcome === 'answer' && hit.ageMs < (fresh ? FRESH_STATE_MS : SHORT_SECONDS * 1000)) return answer(hit.value.text, request)
+  if (hit?.value.outcome === 'answer' && hit.ageMs < (fresh ? FRESH_STATE_MS : LIVE_STATE_MS)) return answer(hit.value.text, request)
   if (hit && hit.value.outcome !== 'answer' && hit.ageMs < FAILURE_SECONDS * 1000) return failure(hit.value.outcome, FAILURE_SECONDS * 1000 - hit.ageMs)
   const budget = newBudget(rt)
   // A fresh read never joins one that started before it (it may predate the action); both keep their answer under `key`.

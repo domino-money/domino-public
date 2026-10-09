@@ -409,11 +409,10 @@ test('preview: Auto-exit on a plain position the wallet holds: the range\'s two 
     await dialog.getByRole('button', { name: 'Close' }).click();
     await dialog.waitFor({ state: 'detached' });
 
-    // Managed positions: real data only (the owner, 2026-10-02). read-v6's route is not deployed on this origin, so nothing
-    // of V2 is drawn, and Positions' layout is V1's: connected and signed out, V1's one calm line stands for both cards.
+    // Public activity is independent of signing in. An absent route is shown as unavailable, never as no history.
     await page.evaluate(() => { location.hash = '#/positions'; });
-    await page.locator('[data-automation-cards="merged"] [data-automation-empty]').waitFor({ timeout: 30_000 });
-    assert.equal(await page.locator('[data-v2in-vaults], [data-vault-card], [data-read6-failed]').count(), 0, 'no example rows, no note of a route that is simply not on yet');
+    await page.locator('[data-automation-cards="integrated"] [data-activity-error]').waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('[data-v2in-vaults], [data-vault-card], section[aria-labelledby="managed-title"]').count(), 0, 'no example rows or duplicate Managed wall');
     // Added 2026-10-06 (the integration review, ux #9): Automate's Auto-exit sends the person here: Auto-exit is named.
     const automation = page.locator('section[aria-labelledby="automation-title"]');
     assert.deepEqual(await automation.locator('.dm-acct-auto-name').allInnerTexts(), ['Auto-compound', 'Domino-compound', 'Auto-exit']);
@@ -471,31 +470,26 @@ test('preview: a position page offers Auto-exit beside its other actions, and op
 // Managed positions is the vaults' card alone. V1's Performance, which asked performance-v2/epochs as soon as a session was
 // signed in, is never mounted: nothing asks that route, signed out or in. Signed out, the one line for both cards stands as
 // before; signed in, with Receipts drawn (V1's receipts unreadable here), Managed positions says its vaults appear here.
-test('preview: Managed positions never asks performance-v2 (V1\'s "Start tracking"): signed out, the cards\' one line stands; signed in, no V1 history is drawn and nothing asks the route', async () => {
+test('preview: integrated history never asks performance-v2 (V1\'s "Start tracking") and signing in creates no duplicate Managed card', async () => {
   const v1 = browserChain({ positions: [], tokens: TOKENS });
   const s = await openPreview(v1, '/positions');
   const { page } = s;
   const performance = () => s.requests.filter((url) => new URL(url).pathname.startsWith('/api/performance/'));
   try {
-    const merged = page.locator('[data-automation-cards="merged"] [data-automation-empty="signed_out"]');
-    await merged.waitFor({ timeout: 30_000 });
-    assert.equal((await merged.innerText()).replace(/\s+/g, ' ').trim(), 'Automated positions and activity Sign in with your wallet to see your automated positions and their receipts. Sign in');
+    const history = page.locator('[data-automation-cards="integrated"]');
+    await history.locator('[data-activity-error]').waitFor({ timeout: 30_000 });
+    assert.equal(await history.locator('section[aria-labelledby="receipts-title"]').count(), 1);
     // Signed in from the header's wallet dialog.
     await page.locator('header [aria-haspopup="dialog"]').click();
     await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Sign in', exact: true }).click();
     await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in', null, { timeout: 30_000 });
     await page.keyboard.press('Escape');
-    // Receipts reads V1's receipts with the session (no route behind this server: unreadable), so both cards are drawn.
-    await page.locator('[data-automation-cards="split"] section[aria-label="Execution receipts"]:not([data-execution="checking"]):not([data-execution="loading"])').waitFor({ timeout: 30_000 });
-    const managed = page.locator('section[aria-labelledby="managed-title"]');
-    await managed.locator('[data-v2in-vaults-empty]').waitFor();
-    assert.equal(await managed.isVisible(), true);
-    assert.equal(await managed.locator('[data-v2in-vaults-empty]').innerText(), 'Your automated positions appear here.');
-    assert.equal(await managed.locator('.dm-acct-desc').innerText(), 'Current automation and any funds waiting to be recovered.');
+    await history.locator('[data-activity-error]').waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('section[aria-labelledby="managed-title"], [data-v2in-vaults-empty], [data-automation-empty]').count(), 0, 'no duplicate empty or sign-in mural');
     await page.waitForTimeout(1_500);
     assert.equal(await page.locator('section[aria-label="Private performance"], [data-track-sequences], [data-performance]').count(), 0, 'no V1 history, no Start tracking');
     assert.deepEqual(performance(), [], 'performance-v2 is never asked');
-    await managed.screenshot({ path: join(shots(), 'v2in-managed-signed-in-no-vaults.png'), animations: 'disabled' });
+    await history.screenshot({ path: join(shots(), 'v2in-history-signed-in-no-vaults.png'), animations: 'disabled' });
   } finally {
     await s.close();
   }
@@ -627,18 +621,18 @@ test('live: a root closed directly on Uniswap, the vault paused: Managed positio
   const s = await openLive(chain, { hash: '/positions', read6: { portfolio }, v1: rootOnV1() });
   const { page } = s;
   try {
-    const vaults = page.locator('[data-v2in-vaults]');
-    await vaults.waitFor({ timeout: 30_000 });
-    // The row (#8): the name, its chain (§8.2), the pill, the figure line and the one primary button; its page has the rest.
-    const row = vaults.locator(`li[data-vault-card="${vault}"]`);
-    assert.match(await row.innerText(), /Auto-compound · Closed/);
+    const row = page.locator(`[data-v2-position-row="4663:${portfolio.body.positions[0].positionManager.toLowerCase()}:${ROOT}"]`);
+    await row.waitFor({ timeout: 30_000 });
+    assert.match(await row.innerText(), /Auto-compound/);
+    assert.match(await row.locator('.dm-own-state').innerText(), /Closed/);
     assert.match(await row.innerText(), /Funds available in automation/);
     assert.equal(await row.locator('[data-v2-chain-badge="4663"]').count(), 1);
     assert.equal(await row.locator('button').count(), 0, 'overview only navigates');
     assert.equal(await row.locator('[data-vault-idle], [data-return-hint], [data-vault-details]').count(), 0, 'the row carries no detail');
-    const link = row.locator('a.dm-automated-link');
-    assert.equal(await link.getAttribute('href'), `#/positions/${ROOT}`);
-    await page.locator('.dm-auto-frame', { has: vaults }).screenshot({ path: join(shots(), 'v2in-managed-closed-root.png'), animations: 'disabled' });
+    const link = row;
+    assert.equal(await link.getAttribute('href'), `#/positions/robinhood-v4-${ROOT}`);
+    assert.equal(await page.locator('[data-v2in-vaults], [data-automation-recovery]').count(), 0, 'the listed root owns the recovery hint once');
+    await row.screenshot({ path: join(shots(), 'v2in-managed-closed-root.png'), animations: 'disabled' });
 
     await link.click();
     await expandAutomation(page);
@@ -1535,13 +1529,13 @@ test('live: Auto-exit on, its root disarmed by a change made outside it: "On" ev
   const s = await openLive(chain, { hash: '/positions', read6: { portfolio }, v1: rootOnV1({ liquidity }) });
   const { page } = s;
   try {
-    // Managed positions: "Auto-exit", and no button that would cut the position from it.
-    const row = page.locator(`[data-v2in-vaults] li[data-vault-card="${vault}"]`);
+    // Automation lives in the position row, with no action that could detach an active exit.
+    const row = page.locator(`[data-v2-position-row="4663:${portfolio.body.positions[0].positionManager.toLowerCase()}:${ROOT}"]`);
     await row.waitFor({ timeout: 30_000 });
-    assert.equal(await row.getAttribute('data-vault-exit'), 'on');
-    assert.match(await row.innerText(), /Auto-exit · On/);
+    assert.equal(await row.locator('[data-v2-vault-role="root"] [data-running]').innerText(), 'Auto-exit');
+    assert.doesNotMatch(await row.locator('[data-v2-vault-role="root"]').innerText(), /Off|Paused|Unavailable/);
     assert.equal(await row.locator('button').count(), 0, 'never Revoke approval or Remove Domino on an Auto-exit that is on');
-    await row.locator('a.dm-automated-link').click();
+    await row.click();
     await expandAutomation(page);
     const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`);
     await card.waitFor({ timeout: 30_000 });
@@ -1744,16 +1738,22 @@ test('one NFT with earlier setups has one overview row and one top control; prev
   const s = await openLive(chain, { hash: '/positions', read6: { portfolio }, v1: rootOnV1({ liquidity }) });
   try {
     const { page } = s;
-    const rows = page.locator('[data-automated-position]');
+    // Automation now lives on the unified NFT row; the separate Managed positions wall was removed.
+    // Wait for read-v6's automation metadata as well as the faster historical inventory's row.
+    const rows = page.locator(`[data-owned-rows] [data-v2-position-row$=":${ROOT}"]`);
     await rows.first().waitFor({ timeout: 30_000 });
+    await rows.locator('[data-v2-vault-role="root"]').waitFor({ timeout: 30_000 });
     assert.equal(await rows.count(), 1, 'historical vaults never duplicate the NFT');
-    assert.equal(await rows.first().getAttribute('data-vault-card'), vault, 'current NFT approval wins');
+    assert.equal(await page.locator('[data-automated-position], section[aria-labelledby="managed-title"]').count(), 0, 'no second overview wall');
+    assert.match(await rows.innerText(), /Auto-compound/);
+    assert.doesNotMatch(await rows.innerText(), /Auto-exit/, 'the previous setup never replaces the current mode');
     assert.equal(await rows.locator('button').count(), 0, 'overview only navigates');
     assert.match(await rows.innerText(), /Funds available in automation/);
-    await rows.locator('a').click();
+    await rows.click();
     await expandAutomation(page);
     const panel = page.locator('[data-automation-panel]');
     assert.equal(await panel.locator('section[data-vault-card]').count(), 1);
+    assert.equal(await panel.locator('section[data-vault-card]').getAttribute('data-vault-card'), vault, 'current NFT approval wins');
     assert.equal(await panel.locator('[data-exit-state="closed"]').count(), 0, 'the old Auto-exit does not replace the current mode');
     await panel.locator('[data-automation-recovery] > summary').click();
     const held = panel.locator(`[data-recovery-vault="${previous.address}"]`);

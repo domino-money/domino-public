@@ -13,6 +13,7 @@ import type { Address, Hex, V2ChainId } from '../../v2/types'
 import { JOURNEY_QUIET_REQUOTES, JOURNEY_RECEIPT_POLL_MS, NEW_POOL_RACE_COPY } from './constants'
 import { JOURNEY } from './copy'
 import { journeyError, planFailure, SENT_CHECK_WALLET, SENT_UNKNOWN_COPY, STILL_PENDING, type JourneyError } from './errors'
+import { positionChanged } from '../lists/positionSync'
 import { livePlanTransport, liveContext, planRuntime } from './source'
 import { connectJourney, onChain, type JourneyConnection } from './wallet'
 
@@ -351,6 +352,7 @@ export function useJourneyRun(input: RunInput) {
   async function openReceipt(gen: number, hash: Hex | null, receipt: Extract<V2Receipt, { logs: unknown }>, again: () => Promise<V2Receipt | { state: 'not-included' } | { state: 'batch-reverted' }>): Promise<void> {
     const reviewed = live.current.reviewed
     if (!reviewed) return
+    let announced = false
     const show = (current: Extract<V2Receipt, { logs: unknown }>) => {
       let read: ZapReceipt | null = null
       let unreadable: string | null = null
@@ -358,6 +360,12 @@ export function useJourneyRun(input: RunInput) {
         read = readZapReceipt({ chainId: reviewed.review.chainId, zap: reviewed.review.zap, intent: reviewed.review.plan.plan.intent, owner: reviewed.review.owner, receipt: rpcReceiptOf(hash, current) })
       } catch (error) {
         unreadable = error instanceof Error ? error.message : 'receipt_invalid'
+      }
+      if (current.state !== 'reverted' && !announced) {
+        announced = true
+        const chain = v2Chain(reviewed.review.chainId)
+        const dex = reviewed.review.plan.plan.intent.pool.dex
+        positionChanged({ chainId: chain.chainId, positionManager: dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager, wallet: reviewed.review.owner, tokenIds: read && read.summary.tokenId > 0n ? [read.summary.tokenId.toString()] : undefined, block: current.blockNumber })
       }
       live.current.receipt = { state: current.state === 'reverted' ? 'reverted' : current.state, read, unreadable, hash }
       bump()

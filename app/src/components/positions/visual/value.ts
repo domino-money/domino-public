@@ -72,6 +72,8 @@ export const unitsText = (units: bigint) => scaledText(units, PRICE_SCALE)
 
 /** A scaled value as a plain number, for geometry only (positions on a chart, shares of a bar). */
 export const unitsNumber = (units: bigint) => Number(unitsText(units))
+/** Geometry uses the actual rational value, including a single atomic fee below the display's fixed-point floor. */
+export const valueNumber = (basis: Basis, amounts: readonly [bigint, bigint]) => Number(valueIn({ amounts, decimals: basis.decimals, into: basis.into, sqrtPriceX96: basis.sqrtPriceX96, fractionDigits: Math.min(336, Math.max(...basis.decimals) + 80) }))
 
 /** Raw amounts from their decimal strings; null when either is not a whole non-negative number. */
 export function rawPair(raw: readonly [string, string]): readonly [bigint, bigint] | null {
@@ -100,7 +102,8 @@ export function quoteFigure(units: bigint): string {
  * A value as the screens write it: `$1,234.56` for USD, a quote figure otherwise (its symbol is the caller's). Under a
  * cent, "<$0.01" (audit E7, 2026-10-01): a new position's fees read "$0.000005" before.
  */
-export function valueFigure(basis: Pick<Basis, 'kind'>, units: bigint): string {
+export function valueFigure(basis: Pick<Basis, 'kind'>, units: bigint, rawPositive = false): string {
+  if (units === 0n && rawPositive) return basis.kind === 'usd' ? '<$0.01' : DUST
   return basis.kind === 'usd' ? formatUsdFloor(unitsText(units)) : quoteFigure(units)
 }
 

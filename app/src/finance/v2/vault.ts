@@ -4,7 +4,7 @@ import v3PoolAbi from '../../../../api-contracts/v2/abi/IUniswapV3PoolMinimal.js
 import { isV2ChainId, v3TickSpacing, type V2Chain } from '../../v2/chains'
 import { V2_FIXTURE_SETS_TAKEN } from '../../v2/flag'
 import { V2_FEES, ZERO_ADDRESS, type Address, type Dex, type Hex, type PoolRef, type PositionRef, type V2ChainId, type V2Component, type V2Contracts, type VaultInit, type VaultLimits, type VaultPolicy } from '../../v2/types'
-import { BATCH_FRAME_GAS, atomicStatus, batchCallsStatus, offerBatch, simulateBatch, type AtomicStatus, type BatchCall } from '../batch'
+import { BATCH_FRAME_GAS, atomicStatus, batchCallsStatus, offerBatch, simulateBatch, type AtomicStatus, type BatchCall, type BatchSimulator } from '../batch'
 import { chainNonceJournal } from '../nonce'
 import { REGISTRY_ABI, V3_POSITION_MANAGER_ABI, V4_POSITION_MANAGER_ABI, VAULT_ABI, VAULT_FACTORY_ABI } from './abi'
 import { admitV2Contracts, verifyV2Code } from './deployment'
@@ -312,16 +312,17 @@ export function checkBatchBudget(gas: V2GasBudget): void {
 }
 
 /**
- * A batch's calls simulated whole through the wallet's own eth_simulateV1 (no other node, OP9: a wallet without it is
- * `batch_simulation_unavailable`, and the steps go one by one), its cost checked against the budget and the owner's
+ * A batch's calls simulated whole through the wallet's eth_simulateV1, or the site's qualified Robinhood simulator
+ * when supplied. Without either, the steps go one by one. Its cost is checked against the budget and the owner's
  * ETH. `budget` null (post-B4 review F8): the budget is read here, through this bounded port, at the moment of the
  * review. On an OP Stack chain the L1 data fee ceiling of the batch's whole calldata is added to its cost (F5). The gas
  * its calls used, and the most the batch may cost. @internal
  */
-export async function simulateV2Batch(rpc: Rpc, chain: V2Chain, owner: Address, calls: readonly BatchCall[], budget: V2GasBudget | null): Promise<{ gasUsed: bigint; networkFeeWei: bigint }> {
+export async function simulateV2Batch(rpc: Rpc, chain: V2Chain, owner: Address, calls: readonly BatchCall[], budget: V2GasBudget | null, simulator?: BatchSimulator): Promise<{ gasUsed: bigint; networkFeeWei: bigint }> {
   const gas = budget ?? (await suggestV2Gas(rpc, chain))
   checkBatchBudget(gas)
-  const gasUsed = await simulateBatch((method, params) => rpc(method, params), owner, calls)
+  // The site's fallback is exclusively the existing Robinhood node route. Never send another chain's calls to it.
+  const gasUsed = await simulateBatch((method, params) => rpc(method, params), owner, calls, chain.chainId === 4663 ? simulator : undefined)
   // The wallet runs the calls in one transaction of its own (its delegate's execute, or a bundler's): room for that frame.
   const limit = ((gasUsed + BATCH_FRAME_GAS) * 120n + 99n) / 100n
   if (limit > gas.maxGas) fail('gas_budget_exceeded')
@@ -887,8 +888,9 @@ const handOverKey = (marker: string, step: VaultStep) => `${marker}|${step.kind}
  * The vault client for one wallet on one chain, with that chain's pinned contracts set. Construction refuses a set of
  * another chain, a malformed one, and a fixture in a deployable build.
  */
-export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Contracts, now: () => number = () => Date.now() / 1000) {
+export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Contracts, now: () => number = () => Date.now() / 1000, simulator?: BatchSimulator) {
   const contracts = v2ContractsFor(chain, supplied)
+  const batchSimulator = chain.chainId === 4663 ? simulator : undefined
   // Changed on purpose (data) 2026-10-02 (Domino V2 integration): every step and batch of this client only with live
   // contracts (./liveLock.ts), refused before any wallet request.
   const t = createTransactor(wallet, chain, now, () => refuseUnlessLive(chain.chainId, contracts))
@@ -1445,7 +1447,7 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
       await t.freeNonce(rpc)
       const { kinds, calls } = await createBatchCalls(rpc, review)
       // `gas` null: the budget read here, through this bounded port; Base's L1 data fee ceiling in the cost (F8, F5).
-      const { gasUsed, networkFeeWei } = await simulateV2Batch(rpc, chain, owner, calls, gas)
+      const { gasUsed, networkFeeWei } = await simulateV2Batch(rpc, chain, owner, calls, gas, batchSimulator)
       const batch: VaultCreateBatch = Object.freeze({
         chainId: chain.chainId,
         owner,
@@ -1483,7 +1485,7 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
         // The chain may have moved since the review: the exact calls are derived and simulated again before the wallet sees them.
         const { calls } = await createBatchCalls(rpc, review)
         if (calls.length !== batch.calls.length || calls.some((call, i) => call.to !== batch.calls[i].to || call.data !== batch.calls[i].data)) fail('vault_review_stale')
-        await simulateBatch((method, params) => rpc(method, params), owner, batch.calls)
+        await simulateBatch((method, params) => rpc(method, params), owner, batch.calls, batchSimulator)
         if (batch.expiresAt <= now()) fail('wallet_review_expired')
         // Immediately before the wallet is asked: the same chain, still (spec §1.3).
         if (quantity(await rpc('eth_chainId', [])) !== BigInt(chain.chainId)) fail('wallet_wrong_chain')
@@ -1536,7 +1538,7 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
       // nothing of this owner in flight on this chain, as before a step.
       const { identity, stateNonce, block, amounts, calls, recipient: to } = await withdrawAllCalls(rpc, vault, recipient)
       await t.freeNonce(rpc)
-      const { gasUsed, networkFeeWei } = await simulateV2Batch(rpc, chain, owner, calls, gas)
+      const { gasUsed, networkFeeWei } = await simulateV2Batch(rpc, chain, owner, calls, gas, batchSimulator)
       const batch: VaultWithdrawBatch = Object.freeze({
         chainId: chain.chainId,
         owner,
@@ -1570,7 +1572,7 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
         await t.freeNonce(rpc)
         const { stateNonce, calls } = await withdrawAllCalls(rpc, batch.vault, batch.recipient)
         if (stateNonce !== batch.stateNonce || calls.length !== batch.calls.length || calls.some((call, i) => call.to !== batch.calls[i].to || call.data !== batch.calls[i].data)) fail('vault_review_stale')
-        await simulateBatch((method, params) => rpc(method, params), owner, batch.calls)
+        await simulateBatch((method, params) => rpc(method, params), owner, batch.calls, batchSimulator)
         if (batch.expiresAt <= now()) fail('wallet_review_expired')
         if (quantity(await rpc('eth_chainId', [])) !== BigInt(chain.chainId)) fail('wallet_wrong_chain')
         issuedWithdraws.delete(batch)

@@ -125,6 +125,8 @@ export const MAX_LEDGER_IDS = 8
 export const LEDGER_BODY_BYTES = 4_096
 /** A cold NFT advances at most this many blocks per answer; the cursor survives between questions. */
 export const LEDGER_SCAN_BLOCKS = 1_000_000
+/** Only indexed NFT mints use this window; settlement and pool-log limits are unchanged. */
+export const MINT_DISCOVERY_BLOCKS = 10_000_000
 /** How long a whole answer serves a question for the same ids; a fresh question takes one only within FRESH_LEDGER_MS. */
 export const LEDGER_SECONDS = 30
 export const FRESH_LEDGER_MS = 2_000
@@ -145,7 +147,7 @@ export const TOO_MANY_SECONDS = 3_600
  */
 export const LEDGER_KEYS = 2
 /** Whole answers refresh on the optional opening-price field; per-NFT accounting cursors are unchanged. */
-export const LEDGER_ANSWER_VERSION = 'v3-mint-price-2'
+export const LEDGER_ANSWER_VERSION = 'v3-mint-discovery-3'
 /** PoolManager.Swap: used only for one verified mint block and one exact pool, never a history scan. */
 export const MINT_SWAP = '0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f'
 /** A slow archive read must not hold a usable ledger for the RPC's normal ten-second timeout. */
@@ -1066,10 +1068,18 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
   const head = state.block
   const vaults = new Map((state.automation ?? []).filter((one): one is typeof one & { vault: string } => 'vault' in one && typeof one.vault === 'string').map((one) => [one.tokenId, one.vault]))
   const works: Work[] = []
+  const keptById = new Map(await Promise.all(state.positions.filter((one) => one.ok).map(async (one) => [one.tokenId, await kept<unknown>(rt, keptUrl(origin, BigInt(one.tokenId)))] as const)))
+  const cold = state.positions.filter((one) => {
+    if (!one.ok || hints?.some((hint) => hint.tokenId === one.tokenId && hint.block <= head)) return false
+    const hit = keptById.get(one.tokenId)
+    if (hit && isKept(hit.value, one.poolId) && hit.value.final && !(hit.value.final === 'too_many' && hit.ageMs >= TOO_MANY_SECONDS * 1000)) return false
+    return !hit || !isKept(hit.value, one.poolId) || !hit.value.mint
+  }).map((one) => BigInt(one.tokenId))
+  const discovered = await discoverMintStarts(rt, budget, origin, head, cold)
   for (const position of state.positions) {
     if (!position.ok) continue
     const id = BigInt(position.tokenId)
-    const hit = await kept<unknown>(rt, keptUrl(origin, id))
+    const hit = keptById.get(position.tokenId)
     let was = hit && isKept(hit.value, position.poolId) ? hit.value : null
     // A `too_many` verdict is checked again once its hour is over (round 4): read anew, as a first read.
     if (hit && was?.final === 'too_many' && hit.ageMs >= TOO_MANY_SECONDS * 1000) was = null
@@ -1084,7 +1094,7 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
     }
     // An indexed mint only saves a history scan after the node proves this exact NFT's zero-address Transfer. A caller
     // cannot assert its owner, timestamp or fees, or shorten the history with an arbitrary transaction/block hint.
-    let provenStart: number | null = null
+    let provenStart: number | null = discovered.get(position.tokenId)?.block ?? null
     const hint = hints?.find((item) => item.tokenId === position.tokenId && item.block <= head)
     if (!was?.mint && hint) {
       const results = await logsBatch(rt, budget, [{ address: POSITION_MANAGER, fromBlock: hex(hint.block), toBlock: hex(hint.block), topics: [TRANSFER_TOPIC, word(0n), null, word(id)] }], ROUND_BYTES)
@@ -1121,7 +1131,7 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
       through: head,
       scanned: head,
       final: was?.final ?? null,
-      unanswered: false,
+      unanswered: discovered.has(position.tokenId) && discovered.get(position.tokenId) === null,
     })
   }
   const live = () => works.filter((work) => !work.final && !work.unanswered)
@@ -1248,6 +1258,69 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
   const positions = state.positions.map((position): LedgerPosition => (position.ok ? (built.get(position.tokenId) as LedgerPosition) : { tokenId: position.tokenId, ok: false, reason: position.reason }))
   await mintPrices(rt, budget, origin, head, positions)
   return { v: 1, block: head, timestamp: state.timestamp, positions }
+}
+
+type MintAnchor = { block: number; tx: string; hash: string; index: number }
+type MintDiscovery = { head: number; next: number; anchor?: MintAnchor }
+
+/** Discover only the indexed zero-address Transfer of these NFTs. No pool history, owner-wide transfer scan or
+ * archive eth_call. Empty windows advance a bounded cursor; they never mean the position earned zero or is closed. */
+async function discoverMintStarts(rt: FeesRuntime, budget: Budget, origin: string, head: number, ids: readonly bigint[]): Promise<Map<string, MintAnchor | null>> {
+  const found = new Map<string, MintAnchor | null>()
+  const groups = new Map<number, { id: bigint; prior: MintDiscovery | null }[]>()
+  for (const id of ids) {
+    const key = cacheUrl(origin, 'mintDiscovery1', String(id), 0)
+    const saved = (await kept<unknown>(rt, key))?.value as Partial<MintDiscovery> | undefined
+    const valid = saved && Number.isSafeInteger(saved.head) && saved.head! <= head && Number.isSafeInteger(saved.next) && saved.next! >= LEDGER_FLOOR - 1 && saved.next! <= saved.head!
+    const prior = valid ? saved as MintDiscovery : null
+    const a = prior?.anchor
+    if (a && Number.isSafeInteger(a.block) && a.block >= LEDGER_FLOOR && a.block <= head - SAFE_DEPTH && HASH.test(a.tx) && HASH.test(a.hash) && Number.isSafeInteger(a.index) && a.index >= 0) {
+      found.set(String(id), a)
+      continue
+    }
+    // Re-read the reorganisable tail before using an older empty-window cursor.
+    const end = prior?.anchor ? head : prior?.next ?? head
+    const group = groups.get(end) ?? []
+    group.push({ id, prior })
+    groups.set(end, group)
+  }
+  for (const [end, group] of groups) {
+    const from = Math.max(LEDGER_FLOOR, end - MINT_DISCOVERY_BLOCKS + 1)
+    const priorHead = Math.min(...group.map((one) => one.prior?.head ?? head))
+    const ranges = end >= from ? [{ from, to: end }] : []
+    if (priorHead < head && end < head) ranges.push({ from: Math.max(LEDGER_FLOOR, priorHead - SAFE_DEPTH), to: head })
+    const topics = group.map((one) => word(one.id))
+    let results: unknown[]
+    try {
+      results = ranges.length ? await roundRead(rt, budget, ranges.map((range) => ({ address: POSITION_MANAGER, fromBlock: hex(range.from), toBlock: hex(range.to), topics: [TRANSFER_TOPIC, word(0n), null, one(topics)] }))) : []
+    } catch (error) {
+      if (!(error instanceof RelayError) || error.kind !== 'bytes') throw error
+      // A spent question or oversized discovery is not evidence of zero fees, closure or nonexistence.
+      for (const { id } of group) found.set(String(id), null)
+      continue
+    }
+    const anchors = new Map<string, MintAnchor>()
+    for (let i = 0; i < ranges.length; i++) for (const raw of results[i] as unknown[]) {
+      const log = logOf(raw, [POSITION_MANAGER], ranges[i].from, ranges[i].to)
+      if (!log) continue
+      if (log.topics.length !== 4 || log.topics[0] !== TRANSFER_TOPIC || log.topics[1] !== word(0n) || !ADDRESS_WORD.test(log.topics[2]) || !topics.includes(log.topics[3]) || log.data !== '0x') throw new RelayError('fatal', 'invalid_mint_log')
+      const hash = (raw as { blockHash?: unknown }).blockHash
+      if (typeof hash !== 'string' || !HASH.test(hash)) throw new RelayError('fatal', 'invalid_mint_hash')
+      const id = BigInt(log.topics[3]).toString()
+      const a = { block: log.block, tx: log.tx, hash: hash.toLowerCase(), index: log.index }
+      const old = anchors.get(id)
+      if (old && (old.block !== a.block || old.tx !== a.tx || old.hash !== a.hash || old.index !== a.index)) throw new RelayError('fatal', 'two_mints')
+      anchors.set(id, a)
+    }
+    for (const { id } of group) {
+      const anchor = anchors.get(String(id))
+      await keep(rt, cacheUrl(origin, 'mintDiscovery1', String(id), 0), { head, next: from - 1, ...(anchor ? { anchor } : {}) } satisfies MintDiscovery, KEPT_SECONDS)
+      if (anchor) found.set(String(id), anchor)
+      else if (from > LEDGER_FLOOR) found.set(String(id), null)
+      // Exhausted the indexed range without a mint: retain the existing conservative before-floor reader.
+    }
+  }
+  return found
 }
 
 /** `work`'s ledger kept as `final`, its verdict: nothing more is read for it while it is kept (lifeOf). */

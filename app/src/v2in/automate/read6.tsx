@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/types'
-import type { V2Gate } from '../../v2/gate'
+import { v2OriginOpen, type V2Gate } from '../../v2/gate'
 import { readActivity, readPortfolio, type ReadV6Reply } from '../../v2/read/v6'
 import { routeServes, type V2RouteOff } from '../../v2/routes'
 import type { Address } from '../../v2/types'
 import { v2Transports } from '../transports'
+import { useKeyed } from '../lists/hooks'
+import { OWN_PORTFOLIO } from '../lists/source'
+import type { ListsReply } from '../lists/read'
 
 /**
  * The integrated automation screens' one way to read read-v6 (spec F7 rev2 §6.2; decision #9: lists and history come
@@ -19,7 +22,7 @@ import { v2Transports } from '../transports'
  */
 
 export interface Read6<T> {
-  reply: ReadV6Reply<T>
+  reply: ListsReply<T>
   /** The wallet the answer is about: the connected one. */
   wallet: Address
   /** Under `live`, why the route was not asked (its capabilities: off, not deployed, unreadable now). */
@@ -57,19 +60,14 @@ export const activityFor = (connected: Address | null, gate: V2Gate, page: { lim
  */
 export function usePortfolio(connected: Address | null, gate: V2Gate | null, version = 0): Read6<PortfolioResponse> | null {
   const who = connected ? (connected.toLowerCase() as Address) : null
-  const mode = gate && gate.mode !== 'off' ? gate.mode : null
-  const [answer, setAnswer] = useState<{ key: string; value: Read6<PortfolioResponse> } | null>(null)
-  const key = `${who ?? ''}|${mode ?? ''}`
+  // The gate still belongs to the caller's writes. Public state is shared even when those writes are paused.
+  void gate
+  const key = who && v2OriginOpen(typeof location === 'undefined' ? '' : location.origin) ? who : null
+  const reply = useKeyed(OWN_PORTFOLIO, key)
+  const previous = useRef({ key, version })
   useEffect(() => {
-    if (!gate || gate.mode === 'off') return
-    let alive = true
-    const asked = `${who ?? ''}|${gate.mode}`
-    void portfolioFor(who, gate).then((value) => {
-      if (alive && value) setAnswer({ key: asked, value })
-    })
-    return () => {
-      alive = false
-    }
-  }, [who, gate, version])
-  return answer && answer.key === key ? answer.value : null
+    if (key && previous.current.key === key && previous.current.version !== version) OWN_PORTFOLIO.again(key)
+    previous.current = { key, version }
+  }, [key, version])
+  return useMemo(() => key && reply ? { wallet: key, reply } : null, [key, reply])
 }

@@ -1,0 +1,13 @@
+.dm-bulk-choices { display: grid; gap: .5rem; }
+.dm-bulk-choice { display: flex; align-items: center; gap: .875rem; padding: .875rem 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); cursor: pointer; }
+.dm-bulk-choice:has(input:checked) { border-color: var(--primary); }
+.dm-bulk-choice input { width: 1rem; height: 1rem; flex: 0 0 auto; accent-color: var(--primary); }
+.dm-bulk-choice span { min-width: 0; }
+.dm-bulk-choice bdi { font-size: .875rem; overflow-wrap: anywhere; }
+.dm-bulk-choice small, .dm-bulk-names { display: block; color: var(--fg-muted); font-size: .75rem; margin-top: .25rem; }
+.dm-bulk-total { font-size: 1.25rem; line-height: 1.5; overflow-wrap: anywhere; }
+.dm-bulk-details { font-size: .75rem; color: var(--fg-muted); border-top: 1px solid var(--border); padding-top: .875rem; }
+.dm-bulk-details summary { cursor: pointer; padding-block: .25rem; }
+.dm-bulk-details > p { margin-top: .75rem; }
+.dm-bulk-details label { display: block; margin: .75rem 0 .375rem; }
+.dm-bulk-details input { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); padding: .625rem; color: var(--fg); background: var(--surface-2); }

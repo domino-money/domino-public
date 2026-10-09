@@ -14,7 +14,7 @@ import { useMediaQuery } from '../../../lib/useMediaQuery'
 import { TokenFigure } from './FeesActivity'
 import type { FeesPeriodView, FeesView } from './model'
 import { dateTicks, spacedTimeTicks } from './ticks'
-import { positive, unitsNumber, valueFigure } from './value'
+import { anyPositive, positive, valueNumber, valueFigure } from './value'
 
 /**
  * The plot's room. Desktop: the y labels and the last-value chip in a gutter
@@ -24,8 +24,8 @@ import { positive, unitsNumber, valueFigure } from './value'
  */
 const PAD = { top: 16, right: 72, bottom: 40, left: 0 }
 const PAD_PHONE = { top: 32, right: 8, bottom: 40, left: 0 }
-const HEIGHT = 232
-const HEIGHT_PHONE = 200
+const HEIGHT = 164
+const HEIGHT_PHONE = 148
 /** The drawn chart's whole box, which its skeleton and its quiet plot keep (2026-09-27: nothing moves when it arrives). */
 export const CHART_BOX = { desktop: PAD.top + HEIGHT + PAD.bottom, phone: PAD_PHONE.top + HEIGHT_PHONE + PAD_PHONE.bottom } as const
 /**
@@ -34,16 +34,13 @@ export const CHART_BOX = { desktop: PAD.top + HEIGHT + PAD.bottom, phone: PAD_PH
  * it; no y label (the hero says $0.00) and no in-range strip (Time in range beside it already says so). Room at the
  * right for the end dot only. A phone, where the timeline sits under the summary, keeps less room above it.
  */
-const PAD_ZERO = { top: 16, right: 16, bottom: 28, left: 0 }
-const PAD_ZERO_PHONE = { top: 8, right: 16, bottom: 28, left: 0 }
-const HEIGHT_ZERO = 48
-const HEIGHT_ZERO_PHONE = 32
 /** A y label closer than this to the baseline's label, or to the chip, is dropped. */
 const BASE_GAP = 20
 const CHIP_GAP = 14
 
 /** An axis figure for a round tick (niceTicks' 1/2/5 steps): `$1,500`, `$0.25`, `$0.002`; a quote amount without its symbol. */
 function axisFigure(view: FeesView, value: number): string {
+  if (value > 0 && value < (view.basis.kind === 'usd' ? 0.01 : 0.000001)) return view.basis.kind === 'usd' ? '<$0.01' : '<0.000001'
   const precision = value > 0 && value < 1 ? Math.min(24, Math.max(8, 3 - Math.floor(Math.log10(value)))) : 8
   const [whole, fraction = ''] = value.toFixed(precision).split('.')
   const digits = fraction.replace(/0+$/, '')
@@ -56,7 +53,7 @@ function axisFigure(view: FeesView, value: number): string {
  * (`$605.12`), `$0` when the period starts at nothing.
  */
 function baseFigure(view: FeesView, pv: FeesPeriodView): string {
-  return positive(pv.base) ? valueFigure(view.basis, pv.base) : axisFigure(view, 0)
+  return positive(pv.base) || (pv.points[0]?.v ?? 0) > 0 ? valueFigure(view.basis, pv.base, true) : axisFigure(view, 0)
 }
 
 /** A symbol from /state, as text (untrusted): the short address when unreadable. */
@@ -187,11 +184,11 @@ export function FeesChart({
 }) {
   const adds = automation?.adds ?? NONE
   const phone = useMediaQuery('(max-width: 767px)')
-  const height = zero ? (phone ? HEIGHT_ZERO_PHONE : HEIGHT_ZERO) : phone ? HEIGHT_PHONE : HEIGHT
-  const pad = zero ? (phone ? PAD_ZERO_PHONE : PAD_ZERO) : phone ? PAD_PHONE : PAD
+  const height = phone ? HEIGHT_PHONE : HEIGHT
+  const pad = phone ? PAD_PHONE : PAD
   const { start, end, buckets } = pv
-  const baseN = unitsNumber(pv.base)
-  const lastN = unitsNumber(pv.last)
+  const baseN = pv.points[0]?.v ?? 0
+  const lastN = pv.points.at(-1)?.v ?? baseN
   // Room above the line on a desktop (the chip sits in the gutter); on a phone the chip rides above the end, in the top padding.
   const headroom = phone ? 1.02 : 1.12
   // Nothing earned: the flat line lies on the plot's foot (the floor at the bottom, one unit of room above it).
@@ -253,7 +250,7 @@ export function FeesChart({
     [scales, pv, zero, bottomN, baseN, topN, phone, marks, automatic],
   )
 
-  const lastText = valueFigure(view.basis, pv.last)
+  const lastText = valueFigure(view.basis, pv.last, !view.zero)
 
   // The y labels: the floor (the period-start value) always, round levels above it clear of it and of the chip.
   const yLabels = useCallback(
@@ -275,7 +272,7 @@ export function FeesChart({
           { x: plot.left, label: edgeLabel(start) },
           { x: plot.right, label: edgeLabel(end) },
         ]
-        return <XAxis ticks={end > start ? edges : edges.slice(0, 1)} anchor={plot.bottom + 22} left={plot.left} right={plot.right} />
+        return <><YAxis ticks={[{ y: plot.bottom, label: axisFigure(view, 0) }]} anchor={plot.right + (phone ? -4 : 10)} side={phone ? 'left' : 'right'} /><XAxis ticks={end > start ? edges : edges.slice(0, 1)} anchor={plot.bottom + 32} left={plot.left} right={plot.right} /></>
       }
       const { x } = scales(plot)
       const dates = dateTicks(start, end, dateCount(plot)).map((tick) => ({ x: x(tick.t), label: tick.label }))
@@ -290,7 +287,7 @@ export function FeesChart({
         </>
       )
     },
-    [scales, yLabels, zero, start, end, phone],
+    [scales, yLabels, zero, start, end, phone, view],
   )
 
   /**
@@ -326,11 +323,11 @@ export function FeesChart({
         {!zero && !phone && <LastValue x0={endX} x1={plot.width - 8} y={endY} />}
         {bucket && (
           <>
-            <Crosshair x={x(bucket.end)} y={y(unitsNumber(bucket.earned))} top={plot.top} bottom={plot.bottom} left={plot.left} right={plot.right} />
+            <Crosshair x={x(bucket.end)} y={y(valueNumber(view.basis, bucket.earnedTokens))} top={plot.top} bottom={plot.bottom} left={plot.left} right={plot.right} />
             {here.map((add) => (
               <AutoMark key={add.tx} x={x(add.timestamp)} y={y(lineAt(pv.points, add.timestamp))} active />
             ))}
-            <HoverDot x={x(bucket.end)} y={y(unitsNumber(bucket.earned))} />
+            <HoverDot x={x(bucket.end)} y={y(valueNumber(view.basis, bucket.earnedTokens))} />
           </>
         )}
         {phone && !zero && insideLabels(plot)}
@@ -382,7 +379,7 @@ export function FeesChart({
         {!zero && <LastValueChip yPct={(chipY / plot.height) * 100}>{lastText}</LastValueChip>}
         {bucket && index !== null && (
           <ChartTooltip x={x(bucket.end)} plot={plot} head={bucketLabel(bucket.start, bucket.end)}>
-            <ChartTooltipRow label="Fees earned">{valueFigure(view.basis, bucket.earnedIn)}</ChartTooltipRow>
+            <ChartTooltipRow label="Fees earned">{valueFigure(view.basis, bucket.earnedIn, anyPositive(bucket.tokensIn))}</ChartTooltipRow>
             {tokenRows(bucket.tokensIn)}
             {positive(bucket.collectedIn) && <ChartTooltipRow label="Collected">{valueFigure(view.basis, bucket.collectedIn)}</ChartTooltipRow>}
             {autoNote(addsIn(index))}
@@ -395,7 +392,7 @@ export function FeesChart({
   const valueText = useMemo(
     () => (index: number) => {
       const bucket = buckets[index]
-      return bucket ? `${bucketLabel(bucket.start, bucket.end)}, ${valueFigure(view.basis, bucket.earnedIn)} earned in this interval; ${valueFigure(view.basis, bucket.earned)} earned since opened` : ''
+      return bucket ? `${bucketLabel(bucket.start, bucket.end)}, ${valueFigure(view.basis, bucket.earnedIn, anyPositive(bucket.tokensIn))} earned in this interval; ${valueFigure(view.basis, bucket.earned, anyPositive(bucket.earnedTokens))} earned since opened` : ''
     },
     [buckets, view.basis],
   )

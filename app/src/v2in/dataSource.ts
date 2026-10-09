@@ -38,6 +38,8 @@ export interface V2Transports {
   routeState(route: V2Route): Promise<V2RouteState>
 }
 
+export type V2ReadTransports = Pick<V2Transports, 'source' | 'readRuntime' | 'read' | 'routeState'>
+
 /**
  * A scripted answer, as a test build's suite hands it. Added 2026-10-06 (rugged's answer of 6 Oct, §1): a refusal's
  * `retryAfter`, the Retry-After header the read Worker would send with it.
@@ -122,6 +124,14 @@ function scriptedRead(answers: NonNullable<V2DataScript['read6']>): ReadV6Transp
       return { status: said.status, body: structuredClone(said.body), ...(typeof said.retryAfter === 'string' ? { retryAfter: said.retryAfter } : {}) }
     },
   }
+}
+
+/** Public history has its own read capability. No financial gate or contract set grants or removes read access. */
+export function createV2ReadTransports(deps: V2DataDeps): V2ReadTransports {
+  const script = deps.script()
+  if (script) return { source: 'scripted', readRuntime: deps.runtimes.read, read: scriptedRead(script.read6 ?? {}), routeState: async () => scriptedOn(script) }
+  const live = deps.live()
+  return { source: 'route', readRuntime: deps.runtimes.read, read: servedRead(live.read, live.probe), routeState: (route) => live.probe.state(route) }
 }
 
 /** The transports for a chain's gate, or null when it is off. */
