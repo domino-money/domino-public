@@ -1037,7 +1037,14 @@ test('what every visitor downloads first, the route screens, the session/read cl
     const base = new Set([...staticClosure(dir, [...island, ...readRoots])].filter((file) => !initial.has(file)));
     const financial = new Set([...staticClosure(dir, financialRoots)].filter((file) => !initial.has(file)));
     for (const file of financialRoots) assert.ok(!base.has(file) && !initial.has(file), `${file} must remain opt-in`);
-    const allLazy = new Set([...base, ...financial]);
+    // Pool pages and their figures dialog open the same chart automatically. Its renderer and history reader are
+    // opt-in there: connecting a wallet or reading Positions must not download them. Keep every chart byte measured,
+    // including shared dependencies in their existing families and the exclusive chart closure in all-lazy below.
+    const poolChartRoots = js.filter((file) => /^PoolHistoryChart-/.test(file));
+    assert.equal(poolChartRoots.length, 1, 'one shared pool history chart in every read build');
+    for (const file of poolChartRoots) assert.ok(!initial.has(file) && !base.has(file) && !financial.has(file), 'pool history opens only on a pool page or its figures dialog');
+    const poolChart = new Set([...staticClosure(dir, poolChartRoots)].filter((file) => !initial.has(file) && !base.has(file) && !financial.has(file)));
+    const allLazy = new Set([...base, ...financial, ...poolChart]);
     // 2026-09-24 (P6, DESIGN-V2 §18, R-12): the fees replay worker (src/lib/fees/feesReplay.worker.ts, created only by
     // src/lib/fees/spawn.ts on a positions page) is its own closure with its own 16,000 B ceiling, outside all lazy: it is
     // not UI and loads only where a fees history is shown. A classic worker is one self-contained file: no import, no
@@ -1226,7 +1233,10 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // variation; keep the entry and every financial/V2 ceiling. All legacy code still counts in absolute budgets.
     // The fixture-only deployment data measures 12,384 B gzip on Windows; its separate 13 kB cap changes no
     // existing ceiling and is not part of the 3 kB instrumentation allowance for the comparable V2 feature closures.
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['all lazy', allLazy, 384_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 651_000], ['V2 fixture data', fixtureData, 13_000]]) {
+    // Windows gzip 9 measures the separately deferred pool chart at 12,066 B: its own 13 kB cap leaves room for
+    // platform/name variation. These same bytes still count against the unchanged all-lazy ceiling. No existing
+    // budget or test-only allowance grows when the chart leaves the session/read startup path.
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 384_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 651_000], ['V2 fixture data', fixtureData, 13_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir !== DIST && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

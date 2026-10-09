@@ -3,7 +3,7 @@ import v3PoolAbi from '../../../../api-contracts/v2/abi/IUniswapV3PoolMinimal.js
 import v4StateViewAbi from '../../../../api-contracts/v2/abi/IV4StateViewMinimal.json'
 import type { V2Chain } from '../../v2/chains'
 import { RECEIVE_MODE, ZERO_ADDRESS, type Address, type Dex, type ExitMandate, type Hex, type ReceiveMode, type V2ChainId, type V2Component, type V2Contracts } from '../../v2/types'
-import { atomicStatus, batchCallsStatus, simulateBatch, type AtomicStatus, type BatchCall, type BatchSimulator } from '../batch'
+import { atomicStatus, simulateBatch, type AtomicStatus, type BatchCall, type BatchSimulator } from '../batch'
 import { readAccountCode } from '../delegates'
 import { AUTO_EXIT_ABI, REGISTRY_ABI, V3_POSITION_MANAGER_ABI, V4_POSITION_MANAGER_ABI, VAULT_ABI, VAULT_FACTORY_ABI } from './abi'
 import { AUTO_EXIT_EVENTS_ABI, VAULT_EVENTS_ABI, VAULT_FACTORY_EVENTS_ABI } from './implementations'
@@ -11,9 +11,9 @@ import { CONTRACTS_NOT_LIVE, refuseUnlessLive } from './liveLock'
 import { createTransactor, quantity, refused, REVIEW_S, revertIn, SIGN_WINDOW_S, WalletNotAsked, type PreparedV2, type Rpc, type SignedNonce, type V2GasBudget, type V2Receipt, type V2Wallet } from './transact'
 import { exitMandateTypedData, mandateId, signV2TypedData, typedDataDigest, type SignatureShape, type V2TypedData } from './typedData'
 import {
-  browserV2BatchLatch, checkBatchBudget, decodeEvents, factoryComponent, factoryOf, managerAbi, managerOf, newVaultRoot, offerV2Batch, pinBlock, readVaultIdentity, receiptOfBatch, settleBatchLatch,
+  browserV2BatchLatch, checkBatchBudget, decodeEvents, factoryComponent, factoryOf, knownBatchState, managerAbi, managerOf, newVaultRoot, offerV2Batch, pinBlock, readVaultIdentity, receiptOfBatch, settleBatchLatch,
   simulateV2Batch, transactionWithLog, v2ContractsFor, V2_BATCH_LATCH_EXPIRY_S, vaultBatchKey, vaultCreation, verifyComponents, viewAt, type ReadAt, type V2BatchLatch, type V2BatchReceipt, type V2Event,
-  type V2Snapshot, type VaultCreateRequest, type VaultIdentity, type VaultStepKind,
+  type KnownBatchConfirmation, type V2Snapshot, type VaultCreateRequest, type VaultIdentity, type VaultStepKind,
 } from './vault'
 
 /**
@@ -462,7 +462,7 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
   const handedOver = new Set<string>()
   const issuedBatches = new WeakSet<MandateBatch>()
   const batchOrigins = new WeakMap<MandateBatch, MandateReview>()
-  const offeredBatches = new Map<string, { batch: MandateBatch; review: MandateReview }>()
+  const offeredBatches = new Map<string, { batch: MandateBatch; review: MandateReview } & KnownBatchConfirmation>()
   const view = <T>(at: ReadAt, to: Address, abi: Abi, functionName: string, args: readonly unknown[] = [], onRevert?: string) => viewAt<T>(t, at, to, abi, functionName, args, onRevert)
   const entryOf = (nonce: bigint): SignedNonce => Object.freeze({ chainId: chain.chainId, owner, space: 'autoExit' as const, verifier: autoExit, nonce })
   const nowSeconds = () => BigInt(Math.floor(now()))
@@ -548,7 +548,7 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
 
   const issuedProtect = new WeakSet<ProtectBatch>()
   const protectOrigins = new WeakMap<ProtectBatch, { review: MandateReview; create: VaultCreateRequest }>()
-  const offeredProtect = new Map<string, { batch: ProtectBatch; review: MandateReview }>()
+  const offeredProtect = new Map<string, { batch: ProtectBatch; review: MandateReview } & KnownBatchConfirmation>()
 
   /** Whether the factory of `dex` made `vault`. */
   const madeBy = (at: ReadAt, dex: Dex, vault: Address) => view<boolean>(at, factoryOf(contracts, dex), VAULT_FACTORY_ABI, 'isVault', [vault])
@@ -763,20 +763,21 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
       const known = offeredBatches.get(id)
       if (!known) return fail('receipt_not_from_this_review')
       const { batch, review } = known
-      await t.identity(rpc)
       const latch = latchFor(chain.chainId, owner)
       const none: readonly V2Event[] = Object.freeze([])
-      const status = await batchCallsStatus((method, params) => rpc(method, params), id)
+      const calls = await knownBatchState(t, wallet, chain, rpc, id, known)
+      const status = calls?.status ?? null
       if (status !== null && status >= 100 && status < 200) return { state: 'pending', events: none }
       if (status === 400 || status === 500) {
         await latch.releaseBatch(batch.key, id)
         return { state: status === 400 ? 'not-included' : 'batch-reverted', events: none }
       }
       const topics = (encodeEventTopics({ abi: AUTO_EXIT_ABI, eventName: 'MandateRegistered', args: { mandateHash: review.id } } as Parameters<typeof encodeEventTopics>[0]) as (Hex | null)[]).slice(0, 2)
-      const hash = await transactionWithLog(rpc, autoExit, topics, review.snapshot.blockNumber)
+      const hash = calls?.transactionHash ?? await transactionWithLog(rpc, autoExit, topics, review.snapshot.blockNumber)
       if (hash === null) return { state: 'pending', events: none }
-      const receipt = await receiptOfBatch(rpc, chain, hash, (logs) => logs.some((log) => log.address === autoExit && log.topics[0] === topics[0] && log.topics[1] === review.id))
+      const receipt = await receiptOfBatch(rpc, chain, hash, (logs) => logs.some((log) => log.address === autoExit && log.topics[0] === topics[0] && log.topics[1] === review.id), wallet)
       if (receipt.state === 'pending' || receipt.state === 'reorged') return { ...receipt, events: none }
+      known.transactionHash = hash
       await latch.releaseBatch(batch.key, id)
       if (receipt.state === 'reverted') return { ...receipt, events: none }
       // A finalized registration used the nonce for good: the journal lets it go, as the step path's receipt does.
@@ -861,10 +862,10 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
       const known = offeredProtect.get(id)
       if (!known) return fail('receipt_not_from_this_review')
       const { batch, review } = known
-      await t.identity(rpc)
       const latch = latchFor(chain.chainId, owner)
       const none: readonly V2Event[] = Object.freeze([])
-      const status = await batchCallsStatus((method, params) => rpc(method, params), id)
+      const calls = await knownBatchState(t, wallet, chain, rpc, id, known)
+      const status = calls?.status ?? null
       if (status !== null && status >= 100 && status < 200) return { state: 'pending', events: none }
       if (status === 400 || status === 500) {
         await latch.releaseBatch(batch.key, id)
@@ -872,12 +873,13 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
       }
       const registered = (encodeEventTopics({ abi: AUTO_EXIT_ABI, eventName: 'MandateRegistered', args: { mandateHash: review.id } } as Parameters<typeof encodeEventTopics>[0]) as (Hex | null)[]).slice(0, 2)
       const created = (encodeEventTopics({ abi: VAULT_FACTORY_ABI, eventName: 'VaultCreated', args: { owner, vault: batch.vault } } as Parameters<typeof encodeEventTopics>[0]) as (Hex | null)[]).slice(0, 3)
-      const hash = await transactionWithLog(rpc, autoExit, registered, review.snapshot.blockNumber)
+      const hash = calls?.transactionHash ?? await transactionWithLog(rpc, autoExit, registered, review.snapshot.blockNumber)
       if (hash === null) return { state: 'pending', events: none }
       const receipt = await receiptOfBatch(rpc, chain, hash, (logs) =>
         logs.some((log) => log.address === autoExit && log.topics[0] === registered[0] && log.topics[1] === review.id)
-        && logs.some((log) => log.address === batch.factory && log.topics[0] === created[0] && log.topics[2] === created[2]))
+        && logs.some((log) => log.address === batch.factory && log.topics[0] === created[0] && log.topics[2] === created[2]), wallet)
       if (receipt.state === 'pending' || receipt.state === 'reorged') return { ...receipt, events: none }
+      known.transactionHash = hash
       await latch.releaseBatch(batch.key, id)
       if (receipt.state === 'reverted') return { ...receipt, events: none }
       // A finalized registration used the nonce for good: the journal lets it go, as the step path's receipt does.

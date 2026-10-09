@@ -244,7 +244,7 @@ async function search(page, address) {
   await page.waitForFunction((wire) => location.hash === `#/markets/${wire}`, address);
 }
 
-test('the landing reads one listed pool, never a placeholder id, and pool activity only when a pool is opened', async () => {
+test('the landing and popup reuse one listed pool, never placeholder ids or unrelated activity', async () => {
   const { context, page, errors } = await visit('/');
   await page.locator('#pools tbody tr').first().waitFor({ timeout: 30_000 });
   await page.waitForFunction(() => document.querySelector('#pools tbody tr [data-provenance]'), null, { timeout: 30_000 });
@@ -259,10 +259,9 @@ test('the landing reads one listed pool, never a placeholder id, and pool activi
   assert.equal(routes().includes('pool-activity'), false);
   await page.locator('#pools [data-pool-figures]').click();
   await page.locator('[data-pool-figures-dialog]').waitFor();
-  await page.waitForFunction(() => document.querySelector('[data-figures-activity]')?.getAttribute('data-figures-activity') !== 'loading', null, { timeout: 30_000 });
   await page.locator('[data-figures-sources] > summary').click();
-  assert.equal(routes().filter((r) => r === 'pool-activity').length, 1);
-  assert.match(await page.locator('[data-pool-figures-dialog]').innerText(), /Pool is 19 s old/);
+  assert.equal(routes().filter((r) => r === 'pool-activity').length, 0);
+  assert.match(await page.locator('[data-pool-figures-dialog]').innerText(), /Network\s+Robinhood Chain/);
   // Changed on purpose 2026-09-28 (speed wave, item 1): the dialog's read shares the table's budget, no longer 1.1 s apart.
   assertWithinBudget(posts());
   assert.deepEqual(errors, []);

@@ -565,6 +565,7 @@ test('wrangler 4.130.0 routes the edge-cached reads and Domino’s own chain rou
     assert.deepEqual(handlers, [
       ['/api/automation/v1/record', 'api/automation/v1/record.ts:onRequest'],
       ['/api/automation/v1/state', 'api/automation/v1/state.ts:onRequest'],
+      ['/api/chain/v1/confirmation', 'api/chain/v1/confirmation.ts:onRequest'],
       ['/api/chain/v1/simulate', 'api/chain/v1/simulate.ts:onRequest'],
       ['/api/fees/v1/state', 'api/fees/v1/state.ts:onRequest'],
       ['/api/fees/v2/ledger', 'api/fees/v2/ledger.ts:onRequest'],

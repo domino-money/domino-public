@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { Mandate } from 'api-contracts/read-v6/types'
 import { Button, KeyValue, KeyValueList, Pill } from '../../components/ui'
 import { createAutoExitClient, type MandateStatusView } from '../../finance/v2/autoExit'
@@ -135,6 +135,7 @@ function ModuleOnDialog({ target, vault, order, gate, labels, onTurnOff, onDone,
       lockedCopy={gate.mode === 'preview' ? gate.lockedCopy : ''}
       context="vault"
       labels={labels}
+      affected={{ positionManager: v2Chain(target.chainId).uniswap[target.dex === 3 ? 'v3' : 'v4']?.positionManager, tokenIds: [target.tokenId.toString()], vault }}
       held={past && !acknowledged}
       prepare={async (session) => {
         // Unread here: nothing is said yet; the step reads it again right before the wallet, and says a failure there.
@@ -187,7 +188,7 @@ export function sessionExits(mandates: readonly SessionMandate[], orders: readon
   return mandates.filter((m) => m.registered && m.tokenId === tokenId && !listed.has(m.id))
 }
 
-export function AutoExitCard({ target, orders, mine, credits, gate, owner, orientation, nowSeconds, offer, protection, stateAvailable, turnOff = 0, onTurnOn, onVaultAction, onChanged }: {
+export function AutoExitCard({ target, orders, mine, credits, gate, owner, orientation, nowSeconds, offer, protection, stateAvailable, turnOff = 0, renderContent, onDialogOpened, onTurnOn, onVaultAction, onChanged }: {
   /** The position as the card names it: its chain, pool, tokens, and the vault its orders are in (or null). */
   target: ExitTarget
   /** read-v6's orders of this position, in whichever of its vaults holds them. */
@@ -212,12 +213,17 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
    * instead" (the price already past an end); this card's Turn off opens then.
    */
   turnOff?: number
+  /** Keeps the controller mounted while its management content moves into a Sheet; wallet dialogs stay outside it. */
+  renderContent: (content: ReactNode, actionOpen: boolean) => ReactNode
+  onDialogOpened?: () => void
   onTurnOn: () => void
   onVaultAction: (kind: VaultActionKind) => void
   onChanged: () => void
 }) {
   const chain = v2Chain(target.chainId)
   const [dialog, setDialog] = useState<Dialog | null>(null)
+  const dialogOpen = dialog !== null
+  useEffect(() => { if (dialogOpen) onDialogOpened?.() }, [dialogOpen, onDialogOpened])
   const [recipient, setRecipient] = useState<string>(owner ?? '')
   const store = useSyncExternalStore(subscribeAutomation, automationState, automationState)
   const locked = gate.mode === 'preview'
@@ -243,7 +249,7 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
     ? vaultActions(protection).filter((kind) => CARD_ACTIONS.has(kind) && !(live && (kind === 'unsubscribe' || kind === 'revoke')) && (kind !== 'rearm' || approvalLost || state.kind === 'off'))
     : []
   const primary = PRIMARY.find((kind) => actions.includes(kind)) ?? null
-  const more = actions.filter((kind) => kind !== primary)
+  const more = actions.filter((kind) => kind !== primary && kind !== 'leave')
   /**
    * The protection-only automation's own action as this card names it, by what it does here: its rearm is the approval
    * back for a paused Auto-exit, or the first part of turning one on (never "Turn Auto-exit back on"); this card is the
@@ -275,14 +281,11 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
         : !stateAvailable ? 'Auto-exit data is unavailable. Your recoverable funds remain below.'
           : canTurnOn ? 'Auto-exit is off. Turn it on to close this position at the end of its range.' : 'Auto-exit is off for this position.'
 
-  return (
+  const content = (
     // One title, one pill, one line, one button (the owner, 2026-10-03: few words; the rest under Details).
-    <section hidden={quiet} className="dm-card dm-pos-card dm-exit-card" aria-labelledby={`v2in-exit-${target.tokenId}`} data-v2in-exit={offer ?? 'orders'} data-exit-orders={orders.length + mine.length} data-exit-state={state.kind}>
+    <section hidden={quiet} className="dm-automation-summary dm-exit-card" aria-label="Auto-exit" data-v2in-exit={offer ?? 'orders'} data-exit-orders={orders.length + mine.length} data-exit-state={state.kind}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 id={`v2in-exit-${target.tokenId}`} className="dm-title">
-            Auto-exit
-          </h2>
           {pill}
         </div>
         {(state.kind === 'on' || state.kind === 'paused') && (
@@ -320,6 +323,7 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
           </Button>
         </div>
       )}
+      {actions.includes('leave') && <Button type="button" variant="outline" size="sm" className="justify-self-start" onClick={() => onVaultAction('leave')} data-vault-more="leave">{VAULT_ACTION_LABEL.leave}</Button>}
       {credits.length > 0 && (
         <div className="dm-inset dm-acct-perf-form" data-claim="">
           <h3 className="dm-acct-subtitle">Funds available to your wallet</h3>
@@ -334,11 +338,13 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
               )
             })}
           </KeyValueList>
-          <label className="dm-label dm-acct-lf">
-            Send to
-            <input className="dm-field dm-acct-mono-field" value={recipient} spellCheck={false} autoComplete="off" onChange={(event) => setRecipient(event.target.value)} data-claim-recipient="" aria-invalid={validRecipient ? undefined : true} />
-          </label>
-          {!validRecipient && <p className="dm-error">Choose a valid address to receive the funds.</p>}
+          <Details label="Send to another address">
+            <label className="dm-label dm-acct-lf">
+              Send to
+              <input className="dm-field dm-acct-mono-field" value={recipient} spellCheck={false} autoComplete="off" onChange={(event) => setRecipient(event.target.value)} data-claim-recipient="" aria-invalid={validRecipient ? undefined : true} />
+            </label>
+            {!validRecipient && <p className="dm-error">Choose a valid address to receive the funds.</p>}
+          </Details>
           <div className="flex flex-wrap gap-2">
             {credits.map((credit) => {
               const token = target.tokens.find((t) => t.address === credit.token)
@@ -398,6 +404,11 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
           </div>
         </Details>
       )}
+    </section>
+  )
+  return (
+    <>
+      {renderContent(content, dialogOpen)}
       {dialog?.kind === 'module-on' && (
         <ModuleOnDialog
           target={target}
@@ -421,6 +432,7 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
           lockedCopy={lockedCopy}
           context="autoExit"
           labels={labels}
+          affected={{ positionManager: chain.uniswap[target.dex === 3 ? 'v3' : 'v4']?.positionManager, tokenIds: [target.tokenId.toString()], ...(vault ? { vault } : {}) }}
           prepare={async (session) => {
             // The order's status read on chain first (§4.5): only an active order of this wallet is cancelled.
             const status: MandateStatusView = await session.serial(() => session.autoExit.status(dialog.id))
@@ -449,6 +461,7 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
           lockedCopy={lockedCopy}
           context="autoExit"
           labels={labels}
+          affected={{ tokenIds: [], ...(vault ? { vault } : {}) }}
           prepare={(session) => ({ key: 'cancel-nonce', title: 'Cancel this signature', tx: { client: session.autoExit, prepare: () => session.autoExit.prepareCancelNonce(dialog.nonce, null) } })}
           onDone={onChanged}
           onClose={() => setDialog(null)}
@@ -468,6 +481,7 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
           lockedCopy={lockedCopy}
           context="autoExit"
           labels={{ ...labels, subjectToken: dialog.token.address }}
+          affected={{ tokenIds: [], ...(vault ? { vault } : {}) }}
           prepare={(session) => ({ key: 'claim', title: `Claim ${dialog.token.label}`, tx: { client: session.autoExit, prepare: () => session.autoExit.prepareClaim(dialog.token.address, recipient.trim().toLowerCase() as Address, null) } })}
           onDone={onChanged}
           onClose={() => setDialog(null)}
@@ -480,6 +494,6 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
           </KeyValueList>
         </OneStepDialog>
       )}
-    </section>
+    </>
   )
 }

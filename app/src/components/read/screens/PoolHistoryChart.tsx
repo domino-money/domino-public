@@ -20,6 +20,7 @@ import { CANDLES_TITLE, PoolPriceChart } from './PoolPriceChart'
 const WINDOWS = { day: 86400, week: 604800, month: 2592000 } as const
 const at = (timestamp: number) => new Date(timestamp * 1000).toISOString().slice(5, 16).replace('T', ' ') + ' UTC'
 type Answer = { key: string; state: HistoryEvent['state']; data: HistoryResponse | null; failed: boolean }
+export type PoolHistoryOption = Pick<PoolOption, 'key' | 'currencies'>
 
 /**
  * The plot's own geometry (DESIGN-V2 §9.1): the whole requested window edge to edge, room above the high and below
@@ -75,8 +76,8 @@ const place = (x: number, y: number): CSSProperties => ({ left: `${(x / PLOT.wid
  * 24-hour window shows, `onDay` hears its span, for the range guide and the activity summary. Coverage is said only
  * when something is missing, in plain words; the exact candles are in each point's accessible text.
  */
-export function PoolHistoryChart({ source, option, market, loading, failed, quote: quoteIndex = 1, onDay }: {
-  source: ReadSource; option: PoolOption; market: Market | null; loading: boolean; failed?: string; quote?: 0 | 1; onDay?: (day: DaySpan) => void
+export function PoolHistoryChart({ source, option, market, loading, failed, quote: quoteIndex = 1, onDay, compact = false }: {
+  source: ReadSource; option: PoolHistoryOption; market: Market | null; loading: boolean; failed?: string; quote?: 0 | 1; onDay?: (day: DaySpan) => void; compact?: boolean
 }) {
   const opening = quoteIndex === 1 ? 'zero' : 'one'
   const [side, setSide] = useState<'zero' | 'one'>(opening)
@@ -185,7 +186,7 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
   const staleWords = stale ? (recentFailure ? ' Showing the last stored prices.' : ' Stored prices, not the latest.') : ''
 
   return <div data-history-mode="chain" data-history-reason={data?.reason ?? undefined}>
-    <section className="dm-card dm-pool-chart" aria-labelledby={titleId} data-pool-ratio-chart="" data-ratio-status={data?.status ?? current?.state ?? 'reading'} data-ratio-stale={stale ? '' : undefined}>
+    <section className={`dm-card dm-pool-chart${compact ? ' dm-pool-chart--compact' : ''}`} aria-labelledby={titleId} data-pool-ratio-chart="" data-ratio-status={data?.status ?? current?.state ?? 'reading'} data-ratio-stale={stale ? '' : undefined}>
       <div className="dm-pool-chart-head">
         <h2 id={titleId} className="dm-title">Price history</h2>
         <Segmented size="sm" label="History window" value={window} onChange={setWindow}

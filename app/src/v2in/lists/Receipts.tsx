@@ -27,7 +27,7 @@ export default function Receipts({ limit, onShows }: { limit?: number; onShows?:
   const { view, session, items } = privateHistory
   const [page, setPage] = useState({ wallet, shown: PAGE_ROWS })
   const shown = page.wallet === wallet ? page.shown : PAGE_ROWS
-  const publicViews = useMemo(() => history.answer ? receiptViews(history.answer, chainsIn(gate, 'live'), portfolio?.kind === 'ok' ? portfolio.body : null) : [], [history.answer, gate, portfolio])
+  const publicViews = useMemo(() => history.answer ? receiptViews(history.answer, chainsIn(gate, 'live'), portfolio?.kind === 'ok' ? portfolio.body : null, history.receiptFinality) : [], [history.answer, history.receiptFinality, gate, portfolio])
   const rows = useMemo(() => timelineRows(publicViews, items, privateTimes(items, history.answer?.items ?? []), history.answer?.items ?? [], local), [publicViews, items, history.answer, local])
   const visible = rows.slice(0, limit ?? shown)
   const tokens = useTokenDetails(visible.flatMap((row) => (row.kind === 'private' ? [row.item] : row.kind === 'public' ? row.evidence : []).flatMap((item) => item.receipt?.sources.map((source) => source.currency) ?? [])))

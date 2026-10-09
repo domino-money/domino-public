@@ -171,9 +171,13 @@ function productionClosures() {
   // (tests/session.bundle.test.mjs measures it with its own ceiling).
   // 2026-10-04 (the owner: the site runs on Domino V2): V2's own screens, lazy roots V1's screens open behind the bare
   // __DOMINO_V2__ define, and the viem chunks only they load (tests/session.bundle.test.mjs measures them as one family).
+  // The pool page and its figures dialog open their shared history chart automatically, outside session startup.
+  // It is a specific admitted public root, still measured in session.bundle's chart and total deferred ceilings.
+  const poolChartRoots = scripts.filter((file) => /^PoolHistoryChart-/.test(file));
+  assert.equal(poolChartRoots.length, 1, 'one shared deferred pool chart');
   const v2Roots = scripts.filter((file) => V2_ROOTS.test(file));
   const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits|FeeReserves|PriceVsRange|feesReplay\.worker|chainCode|Explore|PoolDetail|Positions|NewPosition|Automate|Docs|walletConnectProvider|ElysiumEntry)-/.test(file) || V2_ROOTS.test(file));
-  const shared = reach([...entry, ...otherRoots]);
+  const shared = reach([...entry, ...otherRoots, ...poolChartRoots]);
   const setupClosure = reach(setup);
   assert.ok(!shared.has(setup[0]), 'Setup must not be loaded statically by the entry or another screen');
   const importsSetup = (node) => {
@@ -184,6 +188,7 @@ function productionClosures() {
   assert.ok(importsSetup(trees.get(entry[0])), 'the entry opens Setup through a dynamic import');
   assert.deepEqual([...new Set([...shared, ...setupClosure])].sort(), scripts, 'every production module belongs to an admitted screen closure');
   const entryClosure = reach(entry);
+  assert.ok(!entryClosure.has(poolChartRoots[0]), 'the pool chart stays outside initial entry');
   const collection = scripts.find((file) => file.startsWith('OwnedRows-'));
   assert.ok(collection && !entryClosure.has(collection), 'V2 collection and its stylesheet stay outside the entry closure');
   const createClosure = reach(create);

@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { decodeFunctionData, parseAbi } from 'viem';
 import { closeBrowser } from '../support/close-browser.mjs';
+import { confirmationRoute } from '../support/confirmation-route.mjs';
 import { openJourney, WALLET_NAME } from '../support/journey-browser.mjs';
 import { planAnswer, v4Path, ZERO } from '../support/s1-plans.mjs';
 import { launchBrowser } from '../support/s1-browser.mjs';
@@ -1320,7 +1321,9 @@ test('(t2) his journey on Robinhood Chain: a receipt that can’t be read exactl
   };
   const s = await openJourney(browser, chain, {
     dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]), intercept,
-    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+    // Confirmation is read from the local node now. Apply this scenario's missing events to that node too, rather than
+    // returning a complete receipt through the new reader while only the wallet's old reader sees the missing events.
+    routes: [confirmationRoute({ request: async (method, params) => (await intercept(method, params)) ?? chain.request(method, params) }), (request, url) => read.handle(request, url) ?? undefined], artwork: true,
   });
   try {
     const page = s.page;
@@ -1629,7 +1632,9 @@ test('(w2) a step sent whose receipt can’t be read: Create position stays lock
   const intercept = (method) => (method === 'eth_getTransactionReceipt' && chain.sends.length === 1 ? { result: {} } : undefined);
   const s = await openJourney(browser, chain, {
     dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]), intercept,
-    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+    // The unreadable receipt must also come from the local node, which now follows sent transactions independently of
+    // the wallet. A healthy node receipt would legitimately confirm this approval instead of exercising the unknown lock.
+    routes: [confirmationRoute({ request: async (method, params) => (await intercept(method, params)) ?? chain.request(method, params) }), (request, url) => read.handle(request, url) ?? undefined], artwork: true,
   });
   try {
     const page = s.page;

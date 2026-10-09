@@ -32,7 +32,7 @@ import { FallbackApr } from './FallbackApr'
 import { PoolActivityCard } from './PoolActivityCard'
 import { PoolAprEstimate } from './PoolAprEstimate'
 import { PoolPositionsCard } from './PoolPositionsCard'
-import { PoolHistoryChart } from './PoolHistoryChart'
+import { PoolHistoryChart } from './LazyPoolHistoryChart'
 import { ProviderFigure } from './ProviderFigure'
 import { SymbolText } from './SymbolText'
 

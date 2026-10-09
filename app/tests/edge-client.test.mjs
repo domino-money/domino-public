@@ -46,6 +46,8 @@ test('each route posts JSON to its own fixed path, with this site’s cookies, n
     [(o) => routes.postAutomation(['1', '2'], o), '/api/automation/v1/state', { tokenIds: ['1', '2'] }],
     [(o) => routes.postVaultRecord({ vault: `0x${'5a'.repeat(20)}`, tokenId: '7', currencies: [`0x${'01'.repeat(20)}`, `0x${'02'.repeat(20)}`], from: 1, to: 2 }, o), '/api/automation/v1/record', { vault: `0x${'5a'.repeat(20)}`, tokenId: '7', currencies: [`0x${'01'.repeat(20)}`, `0x${'02'.repeat(20)}`], from: 1, to: 2 }],
     [(o) => routes.postSimulate({ owner: OWNER, calls: [{ to: `0x${'01'.repeat(20)}`, data: '0x', value: '0x0', extra: 1 }] }, o), '/api/chain/v1/simulate', { owner: OWNER, calls: [{ to: `0x${'01'.repeat(20)}`, data: '0x', value: '0x0' }] }],
+    [(o) => routes.postRoute('confirmation', { hash: `0x${'ab'.repeat(32)}` }, o), '/api/chain/v1/confirmation', { hash: `0x${'ab'.repeat(32)}` }],
+    [(o) => routes.postRoute('confirmation', { finality: true }, o), '/api/chain/v1/confirmation', { finality: true }],
   ];
   for (const [ask, path, body] of cases) {
     const { calls, fetch } = recorder(() => json({ v: 1, result: [] }));
@@ -61,7 +63,7 @@ test('each route posts JSON to its own fixed path, with this site’s cookies, n
     assert.deepEqual(sent, body, path);
     assert.equal(JSON.stringify(sent), JSON.stringify(body), `${path}: the keys in their contract order`);
   }
-  assert.deepEqual(Object.values(routes.ROUTES), ['/api/owned/v2/positions', '/api/fees/v1/state', '/api/fees/v2/ledger', '/api/automation/v1/state', '/api/automation/v1/record', '/api/chain/v1/simulate']);
+  assert.deepEqual(Object.values(routes.ROUTES), ['/api/owned/v2/positions', '/api/fees/v1/state', '/api/fees/v2/ledger', '/api/automation/v1/state', '/api/automation/v1/record', '/api/chain/v1/simulate', '/api/chain/v1/confirmation']);
   assert.equal(routes.postLogs, undefined, 'the logs route is gone');
 });
 

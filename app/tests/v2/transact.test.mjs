@@ -97,6 +97,53 @@ function fakeWallet({ chainId = 4663, nonce = 7, journal = new Map(), finalized 
 }
 const prepared = async (t) => t.bounded(async (rpc) => { await t.identity(rpc); return t.prepare(rpc, step, GAS); });
 
+test('the fixed node receipt keeps reviewed identity checks and inclusion when finality is temporarily unavailable', async () => {
+  const { wallet, state } = fakeWallet();
+  let wrong = false;
+  wallet.confirmation = {
+    async read(hash) {
+      const tx = state.sent[0];
+      const blockHash = `0x${'b'.repeat(64)}`;
+      return { transaction: { hash, from: OWNER, to: wrong ? OWNER : tx.to, input: tx.data, value: tx.value, nonce: tx.nonce },
+        receipt: { transactionHash: hash, from: OWNER, status: '0x1', blockNumber: '0x64', blockHash, gasUsed: '0x5208', effectiveGasPrice: '0x1', logs: [] },
+        block: { number: '0x64', hash: blockHash } };
+    },
+    async finalized() { throw new Error('temporarily unavailable'); },
+  };
+  const t = createTransactor(wallet, chains.v2Chain(4663), () => 1000);
+  const p = await prepared(t);
+  const hash = await t.send(p, true);
+  state.asked.length = 0;
+  const included = await t.receipt(hash);
+  assert.equal(included.state, 'included');
+  assert.equal(included.transactionHash, hash);
+  assert.deepEqual(state.asked, [], 'receipt data comes from the fixed node, never a wallet RPC fallback');
+  wrong = true;
+  await assert.rejects(t.receipt(hash), /transaction_does_not_match_review/);
+  wrong = false;
+  state.current = false;
+  state.chainId = 8453;
+  state.asked.length = 0;
+  assert.equal((await t.receipt(hash)).state, 'included', 'the already reviewed Robinhood transaction remains readable after wallet disconnect/network change');
+  assert.deepEqual(state.asked, []);
+});
+
+test('a missing canonical block is pending; a different canonical hash is a reorg, even with a high finalized height', async () => {
+  const { wallet, state } = fakeWallet();
+  let block = null;
+  const blockHash = `0x${'b'.repeat(64)}`;
+  wallet.confirmation = { async read(hash) {
+    const tx = state.sent[0];
+    return { transaction: { hash, from: OWNER, to: tx.to, input: tx.data, value: tx.value, nonce: tx.nonce },
+      receipt: { transactionHash: hash, from: OWNER, status: '0x1', blockNumber: '0x64', blockHash, gasUsed: '0x5208', effectiveGasPrice: '0x1', logs: [] }, block };
+  }, async finalized() { return { number: '0xffff' }; } };
+  const t = createTransactor(wallet, chains.v2Chain(4663), () => 1000);
+  const hash = await t.send(await prepared(t), true);
+  assert.equal((await t.receipt(hash)).state, 'pending');
+  block = { number: '0x64', hash: `0x${'c'.repeat(64)}` };
+  assert.equal((await t.receipt(hash)).state, 'reorged');
+});
+
 test('a step is simulated, estimated with a fifth more, frozen with the free nonce and this chain\'s id', async () => {
   const { wallet, state } = fakeWallet();
   const t = createTransactor(wallet, chains.v2Chain(4663), () => 1_000);

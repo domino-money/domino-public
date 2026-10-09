@@ -14,6 +14,7 @@ import { test } from 'node:test';
 import { decodeFunctionData } from 'viem';
 import { ABI, OTHER, OWNER, ZERO, createVaultChain, vaultContracts, walletOf } from '../support/v2-vault-chain.mjs';
 import { FAKE, USDG } from './support/plans.mjs';
+import { confirmationReader } from '../support/confirmation-route.mjs';
 
 const require = createRequire(import.meta.url);
 const { createVaultClient, vaultBatchKey, withdrawBatchKey } = require('../../.test-build/app/src/finance/v2/vault.js');
@@ -65,6 +66,54 @@ function setup({ atomic = 'ready', simulateV1 = true, before } = {}) {
   return { chain, wallet, client };
 }
 const sendCalls = (chain) => chain.log.filter((method) => method === 'wallet_sendCalls').length;
+
+function detachedConfirmation(chain, wallet) {
+  let final = false;
+  const walletCalls = [];
+  const request = wallet.request;
+  wallet.request = (method, params) => { walletCalls.push(method); return request(method, params); };
+  wallet.confirmation = confirmationReader(chain, { finalized: async () => final ? { number: '0xffffffff' } : null });
+  return { walletCalls, disconnect() { wallet.current = () => false; wallet.chainId = () => 8453; walletCalls.length = 0; }, finalize() { final = true; } };
+}
+
+test('a known create batch follows the fixed node after wallet disconnection; unknown ids and fresh sends remain blocked', async () => {
+  const { chain, wallet, client } = setup();
+  const reads = detachedConfirmation(chain, wallet), latch = memoryLatch();
+  const batch = await client.prepareCreateBatch(await client.reviewCreate(request()), GAS);
+  const id = await client.sendBatch(batch, true, () => latch);
+  reads.disconnect();
+  await assert.rejects(client.batchReceipt(id, () => latch), /wallet_action_expired|wallet_wrong_chain/, 'a batch id alone cannot bypass its wallet envelope');
+  wallet.current = () => true; wallet.chainId = () => chain.chainNow();
+  const included = await client.batchReceipt(id, () => latch);
+  assert.equal(included.state, 'included');
+  assert.ok(included.transactionHash, 'the wallet envelope binds the exact transaction');
+  reads.disconnect(); reads.finalize();
+  const final = await client.batchReceipt(id, () => latch);
+  assert.equal(final.state, 'finalized');
+  assert.equal(final.transactionHash, included.transactionHash);
+  assert.deepEqual(reads.walletCalls, [], 'detached tracking does not touch the wallet');
+  await assert.rejects(client.batchReceipt('unknown-batch', () => latch), /receipt_not_from_this_review/);
+  await assert.rejects(client.sendBatch(batch, true, () => latch), /wallet_review_required/);
+  assert.equal(sendCalls(chain), 1, 'no repeated offer');
+});
+
+test('a known reserve withdrawal batch finalizes after wallet disconnection without reading wallet status again', async () => {
+  const { chain, wallet, client } = setup();
+  const reads = detachedConfirmation(chain, wallet), latch = memoryLatch();
+  const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, startPaused: true });
+  chain.setIdle(vault, USDG, 5_000_000n); chain.setIdle(vault, ZERO, 1000n);
+  const batch = await client.prepareWithdrawAllBatch(vault, GAS);
+  const id = await client.sendWithdrawAllBatch(batch, true, () => latch);
+  const included = await client.withdrawAllReceipt(id, () => latch);
+  assert.equal(included.state, 'included');
+  reads.disconnect(); reads.finalize();
+  const final = await client.withdrawAllReceipt(id, () => latch);
+  assert.equal(final.state, 'finalized');
+  assert.equal(final.transactionHash, included.transactionHash);
+  assert.equal(final.events.filter(event => event.eventName === 'ReservesWithdrawn').length, 2);
+  assert.deepEqual(reads.walletCalls, []);
+  assert.equal(sendCalls(chain), 1);
+});
 
 test('atomic support is read from the wallet for the action\'s chain; a wallet that states none keeps the steps', async () => {
   assert.equal(await setup({ atomic: 'ready' }).client.atomicSupport(), 'ready');
@@ -234,6 +283,30 @@ async function mandateSetup({ atomic = 'ready', simulateV1 = true, module = ZERO
   const client = auto.createAutoExitClient(wallet, chains.v2Chain(4663), vaultContracts(4663), () => NOW, () => draw++);
   return { chain, wallet, client, vault };
 }
+
+test('a known registration batch releases only its finalized signed nonce after the wallet disconnects', async () => {
+  const { chain, wallet, client, vault } = await mandateSetup();
+  const reads = detachedConfirmation(chain, wallet), latch = memoryLatch();
+  const review = await client.reviewMandate(order(vault));
+  await client.signMandate(review);
+  const batch = await client.prepareRegisterBatch(review, GAS);
+  const id = await client.sendRegisterBatch(batch, true, () => latch);
+  const included = await client.registerBatchReceipt(id, () => latch);
+  assert.equal(included.state, 'included');
+  assert.equal(wallet.held.size, 1, 'inclusion alone cannot release the signature nonce');
+  reads.disconnect(); reads.finalize();
+  const read = wallet.confirmation.read;
+  wallet.confirmation.read = async hash => {
+    const answer = await read(hash);
+    return { ...answer, transaction: { ...answer.transaction, from: OTHER.toLowerCase() }, receipt: { ...answer.receipt, from: OTHER.toLowerCase() } };
+  };
+  const final = await client.registerBatchReceipt(id, () => latch);
+  assert.equal(final.state, 'finalized');
+  assert.equal(final.transactionHash, included.transactionHash);
+  assert.equal(wallet.held.size, 0, 'canonical finality settles the reviewed nonce even when the AA gas payer differs');
+  assert.deepEqual(reads.walletCalls, []);
+  assert.equal(sendCalls(chain), 1);
+});
 
 test('after the signature: [setExitModule(autoExit), registerMandate(mandate, signature)] as ONE batch; registered, the latch let go, the nonce released at finality', async () => {
   const { chain, wallet, client, vault } = await mandateSetup();

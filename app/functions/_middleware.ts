@@ -114,7 +114,7 @@ export const PUBLIC_READ_PREFIX = '/api/read/'
  * cookie (none of them takes a credential) and its answer may be compressed on the way. In any case, as Pages routes a
  * path to them.
  */
-export const CHAIN_ROUTE = /^\/api\/(?:owned\/v2\/positions|fees\/(?:v1\/state|v2\/ledger)|automation\/v1\/(?:state|record)|chain\/v1\/simulate)$/i
+export const CHAIN_ROUTE = /^\/api\/(?:owned\/v2\/positions|fees\/(?:v1\/state|v2\/ledger)|automation\/v1\/(?:state|record)|chain\/v1\/(?:simulate|confirmation))$/i
 const CANONICAL_HOST = 'domino.money'
 const MAX_FORM_BYTES = 1024
 

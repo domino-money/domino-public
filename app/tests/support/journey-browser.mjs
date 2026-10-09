@@ -17,6 +17,7 @@
 import assert from 'node:assert/strict';
 import { createFakeSession } from './fake-session.mjs';
 import { createWalletServer } from './wallet-server.mjs';
+import { confirmationRoute } from './confirmation-route.mjs';
 import { ARTWORK } from './new-position.mjs';
 
 export const WALLET_NAME = 'Journey Wallet';
@@ -34,7 +35,7 @@ export const WALLET_NAME = 'Journey Wallet';
  */
 export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null, read6 = null, dex = null, clock = false } = {}) {
   const fake = createFakeSession();
-  const server = createWalletServer({ fake, dist, routes });
+  const server = createWalletServer({ fake, dist, routes: [...routes, confirmationRoute(chain)] });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
   const origin = `http://127.0.0.1:${server.address().port}`;
   fake.origin = origin;

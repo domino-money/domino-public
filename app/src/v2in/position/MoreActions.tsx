@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconPlus, IconRange, IconShield, IconWallet } from '../../components/icons'
 import { Button } from '../../components/ui'
 import { HOOKED_COPY, ROOT_BLOCKS_CHANGE_RANGE, ROOT_CHANGE_RANGE_COPY } from './constants'
@@ -9,7 +10,7 @@ export interface MoreAction {
   key: 'increase' | 'changeRange' | 'exit' | 'protect'
   label: string
   disabled?: boolean
-  /** Why it is disabled, in one sentence (also the entry's title). */
+  /** Why it is disabled, shown on hover, focus or touch. */
   why?: string | null
 }
 
@@ -40,22 +41,39 @@ const ACTION_ICONS = { increase: IconPlus, changeRange: IconRange, exit: IconWal
 
 /** Every action is visible. The old data hooks remain on the group and its buttons. */
 export function MoreActions({ id, items, onPick, ...data }: { id: string; items: readonly MoreAction[]; onPick: (key: MoreAction['key']) => void } & Record<`data-${string}`, string>) {
-  const why = items.find((item) => item.disabled && item.why)?.why ?? null
   return (
     <span className="dm-position-tools" {...data}>
       <span id={id} role="group" aria-label="Position actions" className="dm-position-tools-list" data-position-v2-more="">
         {items.map((item) => {
           const Icon = ACTION_ICONS[item.key]
-          return (
-            <Button key={item.key} type="button" variant="outline" aria-haspopup="dialog" disabled={item.disabled || undefined}
-              title={item.disabled ? (item.why ?? undefined) : undefined} data-position-v2-action={item.key}
-              onClick={() => onPick(item.key)}>
-              <Icon size={18} /><span>{item.label}</span>
-            </Button>
-          )
+          return <ActionButton key={item.key} id={`${id}-${item.key}`} item={item} onPick={onPick}><Icon size={18} /><span>{item.label}</span></ActionButton>
         })}
-        {why && <span className="dm-position-action-note" data-position-v2-blocked="">{why}</span>}
       </span>
+    </span>
+  )
+}
+/** An unavailable action is still reachable by keyboard and touch so its reason can be asked for. */
+function ActionButton({ id, item, children, onPick }: { id: string; item: MoreAction; children: ReactNode; onPick: (key: MoreAction['key']) => void }) {
+  const [explained, setExplained] = useState(false)
+  const wrapper = useRef<HTMLSpanElement>(null)
+  const unavailable = item.disabled === true
+  const hasReason = unavailable && !!item.why
+  useEffect(() => {
+    if (!explained) return
+    const dismiss = (event: PointerEvent) => { if (event.target instanceof Node && !wrapper.current?.contains(event.target)) setExplained(false) }
+    document.addEventListener('pointerdown', dismiss)
+    return () => document.removeEventListener('pointerdown', dismiss)
+  }, [explained])
+  return (
+    <span ref={wrapper} className="dm-position-action-help" onMouseEnter={() => hasReason && setExplained(true)} onMouseLeave={() => setExplained(false)}
+      onFocus={() => hasReason && setExplained(true)} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setExplained(false) }}>
+      <Button type="button" variant="outline" aria-haspopup={unavailable ? undefined : 'dialog'} aria-disabled={unavailable || undefined}
+        aria-describedby={hasReason ? `${id}-reason` : undefined} data-position-v2-action={item.key}
+        onKeyDown={(event) => { if (event.key === 'Escape' && explained) { event.stopPropagation(); setExplained(false) } }}
+        onClick={() => { if (unavailable) { if (hasReason) setExplained(true); return } onPick(item.key) }}>
+        {children}
+      </Button>
+      {hasReason && <span id={`${id}-reason`} role="tooltip" className="dm-position-action-tooltip" hidden={!explained} data-position-action-reason={item.key}>{item.why}</span>}
     </span>
   )
 }

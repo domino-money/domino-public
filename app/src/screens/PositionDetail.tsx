@@ -59,6 +59,8 @@ interface ActionsProps {
   tokens?: readonly [TokenDisplay, TokenDisplay] | null
   /** The page's way on (Automate, or the docs on switching a sequence on), shown first unless Turn on or Pause takes its place (2026-09-25). */
   automate?: ReactNode
+  /** The position's automation control, beside the liquidity actions. */
+  automationSlot?: ReactNode
   /** Collect fees is the primary button (2026-09-27: not for one of Domino's sequences). */
   primary?: boolean
 }
@@ -294,6 +296,7 @@ function HistorySource({ tokenId }: { tokenId: string }) {
 }
 
 function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, changes, onChanged }: { wallet: WalletPosition; owner: string; block: number; cached: boolean; copy?: number; gateway?: boolean; changes: number; onChanged: (block?: bigint) => void }) {
+  const [automationToolbar, setAutomationToolbar] = useState<HTMLSpanElement | null>(null)
   const card = useMemo(() => walletCard(wallet, owner), [wallet, owner])
   // The same read values the amounts for a pair with USDG (§6.2): one price, one block.
   const state = useMemo(() => walletState(wallet, block, owner), [wallet, block, owner])
@@ -395,6 +398,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
                 usd={state && usdgIndex !== null ? { usdgIndex, sqrtPriceX96: state.sqrtPriceX96, block: state.block } : null}
                 tokens={[base, quote]}
                 automate={entry}
+                automationSlot={__DOMINO_V2__ ? <span ref={setAutomationToolbar} className="dm-position-automation-slot" data-position-automation-slot="" /> : null}
                 primary={!(automation.phase === 'ready' && 'paused' in automation.state)}
               />
             </Suspense>
@@ -408,7 +412,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
         )}
       </div>
 
-      {V2Position && <Suspense fallback={null}><V2Position tokenId={card.tokenId} position={wallet} holder={owner} priceContext={{ block, saved: cached || copy !== undefined || gateway }} onChanged={() => onChanged()} /></Suspense>}
+      {V2Position && <Suspense fallback={null}><V2Position tokenId={card.tokenId} position={wallet} holder={owner} priceContext={{ block, saved: cached || copy !== undefined || gateway }} toolbar={automationToolbar} onChanged={() => onChanged()} /></Suspense>}
       <KeyFigures card={card} state={state && usdgIndex !== null ? state : null} price={price} block={block} cached={cached} />
 
       {/* The fees its vault collected and has not reinvested, while any is above zero (2026-10-02): the owner's, from its own

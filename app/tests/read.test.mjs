@@ -4222,7 +4222,7 @@ test('no private API path, no signing or value transfer, no markup injection, no
   assert.match(routesClient, /credentials: 'same-origin'/, 'the beta cookie goes with it');
   assert.doesNotMatch(routesClient, /['"`]https?:\/\/|\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|localStorage|sessionStorage|indexedDB)\b|\beth_[A-Za-z]/, 'no host, no other network client, no storage, no JSON-RPC method');
   // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the ledger route, in place of the fees replay's logs route.
-  assert.deepEqual([...routesClient.matchAll(/'(\/api\/[^']+)'/g)].map((m) => m[1]), ['/api/owned/v2/positions', '/api/fees/v1/state', '/api/fees/v2/ledger', '/api/automation/v1/state', '/api/automation/v1/record', '/api/chain/v1/simulate'], 'the six routes, and only them');
+  assert.deepEqual([...routesClient.matchAll(/'(\/api\/[^']+)'/g)].map((m) => m[1]), ['/api/owned/v2/positions', '/api/fees/v1/state', '/api/fees/v2/ledger', '/api/automation/v1/state', '/api/automation/v1/record', '/api/chain/v1/simulate', '/api/chain/v1/confirmation'], 'the fixed routes, and only them');
   // Changed on purpose 2026-10-01 (RPC-SPEC §7.2): the page's router to the chain's public RPC (lib/chain/browser.ts,
   // failover.ts, endpoints.ts) is gone, and with it its pins (one fetch, its channels, its fallbacks' trust check).
   for (const gone of ['lib/chain/browser.ts', 'lib/chain/failover.ts', 'lib/chain/endpoints.ts']) assert.ok(!sources().some((file) => file.replace(/\\/g, '/').endsWith(`/src/${gone}`)), `${gone} is gone`);

@@ -22,11 +22,12 @@ export const ROUTES = Object.freeze({
   automation: '/api/automation/v1/state',
   record: '/api/automation/v1/record',
   simulate: '/api/chain/v1/simulate',
+  confirmation: '/api/chain/v1/confirmation',
 } as const)
 export type RouteName = keyof typeof ROUTES
 
 /** The most bytes each route's answer may take; past it the answer is `unavailable`. */
-export const REPLY_BYTES: Readonly<Record<RouteName, number>> = Object.freeze({ owned: 1_048_576, state: 262_144, ledger: 4_194_304, automation: 262_144, record: 2_097_152, simulate: 262_144 })
+export const REPLY_BYTES: Readonly<Record<RouteName, number>> = Object.freeze({ owned: 1_048_576, state: 262_144, ledger: 4_194_304, automation: 262_144, record: 2_097_152, simulate: 262_144, confirmation: 262_144 })
 /** The longest wait a refusal may name (Retry-After), and the one assumed for a rate refusal that names none. */
 export const MAX_RETRY_MS = 300_000
 export const RATE_RETRY_MS = 5_000

@@ -25,8 +25,8 @@ import { fakeNode } from './fake-node.mjs';
 const require = createRequire(import.meta.url);
 const chainRoutes = require('../../.test-build/app/functions/_lib/chainRoutes.js');
 
-/** The six routes' paths, exactly (src/lib/edge/chainRoutes.ts ROUTES). */
-export const EDGE_PATH = /^\/api\/(?:owned\/v2\/positions|fees\/(?:v1\/state|v2\/ledger)|automation\/v1\/(?:state|record)|chain\/v1\/simulate)$/;
+/** The fixed route paths, exactly (src/lib/edge/chainRoutes.ts ROUTES). */
+export const EDGE_PATH = /^\/api\/(?:owned\/v2\/positions|fees\/(?:v1\/state|v2\/ledger)|automation\/v1\/(?:state|record)|chain\/v1\/(?:simulate|confirmation))$/;
 /** Each path's route (functions/api/**: one line each over answerChainRoute). */
 const ROUTE_OF = Object.freeze({
   '/api/owned/v2/positions': 'owned',
@@ -35,6 +35,7 @@ const ROUTE_OF = Object.freeze({
   '/api/automation/v1/state': 'automation',
   '/api/automation/v1/record': 'record',
   '/api/chain/v1/simulate': 'simulate',
+  '/api/chain/v1/confirmation': 'confirmation',
 });
 /** The test deployment's node secret: the node's exact host and a token of its shape, no real token. */
 const LOCAL_RPC_URL = 'https://rpc.domino.money/test-token-0123456789abcdef/';

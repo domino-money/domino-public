@@ -15,6 +15,53 @@ const history = (extra = {}) => ({ schemaVersion: 1, chainId: 4663, poolId, curr
   snapshot: { number: 100, hash: '0x' + 'b'.repeat(64), timestamp: 86400 }, covered: [{ startTimestamp: 0, endTimestamp: 14400 }],
   gaps: [{ startTimestamp: 14400, endTimestamp: 86400 }], candles: [candle(0, '1'), candle(3600, '2'), candle(10800, '3')], acquisitionAccepted: true, ...extra })
 
+function lazyHistory(error = null) {
+  const React = require('react'), ts = require('typescript')
+  const { renderToStaticMarkup } = require('react-dom/server')
+  let loader, imports = 0, recoveries = 0
+  const Shared = () => null
+  const code = ts.transpileModule(readFileSync(new URL('../src/components/read/screens/LazyPoolHistoryChart.tsx', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
+  const mod = { exports: {} }
+  new Function('require', 'module', 'exports', code)(name => {
+    if (name === 'react') return { ...React, lazy: start => { loader = start; return () => null } }
+    if (name === 'react/jsx-runtime') return require(name)
+    if (name.endsWith('/staleRelease')) return { isMissingChunk: value => value?.missingChunk === true, recoverWhenSafe: () => recoveries++ }
+    if (name.endsWith('/ui')) return { Skeleton: props => React.createElement('span', { ...props, 'data-skeleton': '' }) }
+    if (name === './PoolHistoryChart') { imports++; if (error) throw error; return { PoolHistoryChart: Shared } }
+    throw new Error(`Unexpected dependency ${name}`)
+  }, mod, mod.exports)
+  return { ...mod.exports, load: () => loader(), Shared, render: renderToStaticMarkup,
+    get imports() { return imports }, get recoveries() { return recoveries } }
+}
+
+test('the pool history boundary waits for mount and passes the current props to the shared chart', async () => {
+  const screen = lazyHistory(), first = { source: {}, option: {}, market: {}, loading: true, compact: true }
+  assert.equal(screen.imports, 0, 'opening wallet or position reads does not load this chart module')
+  const waiting = screen.PoolHistoryChart(first)
+  const markup = screen.render(waiting.props.fallback)
+  assert.match(markup, /dm-pool-chart--compact/)
+  assert.match(markup, /Loading price history/)
+  assert.match(markup, /dm-pool-chart-foot/, 'the denomination row reserves its final height')
+  const loaded = await screen.load()
+  assert.equal(screen.imports, 1)
+  assert.equal(loaded.default, screen.Shared, 'the page and popup load the same reader/rendering component')
+  const current = { ...first, market: { updated: true }, loading: false }
+  const visible = screen.PoolHistoryChart(current)
+  assert.deepEqual(visible.props.children.props, current, 'a snapshot captured before the module loaded is never substituted')
+})
+
+test('a missing or failed chart chunk keeps the pool card visible and only schedules safe release recovery', async () => {
+  for (const error of [{ missingChunk: true }, new Error('Offline')]) {
+    const screen = lazyHistory(error), loaded = await screen.load()
+    const markup = screen.render(loaded.default({ compact: true }))
+    assert.equal(screen.recoveries, error.missingChunk ? 1 : 0, 'a stale chunk requests safe recovery rather than reloading under a modal')
+    assert.match(markup, /Price history is temporarily unavailable/)
+    assert.match(markup, /dm-pool-chart--compact/)
+    assert.doesNotMatch(markup, /data-skeleton|data-pool-history-loading|Loading price history|Reload/)
+  }
+})
+
 test('ratio plot leaves missing candles and acquisition gaps disconnected', () => {
   const data = history()
   const plot = ratioGeometry(data)
@@ -216,4 +263,89 @@ test('the price switch shows only while the chart is read, once a line is drawn,
   assert.match(draw('one', failed('one')), /data-switch="Price of"/, 'flipped, the way back stays')
   assert.match(draw('zero', null), /data-switch="Price of"/, 'while read, it holds its place')
   assert.match(draw('zero', { key: keyOf('zero'), state: 'answer', data: history(), failed: false }), /data-switch="Price of"/, 'with a line drawn')
+})
+
+// The popup shares the pool page's reader and address-based denomination; a live row replaces the opened snapshot.
+function figuresRenderer() {
+  const React = require('react'), ts = require('typescript')
+  const { renderToStaticMarkup } = require('react-dom/server')
+  const markets = require('../.test-build/app/src/lib/markets.js')
+  const orientation = require('../.test-build/app/src/lib/read/orientation.js')
+  const identity = require('../.test-build/app/src/lib/read/screens/identity.js')
+  const presentation = require('../.test-build/app/src/lib/read/poolAprPresentation.js')
+  const describe = require('../.test-build/app/src/lib/read/describe.js')
+  const figures = require('../.test-build/app/src/lib/read/screens/figures.js')
+  const transpile = path => ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
+  const load = (code, dependencies) => {
+    const mod = { exports: {} }
+    new Function('require', 'module', 'exports', code)(name => name === 'react/jsx-runtime' ? require(name) : dependencies, mod, mod.exports)
+    return mod.exports
+  }
+  const components = load(transpile('../src/components/explore/MetricCell.tsx'), { ...markets, ...describe, ...figures,
+    cx: (...classes) => classes.filter(Boolean).join(' '), Skeleton: () => null })
+  let live = null, chart = null, source = {}
+  const dependencies = { ...markets, ...orientation, ...identity, ...presentation, ...components,
+    useEffect() {}, useRef: () => ({ current: null }), useDialog: () => null,
+    useNow: () => ({ wall: 1_000_000 }), useReadSource: () => source, useFeatured: () => ({ entries: [] }),
+    useMarkets: () => ({ state: { result: { markets: live ? [live] : [] } } }), shownResult: state => state.result,
+    useFallbackRows: rows => rows, TokenLabel: ({ token }) => React.createElement('span', null, token.symbol),
+    TokenMarkPair: () => null, IconClose: () => null,
+    FigureDash: ({ reason }) => React.createElement('span', { title: reason }, '—'),
+    IconButton: ({ label, onClick }) => React.createElement('button', { 'aria-label': label, onClick }),
+    Skeleton: () => null, PoolAprEstimate: () => React.createElement('span', null, '—'), FallbackApr: () => null,
+    PoolHistoryChart: props => (chart = props, React.createElement('section', { 'data-shared-history': '' }, 'Price history')) }
+  const module = load(transpile('../src/components/read/screens/PoolFiguresDialog.tsx'), dependencies)
+  return { ...module, render(opened, current = null, readSource = {}) {
+    live = current; source = readSource; chart = null
+    const markup = renderToStaticMarkup(module.PoolFiguresDialog({ market: opened, onClose() {} }))
+    return { markup, chart }
+  } }
+}
+const figuresMarket = (extra = {}) => ({ key: `4663:${poolId}`, poolId, feePips: 3000,
+  tokens: { base: { address: currency, symbol: 'BASE' }, quote: { address: quote, symbol: 'QUOTE' } },
+  tvlUsd: { state: 'qualified', value: '10' }, volume24hUsd: { state: 'qualified', value: '20' },
+  feeAprPercent: { state: 'qualified', value: '158' }, ...extra })
+
+test('the compact figures popup uses the live selected row and opens the shared history outside Details', () => {
+  const screen = figuresRenderer(), opened = figuresMarket()
+  const source = { kind: 'local-shared' }
+  const current = figuresMarket({ tvlUsd: { state: 'qualified', value: '80' }, feeAprPercent: { state: 'qualified', value: '200' } })
+  const { markup, chart } = screen.render(opened, current, source)
+  assert.match(markup, /200%/)
+  assert.match(markup, /\$80\.00/)
+  assert.doesNotMatch(markup, /158%|\$10\.00|The same figures shown|Complete 24h pool history|Provider figures|Pool figures and sources/)
+  assert.doesNotMatch(markup, new RegExp(poolId))
+  assert.equal(chart.source, source)
+  assert.equal(chart.option.key, poolId)
+  assert.deepEqual(chart.option.currencies.map(token => token.address), [currency, quote])
+  assert.equal(chart.compact, true)
+  assert.ok(markup.indexOf('data-shared-history') < markup.indexOf('<details'), 'the chart is visible on open')
+  assert.match(markup, /<summary tabindex="0">Details<\/summary>/, 'Details participates in the dialog focus trap')
+  assert.equal(chart.market, current, 'the chart receives the live market rather than the opening snapshot')
+})
+
+test('the popup keeps missing, pending and observed zero figures distinct', () => {
+  const screen = figuresRenderer()
+  const missing = figuresMarket({ tvlUsd: { state: 'unavailable', value: '99', reason: 'not_observed' },
+    volume24hUsd: { state: 'absent', value: null }, feeAprPercent: { state: 'unavailable', value: null } })
+  const unavailable = screen.render(missing).markup
+  assert.match(unavailable, /Unavailable/)
+  assert.match(unavailable, /Not reported/)
+  assert.doesNotMatch(unavailable, /\$99|\$0\.00|158%/)
+  const pending = screen.render({ ...missing, figuresPending: true }).markup
+  assert.match(pending, /TVL loading/)
+  assert.match(pending, /Estimated APR loading/)
+  const zero = screen.render(figuresMarket({ tvlUsd: { state: 'qualified', value: '0' }, volume24hUsd: { state: 'qualified', value: '0' } })).markup
+  assert.equal((zero.match(/\$0\.00/g) ?? []).length, 2)
+  assert.doesNotMatch(zero, /Unavailable/)
+})
+
+test('popup history preserves the pool page denomination by address and refuses a missing pool identity', () => {
+  const screen = figuresRenderer(), { USDG } = require('../.test-build/app/src/config/mainTokens.js')
+  const stableFirst = figuresMarket({ tokens: { base: { address: USDG.toUpperCase().replace('0X', '0x'), symbol: 'untrusted' }, quote: { address: currency, symbol: 'USDG' } } })
+  assert.deepEqual(screen.figuresHistoryOption(stableFirst).currencies.map(token => token.address), [currency, USDG])
+  assert.equal(screen.figuresHistoryOption(figuresMarket({ poolId: 'not-a-pool' })), null)
+  assert.equal(screen.figuresHistoryOption(figuresMarket({ tokens: { base: { address: 'not-an-address' }, quote: { address: quote } } })), null)
+  assert.equal(screen.figuresHistoryOption(figuresMarket({ tokens: { base: { address: currency }, quote: { address: currency.toUpperCase() } } })), null)
 })

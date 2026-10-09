@@ -825,16 +825,15 @@ test('(n) pool-metrics listed: the lean load, then one pool-metrics read a row; 
     for (const apr of aprs) assert.deepEqual(apr, ['158% APR', 'qualified', 'color: var(--money-in);', 0]);
     assert.doesNotMatch(await page.locator('[data-ticker]').innerHTML(), /money-wait/);
 
-    // The figures dialog names the history behind the APR: its 24h LP fees and time-weighted TVL.
+    // The compact popup preserves verified figures, with only their basis folded away.
     await rows.first().locator('[data-pool-figures]').click();
     const dialog = page.locator('[data-pool-figures-dialog]');
     await dialog.waitFor();
     await dialog.locator('[data-figures-sources] > summary').click();
-    const qualified = dialog.locator('[data-figures-qualified="yes"]');
-    await qualified.waitFor();
-    const facts = await qualified.locator('dl > div').evaluateAll((divs) => divs.map((div) => [div.querySelector('dt').innerText.trim(), div.querySelector('dd').innerText.trim()]));
-    // Changed on purpose 2026-10-01 (integration pass 3, after audit E21): the dialog's Pool APR follows the one APR rule too.
-    assert.deepEqual(facts, [['TVL', '$0.000020'], ['24h volume', '$0.000029'], ['24h LP fees', '<$0.000001'], ['Time-weighted TVL', '$0.000020'], ['Pool APR', '158%']]);
+    const facts = await dialog.locator('[data-figures-summary] > div').evaluateAll(divs => divs.map(div => [div.querySelector('dt').innerText.trim(), div.querySelector('dd').innerText.trim()]));
+    assert.deepEqual(facts, [['APR', '158%'], ['TVL', '$0.000020'], ['24h volume', '$0.000029']]);
+    assert.match(await dialog.locator('[data-figures-sources]').innerText(), /APR basis\s+Verified fees over 24h/);
+    assert.equal(await dialog.locator('[data-figures-qualified], [data-figures-provider]').count(), 0, 'qualified figures are never repeated');
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'detached' });
     assert.deepEqual(errors, []);

@@ -23,6 +23,7 @@ import { test } from 'node:test';
 import { decodeFunctionData } from 'viem';
 import { ABI, OTHER, OWNER, ZERO, createVaultChain, vaultContracts, walletOf } from '../support/v2-vault-chain.mjs';
 import { FAKE, USDG } from './support/plans.mjs';
+import { confirmationReader } from '../support/confirmation-route.mjs';
 
 const require = createRequire(import.meta.url);
 const auto = require('../../.test-build/app/src/finance/v2/autoExit.js');
@@ -99,6 +100,44 @@ function setup({ atomic = 'ready', simulateV1 = true, simulateOnNode = false } =
   return { chain, wallet, client, vaults, localSimulations };
 }
 const sendCalls = (chain) => chain.log.filter((method) => method === 'wallet_sendCalls').length;
+
+test('the known protection batch stays bound to both effects and releases its signed nonce after detached finality', async () => {
+  const { chain, wallet, client, vaults } = setup();
+  let final = false;
+  const calls = [], request = wallet.request;
+  wallet.request = (method, params) => { calls.push(method); return request(method, params); };
+  wallet.confirmation = confirmationReader(chain, { finalized: async () => final ? { number: '0xffffffff' } : null });
+  const latch = memoryLatch(), created = await vaults.reviewCreate(create());
+  const review = await client.reviewMandate(order(created.vault));
+  await client.signMandate(review);
+  const batch = await client.prepareProtectBatch(review, create(), GAS);
+  const id = await client.sendProtectBatch(batch, true, () => latch);
+  const included = await client.protectBatchReceipt(id, () => latch);
+  assert.equal(included.state, 'included');
+  assert.equal(wallet.held.size, 1);
+  wallet.current = () => false; wallet.chainId = () => 8453; calls.length = 0;
+  const bound = wallet.confirmation.read;
+  final = true;
+  wallet.confirmation.read = async hash => {
+    const answer = await bound(hash);
+    return { ...answer, block: { ...answer.block, hash: `0x${'ab'.repeat(32)}` } };
+  };
+  assert.equal((await client.protectBatchReceipt(id, () => latch)).state, 'reorged');
+  assert.equal(wallet.held.size, 1, 'a noncanonical receipt cannot settle the signature');
+  wallet.confirmation.read = async hash => {
+    const answer = await bound(hash);
+    return { ...answer, receipt: { ...answer.receipt, logs: answer.receipt.logs.filter(log => log.address !== batch.factory) } };
+  };
+  await assert.rejects(client.protectBatchReceipt(id, () => latch), /receipt_not_from_this_review/, 'a final height cannot replace the reviewed creation effect');
+  assert.equal(wallet.held.size, 1, 'unverified finality does not release a usable signature');
+  wallet.confirmation.read = bound;
+  const finalized = await client.protectBatchReceipt(id, () => latch);
+  assert.equal(finalized.state, 'finalized');
+  assert.equal(finalized.transactionHash, included.transactionHash);
+  assert.equal(wallet.held.size, 0);
+  assert.deepEqual(calls, [], 'detached settlement only reads the fixed node');
+  assert.equal(sendCalls(chain), 1);
+});
 
 test('Robinhood Auto-exit uses the site node when the batch wallet lacks simulateV1, at review and again before sending', async () => {
   const { chain, client, vaults, localSimulations } = setup({ simulateOnNode: true });

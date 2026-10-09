@@ -1,9 +1,7 @@
 import type { ReactNode } from 'react'
 import { Button, KeyValue, KeyValueList, Pill } from '../../components/ui'
 import { automationFeeText } from '../../finance/v2/vault'
-import { v2Chain } from '../../v2/chains'
 import type { PriceOrientation } from '../../v2/trigger'
-import { ChainBadge } from '../lists/parts'
 import { DISARM_UNKNOWN, RESERVES_TEXT } from './copy'
 import { nextPositionWords, type VaultMemberView } from './portfolio'
 import type { VaultDialogKind, VaultDialogSubject } from './VaultDialog'
@@ -12,10 +10,8 @@ import { Details } from './ui'
 import { memberStateWords, reservesOffer, sinceWords, splitReserves, VAULT_ADVANCED_ACTIONS, vaultActions, type VaultView } from './vaultView'
 
 /**
- * One vault, in the look of the screen it sits on (spec F7 rev3/rev4 §2.13, §5.3–§5.6, §8.2), beginner-first (the
- * review of 2026-10-03, #8): what a person who knows nothing about liquidity pools needs, and nothing else above the fold.
- *   - `page`: a card of the position's own page (components' `dm-pos-card`), titled Automation: its chain (§8.2 "every
- *     object shows its chain"), its state as a pill, ONE sentence (why it waits, rev4's reserves reasons first; else its
+ * One vault in the position's management sheet (spec F7 rev3/rev4 §2.13, §5.3–§5.6), beginner-first:
+ *     its state as a pill, ONE sentence (why it waits, rev4's reserves reasons first; else its
  *     state in §5.4's words, or the spec's own sentence for a running vault), ONE figure (§5.6's `reserves(token)`: "Fees
  *     collected, not yet reinvested", in every state of the vault and its root, never `owedFees`) and at most TWO buttons:
  *     the primary way out for the state ("Return my reserves" once the root is closed and no successor is active, "Turn
@@ -24,9 +20,7 @@ import { memberStateWords, reservesOffer, sinceWords, splitReserves, VAULT_ADVAN
  *     used by automation"), the two hints, §5.5's sequence (root → successors, each with its state, its range in the
  *     reference currency's orientation and the other way round, and its two lots), the other actions (Pause, Resume, the
  *     other way with the fees, "Withdraw #id from the vault" beside an active successor) and §5.6's two recoveries.
- *   - `row`: a row of Managed positions (screens/Performance.tsx's `dm-mp-row`), named by its position: the name, the
- *     chain chip, the pill, the figure line and the one primary button. Its page has the rest.
- * Each button opens its dialog (./VaultDialog.tsx).
+ * Each button opens its dialog (./VaultDialog.tsx); the sheet supplies the title.
  */
 
 const PILL_TONE = { on: 'in', paused: 'wait', protection: 'neutral', off: 'out', unknown: 'neutral' } as const
@@ -192,13 +186,10 @@ function Sequence({ view, tokens, offerChild, onAction }: { view: VaultView; tok
   )
 }
 
-export function VaultCard({ view, tokens, variant, nowSeconds, positionHref, onAction, children }: {
+export function VaultCard({ view, tokens, nowSeconds, onAction, children }: {
   view: VaultView
   tokens: readonly [TokenView, TokenView] | null
-  variant: 'page' | 'row'
   nowSeconds: number
-  /** The root position's own page (rows link to it). */
-  positionHref?: string | null
   onAction: (kind: VaultDialogKind, subject?: VaultDialogSubject) => void
   children?: ReactNode
 }) {
@@ -212,7 +203,6 @@ export function VaultCard({ view, tokens, variant, nowSeconds, positionHref, onA
   // The rest, under Details: the other way with the fees, Pause or Resume; a successor's offer sits beside its id, the two recoveries come last.
   const more = actions.filter((kind) => kind !== primary && kind !== 'leave' && kind !== 'withdraw-child' && !VAULT_ADVANCED_ACTIONS.has(kind))
   const advanced = actions.filter((kind) => VAULT_ADVANCED_ACTIONS.has(kind))
-  const chainName = v2Chain(view.chainId).name
   const since = view.disarm ? sinceWords(view.disarm.since, nowSeconds) : null
   const off = view.armed === false || view.status === 'off'
   // Changed on purpose 2026-10-06 (the integration review, rugged-literal #1): Auto-exit's own vault by its Auto-exit alone,
@@ -223,7 +213,8 @@ export function VaultCard({ view, tokens, variant, nowSeconds, positionHref, onA
       ? `${view.disarm?.text ?? DISARM_UNKNOWN}${since ? ` · ${since}` : ''}`
       : view.status === 'protection' ? PROTECTION_TEXT : view.status === 'paused' ? PAUSED_TEXT : ON_TEXT
   // The one sentence: why it waits (rev4's reserves reasons first), else its state; the other goes under Details.
-  const line = view.waiting ? view.waiting.text : state
+  const shortState = !off && view.status === 'on' ? (view.mode === 2 ? 'Earned fees can fund your next position.' : 'Earned fees go back into this position.') : state
+  const line = view.waiting ? view.waiting.text : shortState
   // Added 2026-10-05 (rugged97's F7 delta of 5 Oct, §5.5: the automation mints Domino-compound's successors): when the next
   // position opens, for a Domino-compound vault still running (a vault that is off or whose root closed opens none).
   const next = off || view.rootClosed === true ? null : nextPositionWords(view)
@@ -231,35 +222,9 @@ export function VaultCard({ view, tokens, variant, nowSeconds, positionHref, onA
   const disarmReason = off && !view.exit ? String(view.disarm?.reason ?? 'unknown') : undefined
   const data = { 'data-vault-card': view.vault, 'data-vault-chain': view.chainId, 'data-vault-status': view.status ?? 'unknown', 'data-vault-exit': view.exit ?? undefined, 'data-vault-armed': view.armed === null ? 'unknown' : view.armed ? 'yes' : 'no', 'data-vault-reserves': view.reserves.known ? (view.reserves.held ? 'held' : 'none') : 'unread', 'data-vault-source': view.source }
 
-  if (variant === 'row') {
-    return (
-      <li className="dm-mp-row" {...data}>
-        <div className="dm-mp-head">
-          {positionHref ? <a className="dm-mp-name" href={positionHref}>Position #{view.rootTokenId.toString()}</a> : <span className="dm-mp-name">Position #{view.rootTokenId.toString()}</span>}
-          <span className="flex flex-wrap items-center gap-1.5">
-            <ChainBadge name={chainName} chainId={view.chainId} compact />
-            <span className={`dm-pill dm-pill--${toneOf(view)} dm-acct-status`}>{statusWords(view)}</span>
-          </span>
-        </div>
-        <p className="dm-acct-note" data-vault-held="">
-          {COLLECTED_LABEL}: <ReservesWords view={view} tokens={tokens} />
-        </p>
-        {primary && (
-          <div data-vault-actions="">
-            <Button type="button" size="sm" variant="primary" onClick={() => onAction(primary)} data-vault-open={primary}>
-              {VAULT_ACTION_LABEL[primary]}
-            </Button>
-          </div>
-        )}
-      </li>
-    )
-  }
-
   return (
-    <section className="dm-card dm-pos-card" aria-label="Automation" {...data}>
+    <section className="dm-automation-summary" aria-label="Automation" {...data}>
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="dm-title">Automation</h2>
-        <ChainBadge name={chainName} chainId={view.chainId} />
         <Pill tone={toneOf(view)} dot data-vault-pill="">
           {statusWords(view)}
         </Pill>
@@ -271,11 +236,6 @@ export function VaultCard({ view, tokens, variant, nowSeconds, positionHref, onA
         <KeyValue label={COLLECTED_LABEL} data-vault-held="">
           <ReservesWords view={view} tokens={tokens} />
         </KeyValue>
-        {next && (
-          <KeyValue label={NEXT_LABEL} data-vault-next="">
-            {next}
-          </KeyValue>
-        )}
       </KeyValueList>
       {(primary || leave) && (
         <div className="flex flex-wrap items-center gap-2" data-vault-actions="">
@@ -294,9 +254,11 @@ export function VaultCard({ view, tokens, variant, nowSeconds, positionHref, onA
       <Details data-vault-details="">
         <div className="grid gap-3">
           {view.waiting && <p className="dm-acct-note" data-vault-detail="state" data-disarm-reason={disarmReason}>{state}</p>}
+          {!view.waiting && line !== state && <p className="dm-acct-note" data-vault-detail="state">{state}</p>}
           {offer.withdraw && <p className="dm-acct-note" data-reserves-text="">{RESERVES_TEXT}</p>}
           {offer.returnable && <p className="dm-acct-note" data-return-hint="">{RETURN_HINT}</p>}
           <KeyValueList>
+            {next && <KeyValue label={NEXT_LABEL} data-vault-next="">{next}</KeyValue>}
             {modeWords(view) && <KeyValue label="Automation">{modeWords(view)}</KeyValue>}
             <KeyValue label={IDLE_LABEL} data-vault-idle="">
               <ReservesWords view={view} tokens={tokens} part="idle" />
@@ -313,7 +275,7 @@ export function VaultCard({ view, tokens, variant, nowSeconds, positionHref, onA
             </div>
           )}
           {advanced.length > 0 && (
-            <>
+            <Details label="More options">
               <p className="dm-acct-note" data-vault-advanced="">{ADVANCED_TEXT}</p>
               <div className="dm-v2in-advanced">
                 {advanced.map((kind) => (
@@ -322,7 +284,7 @@ export function VaultCard({ view, tokens, variant, nowSeconds, positionHref, onA
                   </Button>
                 ))}
               </div>
-            </>
+            </Details>
           )}
         </div>
       </Details>

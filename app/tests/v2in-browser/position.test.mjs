@@ -67,7 +67,7 @@ const LOCKED_BASE = 'This opens as soon as Domino\'s service is live on Base.';
 async function openMenu(detail) {
   const menu = detail.locator('[role="group"][aria-label="Position actions"]');
   await menu.waitFor();
-  return { menu, entries: await menu.locator('button[data-position-v2-action]').evaluateAll((all) => all.map((one) => [one.getAttribute('data-position-v2-action'), one.textContent, one.disabled])) };
+  return { menu, entries: await menu.locator('button[data-position-v2-action]').evaluateAll((all) => all.map((one) => [one.getAttribute('data-position-v2-action'), one.textContent, one.disabled || one.getAttribute('aria-disabled') === 'true'])) };
 }
 
 /** Opens the "···" menu and picks one of its entries (the menu closes on the pick). */
@@ -524,15 +524,32 @@ test('(e) under automation: the armed root blocks Change range (the menu says wh
     await root.waitFor({ timeout: 30_000 });
     await root.locator('[data-position-v2-action="exit"]').waitFor();
     assert.equal(await root.locator('[data-position-v2-action="collect"]').isDisabled(), false);
-    assert.equal(await root.locator('[data-position-v2-blocked]').count(), 1, 'a disabled action keeps its reason visible');
-    // Decision #5: Change range stays listed, disabled, with its reason as the menu's heading. Changed on purpose
+    assert.equal(await root.locator('[data-position-v2-blocked]').count(), 0, 'no fixed sentence below the actions');
+    // Decision #5: Change range stays listed, unavailable, with its reason on hover, keyboard focus or touch.
+    // Changed on purpose
     // 2026-10-06 (the owner's point 5; rugged97: "auto-exit has no fee compounding"): a running Domino-compound is never
     // offered Auto-exit.
     const { menu, entries } = await openMenu(root);
     assert.deepEqual(entries, [['increase', 'Add liquidity', false], ['changeRange', 'Change range', true], ['exit', 'Withdraw', false]]);
     // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation").
-    assert.equal(await text(menu.locator('[data-position-v2-blocked]')), 'Change range isn’t available while your automation manages this position.');
-    assert.equal(await menu.locator('button[data-position-v2-action][data-position-v2-action="changeRange"]').getAttribute('title'), 'Change range isn’t available while your automation manages this position.');
+    const rangeButton = menu.locator('[data-position-v2-action="changeRange"]');
+    const rangeReason = menu.locator('[data-position-action-reason="changeRange"]');
+    assert.equal(await rangeReason.isVisible(), false, 'the reason is quiet until asked for');
+    assert.equal(await rangeButton.isDisabled(), true);
+    await rangeButton.hover();
+    assert.equal(await text(rangeReason), 'Change range isn’t available while your automation manages this position.');
+    assert.equal(await rangeReason.isVisible(), true);
+    await page.mouse.move(0, 0);
+    await rangeButton.focus();
+    assert.equal(await rangeReason.isVisible(), true, 'keyboard users get the same reason');
+    await page.keyboard.press('Escape');
+    assert.equal(await rangeReason.isVisible(), false);
+    await page.setViewportSize({ width: 320, height: 900 });
+    await rangeButton.dispatchEvent('click');
+    assert.equal(await rangeReason.isVisible(), true, 'touch can ask for the reason without starting an action');
+    assert.equal(await page.getByRole('dialog').count(), 0);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the reason fits on mobile');
+    await page.setViewportSize({ width: 1280, height: 1000 });
     await menu.locator('button[data-position-v2-action][data-position-v2-action="exit"]').click();
       const dialog = page.locator('[role="dialog"][data-position-dialog="v2-exit"]');
     assert.equal(await text(dialog.locator('[data-position-root-note]')), 'This pauses automation for this position. You can turn it back on afterwards.');
@@ -568,7 +585,9 @@ test('(e) under automation: the armed root blocks Change range (the menu says wh
     assert.equal(await hooked.locator('[data-position-v2-action="collect"]').getAttribute('title'), "Pools with hooks aren't supported yet.");
     const blocked = await openMenu(hooked);
     assert.deepEqual(blocked.entries.map(([key, , disabled]) => [key, disabled]), [['increase', true], ['changeRange', true], ['exit', true]]);
-    assert.equal(await text(blocked.menu.locator('[data-position-v2-blocked]')), "Pools with hooks aren't supported yet.");
+    assert.equal(await blocked.menu.locator('[data-position-action-reason]:visible').count(), 0);
+    await blocked.menu.locator('[data-position-v2-action="increase"]').focus();
+    assert.equal(await text(blocked.menu.locator('[data-position-action-reason="increase"]')), "Pools with hooks aren't supported yet.");
     await page.keyboard.press('Escape');
   } finally { await s.close(); }
 });
@@ -776,6 +795,9 @@ test('(e2) Auto-exit on: Add liquidity on v4 moves the approval its exit needs, 
     await root.waitFor({ timeout: 30_000 });
     await root.locator('[data-automation-control]').click();
     await page.locator('[data-v2in-exit][data-exit-state="on"]').waitFor({ timeout: 30_000 });
+    assert.equal(await page.getByRole('dialog').count(), 1, 'management uses the standard popup');
+    await page.keyboard.press('Escape');
+    await page.locator('[data-automation-management]').waitFor({ state: 'detached' });
     await pick(root, 'increase');
     const dialog = page.locator('[role="dialog"][data-position-dialog="v2-increase"]');
     await dialog.waitFor();

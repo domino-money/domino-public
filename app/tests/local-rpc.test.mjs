@@ -300,10 +300,15 @@ test('the fixed V1 and V2 events a log read may name are the chain code’s own,
   assert.equal(new Set(local.LOG_TOPICS).size, 11);
   for (const topic of [SWAP, INITIALIZE]) assert.ok(!local.LOG_TOPICS.includes(topic));
   assert.deepEqual(local.PURPOSE_METHODS.simulate, ['eth_simulateV1']);
-  for (const purpose of ['owned', 'state', 'ledger', 'automation', 'record']) assert.ok(!local.PURPOSE_METHODS[purpose].includes('eth_simulateV1'), purpose);
+  for (const purpose of ['owned', 'state', 'ledger', 'automation', 'record', 'confirmation']) assert.ok(!local.PURPOSE_METHODS[purpose].includes('eth_simulateV1'), purpose);
   // rugged97's method list: no method outside it, and never a send.
   const all = new Set(Object.values(local.PURPOSE_METHODS).flat());
-  for (const method of all) assert.ok(['eth_call', 'eth_getLogs', 'eth_blockNumber', 'eth_getBlockByNumber', 'eth_chainId', 'eth_simulateV1'].includes(method), method);
+  for (const method of all) assert.ok(['eth_call', 'eth_getLogs', 'eth_blockNumber', 'eth_getBlockByNumber', 'eth_chainId', 'eth_simulateV1', 'eth_getTransactionByHash', 'eth_getTransactionReceipt'].includes(method), method);
+  assert.deepEqual(local.PURPOSE_METHODS.confirmation, ['eth_getTransactionByHash', 'eth_getTransactionReceipt', 'eth_getBlockByNumber']);
+  for (const purpose of ['owned', 'state', 'ledger', 'automation', 'record', 'simulate']) {
+    assert.ok(!local.PURPOSE_METHODS[purpose].includes('eth_getTransactionByHash'), purpose);
+    assert.ok(!local.PURPOSE_METHODS[purpose].includes('eth_getTransactionReceipt'), purpose);
+  }
   assert.ok(!all.has('eth_sendRawTransaction'));
   assert.deepEqual(local.EDGE_LOG_LIMITS, { one: 5_000_000, many: 5_000_000 });
 });

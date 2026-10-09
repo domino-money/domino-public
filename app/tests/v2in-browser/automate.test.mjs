@@ -39,6 +39,7 @@ const { createFakeSession } = await import('../support/fake-session.mjs');
 const { createWalletServer } = await import('../support/wallet-server.mjs');
 const { ACCOUNTS, installWallets } = await import('../support/mock-wallet.mjs');
 const { browserChain, poolIdOf, routeChain } = await import('../support/browser-chain.mjs');
+const { routeConfirmation } = await import('../support/confirmation-route.mjs');
 const { ABI, OTHER, OWNER, ZERO, createVaultChain, mandateHash } = await import('../support/v2-vault-chain.mjs');
 const { READ6, read6Answer, walletFor } = await import('../support/v2-auto-page.mjs');
 const { plainPortfolio } = await import('../support/v2-plain-portfolio.mjs');
@@ -119,7 +120,7 @@ const elsewhere = (requests, origin) => requests.filter((url) => !url.startsWith
  * The served build, one browser context, V1's chain reads answered from `v1` (tests/support/browser-chain.mjs), the
  * page's errors, CSP violations and requests recorded. `wallet(context)` installs the browser wallet and returns it.
  */
-async function serve({ v1, hooks, wallet, routes = [] }) {
+async function serve({ v1, hooks, wallet, routes = [], confirmation = null }) {
   const fake = createFakeSession();
   const server = createWalletServer({ fake, dist: WALLET_V2_DIST, routes });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
@@ -129,6 +130,7 @@ async function serve({ v1, hooks, wallet, routes = [] }) {
   await context.route(FONTS, (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   const rpc = await routeChain(context, v1);
+  if (confirmation) await routeConfirmation(context, confirmation);
   const installed = await wallet(context);
   await context.addInitScript((given) => {
     window.__dominoV2Test = { ...(window.__dominoV2Test ?? {}), ...given };
@@ -148,7 +150,8 @@ async function expandAutomation(page) {
   assert.equal(await control.count(), 1, 'one mode and status control per position');
   if (await control.getAttribute('data-automation-setup') !== null) return;
   if (await control.getAttribute('aria-expanded') === 'false') await control.click();
-  await page.locator('[data-automation-panel]').waitFor();
+  await page.locator('[data-automation-management]').waitFor();
+  assert.equal(await page.getByRole('dialog').count(), 1, 'one management popup, without a wallet dialog');
 }
 
 /** Preview: Test Wallet A (tests/support/mock-wallet.mjs), V2's gate open on the test origin, nothing live. */
@@ -204,6 +207,7 @@ async function openLive(chain, { hash, read6, v1, routes = [] }) {
   const csp = [];
   const s = await serve({
     v1,
+    confirmation: chain,
     routes,
     hooks: { originOpen: true, contracts: { [chain.chainId]: chain.contracts }, backendOn: true, read6 },
     wallet: async (context) => {
@@ -580,7 +584,7 @@ test('live: a root closed by the S1 exit (burned) keeps its vault\'s fees on its
   try {
     // V1's page says the NFT is gone; the vault, listed by owner, still shows what it holds.
     await page.locator('[data-empty="position-gone"]').waitFor({ timeout: 30_000 });
-    const card = page.locator(`[data-v2in-position="${ROOT}"][data-v2in-mode="live"] section[data-vault-card="${vault}"]`);
+    const card = page.locator(`[data-automation-panel] section[data-vault-card="${vault}"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.equal(await card.getAttribute('data-vault-armed'), 'no');
     assert.equal(await card.getAttribute('data-vault-reserves'), 'held');
@@ -594,7 +598,7 @@ test('live: a root closed by the S1 exit (burned) keeps its vault\'s fees on its
     assert.deepEqual(await card.locator('[data-vault-more]').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('data-vault-more'))), ['withdraw']);
     assert.ok(await card.locator('[data-vault-details] [data-return-hint]').count());
     assert.equal(await card.locator('details[data-vault-details]').evaluate((details) => details.open), false, 'closed until opened');
-    await page.locator(`[data-v2in-position="${ROOT}"]`).screenshot({ path: join(shots(), 'v2in-reserves-burned-root.png'), animations: 'disabled' });
+    await page.locator('[data-automation-management]').screenshot({ path: join(shots(), 'v2in-reserves-burned-root.png'), animations: 'disabled' });
 
     await card.locator('details[data-vault-details] > summary').click();
     await card.locator('[data-vault-more="withdraw"]').click();
@@ -619,7 +623,8 @@ test('live: a root closed by the S1 exit (burned) keeps its vault\'s fees on its
 
     // The index has not caught up (the scripted answer is the same): the card shows the vault as read right after.
     await dialog.locator('[data-v2in-close]').click();
-    const after = page.locator(`[data-v2in-position="${ROOT}"] section[data-vault-card="${vault}"][data-vault-source="chain"]`);
+    await expandAutomation(page);
+    const after = page.locator(`[data-automation-panel] section[data-vault-card="${vault}"][data-vault-source="chain"]`);
     await after.waitFor({ timeout: 30_000 });
     assert.equal(await after.getAttribute('data-vault-reserves'), 'none');
     assert.equal(await after.locator('[data-vault-open="withdraw"], [data-vault-open="return"], [data-vault-more="withdraw"], [data-vault-more="return"]').count(), 0, 'nothing left to withdraw is offered');
@@ -640,7 +645,7 @@ test('live: a token that refuses the owner\'s wallet: Withdraw to wallet leads (
   const { page } = s;
   const other = OTHER.toLowerCase();
   try {
-    const card = page.locator(`[data-v2in-position="${ROOT}"][data-v2in-mode="live"] section[data-vault-card="${vault}"]`);
+    const card = page.locator(`[data-automation-panel] section[data-vault-card="${vault}"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.match(await card.locator('[data-vault-state]').innerText(), /^Your position is closed, but your wallet can't receive one of the tokens\. Withdraw it from your automation · since /);
     // A return pays only the wallet that refuses: Withdraw to wallet leads, and Return is not offered.
@@ -705,7 +710,7 @@ test('live: a root closed directly on Uniswap, the vault paused: Managed positio
 
     await link.click();
     await expandAutomation(page);
-    const card = page.locator(`[data-v2in-position="${ROOT}"] section[data-vault-card="${vault}"]`);
+    const card = page.locator(`[data-automation-panel] section[data-vault-card="${vault}"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.equal(await card.locator('[data-vault-held] [data-reserves="held"]').innerText(), '0.002 ETH + 5 USDG');
     // Nothing waits: §5.4's sentence is THE sentence, with its reason.
@@ -733,7 +738,8 @@ test('live: a root closed directly on Uniswap, the vault paused: Managed positio
     assert.equal(chain.sends.length, 1, 'one transaction for both tokens');
     assert.deepEqual(chain.paid.filter((p) => p.why === 'returnReserves').map((p) => [p.to, p.tokens[0], p.amounts[0]]), [[OWNER, ZERO, 2_000_000_000_000_000n], [OWNER, USDG, 5_000_000n]]);
     await dialog.locator('[data-v2in-close]').click();
-    await page.locator(`[data-v2in-position="${ROOT}"] section[data-vault-card="${vault}"][data-vault-source="chain"][data-vault-reserves="none"]`).waitFor({ timeout: 30_000 });
+    await expandAutomation(page);
+    await page.locator(`[data-automation-panel] section[data-vault-card="${vault}"][data-vault-source="chain"][data-vault-reserves="none"]`).waitFor({ timeout: 30_000 });
   } finally {
     await s.close();
   }
@@ -766,14 +772,14 @@ test('live: "Leave automation" on a running vault\'s page sends exitAll() (the r
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }) });
   const { page } = s;
   try {
-    const card = page.locator(`[data-v2in-position="${ROOT}"] section[data-vault-card="${vault}"]`);
+    const card = page.locator(`[data-automation-panel] section[data-vault-card="${vault}"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.equal(await card.getAttribute('data-vault-status'), 'on');
     assert.equal(await card.getAttribute('data-vault-armed'), 'yes');
     assert.equal(await card.locator('[data-vault-pill]').innerText(), 'Automation on');
     // A running vault: the spec's own sentence (§2.13), the fees waiting, Withdraw to wallet and Leave automation; Pause under Details.
     // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation").
-    assert.match(await card.locator('[data-vault-state]').innerText(), /^Your automation reinvests this position's fees\. If you change it, move it or approve another app, it stops for this position until you turn it back on\.$/);
+    assert.equal(await card.locator('[data-vault-state]').innerText(), 'Earned fees go back into this position.');
     assert.doesNotMatch(await card.innerText(), /vault/i);
     assert.deepEqual(await card.locator('[data-vault-open]').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('data-vault-open'))), ['withdraw', 'leave']);
     assert.deepEqual(await card.locator('[data-vault-more]').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('data-vault-more'))), ['pause']);
@@ -781,7 +787,7 @@ test('live: "Leave automation" on a running vault\'s page sends exitAll() (the r
     // Auto-exit is separate from compounding (rugged97, 2026-10-06): a running Auto-compound is never offered it.
     await page.locator('[data-position-actions] [data-position-v2-more]').waitFor({ timeout: 30_000 });
     assert.equal(await page.locator('[data-position-v2-action="protect"]').count(), 0, 'no Auto-exit on a running Auto-compound');
-    assert.equal(await page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit]:not([hidden])`).count(), 0, 'and no Auto-exit card');
+    assert.equal(await page.locator(`[data-automation-panel] [data-v2in-exit]:not([hidden])`).count(), 0, 'and no Auto-exit card');
     await card.locator('[data-vault-open="leave"]').click();
     const dialog = page.locator('[role="dialog"][data-v2in-dialog="vault-leave"]');
     await dialog.waitFor();
@@ -844,7 +850,7 @@ test('live: an Auto-exit paused because auto-exit is off offers "Turn back on": 
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }) });
   const { page } = s;
   try {
-    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="paused"]`);
+    const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="paused"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.equal(await card.locator('[data-exit-pill]').innerText(), 'Paused');
     // Changed on purpose 2026-10-06 (the final check, F8): the pause by its cause, never "turned off" beside "Turn off".
@@ -853,7 +859,7 @@ test('live: an Auto-exit paused because auto-exit is off offers "Turn back on": 
     assert.doesNotMatch(await card.innerText(), /turned off/i);
     // Changed on purpose 2026-10-06 (the integration review, rugged-literal #2): Leave automation's pause (the module off)
     // keeps the automation Auto-exit's: this one card, never a second "Automation" card in compounding's words.
-    assert.equal(await page.locator(`[data-v2in-position="${ROOT}"] [data-vault-card]`).count(), 0, 'one card for one product');
+    assert.equal(await page.locator(`[data-automation-panel] [data-vault-card]`).count(), 0, 'one card for one product');
     const turnOn = card.locator('[data-order-module-on]');
     assert.equal(await turnOn.innerText(), 'Turn back on');
     await turnOn.click();
@@ -876,7 +882,8 @@ test('live: an Auto-exit paused because auto-exit is off offers "Turn back on": 
     // no "Turn back on" left that would stop at "This step is already done.".
     await dialog.locator('[data-v2in-close]').click();
     await dialog.waitFor({ state: 'detached' });
-    const on = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`);
+    await expandAutomation(page);
+    const on = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="on"]`);
     await on.waitFor({ timeout: 30_000 });
     assert.equal(await on.locator('[data-exit-pill]').innerText(), 'On');
     assert.match(await on.locator('[data-v2in-exit-line="on"]').innerText(), /^Closes at /);
@@ -913,7 +920,7 @@ test('live: after Leave automation, "Turn back on" then "Turn off" made here: on
   });
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }) });
   const { page } = s;
-  const card = (state) => page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="${state}"]`);
+  const card = (state) => page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="${state}"]`);
   try {
     await card('paused').waitFor({ timeout: 30_000 });
     await card('paused').locator('[data-order-module-on]').click();
@@ -924,6 +931,7 @@ test('live: after Leave automation, "Turn back on" then "Turn off" made here: on
     await back.locator('[data-v2in-close]').waitFor({ timeout: 30_000 });
     await back.locator('[data-v2in-close]').click();
     await back.waitFor({ state: 'detached' });
+    await expandAutomation(page);
     const on = card('on');
     await on.waitFor({ timeout: 30_000 });
     assert.match(await on.locator('[data-v2in-exit-line="on"]').innerText(), /^Closes at /);
@@ -938,6 +946,7 @@ test('live: after Leave automation, "Turn back on" then "Turn off" made here: on
     assert.equal(chain.module().status.get(id), 2, 'revoked');
     await off.locator('[data-v2in-close]').click();
     await off.waitFor({ state: 'detached' });
+    await expandAutomation(page);
     const none = card('off');
     await none.waitFor({ timeout: 30_000 });
     assert.equal(await none.locator('[data-exit-pill]').innerText(), 'Off');
@@ -973,7 +982,7 @@ test('live: "Turn back on" with the price already past the end of the range warn
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }) });
   const { page } = s;
   try {
-    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="paused"]`);
+    const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="paused"]`);
     await card.waitFor({ timeout: 30_000 });
     await card.locator('[data-order-module-on]').click();
     const dialog = page.locator('[role="dialog"][data-v2in-dialog="module-on"]');
@@ -999,6 +1008,7 @@ test('live: "Turn back on" with the price already past the end of the range warn
     await off.getByRole('button', { name: 'Close' }).click();
     await off.waitFor({ state: 'detached' });
     // Or on anyway, ticked: then, and only then, the one step.
+    await expandAutomation(page);
     await card.locator('[data-order-module-on]').click();
     await dialog.waitFor();
     await past.waitFor({ timeout: 30_000 });
@@ -1031,9 +1041,9 @@ test('live: a protection-only automation with its Auto-exit on is ONE card: "Clo
   const { page } = s;
   try {
     const mount = page.locator(`[data-v2in-position="${ROOT}"][data-v2in-mode="live"]`);
-    const card = mount.locator('[data-v2in-exit][data-exit-state="on"]');
+    const card = page.locator('[data-automation-panel] [data-v2in-exit][data-exit-state="on"]');
     await card.waitFor({ timeout: 30_000 });
-    assert.equal(await card.locator('h2').innerText(), 'Auto-exit');
+    assert.equal(await page.locator('[data-automation-management] h2').innerText(), 'Auto-exit');
     assert.equal(await card.locator('[data-exit-pill]').innerText(), 'On');
     // Changed on purpose 2026-10-06 (the review of point 5): the title and the pill say "Auto-exit" and "On"; the line where.
     assert.match(await card.locator('[data-v2in-exit-line="on"]').innerText(), /^Closes at 1,855\.72 – 2,504\.92 USDG per ETH$/);
@@ -1044,6 +1054,12 @@ test('live: a protection-only automation with its Auto-exit on is ONE card: "Clo
     assert.equal(await page.locator('[data-position-v2-action="protect"]').count(), 0, 'one Auto-exit per position: no second one offered');
     assert.doesNotMatch(await card.innerText(), /vault|stop-loss|take-profit|order/i);
     await card.screenshot({ path: join(shots(), 'v2in-autoexit-card-on.png'), animations: 'disabled' });
+    for (const width of [1280, 390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.screenshot({ path: join(shots(), `automation-management-autoexit-${width}.png`), fullPage: true, animations: 'disabled' });
+      assert.equal(await page.locator('[data-automation-management] .dm-pa-body').evaluate(node => node.scrollWidth <= node.clientWidth + 1), true, `Auto-exit management fits at ${width}`);
+    }
+    await page.setViewportSize({ width: 1280, height: 1000 });
     // Changed on purpose 2026-10-06 (the integration review, rugged-literal #2): Leave automation (exitAll) turns the module
     // off, so Auto-exit pauses; it never ends it (Turn off does), and the review's note does not say it twice.
     await card.locator('[data-exit-details] > summary').click();
@@ -1129,7 +1145,7 @@ test('live: Auto-exit on, its pool written the other way round (USDG per ORB): D
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1 });
   const { page } = s;
   try {
-    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`);
+    const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="on"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.match(await card.locator('[data-v2in-exit-line="on"]').innerText(), /^Closes at 0\.01\d+ – 0\.09\d+ USDG per ORB$/, 'the line: the lower price first');
     await card.locator('[data-exit-details] > summary').click();
@@ -1200,7 +1216,7 @@ test('live: Auto-exit on a plain position is ONE signature and ONE wallet_sendCa
 
     // The page says it at once (the index has not caught up: the session's own registration), and offers no second one.
     await expandAutomation(page);
-    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`);
+    const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="on"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.match(await card.locator('[data-v2in-exit-line="on"]').innerText(), /^Closes at 1,855\.72 – 2,504\.92 USDG per ETH$/);
     assert.equal(await page.locator('[data-position-v2-action="protect"]').count(), 0, 'one Auto-exit per position');
@@ -1214,7 +1230,7 @@ test('live: Auto-exit on a plain position is ONE signature and ONE wallet_sendCa
     assert.equal(selectorOf(chain.sends.at(-1).data), SELECTOR.revokeMandate);
     assert.equal(chain.module().status.get(mandateHash(mandate)), 2, 'revoked');
     await off.locator('[data-v2in-close]').click();
-    await page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="off"]`).waitFor({ state: 'attached', timeout: 30_000 });
+    await page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="off"]`).waitFor({ state: 'attached', timeout: 30_000 });
   } finally { await s.close(); }
 });
 
@@ -1296,7 +1312,7 @@ test('live: one Auto-exit per position: one turned on in another tab since the p
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1 });
   const { page } = s;
   try {
-    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="off"]`);
+    const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="off"]`);
     await card.waitFor({ timeout: 30_000 });
     await card.locator('[data-v2in-open="mandate"]').click();
     const dialog = page.locator('[role="dialog"][data-v2in-dialog="mandate"]');
@@ -1313,14 +1329,15 @@ test('live: one Auto-exit per position: one turned on in another tab since the p
     assert.deepEqual(chain.sends, [], 'nothing sent');
     assert.equal(chain.module().status.size, 0, 'no order registered on the position\'s automation');
     // The page read again: behind the dialog its card says the one that is on; the dialog still says why, its button off.
-    await page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`).waitFor({ state: 'attached', timeout: 30_000 });
+    await page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="on"]`).waitFor({ state: 'attached', timeout: 30_000 });
     await page.waitForTimeout(500);
     assert.equal(await refused.innerText(), 'Auto-exit is already on for this position.', 'still said');
     assert.equal(await dialog.locator('[data-mandate-send]').isDisabled(), true);
     await dialog.screenshot({ path: join(shots(), 'v2in-autoexit-one-per-position.png'), animations: 'disabled' });
     await dialog.getByRole('button', { name: 'Close' }).click();
     await dialog.waitFor({ state: 'detached' });
-    await page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`).waitFor({ timeout: 30_000 });
+    await expandAutomation(page);
+    await page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="on"]`).waitFor({ timeout: 30_000 });
     assert.equal(await page.locator('[data-position-v2-action="protect"]').count(), 0, 'and no second one is offered');
   } finally { await s.close(); }
 });
@@ -1442,9 +1459,9 @@ test('live: a completed Auto-exit keeps its result in Activity and never offers 
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity: 0n }) });
   const { page } = s;
   try {
-    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="closed"]`);
+    const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="closed"]`);
     await card.waitFor({ timeout: 30_000 });
-    assert.equal(await card.locator('h2').innerText(), 'Auto-exit');
+    assert.equal(await page.locator('[data-automation-management] h2').innerText(), 'Auto-exit');
     assert.equal(await card.locator('[data-exit-pill]').innerText(), 'Completed');
     assert.equal(await card.locator('[data-v2in-exit-line="closed"]').innerText(), 'View the result in Activity.');
     assert.equal(await card.locator('[data-order-result]').count(), 0, 'no duplicated result or assumed 0.2% charge outside Activity');
@@ -1485,7 +1502,7 @@ test('live: Auto-exit paused because its position lost the approval: "Approve ag
   const { chain, vault, s } = await approvalLost({ price: (2n ** 96n) / 20000n });
   const { page } = s;
   try {
-    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="paused"]`);
+    const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="paused"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.equal(await card.locator('[data-exit-pill]').innerText(), 'Paused');
     assert.equal(await card.locator('[data-v2in-exit-line="paused"]').innerText(), 'Paused: Domino no longer has approval on this position.');
@@ -1530,7 +1547,8 @@ test('live: Auto-exit paused because its position lost the approval: "Approve ag
     // position is older than the approval just given back): the card says "On" at once, never "Approve again" again.
     await dialog.locator('[data-v2in-close]').click();
     await dialog.waitFor({ state: 'detached' });
-    const on = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`);
+    await expandAutomation(page);
+    const on = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="on"]`);
     await on.waitFor({ timeout: 30_000 });
     assert.equal(await on.locator('[data-exit-pill]').innerText(), 'On');
     assert.match(await on.locator('[data-v2in-exit-line="on"]').innerText(), /^Closes at 1,855\.72 – 2,504\.92 USDG per ETH$/);
@@ -1547,7 +1565,7 @@ test('live: "Approve again" with the price already past the end of the range war
   const { chain, s } = await approvalLost({ price: null });
   const { page } = s;
   try {
-    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="paused"]`);
+    const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="paused"]`);
     await card.waitFor({ timeout: 30_000 });
     await card.locator('[data-exit-fix="rearm"] [data-vault-open="rearm"]').click();
     const dialog = page.locator('[role="dialog"][data-v2in-dialog="vault-rearm"]');
@@ -1569,6 +1587,7 @@ test('live: "Approve again" with the price already past the end of the range war
     await off.getByRole('button', { name: 'Close' }).click();
     await off.waitFor({ state: 'detached' });
     // Or ticked, on anyway: the approval goes back.
+    await expandAutomation(page);
     await card.locator('[data-exit-fix="rearm"] [data-vault-open="rearm"]').click();
     await dialog.waitFor();
     await past.waitFor({ timeout: 30_000 });
@@ -1607,7 +1626,7 @@ test('live: Auto-exit on, its root disarmed by a change made outside it: "On" ev
     assert.equal(await row.locator('button').count(), 0, 'never Revoke approval or Remove Domino on an Auto-exit that is on');
     await row.click();
     await expandAutomation(page);
-    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`);
+    const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="on"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.equal(await card.locator('[data-exit-pill]').innerText(), 'On');
     assert.match(await card.locator('[data-v2in-exit-line="on"]').innerText(), /^Closes at 1,855\.72 – 2,504\.92 USDG per ETH$/);
@@ -1638,7 +1657,7 @@ test('live: Auto-exit off on a root a change disarmed: "Turn on" reconnects the 
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1 });
   const { page } = s;
   try {
-    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="off"]`);
+    const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="off"]`);
     await card.waitFor({ timeout: 30_000 });
     assert.equal(await card.locator('[data-v2in-exit-line="open"]').innerText(), 'Auto-exit is off. Turn it on to close this position at the end of its range.');
     const turnOn = card.locator('[data-vault-open="rearm"]');
@@ -1655,7 +1674,11 @@ test('live: Auto-exit off on a root a change disarmed: "Turn on" reconnects the 
     assert.equal(await dialog.locator('[data-exit-past]').count(), 0, 'none on: no order put back in force, nothing to warn of');
     await dialog.screenshot({ path: join(shots(), 'v2in-autoexit-turn-on-rearm.png'), animations: 'disabled' });
     await dialog.locator('[data-v2in-send="rearm"]').click();
-    // Reconnected: Auto-exit's own dialog follows by itself, its one button for the person to press.
+    // The completed receipt remains the only modal. Its next action follows after the person closes it.
+    await dialog.locator('[data-v2in-close]').waitFor({ timeout: 60_000 });
+    assert.equal(await page.getByRole('dialog').count(), 1);
+    assert.equal(await page.locator('[data-v2in-dialog="mandate"]').count(), 0);
+    await dialog.locator('[data-v2in-close]').click();
     const mandate = page.locator('[role="dialog"][data-v2in-dialog="mandate"]');
     await mandate.waitFor({ timeout: 60_000 });
     assert.deepEqual(chain.sends.map((tx) => [tx.to.toLowerCase(), selectorOf(tx.data)]), [[vault, toFunctionSelector('rearm(bool)')]]);
@@ -1684,7 +1707,7 @@ test('live: Leave automation with Auto-exit on sends exitAll() and pauses it, in
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }) });
   const { page } = s;
   try {
-    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="on"]`);
+    const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="on"]`);
     await card.waitFor({ timeout: 30_000 });
     await card.locator('[data-exit-details] > summary').click();
     await card.locator('[data-vault-more="leave"]').click();
@@ -1705,7 +1728,8 @@ test('live: Leave automation with Auto-exit on sends exitAll() and pauses it, in
     // as the dialog just said; its way back on beside the line that says why.
     await leave.locator('[data-v2in-close]').click();
     await leave.waitFor({ state: 'detached' });
-    const paused = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="paused"]`);
+    await expandAutomation(page);
+    const paused = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="paused"]`);
     await paused.waitFor({ timeout: 30_000 });
     assert.equal(await paused.locator('[data-exit-pill]').innerText(), 'Paused');
     assert.equal(await paused.locator('[data-v2in-exit-line="paused"]').innerText(), "Paused: your automation doesn't allow Auto-exit right now.");
@@ -1734,7 +1758,7 @@ test('live: Leave automation with Auto-exit off says its automation stops for th
   const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1 });
   const { page } = s;
   try {
-    const card = page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit][data-exit-state="off"]`);
+    const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="off"]`);
     await card.waitFor({ timeout: 30_000 });
     await card.locator('[data-exit-details] > summary').click();
     await card.locator('[data-vault-more="leave"]').click();
@@ -1769,9 +1793,9 @@ test('live: Auto-exit paused after Leave automation, its position\'s read missin
   const { page } = s;
   try {
     await page.locator('[data-empty="position-gone"]').waitFor({ timeout: 30_000 });
-    const card = page.locator(`[data-v2in-position="${ROOT}"][data-v2in-mode="live"] section[data-vault-card="${vault}"]`);
+    const card = page.locator(`[data-automation-panel] section[data-vault-card="${vault}"]`);
     await card.waitFor({ timeout: 30_000 });
-    assert.equal(await page.locator(`[data-v2in-position="${ROOT}"] [data-v2in-exit]`).count(), 0, 'no Auto-exit card here');
+    assert.equal(await page.locator(`[data-automation-panel] [data-v2in-exit]`).count(), 0, 'no Auto-exit card here');
     assert.equal(await card.getAttribute('data-vault-exit'), 'paused');
     assert.equal(await card.locator('[data-vault-pill]').innerText(), 'Auto-exit paused');
     // Its one line says where Auto-exit stands, never "Open the position": this is the position's page.
@@ -1820,7 +1844,15 @@ test('one NFT with earlier setups has one overview row and one top control; prev
     assert.equal(await rows.locator('button').count(), 0, 'overview only navigates');
     assert.match(await rows.innerText(), /Funds available in automation/);
     await rows.click();
+    const control = page.locator('[data-automation-control]');
+    await control.waitFor();
+    assert.equal(await page.locator('[data-automation-panel]').isVisible(), false, 'management stays out of the page until requested');
+    assert.equal(await page.locator('[data-position-actions] [data-automation-control]').count(), 1, 'automation belongs to the action bar');
+    assert.equal(await page.getByRole('dialog').count(), 0);
     await expandAutomation(page);
+    const management = page.locator('[data-automation-management]');
+    assert.equal(await management.locator('h2').innerText(), 'Auto-compound');
+    assert.equal(await management.locator('[data-vault-details]').evaluate((node) => node.open), false);
     const panel = page.locator('[data-automation-panel]');
     assert.equal(await panel.locator('section[data-vault-card]').count(), 1);
     assert.equal(await panel.locator('section[data-vault-card]').getAttribute('data-vault-card'), vault, 'current NFT approval wins');
@@ -1829,8 +1861,105 @@ test('one NFT with earlier setups has one overview row and one top control; prev
     const held = panel.locator(`[data-recovery-vault="${previous.address}"]`);
     assert.match(await held.innerText(), /5 USDG/);
     assert.equal(await held.getByRole('button', { name: 'Resume', exact: true }).count(), 0);
-    await page.setViewportSize({ width: 390, height: 844 });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    await page.screenshot({ path: join(shots(), 'one-nft-current-and-previous-setups.png'), fullPage: true });
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.screenshot({ path: join(shots(), `one-nft-current-and-previous-setups-${width}.png`), fullPage: true, animations: 'disabled' });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      assert.equal(await management.locator('.dm-pa-body').evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true, `management body fits at ${width}`);
+      const foot = await management.locator('.dm-pa-foot').boundingBox();
+      assert.ok(foot && foot.y >= 0 && foot.y + foot.height <= 845, `the way back remains on screen at ${width}: ${JSON.stringify(foot)}`);
+    }
+    await page.keyboard.press('Escape');
+    await management.waitFor({ state: 'detached' });
+    assert.equal(await control.evaluate((node) => document.activeElement === node), true, 'closing management returns focus to its toolbar control');
+    assert.equal(await page.locator('[data-automation-panel]').isVisible(), false);
+    assert.deepEqual(chain.log.filter((method) => SENDS_AND_SIGNATURES.includes(method) || method === 'wallet_switchEthereumChain'), [], 'reading management never signs, sends or switches');
+  } finally { await s.close(); }
+});
+
+test('Auto-compound and Domino-compound management share the action sheet; recovery stays under More options and opening it cannot send', async () => {
+  for (const [mode, label, words] of [[1, 'Auto-compound', 'Earned fees go back into this position.'], [2, 'Domino-compound', 'Earned fees can fund your next position.']]) {
+    const liquidity = 1_000_000n;
+    const chain = createVaultChain({ chainId: 4663, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -600, tickUpper: 600, liquidity }] });
+    const policy = { mode, triggerDistanceBps: 500, maxOverlapBps: 500, minimumIntervalSeconds: 3600, maxPositions: mode === 2 ? 3 : 1 };
+    const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, policy });
+    const portfolio = listing(chain, vault, { armed: true, reserves: [[ZERO, 0n], [USDG, 0n]], root: { owner: OWNER, liquidity } });
+    portfolio.body.vaults[0].state.policy.mode = mode === 2 ? 'domino' : 'simple';
+    portfolio.body.vaults[0].state.policy.maxPositions = policy.maxPositions;
+    const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }) });
+    try {
+      const { page } = s;
+      const management = page.locator('[data-automation-management]');
+      const card = management.locator('[data-vault-card]');
+      assert.equal(await management.locator('h2').innerText(), label);
+      assert.equal(await card.locator('[data-vault-state]').innerText(), words);
+      assert.equal(await card.locator('[data-vault-open="leave"]').isVisible(), true);
+      for (const width of [1280, 390, 320]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.screenshot({ path: join(shots(), `automation-management-${mode}-${width}.png`), fullPage: true, animations: 'disabled' });
+        assert.equal(await management.locator('.dm-pa-body').evaluate(node => node.scrollWidth <= node.clientWidth + 1), true, `${label} management fits at ${width}`);
+      }
+      await page.setViewportSize({ width: 1280, height: 1000 });
+      assert.equal(await card.locator('[data-vault-advanced-open]').count(), 2, 'token and position recovery remain available');
+      assert.equal(await card.locator('[data-vault-advanced-open="recover-position"]').isVisible(), false);
+      await card.locator('[data-vault-details] > summary').click();
+      const more = card.locator('details').filter({ has: page.locator('[data-vault-advanced-open="recover-position"]') }).last();
+      assert.equal(await more.locator('summary').innerText(), 'More options');
+      await more.locator('summary').click();
+      await card.locator('[data-vault-advanced-open="recover-position"]').click();
+      const recover = page.locator('[role="dialog"][data-v2in-dialog="vault-recover-position"]');
+      await recover.waitFor();
+      assert.equal(await page.getByRole('dialog').count(), 1, 'the financial dialog replaces management');
+      assert.equal(await page.locator('[data-automation-management]').count(), 0);
+      assert.deepEqual(chain.sends, []);
+      assert.equal(chain.log.some((method) => method === 'eth_signTypedData_v4' || method === 'personal_sign' || method === 'wallet_switchEthereumChain'), false);
+      await page.keyboard.press('Escape');
+      await recover.waitFor({ state: 'detached' });
+      await expandAutomation(page);
+      assert.equal(await management.locator('h2').innerText(), label, 'closing an action keeps the same management available');
+    } finally { await s.close(); }
+  }
+});
+
+test('Auto-exit recoverable credits stay in management; a different recipient is progressive and its claim replaces the sheet', async () => {
+  const chain = createVaultChain({ chainId: 4663, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -201060, tickUpper: -198060, liquidity: 10n ** 18n }] });
+  const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, startPaused: true });
+  chain.setExitModule(vault, AUTO_EXIT);
+  chain.closeRoot(4, ROOT);
+  chain.disarm(vault, 6);
+  chain.setUnclaimed(OWNER, USDG, 5_000_000n);
+  const portfolio = listing(chain, vault, {
+    armed: false, reason: 'auto_exit', paused: true, pausedBy: 'owner', autoExit: true, reserves: [[ZERO, 0n], [USDG, 0n]], root: { owner: OWNER, liquidity: 0n },
+    orders: (fixture) => fixture.slice(0, 1).map((order) => ({ ...order, tokenId: String(ROOT), status: 'executed', expired: false, blockedBy: [], moduleEnabled: true, waiting: null, revoked: null,
+      executed: { tx: SINCE, anchorSqrtPriceX96: String(sqrtPriceAtTick(-201060)), delivered: ['0', '0'] },
+      terms: { triggerBelowSqrtPriceX96: String(sqrtPriceAtTick(-201060)), triggerAboveSqrtPriceX96: String(sqrtPriceAtTick(-198060)), receive: 'both', convertTo: null, maxSlippageBps: 100 } })),
+  });
+  const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity: 0n }) });
+  try {
+    const { page } = s;
+    const management = page.locator('[data-automation-management]');
+    const claim = management.locator('[data-claim]');
+    await claim.waitFor();
+    assert.match(await claim.innerText(), /5 USDG/);
+    assert.equal(await claim.locator('[data-claim-recipient]').isVisible(), false, 'the default wallet needs no address field');
+    await claim.getByText('Send to another address', { exact: true }).click();
+    await claim.locator('[data-claim-recipient]').fill(OTHER);
+    assert.deepEqual(chain.sends, [], 'reading or choosing a recipient sends nothing');
+    await claim.locator(`[data-claim-open="${USDG}"]`).click();
+    const dialog = page.locator('[role="dialog"][data-v2in-dialog="claim"]');
+    await dialog.waitFor();
+    assert.equal(await page.getByRole('dialog').count(), 1);
+    assert.equal(await management.count(), 0);
+    assert.match(await dialog.innerText(), /5 USDG/);
+    assert.match(await dialog.innerText(), new RegExp(OTHER, 'i'), 'the review keeps the chosen recipient after management closes');
+    await dialog.locator('[data-v2in-send="claim"]:not([disabled])').waitFor({ timeout: 30_000 });
+    await dialog.locator('[data-v2in-send="claim"]').click();
+    await dialog.locator('[data-v2in-close]').waitFor({ timeout: 30_000 });
+    assert.equal(chain.sends.length, 1);
+    const { functionName, args } = decodeFunctionData({ abi: ABI.autoExit, data: chain.sends[0].data });
+    assert.deepEqual([functionName, args.map((value) => String(value).toLowerCase())], ['claim', [USDG, OTHER.toLowerCase()]]);
+    await dialog.locator('[data-v2in-close]').click();
+    await expandAutomation(page);
+    assert.equal(await page.locator('[data-automation-management] [data-claim]').count(), 0, 'the completed claim updates the available balance without a reload');
   } finally { await s.close(); }
 });

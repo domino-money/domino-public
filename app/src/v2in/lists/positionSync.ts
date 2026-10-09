@@ -4,6 +4,7 @@ import { POSITION_MANAGER } from '../../lib/fees/constants'
 import type { StatePositionOk, StateResponse } from '../../lib/fees/types'
 import { isV2ChainId, v2Chain } from '../../v2/chains'
 import { notePositionConfirmation, subscribePositionEvidence, type PositionChange } from '../../lib/positionEvidence'
+import { confirmedOperationState, subscribeConfirmedOperations, type ConfirmedOperation } from '../../lib/confirmedOperations'
 export type { PositionChange } from '../../lib/positionEvidence'
 
 export interface PositionIdentity { chainId: number; positionManager: string; tokenId: string }
@@ -23,12 +24,22 @@ export function createPositionSync() {
   const observations = new Map<string, PositionObservation>()
   const minimums = new Map<string, number>()
   const walletMinimums = new Map<string, number>()
+  const positionSources = new Map<string, Map<string, number>>()
+  const walletSources = new Map<string, Map<string, number>>()
+  const orphanedBlocks = new Set<string>()
   const burns = new Map<string, { block: number; hash?: string }>()
   const portfolios = new Map<string, PortfolioResponse>()
   const listeners = new Set<(change: PositionChange) => void>()
   const trim = <T>(map: Map<string, T>, max: number) => { while (map.size > max) map.delete(map.keys().next().value as string) }
   const notify = (change: PositionChange) => { for (const listener of listeners) listener(change) }
   const minBlock = (identity: PositionIdentity) => minimums.get(positionKey(identity)) ?? 0
+  const advance = (map: Map<string, number>, sources: Map<string, Map<string, number>>, key: string, source: string, block: number) => {
+    const contributions = sources.get(key) ?? new Map<string, number>()
+    contributions.set(source, Math.max(contributions.get(source) ?? 0, block))
+    sources.set(key, contributions)
+    map.set(key, Math.max(...contributions.values()))
+    while (sources.size > MAX_POSITIONS) sources.delete(sources.keys().next().value as string)
+  }
   const stale = (state: PositionLive, at: number): PositionLive => ({ ...state, freshness: { ...state.freshness, status: 'stale', ageSeconds: Math.max(0, at - state.snapshot.timestamp) } })
   const observation = (identity: PositionIdentity): PositionObservation | null => {
     const read = observations.get(positionKey(identity))
@@ -42,24 +53,49 @@ export function createPositionSync() {
     changed(change: PositionChange) {
       const manager = change.positionManager ?? (isV2ChainId(change.chainId) ? v2Chain(change.chainId).uniswap.v4.positionManager : null)
       const block = change.block === undefined ? null : Number(change.block)
+      const source = change.blockHash ? `${change.chainId}:${change.blockHash.toLowerCase()}` : 'unqualified'
       if (manager && block !== null && Number.isSafeInteger(block) && block > 0) {
         for (const tokenId of change.tokenIds ?? []) if (validId(tokenId)) {
           const key = positionKey({ chainId: change.chainId, positionManager: manager, tokenId })
-          minimums.set(key, Math.max(minimums.get(key) ?? 0, block))
+          advance(minimums, positionSources, key, source, block)
         }
         for (const tokenId of change.burnedTokenIds ?? []) if (validId(tokenId)) burns.set(positionKey({ chainId: change.chainId, positionManager: manager, tokenId }), { block, hash: change.blockHash })
         trim(burns, MAX_POSITIONS)
         trim(minimums, MAX_POSITIONS)
       }
-      if (change.wallet && block !== null && Number.isSafeInteger(block) && block > 0) {
+      // An explicitly scoped operation advances only those NFTs. A wallet-wide barrier is reserved for
+      // receipts whose affected positions are genuinely unknown (for example a newly discovered mint).
+      const scoped = change.tokenIds !== undefined || change.burnedTokenIds !== undefined
+      if (!scoped && change.wallet && block !== null && Number.isSafeInteger(block) && block > 0) {
         const wallet = change.wallet.toLowerCase()
         const key = `${change.chainId}:${wallet}`
-        walletMinimums.set(key, Math.max(walletMinimums.get(key) ?? 0, block))
-        for (const position of portfolios.get(wallet)?.positions ?? []) if (position.chainId === change.chainId) minimums.set(positionKey(position), Math.max(minBlock(position), block))
+        advance(walletMinimums, walletSources, key, source, block)
+        for (const position of portfolios.get(wallet)?.positions ?? []) if (position.chainId === change.chainId) advance(minimums, positionSources, positionKey(position), source, block)
         trim(walletMinimums, MAX_WALLETS * 3)
         trim(minimums, MAX_POSITIONS)
       }
       notify({ ...change, wallet: change.wallet?.toLowerCase(), kind: 'confirmed' })
+    },
+    /** A contradictory canonical block removes only the barriers/burns originating in that block. */
+    rollback(operation: Pick<ConfirmedOperation, 'chainId' | 'wallet' | 'positionManager' | 'tokenIds' | 'block' | 'blockHash'>) {
+      const source = `${operation.chainId}:${operation.blockHash.toLowerCase()}`
+      orphanedBlocks.add(source)
+      while (orphanedBlocks.size > 64) orphanedBlocks.delete(orphanedBlocks.values().next().value as string)
+      const affected = new Set<string>()
+      for (const [key, contributions] of positionSources) if (contributions.delete(source)) {
+        affected.add(key)
+        if (contributions.size) minimums.set(key, Math.max(...contributions.values()))
+        else { minimums.delete(key); positionSources.delete(key) }
+      }
+      for (const [key, contributions] of walletSources) if (contributions.delete(source)) {
+        if (contributions.size) walletMinimums.set(key, Math.max(...contributions.values()))
+        else { walletMinimums.delete(key); walletSources.delete(key) }
+      }
+      for (const [key, burn] of burns) if (key.startsWith(`${operation.chainId}:`) && burn.hash?.toLowerCase() === operation.blockHash.toLowerCase()) { burns.delete(key); affected.add(key) }
+      for (const key of affected) observations.delete(key)
+      // Known identities remain discoverable. An orphaned financial snapshot is never replayed as current state.
+      for (const [wallet, body] of portfolios) portfolios.set(wallet, { ...body, positions: body.positions.map(position => affected.has(positionKey(position)) && position.state.status === 'live' && position.state.snapshot.hash.toLowerCase() === operation.blockHash.toLowerCase() ? { ...position, state: { status: 'not_read' } } : position) })
+      notify({ kind: 'confirmed', chainId: operation.chainId, wallet: operation.wallet, positionManager: operation.positionManager, tokenIds: operation.tokenIds, blockHash: operation.blockHash })
     },
     offerState(answer: StateResponse) {
       const ids: string[] = []
@@ -86,13 +122,13 @@ export function createPositionSync() {
       for (const position of body.positions) {
         const key = positionKey(position)
         const minimum = walletMinimums.get(`${position.chainId}:${wallet}`) ?? 0
-        if (minimum > minBlock(position)) minimums.set(key, minimum)
+        if (minimum > minBlock(position)) for (const [source, block] of walletSources.get(`${position.chainId}:${wallet}`) ?? []) advance(minimums, positionSources, key, source, block)
         const old = found.get(key) ?? previous.get(key)
-        const state = position.state
+        const state = position.state.status === 'live' && orphanedBlocks.has(`${position.chainId}:${position.state.snapshot.hash.toLowerCase()}`) ? { status: 'not_read' } as const : position.state
         const burn = burns.get(key)
         if (burn && state.status === 'live' && state.snapshot.number === burn.block && burn.hash && state.snapshot.hash !== burn.hash) burns.delete(key)
         const oldState = old?.state
-        let next = position
+        let next = state === position.state ? position : { ...position, state }
         if (oldState?.status === 'live') {
           const reorganized = state.status === 'live' && state.snapshot.number === oldState.snapshot.number && state.snapshot.hash !== oldState.snapshot.hash
           if (reorganized) observations.delete(key)
@@ -124,11 +160,56 @@ export function createPositionSync() {
   }
 }
 
+/** A brief, bounded catch-up after an included operation. It changes only read timing; it never supplies state,
+ * balances or an automation mode. Failed reads retain their service Retry-After through the source's normal policy.
+ */
+export function createPortfolioCatchup() {
+  interface Target { chainId: number; manager: string | null; ids: readonly string[] | null; block: number; left: number }
+  const wallets = new Map<string, Map<string, Target>>()
+  return {
+    note(change: PositionChange) {
+      const block = change.block === undefined ? 0 : Number(change.block)
+      if (!change.wallet || !Number.isSafeInteger(block) || block <= 0) return
+      const wallet = change.wallet.toLowerCase()
+      let targets = wallets.get(wallet)
+      if (!targets) { targets = new Map(); wallets.set(wallet, targets) }
+      const ids = change.tokenIds === undefined ? null : [...new Set(change.tokenIds.filter(validId))].sort()
+      const manager = change.positionManager?.toLowerCase() ?? (isV2ChainId(change.chainId) ? v2Chain(change.chainId).uniswap.v4.positionManager : null)
+      const key = `${change.chainId}:${manager ?? ''}:${ids?.join(',') ?? '*'}`
+      const before = targets.get(key)
+      if (!before || block > before.block) targets.set(key, { chainId: change.chainId, manager, ids, block, left: 6 })
+      while (targets.size > 32) targets.delete(targets.keys().next().value as string)
+      while (wallets.size > MAX_WALLETS) wallets.delete(wallets.keys().next().value as string)
+    },
+    delay(body: PortfolioResponse): number | null {
+      const targets = wallets.get(body.wallet.toLowerCase())
+      let soon = false
+      for (const target of targets?.values() ?? []) {
+        if (target.left === 0) continue
+        const chain = body.chains.find((value) => value.chainId === target.chainId)
+        const current = chain?.status === 'current' && chain.indexedThrough !== null && chain.indexedThrough.number >= target.block
+        const reached = current && (target.ids === null || target.ids.every((id) => {
+          const position = body.positions.find((value) => value.chainId === target.chainId && value.positionManager.toLowerCase() === target.manager && value.tokenId === id)
+          if (position?.state.status !== 'live' || position.state.snapshot.number < target.block) return false
+          if (!position.vault) return true
+          const vault = body.vaults.find((value) => value.chainId === target.chainId && value.address.toLowerCase() === position.vault!.address.toLowerCase())
+          return vault?.state.status === 'read' && vault.state.snapshot.number >= target.block
+        }))
+        target.left = reached ? 0 : target.left - 1
+        if (target.left > 0) soon = true
+      }
+      return soon ? 2_000 : null
+    },
+  }
+}
+
 const shared = createPositionSync()
 subscribePositionEvidence((evidence) => {
   if (evidence.kind === 'state') shared.offerState(evidence.value)
   else shared.changed(evidence.value)
 })
+for (const operation of confirmedOperationState()) if (operation.phase === 'reorged') shared.rollback(operation)
+subscribeConfirmedOperations(operation => { if (operation.phase === 'reorged') shared.rollback(operation) })
 export const positionChanged = notePositionConfirmation
 export const subscribePositionChanges = shared.subscribe
 export const reconcilePortfolio = shared.reconcile

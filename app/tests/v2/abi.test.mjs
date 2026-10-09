@@ -4,8 +4,10 @@
  */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
-import { toFunctionSelector } from 'viem';
+import { parseAbi, toFunctionSelector } from 'viem';
 
 const require = createRequire(import.meta.url);
 const abi = require('../../.test-build/app/src/finance/v2/abi.js');
@@ -15,6 +17,20 @@ const expectAll = (items, table, label) => {
   const have = selectors(items);
   for (const [selector, name] of Object.entries(table)) assert.equal(have.get(selector), name, `${label}: ${name} ${selector}`);
 };
+
+test('the direct manager ABI literals equal the reviewed multicall and event signatures', () => {
+  const text = readFileSync(new URL('../../.test-build/app/src/finance/v2/direct.js', import.meta.url), 'utf8');
+  for (const [name, signature] of [
+    ['V3_MULTICALL_ABI', 'function multicall(bytes[] data) payable returns (bytes[] results)'],
+    ['V3_COLLECT_EVENT', 'event Collect(uint256 indexed tokenId, address recipient, uint256 amount0, uint256 amount1)'],
+    ['TRANSFER_EVENT', 'event Transfer(address indexed from, address indexed to, uint256 value)'],
+  ]) {
+    const expression = text.match(new RegExp(`const ${name} = (\\[[^\\n]+\\]);`))?.[1];
+    assert.ok(expression, `${name} stays a literal, without a runtime ABI parser`);
+    const literal = JSON.parse(JSON.stringify(runInNewContext(expression)));
+    assert.deepEqual(literal, parseAbi([signature]), name);
+  }
+});
 
 test('the zap: the four actions in their three consents, nonces and checks (§2.1)', () => {
   expectAll(abi.ZAP_ABI, {

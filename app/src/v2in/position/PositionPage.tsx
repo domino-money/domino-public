@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/types'
 import { positionsHref } from '../../components/explore/routes'
-import { IconChevronDown, IconChevronLeft, IconSearch } from '../../components/icons'
+import { IconChevronDown, IconChevronLeft, IconCoins, IconSearch } from '../../components/icons'
 import { PositionRange, chainCardPrice, preloadPriceChart } from '../../components/positions/PositionRange'
 import { activityOpenedAt } from '../../lib/chart/positionOpened'
 import { readablePrice } from '../../lib/chart/priceFacts'
@@ -198,6 +198,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   const priced = priceInverted(position.pool.currency0, position.pool.currency1) ? { base: position.pool.currency1, quote: position.pool.currency0 } : { base: position.pool.currency0, quote: position.pool.currency1 }
   const phone = useMediaQuery('(max-width: 767px)')
   const [mode, setMode] = useState<PositionMode | null>(null)
+  const [automationToolbar, setAutomationToolbar] = useState<HTMLSpanElement | null>(null)
   const approval = useZapApproval(gate, action, walletOnChain)
   const [base, quote] = card.currencies
   const owner = position.owner
@@ -254,18 +255,19 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
             ) : (
               <>
                 <Button type="button" variant="primary" disabled={hooked} title={hooked ? HOOKED_COPY : undefined} data-position-v2-action="collect" onClick={() => setMode('collect')}>
-                  {COPY.button.collect}
+                  <IconCoins size={18} /><span>{COPY.button.collect}</span>
                 </Button>
                 <MoreActions id={`position-v2-more-${position.tokenId}`} items={items} onPick={(key) => { if (key !== 'protect') setMode(key) }} data-position-v2-actions={gate.mode} />
               </>
             )}
+            <span ref={setAutomationToolbar} className="dm-position-automation-slot" data-position-automation-slot="" />
           </div>
         )}
       </div>
 
       <PositionAutomation tokenId={position.tokenId.toString()} position={automationPosition} holder={position.owner}
         chainId={chainId} dex={position.dex} priceContext={{ block: position.snapshotBlock, saved: stale }}
-        indexed={{ portfolio: answer, subscriber: position.custody.subscriber }} onChanged={onChanged} />
+        indexed={{ portfolio: answer, subscriber: position.custody.subscriber }} toolbar={automationToolbar} onChanged={onChanged} />
       <StatStrip layout="tiles" className="dm-pos-stats" title={position.snapshotBlock !== null ? `Read at block ${position.snapshotBlock}` : undefined} data-position-stats="">
         <Stat
           label={COPY.page.holds}

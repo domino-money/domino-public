@@ -14,6 +14,7 @@ import { v2PositionHref } from '../route'
 import { rawAmounts, usdOfRaw } from '../usd'
 import { positionOfState } from '../../lib/walletCards'
 import { minimumPositionBlock, positionBurn, positionKey, positionObservation } from './positionSync'
+import { automationState, confirmedPositionAutomation } from '../automate/store'
 
 /**
  * What the Positions screen's two lists take from read-v6 (spec F7 rev4 §6.2, §6.3, §2.11; the integration brief's data
@@ -253,10 +254,21 @@ const EXIT_WORD: Readonly<Record<ProtectionStanding, string | null>> = { on: nul
  * root a Collect fees or an Add liquidity disarmed while the exit can still fire; and still Auto-exit's after Leave
  * automation turned its module off ("Auto-exit · Paused"), never "Auto-compound · Automation off".
  */
-function vaultBadge(position: V6Position, vaults: readonly Vault[], mandates: readonly Mandate[]): VaultBadge | null {
+function vaultBadge(position: V6Position, vaults: readonly Vault[], mandates: readonly Mandate[], wallet: string | undefined, halted: boolean, automation: ReturnType<typeof automationState>): VaultBadge | null {
+  const vault = position.vault ? vaults.find((v) => v.chainId === position.chainId && v.address.toLowerCase() === position.vault!.address.toLowerCase()) ?? null : null
+  const orders = mandates.filter(order => order.chainId === position.chainId && order.vault.toLowerCase() === vault?.address.toLowerCase() && order.tokenId === position.tokenId)
+  const proof = confirmedPositionAutomation(automation, {
+    chainId: position.chainId, positionManager: position.positionManager, tokenId: position.tokenId, dex: position.dex, wallet, vault: position.vault?.address, halted,
+    listedBlock: vault?.state.status === 'read' ? vault.state.snapshot.number : null,
+    listedNonce: vault?.state.status === 'read' ? BigInt(vault.state.stateNonce) : null,
+  }, vault?.state.status === 'read' ? {
+    mode: vault.state.policy.mode, paused: vault.state.paused, armed: vault.custody.armed, module: vault.state.exitModule, hasExit: orders.length > 0,
+    activeExitIds: orders.filter(order => order.status === 'active' && !order.expired).map(order => order.mandateHash),
+    blockedExitIds: orders.filter(order => order.blockedBy.some(reason => !['expired', 'module_disabled', 'custody_unread'].includes(reason))).map(order => order.mandateHash),
+  } : undefined)
+  const role = position.vault?.role ?? 'root'
+  if (proof) return { role, name: proof.name, word: proof.word, running: proof.running }
   if (!position.vault) return null
-  const vault = vaults.find((v) => v.chainId === position.chainId && v.address.toLowerCase() === position.vault!.address.toLowerCase()) ?? null
-  const role = position.vault.role
   if (!vault) return { role, name: null, word: null, running: false }
   if (vault.state.status !== 'read' || vault.custody.armed === null || vault.state.snapshot.number < minimumPositionBlock(position)) return { role, name: null, word: 'Updating', running: false }
   const exit = protectionStanding(vault, mandates)
@@ -268,7 +280,7 @@ function vaultBadge(position: V6Position, vaults: readonly Vault[], mandates: re
   return { role, name, word: null, running: name !== null }
 }
 
-function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'servedAt'> & Partial<Pick<PortfolioResponse, 'mandates'>>, name: ReturnType<typeof tokenNamer>): PositionRowView | null {
+function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'servedAt'> & Partial<Pick<PortfolioResponse, 'mandates' | 'wallet'>>, name: ReturnType<typeof tokenNamer>, automation: ReturnType<typeof automationState>): PositionRowView | null {
   if (!isV2ChainId(position.chainId)) return null
   const chainId = position.chainId
   const chain = answer.chains.find((c) => c.chainId === chainId)
@@ -290,7 +302,7 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
     dexName: dexName(position.dex),
     tokenId,
     href: v2PositionHref({ chainId, dex: position.dex, tokenId: BigInt(tokenId) }),
-    vault: vaultBadge(position, answer.vaults, answer.mandates ?? []),
+    vault: vaultBadge(position, answer.vaults, answer.mandates ?? [], answer.wallet, chain?.automationHalted === true, automation),
     family: families.length ? { successors, reserves } : null,
   }
   // /state has no block hash. Use its validated amounts as a frontend observation, never forge a read-v6 snapshot.
@@ -355,7 +367,7 @@ const ROBINHOOD_V4_MANAGER = (): string => v2Chain(4663).uniswap.v4.positionMana
  * The rows of an answer's positions, in the order listed, on the chains `open` admits (the gate). `v1Ids`: the NFT ids
  * V1's own list shows; a read-v6 Robinhood Chain v4 position with one of them is the same NFT, shown once, as V1's row.
  */
-export function positionRows(answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'positions' | 'servedAt'> & Partial<Pick<PortfolioResponse, 'mandates'>>, open: (chainId: V2ChainId) => boolean, v1Ids: readonly string[] = []): PositionRowView[] {
+export function positionRows(answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'positions' | 'servedAt'> & Partial<Pick<PortfolioResponse, 'mandates' | 'wallet'>>, open: (chainId: V2ChainId) => boolean, v1Ids: readonly string[] = [], automation: ReturnType<typeof automationState> = automationState()): PositionRowView[] {
   const name = tokenNamer(answer.tokens)
   const v1 = new Set(v1Ids)
   const manager = ROBINHOOD_V4_MANAGER()
@@ -364,7 +376,7 @@ export function positionRows(answer: Pick<PortfolioResponse, 'chains' | 'tokens'
   for (const position of answer.positions) {
     if (!isV2ChainId(position.chainId) || !open(position.chainId)) continue
     if (position.chainId === 4663 && position.dex === 4 && position.positionManager.toLowerCase() === manager && v1.has(position.tokenId)) continue
-    const row = rowOf(position, answer, name)
+    const row = rowOf(position, answer, name, automation)
     if (!row || seen.has(row.key)) continue
     seen.add(row.key)
     out.push(withTerminalEvidence(row))
@@ -495,8 +507,11 @@ function pairWords(amounts: readonly string[], tokens: readonly [TokenName, Toke
   return parts.length ? parts.join(' + ') : '0'
 }
 
-function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer>, pools: ReadonlyMap<string, readonly [string, string]>): ReceiptView | null {
+export type ReceiptFinality = (chainId: number, hash: string, blockHash: string) => 'included' | 'finalized' | 'reorged' | null
+function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer>, pools: ReadonlyMap<string, readonly [string, string]>, finality?: ReceiptFinality): ReceiptView | null {
   if (!isV2ChainId(item.chainId)) return null
+  const proved = finality?.(item.chainId, item.tx.hash, item.tx.snapshot.hash)
+  if (proved === 'reorged') return null
   const chainId = item.chainId
   const token = (address: string) => name(chainId, address)
   const gas = item.tx.gas
@@ -508,7 +523,7 @@ function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer
     hash: item.tx.hash,
     block: item.tx.snapshot.number,
     at: item.tx.snapshot.timestamp,
-    finalized: item.tx.finality === 'finalized',
+    finalized: proved === 'finalized' || item.tx.finality === 'finalized',
     gas: gas ? { sender: gas.sender.toLowerCase(), gasUsed: groupDigits(gas.gasUsed), gasPrice: gweiWords(gas.effectiveGasPriceWei), l1Fee: gas.l1FeeWei === null ? null : weiWords(gas.l1FeeWei) } : null,
   }
   const sender = gas ? gas.sender.toLowerCase() : null
@@ -603,7 +618,7 @@ function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer
  * answer is about (who "you" is in an event). `portfolio`: the same wallet's portfolio, when read, for the pool tokens a
  * vault's [amount0, amount1] figures are in (without it they are said in raw units).
  */
-export function receiptViews(answer: Pick<ActivityResponse, 'items' | 'tokens' | 'wallet'>, open: (chainId: V2ChainId) => boolean, portfolio: Pick<PortfolioResponse, 'vaults' | 'tokens'> | null = null): ReceiptView[] {
+export function receiptViews(answer: Pick<ActivityResponse, 'items' | 'tokens' | 'wallet'>, open: (chainId: V2ChainId) => boolean, portfolio: Pick<PortfolioResponse, 'vaults' | 'tokens'> | null = null, finality?: ReceiptFinality): ReceiptView[] {
   const name = tokenNamer([...answer.tokens, ...(portfolio?.tokens ?? [])])
   const pools = new Map<string, readonly [string, string]>()
   for (const vault of portfolio?.vaults ?? []) {
@@ -613,7 +628,7 @@ export function receiptViews(answer: Pick<ActivityResponse, 'items' | 'tokens' |
   const out: ReceiptView[] = []
   for (const item of answer.items) {
     if (!isV2ChainId(item.chainId) || !open(item.chainId)) continue
-    const view = receiptOf(item, owner, name, pools)
+    const view = receiptOf(item, owner, name, pools, finality)
     if (view) out.push(view)
   }
   return out

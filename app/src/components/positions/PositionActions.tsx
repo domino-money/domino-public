@@ -58,6 +58,8 @@ export interface PositionActionsProps {
   tokens?: readonly [TokenDisplay, TokenDisplay] | null
   /** The page's own way on for this position (Automate, or the docs on switching its sequence on), shown first unless Turn on or Pause takes its place. */
   automate?: ReactNode
+  /** The V2 automation control, placed after Withdraw and before the optional Close action. */
+  automationSlot?: ReactNode
   /** Collect fees is the primary button: a plain position's (2026-09-27); a sequence's is outlined. */
   primary?: boolean
 }
@@ -173,7 +175,7 @@ const LEDE: Readonly<Record<Action, string>> = {
   close: 'Your tokens and fees return to your wallet. The position, now empty, stays in your wallet.',
 }
 
-export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null, automate = null, primary }: PositionActionsProps) {
+export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null, automate = null, automationSlot = null, primary }: PositionActionsProps) {
   const identity = useWalletIdentity()
   const wallet = walletKey(identity)
   const mine = wallet !== null && identity.kind === 'connected' && identity.address.toLowerCase() === owner.toLowerCase()
@@ -334,6 +336,7 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
           <IconCoins size={18} /><span>Collect fees</span>
         </Button>
         <span className="dm-position-tools-slot" data-position-action-tools="" />
+        {automationSlot}
         {!empty && (
           <Button
             type="button"

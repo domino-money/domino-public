@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { PortfolioResponse } from 'api-contracts/read-v6/types'
 import { Button, LinkButton } from '../../components/ui'
+import { IconAutomate, IconShield } from '../../components/icons'
+import { ActionSheet } from '../../components/positions/ActionSheet'
 import { sequenceHref } from '../../components/explore/routes'
 import { askAutoExitOnArrival, takeAutoExitAsk } from '../../lib/automate/autoExitAsk'
 import type { WalletPosition } from '../../lib/walletPositions'
@@ -22,7 +25,7 @@ import { IndexStatus } from './IndexStatus'
 import { chainView, creditsOn, mandatesOf, mergeCredits, tokenMetaOf, vaultsOfPosition } from './portfolio'
 import { usePortfolio } from './read6'
 import { setupEligibility } from './setupPositions'
-import { approvedAt, automationState, exitModuleSet, sessionMandatesFor, sessionRevoked, subscribeAutomation } from './store'
+import { approvedAt, automationState, confirmedPositionAutomation, exitModuleSet, sessionMandatesFor, sessionRevoked, subscribeAutomation } from './store'
 import { poolTokens, shortAddress, walletTokenMeta } from './tokens'
 import { ReservesWords, VAULT_ACTION_LABEL, VaultCard } from './VaultCard'
 import { VaultDialog, type VaultDialogKind, type VaultDialogSubject } from './VaultDialog'
@@ -65,6 +68,8 @@ export interface PositionAutomationProps {
   dex?: Dex
   /** The V2 page already read this portfolio and custody; never re-read V1's subscriber on another chain. */
   indexed?: { portfolio: PortfolioResponse; subscriber: string | null }
+  /** Stable slot supplied by the position's action bar, after its liquidity actions. */
+  toolbar?: Element | null
   onChanged?: () => void
 }
 
@@ -87,7 +92,7 @@ function joined(a: V2Gate | null, b: V2Gate | null): Exclude<V2Gate, { mode: 'of
   return a.mode === 'preview' ? a : b
 }
 
-export default function PositionAutomation({ tokenId, position, holder, priceContext, chainId = 4663, dex = 4, indexed, onChanged }: PositionAutomationProps) {
+export default function PositionAutomation({ tokenId, position, holder, priceContext, chainId = 4663, dex = 4, indexed, toolbar, onChanged }: PositionAutomationProps) {
   const vaultGate = useGate('vault', chainId)
   const exitGate = useGate('autoExit', chainId)
   const identity = useWalletIdentity()
@@ -99,14 +104,37 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   const [now] = useState(() => Math.floor(Date.now() / 1000))
   const [open, setOpen] = useState<Open>(null)
   const [expanded, setExpanded] = useState(false)
+  const hideManagement = useCallback(() => setExpanded(false), [])
+  const beginAction = useCallback((next: Exclude<Open, null>) => {
+    setExpanded(false)
+    setOpen((current) => current ?? next)
+  }, [])
   // Added 2026-10-06 (the integration review, money #4): "Turn off instead" in the automation's own dialog opens the
   // Auto-exit card's Turn off.
   const [turnOff, setTurnOff] = useState(0)
   // The vaults this page acted on, as read on chain right after (./vaultView.ts shownVaultView), by address.
   const [fresh, setFresh] = useState<ReadonlyMap<string, VaultSnapshot>>(() => new Map())
+  const exitAfterClose = useRef(false)
   const chain = v2Chain(chainId)
 
   const store = useSyncExternalStore(subscribeAutomation, automationState, automationState)
+  const invalidatedProofs = useRef(new Set<string>())
+  useEffect(() => {
+    const orphaned = store.proofs.filter(operation => operation.phase === 'reorged' && operation.chainId === chainId && operation.wallet === connected && operation.vault && operation.tokenIds.includes(tokenId) && !invalidatedProofs.current.has(`${operation.hash}:${operation.blockHash}`))
+    if (!orphaned.length) return
+    for (const operation of orphaned) invalidatedProofs.current.add(`${operation.hash}:${operation.blockHash}`)
+    setFresh(before => {
+      const next = new Map(before)
+      for (const operation of orphaned) {
+        const read = next.get(operation.vault!)
+        if (!read || Number(read.blockNumber) < operation.block) continue
+        const later = store.proofs.some(other => other.phase !== 'reorged' && other.chainId === chainId && other.wallet === connected && other.vault === operation.vault && other.block > operation.block && other.block <= Number(read.blockNumber))
+        if (!later) next.delete(operation.vault!)
+      }
+      return next
+    })
+    setVersion(value => value + 1)
+  }, [store, chainId, connected, tokenId])
   // Changed on purpose 2026-10-06 (the final check, F2): with the auto-exit module this page itself set (Leave automation
   // turns it off, "Turn back on" on), from that step's receipt, while the index has not reached it: the card and the
   // automation's actions say the new standing at once (../autoexit/card.ts withExitModules). Changed on purpose 2026-10-06
@@ -143,7 +171,7 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
       const found = views.find((entry) => entry.view.vault === vault)
       if (!found) return
       const kind: VaultDialogKind = focus === 'rearm' ? 'rearm' : focus === 'leave' ? 'leave' : reservesOffer(found.view).returnable ? 'return' : 'withdraw'
-      setOpen({ kind, vault: found.view, subject: null })
+      beginAction({ kind, vault: found.view, subject: null })
     }
     for (const entry of views) {
       const taken = takeVault(chainId, entry.view.vault)
@@ -157,7 +185,7 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
       const taken = takeVault(chainId, handoff.vault)
       if (taken) show(taken.vault, taken.focus)
     })
-  }, [views, chainId])
+  }, [views, chainId, beginAction])
   // §4.8: `unclaimed(owner, token)` for the pool's two tokens, read on chain while the auto-exit gate is live and the wallet
   // is on this chain (../autoexit/Orders.tsx useUnclaimed); null otherwise, and read again after anything this page did.
   const liveCredits = useUnclaimed(exitGate, pagePool, connected, version)
@@ -186,9 +214,21 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   // Changed on purpose 2026-10-07: V2 setup and the detail use the same current portfolio/custody authority. A missing
   // position, failed custody read or a foreign subscriber never means "plain". V1's release/state cannot enable it.
   const listedPosition = body?.positions.find((item) => item.chainId === chainId && item.dex === dex && item.tokenId === tokenId) ?? null
+  const indexedVault = body?.vaults.find(vault => vault.chainId === chainId && vault.address.toLowerCase() === (current?.vault ?? listedPosition?.vault?.address)?.toLowerCase()) ?? null
+  const currentRead = current ? fresh.get(current.vault.toLowerCase()) ?? null : null
+  const proof = connected ? confirmedPositionAutomation(store, {
+    chainId, positionManager: dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager, tokenId, dex, wallet: connected, vault: indexedVault?.address,
+    halted: body?.chains.find(one => one.chainId === chainId)?.automationHalted === true,
+    listedBlock: currentRead ? Number(currentRead.blockNumber) : indexedVault?.state.status === 'read' ? indexedVault.state.snapshot.number : null,
+    listedNonce: currentRead?.stateNonce ?? (indexedVault?.state.status === 'read' ? idOf(indexedVault.state.stateNonce) : null),
+  }, indexedVault?.state.status === 'read' ? {
+    mode: indexedVault.state.policy.mode, paused: indexedVault.state.paused, armed: indexedVault.custody.armed, module: indexedVault.state.exitModule, hasExit: orders.length > 0,
+    activeExitIds: orders.filter(order => order.status === 'active' && !order.expired).map(order => order.mandateHash),
+    blockedExitIds: orders.filter(order => order.blockedBy.some(reason => !['expired', 'module_disabled', 'custody_unread'].includes(reason))).map(order => order.mandateHash),
+  } : undefined) : null
   const eligibility = body && connected && listedPosition ? setupEligibility(body, connected, listedPosition) : 'unavailable'
   // A vault made from this page that the index does not list yet is no plain position any more.
-  const madeHere = mine.length > 0
+  const madeHere = mine.length > 0 || proof !== null
   const plain = !rootView && !memberView && !madeHere && holds && liquid && pagePool !== null && pagePool.hooks === ZERO_ADDRESS && eligibility === 'eligible'
   const orderGate = member ? (gateOpen(exitGate) ? exitGate : null) : joined(vaultGate, exitGate)
   const pagePrice = positionExitPrice(position, priceContext)
@@ -235,48 +275,70 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
     // Added 2026-10-06 (the review of point 5): New position's success asked for Auto-exit on its way here
     // (lib/automate/autoExitAsk.ts): its dialog opens by itself once it is offered.
     const at = latestTarget.current
-    if (offered && at && takeAutoExitAsk(entryKey)) setOpen({ kind: 'mandate', target: at })
+    if (offered && at && takeAutoExitAsk(entryKey)) beginAction({ kind: 'mandate', target: at })
     return () => offerExitOrder(entryKey, false)
-  }, [entryKey, offered])
+  }, [entryKey, offered, beginAction])
   useEffect(
     () =>
       onExitOrderAsked((asked) => {
         const at = latestTarget.current
-        if (asked === entryKey && at) setOpen({ kind: 'mandate', target: at })
+        if (asked === entryKey && at) beginAction({ kind: 'mandate', target: at })
       }),
-    [entryKey],
+    [entryKey, beginAction],
   )
 
   if (!gateOpen(vaultGate) && !gateOpen(exitGate)) return null
 
   const reading = connected !== null && body === null
   const stateUnavailable = unread || (body !== null && chainState?.state !== 'current') || (eligibility === 'unavailable' && mine.length === 0 && current?.rootClosed !== true) || (body?.truncated.mandates === true && protection !== null && !exitOn)
-  const label = current ? automationMode(current) : mine.length > 0 ? 'Auto-exit' : 'Automation'
-  const standing = reading && answer === null ? 'Loading' : stateUnavailable ? 'State unavailable' : current ? automationStanding(current) : mine.length > 0 ? 'On' : eligibility === 'closed' || (position && !liquid) ? 'Closed' : eligibility === 'subscribed' ? 'Managed elsewhere' : eligibility === 'unsupported' ? 'Not supported' : eligibility === 'eligible' ? 'Not available' : 'State unavailable'
+  const label = proof?.name ?? (current ? automationMode(current) : mine.length > 0 ? 'Auto-exit' : 'Automation')
+  const standing = proof ? proof.word ?? (proof.running ? 'On' : 'Updating') : reading && answer === null ? 'Loading' : stateUnavailable ? 'State unavailable' : current ? automationStanding(current) : mine.length > 0 ? 'On' : eligibility === 'closed' || (position && !liquid) ? 'Closed' : eligibility === 'subscribed' ? 'Managed elsewhere' : eligibility === 'unsupported' ? 'Not supported' : eligibility === 'eligible' ? 'Not available' : 'State unavailable'
   const recovery = views.filter(({ view }) => view.vault !== current?.vault)
   const fundsPending = views.some(({ view }) => (view.reserves.known && view.reserves.held) || view.successors.length > 0) || (showExit && credits.length > 0)
-  const canShow = connected !== null && (holds || views.length > 0 || mine.length > 0 || reading || unread)
+  const canShow = connected !== null && (holds || views.length > 0 || mine.length > 0 || proof !== null || reading || unread)
   if (!canShow) return null
   const setupLink = plain && chainId === 4663 && dex === 4 && gateOpen(vaultGate)
   const setupExit = plain && !setupLink && target !== null
 
-  return (
-    <div className="dm-position-automation" data-v2in-position={tokenId} data-v2in-mode={mode ?? 'off'}>
+  const controlId = `automation-controls-${chainId}-${dex}-${tokenId}`
+  const ControlIcon = label === 'Auto-exit' ? IconShield : IconAutomate
+  const controls = <>
       {setupLink ? <LinkButton href={sequenceHref(tokenId)} variant="primary" data-automation-control="" data-automation-setup="" data-automate-entry={tokenId}>Set up automation</LinkButton>
-        : setupExit ? <Button type="button" variant="primary" onClick={() => setOpen({ kind: 'mandate', target })} data-automation-control="" data-automation-setup="" data-v2in-open="mandate">Set up automation</Button>
-          : <Button type="button" variant="outline" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={`automation-controls-${chainId}-${dex}-${tokenId}`} data-automation-control="">
-            {label} · {standing}{fundsPending ? ' · Funds available' : ''}
+        : setupExit ? <Button type="button" variant="primary" onClick={() => beginAction({ kind: 'mandate', target })} data-automation-control="" data-automation-setup="" data-v2in-open="mandate">Set up automation</Button>
+          : <Button type="button" variant="outline" onClick={() => setExpanded(true)} aria-haspopup="dialog" aria-expanded={expanded && !open} aria-controls={controlId} data-automation-control="">
+            <ControlIcon size={18} /><span>{label} · {standing}</span>{fundsPending && <span className="dm-automation-funds-dot" aria-label="Funds available" />}
           </Button>}
-      {(setupLink || setupExit) && fundsPending && <Button type="button" variant="outline" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={`automation-controls-${chainId}-${dex}-${tokenId}`} data-automation-recovery-toggle="">Recover funds</Button>}
-      <div id={`automation-controls-${chainId}-${dex}-${tokenId}`} hidden={!expanded} className="dm-automation-panel" data-automation-panel="">
+      {(setupLink || setupExit) && fundsPending && <Button type="button" variant="outline" onClick={() => setExpanded(true)} aria-haspopup="dialog" aria-expanded={expanded && !open} aria-controls={controlId} data-automation-recovery-toggle="">Recover funds</Button>}
+    </>
+  const renderManagement = (exitContent: ReactNode = null, actionOpen = false) => {
+    const panel = <div id={controlId} className="dm-automation-panel" data-automation-panel="">
+      {proof && <p className="dm-acct-note" role="status" data-automation-confirmed="">Your change is confirmed. Controls update automatically.</p>}
       {/* The chain's status before any figure of it: behind or unavailable, and §5.3's halt banner (the owner's actions stay). */}
       {body && views.length > 0 && chainState && (chainState.state !== 'current' || chainState.halted === true) && <IndexStatus chains={body.chains} chainId={chainId} what="Your automation" />}
       {unread && answer && answer.reply.kind !== 'ok' && <IndexStatus failed={answer.reply} chainId={chainId} what="Your automation" />}
       {body && (body.truncated.vaults || body.truncated.mandates) && <p role="status" className="dm-acct-note">Some automation records are not included in this read. Available balances and recovery remain below.</p>}
-      {current && (!protection || !showExit) && <VaultCard view={current} tokens={tokensOfView(current)} variant="page" nowSeconds={now} onAction={(kind, subject) => setOpen({ kind, vault: current, subject: subject ?? null })} />}
+      {current && (!protection || !showExit) && <VaultCard view={current} tokens={tokensOfView(current)} nowSeconds={now} onAction={(kind, subject) => beginAction({ kind, vault: current, subject: subject ?? null })} />}
       {!current && !plain && !reading && <p role="status" className="dm-acct-note" data-automation-eligibility={eligibility}>{eligibility === 'subscribed' ? 'This position is linked to another service.' : eligibility === 'unsupported' ? 'Automation is not supported for this position.' : stateUnavailable ? 'Automation data is unavailable. Refresh to check again.' : null}</p>}
       {stateUnavailable && <Button type="button" variant="outline" size="sm" onClick={() => changed()} data-automation-refresh="">Refresh</Button>}
-      {showExit && cardTarget && gateOpen(exitGate) && (
+      {exitContent}
+      {recovery.length > 0 && <Details label="Previous setup balances" data-automation-recovery="">
+        <p className="dm-acct-note">Earlier setups of this position may still hold funds. Recover them here.</p>
+        {recovery.map(({ view }) => <div key={view.vault} className="dm-automation-recovery" data-recovery-vault={view.vault}>
+          <p className="dm-acct-note">{shortAddress(view.vault)} · <ReservesWords view={view} tokens={tokensOfView(view)} /></p>
+          <div className="flex flex-wrap gap-2">{vaultActions(view).filter((kind) => ['withdraw', 'return', 'unsubscribe', 'revoke', 'recover-token', 'recover-position'].includes(kind)).map((kind) => <Button key={kind} type="button" size="sm" variant="outline" onClick={() => beginAction({ kind, vault: view, subject: null })}>{VAULT_ACTION_LABEL[kind]}</Button>)}</div>
+          {view.successors.map((id) => <Button key={id.toString()} type="button" size="sm" variant="outline" onClick={() => beginAction({ kind: 'withdraw-child', vault: view, subject: { tokenId: id } })}>Withdraw position #{id.toString()}</Button>)}
+        </div>)}
+      </Details>}
+      {current?.rootClosed === true && <p className="dm-acct-note">This position is closed. Any remaining funds can be recovered here. <a href="#/new">Create a new position</a></p>}
+    </div>
+    return expanded && !open && !actionOpen
+      ? <ActionSheet id={`manage-${entryKey}`} title={label} onClose={hideManagement} footer={<Button type="button" variant="outline" size="lg" onClick={hideManagement}>Back to position</Button>} data-automation-management="">{panel}</ActionSheet>
+      : <div hidden>{panel}</div>
+  }
+  return (
+    <div className="dm-position-automation" data-in-toolbar={toolbar ? '' : undefined} data-v2in-position={tokenId} data-v2in-mode={mode ?? 'off'}>
+      {toolbar ? createPortal(controls, toolbar) : controls}
+      {showExit && cardTarget && gateOpen(exitGate) ? (
         <AutoExitCard
           target={cardTarget}
           orders={orders}
@@ -290,25 +352,17 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
           protection={protection}
           stateAvailable={!stateUnavailable}
           turnOff={turnOff}
+          renderContent={renderManagement}
+          onDialogOpened={hideManagement}
           onTurnOn={() => {
-            if (target) setOpen({ kind: 'mandate', target })
+            if (target) beginAction({ kind: 'mandate', target })
           }}
           onVaultAction={(kind) => {
-            if (protection) setOpen({ kind, vault: protection, subject: null })
+            if (protection) beginAction({ kind, vault: protection, subject: null })
           }}
           onChanged={changed}
         />
-      )}
-      {recovery.length > 0 && <Details label="Previous setup balances" data-automation-recovery="">
-        <p className="dm-acct-note">Earlier setups of this position may still hold funds. Recover them here.</p>
-        {recovery.map(({ view }) => <div key={view.vault} className="dm-automation-recovery" data-recovery-vault={view.vault}>
-          <p className="dm-acct-note">{shortAddress(view.vault)} · <ReservesWords view={view} tokens={tokensOfView(view)} /></p>
-          <div className="flex flex-wrap gap-2">{vaultActions(view).filter((kind) => ['withdraw', 'return', 'unsubscribe', 'revoke', 'recover-token', 'recover-position'].includes(kind)).map((kind) => <Button key={kind} type="button" size="sm" variant="outline" onClick={() => setOpen({ kind, vault: view, subject: null })}>{VAULT_ACTION_LABEL[kind]}</Button>)}</div>
-          {view.successors.map((id) => <Button key={id.toString()} type="button" size="sm" variant="outline" onClick={() => setOpen({ kind: 'withdraw-child', vault: view, subject: { tokenId: id } })}>Withdraw position #{id.toString()}</Button>)}
-        </div>)}
-      </Details>}
-      {current?.rootClosed === true && <p className="dm-acct-note">This position is closed. Any remaining funds can be recovered here. <a href="#/new">Create a new position</a></p>}
-      </div>
+      ) : renderManagement()}
       {open?.kind === 'mandate' && orderGate && <MandateDialog target={{ ...open.target, tokens: pageTokens ?? open.target.tokens, price: pagePrice }} gate={orderGate} onClose={() => setOpen(null)} onChanged={changed} />}
       {open && open.kind !== 'mandate' && gateOpen(vaultGate) && (
         <VaultDialog
@@ -320,11 +374,18 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
           // Auto-exit's own automation (Changed on purpose 2026-10-06, the integration review, rugged-literal #1, money #4):
           // its rearm is said by what it does for the Auto-exit on its root, and "Turn off instead" opens the card's Turn off.
           {...(protectionVault(open.vault) ? { exit: activeExit, onTurnOff: activeExit ? () => { setOpen(null); setTurnOff((n) => n + 1) } : undefined } : {})}
-          onClose={() => setOpen(null)}
+          onClose={() => {
+            setOpen(null)
+            if (!exitAfterClose.current) return
+            exitAfterClose.current = false
+            const at = latestTarget.current
+            if (at) setOpen({ kind: 'mandate', target: at })
+            else askAutoExitOnArrival(entryKey)
+          }}
           onChanged={(snapshot) => {
             // With none on, that rearm was the first part of turning Auto-exit on: its own dialog opens next, by itself, once
             // the page offers it (the automation's root read back armed).
-            if (open.kind === 'rearm' && protectionVault(open.vault) && activeExit === null) askAutoExitOnArrival(entryKey)
+            if (open.kind === 'rearm' && protectionVault(open.vault) && activeExit === null) exitAfterClose.current = true
             changed(snapshot)
           }}
         />

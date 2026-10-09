@@ -194,6 +194,7 @@ export function SetupFlow({ positions, portfolio, intent, gate, exitGate }: {
     steps,
     context: 'vault',
     labels,
+    affected: review ? { positionManager: (review.init.root.dex === 3 ? v2Chain(4663).uniswap.v3 : v2Chain(4663).uniswap.v4).positionManager, tokenIds: [review.init.root.tokenId.toString()], vault: review.vault } : { tokenIds: [] },
     onStepDone: (outcome) => {
       if (!review || !session) return
       if (outcome.receipt) recordVaultEvents(4663, review.vault, outcome.receipt.events)

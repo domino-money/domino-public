@@ -3,13 +3,14 @@ import type { V2Chain } from '../../v2/chains'
 import type { V2ChainId } from '../../v2/types'
 import { definiteRefusal } from '../nonce'
 import { refuseUnlessLive } from './liveLock'
+import type { ConfirmationRead } from '../../lib/edge/confirmation'
 
 /**
  * The one way a V2 money client offers a transaction to a wallet (spec F7 §1.3, §1.8, §2.4 check 11, §2.10), shared by
  * finance/v2/zap.ts, vault.ts and autoExit.ts. It is the V1 owner clients' discipline (finance/position.ts, setup.ts),
  * bound to ONE chain:
  *
- *   - every read and send goes through the connected wallet's own provider; the site reads no public RPC;
+ *   - reviews and sends use the connected wallet; Robinhood receipt reads use the site's fixed route to its existing node;
  *   - every operation is bounded in time and in calls, one at a time, and stops when the wallet, its account or its
  *     chain changes (`current()`, and `eth_accounts` / `eth_chainId` read at the start of every operation);
  *   - a step is simulated from the owner (`eth_call`) and estimated (`eth_estimateGas` × 1.2) before it is offered,
@@ -82,6 +83,8 @@ export interface V2Wallet extends NonceJournal {
   chainId(): number | null
   request(method: string, params: unknown[]): Promise<unknown>
   signatures: SignatureJournal
+  /** Fixed public receipt reads on Domino's existing node. Absent only in isolated clients/tests. */
+  confirmation?: ConfirmationRead
 }
 
 /** What a step may cost: the gas units, the fee ceiling, the priority fee, and ETH to keep. */
@@ -132,6 +135,7 @@ export type V2Receipt =
   | {
       state: 'included' | 'finalized' | 'reverted'
       blockHash: Hex
+      transactionHash?: Hex
       blockNumber: bigint
       gasUsed: bigint
       effectiveGasPrice: bigint
@@ -201,6 +205,22 @@ export const refused = (error: unknown): boolean => definiteRefusal(error)
  * answered: the wallet may have sent it, and an answer thrown away would let the page offer the same action again.
  */
 export type Rpc = (method: string, params: unknown[], onUserRejection?: () => Promise<void>, answerKept?: boolean) => Promise<unknown>
+
+/** Receipt data uses the site's fixed reader on Robinhood; transaction review and effect checks remain in the client. */
+export async function receiptRpc(wallet: V2Wallet, chain: V2Chain, hash: Hex, fallback: Rpc): Promise<Rpc> {
+  if (!wallet.confirmation || chain.chainId !== 4663) return fallback
+  const answer = await wallet.confirmation.read(hash)
+  return async (method, params) => {
+    if (method === 'eth_getTransactionByHash' && params[0] === hash) return answer.transaction
+    if (method === 'eth_getTransactionReceipt' && params[0] === hash) return answer.receipt
+    if (method === 'eth_getBlockByNumber' && params[1] === false) {
+      if (params[0] === 'finalized') return wallet.confirmation!.finalized()
+      const raw = answer.receipt as { blockNumber?: unknown } | null
+      if (raw && params[0] === raw.blockNumber) return answer.block
+    }
+    throw new Error('invalid_confirmation_read')
+  }
+}
 
 /** What one step is: where it goes, what it carries, the ETH it sends, and its review lines. */
 export interface StepDraft {
@@ -491,26 +511,27 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
 
   /** Where a step this transactor sent stands, with its logs and costs once included. */
   function receipt(hash: Hex, recovered?: Pick<V2Transaction, 'from' | 'to' | 'data' | 'value' | 'nonce' | 'chainId'>): Promise<V2Receipt> {
-    return bounded(async (rpc): Promise<V2Receipt> => {
-      await identity(rpc)
+    const readReceipt = async (rpc: Rpc): Promise<V2Receipt> => {
       const known = sent.get(hash)
       const reviewed = known?.transaction ?? recovered
       // A recovered identity authorizes reads only: it is never added to issued/offered and cannot be sent.
       if (!HASH.test(hash) || !reviewed || reviewed.from !== owner || quantity(reviewed.chainId) !== BigInt(chain.chainId)) return fail('receipt_not_from_this_review')
-      const tx = (await rpc('eth_getTransactionByHash', [hash])) as Record<string, unknown> | null
+      const read = await receiptRpc(wallet, chain, hash, rpc)
+      const tx = (await read('eth_getTransactionByHash', [hash])) as Record<string, unknown> | null
       if (tx === null) return { state: 'pending' }
       if (!tx || String(tx.hash).toLowerCase() !== hash || String(tx.from).toLowerCase() !== owner || String(tx.to).toLowerCase() !== reviewed.to
         || String(tx.input).toLowerCase() !== reviewed.data.toLowerCase() || quantity(tx.value) !== BigInt(reviewed.value) || quantity(tx.nonce) !== BigInt(reviewed.nonce)) {
         return fail('transaction_does_not_match_review')
       }
-      const raw = (await rpc('eth_getTransactionReceipt', [hash])) as Record<string, unknown> | null
+      const raw = (await read('eth_getTransactionReceipt', [hash])) as Record<string, unknown> | null
       if (raw === null) return { state: 'pending' }
       if (!raw || String(raw.transactionHash).toLowerCase() !== hash || String(raw.from).toLowerCase() !== owner || typeof raw.blockHash !== 'string'
         || !HASH.test(raw.blockHash.toLowerCase()) || !['0x0', '0x1'].includes(String(raw.status)) || !Array.isArray(raw.logs)) return fail('invalid_receipt')
       const blockNumber = quantity(raw.blockNumber)
       const blockHash = raw.blockHash.toLowerCase() as Hex
-      const block = (await rpc('eth_getBlockByNumber', [numberToHex(blockNumber), false])) as { hash?: string } | null
-      if (!block || String(block.hash).toLowerCase() !== blockHash) return { state: 'reorged' }
+      const block = (await read('eth_getBlockByNumber', [numberToHex(blockNumber), false])) as { hash?: string } | null
+      if (!block) return { state: 'pending' }
+      if (String(block.hash).toLowerCase() !== blockHash) return { state: 'reorged' }
       const logs = (raw.logs as unknown[]).map((entry): V2Log => {
         const log = record(entry)
         if (typeof log.address !== 'string' || !ADDRESS.test(log.address.toLowerCase()) || !Array.isArray(log.topics)) return fail('invalid_receipt')
@@ -522,6 +543,7 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
         })
       })
       const costs = {
+        transactionHash: hash,
         blockHash,
         blockNumber,
         gasUsed: quantity(raw.gasUsed),
@@ -530,10 +552,15 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
         logs: Object.freeze(logs),
       }
       if (raw.status === '0x0') return { state: 'reverted', ...costs }
-      const final = (await rpc('eth_getBlockByNumber', ['finalized', false])) as { number?: string } | null
+      // A finality timeout cannot erase a successfully verified inclusion.
+      const final = await read('eth_getBlockByNumber', ['finalized', false]).catch(() => null) as { number?: string } | null
       if (!final?.number || quantity(final.number) < blockNumber) return { state: 'included', ...costs }
       return { state: 'finalized', ...costs }
-    })
+    }
+    // This hash/review already authorizes public confirmation. Changing or disconnecting the wallet cannot
+    // cancel it. The fixed reader is bounded separately and cannot simulate, sign, send, or offer a nonce.
+    if (chain.chainId === 4663 && wallet.confirmation) return readReceipt(async () => fail('receipt_read_not_allowed'))
+    return bounded(async rpc => { await identity(rpc); return readReceipt(rpc) })
   }
 
   /** A user-supplied replacement is read only. A different effect can release tracking only after canonical finality. */

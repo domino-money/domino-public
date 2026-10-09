@@ -18,6 +18,7 @@ import { shortAddress } from '../../lib/read/screens/identity'
 import { newPositionHref } from '../../components/explore/routes'
 import '../../styles/position-collection.css'
 import { BulkClosePositions } from './BulkClosePositions'
+import { automationState, subscribeAutomation } from '../automate/store'
 
 const noViews: ReadonlyMap<string, FeeHistoryView> = new Map()
 const quiet = () => undefined
@@ -114,8 +115,9 @@ function useOwnRows(owner: string, v1Ids: readonly string[]) {
   const gate = useListsGate()
   const live = anyIn(gate, 'live')
   const reply = useKeyed(OWN_PORTFOLIO, live ? owner : null)
+  const automation = useSyncExternalStore(subscribeAutomation, automationState, automationState)
   const ids = v1Ids.join(',')
-  const rows = useMemo(() => (reply?.kind === 'ok' ? positionRows(reply.body, chainsIn(gate, 'live'), ids === '' ? [] : ids.split(',')) : []), [reply, gate, ids])
+  const rows = useMemo(() => (reply?.kind === 'ok' ? positionRows(reply.body, chainsIn(gate, 'live'), ids === '' ? [] : ids.split(','), automation) : []), [reply, gate, ids, automation])
   return { live, reply, rows }
 }
 

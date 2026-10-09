@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 const require = createRequire(import.meta.url);
-const { createPositionSync, positionKey, burnedPositionIds, positionChanged } = require('../../.test-build/app/src/v2in/lists/positionSync.js');
+const { createPositionSync, createPortfolioCatchup, positionKey, burnedPositionIds, positionChanged } = require('../../.test-build/app/src/v2in/lists/positionSync.js');
 const { createPositionEvidence, createWalletReadGuard, subscribePositionEvidence } = require('../../.test-build/app/src/lib/positionEvidence.js');
 const { positionRows } = require('../../.test-build/app/src/v2in/lists/model.js');
 const { historicalPositionRows, mergePositionRows, positionCounts, hasPositionApr } = require('../../.test-build/app/src/v2in/lists/positionCollection.js');
@@ -107,6 +107,52 @@ test('a receipt block gates the first cold read and later responses, with no man
   assert.equal(sync.reconcile(before).positions[0].state.liquidity, '0');
 });
 
+test('an explicitly affected NFT does not invalidate other positions or a same-id NFT on another manager', () => {
+  const sync = createPositionSync(), body = fixture();
+  const target = body.positions[0], block = target.state.snapshot.number + 10;
+  const other = { ...copy(target), tokenId: '999998' };
+  const differentManager = { ...copy(target), positionManager: '0x' + 'e'.repeat(40) };
+  body.positions = [target, other, differentManager];
+  sync.reconcile(body);
+  sync.changed({ chainId: target.chainId, wallet: body.wallet, positionManager: target.positionManager, tokenIds: [target.tokenId], block });
+  assert.equal(sync.minBlock(target), block);
+  assert.equal(sync.minBlock(other), 0);
+  assert.equal(sync.minBlock(differentManager), 0);
+  const again = sync.reconcile(copy(body));
+  assert.equal(again.positions[1].state.freshness.status, other.state.freshness.status);
+  const approval = createPositionSync();
+  approval.reconcile(body);
+  approval.changed({ chainId: target.chainId, wallet: body.wallet, tokenIds: [], block });
+  assert.equal(approval.minBlock(target), 0, 'an approval with explicit empty scope does not block every NFT');
+  const unknown = createPositionSync();
+  unknown.reconcile(body);
+  unknown.changed({ chainId: target.chainId, wallet: body.wallet, block });
+  assert.equal(unknown.minBlock(other), block, 'truly unscoped confirmations keep the wallet read barrier');
+});
+
+test('portfolio confirmation catch-up stops at the matching snapshot, stays bounded and ignores other wallets', () => {
+  const body = fixture(), policy = createPortfolioCatchup();
+  const position = body.positions[0], block = position.state.snapshot.number + 10;
+  const change = { chainId: position.chainId, positionManager: position.positionManager, tokenIds: [position.tokenId], wallet: body.wallet, block };
+  policy.note(change);
+  assert.equal(policy.delay({ ...body, wallet: '0x' + 'c'.repeat(40) }), null);
+  assert.equal(policy.delay(body), 2_000);
+  const fresh = copy(body); fresh.positions[0].state.snapshot.number = block;
+  if (position.vault) {
+    const vault = fresh.vaults.find(value => value.address.toLowerCase() === position.vault.address.toLowerCase());
+    vault.state.snapshot.number = block;
+  }
+  const chain = fresh.chains.find(value => value.chainId === position.chainId);
+  chain.indexedThrough.number = Math.max(block, chain.indexedThrough.number);
+  assert.equal(policy.delay(fresh), null);
+  policy.note(change);
+  assert.equal(policy.delay(body), null, 'replaying the same proof cannot restart a fast loop');
+  policy.note({ ...change, block: block + 10 });
+  for (let i = 0; i < 5; i++) assert.equal(policy.delay(body), 2_000);
+  assert.equal(policy.delay(body), null);
+  assert.equal(policy.delay(body), null);
+});
+
 test('the collection merges complete identities, counts only proven liquidity and preserves family metadata', () => {
   const portfolio = fixture();
   portfolio.positions[0].state.liquidity = '0';
@@ -162,6 +208,34 @@ test('same-height block hash replacement uses the replacement snapshot, not stal
   replacement.positions[0].state.snapshot.hash = `0x${'ef'.repeat(32)}`;
   replacement.positions[0].state.liquidity = '1';
   assert.equal(sync.reconcile(replacement).positions[0].state.liquidity, '1');
+});
+
+test('reorg rollback removes only its scoped barriers and burns, preserving later proof and other manager/chain state', () => {
+  const sync = createPositionSync();
+  const body = fixture();
+  const position = body.positions[0];
+  const block = position.state.snapshot.number;
+  const a = { chainId: position.chainId, wallet: body.wallet, positionManager: position.positionManager, tokenIds: [position.tokenId], block: block + 1, blockHash: '0x' + 'a1'.repeat(32) };
+  const b = { ...a, block: block + 2, blockHash: '0x' + 'b2'.repeat(32) };
+  sync.reconcile(body);
+  sync.changed({ ...a, burnedTokenIds: a.tokenIds }); sync.changed(b);
+  const other = { ...position, positionManager: '0x' + 'c3'.repeat(20) };
+  sync.changed({ ...b, positionManager: other.positionManager, block: block + 3, blockHash: '0x' + 'c3'.repeat(32) });
+  sync.rollback(a);
+  assert.equal(sync.minBlock(position), b.block, 'later operation remains a barrier');
+  assert.equal(sync.burn(position), null);
+  assert.equal(sync.minBlock(other), block + 3);
+  sync.rollback(b);
+  assert.equal(sync.minBlock(position), 0);
+  assert.equal(sync.minBlock(other), block + 3, 'same numeric NFT on another manager remains independent');
+  sync.changed({ ...a, tokenIds: undefined, blockHash: '0x' + 'd4'.repeat(32) });
+  sync.rollback({ ...a, tokenIds: [], blockHash: '0x' + 'd4'.repeat(32) });
+  assert.equal(sync.minBlock(position), 0, 'unscoped wallet contribution also rolls back');
+  const orphan = copy(body);
+  orphan.positions[0].state.snapshot.hash = a.blockHash;
+  orphan.positions[0].state.snapshot.number = a.block;
+  const reread = sync.reconcile(orphan).positions[0];
+  assert.notEqual(reread.state.status === 'live' ? reread.state.snapshot.hash : null, a.blockHash, 'a lagging index cannot reintroduce a positively orphaned snapshot');
 });
 
 test('only a confirmed NFT Transfer to zero from the exact manager proves a burn', () => {

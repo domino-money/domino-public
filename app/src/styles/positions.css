@@ -871,11 +871,14 @@
   @media (max-width: 479px) { .dm-mp-row { padding: 0.875rem 0.75rem; } }
 }
 
-/* One automation control at the top, apart from actions on liquidity. */
+/* One automation control; its body appears only in the common action Sheet. */
 .dm-position-automation { margin: 0 0 1.25rem; padding: 0.25rem 0 0.75rem; }
+.dm-position-automation[data-in-toolbar] { display: contents; }
 .dm-position-automation > :is(button, a) { max-width: 100%; white-space: normal; text-align: left; }
 .dm-position-automation > [data-automation-recovery-toggle] { margin-left: 0.625rem; }
-.dm-automation-panel:not([hidden]) { display: grid; gap: 1rem; margin-top: 0.75rem; padding: 1rem; border: 0.0625rem solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1); }
+.dm-automation-panel { display: grid; gap: 1rem; }
+.dm-automation-summary { display: grid; gap: 1rem; min-width: 0; }
+.dm-automation-summary > p { margin: 0; }
 .dm-automation-panel > .dm-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
 .dm-automation-panel > .dm-card[hidden] { display: none; }
 .dm-automation-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 0.625rem; }
@@ -886,7 +889,6 @@
 .dm-automated-link:hover { background: var(--surface-2); }
 .dm-automated-link:focus-visible { outline: 0.125rem solid var(--ring); outline-offset: 0.125rem; }
 .dm-automated-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: var(--fg-muted); }
-@media (max-width: 29.9375rem) { .dm-automation-panel:not([hidden]) { padding: 0.875rem; } }
 
 /* A position is one destination. Metadata stays quiet; known empty closed NFTs read as history, not a table of zeroes. */
 .dm-own-figure-slot { display: contents; }

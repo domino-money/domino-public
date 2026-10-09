@@ -1,6 +1,6 @@
 /**
  * Domino's own chain routes (RPC-SPEC §2.4–2.5; the owner's rule of 2026-10-01: the site reads nothing from a public
- * RPC). Six same-origin POSTs, each with one fixed purpose, answered by the site's Pages Functions from Domino's own
+ * RPC). Fixed same-origin POSTs, each with one purpose, answered by the site's Pages Functions from Domino's own
  * Robinhood Chain node (functions/_lib/localRpc.ts, the Pages secret LOCAL_RPC_URL), with the chain code the page ran
  * until now (owned.ts, walletPositions.ts, fees.ts, automation.ts), the fees ledger and the record and simulation reads:
  *
@@ -10,6 +10,7 @@
  *   POST /api/automation/v1/state    plain, Auto-compound or Domino-compound; paused or active
  *   POST /api/automation/v1/record   an automation vault's executions and its payments
  *   POST /api/chain/v1/simulate      eth_simulateV1 for a wallet without it, behind LOCAL_RPC_SIMULATE (on)
+ *   POST /api/chain/v1/confirmation a transaction's canonical receipt or the finalized block
  *
  * Each route file is one line over answerChainRoute. The beta gate runs first (functions/_middleware.ts): a request
  * without the access cookie never arrives, and an admitted one arrives with no cookie at all. Then, in order: the
@@ -31,6 +32,7 @@ import { resetMintWalks, walkMints } from './ownedMints'
 import { SHARED_STALE_MS, outlast } from './sharedWork'
 import { RECORD_BODY_BYTES, recordAnswer, recordRequestOf } from './vaultRecord'
 import { SIMULATE_BODY_BYTES, simulateEnabled, simulateOnNode, simulateRequestOf } from './simulate'
+import { confirmationOnNode, confirmationRequestOf } from './confirmation'
 import { resetSiteGate, siteGateOf } from './wideGate'
 import type { AutomationAnswer } from '../../src/lib/automationState'
 import type { LedgerWhy } from '../../src/lib/fees/types'
@@ -50,7 +52,7 @@ export interface ChainRouteContext {
   env: ChainRouteEnv
   waitUntil?: (work: Promise<unknown>) => void
 }
-export type ChainRouteName = 'owned' | 'state' | 'ledger' | 'automation' | 'record' | 'simulate'
+export type ChainRouteName = 'owned' | 'state' | 'ledger' | 'automation' | 'record' | 'simulate' | 'confirmation'
 export interface ChainRouteRuntime {
   upstream?: (url: string, init: RequestInit) => Promise<Response> // tests: the fake node
   cache?: AnswerCache | null // default caches.default
@@ -77,7 +79,7 @@ export const VISITOR_CLASSES = Object.freeze({
   history: { burst: 240, perMinute: 1200 },
   simulate: { burst: 6, perMinute: 12 },
 } as const)
-export const CLASS_OF: Readonly<Record<ChainRouteName, keyof typeof VISITOR_CLASSES>> = Object.freeze({ owned: 'owned', state: 'state', automation: 'state', ledger: 'history', record: 'history', simulate: 'simulate' })
+export const CLASS_OF: Readonly<Record<ChainRouteName, keyof typeof VISITOR_CLASSES>> = Object.freeze({ owned: 'owned', state: 'state', automation: 'state', ledger: 'history', record: 'history', simulate: 'simulate', confirmation: 'state' })
 /**
  * What a visitor's questions may cost the node, across every route (2026-10-02, review finding 5: the classes count
  * questions, and one question may cost the node up to LOCAL_RPC_POSTS_PER_INVOCATION POSTs, so one visitor could keep
@@ -468,6 +470,13 @@ async function askedOf(name: ChainRouteName, request: Request, url: URL, waitUnt
   const { now, sleep, cache } = runtime
   const fees = (rpc: LocalRpc): FeesRuntime => ({ deps: { fetch: rpc.fetch, sleep, now, logLimits: EDGE_LOG_LIMITS }, cache, waitUntil, refused: rpc.refused, onDiagnostic: (fields) => logLine(runtime, fields) })
   switch (name) {
+    case 'confirmation': {
+      const body = await bodyOf(request, url, 256)
+      if (body instanceof Response) return body
+      const asked = confirmationRequestOf(body)
+      if (!asked) return failed(name, 'bad_request', 400)
+      return { key: 'hash' in asked ? asked.hash : 'finality', read: rpc => confirmationOnNode(rpc.fetch, asked) }
+    }
     case 'owned': {
       const asked = await ownerFrom(request, url)
       if (asked instanceof Response) return asked

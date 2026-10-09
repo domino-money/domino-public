@@ -21,7 +21,7 @@ import { Slippage } from './Slippage'
 import { StepButton, StepsList, stepsDone } from './Steps'
 import { amountText, decimalsOf, labelOf, type TokenBook } from './tokens'
 import { ActionDialog, ErrorLine, Locked, Mark, Note, Pair, PairName, Progress, Rows, Tick } from './ui'
-import { offerVault } from './vaultHandoff'
+import { offerVault, type VaultHandoff } from './vaultHandoff'
 import type { OpenGate } from './wallet'
 
 export type PositionMode = 'increase' | 'changeRange' | 'exit' | 'collect'
@@ -168,12 +168,17 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   const rootVault = reviewed ? reviewed.review.vaultRoot : direct.prepared ? direct.prepared.vaultRoot : position.vault?.role === 'root' ? position.vault.address : null
   const exitVault = mode === 'exit' ? rootVault : null
   const leavesReserves = exitVault !== null
-  const handedToReserves = useRef(false)
+  const afterClose = useRef<VaultHandoff | null>(null)
+  const closedByUser = useRef(false)
   useEffect(() => {
-    if (!leavesReserves || !done || handedToReserves.current || !exitVault) return
-    handedToReserves.current = true
-    offerVault({ chainId, vault: exitVault, focus: 'reserves' })
+    if (leavesReserves && done && exitVault) afterClose.current = { chainId, vault: exitVault, focus: 'reserves' }
   }, [leavesReserves, done, exitVault, chainId])
+  useEffect(() => () => {
+    // Only an explicit close hands over the completed action. Navigation/StrictMode never opens another popup.
+    const next = afterClose.current
+    if (closedByUser.current && next) { afterClose.current = null; offerVault(next) }
+  }, [])
+  const closeDialog = () => { closedByUser.current = true; onClose() }
   const reservesWarning = leavesReserves && exitVault
     ? (reserves && reserves.vault === exitVault && reserves.reserves !== null
         ? (reservesText(book, reserves) ? COPY.reserves.exitWarning(reservesText(book, reserves) as string) : null)
@@ -225,11 +230,11 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
     footer = (
       <>
         {rearmVault && (
-          <Button type="button" variant="primary" size="lg" data-position-rearm={rearmVault} onClick={() => { offerVault({ chainId, vault: rearmVault, focus: 'rearm' }); onClose() }}>
+          <Button type="button" variant="primary" size="lg" data-position-rearm={rearmVault} onClick={() => { afterClose.current = { chainId, vault: rearmVault, focus: 'rearm' }; closeDialog() }}>
             {exitLive ? EXIT_REARM_COPY : COPY.wallet.rearm}
           </Button>
         )}
-        <Button type="button" variant="secondary" size="lg" onClick={onClose} data-position-back="">
+        <Button type="button" variant="secondary" size="lg" onClick={closeDialog} data-position-back="">
           {COPY.wallet.backToPosition}
         </Button>
       </>
@@ -257,7 +262,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   const backTo = phase === 'review' && !done && mode !== 'collect' ? { onClick: back, disabled: view.busy || direct.stage === 'wallet' || direct.stage === 'sent', 'data-position-review-back': '' } : null
 
   return (
-    <ActionDialog id={mode} title={COPY.title[mode]} lede={COPY.lede[mode]} back={backTo} onClose={onClose} footer={footer} data-position-dialog={`v2-${mode}`} data-position-gate={gate.mode}>
+    <ActionDialog id={mode} title={COPY.title[mode]} lede={COPY.lede[mode]} back={backTo} onClose={closeDialog} footer={footer} data-position-dialog={`v2-${mode}`} data-position-gate={gate.mode}>
       {position.vault?.role === 'root' && position.vault.armed === true && !done && !exitLive && <Note tone="warn" data-position-root-note="">{ROOT_PAUSE_COPY}</Note>}
 
       {phase === 'form' && mode === 'increase' && <AmountsField chainId={chainId} position={position} book={book} value={amounts} onChange={setAmounts} />}

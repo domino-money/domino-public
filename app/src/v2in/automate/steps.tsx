@@ -4,6 +4,7 @@ import type { ErrorLabels } from '../../v2/errors'
 import { describeError, type ErrorView } from './copy'
 import { IDLE, OfferedStepError, SentBatchError, SentStepError, sendBatchStep, sendStep, watchFinality, type AutomationSession, type BatchClient, type IncludedReceipt, type StepPhase, type TxClient } from './session'
 import { positionChanged } from '../lists/positionSync'
+import { recordConfirmedOperation, subscribeConfirmedOperations, type OperationScope } from '../../lib/confirmedOperations'
 
 /**
  * A review's wallet steps in the look and the rhythm of Set up automation's own (screens/SequenceCreate.tsx): the list of
@@ -65,11 +66,12 @@ export interface StepsRun {
  * again) and return true, and the press then stops without a notice. `done` names steps already done before this list
  * (a signature made before the steps changed path).
  */
-export function useStepsRun({ session, steps, context, labels, onStepDone, onAllDone, onError, done: before = [] }: {
+export function useStepsRun({ session, steps, context, labels, affected, onStepDone, onAllDone, onError, done: before = [] }: {
   session: AutomationSession | null
   steps: readonly WalletStep[]
   context: 'vault' | 'autoExit'
   labels: ErrorLabels
+  affected?: OperationScope
   onStepDone?: (outcome: StepOutcome) => void
   onAllDone?: (outcomes: readonly StepOutcome[]) => void
   /** `at`: the step that failed, by its place in the list and its key (Added 2026-10-06: a later step found unnecessary is the caller's to call done). */
@@ -95,17 +97,38 @@ export function useStepsRun({ session, steps, context, labels, onStepDone, onAll
     current.current = phases
   }, [phases])
   const generation = useRef(0)
+  const watches = useRef(new Set<() => void>())
   useEffect(() => {
     generation.current++
   }, [steps])
-  useEffect(() => () => void generation.current++, [])
+  useEffect(() => () => { generation.current++; for (const stop of watches.current) stop(); watches.current.clear() }, [])
+
+  function observe(receipt: IncludedReceipt, step: WalletStep, set: (phase: StepPhase) => void, alive: () => boolean, phase: { hash?: `0x${string}`; batchId?: string }, onFinalized: () => Promise<boolean>) {
+    if (!session) return
+    const scope = { ...affected, tokenIds: /approve/.test(step.key) ? [] : affected?.tokenIds ?? [] }
+    const operation = recordConfirmedOperation({ ...scope, chainId: session.chainId, wallet: session.owner, receipt, onFinalized })
+    if (!operation) positionChanged({ ...scope, chainId: session.chainId, wallet: session.owner, block: receipt.blockNumber, blockHash: receipt.blockHash })
+    if (!operation || operation.phase !== 'included' || !alive()) return
+    const stop = subscribeConfirmedOperations(next => {
+      if (next.chainId !== operation.chainId || next.hash !== operation.hash || next.blockHash !== operation.blockHash) return
+      if (next.phase === 'finalized') set({ phase: 'finalized', ...phase })
+      if (next.phase === 'reorged' && alive()) {
+        set({ phase: 'failed', ...phase })
+        const failure = phase.hash ? new SentStepError('receipt_reorged', phase.hash) : new SentBatchError('receipt_reorged', phase.batchId ?? '')
+        setNotice(describeError(failure, step.context ?? context, labels))
+      }
+      if (next.phase === 'finalized' || next.phase === 'reorged' || !alive()) { stop(); watches.current.delete(stop) }
+    })
+    watches.current.add(stop)
+  }
 
   async function runOne(index: number, step: WalletStep, alive: () => boolean, set: (phase: StepPhase) => void): Promise<IncludedReceipt | null> {
     if (!session) throw new Error('connect_wallet')
     if (step.tx) {
       const result = await sendStep(session, step.tx.client, step.tx.prepare, set, alive)
       if (!result) return null
-      if (result.receipt.state === 'included') {
+      observe(result.receipt, step, set, alive, { hash: result.hash }, async () => (await step.tx!.client.receipt(result.hash)).state === 'finalized')
+      if (session.chainId !== 4663 && result.receipt.state === 'included') {
         const client = step.tx.client
         void watchFinality(session, () => client.receipt(result.hash), () => set({ phase: 'finalized', hash: result.hash }), alive)
       }
@@ -115,7 +138,8 @@ export function useStepsRun({ session, steps, context, labels, onStepDone, onAll
       const batch = step.batch
       const result = await sendBatchStep(session, batch, set, alive)
       if (!result) return null
-      if (result.receipt.state === 'included') void watchFinality(session, () => batch.receipt(result.batchId), () => set({ phase: 'finalized', batchId: result.batchId }), alive)
+      observe(result.receipt, step, set, alive, { batchId: result.batchId }, async () => (await batch.receipt(result.batchId)).state === 'finalized')
+      if (session.chainId !== 4663 && result.receipt.state === 'included') void watchFinality(session, () => batch.receipt(result.batchId), () => set({ phase: 'finalized', batchId: result.batchId }), alive)
       return result.receipt
     }
     if (step.sign) {
@@ -170,7 +194,6 @@ export function useStepsRun({ session, steps, context, labels, onStepDone, onAll
         if (!step.sign && receipt === null) return
         const outcome = { index, step, receipt }
         outcomes.push(outcome)
-        if (receipt) positionChanged({ chainId: session.chainId, wallet: session.owner, block: receipt.blockNumber })
         onStepDone?.(outcome)
       }
       if (alive()) onAllDone?.(outcomes)

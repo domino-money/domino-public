@@ -620,7 +620,7 @@ test('See all continues after an older-page outage and wallet switches never ret
     const ids = await s.page.locator('[data-v2-receipt]').evaluateAll(rows => rows.map(row => row.dataset.v2Receipt));
     assert.equal(new Set(ids).size, ids.length);
     assert.ok(ids.length > initial.length);
-    assert.ok(initial.every(id => ids.includes(id)));
+    assert.ok(initial.every(id => ids.includes(id)), `initial operations must survive recovery; missing: ${initial.filter(id => !ids.includes(id)).join(', ')}`);
     assert.equal(await s.page.locator('[data-unified-activity]').getByRole('button', { name: 'Show more', exact: true }).count(), 0, 'the actual end is reached after retry');
     await s.wallet.switchAccount('a', 1);
     await s.page.waitForFunction(() => document.querySelectorAll('[data-v2-receipt]').length === 1);

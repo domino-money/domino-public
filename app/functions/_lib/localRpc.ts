@@ -108,7 +108,7 @@ export const LOCAL_RPC_WIDE = { blocks: 1_000_000, blocksPerSecond: 10_000_000, 
  */
 export const EDGE_LOG_LIMITS = { one: 5_000_000, many: 5_000_000 } as const
 
-export type Purpose = 'owned' | 'state' | 'ledger' | 'automation' | 'record' | 'simulate'
+export type Purpose = 'owned' | 'state' | 'ledger' | 'automation' | 'record' | 'simulate' | 'confirmation'
 export type SourceHealth = 'ok' | 'wrong_chain' | 'refused' | 'down'
 export interface LocalRpc {
   /** OwnedDeps/FeesDeps.fetch: `input` must be functions/_lib/owned.ts RPC_URL (the chain code's fixed name). */
@@ -138,6 +138,7 @@ export const PURPOSE_METHODS: Readonly<Record<Purpose, readonly string[]>> = Obj
   // 2026-10-02 (review of the rules, finding 16): and eth_call, the factory's isVault of the vault asked for.
   record: ['eth_blockNumber', 'eth_call', 'eth_getLogs'],
   simulate: ['eth_simulateV1'],
+  confirmation: ['eth_getTransactionByHash', 'eth_getTransactionReceipt', 'eth_getBlockByNumber'],
 })
 
 const USER_AGENT = 'DominoChainRoutes/1'
@@ -329,7 +330,10 @@ function permitted(envelope: Envelope, purpose: Purpose): boolean {
     case 'eth_getLogs':
       return logFilter(params, purpose) !== null
     case 'eth_getBlockByNumber':
-      return params.length === 2 && quantity(params[0]) !== null && params[1] === false
+      return params.length === 2 && (quantity(params[0]) !== null || (purpose === 'confirmation' && params[0] === 'finalized')) && params[1] === false
+    case 'eth_getTransactionByHash':
+    case 'eth_getTransactionReceipt':
+      return params.length === 1 && typeof params[0] === 'string' && WORD.test(params[0])
     case 'eth_simulateV1':
       return simulation(params)
     default:

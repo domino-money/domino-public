@@ -141,9 +141,11 @@ export async function sendStep(session: AutomationSession, client: TxClient, pre
     throw error
   }
   report({ phase: 'sent', hash })
+  const until = Date.now() + 600_000
   for (let attempt = 0; ; attempt++) {
     await sleep(beat(attempt))
-    if (!alive()) return null
+    // Once sent, this read continues after the sheet closes. It never offers a next step.
+    if (Date.now() >= until) throw new SentStepError('receipt_unknown', hash)
     let receipt: Awaited<ReturnType<TxClient['receipt']>>
     try {
       receipt = await session.serial(() => client.receipt(hash))
@@ -189,9 +191,10 @@ export async function sendBatchStep<B>(session: AutomationSession, batch: BatchC
   report({ phase: 'working', note: 'wallet' })
   const batchId = await session.serial(() => batch.send(prepared))
   report({ phase: 'sent', batchId })
+  const until = Date.now() + 600_000
   for (let attempt = 0; ; attempt++) {
     await sleep(beat(attempt))
-    if (!alive()) return null
+    if (Date.now() >= until) throw new SentBatchError('receipt_unknown', batchId)
     let receipt: V2BatchReceipt
     try {
       receipt = await session.serial(() => batch.receipt(batchId))

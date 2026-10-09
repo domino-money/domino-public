@@ -1,4 +1,4 @@
-import { decodeAbiParameters, decodeEventLog, decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, getContractAddress, keccak256, parseAbi, type Abi, type Address, type Hex } from 'viem'
+import { decodeAbiParameters, decodeEventLog, decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, getContractAddress, keccak256, type Abi, type Address, type Hex } from 'viem'
 import v3FactoryAbi from '../../../../api-contracts/v2/abi/IUniswapV3FactoryMinimal.json'
 import v3PoolAbi from '../../../../api-contracts/v2/abi/IUniswapV3PoolMinimal.json'
 import v4StateViewAbi from '../../../../api-contracts/v2/abi/IV4StateViewMinimal.json'
@@ -144,7 +144,7 @@ const STATE_VIEW_ABI = v4StateViewAbi.abi as unknown as Abi
 const V3_POOL_ABI = v3PoolAbi.abi as unknown as Abi
 const V3_FACTORY_ABI = v3FactoryAbi.abi as unknown as Abi
 /** The NonfungiblePositionManager's own multicall (not in the minimal export, D7): the standard Uniswap v3 periphery's. */
-const V3_MULTICALL_ABI = parseAbi(['function multicall(bytes[] data) payable returns (bytes[] results)'])
+const V3_MULTICALL_ABI = [{ name: 'multicall', type: 'function', stateMutability: 'payable', inputs: [{ type: 'bytes[]', name: 'data' }], outputs: [{ type: 'bytes[]', name: 'results' }] }] as const
 const POOL_KEY = [{ type: 'tuple', components: [
   { name: 'currency0', type: 'address' }, { name: 'currency1', type: 'address' }, { name: 'fee', type: 'uint24' },
   { name: 'tickSpacing', type: 'int24' }, { name: 'hooks', type: 'address' },
@@ -564,8 +564,8 @@ export type DirectClient = ReturnType<typeof createDirectClient>
 // The receipt of a direct exit (spec §2.6.4: "o recibo vem dos eventos da Uniswap")
 // ---------------------------------------------------------------------------
 
-const V3_COLLECT_EVENT = parseAbi(['event Collect(uint256 indexed tokenId, address recipient, uint256 amount0, uint256 amount1)'])
-const TRANSFER_EVENT = parseAbi(['event Transfer(address indexed from, address indexed to, uint256 value)'])
+const V3_COLLECT_EVENT = [{ name: 'Collect', type: 'event', inputs: [{ type: 'uint256', name: 'tokenId', indexed: true }, { type: 'address', name: 'recipient' }, { type: 'uint256', name: 'amount0' }, { type: 'uint256', name: 'amount1' }] }] as const
+const TRANSFER_EVENT = [{ name: 'Transfer', type: 'event', inputs: [{ type: 'address', name: 'from', indexed: true }, { type: 'address', name: 'to', indexed: true }, { type: 'uint256', name: 'value' }] }] as const
 
 /** What one token of a direct exit paid: the exact amount from the logs, or null when the logs cannot say (native ETH on v4). */
 export interface DirectPaid {

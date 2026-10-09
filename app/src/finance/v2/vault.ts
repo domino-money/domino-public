@@ -4,13 +4,13 @@ import v3PoolAbi from '../../../../api-contracts/v2/abi/IUniswapV3PoolMinimal.js
 import { isV2ChainId, v3TickSpacing, type V2Chain } from '../../v2/chains'
 import { V2_FIXTURE_SETS_TAKEN } from '../../v2/flag'
 import { V2_FEES, ZERO_ADDRESS, type Address, type Dex, type Hex, type PoolRef, type PositionRef, type V2ChainId, type V2Component, type V2Contracts, type VaultInit, type VaultLimits, type VaultPolicy } from '../../v2/types'
-import { BATCH_FRAME_GAS, atomicStatus, batchCallsStatus, offerBatch, simulateBatch, type AtomicStatus, type BatchCall, type BatchSimulator } from '../batch'
+import { BATCH_FRAME_GAS, atomicStatus, batchCallsState, offerBatch, simulateBatch, type AtomicStatus, type BatchCall, type BatchSimulator } from '../batch'
 import { chainNonceJournal } from '../nonce'
 import { REGISTRY_ABI, V3_POSITION_MANAGER_ABI, V4_POSITION_MANAGER_ABI, VAULT_ABI, VAULT_FACTORY_ABI } from './abi'
 import { admitV2Contracts, verifyV2Code } from './deployment'
 import { AUTO_EXIT_EVENTS_ABI, implementationErrorSelector, VAULT_EVENTS_ABI, VAULT_FACTORY_EVENTS_ABI } from './implementations'
 import { refuseUnlessLive } from './liveLock'
-import { createTransactor, l1FeeCeiling, quantity, refused, REVIEW_S, revertIn, SIGN_WINDOW_S, suggestV2Gas, V2Revert, WalletNotAsked, type PreparedV2, type Rpc, type Transactor, type V2GasBudget, type V2Log, type V2Receipt, type V2Wallet } from './transact'
+import { createTransactor, l1FeeCeiling, quantity, receiptRpc, refused, REVIEW_S, revertIn, SIGN_WINDOW_S, suggestV2Gas, V2Revert, WalletNotAsked, type PreparedV2, type Rpc, type Transactor, type V2GasBudget, type V2Log, type V2Receipt, type V2Wallet } from './transact'
 
 /**
  * Domino V2's automation vault, as its owner drives it from the wallet (spec F7 §5, milestone M3): create a vault for a
@@ -372,7 +372,8 @@ export async function offerV2Batch(rpc: Rpc, owner: Address, chainId: V2ChainId,
  * the shared sender's states ("included" then "finalized" at the chain's finalized block; a delay is never a failure).
  * @internal
  */
-export async function receiptOfBatch(rpc: Rpc, chain: V2Chain, hash: Hex, holds: (logs: readonly V2Log[]) => boolean): Promise<V2Receipt> {
+export async function receiptOfBatch(rpc: Rpc, chain: V2Chain, hash: Hex, holds: (logs: readonly V2Log[]) => boolean, wallet?: V2Wallet): Promise<V2Receipt> {
+  if (wallet) rpc = await receiptRpc(wallet, chain, hash, rpc)
   const raw = (await rpc('eth_getTransactionReceipt', [hash])) as Record<string, unknown> | null
   if (raw === null) return { state: 'pending' }
   if (!raw || typeof raw !== 'object' || String(raw.transactionHash).toLowerCase() !== hash || typeof raw.blockHash !== 'string'
@@ -380,7 +381,8 @@ export async function receiptOfBatch(rpc: Rpc, chain: V2Chain, hash: Hex, holds:
   const blockNumber = quantity(raw.blockNumber)
   const blockHash = raw.blockHash.toLowerCase() as Hex
   const block = (await rpc('eth_getBlockByNumber', [numberToHex(blockNumber), false])) as { hash?: string } | null
-  if (!block || String(block.hash).toLowerCase() !== blockHash) return { state: 'reorged' }
+  if (!block) return { state: 'pending' }
+  if (String(block.hash).toLowerCase() !== blockHash) return { state: 'reorged' }
   const logs = (raw.logs as unknown[]).map((entry): V2Log => {
     const log = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : null
     if (!log || !isAddress(log.address) || !Array.isArray(log.topics) || typeof log.data !== 'string' || !/^0x(?:[0-9a-fA-F]{2})*$/.test(log.data)) return fail('invalid_receipt')
@@ -388,14 +390,28 @@ export async function receiptOfBatch(rpc: Rpc, chain: V2Chain, hash: Hex, holds:
     return Object.freeze({ address: (log.address as string).toLowerCase() as Address, topics: Object.freeze(topics), data: log.data as Hex, logIndex: Number(quantity(log.logIndex)) })
   })
   const costs = {
+    transactionHash: hash,
     blockHash, blockNumber, gasUsed: quantity(raw.gasUsed), effectiveGasPrice: quantity(raw.effectiveGasPrice),
     l1Fee: chain.l1FeeInReceipt && typeof raw.l1Fee === 'string' ? quantity(raw.l1Fee) : null, logs: Object.freeze(logs),
   }
   if (raw.status === '0x0') return { state: 'reverted', ...costs }
   if (!holds(logs)) return fail('receipt_not_from_this_review')
-  const final = (await rpc('eth_getBlockByNumber', ['finalized', false])) as { number?: string } | null
+  const final = await rpc('eth_getBlockByNumber', ['finalized', false]).catch(() => null) as { number?: string } | null
   if (!final?.number || quantity(final.number) < blockNumber) return { state: 'included', ...costs }
   return { state: 'finalized', ...costs }
+}
+
+/** A hash learned for one batch offered by this client; never an authorization to send. */
+export interface KnownBatchConfirmation { transactionHash?: Hex }
+
+/** Once its wallet envelope names one hash, this authorized Robinhood batch can be followed without a live wallet. */
+export async function knownBatchState(t: Transactor, wallet: V2Wallet, chain: V2Chain, rpc: Rpc, id: string, known: KnownBatchConfirmation): Promise<Awaited<ReturnType<typeof batchCallsState>>> {
+  const fixed = chain.chainId === 4663 && wallet.confirmation !== undefined
+  if (fixed && known.transactionHash) return { status: 200, transactionHash: known.transactionHash }
+  await t.identity(rpc)
+  const calls = await batchCallsState((method, params) => rpc(method, params), id)
+  if (fixed && calls && calls.status >= 200 && calls.status < 300 && calls.transactionHash) known.transactionHash = calls.transactionHash
+  return calls
 }
 
 /**
@@ -910,9 +926,9 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
   const handedOver = new Set<string>()
   const issuedBatches = new WeakSet<VaultCreateBatch>()
   const batchOrigins = new WeakMap<VaultCreateBatch, VaultCreateReview>()
-  const offeredBatches = new Map<string, { batch: VaultCreateBatch; review: VaultCreateReview }>()
+  const offeredBatches = new Map<string, { batch: VaultCreateBatch; review: VaultCreateReview } & KnownBatchConfirmation>()
   const issuedWithdraws = new WeakSet<VaultWithdrawBatch>()
-  const offeredWithdraws = new Map<string, VaultWithdrawBatch>()
+  const offeredWithdraws = new Map<string, { batch: VaultWithdrawBatch } & KnownBatchConfirmation>()
   const view = <T>(at: ReadAt, to: Address, abi: Abi, functionName: string, args: readonly unknown[] = [], onRevert?: string) => viewAt<T>(t, at, to, abi, functionName, args, onRevert)
   const step = vaultStep
   /**
@@ -1506,20 +1522,21 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
       const known = offeredBatches.get(id)
       if (!known) return fail('receipt_not_from_this_review')
       const { batch, review } = known
-      await t.identity(rpc)
       const latch = latchFor(chain.chainId, owner)
       const none: readonly V2Event[] = Object.freeze([])
-      const status = await batchCallsStatus((method, params) => rpc(method, params), id)
+      const calls = await knownBatchState(t, wallet, chain, rpc, id, known)
+      const status = calls?.status ?? null
       if (status !== null && status >= 100 && status < 200) return { state: 'pending', events: none }
       if (status === 400 || status === 500) {
         await latch.releaseBatch(batch.key, id)
         return { state: status === 400 ? 'not-included' : 'batch-reverted', events: none }
       }
       const topics = (encodeEventTopics({ abi: VAULT_FACTORY_ABI, eventName: 'VaultCreated', args: { owner, vault: batch.vault } } as Parameters<typeof encodeEventTopics>[0]) as (Hex | null)[]).slice(0, 3)
-      const hash = await transactionWithLog(rpc, batch.factory, topics, review.snapshot.blockNumber)
+      const hash = calls?.transactionHash ?? await transactionWithLog(rpc, batch.factory, topics, review.snapshot.blockNumber)
       if (hash === null) return { state: 'pending', events: none }
-      const receipt = await receiptOfBatch(rpc, chain, hash, (logs) => logs.some((log) => log.address === batch.factory && log.topics[0] === topics[0] && log.topics[2] === topics[2]))
+      const receipt = await receiptOfBatch(rpc, chain, hash, (logs) => logs.some((log) => log.address === batch.factory && log.topics[0] === topics[0] && log.topics[2] === topics[2]), wallet)
       if (receipt.state === 'pending' || receipt.state === 'reorged') return { ...receipt, events: none }
+      known.transactionHash = hash
       await latch.releaseBatch(batch.key, id)
       if (receipt.state === 'reverted') return { ...receipt, events: none }
       return { ...receipt, events: decodeEvents(receipt.logs, [{ address: batch.factory, abi: VAULT_FACTORY_EVENTS_ABI }, { address: batch.vault, abi: VAULT_EVENTS_ABI }]) }
@@ -1577,7 +1594,7 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
         if (quantity(await rpc('eth_chainId', [])) !== BigInt(chain.chainId)) fail('wallet_wrong_chain')
         issuedWithdraws.delete(batch)
         const id = await offerV2Batch(rpc, owner, chain.chainId, latch, batch.key, batch.calls, () => wallet.current() && wallet.chainId() === chain.chainId && batch.expiresAt > now())
-        offeredWithdraws.set(id, batch)
+        offeredWithdraws.set(id, { batch })
         return id
       }, SIGN_WINDOW_S)
     },
@@ -1589,12 +1606,13 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
      * events. Once it ran (or reverted on chain), its latch is let go.
      */
     withdrawAllReceipt: (id: string, latchFor: (chainId: V2ChainId, owner: Address) => V2BatchLatch = browserV2BatchLatch) => t.bounded(async (rpc): Promise<V2BatchReceipt> => {
-      const batch = offeredWithdraws.get(id)
-      if (!batch) return fail('receipt_not_from_this_review')
-      await t.identity(rpc)
+      const known = offeredWithdraws.get(id)
+      if (!known) return fail('receipt_not_from_this_review')
+      const { batch } = known
       const latch = latchFor(chain.chainId, owner)
       const none: readonly V2Event[] = Object.freeze([])
-      const status = await batchCallsStatus((method, params) => rpc(method, params), id)
+      const calls = await knownBatchState(t, wallet, chain, rpc, id, known)
+      const status = calls?.status ?? null
       if (status !== null && status >= 100 && status < 200) return { state: 'pending', events: none }
       if (status === 400 || status === 500) {
         await latch.releaseBatch(batch.key, id)
@@ -1610,19 +1628,23 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
           return false
         }
       }
-      const found = await rpc('eth_getLogs', [{ address: batch.vault, topics: topic, fromBlock: numberToHex(batch.fromBlock), toBlock: 'latest' }])
-      if (!Array.isArray(found)) return fail('invalid_wallet_reply')
       const hashes = new Set<string>()
-      for (const entry of found) {
-        const log = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : null
-        if (!log || log.removed === true || !Array.isArray(log.topics) || typeof log.data !== 'string' || typeof log.address !== 'string') continue
-        if (typeof log.transactionHash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(log.transactionHash)) return fail('invalid_wallet_reply')
-        if (moved({ address: log.address, topics: log.topics as string[], data: log.data })) hashes.add(log.transactionHash.toLowerCase())
+      if (calls?.transactionHash) hashes.add(calls.transactionHash)
+      else {
+        const found = await rpc('eth_getLogs', [{ address: batch.vault, topics: topic, fromBlock: numberToHex(batch.fromBlock), toBlock: 'latest' }])
+        if (!Array.isArray(found)) return fail('invalid_wallet_reply')
+        for (const entry of found) {
+          const log = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : null
+          if (!log || log.removed === true || !Array.isArray(log.topics) || typeof log.data !== 'string' || typeof log.address !== 'string') continue
+          if (typeof log.transactionHash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(log.transactionHash)) return fail('invalid_wallet_reply')
+          if (moved({ address: log.address, topics: log.topics as string[], data: log.data })) hashes.add(log.transactionHash.toLowerCase())
+        }
       }
       if (hashes.size === 0) return { state: 'pending', events: none }
       if (hashes.size > 1) return fail('receipt_duplicate_action')
-      const receipt = await receiptOfBatch(rpc, chain, [...hashes][0] as Hex, (logs) => logs.some(moved))
+      const receipt = await receiptOfBatch(rpc, chain, [...hashes][0] as Hex, (logs) => logs.some(moved), wallet)
       if (receipt.state === 'pending' || receipt.state === 'reorged') return { ...receipt, events: none }
+      known.transactionHash = [...hashes][0] as Hex
       await latch.releaseBatch(batch.key, id)
       if (receipt.state === 'reverted') return { ...receipt, events: none }
       return { ...receipt, events: decodeEvents(receipt.logs, [{ address: batch.vault, abi: VAULT_EVENTS_ABI }]) }

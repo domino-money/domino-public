@@ -58,6 +58,7 @@
     "functions/api/automation/v1/state.ts",
     "functions/api/automation/v1/record.ts",
     "functions/api/chain/v1/simulate.ts",
+    "functions/api/chain/v1/confirmation.ts",
     "src/lib/capabilities.ts",
     "src/lib/automationState.ts",
     "src/lib/automationImpact.ts",

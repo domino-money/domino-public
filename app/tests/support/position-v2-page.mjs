@@ -22,6 +22,7 @@ import { createFakeSession } from './fake-session.mjs';
 import { contractsFor } from './v2-chain.mjs';
 import { WALLET_V2_DIST } from './wallet-dist.mjs';
 import { createWalletServer } from './wallet-server.mjs';
+import { confirmationRoute } from './confirmation-route.mjs';
 
 export const WALLET_NAME = 'Position V2 Wallet';
 /** DEX Screener's API and images, where V1's optional token artwork is looked up (tests/support/new-position.mjs ARTWORK). */
@@ -29,7 +30,7 @@ const ARTWORK = /^https:\/\/(api|cdn)\.dexscreener\.com\//;
 
 export async function openPositionPage(browser, chain, { dist = WALLET_V2_DIST, hash, read6 = {}, planner = () => undefined, intercept = () => undefined, live = true, open = true, script = live, contracts, connect = true, viewport = { width: 1180, height: 960 }, s1 = {}, routes = [] } = {}) {
   const fake = createFakeSession();
-  const server = createWalletServer({ fake, dist, routes });
+  const server = createWalletServer({ fake, dist, routes: [...routes, confirmationRoute(chain)] });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
   const origin = `http://127.0.0.1:${server.address().port}`;
   fake.origin = origin;

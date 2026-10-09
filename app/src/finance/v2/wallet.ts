@@ -4,6 +4,7 @@ import type { V2ChainId } from '../../v2/types'
 import { chainNonceJournal } from '../nonce'
 import { browserSignatureJournal } from './signatureJournal'
 import type { V2Wallet } from './transact'
+import { confirmationReads } from '../../lib/edge/confirmation'
 
 /**
  * The connected wallet as a Domino V2 client takes it (finance/v2/transact.ts V2Wallet), from the page's one wagmi
@@ -42,5 +43,6 @@ export async function v2Wallet(): Promise<V2Wallet> {
     // Changed on purpose (data) 2026-10-02 (Domino V2 rev2 review, F3): "I rejected it in my wallet" lets the latch go.
     forgetNonce: (chainId: V2ChainId, nonce) => chainNonceJournal(chainId).forget(owner, nonce),
     signatures,
+    confirmation: confirmationReads,
   }
 }

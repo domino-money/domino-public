@@ -906,7 +906,6 @@ async function openFigures(page) {
   await button.click();
   const dialog = page.locator('[data-pool-figures-dialog]');
   await dialog.waitFor();
-  await page.waitForFunction(() => document.querySelector('[data-pool-figures-dialog] [data-figures-activity]')?.getAttribute('data-figures-activity') !== 'loading');
   return dialog;
 }
 
@@ -954,25 +953,19 @@ test('provider figures carry their source and retrieval on the row; every cell w
   assert.equal(before, 0, 'no pool-activity read before the dialog opens');
   const dialog = await openFigures(page);
   assert.equal(await page.evaluate(() => document.activeElement?.id), 'pool-figures-title');
-  assert.equal((await dialog.locator('#pool-figures-title').innerText()).replace(/\s*\/\s*/g, '/'), `${await page.locator('tbody .dm-mkt-name').innerText()} figures`, 'the pair keeps the same orientation as the row');
+  assert.equal((await dialog.locator('#pool-figures-title').innerText()).replace(/\s*\/\s*/g, '/'), await page.locator('tbody .dm-mkt-name').innerText(), 'the pair keeps the same orientation as the row');
   assert.equal(await dialog.locator('[data-figures-sources]').getAttribute('open'), null);
   assert.match(await dialog.locator('[data-figures-summary]').innerText(), /TVL\s+\$12\.3K/);
   assert.doesNotMatch(await dialog.innerText(), /Domino history, 24h|Time-weighted TVL|Pool is 19 s old/);
   await dialog.locator('[data-figures-sources] > summary').click();
   const text = await dialog.innerText();
-  // A provider observation never becomes verified Domino history. Explain the distinction only in Sources.
-  const history = dialog.locator('[data-figures-qualified="no"]');
-  assert.equal(await history.locator('dd').count(), 0, 'no wall of five missing figures');
-  assert.match(await history.innerText(), /Complete 24h pool history isn’t available/);
-  assert.ok(await history.getAttribute('title'), 'the missing history keeps its precise reason');
-  // Who reported the figures and when: the figure's title, not a caption under it.
-  assert.match(await dialog.locator('[data-provider-figure="attributed"]').first().getAttribute('title'), /^Reported by a market data provider, retrieved \d\d:\d\d:\d\d UTC, 1970-01-01\. Provider-reported, not reconciled with chain data\.$/);
-  assert.match(text, /Pool is 19 s old; the 24h window isn’t complete/);
+  assert.equal(await dialog.locator('[data-figures-qualified], [data-figures-provider], [data-figures-activity]').count(), 0, 'no duplicate figures or unrelated activity panels');
+  assert.match(await dialog.locator('[data-figures-summary] [data-metric="provider"]').first().getAttribute('title'), /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
   // What the estimate is not: its own title, not a closing caption.
-  assert.match(await dialog.locator('[data-figures-provider]').evaluate((el) => el.closest('[data-pool-figures-dialog]').querySelector('[data-apr-estimate] [title]').getAttribute('title')), /^Pool estimate, not position APR, APY or a return forecast\./);
+  assert.match(await dialog.locator('[data-apr-estimate] [title]').getAttribute('title'), /^Pool estimate, not position APR, APY or a return forecast\./);
   assert.doesNotMatch(text, /Retrieval age isn’t proof of a complete 24h window|Pool APR describes a pool, not a position|Block \d+/, 'no captions about sources under the figures');
   assert.doesNotMatch(await dialog.innerHTML(), /money-wait/);
-  assert.equal((await caseLog(page)).filter((r) => r.route === 'pool-activity').length, 1, 'exactly one pool-activity read, after the click');
+  assert.equal((await caseLog(page)).filter((r) => r.route === 'pool-activity').length, 0, 'the compact popup no longer reads unrelated pool activity');
   await page.keyboard.press('Escape');
   await dialog.waitFor({ state: 'detached' });
   assert.equal(await page.evaluate(() => document.activeElement?.hasAttribute('data-pool-figures')), true, 'focus returns to the pool');
@@ -984,7 +977,7 @@ test('provider figures carry their source and retrieval on the row; every cell w
 // F3 dropped from the table's path, so MARKET_CASES has neither and their lab cases draw no row; the qualified figures
 // are the pool page's (the pool page test below). The provider's own states, and a failed activity read, are each
 // checked here as they read today: the 30d volume column is gone with F3's contract, so a row has two provider cells.
-test('stale, expired, missing and zero provider figures, and an activity read that failed, each read as themselves', async () => {
+test('stale, expired, missing and zero figures stay honest, without unrelated activity reads', async () => {
   const cellsOf = (page) => page.locator('tbody [data-metric]').evaluateAll((els) => els.map((e) => [e.getAttribute('data-metric'), e.innerText.replace(/\s+/g, ' ').trim()]));
 
   const stale = await openCase('figures.stale');
@@ -993,7 +986,8 @@ test('stale, expired, missing and zero provider figures, and an activity read th
   assert.match(await stale.page.locator('tbody [data-metric]').first().getAttribute('title'), /Stale, not current\.$/);
   const s = await openFigures(stale.page);
   await s.locator('[data-figures-sources] > summary').click();
-  assert.match(await s.innerText(), /Liquidity\s+\$12\.3K\s+Reported by a market data provider, retrieved [^.]*\. This observation is stale\./);
+  assert.match(await s.locator('[data-figures-summary]').innerText(), /TVL\s+\$12\.3K/);
+  assert.match(await s.locator('[data-figures-summary] [data-metric="stale"]').first().getAttribute('title'), /Stale, not current\.$/);
   await stale.page.close();
 
   const expired = await openCase('figures.expired');
@@ -1017,15 +1011,15 @@ test('stale, expired, missing and zero provider figures, and an activity read th
   await table(unavailable.page);
   const u = await openFigures(unavailable.page);
   await u.locator('[data-figures-sources] > summary').click();
-  assert.equal(await u.locator('[data-figures-activity]').getAttribute('data-figures-activity'), 'failed');
-  assert.match(await u.innerText(), /Pool activity data unavailable/);
+  assert.equal(await u.locator('[data-figures-activity]').count(), 0);
+  assert.equal((await caseLog(unavailable.page)).filter((r) => r.route === 'pool-activity').length, 0, 'an unrelated failing route cannot delay the popup');
   await unavailable.page.close();
 });
 
 // Restored 2026-10-01 (audit H11, skipped since 2026-09-12 on the landing's read sequence): the fixture build's table
 // keeps its own fixture pipeline (lib/read/buildMode.ts), so the app's read log holds no table read to count. What the
 // case guards stands: nothing reads pool activity until a pool's figures are opened, and opening them reads it once.
-test('the fixture landing reads no pool activity until a pool is opened', async () => {
+test('the fixture landing and its compact popup read no unrelated pool activity', async () => {
   const { page, errors } = await tracked();
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
   await page.locator('#pools tbody tr').first().waitFor();
@@ -1037,8 +1031,8 @@ test('the fixture landing reads no pool activity until a pool is opened', async 
   assert.match(await button.innerText(), /figures/);
   await button.click();
   await page.locator('[data-pool-figures-dialog]').waitFor();
-  await page.waitForFunction(() => (window.__DOMINO_FIXTURE_READS__ ?? []).some((r) => r.route === 'pool-activity'));
-  assert.equal((await routes()).filter((r) => r === 'pool-activity').length, 1);
+  assert.equal((await routes()).filter((r) => r === 'pool-activity').length, 0);
+  assert.equal(await page.locator('[data-pool-figures-dialog] [data-figures-summary]').count(), 1);
   await quiet(page, errors);
   await page.close();
 });
@@ -1079,26 +1073,26 @@ test('the figures dialog ages with the row behind it, and says stale when the ro
 
   const dialog = await openFigures(page);
   await dialog.locator('[data-figures-sources] > summary').click();
-  assert.equal(await dialog.locator('[data-provider-figure="attributed_stale"]').count(), 0, 'nothing is stale yet');
+  assert.equal(await dialog.locator('[data-figures-summary] [data-metric="stale"]').count(), 0, 'nothing is stale yet');
   // The provenance moved off the line into the figure's title with the rest of the
   // provider captions, and says when the observation was retrieved rather than how
   // long a cache had held it: the age is the retrieval, read against the clock.
-  assert.match(await dialog.locator('[data-provider-figure="attributed"]').first().getAttribute('title'), /Reported by a market data provider, retrieved .*not reconciled with chain data\./);
+  assert.match(await dialog.locator('[data-figures-summary] [data-metric="provider"]').first().getAttribute('title'), /Reported by a market data provider, retrieved .*Not reconciled by Domino\./);
   // The dialog still offers the long provenance to assistive technology; what went
   // is the caption printed beside every number.
-  assert.doesNotMatch(await dialog.locator('[data-provider-figure="attributed"]').first().locator('> div').innerText(), /provider|cache 0 s/i, 'no provider caption on the figure line');
+  assert.doesNotMatch(await dialog.locator('[data-figures-summary]').innerText(), /provider|cache 0 s/i, 'no provider caption on the figure line');
 
   const readsBeforeAge = await caseLog(page);
   // Past the read service's fresh window, with the dialog left open.
   await jump(page, '01:05');
-  await page.waitForFunction(() => document.querySelectorAll('[data-pool-figures-dialog] [data-provider-figure="attributed_stale"]').length > 0);
+  await page.waitForFunction(() => document.querySelectorAll('[data-pool-figures-dialog] [data-metric="stale"]').length > 0);
   const aged = await dialog.innerText();
   // The owner's rule: a stale figure reads as the figure, in the same ink; that it is stale is its state and its title.
-  const staleFigure = dialog.locator('[data-provider-figure="attributed_stale"]').first();
-  assert.match(await staleFigure.getAttribute('title'), /This observation is stale\./, 'the open dialog says stale in the figure’s title');
-  assert.match(await staleFigure.locator('> div').innerText(), /^Liquidity\s+\$12\.3K$/, 'and draws the figure as it was, with no stale word and no provider beside it');
+  const staleFigure = dialog.locator('[data-figures-summary] [data-metric="stale"]').first();
+  assert.match(await staleFigure.getAttribute('title'), /Stale, not current\./, 'the open dialog says stale in the figure’s title');
+  assert.equal(await staleFigure.innerText(), '$12.3K', 'the number stays, with no stale caption or duplicate provider figure');
   assert.doesNotMatch(await staleFigure.innerHTML(), /money-wait/);
-  assert.match(await staleFigure.getAttribute('title'), /This observation is stale\./, 'and the title says so rather than reporting a cache age as if it were current');
+  assert.match(await staleFigure.getAttribute('title'), /Stale, not current\./, 'the age is never described as current');
   assert.doesNotMatch(aged, /A later refresh failed/i, 'aging alone does not imply a failed refresh');
   assert.deepEqual(await caseLog(page), readsBeforeAge, 'the display clock starts no new read');
   assert.deepEqual(await page.locator('tbody [data-metric="stale"]').count() > 0, true, 'the row behind it says the same');
@@ -1109,7 +1103,7 @@ test('the figures dialog ages with the row behind it, and says stale when the ro
 
 // --- markets-snapshot listed in the figures lab (G2 through the real table) -------
 
-test('with markets-snapshot listed, a current stored row is the row: one snapshot read, its tokens, and no market read; the dialog still reads activity only when opened', async () => {
+test('with markets-snapshot listed, the table and popup reuse its current row without unrelated activity', async () => {
   const { page, errors } = await openCase('figures.snapshot');
   await table(page);
   await page.locator('tbody tr[data-row-source="markets-snapshot"]').waitFor();
@@ -1120,7 +1114,7 @@ test('with markets-snapshot listed, a current stored row is the row: one snapsho
   for (const [, , title] of cells) assert.match(title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
   assert.doesNotMatch(await page.locator('tbody').innerText(), /snapshot|stored/i, 'where the row came from is data, never words');
   await openFigures(page);
-  assert.equal((await caseLog(page)).filter((r) => r.route === 'pool-activity').length, 1, 'one pool-activity read, after the click');
+  assert.equal((await caseLog(page)).filter((r) => r.route === 'pool-activity').length, 0, 'no unrelated activity read after opening');
   await quiet(page, errors);
   await page.close();
 });

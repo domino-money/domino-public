@@ -90,16 +90,114 @@ test('Markets help works with hover, keyboard and touch; mobile tips fit and Det
     assert.equal(await figures.locator('[data-figures-sources]').getAttribute('open'), null, 'sources start folded away')
     assert.doesNotMatch(await figures.innerText(), /Domino history, 24h|Time-weighted TVL|Pool verified|Some figures are taking longer/)
     assert.ok(await figures.evaluate(el => el.scrollWidth <= el.clientWidth), 'the 320px modal has no horizontal overflow')
+    await figures.locator('[data-history-mode="chain"] [data-pool-ratio-chart]').waitFor()
+    assert.equal(await figures.locator('[data-figures-sources] [data-pool-ratio-chart]').count(), 0, 'price history opens without expanding Details')
+    assert.equal(await figures.locator('[data-figures-provider], [data-figures-activity]').count(), 0, 'no duplicate provider or activity panels')
     await figures.locator('[data-figures-sources] > summary').click()
-    const explanation = page.locator('[data-pool-figures-dialog] section[aria-labelledby="figures-estimate"]')
-    await explanation.waitFor()
-    assert.equal((await explanation.innerText()).match(/[\d,.]+%/)?.[0], value, 'Details explains the same APR as the row')
+    assert.match(await figures.locator('[data-figures-sources]').innerText(), /APR basis\s+(Verified fees over 24h|Recent pool activity)/)
+    assert.equal((await figures.locator('[data-figures-summary]').innerText()).match(/[\d,.]+%/)?.[0], value, 'Details never changes or duplicates the row’s APR')
+    await page.keyboard.press('Escape')
+    await figures.waitFor({ state: 'detached' })
+    assert.equal(await row.locator('[data-pool-figures]').evaluate(el => el === document.activeElement), true, 'Escape restores focus to the pool control')
     assert.deepEqual(errors, [])
   } finally {
     await context.close()
     await new Promise(resolve => { site.close(resolve); site.closeAllConnections() })
   }
 })
+
+test('a delayed pool chart chunk keeps figures usable and reopens with automatic history', { timeout: 30000 }, async () => {
+  const { startLatencySite, signIn } = await import('./support/markets-latency.mjs')
+  const site = await startLatencySite({ latency: { edge: 10, featured: 20, overview: 40, history: 20, asset: 0 } })
+  const context = await browser.newContext({ viewport: { width: 320, height: 760 } }), page = await context.newPage(), errors = []
+  let releaseChunk
+  const held = new Promise(resolve => { releaseChunk = resolve })
+  const isChart = url => url.startsWith(site.origin) && /\/assets\/PoolHistoryChart-[\w-]+\.js$/.test(new URL(url).pathname)
+  page.setDefaultTimeout(5000)
+  try {
+    page.on('pageerror', error => errors.push(error.message))
+    await context.route('**/*', async route => {
+      const url = route.request().url()
+      if (!url.startsWith(site.origin)) return route.abort()
+      if (isChart(url)) await held
+      return route.continue()
+    })
+    await signIn(context, site.origin)
+    await page.goto(`${site.origin}/#/`)
+    const row = page.locator('#pools tr.dm-mkt-row:not([data-pool-catalogue])').first()
+    const control = row.locator('[data-pool-figures]')
+    await control.waitFor()
+    const requested = page.waitForRequest(request => isChart(request.url()))
+    await control.click()
+    await requested
+    const figures = page.locator('[data-pool-figures-dialog]')
+    await figures.locator('[data-pool-history-loading]').waitFor()
+    const summary = await figures.locator('[data-figures-summary]').innerText()
+    assert.match(summary, /APR[\s\S]*TVL[\s\S]*24h volume/)
+    await figures.locator('[data-figures-sources] > summary').click()
+    assert.notEqual(await figures.locator('[data-figures-sources]').getAttribute('open'), null, 'Details works while the chart module waits')
+    assert.equal(await figures.locator('[data-figures-summary]').innerText(), summary, 'chart loading never replaces the pool figures')
+    assert.ok(await figures.evaluate(el => el.scrollWidth <= el.clientWidth), 'the pending chart fits the narrow popup')
+    assert.equal(site.counts.history, 0, 'the chart does not read before its module arrives')
+    await page.keyboard.press('Escape')
+    await figures.waitFor({ state: 'detached' })
+    assert.equal(await control.evaluate(el => el === document.activeElement), true, 'Escape restores focus before the chart loads')
+    const received = page.waitForResponse(response => isChart(response.url()))
+    releaseChunk()
+    await received
+    await control.click()
+    await figures.locator('[data-history-mode="chain"] [data-ratio-status="not_built"]').waitFor()
+    assert.equal(site.counts.history, 1, 'reopening starts history without another chart control or duplicate read')
+    assert.equal(await figures.locator('[data-figures-sources]').getAttribute('open'), null, 'the chart opens while Details stays closed')
+    assert.deepEqual(errors, [])
+  } finally {
+    releaseChunk()
+    await context.close()
+    await site.close()
+  }
+})
+
+test('a failed pool chart chunk preserves figures and does not reload an open popup', { timeout: 30000 }, async () => {
+  const { startLatencySite, signIn } = await import('./support/markets-latency.mjs')
+  const site = await startLatencySite({ latency: { edge: 10, featured: 20, overview: 40, history: 20, asset: 0 } })
+  const context = await browser.newContext(), page = await context.newPage(), errors = []
+  let recoveryChecks = 0
+  page.setDefaultTimeout(5000)
+  try {
+    page.on('pageerror', error => errors.push(error.message))
+    await context.route('**/*', route => {
+      const url = route.request().url()
+      if (!url.startsWith(site.origin)) return route.abort()
+      if (new URL(url).pathname === '/' && route.request().resourceType() === 'fetch') {
+        recoveryChecks += 1
+        return route.fulfill({ status: 200, contentType: 'text/html', body: '<script type="module" src="/assets/replaced-entry.js"></script>' })
+      }
+      return /\/assets\/PoolHistoryChart-[\w-]+\.js$/.test(new URL(url).pathname) ? route.abort('failed') : route.continue()
+    })
+    await signIn(context, site.origin)
+    await page.goto(`${site.origin}/#/`)
+    const control = page.locator('#pools tr.dm-mkt-row:not([data-pool-catalogue])').first().locator('[data-pool-figures]')
+    await control.waitFor()
+    await page.evaluate(() => { window.__chartRecoveryDocument = 'kept' })
+    await control.click()
+    const figures = page.locator('[data-pool-figures-dialog]')
+    await figures.locator('[data-pool-history-placeholder]:not([data-pool-history-loading])').waitFor()
+    assert.match(await figures.innerText(), /Price history is temporarily unavailable\./)
+    assert.match(await figures.locator('[data-figures-summary]').innerText(), /APR[\s\S]*TVL[\s\S]*24h volume/)
+    assert.equal(recoveryChecks, 0, 'a newer release is not checked until navigation makes recovery safe')
+    assert.equal(await page.evaluate(() => window.__chartRecoveryDocument), 'kept', 'a missing module never reloads under an open dialog')
+    await figures.locator('[data-figures-sources] > summary').click()
+    assert.notEqual(await figures.locator('[data-figures-sources]').getAttribute('open'), null)
+    await page.keyboard.press('Escape')
+    await figures.waitFor({ state: 'detached' })
+    assert.equal(await control.evaluate(el => el === document.activeElement), true)
+    assert.deepEqual(errors, [])
+  } finally {
+    await context.close()
+    await site.close()
+  }
+})
+
 let releaseHistory
 const worker = createWorker({ getClientIp: () => '198.51.100.31', fetch: async (url, init) => {
   const route = new URL(url).pathname.split('/').at(-1), request = JSON.parse(init.body)
@@ -393,8 +491,9 @@ test('Home, its ticker, Markets and its cards show one set of figures for the si
     await page.locator(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="#/pool/${behind[0]}"]) [data-pool-figures]`).click()
     const dialog = page.locator('[data-pool-figures-dialog]')
     await dialog.waitFor()
-    assert.equal(await dialog.locator('[data-figures-provider] [data-metric="pending"]').count(), 1)
+    assert.equal(await dialog.locator('[data-figures-summary] [data-figure-summary="pending"]').count(), 2)
     assert.equal(await dialog.locator('[data-no-provider-figure]').count(), 0)
+    await dialog.locator('[data-history-mode="chain"] [data-ratio-status="not_built"]').waitFor()
     await page.keyboard.press('Escape')
     await dialog.waitFor({ state: 'detached' })
 
@@ -425,8 +524,9 @@ test('Home, its ticker, Markets and its cards show one set of figures for the si
     assert.doesNotMatch(await page.locator('main').innerText(), /Unavailable/)
 
     const posts = edge.filter(read => read.method === 'POST')
-    // Changed on purpose (2026-09-26): the featured list is read once, first; a catch-up seconds later reads the markets alone.
-    assert.deepEqual(posts.map(read => read.path), ['/api/read/v5/featured-pools', '/api/read/v3/overview', '/api/read/v3/overview', ...SELECTED.map(() => '/api/read/v3/history')], 'the list, the table’s overview and its one catch-up, then the cards; no provider read')
+    // The popup opens its own history immediately. The cards reuse that cached
+    // read, so the total remains six histories and one overview catch-up.
+    assert.deepEqual(posts.map(read => read.path), ['/api/read/v5/featured-pools', '/api/read/v3/overview', '/api/read/v3/history', '/api/read/v3/overview', ...SELECTED.slice(1).map(() => '/api/read/v3/history')], 'the list and overview, immediate popup history, one catch-up, then the remaining cards; no provider or duplicate history read')
     assertWithinBudget(posts)
 
     // Added after review, 2026-09-25: a later visit meets a store whose collection of those two failed (backed off

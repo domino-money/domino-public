@@ -38,7 +38,7 @@ const ORIGIN = 'https://domino.money';
 const TOKEN_PATH = 'test-token-0123456789abcdef';
 const ENV = { LOCAL_RPC_URL: `https://rpc.domino.money/${TOKEN_PATH}/` };
 const SIMULATING = { ...ENV, LOCAL_RPC_SIMULATE: 'true' };
-const PATHS = { owned: '/api/owned/v2/positions', state: '/api/fees/v1/state', ledger: '/api/fees/v2/ledger', automation: '/api/automation/v1/state', record: '/api/automation/v1/record', simulate: '/api/chain/v1/simulate' };
+const PATHS = { owned: '/api/owned/v2/positions', state: '/api/fees/v1/state', ledger: '/api/fees/v2/ledger', automation: '/api/automation/v1/state', record: '/api/automation/v1/record', simulate: '/api/chain/v1/simulate', confirmation: '/api/chain/v1/confirmation' };
 const PLAIN = new Set(['owned', 'automation']);
 const VAULT = `0x${'5a'.repeat(20)}`;
 const ZERO = '0x0000000000000000000000000000000000000000';
@@ -52,6 +52,7 @@ const BODIES = {
   automation: { tokenIds: ['11'] },
   record: { vault: VAULT, tokenId: '11', currencies: [USDG, TOKEN], from: 70_000_000, to: 70_100_000 },
   simulate: { owner: OWNER, calls: [{ to: USDG, data: '0x', value: '0x0' }] },
+  confirmation: { hash: `0x${'ab'.repeat(32)}` },
 };
 
 function request(name, body, { method = 'POST', headers = {} } = {}) {
@@ -110,7 +111,7 @@ function wallet(more = {}) {
 
 test('each route refuses, in order, a method, an origin, a type, a size and a shape it does not take, in its own shape, asking nothing', async () => {
   const { ask, asked, routeLines } = edge(deps(wallet()), { env: SIMULATING });
-  const big = (name) => JSON.stringify({ ...BODIES[name], pad: 'x'.repeat({ owned: 600, automation: 9_000, state: 600, ledger: 600, record: 600, simulate: 70_000 }[name]) });
+  const big = (name) => JSON.stringify({ ...BODIES[name], pad: 'x'.repeat({ owned: 600, automation: 9_000, state: 600, ledger: 600, record: 600, simulate: 70_000, confirmation: 300 }[name]) });
   const shapes = {
     owned: { owner: OWNER, method: 'eth_call' },
     automation: { tokenIds: [] },
@@ -118,6 +119,7 @@ test('each route refuses, in order, a method, an origin, a type, a size and a sh
     ledger: { tokenIds: [] },
     record: { ...BODIES.record, vault: ZERO },
     simulate: { owner: OWNER, calls: [] },
+    confirmation: { ...BODIES.confirmation, method: 'eth_getLogs' },
   };
   for (const name of Object.keys(PATHS)) {
     const plain = PLAIN.has(name);
@@ -186,7 +188,7 @@ test('each visitor’s rate per class: a burst, then a refill a minute; every re
   // Changed on purpose 2026-10-02 (rugged97's answer to Q3: the site's token allows 1,000 requests a second): each class
   // five times what it was, or more, so a visitor is held by its node bill (VISITOR_NODE), not by counting questions.
   assert.deepEqual(routes.VISITOR_CLASSES, { owned: { burst: 30, perMinute: 60 }, state: { burst: 60, perMinute: 240 }, history: { burst: 240, perMinute: 1200 }, simulate: { burst: 6, perMinute: 12 } });
-  assert.deepEqual(routes.CLASS_OF, { owned: 'owned', state: 'state', automation: 'state', ledger: 'history', record: 'history', simulate: 'simulate' });
+  assert.deepEqual(routes.CLASS_OF, { owned: 'owned', state: 'state', automation: 'state', ledger: 'history', record: 'history', simulate: 'simulate', confirmation: 'state' });
   // owned: 30 at once, then one a second (60 a minute).
   assert.deepEqual(await statuses('owned', 32), [...Array(30).fill('503'), '429:1', '429:1']);
   clock.time += 1_000;
@@ -703,7 +705,7 @@ test('the gate: without the access cookie a 401; with it each chain route goes o
   }
 });
 
-test('the route files: one line each over answerChainRoute, at the six fixed paths', async () => {
+test('the route files: one line each over answerChainRoute, at the fixed paths', async () => {
   const files = {
     owned: require('../.test-build/app/functions/api/owned/v2/positions.js'),
     state: require('../.test-build/app/functions/api/fees/v1/state.js'),
@@ -711,6 +713,7 @@ test('the route files: one line each over answerChainRoute, at the six fixed pat
     automation: require('../.test-build/app/functions/api/automation/v1/state.js'),
     record: require('../.test-build/app/functions/api/automation/v1/record.js'),
     simulate: require('../.test-build/app/functions/api/chain/v1/simulate.js'),
+    confirmation: require('../.test-build/app/functions/api/chain/v1/confirmation.js'),
   };
   const log = console.log;
   console.log = () => {};

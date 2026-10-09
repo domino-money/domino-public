@@ -175,7 +175,12 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     }
     await page.setViewportSize({width:1180,height:900});
     assert.equal(await detail.locator('[data-automation-panel]').isVisible(), false, 'plain positions go directly to setup');
-    assert.equal(await actions.locator('[data-automate-entry], [data-position-v2-action="protect"]').count(), 0);
+    assert.equal(await actions.locator('[data-automate-entry]').count(), 1, 'setup follows Withdraw in the same action bar');
+    assert.equal(await actions.locator('[data-position-v2-action="protect"]').count(), 0, 'no duplicate setup entry');
+    const toolbar = await actions.locator('[data-position-v2-action="exit"], [data-automation-control]').evaluateAll((all) => all.map((item) => ({ label: item.textContent, height: item.getBoundingClientRect().height, top: item.getBoundingClientRect().top })));
+    assert.deepEqual(toolbar.map((item) => item.label), ['Withdraw', 'Set up automation']);
+    assert.equal(toolbar[0].height, toolbar[1].height, 'liquidity and automation controls share their height');
+    assert.equal(toolbar[0].top, toolbar[1].top, 'setup sits beside Withdraw on desktop');
     /**
      * Opens the "···" menu, checks its entries, picks one (the menu closes on the pick). Changed on purpose 2026-10-04 (the
      * owner: stop-loss and take-profit inside the position): a plain position the wallet holds ends the list with it.

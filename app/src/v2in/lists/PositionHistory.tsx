@@ -31,13 +31,14 @@ export default function PositionHistory({ wallet, position, events = NO_EVENTS, 
   const scope = `${wallet ?? ''}:${position.chainId}:${position.dex}:${position.tokenId}`
   const [page, setPage] = useState({ scope, shown: 5 })
   const shown = page.scope === scope ? page.shown : 5
-  const matching = useMemo(() => positionActivity(history.answer?.items ?? [], position, portfolio), [history.answer, position, portfolio])
+  const { answer, receiptFinality } = history
+  const matching = useMemo(() => positionActivity((answer?.items ?? []).filter(item => receiptFinality(item.chainId, item.tx.hash, item.tx.snapshot.hash) !== 'reorged'), position, portfolio), [answer, receiptFinality, position, portfolio])
   const mint = useMemo(() => {
     const own = portfolio?.positions.find((item) => item.chainId === position.chainId && item.dex === position.dex && item.tokenId === position.tokenId)
     return activityMint({ items: matching }, { ...position, vault: own?.vault ?? null })
   }, [matching, portfolio, position])
   useEffect(() => { if (mint) onMint?.(mint) }, [mint, onMint])
-  const receipts = useMemo(() => history.answer ? receiptViews({ ...history.answer, items: matching }, chainsIn(gate, 'live'), portfolio) : [], [history.answer, matching, gate, portfolio])
+  const receipts = useMemo(() => history.answer ? receiptViews({ ...history.answer, items: matching }, chainsIn(gate, 'live'), portfolio, history.receiptFinality) : [], [history.answer, history.receiptFinality, matching, gate, portfolio])
   const rows = useMemo(() => {
     const scoped = local.filter((item) => item.chainId === position.chainId && item.dex === position.dex && item.tokenIds.includes(position.tokenId))
     const operations = timelineRows(receipts, [], new Map(), matching, scoped).filter((row) => row.kind !== 'private')

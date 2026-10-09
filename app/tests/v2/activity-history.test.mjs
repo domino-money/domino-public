@@ -20,7 +20,7 @@ function clock() {
   let now = 0, visible = true;
   const jobs = new Set(), wake = new Set();
   return {
-    timers: { set(fn, ms) { const job = { fn, at: now + ms }; jobs.add(job); return job; }, clear(job) { jobs.delete(job); }, visible: () => visible,
+    timers: { now: () => now, set(fn, ms) { const job = { fn, at: now + ms }; jobs.add(job); return job; }, clear(job) { jobs.delete(job); }, visible: () => visible,
       onVisible(fn) { wake.add(fn); return () => wake.delete(fn); } },
     async tick(ms) { now += ms; for (const job of [...jobs]) if (job.at <= now) { jobs.delete(job); job.fn(); await flush(); } },
     show(next) { visible = next; if (next) for (const fn of [...wake]) { wake.delete(fn); fn(); } },
@@ -69,6 +69,137 @@ test('refresh catches a gap larger than one page before joining the preserved ol
   assert.equal(history.get(wallet).catchingUp, false);
   assert.equal(history.get(wallet).more, false);
   assert.deepEqual(history.get(wallet).answer.items.map(x => x.tx.snapshot.number), Array.from({ length: 80 }, (_, i) => 80 - i));
+  stop();
+});
+
+test('an older-page retry never removes the unfinalized event exactly at its exclusive cursor boundary', async () => {
+  const time = clock(); let tailReads = 0;
+  const head = structuredClone(fixture.items.slice(0, 5));
+  const older = structuredClone(fixture.items.slice(5));
+  const boundary = head.at(-1);
+  assert.equal(boundary.tx.finality, 'unfinalized');
+  const history = createActivityHistory(async (_, request) => !request.cursor ? page(head, 'older')
+    : ++tailReads === 1 ? { kind: 'unavailable', reason: 'upstream_unavailable', retryAfterSeconds: 5 } : page(older), time.timers, false);
+  const stop = history.subscribe(wallet, () => {}); await flush();
+  const initial = history.get(wallet).answer.items.map(item => item.id);
+  history.more(wallet); await flush();
+  assert.deepEqual(history.get(wallet).answer.items.map(item => item.id), initial);
+  await time.tick(5_000);
+  const all = history.get(wallet).answer.items.map(item => item.id);
+  assert.ok(all.includes(boundary.id), 'the cursor event is outside the reread interval, even when its neighboring log shares the block and tx');
+  assert.deepEqual(all, fixture.items.map(item => item.id));
+  assert.equal(history.get(wallet).more, false);
+  stop();
+});
+
+test('backfill continues beyond three pages and a new recent head cannot erase its older join target', async () => {
+  const time = clock(), asks = []; let top = 40;
+  const history = createActivityHistory(async (_, request) => {
+    asks.push(request);
+    const high = request.cursor ? Number(request.cursor) : top;
+    return page(range(high, Math.max(1, high - 19)), high > 20 ? String(high - 20) : null);
+  }, time.timers, true);
+  const stop = history.subscribe(wallet, () => {}); await flush();
+  history.more(wallet); await flush();
+  top = 200; history.refresh(wallet); await flush();
+  await time.tick(1_000); await time.tick(1_000); await time.tick(1_000);
+  assert.equal(history.get(wallet).catchingUp, true, 'the gap still has more than three pages');
+  top = 205; history.refresh(wallet); await flush();
+  assert.equal(history.get(wallet).catchingUp, true, 'overlapping the new recent segment does not close the old gap');
+  assert.equal(history.get(wallet).answer.items[0].tx.snapshot.number, 205, 'recent reads do not wait for backfill');
+  for (let i = 0; i < 12; i++) await time.tick(5_000);
+  assert.equal(history.get(wallet).catchingUp, false);
+  assert.equal(history.get(wallet).more, false);
+  assert.deepEqual(history.get(wallet).answer.items.map(value => value.tx.snapshot.number), Array.from({ length: 205 }, (_, i) => 205 - i));
+  const heads = asks.filter(request => !request.cursor).length;
+  await time.tick(60_000);
+  assert.ok(asks.filter(request => !request.cursor).length > heads, 'the recurring head is still scheduled');
+  stop();
+});
+
+test('old included receipts outside the first twenty rows reconcile finality and canonical removal without a public RPC', async () => {
+  for (const reorganized of [false, true]) {
+    const time = clock(); let round = 0;
+    const tentative = item(25); tentative.tx.finality = 'unfinalized';
+    const history = createActivityHistory(async (_, request) => {
+      if (!request.cursor) return ++round === 1 ? page(range(40, 21).map(value => value.id === tentative.id ? tentative : value), '20') : page(range(45, 26), '25');
+      return request.cursor === '20' ? page(range(20, 1)) : page(range(25, 6).filter(value => !reorganized || value.id !== tentative.id), '5');
+    }, time.timers, true);
+    const stop = history.subscribe(wallet, () => {}); await flush(); history.more(wallet); await flush();
+    history.refresh(wallet); await flush();
+    assert.equal(history.get(wallet).answer.items.find(value => value.id === tentative.id).tx.finality, 'unfinalized');
+    await time.tick(1_000);
+    const found = history.get(wallet).answer.items.find(value => value.id === tentative.id);
+    assert.equal(reorganized ? found === undefined : found?.tx.finality === 'finalized', true);
+    stop();
+  }
+});
+
+test('more than twenty old pending receipts are checked in successive bounded turns instead of starving behind the newest pending group', async () => {
+  const time = clock(); let heads = 0;
+  const history = createActivityHistory(async (_, request) => {
+    if (!request.cursor) heads++;
+    const top = request.cursor ? Number(request.cursor) : 100;
+    const rows = range(top, Math.max(1, top - 19)).map(value => {
+      const block = value.tx.snapshot.number;
+      if (block <= 60 && !(heads >= 3 && block <= 40)) value.tx.finality = 'unfinalized';
+      return value;
+    });
+    return page(rows, top > 20 ? String(top - 20) : null);
+  }, time.timers, true);
+  const stop = history.subscribe(wallet, () => {}); await flush();
+  for (let n = 0; n < 4; n++) { history.more(wallet); await flush(); }
+  history.refresh(wallet); await flush();
+  await time.tick(1000); await time.tick(1000);
+  assert.equal(history.get(wallet).answer.items.find(value => value.tx.snapshot.number === 55).tx.finality, 'unfinalized');
+  await time.tick(60_000);
+  for (let n = 0; n < 5; n++) await time.tick(5_000);
+  assert.equal(history.get(wallet).answer.items.find(value => value.tx.snapshot.number === 25).tx.finality, 'finalized', 'the next pending group is reached although the first group stayed included');
+  stop();
+});
+
+test('a partial head without a next cursor cannot erase an already known older-page path', async () => {
+  const time = clock(); let heads = 0;
+  const history = createActivityHistory(async (_, request) => {
+    if (request.cursor) return page(range(20, 1));
+    return ++heads === 1 ? page(range(40, 21), '20') : page([item(40)], null, { coverage: 'partial' });
+  }, time.timers, false);
+  const stop = history.subscribe(wallet, () => {}); await flush();
+  history.refresh(wallet); await flush();
+  assert.equal(history.get(wallet).more, true);
+  history.more(wallet); await flush();
+  assert.equal(history.get(wallet).answer.items.length, 40, 'older history is still reachable after a partial refresh');
+  stop();
+});
+
+test('a confirmation head preempts a failing old page only after its Retry-After, then paging resumes', async () => {
+  const time = clock(), asks = []; let top = 40, failed = false;
+  const history = createActivityHistory(async (_, request) => {
+    asks.push(request);
+    if (request.cursor && !failed) { failed = true; return { kind: 'unavailable', reason: 'upstream_unavailable', retryAfterSeconds: 12 }; }
+    return request.cursor ? page(range(20, 1)) : page(range(top, top - 19), '20');
+  }, time.timers, false);
+  const stop = history.subscribe(wallet, () => {}); await flush(); history.more(wallet); await flush();
+  top = 41; history.refresh(wallet, { chainId: 4663, block: 41 }); await flush();
+  await time.tick(11_999); assert.equal(asks.length, 2);
+  await time.tick(1);
+  assert.equal(asks[2].cursor, undefined, 'the due head wins over the failed archive');
+  assert.equal(history.get(wallet).answer.items[0].tx.snapshot.number, 41);
+  assert.equal(asks[3].cursor, '20', 'the exact failed archive cursor is retained');
+  stop();
+});
+
+test('confirmed index catch-up is responsive but bounded and honors hidden tabs', async () => {
+  const time = clock(); let asks = 0;
+  const chains = fixture.chains.map(chain => chain.chainId === 4663 ? { ...chain, indexedThrough: { ...chain.indexedThrough, number: 10 } } : chain);
+  const history = createActivityHistory(async () => { asks++; return page([item(10)], null, { chains }); }, time.timers, true);
+  const stop = history.subscribe(wallet, () => {}); await flush();
+  history.refresh(wallet, { chainId: 4663, block: 20 }); await flush();
+  for (let i = 0; i < 5; i++) await time.tick(2_000);
+  const bounded = asks;
+  await time.tick(2_000); assert.equal(asks, bounded, 'a lagging index does not cause an unlimited fast loop');
+  time.show(false); await time.tick(60_000); assert.equal(asks, bounded);
+  time.show(true); await flush(); assert.equal(asks, bounded + 1);
   stop();
 });
 

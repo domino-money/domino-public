@@ -4,7 +4,7 @@ import { v2OriginOpen } from '../../v2/gate'
 import type { V2ChainId } from '../../v2/types'
 import { v2ReadTransports } from '../transports'
 import { createKeyedReader, createListsReads, readAgainAfter, type ListsReply, type ListsTransports } from './read'
-import { reconcilePortfolio, subscribePositionChanges } from './positionSync'
+import { createPortfolioCatchup, reconcilePortfolio, subscribePositionChanges } from './positionSync'
 
 /**
  * The lists' one read-v6 source in the page (Domino V2 builds only: the lists' chunks are opened behind `__DOMINO_V2__`).
@@ -41,14 +41,15 @@ const failed = <T>(reply: ListsReply<T>) => reply.kind !== 'ok'
 export const ACTIVITY_PAGE = 20
 
 /** The person's own portfolio, from the site's route, by wallet (lowercase). */
+const catchup = createPortfolioCatchup()
 export const OWN_PORTFOLIO = createKeyedReader<ListsReply<PortfolioResponse>>(async (wallet) => {
   const answer = await LISTS_SOURCE.ownPortfolio(wallet)
   return answer.kind === 'ok' ? { ...answer, body: reconcilePortfolio(answer.body) } : answer
-}, { next: (reply, failures) => reply.kind === 'ok' && REFRESH ? 30_000 : again(reply, failures), failed })
+}, { next: (reply, failures) => reply.kind === 'ok' && REFRESH ? catchup.delay(reply.body) ?? 30_000 : again(reply, failures), failed })
 /** The first page of the person's own receipts, by wallet (lowercase). */
 export const OWN_ACTIVITY = createKeyedReader<ListsReply<ActivityResponse>>((wallet) => LISTS_SOURCE.ownActivity(wallet, { limit: ACTIVITY_PAGE }), { next: again, failed })
 
 subscribePositionChanges((change) => {
   if (change.kind === 'state') OWN_PORTFOLIO.update((value) => value.kind === 'ok' ? { ...value, body: reconcilePortfolio(value.body) } : value)
-  else OWN_PORTFOLIO.again(change.wallet)
+  else { catchup.note(change); OWN_PORTFOLIO.again(change.wallet) }
 })

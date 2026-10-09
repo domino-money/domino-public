@@ -45,6 +45,8 @@ execFileSync(
     // 2026-10-01 (RPC-SPEC §2.10): Domino's own node from the edge (functions/_lib/localRpc.ts), and the six chain routes over it.
     'tests/local-rpc.test.mjs',
     'tests/chain-routes.test.mjs',
+    'tests/confirmation.test.mjs',
+    'tests/confirmed-operations.test.mjs',
     // 2026-09-26: the featured pools list's route, its 60-second edge cache and what it may answer from it (featured-pools v1 §10.6).
     'tests/featured-edge.test.mjs',
     // 2026-10-01 (audit A6, A7 b, A14, B1, F7, I3): the list served at once under 5 min, its evidence line, misses coalesced,
