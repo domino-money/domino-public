@@ -10,6 +10,7 @@ pass (v2_automation.ChainAutomation): discovery, the vault's state, the
 planner, the publisher's signed observation, the presimulation, the journal,
 the signed transaction, the receipt and its reconciliation.
 """
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -160,7 +161,9 @@ class AutomationEvmTests(unittest.TestCase):
     def chain_time(self):
         return int(self.local.head()['timestamp'], 16)
 
-    def service(self, *, executor=True, planner=None, waiting_file=None):
+    def service(self, *, executor=True, planner=None, waiting_file=None, behind=None):
+        """`behind` answers for a node ahead of the chain's endpoint in the order, as Domino's node leads
+        Robinhood's."""
         local = self.local
 
         def anvil(_, body):
@@ -169,6 +172,10 @@ class AutomationEvmTests(unittest.TestCase):
                 return json.load(response)
         endpoint = Endpoint('local', 'anvil.invalid', 'https://anvil.invalid/', None, 100, None, None)
         endpoints = ChainEndpoints(self.chain, (endpoint,), 'test', send=anvil)
+        if behind is not None:
+            node = Endpoint('local', 'node.invalid', 'https://node.invalid/', None, 100, None, None)
+            endpoints = ChainEndpoints(self.chain, (node, replace(endpoint, name='fallback-1')), 'test',
+                                       send=lambda url, body: behind(body) if url == node.url else anvil(url, body))
         follower = HeadFollower(endpoints, max_age_seconds=1, max_block_age_seconds=3600, clock=self.chain_time)
         journal_directory = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(shutil.rmtree, journal_directory)
@@ -282,6 +289,35 @@ class AutomationEvmTests(unittest.TestCase):
         # Nothing new while the interval runs: the vault would refuse it.
         again = next(v for v in self.service().run_once(act=False)['vaults'] if v['vault'] == vault)
         self.assertEqual((again['act'], again['reason']), (False, 'too_soon'))
+        self.local.send(self.owner, vault, calldata('pause()'), impersonate=True)
+
+    def test_a_node_far_behind_is_passed_over_and_the_pass_runs_on_the_next_endpoint(self):
+        """9 Oct 2026: Domino's node came back from a hard power-off about 520,000 blocks behind and answered
+        every call, so each pass refused its head while the next endpoint was current. The pass now reads,
+        presimulates, sends and reconciles where its head came from; the node is asked for its head alone."""
+        # A pool no other test moves (fee 0.05%, spacing 20), with someone else's liquidity.
+        key = (*sorted([self.weth, self.token]), 500, 20, ZERO)
+        self.local.send(self.deployer, self.v4.poolManager,
+                        calldata('initialize(' + KEY_TYPE + ',uint160)', [KEY_TYPE, 'uint160'], [key, 2**96]))
+        self.position(self.lp, 4 * 10**20, key)
+        token_id = self.position(self.owner, 10**20, key)
+        vault = self.vault(token_id)
+        self.swaps(30, key=key)
+        self.local.mine(35, 2)
+        asked = []
+
+        def behind(body):
+            asked.append(body)
+            if not isinstance(body, dict) or body['method'] != 'eth_getBlockByNumber' or body['params'][0] != 'latest':
+                raise AssertionError('a pass read the node that is far behind')
+            return {'jsonrpc': '2.0', 'id': body['id'],
+                    'result': {'number': '0x1', 'hash': '0x' + '83' * 32, 'timestamp': hex(self.chain_time() - 30_879)}}
+        service = self.service(behind=behind)
+        with self.assertLogs('v2_head', 'WARNING') as logs:
+            self.compounded(service, vault)
+        self.assertEqual(len(asked), 2)  # once a pass, for its head
+        self.assertEqual(logs.output,
+                         ['WARNING:v2_head:v2_head_set_aside chain=base-8453 endpoint=local head_age_seconds=30879'])
         self.local.send(self.owner, vault, calldata('pause()'), impersonate=True)
 
     def test_a_domino_vault_mints_its_successor_near_the_ceiling_then_its_parent_feeds_it(self):

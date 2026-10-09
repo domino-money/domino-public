@@ -501,6 +501,47 @@ class TransportTests(unittest.TestCase):
             with self.subTest(args=args), self.assertRaisesRegex(DataError, '^invalid_v2_chain_endpoints$'):
                 ChainEndpoints(args[0], args[1], 'test')
 
+    def test_clients_pass_over_the_endpoints_the_head_follower_set_aside(self):
+        clock = Clock()
+        fake = FakeChain(8453)
+        endpoints = hosted(fake, clock=clock)
+        stack, drpc, alchemy, public = endpoints.endpoints
+        head = self.call('eth_getBlockByNumber', ['latest', False])
+
+        def cool(endpoint):
+            fake.fail[(endpoint.url, 'eth_getBlockByNumber')] = 'http_429'
+            with self.assertRaisesRegex(DataError, '^http_429$'):
+                endpoints(endpoint.url, head)
+            del fake.fail[(endpoint.url, 'eth_getBlockByNumber')]
+
+        def named(found):
+            return [endpoint.name for endpoint in found]
+        self.assertEqual((endpoints.aside(), endpoints.passes_over()), ((), False))
+        self.assertEqual(endpoints.set_aside([stack]), (['stack'], []))
+        self.assertEqual((endpoints.aside(), endpoints.passes_over()), ((stack,), True))
+        self.assertEqual(named(endpoints.usable()), ['drpc', 'alchemy', 'public'])
+        self.assertEqual((endpoints.read_rpc().names, endpoints.history_rpc().names), (('drpc', 'alchemy', 'public'),) * 2)
+        self.assertEqual(endpoints.read_rpc(only='stack').names, ('stack',))  # named, it is still reached
+        self.assertEqual(named(endpoints.head_candidates()), ['stack', 'drpc', 'alchemy', 'public'])
+        cool(drpc)  # cooling hides an endpoint from the follower too
+        self.assertEqual((named(endpoints.head_candidates()), named(endpoints.usable())),
+                         (['stack', 'alchemy', 'public'], ['alchemy', 'public']))
+        # Replaced as a whole: alchemy set aside, stack taken back, and stack leads the clients again.
+        self.assertEqual(endpoints.set_aside([alchemy]), (['alchemy'], ['stack']))
+        self.assertFalse(endpoints.passes_over())
+        cool(stack)  # past a cooling endpoint, the first a client meets is set aside
+        self.assertTrue(endpoints.passes_over())
+        with self.assertRaisesRegex(DataError, '^v2_rpc_endpoint_unknown$'):
+            endpoints.set_aside([Endpoint('x', 'x.example.invalid', 'https://x.example.invalid/', None, 1, None, None)])
+        self.assertEqual(endpoints.aside(), (alchemy,))
+        endpoints.set_aside([drpc, alchemy, public])  # with stack cooling, no client has an endpoint
+        with self.assertRaisesRegex(DataError, '^v2_rpc_endpoints_cooling$'):
+            endpoints.read_rpc()
+        endpoints.set_aside([])
+        cool(alchemy)
+        cool(public)
+        self.assertEqual((endpoints.head_candidates(), endpoints.passes_over()), ((), False))
+
     def test_every_endpoint_cooling_is_refused(self):
         clock = Clock()
         fake = FakeChain(8453)

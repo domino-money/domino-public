@@ -49,17 +49,22 @@ to 60 s while it keeps failing. A call to a cooling endpoint, or one the pace
 would hold for more than MAX_PACE_WAIT_SECONDS, is refused locally as http_429:
 nothing is sent or billed, and the client fails over to the next endpoint.
 
+An endpoint whose latest head the chain's follower (v2_head) found outside its
+window, such as a node restarted far behind, is set aside: clients pass over it
+as over a cooling one until the follower finds its head current again.
+
 Clients. ChainReadRpc (current state) and ChainHistoryRpc (pinned historical
 reads) are the read path's failover clients (rpc_failover): one deadline and
 request budget across endpoints, every pinned block proven again on each
-switch. Each takes the first three endpoints that are not cooling down. They
-never request eth_chainId: the chain id is the profile's. An endpoint proves
-its chain once, when `check` is run on it after provisioning, and the code-hash
-proofs of what a service reads would fail on any other chain. A history read of
-state older than an endpoint keeps starts at the first endpoint that keeps it,
-which is V1's rule for the own pruned node, generalized. A head the chain's
-follower already observed (v2_head) can seed a current client, so a read spends
-no call on the head, and the chain's code-hash cache spares eth_getCode.
+switch. Each takes the first three endpoints that are neither cooling down nor
+set aside. They never request eth_chainId: the chain id is the profile's. An
+endpoint proves its chain once, when `check` is run on it after provisioning,
+and the code-hash proofs of what a service reads would fail on any other chain.
+A history read of state older than an endpoint keeps starts at the first
+endpoint that keeps it, which is V1's rule for the own pruned node,
+generalized. A head the chain's follower already observed (v2_head) can seed a
+current client, so a read spends no call on the head, and the chain's code-hash
+cache spares eth_getCode.
 
 URLs never enter an error, a log line or a repr; only endpoint names do.
 """
@@ -319,6 +324,7 @@ class ChainEndpoints:
         self.chain, self.endpoints, self.source = chain, tuple(endpoints), source
         self._send, self._clock, self._sleep = send, clock, sleep
         self._states = {e.url: _EndpointState(e) for e in self.endpoints}
+        self._aside = frozenset()  # the URLs the chain's head follower set aside (v2_head)
         self._lock = threading.Lock()
         self.code = CodeCache()
 
@@ -332,13 +338,49 @@ class ChainEndpoints:
             return {state.endpoint.name: state.calls for state in self._states.values()}
 
     def usable(self):
-        """The first endpoints a client may use, in order, skipping cooling ones."""
+        """The first endpoints a client may use, in order, skipping cooling ones and those set aside."""
         now = self._clock()
         with self._lock:
-            ready = [s.endpoint for s in self._states.values() if s.cooling_until <= now]
+            ready = [s.endpoint for s in self._states.values()
+                     if s.cooling_until <= now and s.endpoint.url not in self._aside]
         if not ready:
             raise DataError('v2_rpc_endpoints_cooling')
         return tuple(ready[:MAX_RPC_ENDPOINTS])
+
+    def head_candidates(self):
+        """Where the head follower asks for the head, in order: every endpoint not
+        cooling down, those set aside included, so it sees one catch up."""
+        now = self._clock()
+        with self._lock:
+            return tuple(s.endpoint for s in self._states.values() if s.cooling_until <= now)
+
+    def set_aside(self, endpoints):
+        """The endpoints clients pass over from now on, in place of those before.
+        Returns the names newly set aside and the names taken back, in order."""
+        urls = frozenset(e.url for e in endpoints)
+        if not urls <= self._states.keys():
+            raise DataError('v2_rpc_endpoint_unknown')
+        with self._lock:
+            before, self._aside = self._aside, urls
+        return ([e.name for e in self.endpoints if e.url in urls - before],
+                [e.name for e in self.endpoints if e.url in before - urls])
+
+    def aside(self):
+        """The endpoints set aside, in order."""
+        with self._lock:
+            return tuple(e for e in self.endpoints if e.url in self._aside)
+
+    def passes_over(self):
+        """Whether a client now passes over an endpoint set aside: one comes
+        before the first endpoint a client would use."""
+        now = self._clock()
+        with self._lock:
+            for state in self._states.values():
+                if state.endpoint.url in self._aside:
+                    return True
+                if state.cooling_until <= now:
+                    return False
+        return False
 
     def select(self, only=None):
         """The endpoints a new client uses: usable() or exactly the one named."""
