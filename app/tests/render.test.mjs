@@ -25,11 +25,11 @@ import { apiOf, close, dexOf, go, leaving, open as openPage, problemsOf, reload,
 import { feesAnswer } from './support/fees/stub.mjs';
 
 const DIST = resolve(import.meta.dirname, '../dist');
-async function captureUI(page, name, selector) {
+async function captureUI(page, name, selector, { animations = 'disabled' } = {}) {
   if (!process.env.DOMINO_UI_CAPTURE_DIR) return;
   await mkdir(process.env.DOMINO_UI_CAPTURE_DIR, { recursive: true });
   const target = selector ? page.locator(selector) : page;
-  await target.screenshot({ path: join(process.env.DOMINO_UI_CAPTURE_DIR, `${name}.png`), animations: 'disabled' });
+  await target.screenshot({ path: join(process.env.DOMINO_UI_CAPTURE_DIR, `${name}.png`), animations });
 }
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -869,6 +869,168 @@ test('shared decorative motion repeats, rests outside the viewport or hidden tab
   assert.equal(await preview.locator('.line').first().evaluate(el => getComputedStyle(el).animationIterationCount), 'infinite');
   assert.equal(await page.getByRole('button', { name: /Replay|Watch fees move|Pause motion/ }).count(), 0);
   clean(page, 'shared decorative motion');
+  await close(page);
+});
+
+test('New position forms one position, while Auto-exit closes the whole position before returning tokens; both rest accessibly', async () => {
+  const page = await openSimulator();
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await go(page, '/automate');
+  const drawing = (kind) => page.locator(`[data-automation-card="${kind}"] .dm-position-choice-art`);
+  // Freeze every moving part on the same timeline. Screenshots must preserve this paused frame:
+  // Playwright's usual animations:disabled resets infinite loops to their initial composition.
+  const frame = async (kind, fraction) => {
+    const art = drawing(kind);
+    await art.scrollIntoViewIfNeeded();
+    const timing = await art.evaluate(async (node, fraction) => {
+      const animations = node.getAnimations({ subtree: true }).filter((animation) => animation instanceof CSSAnimation);
+      if (!animations.length) throw new Error('The decorative scene has no CSS timeline');
+      const timing = animations.map((animation) => {
+        const { duration, delay, iterations } = animation.effect.getTiming();
+        animation.pause();
+        animation.currentTime = Number(duration) * fraction;
+        return { duration, delay, repeats: iterations === Infinity };
+      });
+      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+      return timing;
+    }, fraction);
+    assert.ok(timing.length > 2, `${kind} has its coordinated moving parts`);
+    assert.deepEqual([...new Set(timing.map(({ duration }) => duration))], [8000], 'one duration for every part');
+    assert.ok(timing.every(({ delay, repeats }) => delay === 0 && repeats), 'no separately delayed or finite timelines');
+    return art;
+  };
+  const picture = (art) => art.evaluate((node) => {
+    // Interpolated and static CSS colors can serialize differently. Compare their sRGB pixels.
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    const paint = (color) => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data);
+    };
+    const inside = (container, token) => {
+      const outer = container.getBoundingClientRect();
+      const inner = token.getBoundingClientRect();
+      const x = (inner.left + inner.right) / 2;
+      const y = (inner.top + inner.bottom) / 2;
+      return x >= outer.left && x <= outer.right && y >= outer.top && y <= outer.bottom;
+    };
+    const part = (selector) => getComputedStyle(node.querySelector(selector));
+    const creating = node.dataset.choice === 'plain';
+    const band = part(creating ? '.choice-create-band' : '.choice-exit-band');
+    const tile = part(creating ? '.choice-create-tile' : '.choice-exit-tile');
+    const body = part('.t-body');
+    const tokens = [...node.querySelectorAll(creating ? '.choice-fund' : '.choice-transfer')];
+    return {
+      band: {
+        fill: paint(band.fill),
+        stroke: paint(band.stroke),
+        // CSS serializes a solid animated outline as zero lengths and a static one as `none`.
+        dash: band.strokeDasharray === 'none' || band.strokeDasharray.split(/[ ,]+/).every((length) => parseFloat(length) === 0) ? 'solid' : band.strokeDasharray,
+      },
+      tile: { opacity: Number(tile.opacity), fill: paint(body.fill) },
+      tokens: tokens.map((token) => ({
+        opacity: Number(getComputedStyle(token).opacity),
+        distance: parseFloat(getComputedStyle(token).offsetDistance),
+        arrived: inside(node.querySelector(creating ? '.choice-create-band' : '.choice-wallet'), token),
+      })),
+      plus: creating ? Number(part('.choice-create-plus').opacity) : null,
+      tip: creating ? null : { opacity: Number(part('.choice-tip').opacity), distance: parseFloat(part('.choice-tip').offsetDistance) },
+      wallet: creating ? null : paint(part('.choice-wallet').fill),
+      tiles: node.querySelectorAll('.t-body').length,
+    };
+  });
+  let completed;
+  let closed;
+  for (const width of [1440, 320]) {
+    await page.setViewportSize({ width, height: 960 });
+    const emptyArt = await frame('plain', 0.24);
+    const empty = await picture(emptyArt);
+    assert.equal(empty.tile.opacity, 0, 'the new position does not exist before funding');
+    assert.equal(empty.plus, 1, 'its empty destination has a creation marker');
+    assert.equal(empty.tiles, 1, 'two input tokens form exactly one position');
+    assert.ok(empty.tokens.every(({ distance, arrived }) => distance === 0 && !arrived), 'tokens begin outside the empty range');
+    await captureUI(page, `new-position-empty-${width}`, '[data-automation-card="plain"]', { animations: 'allow' });
+    const entering = await picture(await frame('plain', 0.38));
+    assert.ok(entering.tokens.every(({ distance }) => distance > 0 && distance < 100), 'both tokens travel into the same position');
+    completed = await picture(await frame('plain', 0.70));
+    assert.equal(completed.tile.opacity, 1, 'funding creates a fully visible tile');
+    assert.equal(completed.plus, 0, 'the creation marker gives way to the position');
+    assert.notDeepEqual(empty.band.fill, completed.band.fill, 'the empty band gains its funded fill');
+    assert.notEqual(empty.band.dash, completed.band.dash, 'the empty outline becomes a solid position');
+    assert.ok(completed.tokens.every(({ distance, arrived }) => distance === 100 && arrived), 'both tokens have arrived inside the single new position');
+    await captureUI(page, `new-position-created-${width}`, '[data-automation-card="plain"]', { animations: 'allow' });
+
+    const warm = await picture(await frame('protection', 0.32));
+    assert.ok(warm.tip.opacity === 1 && warm.tip.distance > 0 && warm.tip.distance < 100, 'the price moves toward the range boundary');
+    assert.ok(warm.tokens.every(({ opacity }) => opacity === 0), 'no withdrawal before the trigger');
+    await captureUI(page, `auto-exit-active-${width}`, '[data-automation-card="protection"]', { animations: 'allow' });
+    closed = await picture(await frame('protection', 0.535));
+    assert.notDeepEqual(closed.band.fill, warm.band.fill, 'the large range changes to its closed fill');
+    assert.notDeepEqual(closed.band.stroke, warm.band.stroke, 'the range outline closes too');
+    assert.notDeepEqual(closed.tile.fill, warm.tile.fill, 'the tile body changes to its closed color');
+    assert.deepEqual(closed.band.stroke, closed.tile.fill, 'the large range and its tile share the closed color');
+    assert.equal(closed.tip.distance, 100, 'closure follows the price reaching the boundary');
+    assert.ok(closed.tokens.every(({ opacity, distance }) => opacity === 0 && distance === 0), 'the whole position closes before tokens start returning');
+    await captureUI(page, `auto-exit-closed-${width}`, '[data-automation-card="protection"]', { animations: 'allow' });
+    const received = await picture(await frame('protection', 0.82));
+    assert.deepEqual(received.band, closed.band, 'the range remains closed after withdrawal');
+    assert.deepEqual(received.tile.fill, closed.tile.fill, 'its tile stays closed too');
+    assert.ok(received.tokens.every(({ opacity, distance, arrived }) => opacity === 1 && distance === 100 && arrived), 'both returned tokens arrive inside the wallet');
+    assert.notDeepEqual(received.wallet, closed.wallet, 'the wallet acknowledges receipt');
+    await captureUI(page, `auto-exit-returned-${width}`, '[data-automation-card="protection"]', { animations: 'allow' });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, `no page overflow at ${width}px`);
+  }
+
+  // Re-enter to inspect the genuine CSS-controlled timelines, without the manual pause used for phase sampling.
+  await page.setViewportSize({ width: 1440, height: 320 });
+  await go(page, '/');
+  await go(page, '/automate');
+  const reads = structuredClone(apiOf(page));
+  for (const kind of ['plain', 'protection']) {
+    const selector = `[data-automation-card="${kind}"] .dm-position-choice-art`;
+    const art = drawing(kind);
+    await art.scrollIntoViewIfNeeded();
+    await page.waitForFunction((selector) => document.querySelector(selector)?.classList.contains('is-running'), selector);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForFunction((selector) => {
+      const node = document.querySelector(selector);
+      const animations = node?.getAnimations({ subtree: true });
+      return !node?.classList.contains('is-running') && animations?.length && animations.every((animation) => animation.playState === 'paused' && !animation.pending);
+    }, selector);
+    const paused = await art.evaluate((node) => node.getAnimations({ subtree: true }).map((animation) => animation.currentTime));
+    await page.waitForTimeout(100);
+    assert.deepEqual(await art.evaluate((node) => node.getAnimations({ subtree: true }).map((animation) => animation.currentTime)), paused, `${kind} spends no timeline time in a hidden tab`);
+    await page.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); });
+    await page.waitForFunction((selector) => document.querySelector(selector)?.classList.contains('is-running'), selector);
+    await page.locator('footer').scrollIntoViewIfNeeded();
+    await page.waitForFunction((selector) => {
+      const node = document.querySelector(selector);
+      return !node?.classList.contains('is-running') && node?.getAnimations({ subtree: true }).every((animation) => animation.playState === 'paused' && !animation.pending);
+    }, selector);
+  }
+  await page.setViewportSize({ width: 320, height: 960 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  for (const kind of ['plain', 'protection']) {
+    assert.equal(await drawing(kind).evaluate((node) => node.getAnimations({ subtree: true }).length), 0, `${kind} has no loops with reduced motion`);
+  }
+  const stillNew = await picture(drawing('plain'));
+  assert.equal(stillNew.tile.opacity, 1);
+  assert.equal(stillNew.plus, 0);
+  assert.deepEqual(stillNew.band, completed.band, 'the static new-position picture is its completed composition');
+  assert.ok(stillNew.tokens.every(({ arrived }) => arrived));
+  const stillExit = await picture(drawing('protection'));
+  assert.deepEqual(stillExit.band, closed.band, 'reduced motion retains the visibly closed range');
+  assert.deepEqual(stillExit.tile.fill, closed.tile.fill);
+  assert.ok(stillExit.tokens.every(({ opacity, arrived }) => opacity === 1 && arrived), 'the static exit picture already shows the tokens in the wallet');
+  await captureUI(page, 'position-choice-reduced-320', 'main');
+  assert.deepEqual(apiOf(page), reads, 'decorative phases do not fetch data');
+  clean(page, 'position choice phases');
   await close(page);
 });
 

@@ -29,8 +29,8 @@ import { labelOf, tokenBook } from './tokens'
  * (components/create/Journey.tsx) keeps every screen he built; its last step, Review and Create position, runs on the new
  * contracts once Robinhood Chain's S1 gate is `live`. The plan from position-plan-v1 for what his journey chose
  * (./model/fromV1.ts), the review of it and the wallet's steps through the closed money client, exactly as the zap path
- * runs them (./run.ts, ./ReviewStage.tsx). Wherever that gate is not live (the preview alias, a build or page without
- * the wrapper), today's own Review and Create position, handed in as `v1`, stand unchanged.
+ * runs them (./run.ts, ./ReviewStage.tsx). Wherever that gate is not live, creation stays disabled. The static selected
+ * amounts may still be shown by the older presentation component, but no retired setup control is mounted.
  *
  * Two lazily mounted parts, as Journey.tsx draws its step: the footer (the default export) owns the run, as today's
  * footer owns Create position; Review's body (ReviewV2) draws the same run's review, through the small store below.
@@ -83,13 +83,12 @@ type CreateProps = {
   v1: ReactElement
 }
 
-/** Review's footer: Create position on the new contracts once the gate is live, else today's own control (`v1`). */
-export default function JourneyCreateV2({ state, balances, pay, onBusy, onReadAgain, v1 }: CreateProps) {
+/** Review's footer: Create position on V2 once the gate is live, otherwise disabled. */
+export default function JourneyCreateV2({ state, balances, pay, onBusy, onReadAgain }: CreateProps) {
   const chainId = chainOf(state)
   const gate = useLiveGate(chainId)
-  // Another network's pool is never today's control's (2026-10-05): closed there, it says so. Nor a deposit paid with one
-  // other token (2026-10-06, lib/create/journey.ts PayWith), which only Domino V2's zap swaps in.
-  if ((chainId !== 4663 || state.payWith) && (gate === 'outside' || gate === 'not-live')) {
+  // V2 is the only creation path on every network. An unavailable gate never mounts the retired setup control.
+  if (gate === 'outside' || gate === 'not-live') {
     return (
       <>
         <Button type="button" variant="primary" size="xl" className="w-full" disabled data-create-position="closed" aria-describedby="create-reason">
@@ -101,7 +100,6 @@ export default function JourneyCreateV2({ state, balances, pay, onBusy, onReadAg
       </>
     )
   }
-  if (gate === 'outside' || gate === 'not-live') return v1
   // Never today's Create position while the gate is still read: it could leave a Domino V1 deposit held.
   if (gate === 'reading') {
     return (

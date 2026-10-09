@@ -639,22 +639,23 @@
   .dm-automation-choice-entry > .dm-btn { width: 100%; min-height: 2.75rem; white-space: normal; }
   .dm-position-choice-art .choice-band { fill: var(--primary-wash); stroke: var(--primary-line); stroke-opacity: 0.5; }
   .dm-position-choice-art .choice-price { fill: none; stroke: var(--primary-line); stroke-width: 1.5; stroke-linejoin: round; opacity: 0.7; }
-  .dm-position-choice-art .choice-edge { stroke: var(--primary-line); stroke-dasharray: 2 3; opacity: 0.6; }
+  .dm-position-choice-art .choice-edge { stroke: var(--fg-faint); stroke-dasharray: 2 3; opacity: 0.6; animation: dm-choice-exit-stroke 8s linear infinite; }
   .dm-position-choice-art .choice-wallet { fill: var(--surface-2); stroke: var(--primary-line); stroke-width: 1.5; stroke-linejoin: round; }
-  .dm-position-choice-art :is(.choice-fee, .choice-tip, .choice-transfer) { fill: var(--primary); }
-  .dm-position-choice-art .choice-token { stroke-width: 1.5; fill: var(--surface-2); }
-  .dm-position-choice-art .choice-token-a { stroke: var(--primary-line); }
-  .dm-position-choice-art .choice-token-b { stroke: var(--fg-muted); }
-  .dm-position-choice-art .choice-funding-path { fill: none; stroke: var(--fg-faint); stroke-dasharray: 2 4; stroke-linecap: round; }
-  .dm-position-choice-art .choice-create-plus { fill: var(--surface-2); stroke: var(--primary-line); stroke-width: 1.25; }
-  .dm-position-choice-art .choice-fund { fill: var(--primary-line); offset-distance: 100%; animation: dm-choice-fund 7s linear infinite; }
-  .dm-position-choice-art .choice-fund-1 { animation-delay: 0.4s; fill: var(--fg-muted); }
-  .dm-position-choice-art .choice-create-tile { transform-box: fill-box; transform-origin: 50% 100%; animation: dm-choice-create 7s var(--ease-enter) infinite; }
-  .dm-position-choice-art .choice-exit-limit { fill: var(--surface-2); stroke: var(--primary-line); stroke-width: 1.25; stroke-linejoin: round; }
-  .dm-position-choice-art .choice-exit-tile { transform-box: fill-box; transform-origin: 50% 100%; animation: dm-choice-close 8s var(--ease-std) infinite; }
-  .dm-position-choice-art .choice-tip { offset-distance: 100%; animation: dm-choice-price 8s linear infinite; }
-  .dm-position-choice-art .choice-transfer { offset-distance: 100%; animation: dm-choice-exit 8s linear infinite; }
-  .dm-position-choice-art .choice-transfer-1 { animation-delay: 0.3s; }
+  .dm-position-choice-art .choice-token { fill: var(--primary); stroke: var(--primary-fg); stroke-width: 1.5; }
+  .dm-position-choice-art :is(.choice-fund-1, .choice-transfer-1) { fill: var(--fg-muted); }
+  /* Two tokens form one position. The complete frame is also the reduced-motion picture. */
+  .dm-position-choice-art .choice-create-band { animation: dm-choice-form 8s linear infinite; }
+  .dm-position-choice-art .choice-create-price { stroke-dasharray: 100 110; animation: dm-choice-create-price 8s linear infinite; }
+  .dm-position-choice-art .choice-create-plus { fill: none; stroke: var(--fg-muted); stroke-width: 1.5; stroke-linecap: round; opacity: 0; animation: dm-choice-plus 8s linear infinite; }
+  .dm-position-choice-art .choice-fund { offset-distance: 100%; offset-rotate: 0deg; animation: dm-choice-fund 8s var(--ease-std) infinite; }
+  .dm-position-choice-art .choice-create-tile { transform-box: fill-box; transform-origin: 50% 100%; animation: dm-choice-create 8s var(--ease-enter) infinite; }
+  /* Price reaches the boundary, the whole position closes, then its tokens arrive in the wallet. */
+  .dm-position-choice-art .choice-exit-band { fill: color-mix(in srgb, var(--fg-faint) 18%, transparent); stroke: var(--fg-faint); animation: dm-choice-close 8s linear infinite; }
+  .dm-position-choice-art .choice-exit-tile .t-body { fill: var(--fg-faint); animation: dm-choice-close-tile 8s linear infinite; }
+  .dm-position-choice-art .choice-exit-price { stroke: var(--fg-faint); stroke-dasharray: 100 110; animation: dm-choice-price 8s linear infinite, dm-choice-exit-stroke 8s linear infinite; }
+  .dm-position-choice-art .choice-tip { fill: var(--primary); opacity: 0; offset-distance: 100%; animation: dm-choice-tip 8s linear infinite; }
+  .dm-position-choice-art .choice-transfer { offset-distance: 100%; offset-rotate: 0deg; animation: dm-choice-exit 8s var(--ease-std) infinite; }
+  .dm-position-choice-art .choice-wallet { animation: dm-choice-receive 8s linear infinite; }
   @media (max-width: 639px) {
     .dm-automation-choice-grid { grid-template-columns: minmax(0, 1fr); }
     .dm-automation-choice-body { padding: 0.875rem; }
@@ -670,8 +671,21 @@
     .dm-automation-choice:is(:hover, :focus-within) .dm-automation-choice-art > svg { scale: 1.035; }
   }
 }
-@keyframes dm-choice-fund { 0%, 100% { opacity: 0; offset-distance: 100%; } 8% { opacity: 0; offset-distance: 0%; } 12% { opacity: 1; } 38% { opacity: 1; offset-distance: 100%; } 45%, 95% { opacity: 0; offset-distance: 100%; } }
-@keyframes dm-choice-create { 0%, 100% { opacity: 1; scale: 1; } 8%, 22% { opacity: 0.2; scale: 0.85; } 43%, 95% { opacity: 1; scale: 1; } }
-@keyframes dm-choice-close { 0%, 100% { opacity: 1; scale: 1; } 56%, 86% { opacity: 0.15; scale: 0.9; } 96% { opacity: 1; scale: 1; } }
-@keyframes dm-choice-price { 0%, 100% { offset-distance: 100%; opacity: 1; } 8% { opacity: 0; offset-distance: 100%; } 10% { opacity: 0; offset-distance: 0%; } 18% { opacity: 1; } 55%, 90% { offset-distance: 100%; opacity: 1; } }
-@keyframes dm-choice-exit { 0%, 100% { offset-distance: 100%; opacity: 1; } 12%, 52% { offset-distance: 0%; opacity: 0; } 56% { opacity: 1; } 80%, 95% { offset-distance: 100%; opacity: 1; } }
+@keyframes dm-choice-form {
+  0%, 8%, 55%, 100% { fill: var(--primary-wash); stroke: var(--primary-line); stroke-dasharray: 0 0; }
+  15%, 44% { fill: transparent; stroke: var(--fg-faint); stroke-dasharray: 4 4; }
+}
+@keyframes dm-choice-fund { 0%, 8%, 50%, 100% { offset-distance: 100%; } 15%, 28% { offset-distance: 0%; } }
+@keyframes dm-choice-create { 0%, 8%, 58%, 100% { opacity: 1; translate: 0 0; scale: 1; } 15%, 45% { opacity: 0; translate: 0 12px; scale: 0.8; } }
+@keyframes dm-choice-create-price { 0%, 8%, 62%, 100% { opacity: 0.7; stroke-dashoffset: 0; } 15%, 51% { opacity: 0; stroke-dashoffset: 100; } }
+@keyframes dm-choice-plus { 0%, 8%, 53%, 100% { opacity: 0; } 15%, 42% { opacity: 1; } }
+@keyframes dm-choice-close {
+  0%, 8%, 53%, 100% { fill: color-mix(in srgb, var(--fg-faint) 18%, transparent); stroke: var(--fg-faint); }
+  16%, 47% { fill: var(--primary-wash); stroke: var(--primary-line); }
+}
+@keyframes dm-choice-close-tile { 0%, 8%, 53%, 100% { fill: var(--fg-faint); } 16%, 47% { fill: var(--primary); } }
+@keyframes dm-choice-exit-stroke { 0%, 8%, 53%, 100% { stroke: var(--fg-faint); } 16%, 47% { stroke: var(--primary-line); } }
+@keyframes dm-choice-price { 0%, 8%, 47%, 100% { stroke-dashoffset: 0; } 16%, 22% { stroke-dashoffset: 100; } }
+@keyframes dm-choice-tip { 0%, 8%, 54%, 100% { opacity: 0; offset-distance: 100%; } 16% { opacity: 0; offset-distance: 0%; } 22% { opacity: 1; offset-distance: 0%; } 47% { opacity: 1; offset-distance: 100%; } }
+@keyframes dm-choice-exit { 0%, 8%, 76%, 100% { offset-distance: 100%; opacity: 1; } 16%, 54% { offset-distance: 0%; opacity: 0; } 58% { offset-distance: 0%; opacity: 1; } }
+@keyframes dm-choice-receive { 0%, 70%, 90%, 100% { fill: var(--surface-2); } 78%, 84% { fill: var(--primary-wash); } }

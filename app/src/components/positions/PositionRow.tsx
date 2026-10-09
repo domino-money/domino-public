@@ -6,14 +6,14 @@ import type { LiveCard } from '../../lib/walletCards'
 import { positionHref } from '../explore/routes'
 import { TokenMarkPair } from '../TokenIcon'
 import { IconChevronRight } from '../icons'
-import { Skeleton, cx } from '../ui'
+import { Skeleton } from '../ui'
 import { shortDate, shortTime } from '../../lib/format/time'
 import type { RowApr } from './listApr'
 import { useLoadMilestone } from '../../lib/useLoadMilestone'
 import type { LoadQuality } from '../../lib/loadTiming'
 import { Amount, PairName, PositionStatus } from './PositionFigures'
 import { cardUsd } from './visual/PortfolioSummary'
-import { positive, unitsText } from './visual/value'
+import { unitsText } from './visual/value'
 
 /*
  * Your positions as one tidy row each (the owner, round 6, 2026-09-27: "Domino is for people who know nothing about
@@ -31,7 +31,7 @@ export function RowsHead({ closed = false }: { closed?: boolean }) {
     <div className="dm-own-band" aria-hidden="true">
       <span>Pool</span>
       <span>Value</span>
-      <span>Fees ready to collect</span>
+      <span>Fees to collect</span>
       <span>{closed ? '' : 'Your APR'}</span>
       <span>{closed ? '' : 'Automation'}</span>
       <span />
@@ -51,12 +51,18 @@ function Money({ card, state, which, label }: { card: LiveCard; state: PositionS
       <Amount amount={card[which][1]} />
     </>
   )
+  if (which === 'unsettledFees') return <span className="dm-own-cell" data-cell="fees" title={`${usd ? '' : 'USD estimate unavailable. '}${card[which].map(amount => `${amount.exact ?? amount.text} ${amount.token.symbol ?? amount.token.address}`).join(' + ')}`}>
+    <span className="dm-own-label">{label}</span>
+    <span className={usd ? 'dm-own-fig' : 'dm-own-dash'}>{usd ? formatUsdFloor(unitsText(usd.units)) : '—'}</span>
+    {!usd && <span className="sr-only">USD estimate unavailable.</span>}
+    <span className="sr-only">{amounts}</span>
+  </span>
   return (
-    <span className="dm-own-cell" data-cell={which === 'principal' ? 'principal' : 'fees'}>
+    <span className="dm-own-cell" data-cell="principal">
       <span className="dm-own-label">{label}</span>
       {usd ? (
         <>
-          <span className={cx('dm-own-fig dm-arrive', which === 'unsettledFees' && positive(usd.units) && 'dm-fees-in')}>
+          <span className="dm-own-fig dm-arrive">
             {formatUsdFloor(unitsText(usd.units))}
           </span>
           <span className="dm-own-split">{amounts}</span>
@@ -143,7 +149,7 @@ export function PositionRow({ card, block, state = null, apr = null, aprQuality 
         </span>
         <span className={emptyValue && emptyFees ? 'dm-own-figs dm-own-empty-figure' : 'dm-own-figs'}>
           <span className={emptyValue ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Money card={card} state={state} which="principal" label="Value" /></span>
-          <span className={emptyFees ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Money card={card} state={state} which="unsettledFees" label="Fees ready to collect" /></span>
+          <span className={emptyFees ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Money card={card} state={state} which="unsettledFees" label="Fees to collect" /></span>
           {card.hasLiquidity && <Apr apr={apr} quality={aprQuality} ledger={ledger} />}
         </span>
         {closed && <span className="dm-own-closed-caption">View history</span>}

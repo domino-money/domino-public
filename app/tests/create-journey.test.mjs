@@ -548,7 +548,7 @@ test('Review ends on Create position, made in place: no hand-off to Setup, and t
   const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
   assert.match(review, /module\.CreatePosition/, 'the final control is Create position');
   assert.doesNotMatch(review, /#\/setup|Continue in Setup|SetupLink/, 'nothing on Review sends anyone to Setup');
-  assert.match(review, /<Suspense fallback=\{<Unavailable note=\{CREATE\.review\.loading\} \/>\}>/);
+  assert.match(review, /<Suspense fallback=\{<CreateUnavailable note=\{CREATE\.review\.loading\} \/>\}>/);
   const control = readFileSync(new URL('../src/components/create/CreatePosition.tsx', import.meta.url), 'utf8');
   assert.match(control, /'Create position'/);
   // Changed on purpose (2026-09-24, the three features joined up): the page no longer leaves by itself once the position

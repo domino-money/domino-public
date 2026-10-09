@@ -1707,7 +1707,7 @@ test('what Domino can do in a pool: the four V2 choices link their own docs and 
   const yes = renderToStaticMarkup(React.createElement(PoolAutomation, { usable: true, why: '' }))
   const text = yes.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
   assert.match(yes, /data-pool-automation="available"/)
-  assert.match(text, /New position No service fee Fees wait in the position until you collect them\./)
+  assert.match(text, /New position No automation fee Fees wait in the position until you collect them\./)
   assert.match(text, /Auto-exit 0\.2% if it closes/)
   assert.match(text, /Auto-compound 2% of fees Fees go back into the same position\./)
   assert.match(text, /Domino-compound 4% of fees Fees can fund the next range one step higher\./)

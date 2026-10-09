@@ -177,10 +177,11 @@ test('private history and receipts read themselves after login, format exact pro
     assert.doesNotMatch(await history.innerText(), /\bavailable\b|_|Observed \d+ seconds|Historical APR is not a forecast/, 'no raw enums and no caption under the figures');
     const receipts = s.page.locator('section[aria-label="Execution receipts"]');
     await s.page.locator('section[aria-label="Execution receipts"][data-execution="ready"]').waitFor();
-    // Changed on purpose (qa:visual, Positions): one plain line under each heading; how a missing or uncertain figure shows is that line's title, never a caption.
+    // The performance introduction stays. Receipts' compact preview uses its outer heading and each row's state.
     const line = async (section) => { const desc = section.locator('.dm-acct-desc'); return [await desc.innerText(), await desc.getAttribute('title')]; };
     assert.deepEqual(await line(history), ['How your automated positions did in the last 24 hours.', 'Missing prices and incomplete history show as dashes.']);
-    assert.deepEqual(await line(receipts), ['What automation did for your positions.', 'An uncertain or reorganized transaction is never shown as completed.']);
+    assert.equal(await s.page.getByRole('heading', { name: 'Receipts', exact: true }).count(), 1);
+    assert.equal(await receipts.locator('h2, .dm-acct-desc').count(), 0, 'the short preview does not duplicate its Receipts heading or introduction');
     const reserved = receipts.locator('[data-execution-state="reserved"]');
     // Changed on purpose (the owner, 2026-09-27, round 6): one plain phrase everywhere, the position page's "Fees added back".
     assert.equal(await reserved.locator('summary').innerText(), 'In progress\nAdding fees back');
@@ -6295,7 +6296,7 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     await detail.locator('[data-stat="price"] [data-current-price="usable"]').waitFor();
     assert.match(await detail.locator('h1').innerText(), /^ETH\s*\/\s*TOKEN$/);
     // Changed on purpose (2026-09-27, the owner: plain words for someone who knows nothing of pools): the fee tier says
-    // "fee" beside Your APR; the key figures are Position value, Fees ready to collect, Your APR and Current price, the
+    // "fee" beside Your APR; the key figures are Position value, Fees to collect, Your APR and Current price, the
     // price written "1 ETH = …" and the range under it as a bar with its two ends, without "≈"; the facts are in Details,
     // closed until opened.
     // Changed on purpose 2026-10-01 (audit E5): the NFT's number is no longer in the chip; a screen reader still hears it.
@@ -6307,7 +6308,7 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // zeros after the point counted ("0.0₁₁1" is 0.000000000001), as the Price range chart writes it too.
     assert.match(stats, /CURRENT PRICE\s+1 TOKEN = 0\.0₁₁1 ETH\s+0\.0₁₂994018\s+Your range\s+0\.0₁₁100602\s+In range: earning fees/, 'the pool’s price from the same read, with no button to ask for it');
     assert.equal(await detail.locator('[data-stat="price"] [data-current-price="usable"]').getAttribute('title'), `Pool price at block ${await detail.getAttribute('data-snapshot')}: ≈0.000000000001`, 'every digit in its title');
-    assert.match(stats, /FEES READY TO COLLECT\s+<?[\d.,]+ ETH\s+0 TOKEN/);
+    assert.match(stats, /FEES TO COLLECT\s+<?[\d.,]+ ETH\s+0 TOKEN/);
     assert.match(stats, /POSITION VALUE\s+[\d.,]+ ETH/);
     // Your APR waits for the fees history (a skeleton meanwhile); this chain has none to give it, so a dash and why.
     const apr = detail.locator('[data-cell="apr"]:not([data-apr="loading"]):not([data-apr="idle"])');
@@ -8135,7 +8136,7 @@ test('the site’s chain routes without their node, then with it: Your positions
     await detail.waitFor({ timeout: 30_000 });
     assert.match(await detail.locator('.dm-pos-name').innerText(), new RegExp(`#${OWNED_OPEN}`));
     assert.equal(await detail.locator('[data-position-status]').getAttribute('data-position-status'), 'in-range');
-    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+<?[\d.,]+ ETH/);
+    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES TO COLLECT\s+<?[\d.,]+ ETH/);
     await feesSettled();
     const fees = await detail.locator('[data-fees-card]').first().getAttribute('data-fees-state');
     assert.ok(!['loading', 'unavailable'].includes(fees), `the fees card is drawn (${fees})`);
@@ -8174,7 +8175,7 @@ test('a position’s page with the site’s chain routes without their node: the
     // The gateway's row: its own block, the pair, the range and the fees ready to collect, and no action for the owner.
     await at(NFTS.snapshot.number).waitFor({ timeout: 30_000 });
     assert.match(await detail.locator('.dm-pos-name').innerText(), /ETH/);
-    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+<?[\d.,]+ ETH/);
+    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES TO COLLECT\s+<?[\d.,]+ ETH/);
     assert.equal((await detail.locator('[data-ticks]').textContent()).trim(), '-60 to 60');
     assert.equal(await detail.locator('[data-position-actions]').count(), 0, 'no action on the gateway’s row');
     assert.equal(await detail.getAttribute('data-position-read'), 'gateway');
@@ -8201,7 +8202,7 @@ test('a position’s page with the site’s chain routes without their node: the
     await detail.locator('[data-position-action="close"]').waitFor();
     assert.equal(await detail.getAttribute('data-position-read'), 'chain');
     assert.equal(await waiting.count(), 0, 'the explanation leaves when the original owner controls return');
-    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+<?[\d.,]+ ETH/);
+    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES TO COLLECT\s+<?[\d.,]+ ETH/);
     assert.deepEqual(nftReads(read), [[OWNED_OPEN]], 'the gateway was not asked again over the page’s own read');
     assert.deepEqual(chain.publicAsked, [], 'no public RPC, ever');
     assert.deepEqual(site.asked, [], 'nothing reached the server behind the site’s routes');

@@ -363,13 +363,12 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
   )
 }
 
-// The final control in builds with the wallet: Create position, from its own chunk, so the entry never carries the
-// wallet or the setup client. While it loads, the disabled button stands in for it.
-const CreateControl = __DOMINO_WALLET_SESSION__
+// The retired setup control belongs only to non-V2 wallet test builds. V2 creation has its own gated chunk in Journey.
+const CreateControl = __DOMINO_WALLET_SESSION__ && !__DOMINO_V2__
   ? lazy(() =>
       import('./DepositAmounts')
         .then((module) => ({ default: module.CreatePosition }))
-        .catch(() => ({ default: () => <Unavailable note={CREATE.review.loadFailed} /> })),
+        .catch(() => ({ default: () => <CreateUnavailable note={CREATE.review.loadFailed} /> })),
     )
   : null
 
@@ -383,11 +382,11 @@ let loadedCreate: CreateComponent | null = null
  * 300 ms React holds a lazy control's stand-in on screen once it has shown it. Loading runs nothing: the module only
  * defines the control, which runs once Review renders it. The same import(), behind the same flag.
  */
-export const preloadCreateControl = __DOMINO_WALLET_SESSION__
+export const preloadCreateControl = __DOMINO_WALLET_SESSION__ && !__DOMINO_V2__
   ? () => void import('./DepositAmounts').then((module) => { loadedCreate = module.CreatePosition }, () => undefined)
   : () => undefined
 
-function Unavailable({ note }: { note: string }) {
+export function CreateUnavailable({ note }: { note: string }) {
   return (
     <>
       <Button type="button" variant="primary" size="xl" className="w-full" disabled data-create-position="" aria-describedby="create-reason">
@@ -401,10 +400,7 @@ function Unavailable({ note }: { note: string }) {
 }
 
 /**
- * The last control of the flow: Create position. In a build that carries the
- * wallet it opens the position through the wallet, step by step
- * (CreatePosition.tsx), and says under it when Review's reading finds the
- * wallet cannot fund it; any other build shows the disabled action and why.
+ * The non-V2 flow's last control. A V2 build draws only the unavailable stand-in here, never the retired setup.
  * This is the one control that depends on the build, so it lives here, where
  * the build flag is defined, and not in lib/create/copy.ts, which is compiled
  * for tests without it.
@@ -418,16 +414,18 @@ export function FinalControl({ state, balances, onBusy }: { state: JourneyState;
   // Added 2026-10-05 (New position on Base and Arbitrum One): a pool of another network opens through Domino V2 alone
   // (src/v2in/journey/JourneyCreateV2.tsx), never through Domino V1's setup contract, which is Robinhood Chain's. This
   // control stands there only when that code could not load.
-  if (poolOnOtherChain(state.pool)) return <Unavailable note={CREATE.review.otherNetwork} />
+  // A V2 build must never fall through to the retired setup contract, even if its V2 chunk fails to load.
+  if (__DOMINO_V2__) return <CreateUnavailable note={CREATE.review.loadFailed} />
+  if (poolOnOtherChain(state.pool)) return <CreateUnavailable note={CREATE.review.otherNetwork} />
   if (Control) {
     return (
       <>
-        <Suspense fallback={<Unavailable note={CREATE.review.loading} />}>
+        <Suspense fallback={<CreateUnavailable note={CREATE.review.loading} />}>
           <Control state={state} reviewed={planFor(state, balances)} onBusy={onBusy} />
         </Suspense>
         {created && <CreatedNext tokenId={created} state={state} />}
       </>
     )
   }
-  return <Unavailable note={CREATE.review.noWallet} />
+  return <CreateUnavailable note={CREATE.review.noWallet} />
 }

@@ -235,7 +235,7 @@ export const COPY = {
     closed: 'Closed',
     holds: 'What it holds',
     holdsInfo: 'What this position holds now, at the pool’s price. Fees not included.',
-    fees: 'Fees ready to collect',
+    fees: 'Fees to collect',
     feesInfo: 'Fees this position earned and has not collected yet.',
     price: 'Current price',
     priceInfo: 'The position earns fees while this price is inside its range.',

@@ -27,9 +27,10 @@ import { createRequire } from 'node:module';
 const APP = resolve(import.meta.dirname, '..');
 const DIST = join(APP, 'dist');
 const WALLET = join(APP, '.wallet-test-dist');
+const WALLET_V2 = join(APP, '.wallet-test-v2-dist');
 
-for (const dir of [DIST, WALLET]) {
-  if (!existsSync(join(dir, 'index.html'))) throw new Error(`${dir} is missing. Run npm run build and npm run build:wallet-test first.`);
+for (const dir of [DIST, WALLET, WALLET_V2]) {
+  if (!existsSync(join(dir, 'index.html'))) throw new Error(`${dir} is missing. Run npm run build, npm run build:wallet-test and npm run build:wallet-test-v2 first.`);
 }
 
 /**
@@ -277,6 +278,7 @@ test('no connector SDK or relay, and no public RPC endpoint reached; the chain\u
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
+    ['.wallet-test-v2-dist', WALLET_V2],
   ]) {
     // 2026-10-01 (audit C3): WalletConnect's own chunk, and only it, names its relay and its hosts (the chunk's own
     // allowance below); the CSP lets the page reach exactly two of them, the relay and the Verify API's frame.
@@ -999,6 +1001,7 @@ test('what every visitor downloads first, the route screens, the session/read cl
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
+    ['.wallet-test-v2-dist', WALLET_V2],
   ]) {
     const { js, entry, island } = shape(dir);
     const initial = staticClosure(dir, entry);
@@ -1016,7 +1019,7 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // (screens/PositionLab.tsx, routed only behind __DOMINO_TEST_HOOKS__). A deployable dist never carries the lab, and
     // carries the two actions together or not at all (not at all on a branch where no Positions screen opens them yet).
     const positionRoots = js.filter((file) => /^(PositionActions|HeldDeposits|PositionLab)-/.test(file)).map((file) => file.split('-')[0]).sort();
-    if (dir === WALLET) assert.deepEqual(positionRoots, ['HeldDeposits', 'PositionActions', 'PositionLab'], 'the lab and the two actions it opens');
+    if (dir !== DIST) assert.deepEqual(positionRoots, ['HeldDeposits', 'PositionActions', 'PositionLab'], 'the lab and the two actions it opens');
     else assert.ok(['', 'HeldDeposits,PositionActions'].includes(positionRoots.join()), `dist carries both position actions or neither, and never the lab: ${positionRoots.join(', ')}`);
     // 2026-10-02 (rugged97's spec rev3 §2.13, the V1 incident): the fees waiting in a vault and their withdrawal
     // (components/positions/FeeReserves.tsx), a lazy root of its own that Positions and a position's page open in every
@@ -1026,14 +1029,13 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // The V1 setup implementation exists only in the legacy fixture build; V2 cannot import it as a fallback.
     const legacyRoots = js.filter((file) => /^SequenceLegacy-/.test(file));
     assert.equal(legacyRoots.length, dir === WALLET ? 1 : 0, 'only the legacy wallet test carries the V1 sequence setup');
+    const legacyCreate = js.filter((file) => /^DepositAmounts-/.test(file));
+    assert.equal(legacyCreate.length, dir === WALLET ? 1 : 0, 'only the non-V2 wallet test carries the retired creation control');
     const financialRoots = js.filter((file) => /^(Setup|Sequence|SequenceLegacy|Execution|Performance|DepositAmounts|PositionActions|HeldDeposits|PositionLab|FeeReserves)-/.test(file));
-    assert.equal(financialRoots.length, 5 + positionRoots.length + reserveRoots.length + legacyRoots.length, 'the financial screens, actions and legacy-only sequence setup are explicit lazy roots');
+    assert.equal(financialRoots.length, 4 + legacyCreate.length + positionRoots.length + reserveRoots.length + legacyRoots.length, 'the financial screens, actions and legacy-only controls are explicit lazy roots');
     assert.equal(readRoots.filter((file) => file.startsWith('index-')).length, 1, 'include the public read screen, even though Vite calls it index');
     const base = new Set([...staticClosure(dir, [...island, ...readRoots])].filter((file) => !initial.has(file)));
     const financial = new Set([...staticClosure(dir, financialRoots)].filter((file) => !initial.has(file)));
-    const sharedFinancial = staticClosure(dir, financialRoots.filter((file) => !legacyRoots.includes(file)));
-    const legacyOnly = [...staticClosure(dir, legacyRoots)].filter((file) => !initial.has(file) && !base.has(file) && !sharedFinancial.has(file));
-    const legacyBytes = legacyOnly.reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
     for (const file of financialRoots) assert.ok(!base.has(file) && !initial.has(file), `${file} must remain opt-in`);
     const allLazy = new Set([...base, ...financial]);
     // 2026-09-24 (P6, DESIGN-V2 §18, R-12): the fees replay worker (src/lib/fees/feesReplay.worker.ts, created only by
@@ -1096,7 +1098,15 @@ test('what every visitor downloads first, the route screens, the session/read cl
     else assert.ok(v2Roots.length >= 14, `the deployed build carries V2's screens: ${v2Roots.join(', ')}`);
     const v2 = new Set([...staticClosure(dir, v2Roots)].filter((file) => !initial.has(file)));
     for (const file of v2Roots) assert.ok(!initial.has(file) && !routes.has(file), `${file} is loaded only when a V1 screen opens V2`);
-    assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain, ...routes, ...walletConnect, ...elysium, ...priceChart, ...v2])].sort(), js, 'every generated script belongs to a measured closure');
+    // 2026-10-09: budget the V2 wallet fixture alongside production, including the fake deployment manifests it
+    // opens dynamically. This previously unmeasured test-data family is absent from deployable and legacy builds.
+    // Shared dependencies retain their existing family charges; only the fixture-exclusive closure uses this cap.
+    const fixtureRoots = js.filter((file) => /^manifestFixtures-/.test(file));
+    assert.equal(fixtureRoots.length, dir === WALLET_V2 ? 1 : 0, 'only the V2 wallet fixture carries fake deployment manifests');
+    const measured = new Set([...initial, ...allLazy, ...worker, ...chain, ...routes, ...walletConnect, ...elysium, ...priceChart, ...v2]);
+    for (const file of fixtureRoots) assert.ok(!measured.has(file), 'fake deployment manifests remain an opt-in test-data chunk');
+    const fixtureData = new Set([...staticClosure(dir, fixtureRoots)].filter((file) => !measured.has(file)));
+    assert.deepEqual([...new Set([...measured, ...fixtureData])].sort(), js, 'every generated script belongs to a measured closure');
     // H4 (2026-10-01): what every visitor downloads before anything shows, the entry with the chunks it imports and the
     // stylesheet the page links, has a budget of its own. Until then only lazily loaded families had one, and the entry
     // grew 33% in a week with no test failing.
@@ -1214,16 +1224,18 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // chunks. Windows gzip 9: routes 190,155 B, public reads 166,496 B, financial 330,987 B, all lazy 368,517 B,
     // V2 616,443 B (previous V2 650,823 B). Round only the two nearly-full shared families up for platform/name
     // variation; keep the entry and every financial/V2 ceiling. All legacy code still counts in absolute budgets.
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['all lazy', allLazy, 384_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 651_000]]) {
+    // The fixture-only deployment data measures 12,384 B gzip on Windows; its separate 13 kB cap changes no
+    // existing ceiling and is not part of the 3 kB instrumentation allowance for the comparable V2 feature closures.
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['all lazy', allLazy, 384_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 651_000], ['V2 fixture data', fixtureData, 13_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
-      const testOnly = dir === WALLET && (family === 'financial' || family === 'all lazy');
+      const testOnly = dir !== DIST && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);
       if (dir === DIST) productionBytes.set(family, total);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);
-      // V2 intentionally omits the legacy setup UI. Its exclusive closure remains in the absolute budget above,
-      // but is a real legacy feature, not a test probe; compare only the actual fixture overhead with production.
-      if (testOnly) assert.ok(total - legacyBytes - productionBytes.get(family) <= 3_000, `${family}: wallet test-only overhead exceeds 3 kB`);
+      // Compare instrumentation overhead between builds with the same V2 feature set. The legacy fixture still
+      // counts every byte against its absolute budget; neither build discounts shared runtime or feature chunks.
+      if (testOnly && dir === WALLET_V2) assert.ok(total - productionBytes.get(family) <= 3_000, `${family}: V2 wallet test-only overhead exceeds 3 kB`);
       assert.ok(total <= budget, `${label} ${family} is ${total} bytes gzip, over the ${budget} budget`);
     }
   }

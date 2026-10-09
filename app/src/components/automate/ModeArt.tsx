@@ -318,23 +318,19 @@ export function PositionChoiceArt({ kind }: { kind: 'plain' | 'protection' }) {
     width={rem(240)} height={rem(100)} viewBox="0 0 240 100" aria-hidden="true" focusable="false">
     <Ground id={id} at={[8, 91.5, 224]} />
     {kind === 'plain' ? <>
-      <circle className="choice-token choice-token-a" cx="34" cy="36" r="11" />
-      <circle className="choice-token choice-token-b" cx="46" cy="69" r="11" />
-      <path className="choice-funding-path" d="M 48 36 C 84 36 92 61 144 62 M 60 69 C 86 69 98 69 144 69" />
-      <rect className="choice-band choice-create-band" x="98" y="62" width="118" height="30" rx="10" />
-      <path className="choice-price" d="M 110 82 L 129 77 L 149 81 L 167 74 L 186 77 L 204 70" />
-      <g transform="translate(149 30.5)"><g className="tile-solid choice-create-tile"><ArtTile w={18} layout={[2, 1]} /></g></g>
-      <g className="choice-create-plus"><circle cx="113" cy="35" r="9" /><path d="M 109 35 H 117 M 113 31 V 39" /></g>
-      {[0, 1].map((n) => <circle key={n} className={`choice-fund choice-fund-${n}`} r="3" style={route(n === 0 ? 'M 48 36 C 84 36 92 61 144 62' : 'M 60 69 C 86 69 98 69 144 69')} />)}
+      <rect className="choice-band choice-create-band" x="94" y="58" width="126" height="34" rx="10" />
+      <path className="choice-price choice-create-price" pathLength="100" d="M 108 82 L 128 77 L 148 81 L 168 74 L 187 77 L 206 70" />
+      <g transform="translate(148 26.5)"><g className="tile-solid choice-create-tile"><ArtTile w={18} layout={[2, 1]} /></g></g>
+      <path className="choice-create-plus" d="M 151 75 H 163 M 157 69 V 81" />
+      {[0, 1].map((n) => <circle key={n} className={`choice-token choice-fund choice-fund-${n}`} r="9" style={route(n === 0 ? 'M 34 43 C 72 43 92 68 141 75' : 'M 34 75 C 78 75 106 85 174 75')} />)}
     </> : <>
-      <rect className="choice-band choice-exit-band" x="24" y="62" width="122" height="30" rx="10" />
-      <path className="choice-price" d="M 36 82 L 60 77 L 77 81 L 98 71 L 116 74 L 143 62" />
-      <g transform="translate(66 30.5)"><g className="tile-solid choice-exit-tile"><ArtTile w={18} layout={[2, 1]} /></g></g>
-      <line className="choice-edge" x1="146" x2="146" y1="33" y2="86" />
-      <path className="choice-exit-limit" d="M 138 32 L 146 28 L 154 32 V 38 C 154 44 150 48 146 50 C 142 48 138 44 138 38 Z M 142 38 L 145 41 L 150 35" />
-      <circle className="choice-tip" r="3.5" style={route('M 36 82 L 60 77 L 77 81 L 98 71 L 116 74 L 143 62')} />
-      <path className="choice-wallet" d="M 184 49 H 216 A 5 5 0 0 1 221 54 V 78 A 5 5 0 0 1 216 83 H 184 A 5 5 0 0 1 179 78 V 54 A 5 5 0 0 1 184 49 Z M 221 60 H 208 V 72 H 221" />
-      {[0, 1].map((n) => <g key={n} className={`choice-transfer choice-transfer-${n}`} style={route(`M 136 ${72 + n * 8} C 157 42, 179 42, 198 ${61 + n * 10}`)}><circle r="3" /></g>)}
+      <rect className="choice-band choice-exit-band" x="18" y="58" width="132" height="34" rx="10" />
+      <path className="choice-price choice-exit-price" pathLength="100" d="M 30 82 L 55 77 L 77 81 L 99 71 L 120 74 L 150 58" />
+      <g transform="translate(64 26.5)"><g className="tile-solid choice-exit-tile"><ArtTile w={18} layout={[2, 1]} /></g></g>
+      <line className="choice-edge" x1="150" x2="150" y1="35" y2="86" />
+      <circle className="choice-tip" r="3.5" style={route('M 30 82 L 55 77 L 77 81 L 99 71 L 120 74 L 150 58')} />
+      <path className="choice-wallet" d="M 185 45 H 221 V 86 H 185 Q 179 86 179 80 V 51 Q 179 45 185 45 Z M 221 60 H 208 V 72 H 221" />
+      {[0, 1].map((n) => <circle key={n} className={`choice-token choice-transfer choice-transfer-${n}`} r="5" style={route(`M 131 ${71 + n * 11} C 161 ${42 + n * 12}, 175 ${42 + n * 12}, 195 ${59 + n * 15}`)} />)}
     </>}
   </svg>
 }

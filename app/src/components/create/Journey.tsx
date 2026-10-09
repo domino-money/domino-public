@@ -51,7 +51,7 @@ import { recovering } from '../../lib/staleRelease'
 import { deferred } from '../Deferred'
 import { Button, PageHeader, PageShell } from '../ui'
 import { StageAmount, StageRange } from './StageAmount'
-import { FinalControl, StageReview, preloadCreateControl } from './StageReview'
+import { CreateUnavailable, FinalControl, StageReview, preloadCreateControl } from './StageReview'
 import { StageToken, type PreselectStatus } from './StageToken'
 import { AmountSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type StepView, type VisualStep } from './StepList'
 import { PositionPreview } from './PositionPreview'
@@ -74,8 +74,8 @@ const V2PoolAdvanced = __DOMINO_V2__ ? lazy(recovering(() => import('../../v2in/
 /**
  * Changed on purpose 2026-10-05 (the owner: his screens, with Domino V2 connected behind them): in a build that carries
  * V2, Review's body and its Create position come from src/v2in/journey/JourneyCreateV2.tsx, which draws the plan and runs
- * the new contracts once Robinhood Chain's S1 gate is live, and hands back today's own Review and Create position (`v1`)
- * everywhere else. Asked once a pool is chosen, as Create position's own code is; one that cannot load leaves today's own.
+ * the new contracts once the selected network's S1 gate is live. A closed gate or failed V2 module disables creation;
+ * the retired setup contract remains available only to builds without V2. Asked once a pool is chosen.
  */
 type V2ReviewProps = { state: JourneyState; now: number; balances: PairBalancesState; pay?: PayFacts | null; v1: ReactElement }
 type V2CreateProps = {
@@ -87,7 +87,7 @@ type V2CreateProps = {
   v1: ReactElement
 }
 const V2Review = __DOMINO_V2__ ? deferred<V2ReviewProps>(recovering(() => import('../../v2in/journey/JourneyCreateV2').then((module) => ({ default: module.ReviewV2 })), () => ({ default: ({ v1 }: V2ReviewProps) => v1 }))) : null
-const V2Create = __DOMINO_V2__ ? deferred<V2CreateProps>(recovering(() => import('../../v2in/journey/JourneyCreateV2').then((module) => ({ default: module.default })), () => ({ default: ({ v1 }: V2CreateProps) => v1 }))) : null
+const V2Create = __DOMINO_V2__ ? deferred<V2CreateProps>(recovering(() => import('../../v2in/journey/JourneyCreateV2').then((module) => ({ default: module.default })), () => ({ default: () => <CreateUnavailable note={CREATE.review.loadFailed} /> }))) : null
 
 /** How many times a failed verification of the linked pool is asked again on its own, and the first wait. */
 const VERIFY_ATTEMPTS = 3

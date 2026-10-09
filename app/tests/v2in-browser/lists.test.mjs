@@ -307,6 +307,50 @@ test('the list and the detail display the same verified APR for a new V2 NFT', a
   } finally { await s.close(); }
 });
 
+test('fees keep one neutral total through price qualification changes, with exact tokens accessible on demand', async () => {
+  const own = about('portfolio', fixture('portfolio.json'), OWNER);
+  own.positions = [own.positions[0]];
+  own.positions[0].vault = null;
+  own.vaults = [];
+  own.mandates = [];
+  const s = await scenario({ hooks: LIVE, refresh: true, readV6: routeOn(route => ({ status: 200, body: route === 'portfolio' ? own : activityOf({ wallet: OWNER }).body })) });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="${rowKey('7')}"]`);
+    const cell = row.locator('[data-cell="fees"]');
+    await cell.locator('[data-usd="fees"]').waitFor();
+    assert.equal(await cell.locator('[data-usd="fees"]').innerText(), '<$0.01');
+    const initialHeight = await row.evaluate(node => node.getBoundingClientRect().height);
+    await cell.hover();
+    assert.equal(await cell.locator('.dm-own-split, .dm-own-amounts').count(), 0, 'hover does not create a second visual layout');
+    assert.match(await cell.getAttribute('title'), /0\.0012 USDG/);
+    for (const token of own.tokens) { token.price = null; token.priceReason = 'no_qualified_price_source'; }
+    own.positions[0].state.feesOwed = ['2800', '0'];
+    own.positions[0].state.snapshot.number += 10;
+    assert.equal(runtime.validateResponse('portfolio', own), true);
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await s.page.waitForFunction(key => document.querySelector(`[data-v2-position-row="${key}"] [data-cell="fees"]`)?.getAttribute('title')?.includes('0.0028 USDG'), rowKey('7'));
+    assert.equal(await cell.locator('.dm-own-dash').innerText(), '—', 'no old USD total is attached to changed fees');
+    assert.match(await cell.getAttribute('title'), /^USD estimate unavailable\.[\s\S]*0\.0028 USDG/);
+    assert.match(await cell.textContent(), /0\.0028 USDG/, 'exact amounts are retained for assistive readers');
+    assert.equal(await cell.locator('.dm-own-split, .dm-own-amounts').count(), 0, 'unpriced fees never become two green token lines');
+    assert.equal(await cell.locator('.dm-acct-amount').evaluateAll(nodes => nodes.every(node => node.closest('.sr-only') && node.closest('.sr-only').getBoundingClientRect().width <= 1)), true);
+    assert.equal(await row.evaluate(node => node.getBoundingClientRect().height), initialHeight, 'qualification changes do not resize the row');
+    for (const width of [1320, 1024, 736, 390, 320]) {
+      await s.page.setViewportSize({ width, height: 960 });
+      assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `fees fit ${width}px`);
+      assert.equal(await cell.locator('.dm-own-label').textContent(), 'Fees to collect');
+      // Clipped 1px assistive text at the cell's right edge contributes to scrollWidth without painting outside it.
+      const geometry = await cell.evaluate(node => {
+        const bounds = node.getBoundingClientRect();
+        const visible = [...node.children].filter(child => getComputedStyle(child).clip === 'auto' && getComputedStyle(child).display !== 'none');
+        return { cell: bounds.toJSON(), visible: visible.map(child => ({ text: child.textContent, rect: child.getBoundingClientRect().toJSON() })) };
+      });
+      assert.ok(geometry.visible.every(({ rect }) => rect.left >= geometry.cell.left - 0.5 && rect.right <= geometry.cell.right + 0.5), `visible fees stay within their column at ${width}px: ${JSON.stringify(geometry)}`);
+    }
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
 test('read gate off: historical NFTs remain in the unified collection and read-v6 is not asked', async () => {
   const s = await scenario();
   try {
@@ -318,6 +362,13 @@ test('read gate off: historical NFTs remain in the unified collection and read-v
     assert.equal(await s.page.locator('[data-v2-examples], [data-v2-own-note], [data-v2-receipt]').count(), 0);
     assert.deepEqual(s.asked, [], 'the site’s read-v6 route is never asked');
     assert.doesNotMatch(await s.page.locator('main').innerText(), /Test data|Example/);
+    const summary = s.page.locator('section[aria-labelledby="receipts-title"] section[aria-label="Execution receipts"]');
+    assert.equal(await summary.locator('h2, .dm-acct-desc').count(), 0, 'the preview uses its wrapper heading and one wallet state');
+    await s.page.getByRole('link', { name: 'Receipts', exact: true }).click();
+    const history = s.page.locator('section[aria-label="Execution receipts"]');
+    await history.locator('h2').waitFor({ state: 'attached' });
+    assert.equal(await history.locator('h2').textContent(), 'Execution receipts', 'full history retains its introduction');
+    assert.equal(await history.locator('.dm-acct-desc').innerText(), 'What automation did for your positions.');
   } finally {
     await s.close();
   }

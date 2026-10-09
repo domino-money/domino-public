@@ -203,7 +203,7 @@ export function KeyFigures({ card, state, price, block, cached = false }: { card
         )}
       </Stat>
       <Stat
-        label="Fees ready to collect"
+        label="Fees to collect"
         info="Fees this position earned and has not collected yet."
         className="dm-pos-stat"
         data-cell="fees"

@@ -90,10 +90,11 @@ function productionClosures() {
   // its stable chunks and every route's files.
   const entry = [...html.matchAll(/<script\b[^>]*\btype="module"[^>]*\bsrc="\/assets\/([^"]+)"/g)].map((match) => match[1]);
   const setup = scripts.filter((file) => file.startsWith('Setup-'));
-  const amounts = scripts.filter((file) => file.startsWith('DepositAmounts-'));
+  const create = scripts.filter((file) => file.startsWith('JourneyCreateV2-'));
   assert.equal(entry.length, 1);
   assert.equal(setup.length, 1);
-  assert.equal(amounts.length, 1, 'Create position is one lazy chunk');
+  assert.equal(create.length, 1, 'V2 creation is one lazy chunk');
+  assert.equal(scripts.filter((file) => file.startsWith('DepositAmounts-')).length, 0, 'production cannot load the retired creation control');
   const trees = new Map(scripts.map((file) => [file, parse(readFileSync(join(assets, file), 'utf8'), { sourceType: 'module' })]));
   const reach = (roots) => {
     const seen = new Set();
@@ -185,8 +186,8 @@ function productionClosures() {
   const entryClosure = reach(entry);
   const collection = scripts.find((file) => file.startsWith('OwnedRows-'));
   assert.ok(collection && !entryClosure.has(collection), 'V2 collection and its stylesheet stay outside the entry closure');
-  const amountsClosure = reach(amounts);
-  assert.ok(!entryClosure.has(amounts[0]) && !entryClosure.has(setup[0]), 'neither Create position nor Setup is loaded statically by the entry');
+  const createClosure = reach(create);
+  assert.ok(!entryClosure.has(create[0]) && !entryClosure.has(setup[0]), 'neither Create position nor Setup is loaded statically by the entry');
   const opens = (node, file) => {
     if (!node || typeof node !== 'object') return false;
     if (node.type === 'CallExpression' && node.callee?.type === 'Import' && node.arguments[0]?.value === `./${file}`) return true;
@@ -194,20 +195,20 @@ function productionClosures() {
   };
   // Changed on purpose 2026-10-01 (platform workstream, F1): New position is a chunk of its own, and its Review, in it,
   // opens Create position; the entry no longer carries Review.
-  const openers = scripts.filter((file) => opens(trees.get(file), amounts[0]));
+  const openers = scripts.filter((file) => opens(trees.get(file), create[0]));
   assert.ok(openers.length > 0 && openers.every((file) => !entryClosure.has(file)), `a lazy screen opens Create position through a dynamic import: ${openers.join(', ')}`);
-  const onboardingAdmitted = new Set([...setupClosure, ...amountsClosure].filter((file) => !entryClosure.has(file)));
+  const onboardingAdmitted = new Set([...setupClosure].filter((file) => !entryClosure.has(file)));
   const setupOnly = new Set([...setupClosure].filter((file) => !shared.has(file)));
   // 2026-10-04 (the owner: the site runs on Domino V2): V2's lazy closures say the same expiry code (a plan's or a quote's),
   // and stay out of the entry like the deposit and onboarding closures.
   const v2Closure = new Set([...reach(v2Roots)].filter((file) => !entryClosure.has(file)));
   const sharedCodeAdmitted = new Set([...setupOnly, ...onboardingAdmitted, ...v2Closure]);
-  return { setupOnly, setupClosure, amountsClosure, onboardingAdmitted, sharedCodeAdmitted };
+  return { setupOnly, setupClosure, createClosure, onboardingAdmitted, sharedCodeAdmitted };
 }
 
 test('production excludes preview/deposit labs and confines the live deposit client to opt-in Setup', () => {
   const files = textFiles(DIST);
-  const { setupOnly, setupClosure, amountsClosure, onboardingAdmitted, sharedCodeAdmitted } = productionClosures();
+  const { setupOnly, setupClosure, createClosure, onboardingAdmitted, sharedCodeAdmitted } = productionClosures();
   for (const { file, text } of files) {
     for (const marker of CONSUMER_MARKERS) assert.ok(!text.includes(marker), `dist/${file} contains ${marker}`);
     for (const marker of SETUP_DEPOSIT_MARKERS) {
@@ -221,15 +222,12 @@ test('production excludes preview/deposit labs and confines the live deposit cli
     }
   }
   assert.ok(files.some(({ text }) => SHARED_CODE_MARKERS.every((marker) => text.includes(marker))), 'the shared error codes are still in the build, so the confinement above is checked against something');
-  // Create position's chunk carries the setup client it signs through, its assisted swap and its way to the new position's
-  // page on Positions ('#/positions/<id>', a position's own page since 2026-09-24),
-  // and the authenticated route decision. Only the lazy financial chunk may reach that service.
-  const amountsText = [...amountsClosure].map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
-  for (const marker of ['quoteSwap', 'swap_output_insufficient', 'getSlot0', '#/positions/']) {
-    assert.ok(amountsText.includes(marker), `the production Create position closure is missing ${marker}`);
+  // Creation uses the V2 planner and money client. A failed chunk or closed gate cannot import the old setup client.
+  const createText = [...createClosure].map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
+  for (const marker of ['/api/position-plan/v1/', '#/positions/']) {
+    assert.ok(createText.includes(marker), `the production V2 creation closure is missing ${marker}`);
   }
-  for (const marker of ['/api/onboarding/v1/', 'swap-route', 'X-Domino-Onboarding-Contract', 'X-Domino-CSRF']) assert.ok(amountsText.includes(marker), `the production Create position closure is missing ${marker}`);
-  for (const marker of SETUP_DEPOSIT_MARKERS) assert.ok(!amountsText.includes(marker), `the production Create position closure carries deposit-only ${marker}`);
+  for (const marker of ['/api/setup/v1/', '/api/onboarding/v1/', 'X-Domino-Onboarding-Contract', ...SETUP_DEPOSIT_MARKERS]) assert.ok(!createText.includes(marker), `V2 creation carries retired setup marker ${marker}`);
   const assets = readdirSync(join(DIST, 'assets'));
   assert.deepEqual(assets.filter((file) => /^(LivePreview|Deposits|OperationPanel|PreviewPanels)/.test(file)), []);
   const setupText = [...setupClosure].map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');

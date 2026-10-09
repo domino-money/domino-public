@@ -201,7 +201,14 @@ test('four Automate choices fit two columns desktop and one mobile, with native 
     }
     assert.equal(await cards.first().getByRole('heading', { name: 'New position', exact: true }).count(), 1);
     assert.equal(await cards.first().locator('.choice-create-plus').count(), 1);
-    assert.equal(await cards.nth(1).locator('.choice-exit-limit').count(), 1);
+    assert.equal(await cards.first().locator('.choice-create-band').count(), 1, 'one destination range');
+    assert.equal(await cards.first().locator('.choice-create-tile').count(), 1, 'two inputs create one position');
+    assert.equal(await cards.first().locator('.choice-fund').count(), 2);
+    const exit = cards.nth(1);
+    assert.equal(await exit.locator('.choice-exit-band').count(), 1);
+    assert.equal(await exit.locator('.choice-edge').count(), 1, 'the price reaches the range boundary');
+    assert.equal(await exit.locator('.choice-wallet').count(), 1);
+    assert.equal(await exit.locator('.choice-transfer').count(), 2, 'both tokens return to the wallet');
     assert.equal(await s.page.getByRole('button', { name: /Replay|Pause/ }).count(), 0);
     for (const width of [1320, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
@@ -214,6 +221,16 @@ test('four Automate choices fit two columns desktop and one mobile, with native 
     await s.page.emulateMedia({ reducedMotion: 'reduce' });
     assert.equal(await s.page.locator('.choice-tip').evaluate((node) => getComputedStyle(node).animationName), 'none');
     assert.equal(await s.page.locator('.choice-fund').first().evaluate((node) => getComputedStyle(node).animationName), 'none');
+    assert.equal(await cards.first().locator('.choice-create-tile').evaluate((node) => getComputedStyle(node).opacity), '1', 'the still creation picture shows its completed position');
+    assert.equal(await exit.evaluate((node) => getComputedStyle(node.querySelector('.choice-exit-band')).stroke === getComputedStyle(node.querySelector('.choice-exit-tile .t-body')).fill), true, 'the still exit picture has a closed range and tile');
+    assert.equal(await exit.evaluate((node) => {
+      const wallet = node.querySelector('.choice-wallet').getBoundingClientRect();
+      return [...node.querySelectorAll('.choice-transfer')].every((token) => {
+        const bounds = token.getBoundingClientRect();
+        const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+        return x >= wallet.left && x <= wallet.right && y >= wallet.top && y <= wallet.bottom;
+      });
+    }), true, 'the returned tokens are already inside the wallet in reduced motion');
     await cards.first().hover();
     assert.ok(['none', '0px', '0px 0px'].includes(await cards.first().evaluate((node) => getComputedStyle(node).translate)), 'reduced motion keeps the card still on hover');
     assert.equal(s.chain.sends.length, 0);

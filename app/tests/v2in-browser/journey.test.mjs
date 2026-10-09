@@ -301,6 +301,51 @@ function robinhoodRead(route, body) {
   return JSON.stringify(answer);
 }
 
+for (const unavailable of ['closed gate', 'preview gate', 'missing V2 chunk']) {
+  test(`the owner's Review with a ${unavailable} never opens the retired creation path`, async () => {
+    const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
+    chain.switchTo(4663);
+    const read = createReadStub({ answer: robinhoodRead });
+    const retired = [];
+    const missing = unavailable === 'missing V2 chunk';
+    const s = await openJourney(browser, chain, {
+      dist: WALLET_V2_DIST, originOpen: unavailable !== 'closed gate',
+      ...(missing ? { live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner() } : {}),
+      routes: [(request, url) => {
+        if (url.pathname.startsWith('/api/setup/v1/')) retired.push(url.pathname);
+        return read.handle(request, url) ?? undefined;
+      }], artwork: true,
+    });
+    try {
+      let blocked = 0;
+      if (missing) await s.context.route(/\/assets\/JourneyCreateV2-[^/]+\.js$/, route => { blocked += 1; return route.abort('failed'); });
+      const page = s.page;
+      const current = step => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+      await page.getByRole('combobox', { name: 'Search a token' }).fill(USDG_RH);
+      await page.locator(`[data-token-option="${USDG_RH}"]`).click();
+      await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+      await pressContinue(current('pool'));
+      await pressContinue(current('range'));
+      await current('amount').locator('[data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+      await current('amount').locator('[data-pair-side="1"] input').fill('1000');
+      await pressContinue(current('amount'));
+      const footer = current('review').locator('[data-journey-footer]');
+      const reason = footer.locator('#create-reason');
+      await reason.waitFor({ timeout: 30_000 });
+      assert.equal(await footer.locator('[data-create-position]').isDisabled(), true);
+      assert.equal(await page.locator('[data-create-position="idle"]').count(), 0);
+      if (missing) {
+        assert.ok(blocked > 0, 'the V2 creation module actually failed to load');
+        assert.equal(await reason.innerText(), 'The wallet steps could not load. Reload the page to try again.');
+      } else assert.equal(await reason.innerText(), 'New positions on Robinhood Chain aren’t open right now.');
+      assert.deepEqual(retired, [], 'no retired setup endpoint is read');
+      assert.equal(chain.sends.length, 0, 'no transaction is sent');
+      assert.equal(chain.signed.length, 0, 'no signature is requested');
+      assert.equal(s.planned.length, 0, 'no plan is requested without the live V2 module and gate');
+    } finally { await s.close(); }
+  });
+}
+
 test('(d) the owner’s journey on V2: his steps, his preview and balances, the plan’s review on his Review, approve and create on the zap, then his created view', async () => {
   const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);

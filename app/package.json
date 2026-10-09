@@ -29,7 +29,7 @@
     "deploy:preview": "node scripts/release.mjs deploy preview",
     "deploy": "node scripts/release.mjs deploy production",
     "build:wallet-test": "vite build --mode wallet-test",
-    "test:session": "npm run build:wallet-test && node --test --test-force-exit tests/session.bundle.test.mjs tests/session.browser.test.mjs",
+    "test:session": "npm run build:wallet-test && npm run build:wallet-test-v2 && node --test --test-force-exit tests/session.bundle.test.mjs tests/session.browser.test.mjs",
     "build:consumer-test": "vite build --mode consumer-test",
     "test:consumer": "npm run build:consumer-test && node --test --test-force-exit tests/consumer.bundle.test.mjs tests/consumer.browser.test.mjs",
     "check:producer-fixtures": "node scripts/check-producer-fixtures.mjs",

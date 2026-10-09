@@ -122,6 +122,13 @@ function RowStatus({ row }: { row: PositionRowView }) {
  * two amounts under it.
  */
 function Amounts({ amounts, which, label, unread, usd }: { amounts: readonly [AmountShown, AmountShown] | null; which: 'principal' | 'fees'; label: string; unread: string | null; usd: string | null }) {
+  // A price that is temporarily unavailable must not replace one total with two moving token lines.
+  if (which === 'fees') return <span className="dm-own-cell" data-cell="fees" title={amounts ? `${usd === null ? 'USD estimate unavailable. ' : ''}${amounts.map(amount => `${amount.exact ?? amount.text} ${amount.token.label}`).join(' + ')}` : unread ?? 'Not reported'}>
+    <span className="dm-own-label">{label}</span>
+    <span className={usd === null ? 'dm-own-dash' : 'dm-own-fig'} data-usd={usd !== null ? 'fees' : undefined}>{usd === null ? '—' : formatUsdFloor(usd)}</span>
+    {usd === null && <span className="sr-only">USD estimate unavailable.</span>}
+    {amounts && <span className="sr-only"><AmountText amount={amounts[0]} /> + <AmountText amount={amounts[1]} /></span>}
+  </span>
   return (
     <span className="dm-own-cell" data-cell={which}>
       <span className="dm-own-label">{label}</span>
@@ -223,7 +230,7 @@ export function V2PositionRow({ row, apr = null }: { row: PositionRowView; apr?:
         </span>
         <span className={closed && ((emptyValue && emptyFees) || burned) ? 'dm-own-figs dm-own-empty-figure' : 'dm-own-figs'}>
           <span className={emptyValue || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.value} which="principal" label="Value" unread={row.unread} usd={row.valueUsd} /></span>
-          <span className={emptyFees || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.fees} which="fees" label="Fees ready to collect" unread={row.unread} usd={row.feesUsd} /></span>
+          <span className={emptyFees || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.fees} which="fees" label="Fees to collect" unread={row.unread} usd={row.feesUsd} /></span>
           {!closed && <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : apr?.kind ?? 'none'}>
             <span className="dm-own-label">Your APR</span>
             {apr?.kind === 'loading' ? <Skeleton className="dm-collection-apr-loading" /> : apr?.kind === 'rate' ? <span className="dm-own-fig" title={apr.saved ? 'Last verified position history. Updating automatically.' : 'Annualized fees earned by this position since it opened.'}>{apr.text}</span> : <span className="dm-own-dash" title={apr?.kind === 'missing' ? apr.words : 'The position’s verified fee history is not available yet.'}>—</span>}

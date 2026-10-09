@@ -253,14 +253,14 @@ test('the wallet feature is reached only through the build flag', () => {
   assert.equal(ALL.some(({ path }) => path === 'components/create/StageBalance.tsx'), false, 'the deposit amounts section is gone');
   for (const path of ['components/create/StageReview.tsx']) {
     const { code } = ALL.find((file) => file.path === path);
-    assert.match(code, /__DOMINO_WALLET_SESSION__\s*\?\s*lazy\(\(\)\s*=>\s*import\('\.\/DepositAmounts'\)/, `${path} opens Create position lazily, behind the flag`);
+    assert.match(code, /__DOMINO_WALLET_SESSION__\s*&&\s*!__DOMINO_V2__\s*\?\s*lazy\(\(\)\s*=>\s*import\('\.\/DepositAmounts'\)/, `${path} opens retired Create position only in the non-V2 wallet harness`);
     // reviewOpens admits the specifier, and specifiers() cannot tell a static import from import(): every mention must be the lazy one,
     // so a static `from './DepositAmounts'` (or a bare import of it) beside the lazy import still fails here, before any build.
     const mentions = [...code.matchAll(/['"`]\.\/DepositAmounts(?:\.tsx?)?['"`]/g)].length;
     const lazy = [...code.matchAll(/import\(\s*['"`]\.\/DepositAmounts(?:\.tsx?)?['"`]\s*\)/g)].length;
     // Changed on purpose 2026-09-28 (speed wave, study item 33): Review's chunk is also asked ahead once a pool is chosen
     // (preloadCreateControl), with the same import() behind the same flag, so it is named twice, both times in import().
-    assert.match(code, /export const preloadCreateControl = __DOMINO_WALLET_SESSION__\s*\?\s*\(\)\s*=>\s*void import\('\.\/DepositAmounts'\)/, `${path} asks Create position's chunk ahead only behind the flag`);
+    assert.match(code, /export const preloadCreateControl = __DOMINO_WALLET_SESSION__\s*&&\s*!__DOMINO_V2__\s*\?\s*\(\)\s*=>\s*void import\('\.\/DepositAmounts'\)/, `${path} preloads retired Create position only in the non-V2 wallet harness`);
     assert.deepEqual([mentions, lazy], [2, 2], `${path} names Create position's chunk only in its two import() calls`);
   }
   for (const [path, spec] of Object.entries(POSITION_CHUNKS).flatMap(([path, specs]) => specs.map((spec) => [path, spec]))) {

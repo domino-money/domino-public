@@ -333,9 +333,11 @@ export default function Execution({ limit, onShows }: { limit?: number; onShows?
         : Object.keys(view.refreshFailed).length > 0 ? 'Some receipts couldn’t be updated.' : null
   return <section className="dm-acct-exec" aria-label="Execution receipts" aria-busy={view.busy || view.reading || undefined} data-execution={view.state} data-execution-reason={view.reason ?? undefined}
     data-execution-rows={rows.length}>
-    <h2 className="sr-only">Execution receipts</h2>
-    {/* One plain line; the rule for uncertain transactions is its title, and each receipt's chip says where it stands. */}
-    <p className="dm-acct-desc" title="An uncertain or reorganized transaction is never shown as completed.">What automation did for your positions.</p>
+    {limit === undefined && <>
+      <h2 className="sr-only">Execution receipts</h2>
+      {/* The summary already has its Receipts heading. Full history keeps its introduction. */}
+      <p className="dm-acct-desc" title="An uncertain or reorganized transaction is never shown as completed.">What automation did for your positions.</p>
+    </>}
     {/* Loading, empty and unavailable are different states; an unread history is never described as empty. */}
     {view.state === 'signed_out' ? <div className="dm-acct-quiet" data-signed-out={session.kind}>
       <p>{out.text}</p>

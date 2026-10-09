@@ -32,7 +32,7 @@ export function PoolAutomation({ usable, why }: { usable: boolean; why: string }
                   <span className="dm-pool-auto-body">
                     <span className="dm-pool-auto-name">
                       <a href={docsHref(slug)}>{key === 'plain' ? 'New position' : feature.name}</a>
-                      <span className="dm-pool-auto-fee">{key === 'protection' ? feature.fee : feature.fee ? `${feature.fee} of fees` : 'No service fee'}</span>
+                      <span className="dm-pool-auto-fee">{key === 'protection' ? feature.fee : feature.fee ? `${feature.fee} of fees` : 'No automation fee'}</span>
                     </span>
                     <span className="dm-pool-auto-line">{feature.line}</span>
                   </span>

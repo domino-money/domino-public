@@ -1,4 +1,3 @@
-import { AutomationChoice } from '../../components/automate/AutomationChoice'
 import { IconChevronRight } from '../../components/icons'
 import { Button, LinkButton } from '../../components/ui'
 import { gateOpen, useGate } from './gate'
@@ -22,11 +21,11 @@ export default function AutomateProtection() {
   const anywhere = (gateOpen(vault4663) && gateOpen(exit4663)) || (gateOpen(vault8453) && gateOpen(exit8453)) || (gateOpen(vault42161) && gateOpen(exit42161))
   const pending = [vault4663, exit4663, vault8453, exit8453, vault42161, exit42161].some((gate) => gate === null)
   return (
-    <AutomationChoice kind="protection">
+    <>
       {anywhere ? <LinkButton href="#/sequence/protection" variant="outline" data-v2in-protection="">
         Choose a position
         <IconChevronRight />
       </LinkButton> : <Button disabled>{pending ? 'Checking availability…' : 'Unavailable right now'}</Button>}
-    </AutomationChoice>
+    </>
   )
 }
