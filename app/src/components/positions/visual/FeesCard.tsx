@@ -2,7 +2,6 @@ import { useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Delta, LiveFigure, PeriodTabs, StackedBar, UsdText, type PeriodKey } from '../../figures'
 import { TokenMarkPair } from '../../TokenIcon'
-import { DataFreshness } from '../../DataFreshness'
 import { cx } from '../../ui'
 import { useFeeHistory } from '../../../lib/fees/useFeeHistory'
 import { usePastReads } from '../../../lib/fees/usePastReads'
@@ -335,7 +334,6 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
     <>
       <Head titleId={titleId} state={lead} tokens={tokens} standalone={standalone} tabs={tabs} />
       {saved && <span className="sr-only" data-fees-saved="">{savedTitle}</span>}
-      <DataFreshness active={saved !== null} scope={id} detail={savedTitle}>Fee history is taking longer to update. Showing the last available figures.</DataFreshness>
       <div className="dm-fees-body" data-zero={view.zero ? '' : undefined}>
         <div className="dm-fees-summary">
           <p className="dm-fees-hero" title={blockTitle}>

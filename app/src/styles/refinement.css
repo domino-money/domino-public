@@ -12,7 +12,7 @@
   .dm-mkt-card.dm-plate { border-radius: var(--radius-hero); }
   .dm-mkt-card::before { opacity: 0.45; }
   .dm-mkt-card-price { padding-top: 0.25rem; }
-  .dm-mkt-card-close.dm-fig-lg { font-size: 2rem; line-height: 1.15; letter-spacing: -0.04em; }
+  .dm-mkt-card-close.dm-fig-lg { font-size: 1.8rem; line-height: 1.15; letter-spacing: -0.04em; }
   .dm-mkt-guide { margin-top: 1.5rem; padding: 0.25rem 1rem; background: var(--card); border-radius: var(--radius); box-shadow: var(--elev-card); }
   .dm-mkt-guide > summary { min-height: 2.75rem; color: var(--fg-muted); }
   .dm-mkt-guide-grid { display: grid; gap: 1.5rem; padding: 0.5rem 0 1rem; }
@@ -26,9 +26,9 @@
   .dm-mkt-pools .dm-table tbody tr + tr { border-top: 1px solid var(--border); }
   .dm-mkt-catalogue { padding: 0.5rem 1.25rem; border-radius: var(--radius-card); background: var(--card); box-shadow: var(--elev-card); }
   @media (min-width: 768px) {
-    .dm-display-h1 { font-size: 3rem; line-height: 1.1; letter-spacing: -0.025em; }
+    .dm-display-h1 { font-size: 2.7rem; line-height: 1.1; letter-spacing: -0.025em; }
     .dm-mkt-guide-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .dm-mkt-pools { padding: 1.5rem; }
+    .dm-mkt-pools { padding: 1.25rem; }
   }
   @media (max-width: 767px) {
     .dm-mkt-pools { padding: 1rem 0.75rem; }

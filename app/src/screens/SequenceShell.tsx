@@ -5,11 +5,12 @@ import { Button, Display, EmptyState, Skeleton } from '../components/ui'
 import { IconWallet } from '../components/icons'
 import type { WalletIdentityView } from '../lib/walletIdentity'
 
-export function Frame({ children }: { children: ReactNode }) {
-  useRouteTitle('Set up automation')
+export function Frame({ children, protection = false }: { children: ReactNode; protection?: boolean }) {
+  const title = protection ? 'Set up Auto-exit' : 'Set up automation'
+  useRouteTitle(title)
   return <main className="dm-page dm-page--narrow dm-seq">
-    <Display as="h1" className="dm-display-title">Set up automation</Display>
-    <p className="dm-acct-lede">{__DOMINO_V2__ ? 'Choose a position and what Domino does for it.' : 'Choose a position and what its earned fees do.'}</p>
+    <Display as="h1" className="dm-display-title">{title}</Display>
+    <p className="dm-acct-lede">{protection ? 'Choose the position you want Domino to close at the end of its range.' : __DOMINO_V2__ ? 'Choose a position and what Domino does for it.' : 'Choose a position and what its earned fees do.'}</p>
     {children}
   </main>
 }

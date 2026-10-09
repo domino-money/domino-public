@@ -2,38 +2,38 @@ import { useEffect, useState } from 'react'
 import type { V2Service } from '../../v2/capabilities'
 import { v2Gate, type V2Gate } from '../../v2/gate'
 import { v2PageProbe } from '../transports'
+import { createGateCache, GATE_RECHECK_MS } from './gateCache'
 
 /**
  * The gate of a Domino V2 service on a chain (src/v2/gate.ts), for the integrated automation screens: `off` (the screen is
  * exactly V1's), `preview` (the option runs up to its review, then says `lockedCopy`: nothing is sent or signed) or `live`
- * (the same screens, for real, through the closed money clients). Asked once per page for each service and chain: what it
- * depends on (the build, the page's origin, the pinned manifests, the backend's word) does not change while the page is
- * open. Null until it is known, which is a moment: the preview's fixture set is a lazy chunk.
+ * (the same screens, for real, through the closed money clients). Rechecked on re-entry, focus, reconnect and each
+ * visible minute. The underlying capability probe keeps its own one-minute TTL. Null until the first check completes.
  */
-const asked = new Map<string, Promise<V2Gate>>()
-const OFF: V2Gate = Object.freeze({ mode: 'off' })
-
-export function gateOf(service: V2Service, chainId: number): Promise<V2Gate> {
-  const key = `${service}|${chainId}`
-  let gate = asked.get(key)
-  if (!gate) {
-    // A gate that cannot be worked out (the fixture chunk failed to load) is off: the screen stays V1's.
-    gate = v2Gate(service, chainId, undefined, v2PageProbe).catch(() => OFF)
-    asked.set(key, gate)
-  }
-  return gate
-}
+export const gateOf = createGateCache((service, chainId) => v2Gate(service, chainId, undefined, v2PageProbe))
 
 export function useGate(service: V2Service, chainId: number): V2Gate | null {
   const key = `${service}|${chainId}`
   const [known, setKnown] = useState<{ key: string; gate: V2Gate } | null>(null)
   useEffect(() => {
     let live = true
-    void gateOf(service, chainId).then((gate) => {
-      if (live) setKnown({ key, gate })
-    })
+    const check = () => {
+      if (document.visibilityState === 'hidden') return
+      void gateOf(service, chainId, true).then((gate) => {
+        if (live) setKnown((previous) => previous?.key === key && previous.gate === gate ? previous : { key, gate })
+      })
+    }
+    check()
+    const timer = window.setInterval(check, GATE_RECHECK_MS)
+    window.addEventListener('focus', check)
+    window.addEventListener('online', check)
+    document.addEventListener('visibilitychange', check)
     return () => {
       live = false
+      window.clearInterval(timer)
+      window.removeEventListener('focus', check)
+      window.removeEventListener('online', check)
+      document.removeEventListener('visibilitychange', check)
     }
   }, [service, chainId, key])
   return known && known.key === key ? known.gate : null

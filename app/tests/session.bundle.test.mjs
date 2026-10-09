@@ -1091,7 +1091,7 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // their own, measured in the deployed build that carries them. The V1 wallet-test build carries none.
     // 2026-10-05 (the owner: his New position screens, with V2 connected behind them): and JourneyCreateV2, his journey's
     // Review and Create position on the new contracts: 604,752 B gzip for the family then, so its budget 606,000.
-    const v2Roots = js.filter((file) => /^(NewPositionV2|JourneyCreateV2|PoolAdvanced|PositionV2Actions|PositionAutomation|PositionPage|ManagedVaults|OwnedRows|Receipts|SetupEntry|AutomateProtection|FundsAmounts|MandateDialog|PositionDialog|VaultDialog|actions|ccip|secp256k1)-/.test(file));
+    const v2Roots = js.filter((file) => /^(NewPositionV2|JourneyCreateV2|PoolAdvanced|PositionV2Actions|PositionAutomation|PositionPage|ManagedVaults|OwnedRows|Receipts|SetupEntry|ProtectionSetup|AutomateProtection|FundsAmounts|MandateDialog|PositionDialog|VaultDialog|actions|ccip|secp256k1)-/.test(file));
     if (dir === WALLET) assert.deepEqual(v2Roots, [], 'the V1 wallet-test build carries no V2');
     else assert.ok(v2Roots.length >= 14, `the deployed build carries V2's screens: ${v2Roots.join(', ')}`);
     const v2 = new Set([...staticClosure(dir, v2Roots)].filter((file) => !initial.has(file)));

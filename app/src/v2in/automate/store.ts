@@ -37,6 +37,8 @@ export interface ExitModuleSet {
 
 export interface SessionMandate {
   chainId: V2ChainId
+  /** New registrations retain the NFT namespace. Older in-memory entries remain conservatively unqualified. */
+  dex?: 3 | 4
   owner: Address
   id: Hex
   nonce: bigint
@@ -147,6 +149,9 @@ export function rememberMandate(entry: SessionMandate): void {
 
 export const sessionMandates = (s: State, chainId: V2ChainId, owner: Address): readonly SessionMandate[] =>
   s.mandates.filter((m) => m.chainId === chainId && m.owner === owner.toLowerCase())
+
+export const sessionMandatesFor = (s: State, chainId: V2ChainId, owner: Address, tokenId: bigint, dex: 3 | 4): readonly SessionMandate[] =>
+  sessionMandates(s, chainId, owner).filter((m) => m.tokenId === tokenId && (m.dex === undefined || m.dex === dex))
 
 /**
  * Added 2026-10-06 (the owner's point 5): an Auto-exit this page turned off, once its revocation is in a block: the card

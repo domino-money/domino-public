@@ -248,12 +248,9 @@ export const POSITIONS: DocPage = {
       title: 'Your positions',
       blocks: [
         shot('positions', 'Your positions and how their fees are used.'),
-        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the positions read from Domino's new contracts
-        // on the three networks are listed too (src/v2in/lists), each with its network.
         p('Connect your wallet and Positions lists the positions it created with Domino, on any of its networks, read from the chain: there is no ID to type. ', b('Open'), ' positions hold liquidity; ', b('Closed'), ' ones hold none. Position NFTs made elsewhere are not listed.'),
-        // 2026-10-06: dollars on V2 rows too (read-v6's qualified USD).
-        p('Each row shows the pair, its network, whether the price is in range, what it holds and its fees ready to collect, in dollars when priced, else in tokens. Domino V1 rows add ', b('Your APR'), ' since opening, or “on its page”.'),
-        p('Open rows also say how their fees are used, or offer Automate. Select a row to open its page. A Domino V1 deposit that never became a position is listed too, with its refund.'),
+        p('Each row shows the pair, its network, range status, value, fees ready to collect and ', b('Your APR'), ' when its history can be measured. Values use dollars when priced, else tokens.'),
+        p('Select a row to open its page and manage its automation. Closed rows keep the history and show any fees still waiting to collect.'),
       ],
     },
     {
@@ -268,18 +265,17 @@ export const POSITIONS: DocPage = {
           [b('Fees ready to collect'), ': earned and not yet collected.'],
           [b('Your APR'), ': this position’s own fees as a yearly rate, from its history. Not the pool’s APR, and not a promise.'],
           [b('Current price'), ': the pool’s price now, on a bar between your range’s two ends.'],
-          ['Below: price and fee charts, activity, automation, Auto-exit, and technical details.'],
+          ['Automation controls sit below the title. Below the figures: price and fee charts, Activity and technical Details.'],
         ),
-        p('The page updates every minute; everything on it is public chain data.'),
+        p('Figures and charts update automatically as new chain data arrives. Zero fees show a flat chart; missing history is never filled with invented values.'),
       ],
     },
     {
-      // 2026-10-04 (the owner: docs revalidated for V2): the chart as the owner's point 10 of 2026-10-03 redrew it.
       id: 'price-range',
       title: 'The Price range chart',
       blocks: [
         p('One line says first whether the position earns fees: ', b('Earning fees'), ' while the price is inside your range, ', b('Not earning'), ' outside it, with how far the price must move to come back, or ', b('Closed'), '.'),
-        p('The band marks ', b('Max'), ' and ', b('Min'), ', with the price ', b('Now'), '. History starts when this position opened, up to 7 days: green inside the range, red outside. Unread history is not filled in.'),
+        p('The band marks ', b('Max'), ' and ', b('Min'), ', with the price ', b('Now'), '. History starts when this position opened, up to 7 days: green inside the range, red outside. Unread history is not filled in. Closed charts stop at the verified closing time, marked ', b('Last'), '.'),
         p('Fees earned offers 24H, 7D and All. A recent position’s periods start at its opening.'),
       ],
     },
@@ -287,11 +283,9 @@ export const POSITIONS: DocPage = {
       id: 'managed-positions',
       title: 'What automation did',
       blocks: [
-        // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the cards read Domino's new contracts with
-        // no sign-in (src/v2in/automate/ManagedVaults.tsx, src/v2in/lists/Receipts.tsx); Domino V1's history still needs it.
-        p(b('Managed positions'), ' lists each automated position, on any network: its state, the fees it collected and hasn’t reinvested yet, and the one button it needs, such as ', b('Withdraw to wallet'), '. ', b('Receipts'), ' lists what you and your automation did, each action with its fees and what came back. For the full list, select ', b('Receipts'), ' beside New position or the card’s ', b('See all'), '.'),
+        p('Automation is shown with its position. Open the position to set up, pause or stop it, or recover tokens it holds. ', b('Receipts'), ' lists what you and your automation did, each action with its fees and what came back. For the full list, select ', b('Receipts'), ' beside New position or the card’s ', b('See all'), '.'),
         shot('receipts', 'Receipts: each time automation added fees back.'),
-        p('Neither needs sign-in, except for what Domino V1’s automation did. A receipt is final only once its network settles it.'),
+        p('Public on-chain activity needs no signature. Additional account history may ask you to sign in. A receipt is final only once its network settles it.'),
       ],
     },
     {

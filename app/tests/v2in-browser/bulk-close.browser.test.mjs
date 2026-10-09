@@ -187,9 +187,21 @@ for (const changed of [false, true]) test(`a wallet ${changed ? 'replacement wit
 test('four Automate choices fit two columns desktop and one mobile, with native art and no playback controls', async () => {
   const s = await scenario({ width: 1320, height: 960 }, '#/automate');
   try {
-    await s.page.locator('[data-automation-card="protection"] a').waitFor();
+    await s.page.getByRole('link', { name: 'Choose a position', exact: true }).waitFor();
     const cards = s.page.locator('[data-automation-card]');
     assert.equal(await cards.count(), 4);
+    const slugs = ['new-position', 'auto-exit', 'auto-compound', 'domino-compound'];
+    for (const [index, slug] of slugs.entries()) {
+      const link = cards.nth(index).locator('.dm-automation-choice-doc');
+      assert.equal(await link.getAttribute('href'), `#/docs/${slug}`);
+      await link.click();
+      await s.page.locator(`[data-docs-page="${slug}"]`).waitFor();
+      await s.page.goBack();
+      await cards.nth(index).waitFor();
+    }
+    assert.equal(await cards.first().getByRole('heading', { name: 'New position', exact: true }).count(), 1);
+    assert.equal(await cards.first().locator('.choice-create-plus').count(), 1);
+    assert.equal(await cards.nth(1).locator('.choice-exit-limit').count(), 1);
     assert.equal(await s.page.getByRole('button', { name: /Replay|Pause/ }).count(), 0);
     for (const width of [1320, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
@@ -201,6 +213,9 @@ test('four Automate choices fit two columns desktop and one mobile, with native 
     }
     await s.page.emulateMedia({ reducedMotion: 'reduce' });
     assert.equal(await s.page.locator('.choice-tip').evaluate((node) => getComputedStyle(node).animationName), 'none');
+    assert.equal(await s.page.locator('.choice-fund').first().evaluate((node) => getComputedStyle(node).animationName), 'none');
+    await cards.first().hover();
+    assert.ok(['none', '0px', '0px 0px'].includes(await cards.first().evaluate((node) => getComputedStyle(node).translate)), 'reduced motion keeps the card still on hover');
     assert.equal(s.chain.sends.length, 0);
   } finally { await s.close(); }
 });

@@ -1159,14 +1159,14 @@ test('Automate shows four compact choices with exact fees and equally sized entr
   assert.equal(await page.locator('main .dm-automation-choice-description').count(), 4, 'one short explanation per choice');
   assert.doesNotMatch(await page.locator('main').innerText(), /improving|consumed|hold’s/, 'no broken possessive, no "consumed", no promise');
   const plain = page.locator('main [data-feature="plain"]');
-  assert.match(await plain.innerText(), /^Plain position\s+Earn fees and collect them when you choose\.\s+No automation fee\s+New position$/);
+  assert.match(await plain.innerText(), /^New position\s+How it works\s+Choose a pool, add your tokens and start earning fees\.\s+No automation fee\s+New position$/);
   assert.doesNotMatch(await plain.innerText(), /\bfree\b/i, 'no claim that a plain position has no costs');
-  assert.deepEqual(await plain.getByRole('link').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [['New position', '#/new']]);
+  assert.deepEqual(await plain.getByRole('link').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [['How it works', '#/docs/new-position'], ['New position', '#/new']]);
   assert.deepEqual(await page.locator('main [data-automation-card]').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-automation-card'))), ['plain', 'protection', 'compound', 'domino']);
   const protection = page.locator('[data-automation-card="protection"]');
   await protection.getByRole('button', { name: 'Unavailable right now', exact: true }).waitFor();
   assert.equal(await protection.getByRole('button').isDisabled(), true, 'a missing execution capability never becomes an actionable Auto-exit entry');
-  assert.equal(await protection.getByRole('link').count(), 0);
+  assert.deepEqual(await protection.getByRole('link').evaluateAll((links) => links.map((a) => a.getAttribute('href'))), ['#/docs/auto-exit'], 'docs stay available without opening an unavailable execution');
   clean(page, 'automate');
   await close(page);
 });

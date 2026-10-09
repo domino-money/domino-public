@@ -178,9 +178,7 @@ export function autoExitStanding(
   dex: 3 | 4,
   off: ReadonlySet<string> = new Set(),
 ): AutoExitStanding {
-  const active = body.mandates.some(
-    (order) => order.chainId === chainId && order.tokenId === tokenId && order.status === 'active' && !order.expired && !off.has(order.mandateHash.toLowerCase()),
-  )
+  const active = exitOnPosition(body, chainId, tokenId, dex, off)
   if (active) return 'on'
   // The rule of ./standing.ts exitVaultOf, repeated here rather than imported: Set up automation reads this file, and an
   // import would split that small module into a chunk of its own (tests/v2/auto-exit-edges.test.mjs holds the two equal).

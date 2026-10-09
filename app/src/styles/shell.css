@@ -15,7 +15,7 @@
   .dm-page--pool { max-width: calc(var(--content-pool) + 2 * var(--gutter)); }
   .dm-page--flow { max-width: calc(var(--content-flow) + 2 * var(--gutter)); }
   .dm-page--narrow { max-width: calc(var(--content-narrow) + 2 * var(--gutter)); }
-  @media (min-width: 768px) { .dm-page { padding-top: 2.5rem; } }
+  @media (min-width: 768px) { .dm-page { padding-top: 2rem; } }
 
   /* ---- Surfaces (§3.1): flat cards (a fill, an inner ring, a lit lip); plates sit lower ------- */
   .dm-card { min-width: 0; background: var(--card); border-radius: var(--radius-card); box-shadow: var(--elev-card); }
@@ -24,7 +24,7 @@
   .dm-card[data-interactive]:active, a.dm-card:active { scale: var(--press-scale-card); }
   .dm-card--flush { background: transparent; box-shadow: none; border-radius: 0; }
   .dm-card-pad { padding: 1rem; }
-  @media (min-width: 768px) { .dm-card-pad { padding: 1.5rem; } }
+  @media (min-width: 768px) { .dm-card-pad { padding: 1.25rem; } }
   .dm-plate { min-width: 0; background: var(--surface-1); border-radius: var(--radius-lg); box-shadow: inset 0 0 0 1px var(--border); position: relative; overflow: hidden; }
   .dm-inset { min-width: 0; background: var(--surface-1); border-radius: var(--radius-lg); box-shadow: inset 0 0 0 1px var(--border); }
 

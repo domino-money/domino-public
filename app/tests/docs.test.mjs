@@ -549,13 +549,10 @@ test('the docs use the product’s words for a position’s figures, say what au
   const all = DOC_PAGES.map(textOf).join('\n');
   // Principal and Unclaimed fees are Position value (Value on the list) and Fees ready to collect on every screen.
   assert.doesNotMatch(all, /Unclaimed fees|unclaimed fees|the principal \(/);
-  // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the rows read from Domino's new contracts name
-  // their network and show tokens (no USD or APR without a qualified source, decision #22); a Domino V1 row keeps dollars
-  // and Your APR, or "on its page" (components/positions/PositionRow.tsx).
-  // Changed on purpose 2026-10-06 (read-v6 1.1.0-rc.1's qualified USD): dollars on the new contracts' rows too.
-  assert.match(sectionText(positions, 'your-positions'), /Each row shows the pair, its network, whether the price is in range, what it holds and its fees ready to collect, in dollars when priced, else in tokens\. Domino V1 rows add Your APR since opening, or “on its page”\./);
+  // Qualified row figures apply across the supported networks; unread history never becomes an APR estimate.
+  assert.match(sectionText(positions, 'your-positions'), /Each row shows the pair, its network, range status, value, fees ready to collect and Your APR when its history can be measured\. Values use dollars when priced, else tokens\./);
   assert.doesNotMatch(readText(join(APP, 'src/components/positions/PositionRow.tsx')), />est\.</);
-  assert.ok(readText(join(APP, 'src/components/positions/PositionRow.tsx')).includes('>on its page<'));
+  assert.match(sectionText(positions, 'your-positions'), /Closed rows keep the history and show any fees still waiting to collect\./);
   const details = sectionText(positions, 'position-details');
   for (const label of ['Position value', 'Fees ready to collect', 'Your APR', 'Current price']) assert.match(details, new RegExp(`\\n${label}: `), label);
   assert.match(details, /Your APR: this position’s own fees as a yearly rate, from its history\. Not the pool’s APR, and not a promise\./);
@@ -582,10 +579,10 @@ test('the docs use the product’s words for a position’s figures, say what au
   assert.match(sectionText(page('auto-compound'), 'what-it-did'), /Receipts, on Positions, lists each automated run with the fees it used and its service fee\. The position’s page shows its automation: its state, what it waits for, and the fees it collected and hasn’t reinvested yet\. No sign-in is needed\./);
   assert.ok(linksOf(page('auto-compound')).some((link) => link.to === '#/docs/positions#managed-positions'));
   const managed = sectionText(positions, 'managed-positions');
-  assert.match(managed, /Managed positions lists each automated position, on any network: its state, the fees it collected and hasn’t reinvested yet, and the one button it needs, such as Withdraw to wallet\./);
+  assert.match(managed, /Automation is shown with its position\. Open the position to set up, pause or stop it, or recover tokens it holds\./);
   assert.match(managed, /For the full list, select Receipts beside New position or the card’s See all\./);
   assert.match(readText(join(APP, 'src/screens/Positions.tsx')), /href=\{receiptsHref\} variant="outline" data-positions-receipts/, 'the connected wallet has a direct receipt entrance');
-  assert.match(managed, /Neither needs sign-in, except for what Domino V1’s automation did\./);
+  assert.match(managed, /Public on-chain activity needs no signature\. Additional account history may ask you to sign in\. A receipt is final only once its network settles it\./);
   // Moved on purpose 2026-10-04 (the owner: docs revalidated for V2) to Manage a position, word for word: only Close has an
   // "At least" row and a slippage choice (PositionActions.tsx).
   assert.match(sectionText(page('manage-position'), 'collect-and-close'), /Each shows what you receive and the network fee before you sign; Close also shows the least you receive within your slippage tolerance\./);
@@ -641,7 +638,7 @@ test('the V2 pages: Manage a position, Bring funds from another network, Auto-ex
   // Changed on purpose 2026-10-06 (the review of point 5): every network's position page, and New position's success on
   // every network (components/create/CreatedNext.tsx on Robinhood Chain's own journey, src/v2in/journey/ReviewStage.tsx
   // CreatedExit elsewhere).
-  assert.match(sectionText(exit, 'turn-it-on'), /Select Auto-exit below a position’s title, on any network, or right after you create a position\. The dialog shows where it closes, the price now and its fee\./);
+  assert.match(sectionText(exit, 'turn-it-on'), /On Automate, select Choose a position under Auto-exit, then choose the position\. You can also select Auto-exit below a position’s title, or right after you create a position\. The dialog shows where it closes, the price now and its fee\./);
   assert.match(sectionText(exit, 'turn-it-on'), /Turn on Auto-exit asks your wallet for one signature, then one confirmation when your wallet can send the calls together\./);
   assert.match(sectionText(exit, 'separate'), /A position has compounding or Auto-exit, never both, and one Auto-exit at a time\./);
   assert.doesNotMatch(textOf(exit), /stop-loss|take-profit|order|Protection only/i);
@@ -858,7 +855,7 @@ test('round 6: "added back" everywhere, no Settings, and the docs describe the r
   assert.match(SHOTS.receipts.alt, /added a position’s fees back, with what it added back\.$/);
   // Point 3: the table's own APR, beside how each row's fees are used. Point 4: the Wallet card, every token in dollars,
   // the three worth the most always shown.
-  assert.match(sectionText(positions, 'your-positions'), /Open rows also say how their fees are used, or offer Automate\./);
+  assert.match(sectionText(positions, 'your-positions'), /Select a row to open its page and manage its automation\./);
   assert.match(sectionText(positions, 'wallet-balances'), /The Wallet card shows the tokens of the connected wallet, or any address, in dollars: the three largest first, the rest under Show all\./);
   // Point 3: the simulator in plain words. Point 7: Plan a range left the pool page, and its typical range took the place.
   const ranges = page('ranges');
@@ -1189,7 +1186,7 @@ test('the docs say what the follow-ups ship: replaced wallet steps, one line for
   const positions = page('positions');
   // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the new automation's rows and receipts need no
   // sign-in; Domino V1's history still does.
-  assert.match(sectionText(positions, 'managed-positions'), /Neither needs sign-in, except for what Domino V1’s automation did\./);
+  assert.match(sectionText(positions, 'managed-positions'), /Public on-chain activity needs no signature\. Additional account history may ask you to sign in\./);
   // Changed on purpose 2026-10-01 (integration pass 3): "read-only" is a word the docs never use (the words, above), and
   // only the list of a viewed address is never kept (its positions' start blocks are, as any position's, with no address).
   assert.match(sectionText(positions, 'wallet-balances'), /View address also lists that address’s positions, just to look at\./);

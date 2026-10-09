@@ -27,6 +27,7 @@ import { ARTWORK } from '../support/new-position.mjs';
 import { historyFor } from '../support/price-range-cases.mjs';
 import { FIXTURE_TOKEN, createReadStub } from '../support/read-stub.mjs';
 import { launchBrowser } from '../support/s1-browser.mjs';
+import { activityOf, indexedToken, livePosition, portfolioOf } from '../support/s1-read6.mjs';
 import { contractsFor } from '../support/v2-chain.mjs';
 import { WALLET_V2_DIST } from '../support/wallet-dist.mjs';
 import { createWalletServer } from '../support/wallet-server.mjs';
@@ -79,7 +80,7 @@ after(async () => {
  * Positions of wallet-test-v2, Test Wallet A connected on Robinhood Chain with one open V1 position. `hooks`: the page's
  * `window.__dominoV2Test`; `readV6(method, route, body)`: the site's read-v6 route ({ status, body, contract }), recorded.
  */
-async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positions', privateReceipts = null, localCloses = [], sessionDisabled = false, refresh = false, chainOptions = {}, stored = undefined, ledgerReply = null, connect = true } = {}) {
+async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positions', privateReceipts = null, localCloses = [], sessionDisabled = false, refresh = false, chainOptions = {}, stored = undefined, ledgerReply = null, connect = true, artwork = null } = {}) {
   const fake = createFakeSession();
   fake.controls.disabled = sessionDisabled;
   const chain = browserChain({ positions: [onChain(V1_OPEN)], tokens: TOKENS, ...chainOptions });
@@ -120,7 +121,7 @@ async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positio
   const context = await browser.newContext({ viewport: { width: 1320, height: 1000 } });
   const errors = [];
   await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
-  await context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await context.route(ARTWORK, artwork ?? ((route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })));
   await routeChain(context, chain);
   if (ledgerReply) await context.route('**/api/fees/v2/ledger', async route => {
     const body = route.request().postDataJSON();
@@ -258,6 +259,9 @@ test('the unified collection follows external closure on reconnect, retains it t
     assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 1']);
     await s.page.getByRole('tab', { name: /^Closed 1/ }).click();
     await s.page.locator(`[data-v2-position-row="${rowKey('7')}"] [data-position-status="closed"]`).waitFor();
+    const closed = s.page.locator(`[data-v2-position-row="${rowKey('7')}"]`);
+    assert.match(await closed.locator('[data-cell="fees"]').innerText(), /0\.0012 USDG/, 'external closure does not hide uncollected fees');
+    assert.ok(await closed.locator('[data-cell="principal"]').evaluate(cell => cell.closest('.dm-own-empty-figure')?.getBoundingClientRect().height <= 1), 'known empty principal becomes a history row');
     failure = true;
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
     await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor();
@@ -265,7 +269,7 @@ test('the unified collection follows external closure on reconnect, retains it t
     for (const width of [1024, 736, 390, 320]) {
       await s.page.setViewportSize({ width, height: 980 });
       assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `collection and wallet fit ${width}px`);
-      assert.equal(await s.page.locator('[data-owned] .dm-own-label').evaluateAll(labels => labels.every(label => label.getBoundingClientRect().right <= label.parentElement.getBoundingClientRect().right + 1)), true, `column labels stay in their cells at ${width}px`);
+      assert.equal(await s.page.locator('[data-owned] .dm-own-label').evaluateAll(labels => labels.filter(label => !label.closest('.dm-own-empty-figure')).every(label => label.getBoundingClientRect().right <= label.parentElement.getBoundingClientRect().right + 1)), true, `visible column labels stay in their cells at ${width}px`);
     }
     await s.page.locator('[data-owned]').screenshot({ path: join(shots(), 'positions-unified-closed-320.png'), animations: 'disabled' });
     assert.equal(s.wallet.state.signed.length, 0, 'inventory refresh requires no wallet transaction');
@@ -753,6 +757,68 @@ test('setup is one human receipt with all effects, one gas cost and open details
         assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         await s.page.locator('main').screenshot({ path: join(process.env.DOMINO_RECEIPT_SHOTS, `receipts-grouped-${width}.png`), animations: 'disabled' });
       }
+    }
+  } finally { await s.close(); }
+});
+
+test('compact Open and Closed rows resolve real token artwork by identity and retain fees without a wall of zeroes', async () => {
+  const pons = '0x39dbed3a2bd333467115de45665cc57f813c4571';
+  const manager = fixture('portfolio.json').positions[0].positionManager;
+  const pool = { dex: 4, currency0: pons, currency1: USDG, fee: 3000, tickSpacing: 60, hooks: zeroAddress };
+  const common = { chainId: 4663, manager, owner: OWNER, pool, tickLower: -60, tickUpper: 60, sqrtPriceX96: 2n ** 96n, tick: 0 };
+  const positions = [
+    livePosition({ ...common, tokenId: 41n, liquidity: 10n ** 18n, principal: ['1000000000000000000', '1000000'] }),
+    livePosition({ ...common, tokenId: 42n, liquidity: 0n }),
+    livePosition({ ...common, tokenId: 43n, liquidity: 0n, feesOwed: ['0', '1000000'] }),
+    livePosition({ ...common, tokenId: 44n, liquidity: 0n }),
+  ];
+  const own = portfolioOf({ wallet: OWNER, positions, tokens: [indexedToken(4663, pons, 'PONS', 18), indexedToken(4663, USDG, 'USDG', 6)] });
+  const askedArtwork = [];
+  const image = 'https://cdn.dexscreener.com/cms/images/positionponsart';
+  const s = await scenario({ hooks: LIVE, readV6: routeOn(route => route === 'portfolio' ? own : activityOf({ wallet: OWNER })), artwork: route => {
+    const url = route.request().url(); askedArtwork.push(url);
+    if (url.startsWith(image)) return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aO9sAAAAASUVORK5CYII=', 'base64') });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(url.endsWith(`/robinhood/${pons}`) ? [{ chainId: 'robinhood', baseToken: { address: pons, symbol: 'UNTRUSTED' }, info: { imageUrl: image } }] : []) });
+  } });
+  try {
+    const open = s.page.locator(`[data-v2-position-row="${rowKey('41')}"]`);
+    await open.locator('[data-token-mark="provider"]').waitFor();
+    await s.page.waitForFunction(key => { const image = document.querySelector(`[data-v2-position-row="${key}"] [data-token-mark="provider"]`); return image?.complete && image.naturalWidth > 0; }, rowKey('41'));
+    assert.equal(await open.locator('[data-token-mark="provider"]').getAttribute('src'), `${image}?width=64&height=64&quality=85&format=auto`);
+    assert.match(await open.innerText(), /PONS/);
+    assert.doesNotMatch(await open.innerText(), /UNTRUSTED/);
+    assert.equal(await open.locator('[data-v2-chain-badge], [data-v2-dex-badge], .dm-own-badge').count(), 0, 'metadata is a quiet line, not repeated badges');
+    assert.equal(await open.locator('[data-cell="apr"]').count(), 1);
+    await s.page.getByRole('tab', { name: /^Open 2/ }).waitFor();
+    await s.page.getByRole('tab', { name: /^Closed 3/ }).click();
+    const closed = s.page.locator(`[data-v2-position-row="${rowKey('42')}"]`);
+    const fees = s.page.locator(`[data-v2-position-row="${rowKey('43')}"]`);
+    await closed.waitFor();
+    assert.equal(await closed.locator('.dm-own-closed-caption').innerText(), 'View history');
+    assert.equal(await closed.locator('[data-cell="apr"]').count(), 0);
+    assert.match(await closed.innerText(), /0 PONS[\s\S]*0 USDG/, 'measured zero amounts remain accessible');
+    assert.ok(await closed.locator('.dm-own-figs').evaluate(node => node.getBoundingClientRect().height <= 1), 'known zeroes do not occupy visible columns');
+    assert.match(await fees.locator('[data-cell="fees"]').innerText(), /1 USDG/, 'uncollected fees on a closed NFT stay visible');
+    assert.ok(await fees.locator('[data-cell="fees"]').evaluate(node => node.getBoundingClientRect().height > 1));
+    assert.equal(askedArtwork.filter(url => url.endsWith(`/robinhood/${pons}`)).length, 1, 'all open/closed NFTs share one bounded lookup for the same chain/address');
+    for (const width of [1320, 1024, 736, 390, 320]) {
+      await s.page.setViewportSize({ width, height: 960 });
+      assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Closed fits ${width}px`);
+      assert.ok(await closed.evaluate(node => node.getBoundingClientRect().height >= 44), 'whole-row touch target remains usable');
+      await s.page.locator('[data-owned]').screenshot({ path: join(shots(), `positions-clean-closed-${width}.png`), animations: 'disabled' });
+      await s.page.getByRole('tab', { name: /^Open 2/ }).click();
+      await open.waitFor();
+      assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Open fits ${width}px`);
+      assert.ok(await open.evaluate(node => node.scrollWidth <= node.clientWidth), 'row contents fit the collection');
+      assert.ok(await open.locator('[data-cell="principal"]').isVisible());
+      assert.ok(await open.locator('[data-cell="fees"]').isVisible());
+      assert.ok(await open.evaluate(row => [...row.querySelectorAll('.dm-own-label')].every(label => {
+        const own = label.getBoundingClientRect(); const cell = label.parentElement.getBoundingClientRect();
+        return own.left >= cell.left - 1 && own.right <= cell.right + 1;
+      })), 'financial labels wrap inside their own cells without overlapping adjacent metrics');
+      assert.equal(await open.locator('a, button').count(), 0, 'the row stays one clear destination');
+      await s.page.locator('[data-owned]').screenshot({ path: join(shots(), `positions-clean-open-${width}.png`), animations: 'disabled' });
+      await s.page.getByRole('tab', { name: /^Closed 3/ }).click();
     }
   } finally { await s.close(); }
 });

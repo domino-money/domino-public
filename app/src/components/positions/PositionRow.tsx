@@ -26,6 +26,7 @@ import { positive, unitsText } from './visual/value'
 
 /** The columns' names, for the eye (each cell names itself for a screen reader and, on a phone, for the eye). */
 export function RowsHead({ closed = false }: { closed?: boolean }) {
+  if (closed) return <div className="dm-own-band dm-own-band--closed" aria-hidden="true"><span>Pool</span><span>Position history</span></div>
   return (
     <div className="dm-own-band" aria-hidden="true">
       <span>Pool</span>
@@ -116,11 +117,14 @@ function Apr({ apr, quality, ledger }: { apr: RowApr | null; quality: LoadQualit
  */
 export function PositionRow({ card, block, state = null, apr = null, aprQuality = null, ledger = null, automation }: { card: LiveCard; block: number; state?: PositionState | null; apr?: RowApr | null; aprQuality?: LoadQuality | null; ledger?: LedgerTrace | null; automation?: ReactNode }) {
   const [base, quote] = card.currencies
+  const closed = !card.hasLiquidity
+  const emptyValue = closed && card.principal.every(amount => amount.kind === 'zero')
+  const emptyFees = closed && card.unsettledFees.every(amount => amount.kind === 'zero')
   return (
     <div className="dm-own-item" data-position-item={card.tokenId}>
-      <a href={positionHref(card.tokenId)} className="dm-own-row" data-position-row={card.tokenId} data-snapshot={block}>
+      <a href={positionHref(card.tokenId)} className="dm-own-row" data-position-row={card.tokenId} data-snapshot={block} data-row-state={closed ? 'closed' : 'open'}>
         <span className="dm-own-pool">
-          <TokenMarkPair base={base} quote={quote} size={32} ring="var(--card)" />
+          <TokenMarkPair base={base} quote={quote} size={28} ring="var(--card)" />
           <span className="dm-own-name">
             <span className="dm-own-title">
               <span className="dm-own-pair">
@@ -133,14 +137,16 @@ export function PositionRow({ card, block, state = null, apr = null, aprQuality 
             </span>
             <span className="dm-own-state">
               <PositionStatus card={card} />
+              {closed && <span className="dm-collection-id" aria-hidden="true">#{card.tokenId}</span>}
             </span>
           </span>
         </span>
-        <span className="dm-own-figs">
-          <Money card={card} state={state} which="principal" label="Value" />
-          <Money card={card} state={state} which="unsettledFees" label="Fees ready to collect" />
+        <span className={emptyValue && emptyFees ? 'dm-own-figs dm-own-empty-figure' : 'dm-own-figs'}>
+          <span className={emptyValue ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Money card={card} state={state} which="principal" label="Value" /></span>
+          <span className={emptyFees ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Money card={card} state={state} which="unsettledFees" label="Fees ready to collect" /></span>
           {card.hasLiquidity && <Apr apr={apr} quality={aprQuality} ledger={ledger} />}
         </span>
+        {closed && <span className="dm-own-closed-caption">View history</span>}
         <span className="dm-own-chev">
           <IconChevronRight size={16} />
           <span className="sr-only">Details</span>

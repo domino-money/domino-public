@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 import { Display } from '../ui'
 import { ModeArt, PositionChoiceArt } from './ModeArt'
 import { AUTOMATION_CHOICE_COPY } from './copy'
+import { docsHref } from '../explore/routes'
+import { IconBook } from '../icons'
 
 type Choice = 'plain' | 'protection' | 'compound' | 'domino'
 
@@ -15,7 +17,12 @@ export function AutomationChoice({ kind, children }: { kind: Choice; children: R
         : <PositionChoiceArt kind={kind} />}
     </div>
     <div className="dm-automation-choice-body">
-      <Display as="h2" id={`automate-${kind}`} className="dm-display-card">{copy.title}</Display>
+      <div className="dm-automation-choice-heading">
+        <Display as="h2" id={`automate-${kind}`} className="dm-display-card">{copy.title}</Display>
+        <a className="dm-automation-choice-doc" href={docsHref(copy.docs)} aria-label={`How ${copy.title} works`}>
+          <IconBook size={13} /><span>How it works</span>
+        </a>
+      </div>
       <p className="dm-automation-choice-description">{copy.description}</p>
       <p className="dm-automation-choice-fee">{copy.fee}</p>
       <div className="dm-automation-choice-entry">{children}</div>

@@ -153,8 +153,8 @@ test('the reading finds each kind of text the rules are for, so a rule cannot pa
   assert.ok(!automate.some(([text]) => /improving your fees APR|consumed/.test(text)), 'no promise, no "consumed"');
   const fees = read('components/positions/visual/FeesCard.tsx');
   assert.ok(fees.some(([text, onScreen]) => text === 'Ready to collect' && onScreen), 'either side of a choice in a JSX child');
-  // The same collection label survives a routine refresh; a sustained delay has one separate explanation.
-  assert.ok(fees.some(([text, onScreen]) => text === 'Fee history is taking longer to update. Showing the last available figures.' && onScreen));
+  // The collection label survives refresh; provenance stays in Details and hover text rather than a generic notice.
+  assert.ok(!fees.some(([text, onScreen]) => /taking longer to update/.test(text) && onScreen));
   assert.ok(!fees.some(([text]) => text === 'Ready to collect (saved)'));
   // Changed on purpose 2026-10-01 (audit E20): the routed swap's words are CREATE's now; the one-token line is JSX text.
   assert.ok(read('components/create/StageReview.tsx').some(([text]) => text.startsWith('You put in')), 'JSX text');

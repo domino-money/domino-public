@@ -829,6 +829,7 @@ test('(n) pool-metrics listed: the lean load, then one pool-metrics read a row; 
     await rows.first().locator('[data-pool-figures]').click();
     const dialog = page.locator('[data-pool-figures-dialog]');
     await dialog.waitFor();
+    await dialog.locator('[data-figures-sources] > summary').click();
     const qualified = dialog.locator('[data-figures-qualified="yes"]');
     await qualified.waitFor();
     const facts = await qualified.locator('dl > div').evaluateAll((divs) => divs.map((div) => [div.querySelector('dt').innerText.trim(), div.querySelector('dd').innerText.trim()]));

@@ -11,7 +11,6 @@ import { PositionSkeleton } from '../components/positions/visual/PositionSkeleto
 import { usdgSide } from '../components/positions/visual/value'
 import { Address } from '../components/read/screens/Address'
 import { TokenMarkPair } from '../components/TokenIcon'
-import { DataFreshness } from '../components/DataFreshness'
 import { Button, Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, PageShell } from '../components/ui'
 import { chainState, freshState, takeWarmState } from '../lib/fees/client'
 import { feesStore } from '../lib/fees/spawn'
@@ -340,7 +339,6 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
             {copy !== undefined && (
               <span className="sr-only" data-position-copy="">Saved copy from {shortDate(Math.floor(copy / 1000))} {shortTime(Math.floor(copy / 1000))}</span>
             )}
-            <DataFreshness active={copy !== undefined || gateway} scope={`position-${card.tokenId}`} detail={`Last available block: ${block}`} />
             <div className="dm-pos-chips">
               {/* "fee" after the pool's fee tier (2026-09-27): beside Your APR, a bare percentage would read as a yield.
                   Changed on purpose 2026-10-01 (audit E5): the NFT's number left the chip for Details, the tab's title

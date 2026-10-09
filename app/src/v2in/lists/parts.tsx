@@ -1,11 +1,13 @@
 import { formatUsdFloor } from '../../lib/format/usd'
 import type { ReactNode } from 'react'
 import { Figure } from '../../components/positions/Figure'
-import { QuietMarkPair } from '../../components/positions/visual/QuietMarks'
+import { TokenMarkPair } from '../../components/TokenIcon'
 import { IconChevronRight } from '../../components/icons'
 import { Badge, Pill, Skeleton } from '../../components/ui'
 import type { RowApr } from '../../components/positions/listApr'
 import type { AmountShown, PositionRowView, TokenName } from './model'
+import { markOf } from '../position/marks'
+import { positionBurn } from './positionSync'
 
 /*
  * The pieces the lists draw for read-v6's positions, in V1's own row markup and classes (components/positions/PositionRow.tsx,
@@ -147,13 +149,14 @@ function Amounts({ amounts, which, label, unread, usd }: { amounts: readonly [Am
   )
 }
 
-/** Two quiet marks for the pair (no request is made for artwork), or two plain discs for a position not read. */
+/** Same bounded chain/address artwork as the position detail, including its shared cache. */
 function Marks({ tokens }: { tokens: readonly [TokenName, TokenName] | null }) {
-  if (tokens) return <QuietMarkPair addresses={[tokens[0].address, tokens[1].address]} size={32} />
+  const mark = (token: TokenName) => markOf(token.chainId, { address: token.address, symbol: token.symbol ? token.label : null, decimals: token.decimals })
+  if (tokens) return <TokenMarkPair base={mark(tokens[0])} quote={mark(tokens[1])} size={28} />
   return (
     <span className="inline-flex shrink-0 items-center" aria-hidden="true">
-      <span className="inline-block size-8 rounded-full border-2 border-[var(--card)] bg-surface-3" />
-      <span className="-ml-[0.625rem] inline-block size-8 rounded-full border-2 border-[var(--card)] bg-surface-3" />
+      <span className="inline-block size-7 rounded-full border-2 border-[var(--card)] bg-surface-3" />
+      <span className="-ml-[0.525rem] inline-block size-7 rounded-full border-2 border-[var(--card)] bg-surface-3" />
     </span>
   )
 }
@@ -164,7 +167,7 @@ function VaultColumn({ row }: { row: PositionRowView }) {
   if (!vault) return null
   return (
     <span className="dm-collection-auto" data-v2-vault-role={vault.role}>
-      <span className="dm-own-badge" data-running={vault.running ? '' : undefined}>
+      <span className="dm-collection-mode" data-running={vault.running ? '' : undefined}>
         {vault.name ?? 'Automation'}
       </span>
       {vault.word && <span className="dm-own-badge-word">{vault.word}</span>}
@@ -174,6 +177,11 @@ function VaultColumn({ row }: { row: PositionRowView }) {
 
 /** One of the person's own positions read from read-v6, as a row of Your positions. */
 export function V2PositionRow({ row, apr = null }: { row: PositionRowView; apr?: RowApr | null }) {
+  const closed = row.state === 'closed'
+  const emptyValue = closed && row.value?.every(amount => amount.kind === 'zero')
+  const emptyFees = closed && row.fees?.every(amount => amount.kind === 'zero')
+  const terminal = positionBurn(row)
+  const burned = closed && terminal !== null && terminal.block >= (row.block ?? 0)
   const pair: ReactNode = row.tokens ? (
     <>
       <TokenText token={row.tokens[0]} /> / <TokenText token={row.tokens[1]} />
@@ -183,7 +191,7 @@ export function V2PositionRow({ row, apr = null }: { row: PositionRowView; apr?:
   )
   return (
     <div className="dm-own-item" data-v2-position-item={row.key}>
-      <a href={row.href} className="dm-own-row" data-v2-position-row={row.key} data-v2-row-status={row.status} data-position-block={row.block ?? undefined}>
+      <a href={row.href} className="dm-own-row" data-v2-position-row={row.key} data-v2-row-status={row.status} data-position-block={row.block ?? undefined} data-row-state={closed ? 'closed' : 'open'}>
         <span className="dm-own-pool">
           <Marks tokens={row.tokens} />
           <span className="dm-own-name">
@@ -195,15 +203,16 @@ export function V2PositionRow({ row, apr = null }: { row: PositionRowView; apr?:
                 </span>
               )}
               {/* In the title line, which wraps, and which V1's phone layout gives the row's whole width (styles/positions.css). */}
-              <ChainBadge name={row.chain} chainId={row.chainId} compact />{' '}
-              <DexBadge name={row.dexName} dex={row.dex} />
+              <span className="sr-only">{row.dexName}. </span>
               <span className="sr-only">
                 Position #{row.tokenId} on {row.chain}
               </span>
             </span>
             <span className="dm-own-state flex-wrap gap-1.5">
+              <span className="dm-collection-network" data-v2-chain={row.chainId} title={`${row.chain} · ${row.dexName}`}>{row.chain}</span>
               <RowStatus row={row} />
               <VaultColumn row={row} />
+              {closed && <span className="dm-collection-id" aria-hidden="true">#{row.tokenId}</span>}
               {row.stale && <span className="sr-only" data-v2-stale={row.stale}>{row.stale}</span>}
             </span>
             {row.family && (row.family.successors > 0 || row.family.reserves !== null) && <span className="dm-collection-family">{[
@@ -212,14 +221,15 @@ export function V2PositionRow({ row, apr = null }: { row: PositionRowView; apr?:
             ].filter(Boolean).join(' · ')}</span>}
           </span>
         </span>
-        <span className="dm-own-figs">
-          <Amounts amounts={row.value} which="principal" label="Value" unread={row.unread} usd={row.valueUsd} />
-          <Amounts amounts={row.fees} which="fees" label="Fees" unread={row.unread} usd={row.feesUsd} />
-          <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : apr?.kind ?? 'none'}>
+        <span className={closed && ((emptyValue && emptyFees) || burned) ? 'dm-own-figs dm-own-empty-figure' : 'dm-own-figs'}>
+          <span className={emptyValue || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.value} which="principal" label="Value" unread={row.unread} usd={row.valueUsd} /></span>
+          <span className={emptyFees || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.fees} which="fees" label="Fees ready to collect" unread={row.unread} usd={row.feesUsd} /></span>
+          {!closed && <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : apr?.kind ?? 'none'}>
             <span className="dm-own-label">Your APR</span>
             {apr?.kind === 'loading' ? <Skeleton className="dm-collection-apr-loading" /> : apr?.kind === 'rate' ? <span className="dm-own-fig" title={apr.saved ? 'Last verified position history. Updating automatically.' : 'Annualized fees earned by this position since it opened.'}>{apr.text}</span> : <span className="dm-own-dash" title={apr?.kind === 'missing' ? apr.words : 'The position’s verified fee history is not available yet.'}>—</span>}
-          </span>
+          </span>}
         </span>
+        {closed && <span className="dm-own-closed-caption">View history</span>}
         <span className="dm-own-chev">
           <IconChevronRight size={16} />
           <span className="sr-only">Details</span>

@@ -260,6 +260,7 @@ test('the landing reads one listed pool, never a placeholder id, and pool activi
   await page.locator('#pools [data-pool-figures]').click();
   await page.locator('[data-pool-figures-dialog]').waitFor();
   await page.waitForFunction(() => document.querySelector('[data-figures-activity]')?.getAttribute('data-figures-activity') !== 'loading', null, { timeout: 30_000 });
+  await page.locator('[data-figures-sources] > summary').click();
   assert.equal(routes().filter((r) => r === 'pool-activity').length, 1);
   assert.match(await page.locator('[data-pool-figures-dialog]').innerText(), /Pool is 19 s old/);
   // Changed on purpose 2026-09-28 (speed wave, item 1): the dialog's read shares the table's budget, no longer 1.1 s apart.

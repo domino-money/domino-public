@@ -887,3 +887,32 @@
 .dm-automated-link:focus-visible { outline: 0.125rem solid var(--ring); outline-offset: 0.125rem; }
 .dm-automated-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: var(--fg-muted); }
 @media (max-width: 29.9375rem) { .dm-automation-panel:not([hidden]) { padding: 0.875rem; } }
+
+/* A position is one destination. Metadata stays quiet; known empty closed NFTs read as history, not a table of zeroes. */
+.dm-own-figure-slot { display: contents; }
+.dm-own-empty-figure, .dm-own-row[data-row-state="closed"] [data-position-status="closed"] { position: absolute !important; width: 1px !important; height: 1px !important; margin: -1px !important; padding: 0 !important; overflow: hidden !important; clip-path: inset(50%) !important; white-space: nowrap !important; border: 0 !important; }
+.dm-own-pair { font-size: 1.125rem; line-height: 1.4; }
+.dm-own-fee { font-size: .9375rem; }
+.dm-own-state { align-items: center; flex-wrap: wrap; gap: .375rem; font-size: .9375rem; line-height: 1.4; color: var(--fg-muted); }
+.dm-own-state > .dm-pill { min-height: 0; padding: 0; border: 0; background: transparent; font-size: inherit; line-height: inherit; }
+.dm-own-fig { font-size: 1.125rem; }
+.dm-own-amounts .dm-acct-amount { font-size: .9375rem; }
+.dm-collection-id { color: var(--fg-subtle); font-size: .9375rem; }
+.dm-collection-id::before { content: '·'; margin-inline-end: .375rem; }
+.dm-own-row[data-row-state="closed"] .dm-collection-id::before { content: none; }
+.dm-own-closed-caption { color: var(--fg-subtle); font-size: .9375rem; white-space: nowrap; }
+.dm-own-list:has(> .dm-own-band--closed) { display: block; }
+.dm-own-band--closed { display: flex; justify-content: space-between; }
+.dm-own-row[data-row-state="closed"] { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto; gap: .625rem 1rem; min-height: 4rem; }
+.dm-own-row[data-row-state="closed"] .dm-own-pool { display: flex; grid-column: 1; gap: .75rem; }
+.dm-own-row[data-row-state="closed"] .dm-own-name { display: grid; gap: .25rem; }
+.dm-own-row[data-row-state="closed"] .dm-own-title, .dm-own-row[data-row-state="closed"] .dm-own-state { grid-column: auto; grid-row: auto; }
+.dm-own-row[data-row-state="closed"] .dm-own-closed-caption { grid-column: 2; grid-row: 1; align-self: center; }
+.dm-own-row[data-row-state="closed"] .dm-own-chev { display: none; }
+.dm-own-row[data-row-state="closed"] .dm-own-figs:not(.dm-own-empty-figure) { position: static; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 1.5rem; grid-column: 1 / -1; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; white-space: normal; }
+.dm-own-row[data-row-state="closed"] .dm-own-label { position: static; width: auto; height: auto; margin: 0 0 .125rem; overflow: visible; clip: auto; white-space: normal; color: var(--fg-subtle); font-size: .9375rem; }
+.dm-own-row[data-row-state="closed"] :is(.dm-own-fig, .dm-acct-amount) { font-size: .9375rem; }
+@media (max-width: 479px) {
+  .dm-own-row[data-row-state="closed"] { column-gap: .5rem; }
+  .dm-own-row[data-row-state="closed"] .dm-own-closed-caption { font-size: .9375rem; }
+}

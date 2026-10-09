@@ -91,7 +91,7 @@ test('the actions\' one shape from read-v6: live positions only, the vault\'s ro
   assert.equal(tokens.amountText(book, USDG, 1_202_000n), '1.202 USDG');
 });
 
-test('the card V1\'s components draw for a read-v6 position: its real pool identity, its amounts, plain marks off Robinhood', () => {
+test('the card and marks preserve exact chain/address identities across supported networks', () => {
   const plain = model.findPosition(portfolio, 4663, 4, 9n);
   const book = tokens.tokenBook(4663, model.tokensOf(portfolio, 4663));
   const drawn = card.cardOf(plain, book);
@@ -108,8 +108,11 @@ test('the card V1\'s components draw for a read-v6 position: its real pool ident
   assert.deepEqual(card.poolIdentity(8453, v3.pool), { kind: 'v3', address });
   const baseCard = card.cardOf(v3, tokens.tokenBook(8453));
   assert.equal(baseCard.poolId, `0x${address.slice(2).padStart(64, '0')}`);
-  assert.deepEqual(baseCard.currencies.map((token) => [token.symbol, token.readStatus, token.artwork]), [['WETH', 'no_contract', null], ['USDC', 'no_contract', null]], 'another chain\'s tokens are never looked up as Robinhood\'s');
+  assert.deepEqual(baseCard.currencies.map((token) => [token.chainId, token.symbol, token.readStatus, token.artwork]), [[8453, 'WETH', 'available', 'WETH'], [8453, 'USDC', 'available', null]], 'metadata and artwork resolve on the actual network');
   assert.equal(marks.markOf(4663, { address: USDG, symbol: 'USDG', decimals: 6 }).readStatus, 'available');
+  assert.equal(marks.markOf(8453, { address: USDG, symbol: 'USDG', decimals: 6 }).artwork, null, 'same address on another chain never inherits Robinhood curated artwork');
+  const generic = marks.markOf(42161, { address: MANY, symbol: 'USDG', decimals: null });
+  assert.deepEqual([generic.chainId, generic.readStatus, generic.artwork], [42161, 'partial', null], 'a symbol cannot select artwork or turn missing metadata into a nonexistent contract');
 });
 
 test('the failures\' words: the money clients\' codes (rev2 review F1-F4), the plan API\'s table, the wallet\'s refusal; the code never in the text', () => {

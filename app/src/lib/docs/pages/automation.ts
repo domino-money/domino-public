@@ -159,7 +159,7 @@ export const AUTO_EXIT: DocPage = {
       id: 'turn-it-on',
       title: 'Turn it on',
       blocks: [
-        p('Select ', b('Auto-exit'), ' below a position’s title, on any network, or right after you create a position. The dialog shows where it closes, the price now and its fee. ', b('Turn on Auto-exit'), ' asks your wallet for one signature, then one confirmation when your wallet can send the calls together.'),
+        p('On Automate, select ', b('Choose a position'), ' under Auto-exit, then choose the position. You can also select ', b('Auto-exit'), ' below a position’s title, or right after you create a position. The dialog shows where it closes, the price now and its fee. ', b('Turn on Auto-exit'), ' asks your wallet for one signature, then one confirmation when your wallet can send the calls together.'),
         p('Behind it, Domino sets up an automation for that position alone, which never reinvests. Your position stays in your wallet. ', b('Details'), ' has the exact terms: both tokens as they come out, a 1% slippage limit on top of the pool fee, valid for a year.'),
       ],
     },

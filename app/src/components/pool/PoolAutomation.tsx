@@ -1,16 +1,17 @@
-import { FEATURES, FEATURE_ORDER } from '../../lib/automate/features'
+import { AUTO_EXIT_FEATURE, FEATURES, FEATURE_ORDER } from '../../lib/automate/features'
 import { docsHref } from '../explore/routes'
 import { IconCheck } from '../icons'
 
 /** Where each feature is explained. */
-const DOCS: Record<string, string | null> = { plain: 'earned-fees', compound: 'auto-compound', domino: 'domino-compound' }
+const DOCS: Record<string, string> = { plain: 'new-position', protection: 'auto-exit', compound: 'auto-compound', domino: 'domino-compound' }
 
 /**
- * What Domino can do in this pool, the product's three features side by side (lib/automate/features.ts): a plain
- * position, and the two ways to put its fees to work. They work in a pool with no hooks and a fixed fee, the pools New
+ * The same choices as Automate: create a position, protect its range, or put its fees to work.
+ * They work in a pool with no hooks and a fixed fee, the pools New
  * position opens positions in and a sequence accepts; any other pool says so in one line. `why` is that line's reason.
  */
 export function PoolAutomation({ usable, why }: { usable: boolean; why: string }) {
+  const choices = __DOMINO_V2__ ? ['plain', 'protection', 'compound', 'domino'] as const : FEATURE_ORDER
   return (
     <section className="dm-card dm-pool-card dm-pool-auto" aria-labelledby="pool-auto-title" data-pool-automation={usable ? 'available' : 'unavailable'}>
       <h2 id="pool-auto-title" className="dm-title">
@@ -18,10 +19,10 @@ export function PoolAutomation({ usable, why }: { usable: boolean; why: string }
       </h2>
       {usable ? (
         <>
-          <p className="dm-pool-lead">Create a position, then choose in Automate what happens to its fees.</p>
+          <p className="dm-pool-lead">Create a position, then choose how Domino manages it.</p>
           <ul className="dm-pool-auto-list">
-            {FEATURE_ORDER.map((key) => {
-              const feature = FEATURES[key]
+            {choices.map((key) => {
+              const feature = key === 'protection' ? AUTO_EXIT_FEATURE : FEATURES[key]
               const slug = DOCS[key]
               return (
                 <li key={key} data-feature={key}>
@@ -30,8 +31,8 @@ export function PoolAutomation({ usable, why }: { usable: boolean; why: string }
                   </span>
                   <span className="dm-pool-auto-body">
                     <span className="dm-pool-auto-name">
-                      {slug ? <a href={docsHref(slug)}>{feature.name}</a> : feature.name}
-                      <span className="dm-pool-auto-fee">{feature.fee ? `${feature.fee} of fees` : 'No service fee'}</span>
+                      <a href={docsHref(slug)}>{key === 'plain' ? 'New position' : feature.name}</a>
+                      <span className="dm-pool-auto-fee">{key === 'protection' ? feature.fee : feature.fee ? `${feature.fee} of fees` : 'No service fee'}</span>
                     </span>
                     <span className="dm-pool-auto-line">{feature.line}</span>
                   </span>

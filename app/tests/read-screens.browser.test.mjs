@@ -954,13 +954,17 @@ test('provider figures carry their source and retrieval on the row; every cell w
   assert.equal(before, 0, 'no pool-activity read before the dialog opens');
   const dialog = await openFigures(page);
   assert.equal(await page.evaluate(() => document.activeElement?.id), 'pool-figures-title');
+  assert.equal((await dialog.locator('#pool-figures-title').innerText()).replace(/\s*\/\s*/g, '/'), `${await page.locator('tbody .dm-mkt-name').innerText()} figures`, 'the pair keeps the same orientation as the row');
+  assert.equal(await dialog.locator('[data-figures-sources]').getAttribute('open'), null);
+  assert.match(await dialog.locator('[data-figures-summary]').innerText(), /TVL\s+\$12\.3K/);
+  assert.doesNotMatch(await dialog.innerText(), /Domino history, 24h|Time-weighted TVL|Pool is 19 s old/);
+  await dialog.locator('[data-figures-sources] > summary').click();
   const text = await dialog.innerText();
-  // Domino's 24h figures, not read for this row: each a dash that says why in its title, never a sentence.
+  // A provider observation never becomes verified Domino history. Explain the distinction only in Sources.
   const history = dialog.locator('[data-figures-qualified="no"]');
-  const reasons = await history.locator('dd [title]').evaluateAll((els) => els.map((el) => [el.textContent, el.getAttribute('title')]));
-  assert.deepEqual(reasons.map(([dash]) => dash), ['—', '—', '—', '—', '—']);
-  assert.deepEqual(reasons.slice(0, 2).map(([, why]) => why), ['Not qualified: the figure shown is the provider’s', 'Not qualified: the figure shown is the provider’s']);
-  assert.doesNotMatch(await history.innerText(), /yet|usable|need/i);
+  assert.equal(await history.locator('dd').count(), 0, 'no wall of five missing figures');
+  assert.match(await history.innerText(), /Complete 24h pool history isn’t available/);
+  assert.ok(await history.getAttribute('title'), 'the missing history keeps its precise reason');
   // Who reported the figures and when: the figure's title, not a caption under it.
   assert.match(await dialog.locator('[data-provider-figure="attributed"]').first().getAttribute('title'), /^Reported by a market data provider, retrieved \d\d:\d\d:\d\d UTC, 1970-01-01\. Provider-reported, not reconciled with chain data\.$/);
   assert.match(text, /Pool is 19 s old; the 24h window isn’t complete/);
@@ -988,6 +992,7 @@ test('stale, expired, missing and zero provider figures, and an activity read th
   assert.deepEqual(await cellsOf(stale.page), [['stale', '$12.3K'], ['stale', '$0.00']], 'a stale figure is still shown, marked stale');
   assert.match(await stale.page.locator('tbody [data-metric]').first().getAttribute('title'), /Stale, not current\.$/);
   const s = await openFigures(stale.page);
+  await s.locator('[data-figures-sources] > summary').click();
   assert.match(await s.innerText(), /Liquidity\s+\$12\.3K\s+Reported by a market data provider, retrieved [^.]*\. This observation is stale\./);
   await stale.page.close();
 
@@ -1011,6 +1016,7 @@ test('stale, expired, missing and zero provider figures, and an activity read th
   const unavailable = await openCase('figures.activityUnavailable');
   await table(unavailable.page);
   const u = await openFigures(unavailable.page);
+  await u.locator('[data-figures-sources] > summary').click();
   assert.equal(await u.locator('[data-figures-activity]').getAttribute('data-figures-activity'), 'failed');
   assert.match(await u.innerText(), /Pool activity data unavailable/);
   await unavailable.page.close();
@@ -1072,6 +1078,7 @@ test('the figures dialog ages with the row behind it, and says stale when the ro
   await page.locator('#root tbody tr').first().waitFor();
 
   const dialog = await openFigures(page);
+  await dialog.locator('[data-figures-sources] > summary').click();
   assert.equal(await dialog.locator('[data-provider-figure="attributed_stale"]').count(), 0, 'nothing is stale yet');
   // The provenance moved off the line into the figure's title with the rest of the
   // provider captions, and says when the observation was retrieved rather than how

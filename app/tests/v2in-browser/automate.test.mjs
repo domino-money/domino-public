@@ -333,6 +333,75 @@ const rootOnV1 = ({ holder = OWNER, liquidity = 0n, burned = false } = {}) => br
 // Preview
 // ---------------------------------------------------------------------------
 
+test('Auto-exit entry chooses a chain-qualified NFT and opens the existing dialog; back, cancel and deep links preserve the intended position', async () => {
+  const ID = '3135288';
+  const holder = ACCOUNTS[0].address.toLowerCase();
+  const v1 = browserChain({ positions: [{ tokenId: ID, holder, key: KEY, tickLower: -600, tickUpper: 600, liquidity: 10n ** 18n }], tokens: TOKENS });
+  const { v2Chain } = require('../../.test-build/app/src/v2/chains.js');
+  const portfolio = plainPortfolio(v1, holder, (body) => {
+    const original = body.positions[0];
+    body.positions.push({ ...structuredClone(original), chainId: 8453, dex: 3, positionManager: v2Chain(8453).uniswap.v3.positionManager,
+      state: { ...structuredClone(original.state), pool: { ...original.state.pool, dex: 3, currency0: v2Chain(8453).wrappedNative.address, currency1: `0x${'f'.repeat(40)}` } } });
+    body.tokens.push({ ...body.tokens[0], chainId: 8453, address: v2Chain(8453).wrappedNative.address, symbol: 'WETH' });
+    body.chains = body.chains.map((chain) => ({ ...body.chains[0], chainId: chain.chainId }));
+    body.coverage = 'complete';
+    body.truncated = { positions: false, mandates: false, vaults: false };
+  });
+  const s = await openPreview(v1, '/automate', { portfolio });
+  const { page } = s;
+  try {
+    const entry = page.locator('[data-v2in-protection]');
+    await entry.waitFor();
+    assert.equal(await entry.getAttribute('href'), '#/sequence/protection');
+    await entry.click();
+    await page.locator('[data-v2in-protection-setup]').waitFor();
+    assert.equal(await page.locator('h1').innerText(), 'Set up Auto-exit');
+    assert.equal(await page.locator('[data-sequence-mode]').count(), 0, 'the selected product is already Auto-exit');
+    assert.equal(await page.locator('[data-protection-position]').count(), 2, 'same numeric ID in two namespaces remains two choices');
+    assert.equal(await page.locator('[data-sequence-action="protection"]').isDisabled(), true);
+    const base = page.locator(`[data-protection-position="8453:3:${ID}"]`);
+    await base.click();
+    await page.locator('[data-sequence-action="protection"]').click();
+    const dialog = page.locator('[data-v2in-dialog="mandate"]');
+    await dialog.waitFor();
+    assert.match(await dialog.innerText(), /live on Base/, 'the existing dialog received the selected chain, not the wallet network');
+    assert.match(await dialog.locator('[data-mandate-fee]').innerText(), /0\.2%/);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    assert.equal(await base.getAttribute('aria-checked'), 'true', 'cancelling the dialog keeps the choice');
+    await page.getByRole('link', { name: 'Back', exact: true }).click();
+    await entry.waitFor();
+    await page.goBack();
+    await page.locator('[data-v2in-protection-setup]').waitFor();
+    await page.evaluate((id) => { location.hash = `#/sequence/protection/robinhood-v4-${id}`; }, ID);
+    await page.locator(`[data-protection-position="4663:4:${ID}"][aria-checked="true"]`).waitFor();
+    await page.evaluate((id) => { location.hash = `#/sequence/protection/base-v3-${id}`; }, ID);
+    await page.locator(`[data-protection-position="8453:3:${ID}"][aria-checked="true"]`).waitFor();
+    await page.goBack();
+    await page.locator(`[data-protection-position="4663:4:${ID}"][aria-checked="true"]`).waitFor();
+    await page.setViewportSize({ width: 320, height: 800 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.locator('main').screenshot({ path: join(shots(), 'autoexit-picker-320.png'), animations: 'disabled' });
+    assert.deepEqual(s.wallet.state.log.filter((entry) => SENDS_AND_SIGNATURES.includes(entry.method) || entry.method === 'wallet_switchEthereumChain'), [], 'picker and preview never sign, send or switch networks');
+  } finally { await s.close(); }
+});
+
+test('Auto-exit picker recovers a failed portfolio read without a reload or a wallet action', async () => {
+  const holder = ACCOUNTS[0].address.toLowerCase();
+  const v1 = browserChain({ positions: [{ tokenId: '3135288', holder, key: KEY, tickLower: -600, tickUpper: 600, liquidity: 10n ** 18n }], tokens: TOKENS });
+  const failed = { status: 503, body: { error: 'upstream_unavailable' } };
+  const s = await openPreview(v1, '/sequence/protection/999999', { portfolio: failed });
+  try {
+    await s.page.locator('[data-sequence-positions="failed"]').waitFor();
+    const portfolio = plainPortfolio(v1, holder);
+    await s.page.evaluate((value) => { window.__dominoV2Test.read6.portfolio = () => value; }, portfolio);
+    await s.page.getByRole('button', { name: 'Try again', exact: true }).click();
+    await s.page.locator('[data-v2in-protection-setup]').waitFor();
+    assert.match(await s.page.locator('[data-sequence-position-missing]').innerText(), /Choose another position/);
+    assert.equal(await s.page.locator('[data-sequence-action="protection"]').isDisabled(), true, 'missing intent never selects an unrelated NFT');
+    assert.deepEqual(s.wallet.state.log.filter((entry) => SENDS_AND_SIGNATURES.includes(entry.method)), []);
+  } finally { await s.close(); }
+});
+
 test('preview: Auto-exit on a plain position the wallet holds: the range\'s two edges, the fee, the rest under Details, and the locked sentence where its one button would be; Managed positions shows nothing of V2 for a wallet read-v6 knows nothing about; nothing reaches the wallet', async () => {
   const ID = '3135288';
   const holder = ACCOUNTS[0].address.toLowerCase();
@@ -626,7 +695,7 @@ test('live: a root closed directly on Uniswap, the vault paused: Managed positio
     assert.match(await row.innerText(), /Auto-compound/);
     assert.match(await row.locator('.dm-own-state').innerText(), /Closed/);
     assert.match(await row.innerText(), /Funds available in automation/);
-    assert.equal(await row.locator('[data-v2-chain-badge="4663"]').count(), 1);
+    assert.equal(await row.locator('[data-v2-chain="4663"]').count(), 1);
     assert.equal(await row.locator('button').count(), 0, 'overview only navigates');
     assert.equal(await row.locator('[data-vault-idle], [data-return-hint], [data-vault-details]').count(), 0, 'the row carries no detail');
     const link = row;
@@ -994,12 +1063,13 @@ test('live: a protection-only automation with its Auto-exit on is ONE card: "Clo
     assert.deepEqual(chain.sends, [], 'nothing sent');
     // Set up automation offers it neither a second Auto-exit nor compounding (rugged97: "auto-exit has no fee compounding").
     await page.evaluate((id) => { location.hash = `#/sequence/protection/${id}`; }, String(ROOT));
-    const setup = page.locator('[data-sequence-positions="empty"]');
+    // The multichain picker also checks Base and Arbitrum; this fixture explicitly leaves those reads unavailable.
+    const setup = page.locator('[data-sequence-positions="failed"]');
     await setup.waitFor({ timeout: 30_000 });
     assert.equal(released.length, 0, 'V2 never asks the inactive V1 release');
     assert.equal(await page.locator('[data-sequence-release="unavailable"]').count(), 0, 'no "Automation can’t be set up here."');
     assert.doesNotMatch(await page.locator('main').innerText(), /Automation can’t be set up here/);
-    assert.match(await setup.innerText(), /This position isn’t available for a new automation/);
+    assert.match(await setup.innerText(), /Your positions couldn’t be checked right now/);
     assert.equal(await page.locator('[data-sequence-action], [data-sequence-mode]').count(), 0, 'an automated NFT cannot choose a second Auto-exit or compounding');
     assert.equal(await setup.locator('[data-v2in-consent]').count(), 0, 'nothing to consent to');
     await setup.screenshot({ path: join(shots(), 'v2in-setup-autoexit-held.png'), animations: 'disabled' });

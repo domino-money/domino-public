@@ -20,7 +20,6 @@ import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { useNow } from '../lib/read/useNow'
 import { useLoadMilestone } from '../lib/useLoadMilestone'
 import { MetricCell, PendingFigure } from './explore/MetricCell'
-import { DataFreshness } from './DataFreshness'
 import { InfoTip } from './InfoTip'
 import { marketsHref, poolHref } from './explore/routes'
 import { IconChevronRight, IconInfo } from './icons'
@@ -489,11 +488,6 @@ export function MarketsTable({
   )
   const said = marketsStatus(state)
   const status = diagnostics ? <ReadStatus status={said} onRetry={retry} /> : <ReadStatus status={said} quiet />
-  const retained = markets.some((market) => {
-    const aged = agedMarket(market, now)
-    const price = marketPoolPrice(aged, now)
-    return [aged.tvlUsd, aged.volume24hUsd, aged.feeAprPercent].some((metric) => metric.state === 'stale') || (price.state === 'usable' && price.stale)
-  })
 
   // Changed on purpose 2026-10-03 (the owner): a short list no longer says "5 of 6 today" over the table. It raised a
   // question the screen can't answer, and a list carried over from an earlier day made its "today" untrue.
@@ -615,7 +609,6 @@ export function MarketsTable({
       ) : (
         table
       )}
-      <DataFreshness active={retained && state.phase !== 'loading'} scope={title} />
       {figures && PoolFiguresSlot && SlotBoundary && SlotFailed && (
         <SlotBoundary fallback={<SlotFailed />}>
           <Suspense fallback={null}>

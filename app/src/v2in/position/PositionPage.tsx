@@ -10,7 +10,6 @@ import { Amount as CardAmount, PairName, PositionStatus } from '../../components
 import { PositionSkeleton } from '../../components/positions/visual/PositionSkeleton'
 import { Address } from '../../components/read/screens/Address'
 import { TokenMarkPair } from '../../components/TokenIcon'
-import { DataFreshness } from '../../components/DataFreshness'
 import { Button, Chip, Display, EmptyState, FigureDash, KeyValue, KeyValueList, PageShell, Stat, StatStrip } from '../../components/ui'
 import { LiveFigure, UsdText } from '../../components/figures'
 import { formatUsdFloor } from '../../lib/format/usd'
@@ -244,7 +243,6 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
               <PositionStatus card={card} />
             </div>
             {coverage && <p className="dm-pos-copy" data-position-coverage="">{coverage}</p>}
-            <DataFreshness active={stale} scope={`position-${chainId}-${position.dex}-${position.tokenId}`} detail={COPY.page.chainStale(chain.name)} />
           </div>
         </div>
         {/* V1's row: one primary button and the "···" menu (./MoreActions.tsx), which says why an entry is disabled. A

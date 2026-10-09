@@ -9,7 +9,7 @@ import { describeError, errorLabels, PROTECTION_CONSENT_TEXT, STEPS_INSTEAD, typ
 import { protectionSettings } from '../automate/form'
 import { portfolioFor } from '../automate/read6'
 import { openAutomation, type AutomationSession } from '../automate/session'
-import { automationState, recordVaultEvents, rememberMandate, rememberVault, sessionMandates, sessionRevoked } from '../automate/store'
+import { automationState, recordVaultEvents, rememberMandate, rememberVault, sessionMandatesFor, sessionRevoked } from '../automate/store'
 import { useStepsRun, WalletSteps, type WalletStep } from '../automate/steps'
 import { dateWords, shortAddress, type TokenView } from '../automate/tokens'
 import { Fact } from '../automate/ui'
@@ -149,7 +149,7 @@ const ALREADY_ON = 'mandate_already_on'
 async function exitOnAlready(gate: Exclude<V2Gate, { mode: 'off' }>, owner: Address, chainId: V2ChainId, dex: Dex, tokenId: bigint): Promise<boolean> {
   const store = automationState()
   const off = sessionRevoked(store, chainId)
-  if (sessionMandates(store, chainId, owner).some((m) => m.registered && m.tokenId === tokenId && !off.has(m.id))) return true
+  if (sessionMandatesFor(store, chainId, owner, tokenId, dex).some((m) => m.registered && !off.has(m.id))) return true
   const answer = await portfolioFor(owner, gate)
   return answer !== null && answer.reply.kind === 'ok' && exitOnPosition(answer.reply.body, chainId, tokenId.toString(), dex, off)
 }
@@ -261,7 +261,7 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
         // One Auto-exit per position (rugged's answer of 6 Oct, §4 item 7): nothing is signed while one is on already.
         if (await exitOnAlready(gate, session.owner, target.chainId, dex, tokenId)) throw new Error(ALREADY_ON)
         const result = await session.autoExit.signMandate(mandate)
-        rememberMandate({ chainId: target.chainId, owner: session.owner, id: mandate.id, nonce: mandate.mandate.nonce, vault: mandate.vault, tokenId: mandate.mandate.tokenId, registered: false, triggers: { below: mandate.mandate.triggerBelowSqrtPriceX96, above: mandate.mandate.triggerAboveSqrtPriceX96 } })
+        rememberMandate({ chainId: target.chainId, dex, owner: session.owner, id: mandate.id, nonce: mandate.mandate.nonce, vault: mandate.vault, tokenId: mandate.mandate.tokenId, registered: false, triggers: { below: mandate.mandate.triggerBelowSqrtPriceX96, above: mandate.mandate.triggerAboveSqrtPriceX96 } })
         setSigned(true)
         return result
       },
@@ -338,7 +338,7 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
       if (outcome.receipt) recordVaultEvents(target.chainId, mandate.vault, outcome.receipt.events)
       if (outcome.step.key === 'create-vault' || outcome.step.key === 'protect-batch') rememberVault(target.chainId, session.owner, mandate.vault)
       if (outcome.step.key === 'register-mandate' || outcome.step.key === 'register-batch' || outcome.step.key === 'protect-batch') {
-        rememberMandate({ chainId: target.chainId, owner: session.owner, id: mandate.id, nonce: mandate.mandate.nonce, vault: mandate.vault, tokenId: mandate.mandate.tokenId, registered: true, triggers: { below: mandate.mandate.triggerBelowSqrtPriceX96, above: mandate.mandate.triggerAboveSqrtPriceX96 } })
+        rememberMandate({ chainId: target.chainId, dex, owner: session.owner, id: mandate.id, nonce: mandate.mandate.nonce, vault: mandate.vault, tokenId: mandate.mandate.tokenId, registered: true, triggers: { below: mandate.mandate.triggerBelowSqrtPriceX96, above: mandate.mandate.triggerAboveSqrtPriceX96 } })
         setRegistered(true)
         onChanged()
       }

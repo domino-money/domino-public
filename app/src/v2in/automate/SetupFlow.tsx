@@ -27,7 +27,7 @@ import { bpsText, defaultSettingsForm, intervalWords, observationAgeWords, setti
 import { gateOpen } from './gate'
 import { LimitsFields } from './LimitsFields'
 import { openAutomation, type AutomationSession } from './session'
-import { automationState, recordVaultEvents, rememberVault, sessionMandates, sessionRevoked, subscribeAutomation } from './store'
+import { automationState, recordVaultEvents, rememberVault, sessionMandatesFor, sessionRevoked, subscribeAutomation } from './store'
 import { useStepsRun, WalletSteps, type WalletStep } from './steps'
 import { poolTokens, shortAddress, walletTokenMeta } from './tokens'
 import { ErrorLine, LockedNote } from './ui'
@@ -111,7 +111,7 @@ export function SetupFlow({ positions, portfolio, intent, gate, exitGate }: {
   const connected = identity.kind === 'connected' ? (identity.address.toLowerCase() as Address) : null
   const store = useSyncExternalStore(subscribeAutomation, automationState, automationState)
   const revoked = sessionRevoked(store, 4663)
-  const turnedOnHere = usable !== null && connected !== null && sessionMandates(store, 4663, connected).some((m) => m.registered && m.tokenId === BigInt(usable.tokenId) && !revoked.has(m.id))
+  const turnedOnHere = usable !== null && connected !== null && sessionMandatesFor(store, 4663, connected, idOf(usable.tokenId), 4).some((m) => m.registered && !revoked.has(m.id))
   const exitStanding: AutoExitStanding = turnedOnHere ? 'on' : usable !== null ? autoExitStanding(portfolio, 4663, usable.tokenId, 4, revoked) : null
   const exitHeld = exitStanding !== null
   const pool = usable ? poolOf(usable) : null

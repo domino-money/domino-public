@@ -84,6 +84,13 @@ test('Markets help works with hover, keyboard and touch; mobile tips fit and Det
     const value = (await row.locator('.dm-mkt-apr').innerText()).match(/[\d,.]+%/)?.[0]
     assert.ok(value, 'the row has a qualified or attributed APR')
     await row.locator('[data-pool-figures]').click()
+    const figures = page.locator('[data-pool-figures-dialog]')
+    await figures.waitFor()
+    assert.equal((await figures.locator('[data-figures-summary]').innerText()).match(/[\d,.]+%/)?.[0], value, 'the concise summary preserves the row’s APR')
+    assert.equal(await figures.locator('[data-figures-sources]').getAttribute('open'), null, 'sources start folded away')
+    assert.doesNotMatch(await figures.innerText(), /Domino history, 24h|Time-weighted TVL|Pool verified|Some figures are taking longer/)
+    assert.ok(await figures.evaluate(el => el.scrollWidth <= el.clientWidth), 'the 320px modal has no horizontal overflow')
+    await figures.locator('[data-figures-sources] > summary').click()
     const explanation = page.locator('[data-pool-figures-dialog] section[aria-labelledby="figures-estimate"]')
     await explanation.waitFor()
     assert.equal((await explanation.innerText()).match(/[\d,.]+%/)?.[0], value, 'Details explains the same APR as the row')

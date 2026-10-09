@@ -22,7 +22,7 @@ import { IndexStatus } from './IndexStatus'
 import { chainView, creditsOn, mandatesOf, mergeCredits, tokenMetaOf, vaultsOfPosition } from './portfolio'
 import { usePortfolio } from './read6'
 import { setupEligibility } from './setupPositions'
-import { approvedAt, automationState, exitModuleSet, sessionMandates, sessionRevoked, subscribeAutomation } from './store'
+import { approvedAt, automationState, exitModuleSet, sessionMandatesFor, sessionRevoked, subscribeAutomation } from './store'
 import { poolTokens, shortAddress, walletTokenMeta } from './tokens'
 import { ReservesWords, VAULT_ACTION_LABEL, VaultCard } from './VaultCard'
 import { VaultDialog, type VaultDialogKind, type VaultDialogSubject } from './VaultDialog'
@@ -170,7 +170,7 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   // the index does not list yet.
   const ordersVault = rootView ?? memberView
   const orders = body && ordersVault ? mandatesOf(body, chainId, ordersVault.vault).filter((order) => order.tokenId === tokenId) : []
-  const mine = connected ? sessionExits(sessionMandates(store, chainId, connected), orders, idOf(tokenId)) : []
+  const mine = connected ? sessionExits(sessionMandatesFor(store, chainId, connected, idOf(tokenId), dex), orders, idOf(tokenId)) : []
   const exitState = exitCardState(orders, mine, sessionRevoked(store, chainId))
   // Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "auto-exit has no fee compounding"; one Auto-exit per
   // position): offered only while none is on, and only on the position's own protection-only vault (paused, auto-exit on),

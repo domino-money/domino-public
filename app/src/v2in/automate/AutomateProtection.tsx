@@ -10,9 +10,7 @@ import { gateOpen, useGate } from './gate'
  * Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "this stop loss-take profit product was named wrong. It is
  * AUTO-EXIT. When the price hits the edge of the range we close the position automatically and send the tokens to the
  * wallet"): its name and one line, and shown wherever Domino's automation and auto-exit are open on any of its three
- * networks (it was Robinhood Chain's alone). Changed on purpose 2026-10-06 (the review of point 5): it leads to Positions,
- * where every network's position has its own Auto-exit on its page, and no longer to Set up automation, which lists
- * Robinhood Chain's positions alone and depends on V1's automation release.
+ * networks. The dedicated picker uses those same networks and opens the existing V2 Auto-exit dialog.
  */
 export default function AutomateProtection() {
   const vault4663 = useGate('vault', 4663)
@@ -25,7 +23,7 @@ export default function AutomateProtection() {
   const pending = [vault4663, exit4663, vault8453, exit8453, vault42161, exit42161].some((gate) => gate === null)
   return (
     <AutomationChoice kind="protection">
-      {anywhere ? <LinkButton href="#/positions" variant="outline" data-v2in-protection="">
+      {anywhere ? <LinkButton href="#/sequence/protection" variant="outline" data-v2in-protection="">
         Choose a position
         <IconChevronRight />
       </LinkButton> : <Button disabled>{pending ? 'Checking availability…' : 'Unavailable right now'}</Button>}

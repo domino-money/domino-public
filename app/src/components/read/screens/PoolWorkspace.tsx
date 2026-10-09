@@ -18,7 +18,6 @@ import { APR_SLIVER } from '../../../lib/format/apr'
 import { feeChipText } from '../../../lib/format/fee'
 import { useLoadMilestone } from '../../../lib/useLoadMilestone'
 import { MetricCell, TurnoverCell } from '../../explore/MetricCell'
-import { DataFreshness } from '../../DataFreshness'
 import { PoolTokenLabel } from '../../PoolCatalogueIdentity'
 import { TokenMarkPair } from '../../TokenIcon'
 import { FigureDash, Skeleton, Stat, StatStrip } from '../../ui'
@@ -321,12 +320,6 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
   // The money in the pool, which shares its fees with an amount added (the estimate), where the TVL is a figure.
   const tvlMetric = shown?.tvlUsd ?? standIns?.tvl ?? null
   const tvl = tvlMetric && presentMetric(tvlMetric).kind === 'value' ? numberOf(tvlMetric.value) : null
-  // Name only retained figures actually displayed. A missing, partial or rejected value never becomes “saved”.
-  const savedMetrics = [
-    ...(savedApr && aprNumber !== null ? ['APR'] : []),
-    ...([['TVL', tvlMetric], ['24h volume', shown?.volume24hUsd ?? standIns?.volume], ['24h fees', metricsListed ? shown?.lpFees24hUsd : null]] as const)
-      .filter(([, metric]) => metric?.state === 'stale' && metric.value !== null).map(([label]) => label),
-  ]
   // Fees in dollars only where the pool holds USDG, at the pool's own price with 1 USDG = $1 (lib/format/usd.ts).
   const usd = isUsdg(quote.address) && priceNow !== null ? { usdgIndex: quoteIndex, price: numberOf(priceNow) ?? 0 } : null
 
@@ -397,7 +390,6 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
             : <FigureDash reason={price.state === 'usable' ? 'The price can’t be written as a plain number.' : COPY.range.problems[price.problem]} />}
         </Stat>
       </StatStrip>
-      <DataFreshness active={savedMetrics.length > 0 || (price.state === 'usable' && price.stale)} scope={poolId} detail={observation} />
       <p role="status" aria-live="polite" className="sr-only" data-pool-status={loading ? 'loading' : failure ? failure.state : 'none'}>
         {loading ? 'Reading pool figures…' : failed && !shown ? failed : ''}
       </p>

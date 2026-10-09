@@ -22,7 +22,7 @@ const row = (poolId) => ({ poolId, tokens: { base: token('1'), quote: token('2')
 const Container = ({ children }) => React.createElement('div', null, children)
 const stub = (name) => Object.defineProperty(() => null, 'displayName', { value: name })
 const parts = Object.fromEntries([
-  'PoolPicker', 'PoolSelectionDialog', 'PoolWorkspace', 'TokenPicker', 'TokenLookup', 'CatalogueCandidates', 'WalletCandidates', 'PoolPriceChart', 'PoolHistoryChart', 'PoolRangeControls', 'DataFreshness',
+  'PoolPicker', 'PoolSelectionDialog', 'PoolWorkspace', 'TokenPicker', 'TokenLookup', 'CatalogueCandidates', 'WalletCandidates', 'PoolPriceChart', 'PoolHistoryChart', 'PoolRangeControls',
   'PoolAprEstimate', 'IconChevronLeft', 'PoolCatalogueIdentity', 'PoolTokenLabel', 'TokenMark', 'TokenMarkPair', 'SymbolText', 'Address', 'MetricCell', 'TurnoverCell', 'Tabs', 'Skeleton',
   'CopyButton', 'ProviderFigure', 'EmptyState', 'LinkButton', 'SelectedPoolsTable', 'MarketsTable', 'TokensTable', 'SearchField', 'PageHeader', 'PoolActivityCard', 'PoolPositionsCard',
   // 2026-09-27 (round 6, the pool page for beginners): its new cards (src/components/pool/), each checked for real below.
@@ -815,7 +815,7 @@ function real(relative, expose = '') {
     const typed = ['.ts', '.tsx', '/index.ts', '/index.tsx'].map((suffix) => path + suffix).find(existsSync)
     return typed ? real(typed) : createRequire(file)(name)
   }
-  new Function('require', 'module', 'exports', code)(local, mod, mod.exports)
+  new Function('require', 'module', 'exports', '__DOMINO_V2__', code)(local, mod, mod.exports, true)
   return mod.exports
 }
 const gatewayFixture = (name) => JSON.parse(readFileSync(resolve(root, `../api-contracts/read-v1/fixtures/gateway/${name}.json`), 'utf8'))
@@ -1702,15 +1702,16 @@ test('round 6: a typical range draws the band, the price now and the last day, a
   assert.match(none, /This pool’s price can’t be drawn as a range here\./)
 })
 
-test('round 6: what Domino can do in a pool: the three features with their fees where a position can be opened, one line where not', () => {
+test('what Domino can do in a pool: the four V2 choices link their own docs and show the exact fee basis', () => {
   const { PoolAutomation } = real('src/components/pool/PoolAutomation.tsx')
   const yes = renderToStaticMarkup(React.createElement(PoolAutomation, { usable: true, why: '' }))
   const text = yes.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
   assert.match(yes, /data-pool-automation="available"/)
-  assert.match(text, /Plain position No service fee Fees wait in the position until you collect them\./)
+  assert.match(text, /New position No service fee Fees wait in the position until you collect them\./)
+  assert.match(text, /Auto-exit 0\.2% if it closes/)
   assert.match(text, /Auto-compound 2% of fees Fees go back into the same position\./)
   assert.match(text, /Domino-compound 4% of fees Fees can fund the next range one step higher\./)
-  assert.deepEqual([...yes.matchAll(/href="([^"]+)"/g)].map(([, href]) => href), ['#/docs/earned-fees', '#/docs/auto-compound', '#/docs/domino-compound'])
+  assert.deepEqual([...yes.matchAll(/href="([^"]+)"/g)].map(([, href]) => href), ['#/docs/new-position', '#/docs/auto-exit', '#/docs/auto-compound', '#/docs/domino-compound'])
   const no = renderToStaticMarkup(React.createElement(PoolAutomation, { usable: false, why: 'it runs extra code on every swap (hooks)' }))
   assert.match(no, /data-pool-automation="unavailable"/)
   assert.match(no.replace(/<[^>]+>/g, ''), /Domino can’t open positions in this pool: it runs extra code on every swap \(hooks\)\./)
@@ -1814,51 +1815,29 @@ test('round 6: the page opens with what the pool is and what it earns, and gives
   usable.unmount()
 })
 
-test('one section notice tracks retained figures without repeated cache labels; missing and qualified values remain distinct', async () => {
+test('retained figures keep their source and qualification without update notices; missing and verified zero remain distinct', async () => {
   for (const [state, value, expected] of [['stale', '42', true], ['stale', null, false], ['unavailable', '42', false], ['partial', '42', false], ['qualified', '0', false]]) {
     const fixture = workspace({ dependencies: { projectMarketRow: ({ market }) => ({ ...row(market.data.poolId), tvlUsd: { ...metric, state, value }, feeAprEstimate: { data: { feeAprEstimate24hPercent: '10' }, receivedAt: 0 } }) } })
     const host = mount(fixture.PoolWorkspace, fixture.props)
     fixture.reads[0].resolve(ok()); await flush(); host.render()
-    const freshness = part(host, 'DataFreshness')
-    assert.equal(freshness.props.active, expected, `${state}, ${value}`)
-    assert.doesNotMatch(visibleText(host), /Saved figures|Saved pool price/)
+    assert.doesNotMatch(visibleText(host), /Saved figures|Saved pool price|taking longer to update/)
+    assert.equal(elements(host.tree, (node) => node.props?.['data-data-freshness']).length, 0)
     assert.equal(part(host, 'PoolEarnings').props.saved, expected, 'only a retained input actually used by the estimate is labelled saved')
-    if (expected) {
-      assert.match(freshness.props.detail, /retrieved 12 s ago/, 'the original observation time remains accessible')
-    }
+    const metricCell = elements(host.tree, (node) => node.type === parts.MetricCell && node.props.metric.state === state)[0]
+    assert.equal(metricCell.props.metric.value, value, 'the original metric reaches the shared presentation unchanged')
+    const provenance = elements(host.tree, (node) => node.props?.['data-market-provenance'] === '')[0]
+    assert.match(provenance.props.title, /retrieved 12 s ago/, 'Details preserves the original observation time')
     host.unmount()
   }
   const stalePrice = workspace({ dependencies: { poolPrice: () => ({ state: 'usable', tick: 0, tickSpacing: 60, text: '≈1', base: token('1'), quote: token('2'), inverted: false, decimals: [18, 18], block: 700, stale: true, partial: false }) } })
   const host = mount(stalePrice.PoolWorkspace, stalePrice.props)
   assert.match(visibleText(host), /Pool price/, 'the metric name remains stable during refresh')
-  assert.equal(part(host, 'DataFreshness').props.active, true)
+  assert.doesNotMatch(visibleText(host), /taking longer to update/)
+  const price = elements(host.tree, (node) => node.props?.['data-pool-price-now'] === '')[0]
+  assert.match(price.props.title, /block 700.*Read more than 5 minutes ago/, 'a saved price keeps its own qualification')
   assert.equal(part(host, 'PoolRangeGuide').props.saved, true)
   assert.equal(elements(host.tree, (node) => node.props?.['data-saved-data'] === 'figures').length, 0, 'a saved price never labels unrelated figures as saved')
   host.unmount()
-})
-
-test('background refresh is quiet, a sustained delay is disclosed, and changing sections clears the old notice', () => {
-  const before = globalThis.window
-  const timers = new Map()
-  let next = 0
-  globalThis.window = {
-    setTimeout(run, ms) { const id = ++next; timers.set(id, { run, ms }); return id },
-    clearTimeout(id) { timers.delete(id) },
-  }
-  const { DataFreshness } = load('src/components/DataFreshness.tsx', {})
-  const host = mount(DataFreshness, { active: true, scope: 'pool-a', detail: 'Read at block 42' })
-  try {
-    assert.equal(host.tree, null, 'no visual change for a routine read')
-    const [timer] = timers.values()
-    assert.equal(timer.ms, 15_000)
-    timer.run(); host.render()
-    assert.match(visibleText(host), /taking longer to update/)
-    assert.equal(host.tree.props.title, 'Read at block 42')
-    host.props = { active: true, scope: 'pool-b' }; host.render()
-    assert.equal(host.tree, null, 'a previous pool never supplies this pool’s delay state')
-    host.props = { active: false, scope: 'pool-b' }; host.render()
-    assert.equal(host.tree, null, 'fresh data clears the notice')
-  } finally { host.unmount(); globalThis.window = before }
 })
 
 test('round 6: the pool page’s button is “Create a position”, into the same New position flow with the pool chosen', async () => {

@@ -83,7 +83,7 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
       {note && <Note note={note} inGrid={false} />}
       {!note && (partial || failed) && <p className="dm-own-note">Some positions are still being checked. Available positions are shown below.</p>}
       {shown.length ? <div className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
-        <div className="dm-collection-head" aria-hidden="true"><span>Pool</span><span>Value</span><span>Fees ready to collect</span><span>Your APR</span></div>
+        <div className="dm-collection-head" data-collection-tab={tab} aria-hidden="true"><span>Pool</span>{tab === 'closed' ? <span>Position history</span> : <><span>Value</span><span>Fees ready to collect</span><span>Your APR</span></>}</div>
         {shown.map((row) => <V2PositionRow key={row.key} row={row} apr={hasPositionApr(row) ? aprs.get(row.tokenId) ?? null : null} />)}
       </div> : empty ? <EmptyState title={readOnly ? 'No positions at this address' : 'No positions yet'} action={!readOnly ? <LinkButton href={newPositionHref()}>New position</LinkButton> : undefined} className="dm-own-none" data-empty="owned-none" />
         : rows.length ? <EmptyState title={tab === 'open' ? 'No open positions' : 'No closed positions'} data-empty={`owned-${tab}`} />

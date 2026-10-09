@@ -61,7 +61,7 @@
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
     min-width: 0;
-    height: 18.75rem;
+    height: 16.875rem;
     padding: 1.25rem 1.25rem 0;
     border-radius: var(--radius-card);
     background-color: var(--card);

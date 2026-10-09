@@ -6270,6 +6270,11 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     await closedRows.nth(9).waitFor();
     assert.equal(await closedRows.count(), 10);
     assert.deepEqual(await closedRows.locator('[data-position-status]').evaluateAll((pills) => [...new Set(pills.map((pill) => pill.textContent))]), ['Closed']);
+    assert.equal(await closedRows.first().getAttribute('data-row-state'), 'closed');
+    assert.equal(await closedRows.first().locator('.dm-own-closed-caption').innerText(), 'View history');
+    assert.equal(await closedRows.first().locator('[data-cell="apr"]').count(), 0, 'closed positions do not carry an empty APR column');
+    assert.match(await closedRows.first().innerText(), /0 ETH[\s\S]*0 TOKEN/, 'measured zeroes remain available to assistive readers');
+    assert.ok(await closedRows.first().locator('.dm-own-figs').evaluate(node => node.getBoundingClientRect().height <= 1), 'empty closed figures do not take visual space');
     await s.page.getByRole('button', { name: 'Show 1 more', exact: true }).click();
     await s.page.locator(`[data-owned-rows="closed"] a[data-position-row="${OWNED_CLOSED[10]}"]`).waitFor();
     assert.equal(await s.page.getByRole('button', { name: /^Show \d+ more$/ }).count(), 0);
