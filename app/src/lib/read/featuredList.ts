@@ -30,9 +30,9 @@
  * screen only this way: the same listId refreshes its selection figures and publication; pools
  * that left the list leave at once; `none` or a route that is off switch to
  * the embedded list at once (how a rollback reaches open tabs); valid new pools
- * enter at once after the surviving pools in their existing order. A new selection
- * day takes the server's order at once; an intra-day reorder waits for a remount
- * after 30 minutes. A failure keeps the list.
+ * enter in the server's order at once, including intra-day repairs. Older
+ * publications and late responses cannot undo an accepted publication or its
+ * withdrawals. A failure keeps the list.
  *
  * Changed 2026-09-28 (speed wave, item 8): a first read that found no answer
  * (its deadline passed, the service was busy, an edge page) put the embedded
@@ -82,8 +82,6 @@ export const FEATURED_FIRST_DEADLINE_MS = 3_500
 export const FEATURED_RETRY_MS: readonly number[] = [3_000, 6_000, 12_000]
 /** A list served this long after it was generated is not shown at all (§11.2). */
 export const FEATURED_MAX_AGE_SECONDS = 72 * 3600
-/** An intra-day reorder waits until the list on screen is this old and a screen showing it mounts. */
-export const FEATURED_REMOUNT_MS = 30 * 60_000
 
 /**
  * Pools a featured list never shows, lowercase: the owner's emergency brake on
@@ -198,6 +196,9 @@ export interface Withdrawal {
   reason: string
 }
 
+/** Publication ordering is independent of pool identities and browser time. */
+type Publication = Pick<FeaturedPoolsResponse, 'revision' | 'selectionDate' | 'effectiveAt' | 'servedAt'>
+
 /**
  * Withdrawals that say nothing about a pool's safety: its figures were unavailable, or its volume went away. A link
  * to such a pool opens New position as any other pool's does (audit B2, the owner's OK, 2026-10-01). Every other
@@ -210,7 +211,7 @@ export type FeaturedAnswer =
   /** A valid list (not `none`), with the pools the app shows. */
   | { kind: 'list'; valid: ValidFeatured; withdrawn: readonly Withdrawal[] }
   /** `none`, or the route is off or not there at all: the embedded list, at once. */
-  | { kind: 'off'; withdrawn: readonly Withdrawal[] }
+  | { kind: 'off'; withdrawn: readonly Withdrawal[]; publication?: Publication }
   /**
    * Anything else: an invalid answer, another refusal, a busy service, the 1.5 s passed. `passing` when it can clear
    * by itself (transient.ts: the deadline, a busy service, an edge page): only such a first failure is asked again.
@@ -227,7 +228,7 @@ const withdrawnOf = (answer: FeaturedPoolsResponse): Withdrawal[] => answer.with
 export function answerOf(outcome: ReadOutcome<'featured-pools'>): FeaturedAnswer {
   if (outcome.state === 'ok') {
     const answer = outcome.data
-    if (answer.status === 'none') return { kind: 'off', withdrawn: withdrawnOf(answer) }
+    if (answer.status === 'none') return { kind: 'off', withdrawn: withdrawnOf(answer), publication: answer }
     return { kind: 'list', valid: keptPools(answer), withdrawn: withdrawnOf(answer) }
   }
   // route_not_available (404), the build's live data off, the deployment with no forwarder for v5: the route is off.
@@ -326,48 +327,13 @@ export function shortCount(list: Pick<FeaturedList, 'source' | 'entries' | 'size
 
 const idsOf = (list: FeaturedList) => list.entries.map((entry) => entry.poolId)
 
-/** Whether `next` is `list` with some pools left out and the rest in the same order. */
-function onlyRemovals(list: readonly string[], next: readonly string[]): boolean {
-  let at = 0
-  for (const id of next) {
-    at = list.indexOf(id, at)
-    if (at === -1) return false
-    at += 1
-  }
-  return true
-}
-
-/** The list on screen and the one waiting for its turn, after a refresh's answer (see the header). */
-export function nextList(shown: FeaturedList, waiting: FeaturedList | null, answer: FeaturedAnswer): { shown: FeaturedList; waiting: FeaturedList | null } {
-  if (answer.kind === 'failed') return { shown, waiting }
-  const candidate = listFrom(answer)
-  if (candidate.source === 'bundled') return { shown: BUNDLED_LIST, waiting: null }
-  if (shown.source === 'bundled') return { shown: candidate, waiting: null }
-  // The daily ranking must reach an open tab too, even when only the order changed. Pool-id React keys keep the
-  // surviving rows/cards and their local state. The date is the server's, not the browser's calendar.
-  if (candidate.selectionDate !== null && (shown.selectionDate === null || candidate.selectionDate > shown.selectionDate)) return { shown: candidate, waiting: null }
-  // A listId excludes the publication and selection figures. Update those without readmitting a row this page
-  // unbound, or discarding a pending intra-day order. Candidate entries have passed the latest app safety checks.
-  if (candidate.listId === shown.listId) {
-    const entries = shown.entries.flatMap((entry) => candidate.entries.filter((next) => next.poolId === entry.poolId))
-    if (entries.length === 0) return { shown: BUNDLED_LIST, waiting: null }
-    const ids = new Set(entries.map((entry) => entry.poolId))
-    const pending = waiting?.listId === candidate.listId ? { ...candidate, entries: candidate.entries.filter((entry) => ids.has(entry.poolId)) } : null
-    return { shown: { ...candidate, entries }, waiting: pending && idsOf(pending).join() !== entries.map((entry) => entry.poolId).join() ? pending : null }
-  }
-  const ids = idsOf(candidate)
-  if (onlyRemovals(idsOf(shown), ids)) return { shown: candidate, waiting: null }
-  // Replacements cannot wait for a remount: remove departed pools, keep survivors
-  // in their existing order, and append only the newly admitted, validated entries.
-  const before = new Set(idsOf(shown))
-  const added = candidate.entries.filter((entry) => !before.has(entry.poolId))
-  const kept = shown.entries.flatMap((entry) => candidate.entries.filter((next) => next.poolId === entry.poolId))
-  if (added.length) {
-    const next = { ...candidate, entries: [...kept, ...added] }
-    return { shown: next, waiting: idsOf(next).join() === ids.join() ? null : candidate }
-  }
-  if (kept.length === 0) return { shown: candidate, waiting: null }
-  return { shown: { ...candidate, entries: kept }, waiting: candidate }
+/** Compare the producer's publication, then its observation time; no browser calendar is involved. */
+function comparePublication(next: Publication, previous: Publication): number {
+  // Revisions are the producer's global sequence. A deliberate new publication wins even when it reuses an older list.
+  if (next.revision !== null && previous.revision !== null && next.revision !== previous.revision) return next.revision - previous.revision
+  if (next.selectionDate !== null && previous.selectionDate !== null && next.selectionDate !== previous.selectionDate) return next.selectionDate < previous.selectionDate ? -1 : 1
+  if (next.effectiveAt !== null && previous.effectiveAt !== null && next.effectiveAt !== previous.effectiveAt) return next.effectiveAt - previous.effectiveAt
+  return next.servedAt - previous.servedAt
 }
 
 /** The list as the page holds it. */
@@ -394,7 +360,7 @@ export interface FeaturedStore {
   ensure(): Promise<FeaturedSnapshot>
   /** Reads the list again and applies the refresh rules (the header). Never rejects. */
   refresh(signal?: AbortSignal): Promise<FeaturedSnapshot>
-  /** A screen mounted: a pending intra-day order takes its turn once the list on screen is 30 min old. */
+  /** Retained for screen lifecycle callers; accepted publications already apply without a remount. */
   remount(): void
   /** Rows whose read did not bind to their entry (§11.3): they leave the list; with none left, the embedded list. */
   unbind(poolIds: readonly string[]): void
@@ -413,9 +379,13 @@ export function createFeaturedStore({ read, clock = realClock }: {
   clock?: Clock
 }): FeaturedStore {
   let snapshot: FeaturedSnapshot = { ...BUNDLED_LIST, settled: false, withdrawn: NO_WITHDRAWN, withdrawnReasons: NO_REASONS }
-  let waiting: FeaturedList | null = null
-  /** When the pools on screen were put there, on the monotonic clock. */
-  let shownAt = clock.monotonic()
+  let publication: Publication | null = null
+  let requestSequence = 0
+  let appliedRequest = 0
+  let routeOffRequest = 0
+  // A reorder cannot readmit an identity that failed its own verified pool read. A corrected key can be checked afresh.
+  const unbound = new Map<string, string>()
+  const identity = (entry: PoolCatalogueEntry) => JSON.stringify(entry.poolKey ?? null)
   let first: Promise<void> | null = null
   const listeners = new Set<() => void>()
   /** The embedded list is on screen only because no answer has come yet: the first one that comes takes the screen. */
@@ -436,7 +406,6 @@ export function createFeaturedStore({ read, clock = realClock }: {
   /** Puts `shown` on screen, and tells the page only when something it shows changed. */
   const publish = (shown: FeaturedList, withdrawn: Withdrawn) => {
     const ids = idsOf(shown).join()
-    if (ids !== idsOf(snapshot).join()) shownAt = clock.monotonic()
     const reasons = [...withdrawn.reasons].join()
     const same = snapshot.settled && ids === idsOf(snapshot).join() && shown.listId === snapshot.listId && shown.source === snapshot.source
       && shown.revision === snapshot.revision && shown.selectionDate === snapshot.selectionDate && shown.effectiveAt === snapshot.effectiveAt
@@ -451,34 +420,57 @@ export function createFeaturedStore({ read, clock = realClock }: {
   const withdrawnFrom = (answer: FeaturedAnswer): Withdrawn => answer.kind === 'failed'
     ? { safety: snapshot.withdrawn, reasons: snapshot.withdrawnReasons ?? NO_REASONS }
     : { safety: new Set(answer.withdrawn.filter((entry) => !SOFT_WITHDRAWALS.has(entry.reason)).map((entry) => entry.poolId)), reasons: new Map(answer.withdrawn.map((entry) => [entry.poolId, entry.reason])) }
-  const kept = (): Withdrawn => ({ safety: snapshot.withdrawn, reasons: snapshot.withdrawnReasons ?? NO_REASONS })
   // A read made while the embedded list only holds the place has the longer deadline (B3).
   const safely = (signal?: AbortSignal, placeholder = false) => read(signal, placeholder).catch((): FeaturedAnswer => ({ kind: 'failed' }))
 
+  /** Ignore old edge copies and late completions before changing either the list or the withdrawal guard. */
+  const accept = (answer: FeaturedAnswer, request: number): boolean => {
+    if (answer.kind === 'failed' || request < routeOffRequest) return false
+    const next = answer.kind === 'list' ? answer.valid.answer : answer.publication
+    const order = next && publication ? comparePublication(next, publication) : 0
+    if (order < 0 || (order === 0 && request < appliedRequest)) return false
+    appliedRequest = Math.max(appliedRequest, request)
+    // A route shutdown has no server publication stamp. Reads started before it cannot turn the route back on.
+    if (!next) routeOffRequest = request
+    if (next) publication = {
+      revision: next.revision ?? publication?.revision ?? null,
+      selectionDate: next.selectionDate ?? publication?.selectionDate ?? null,
+      effectiveAt: next.effectiveAt ?? publication?.effectiveAt ?? null,
+      servedAt: next.servedAt,
+    }
+    const candidate = listFrom(answer)
+    if (candidate.source === 'bundled') publish(candidate, withdrawnFrom(answer))
+    else {
+      const entries = candidate.entries.filter((entry) => unbound.get(entry.poolId) !== identity(entry))
+      publish(entries.length ? { ...candidate, entries } : BUNDLED_LIST, withdrawnFrom(answer))
+    }
+    return true
+  }
+
   function ensure(): Promise<FeaturedSnapshot> {
-    first ??= safely(undefined, true).then((answer) => {
-      publish(listFrom(answer), withdrawnFrom(answer))
-      provisional = answer.kind === 'failed' && answer.passing === true
-      retry()
-    })
+    if (!first) {
+      const request = ++requestSequence
+      first = safely(undefined, true).then((answer) => {
+        if (!accept(answer, request)) publish(listFrom(answer), withdrawnFrom(answer))
+        provisional = answer.kind === 'failed' && answer.passing === true
+        retry()
+      })
+    }
     return first.then(() => snapshot)
   }
 
   async function refresh(signal?: AbortSignal): Promise<FeaturedSnapshot> {
     if (!snapshot.settled) return ensure()
+    const request = ++requestSequence
     const answer = await safely(signal, provisional || snapshot.source === 'bundled')
     if (signal?.aborted) return snapshot
-    if (provisional && answer.kind !== 'failed') {
+    const accepted = accept(answer, request)
+    if (provisional && accepted) {
       // The first answer since a first read that found none: it takes the screen, as a first answer does.
       provisional = false
       retry()
-      waiting = null
-      publish(listFrom(answer), withdrawnFrom(answer))
       return snapshot
     }
-    const next = nextList(snapshot, waiting, answer)
-    waiting = next.waiting
-    publish(next.shown, withdrawnFrom(answer))
     // A failure that cannot clear by itself (an invalid list) is not asked again on the list's own.
     if (provisional && answer.kind === 'failed' && !answer.passing) provisional = false
     if (provisional && !cancelRetry) retry()
@@ -495,20 +487,13 @@ export function createFeaturedStore({ read, clock = realClock }: {
     },
     ensure,
     refresh,
-    remount() {
-      if (!waiting || !snapshot.settled || clock.monotonic() - shownAt < FEATURED_REMOUNT_MS) return
-      const adopted = waiting
-      waiting = null
-      publish(adopted, kept())
-    },
+    remount: () => undefined,
     unbind(poolIds) {
       if (poolIds.length === 0 || snapshot.source === 'bundled') return
       const gone = new Set(poolIds.map((id) => id.toLowerCase()))
+      for (const entry of snapshot.entries) if (gone.has(entry.poolId)) unbound.set(entry.poolId, identity(entry))
       const kept = snapshot.entries.filter((entry) => !gone.has(entry.poolId))
       if (kept.length === snapshot.entries.length) return
-      // The list waiting for its turn is the service's; a row that did not bind leaves it too.
-      if (waiting) waiting = { ...waiting, entries: waiting.entries.filter((entry) => !gone.has(entry.poolId)) }
-      if (waiting && waiting.entries.length === 0) waiting = null
       publish(kept.length > 0 ? { ...snapshot, entries: kept } : BUNDLED_LIST, { safety: snapshot.withdrawn, reasons: snapshot.withdrawnReasons ?? NO_REASONS })
     },
   }

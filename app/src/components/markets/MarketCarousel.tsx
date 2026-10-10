@@ -66,15 +66,17 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
   // The list on screen (lib/read/featuredSource.ts): the featured list, or the embedded one.
   const featured = useFeatured()
   const listed = __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge'
-  // Refused figures stood in for, as the table does (audit V1); the clock only for choosing among stand-ins.
-  const markets = useFallbackRows(read, listed ? featured.entries : null, useNow(false))
+  const [visible, setVisible] = useState<ReadonlySet<string>>(() => new Set())
+  // The same live clock chooses a stand-in and ages its presentation. A frozen selection clock kept preferring
+  // old saved figures on the cards after the table had switched to a newer source. Resume when cards are visible.
+  const now = useNow(visible.size > 0)
+  const markets = useFallbackRows(read, listed ? featured.entries : null, now)
   // Until the list's first answer is in, resting cards with no names (audit B4, 2026-10-01).
   const unsettled = listed && !featured.settled
   const listings = unsettled ? [] : poolListings(markets, listed ? featured.entries : null)
   const settled = state.phase !== 'loading'
 
   const rail = useRef<HTMLDivElement>(null)
-  const [visible, setVisible] = useState<ReadonlySet<string>>(() => new Set())
   const [mode, setMode] = useState<CardMode | null>(null)
   const [reads, setReads] = useState<ReadonlyMap<string, CardAnswer>>(() => new Map())
   const [edges, setEdges] = useState<Rail>({ start: true, end: true, perView: 0, page: 0 })
@@ -85,8 +87,6 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
   const rows = listings.some((listing) => listing.market !== undefined)
   const asks = mode === 'chain' || mode === 'provider' ? listings.map((listing) => (listing.market ? cardAsk(listing.market, mode) : null)) : NO_ASKS
   const wanted = asks.flatMap((ask) => (ask ? [ask.key] : [])).join(',')
-  const active = listings.some((listing) => visible.has(listing.poolId) && listing.market !== undefined)
-  const now = useNow(active)
 
   const onScroll = () => {
     if (frame.current) return

@@ -790,13 +790,74 @@ test('Home and Markets adopt daily featured publications, fresh figures and orde
         assert.equal(await keptLink.evaluate(node => node.isConnected && node === document.activeElement), true, 'refresh and reorder retain the focused row link')
         if (hash === '#/markets') assert.equal(await page.getByRole('searchbox', { name: 'Filter selected pools by pair name' }).inputValue(), 'USDG')
       }
-      assert.equal(featuredReads, 3, 'initial publication and two automatic refreshes')
+      // Repairs belong on an already-open page too: reorder now, remove two now, then restore the slots in server
+      // order. The person's filter stays put through all three publications.
+      const original = current.pools
+      for (const [step, order] of [[1, [...original].reverse()], [2, original.slice(0, 4)], [3, original]]) {
+        current = { ...current, revision: current.revision + 1, status: 'repaired',
+          servedAt: current.servedAt + 120, effectiveAt: current.effectiveAt + 120,
+          listId: `0x${String(step).repeat(64)}`, pools: order.map((entry, i) => ({ ...entry, slot: i + 1 })) }
+        assert.ok(validFeatured('featured-pools', current))
+        await page.clock.fastForward(120000)
+        await assertPublication(current)
+        if (hash === '#/markets') assert.equal(await page.getByRole('searchbox', { name: 'Filter selected pools by pair name' }).inputValue(), 'USDG')
+      }
+      assert.equal(featuredReads, 6, 'initial publication, two daily refreshes and three same-day repairs')
       assert.deepEqual(navigations, [`${at}/${hash}`], 'the document stayed mounted')
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
       await new Promise(resolve => { site.close(resolve); site.closeAllConnections() })
     }
+  }
+})
+
+test('Markets cards and table choose the same fresh fallback after thirty minutes and expire saved figures after a day', { timeout: 60000 }, async () => {
+  const { startLatencySite, signIn, RECORDED } = await import('./support/markets-latency.mjs')
+  const start = Math.floor(Date.now() / 1000)
+  const site = await startLatencySite({ latency: { edge: 0, featured: 0, overview: 0, history: 0, asset: 0 },
+    store: body => withStalePools(body, body.requestedPoolIds, { reason: 'provider_unavailable', inSeconds: 300 }) })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } }), page = await context.newPage()
+  let provideFallback = true
+  const errors = []
+  try {
+    page.on('pageerror', error => errors.push(error.message))
+    await context.route('**/*', route => {
+      const url = route.request().url()
+      if (url.startsWith(`${site.origin}/api/read/dex/`)) {
+        const pairs = provideFallback ? RECORDED.pools.map(entry => ({ chainId: 'robinhood', dexId: 'uniswap', labels: ['v4'],
+          pairAddress: entry.poolId, baseToken: { address: entry.value.market.pool.currencies[0] },
+          quoteToken: { address: entry.value.market.pool.currencies[1] }, liquidity: { usd: 400000 }, volume: { h24: 2000000 } })) : []
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify(pairs) })
+      }
+      return url.startsWith(site.origin) ? route.continue() : route.abort()
+    })
+    await signIn(context, site.origin)
+    await page.clock.install({ time: new Date(start * 1000) })
+    await page.addInitScript(({ ids, at }) => localStorage.setItem('domino-figures:v1', JSON.stringify({ v: 1,
+      pools: Object.fromEntries(ids.map(id => [id, { tvl: '200000', volume: '1000000', at, apr: null, aprAt: null }])) })), { ids: SELECTED, at: start })
+    await page.goto(`${site.origin}/#/markets`)
+    const assertTvl = async expected => {
+      await page.waitForFunction(value => {
+        const card = document.querySelector('#market-rail [data-market-card] .dm-mkt-card-tvl')
+        const cell = document.querySelector('[data-selected-pools] tbody tr.dm-mkt-row td:nth-child(3)')
+        return card?.innerText.includes(value) && cell?.innerText === value
+      }, expected)
+    }
+    await assertTvl('$200.0K')
+    await page.clock.fastForward(31 * 60 * 1000)
+    await assertTvl('$400.0K')
+    provideFallback = false
+    await page.clock.fastForward(24 * 3600 * 1000)
+    await page.waitForFunction(() => {
+      const card = document.querySelector('#market-rail [data-market-card] .dm-mkt-card-tvl')
+      const cell = document.querySelector('[data-selected-pools] tbody tr.dm-mkt-row td:nth-child(3)')
+      return card && cell && !card.innerText.includes('$') && !cell.innerText.includes('$')
+    })
+    assert.deepEqual(errors, [])
+  } finally {
+    await context.close()
+    await site.close()
   }
 })
 

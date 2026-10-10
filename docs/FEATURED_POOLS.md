@@ -190,18 +190,27 @@ The gateway serves the route only with `--enable-v5` and
 ### Open pages follow the daily publication
 
 Home and Markets share one list, refreshed with the markets' normal 60-second
-read while the page is active. A new server selection date adopts the complete
-published order without reopening the page. Re-ranking does not guarantee different
-pools: eligible incumbents, pins and fallback slots can remain.
+read while the page is active. Every accepted publication adopts the complete
+published order, including same-day repairs, without reopening the page or
+waiting 30 minutes. Re-ranking does not guarantee different pools: eligible
+incumbents, pins and fallback slots can remain.
 
 `listId` identifies ordered pool identities, not the day's evidence. Even when it
 stays unchanged, the app replaces selection figures, revision and publication times.
-Intra-day repairs remove withdrawn pools immediately and admit replacements;
-an order-only change within that day keeps the existing 30-minute/remount behavior.
+Older publications and out-of-order responses cannot roll the list or its
+withdrawals back. Identity mismatches remain excluded across reordered lists;
+an unchanged pool key does not become verified merely because its slot changed.
 Safety validation and the neutral title for carried-over or stale lists still apply.
 The table and cards expose publication metadata as DOM data attributes for diagnosis,
-without adding visible labels. `effectiveAt` distinguishes a fresh publication from
-a carried-over list whose `selectionDate` alone may have advanced.
+without adding visible labels. These fields identify publication, not a fresh
+ranking evaluation: carry-over can advance `selectionDate`, and repair can
+advance `effectiveAt`. Inspect the evaluation window and ranked entries'
+`rankInputs.evaluatedAt` to establish when the selection inputs were evaluated.
+
+This consumer update does not trigger selection, change eligibility or fill
+vacancies. Those remain the selector's responsibilities. Cards and the table
+age their retained figures using a live clock while visible, so an open card
+does not keep choosing a figure against its original mount time.
 
 ## Rules
 

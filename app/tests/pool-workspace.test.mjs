@@ -174,7 +174,14 @@ function carousel({ mode = 'chain', listings, phase = 'ready' }) {
     watchCard(_source, ask, emit, options) { watches.push({ ask, emit, options }); return new Promise(() => {}); },
   });
   const series = (host) => elements(host.tree, (node) => node.type === Card).map((node) => [node.props.listing.poolId, node.props.series]);
-  return { MarketCarousel, modes, watches, decide, series };
+  // Layout is outside this hook harness: seed the observer's visible-set state by its type, not a hook index.
+  // Moving a clock or ref must not accidentally overwrite the rail ref while leaving every card out of view.
+  const inView = (host, ids) => {
+    const slots = host.values.flatMap((value, index) => value instanceof Set ? [index] : []);
+    assert.equal(slots.length, 1, 'the carousel has one visible-card set');
+    host.values[slots[0]] = new Set(ids);
+  };
+  return { MarketCarousel, modes, watches, decide, series, inView };
 }
 /** A row whose provider orientation names the pool's first currency as its quote, as on the live WETH/USDG pool. */
 const cardRow = (letter, extra = {}) => ({ ...row(id(letter)), key: `4663:${id(letter)}`, chartTokens: { base: addr('2'), quote: addr('1') },
@@ -198,12 +205,12 @@ test('every carousel card asks at mount, those in view first, with no view gate,
     assert.equal(fixture.modes.length, 1, 'one capabilities decision for the whole rail');
     assert.equal(fixture.watches.length, 0, 'nothing is asked before it is known what to ask');
     assert.deepEqual(fixture.series(host).map(([, series]) => series.kind), letters.map(() => 'waiting'));
-    // The observer's visible-set state (hook slot 1): two cards in view, as on a laptop. The harness does not emulate layout.
-    host.values[1] = new Set([id('c'), id('d')]);
+    // Two cards in view, as on a laptop.
+    fixture.inView(host, [id('c'), id('d')]);
     await flush(); host.render();
     assert.deepEqual(fixture.watches.map(({ ask }) => ask.poolId), [id('c'), id('d'), id('a'), id('b'), id('e'), id('f')], 'all six at once, in view first, then rail order');
     for (const { ask } of fixture.watches) assert.deepEqual(ask, { key: `chain:${ask.poolId}:${addr('1')}:3600`, poolId: ask.poolId, source: 'chain', currency: addr('1'), side: 'quote' });
-    host.render(); host.values[1] = new Set([id('a')]); host.render();
+    host.render(); fixture.inView(host, [id('a')]); host.render();
     assert.equal(fixture.watches.length, 6, 'a card already asking, or scrolled to, does not ask again');
     assert.deepEqual(fixture.series(host).map(([, series]) => series.kind), letters.map(() => 'waiting'), 'a baseline only until the first answer');
 
