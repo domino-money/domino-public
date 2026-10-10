@@ -74,7 +74,7 @@ function walletAssets(ethWei) {
  * sends on (../support/s2-wallet.mjs; nothing is sent anywhere else); `batches`, deposits sent as one batch on an earlier
  * visit and kept until the wallet names their transaction (finance/v2/crosschain.ts's store, in localStorage).
  */
-async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, bridge = false, switching = false, served = null, journal = null, clock = false, range = null, relayDown = false, held = null, sendOn = null, batches = null } = {}) {
+async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, bridge = false, switching = false, served = null, journal = null, clock = false, range = null, relayDown = false, held = null, sendOn = null, batches = null, originsFailures = 0, originsRetryAfter = 30 } = {}) {
   const fake = createFakeSession();
   const errors = [];
   // The read stub's own fixture for each read (tests/support/read-stub.mjs), TOKEN as USDG, and the wallet's balances.
@@ -102,6 +102,9 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
     assert.equal(request.headers.get('X-Domino-CSRF'), session.csrf);
     const body = await request.json();
     bridgeCalls.push({ route, body });
+    if (route === 'origins' && originsFailures-- > 0) {
+      return Response.json({ error: 'session_rate_limited' }, { status: 429, headers: { ...headers, 'Retry-After': String(originsRetryAfter) } });
+    }
     if (route === 'quote') {
       // ETH for USDG: at a price, through Relay alone (Added 2026-10-06).
       const crossKind = body.originToken === ZERO && body.destinationToken === USDG ? { rate: ETH_AS_USDG, relayOnly: true } : {};
@@ -128,7 +131,7 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
     if (!served || !url.pathname.startsWith('/api/read/v6/')) return undefined;
     const route = url.pathname.split('/').at(-1);
     if (route === 'capabilities') return Response.json({ contractVersion: '1.1.0-rc.1', dataMode: 'live_read_only', chainIds: [4663, 8453, 42161], enabledReads: ['chain-balances'], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false }, { headers: readV6 });
-    const said = served.answer(route, await request.json());
+    const said = await served.answer(route, await request.json());
     return said ? Response.json(said.body, { status: said.status, headers: readV6 }) : Response.json({ error: 'route_not_available' }, { status: 404, headers: readV6 });
   };
   const server = createWalletServer({ fake, dist: V2_DIST, routes: [servedRoute, bridgeRoute, (request, url) => read.handle(request, url) ?? undefined] });
@@ -264,6 +267,7 @@ const ARB_USDC = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
 const ARB_WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
 const BASE_USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
 const ETH_USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+const OP_USDC = '0x0b2c639c533813f4aa9d7837caf62653d097ff85';
 const token = (address, symbol, decimals) => ({ address, symbol, decimals });
 const homeReads = (native = 0n) => createChainReads({ chainId: 4663, tokens: [token(ZERO, 'ETH', 18), token(USDG, 'USDG', 6)], balances: { [ZERO]: native } });
 const chainReads = (chainId, stable, raw = 100_000_000n, gas = 10n ** 16n) => createChainReads({ chainId,
@@ -339,17 +343,20 @@ test('changing the typed amount automatically replaces the unsent quote without 
     await s.page.locator('[data-funding-state="ready"]').waitFor();
     assert.equal(s.quotes().at(-1).amountRaw, '40000000');
     assert.equal(await s.page.locator('li[data-step="amount"] [data-pair-side="1"] input[inputmode="decimal"]').inputValue(), '40');
+    assert.equal(s.bridgeCalls.filter((call) => call.route === 'origins').length, 1, 'amount changes reuse destination route discovery');
   } finally { await s.close(); }
 });
 
 test('tokens with no source gas are not an actionable transfer and do not trigger wallet scans', async () => {
-  const s = await openNewPosition({ bridge: true, served: together(homeReads(), chainReads(42161, ARB_USDC, 100_000_000n, 0n)) });
+  const s = await openNewPosition({ bridge: true, served: together(homeReads(), chainReads(42161, ARB_USDC, 100_000_000n, 0n),
+    chainReads(8453, BASE_USDC, 0n, 0n), chainReads(1, ETH_USDC, 0n, 0n), chainReads(10, OP_USDC, 0n, 0n)) });
   try {
     await typeUsdg(s, '50'); await signIn(s);
-    await s.page.locator('[data-funding-state="empty"]').waitFor();
+    await s.page.locator('[data-funds-nothing]').waitFor();
     assert.equal(await s.page.locator('[data-funds-deposit-button]').count(), 0);
     assert.equal(s.quotes().length, 0);
-    assert.match(await s.page.locator('[data-funds-nothing]').innerText(), /No available funds/);
+    assert.match(await s.page.locator('[data-funds-nothing]').innerText(), /need ETH for the transfer fee/);
+    assert.match(await s.page.locator('[data-funds-title]').innerText(), /Arbitrum One/);
   } finally { await s.close(); }
 });
 
@@ -358,7 +365,7 @@ test('unread balances remain unavailable, never zero or an empty-network claim',
   try {
     await typeUsdg(s, '50'); await signIn(s);
     await s.page.locator('[data-funds-nothing]').waitFor();
-    assert.match(await s.page.locator('[data-funds-nothing]').innerText(), /temporarily unavailable/);
+    assert.match(await s.page.locator('[data-funds-nothing]').innerText(), /could not be checked yet.*try again automatically/);
     assert.equal(await s.page.locator('[data-funds-deposit-button]').count(), 0);
   } finally { await s.close(); }
 });
@@ -384,5 +391,66 @@ test('different-origin balances are combined only by guaranteed destination outp
     assert.equal(await card.locator('[data-funds-deposit-button]').count(), 1);
     assert.equal(await s.page.locator('li[data-step="amount"] [data-pair-side="1"] input[inputmode="decimal"]').inputValue(), '60');
     await capture(s, 'funding-aggregate-offer');
+  } finally { await s.close(); }
+});
+
+test('origins 429 recovers automatically after Retry-After, and changing the amount cannot bypass the wait', async () => {
+  const s = await openNewPosition({ bridge: true, served: together(homeReads(), chainReads(42161, ARB_USDC)), clock: true, originsFailures: 1, originsRetryAfter: 30 });
+  try {
+    await typeUsdg(s, '30'); await signIn(s);
+    await s.page.locator('[data-error-code="session_rate_limited"]').waitFor();
+    assert.equal(s.bridgeCalls.filter((call) => call.route === 'origins').length, 1);
+    await s.page.clock.fastForward(20_000);
+    await typeUsdg(s, '40');
+    await s.page.clock.fastForward(5_000);
+    assert.equal(s.bridgeCalls.filter((call) => call.route === 'origins').length, 1, 'typed changes must retain the service cooldown');
+    await s.page.clock.fastForward(10_000);
+    await s.page.locator('[data-funding-state="ready"]').waitFor({ timeout: 30_000 });
+    assert.equal(s.bridgeCalls.filter((call) => call.route === 'origins').length, 2);
+    assert.equal(s.quotes().at(-1).amountRaw, '40000000');
+    assert.equal(await s.page.locator('[data-funds-run-notice]').count(), 0);
+  } finally { await s.close(); }
+});
+
+test('a useful primary-network read produces a proposal while the other balance group is still pending', async () => {
+  const primary = together(homeReads(), chainReads(8453, BASE_USDC, 0n, 0n), chainReads(42161, ARB_USDC));
+  const secondary = together(chainReads(1, ETH_USDC, 0n, 0n), chainReads(10, OP_USDC, 0n, 0n));
+  const release = [];
+  let secondaryWaiting = 0, secondaryCompleted = 0;
+  const served = { async answer(route, request) {
+    if (route === 'chain-balances' && request.tokens.some((token) => token.chainId === 1 || token.chainId === 10)) {
+      secondaryWaiting += 1;
+      await new Promise((done) => release.push(done));
+      secondaryCompleted += 1;
+      return secondary.answer(route, request);
+    }
+    return primary.answer(route, request);
+  } };
+  const s = await openNewPosition({ bridge: true, served });
+  try {
+    const offer = await offerReady(s);
+    assert.ok(secondaryWaiting > 0, 'the secondary balance read really started');
+    assert.equal(secondaryCompleted, 0, 'the proposal does not depend on its completion');
+    assert.match(await offer.locator('[data-funds-title]').innerText(), /Arbitrum One/);
+    assert.equal(s.quotes()[0].originChainId, 42161);
+  } finally {
+    release.forEach((done) => done());
+    await s.close();
+  }
+});
+
+test('an expired idle proposal stays visible and only refreshes when the user requests it', async () => {
+  const s = await openNewPosition({ bridge: true, served: together(homeReads(), chainReads(42161, ARB_USDC)), clock: true });
+  try {
+    await offerReady(s);
+    const firstQuote = s.quotes().length;
+    await s.page.clock.fastForward(125_000);
+    await s.page.locator('[data-funds-deposit-button]').getByText('Update transfer', { exact: true }).waitFor();
+    assert.equal(s.quotes().length, firstQuote, 'expiry and routine balance refresh do not start more quotes');
+    assert.equal(s.bridgeCalls.filter((call) => call.route === 'origins').length, 1);
+    await s.page.locator('[data-funds-deposit-button]').click();
+    await s.page.locator('[data-funding-state="ready"] [data-funds-deposit-button]').getByText('Use these funds', { exact: true }).waitFor({ timeout: 30_000 });
+    assert.equal(s.quotes().length, firstQuote + 1);
+    assert.equal(s.bridgeCalls.filter((call) => call.route === 'origins').length, 1, 'explicit renewal still reuses destination discovery');
   } finally { await s.close(); }
 });

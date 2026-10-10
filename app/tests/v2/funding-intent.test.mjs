@@ -171,3 +171,97 @@ test('gas recovery metadata survives reload while invalid reservations fail clos
   restored.legs[0].reserveRaw = '1';
   assert.equal(model.parseFunding(JSON.stringify(restored), OWNER, 4663), null);
 });
+
+const planning = (overrides = {}) => ({ destinationChainId: 4663, destinationToken: USDG,
+  required: 60_000_000n, holdings: [holding(8453, 20), holding(42161, 50)], destinationGas: false,
+  cancelled: () => false, ...overrides });
+
+test('capacity discovery stops once actual net quotes cover the target, without probing unused dust', async () => {
+  const other = { ...holding(8453, 1), chainId: 10, token: '0x0b2c639c533813f4aa9d7837caf62653d097ff85' };
+  const asked = [];
+  const legs = await model.planFunding(planning({ holdings: [holding(8453, 20), holding(42161, 50), other],
+    quote: async (request) => { asked.push(request); return quote(request); }, monoMs: () => 1,
+  }));
+  assert.equal(legs.length, 2);
+  assert.equal(asked.filter((request) => request.originChainId === 10).length, 0, 'no unrelated source is requested once a real plan covers the target');
+  assert.equal(asked.find((request) => request.amountKind === 'exact_input').originChainId, 42161, 'quote-derived net estimate orders capacity probes');
+  assert.ok(legs.reduce((sum, leg) => sum + model.winningMinimum(leg.quote), 0n) >= 60_000_000n);
+});
+
+test('a slow four-source preparation stops at its total deadline, rather than publishing the old 225-second expired proposal', async () => {
+  let now = 0, count = 0;
+  const sources = [holding(8453, 20), holding(42161, 20),
+    { ...holding(8453, 20), chainId: 1, token: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48' },
+    { ...holding(8453, 20), chainId: 10, token: '0x0b2c639c533813f4aa9d7837caf62653d097ff85' }];
+  await assert.rejects(model.planFunding(planning({ holdings: sources, monoMs: () => now,
+    quote: async (request, options) => {
+      assert.ok(options.signal instanceof AbortSignal);
+      count += 1;
+      const sentMono = now;
+      now += 25_000;
+      return { quote: quoteFor(request, OWNER).quote, timing: { sentMono, receivedMono: now } };
+    },
+  })), /funding_plan_timeout/);
+  assert.equal(count, 5);
+  assert.equal(now, 125_000, 'the response crossing the deadline is discarded; no further candidate is requested');
+});
+
+test('only a selected stale leg is renewed, within its priced debit and net minimum', async () => {
+  let now = 0;
+  const durations = [1_000, 1_000, 1_000, 60_000, 40_000, 1_000], asked = [];
+  const legs = await model.planFunding(planning({ monoMs: () => now,
+    quote: async (request) => {
+      asked.push(request);
+      const sentMono = now;
+      now += durations[asked.length - 1] ?? 1_000;
+      return { quote: quoteFor(request, OWNER).quote, timing: { sentMono, receivedMono: now } };
+    },
+  }));
+  assert.equal(asked.length, 6, 'five selection requests and one renewal; no repeated discovery');
+  const renewed = asked.at(-1), oldCapacity = asked[2];
+  assert.equal(renewed.originChainId, oldCapacity.originChainId);
+  assert.equal(renewed.amountKind, 'output');
+  assert.equal(renewed.maxInputRaw, oldCapacity.amountRaw);
+  assert.ok(legs.every((leg) => Math.min(leg.timing.sentMono + 120_000, leg.timing.receivedMono + 120_000) > now + model.FUNDING_REVIEW_MARGIN_MS));
+  assert.ok(legs.reduce((sum, leg) => sum + model.winningMinimum(leg.quote), 0n) >= 60_000_000n);
+});
+
+test('a quote that repeatedly arrives without enough review time is renewed once and then stops', async () => {
+  let now = 100_000, count = 0;
+  await assert.rejects(model.planFunding(planning({ holdings: [holding(42161, 100)], monoMs: () => now,
+    quote: async (request) => {
+      count += 1; now += 1_000;
+      return { quote: quoteFor(request, OWNER).quote, timing: { sentMono: now - 100_000, receivedMono: now } };
+    },
+  })), /funding_quotes_expired/);
+  assert.equal(count, 2);
+});
+
+test('candidate-budget exhaustion is incomplete discovery, never a false insufficient-balance result', async () => {
+  let count = 0;
+  const holdings = Array.from({ length: 13 }, (_, index) => ({ ...holding(8453, 1), token: `0x${String(index + 1).padStart(40, '0')}` }));
+  await assert.rejects(model.planFunding(planning({ holdings, monoMs: () => 0,
+    quote: async (request) => { count += 1; return { quote: quoteFor(request, OWNER, 'variants/quote.none').quote, timing: { sentMono: 0, receivedMono: 0 } }; },
+  })), /funding_plan_limit/);
+  assert.equal(count, model.FUNDING_PLAN_QUOTE_LIMIT);
+});
+
+test('a silent quote settles at the total deadline and receives an aborted signal', async () => {
+  let signal;
+  await assert.rejects(model.planFunding(planning({ maxDurationMs: 20,
+    quote: async (_request, options) => { signal = options.signal; return new Promise(() => {}); },
+  })), /funding_plan_timeout/);
+  assert.equal(signal.aborted, true);
+});
+
+test('changing the funding intent aborts a pending quote and never returns the superseded proposal', async () => {
+  const controller = new AbortController();
+  let requestSignal;
+  const pending = model.planFunding(planning({ signal: controller.signal,
+    quote: async (_request, options) => { requestSignal = options.signal; return new Promise(() => {}); },
+  }));
+  await Promise.resolve();
+  controller.abort();
+  await assert.rejects(pending, /funding_cancelled/);
+  assert.equal(requestSignal.aborted, true);
+});

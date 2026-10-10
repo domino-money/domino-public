@@ -75,6 +75,8 @@ export interface CallOptions {
   /** The wallet connected and signed in, the one every answer must be about. */
   owner: string
   signal?: AbortSignal
+  /** An explicit user's confirmation takes precedence over speculative preparation. No wire field. */
+  priority?: 'action' | 'preview'
 }
 
 export interface CrosschainClient {
@@ -189,7 +191,7 @@ export function createCrosschainClient({
   session: CrosschainSession
   clock: CrosschainClock
 }): CrosschainClient {
-  async function call<R extends CrosschainRoute>(route: R, request: CrosschainRequests[R], { owner, signal }: CallOptions): Promise<CrosschainOutcome<R>> {
+  async function call<R extends CrosschainRoute>(route: R, request: CrosschainRequests[R], { owner, signal, priority }: CallOptions): Promise<CrosschainOutcome<R>> {
     const fail = (failure: CrosschainFailure): CrosschainOutcome<R> => ({ ok: false, route, failure })
     let valid: boolean
     try {
@@ -199,10 +201,10 @@ export function createCrosschainClient({
     }
     const body = JSON.stringify(request)
     if (!valid || new TextEncoder().encode(body).byteLength > MAX_REQUEST_BYTES) return fail({ kind: 'request_invalid' })
-    const sentMono = clock.monoMs()
+    let sentMono = clock.monoMs()
     let lent: { lent: true; value: TransportResult } | { lent: false }
     try {
-      lent = await session.withCsrf((csrf) => transport.send(route, body, { csrf, signal }))
+      lent = await session.withCsrf((csrf) => transport.send(route, body, { csrf, signal, onStart: () => { sentMono = clock.monoMs() }, ...(priority ? { priority } : {}) }))
     } catch {
       lent = { lent: true, value: { kind: 'network' } }
     }

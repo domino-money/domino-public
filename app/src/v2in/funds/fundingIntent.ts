@@ -1,6 +1,7 @@
 import type { Holding } from '../../finance/v2/holdings'
-import type { Timing } from '../../v2/crosschain/client'
+import { quoteDeadlineMono, type Timing } from '../../v2/crosschain/client'
 import type { CrosschainRequests, QuotePlan } from '../../v2/crosschain/types'
+import { SEND_MARGIN_MS } from '../../v2/crosschain/steps'
 import { quoteRequestOf, sendable, sentRaw } from './model'
 import { FUNDS_DEFAULT_SLIPPAGE_BPS } from './constants'
 
@@ -32,9 +33,19 @@ export interface FundingIntent {
   gasRecovery?: { mode: 'native' | 'token'; reviewNeeded: boolean }
 }
 export interface PricedLeg { holding: Holding; quote: QuotePlan; timing: Timing }
-export type QuoteFunding = (request: CrosschainRequests['quote']) => Promise<{ quote: QuotePlan; timing: Timing }>
+export type QuoteFunding = (request: CrosschainRequests['quote'], options?: { signal?: AbortSignal }) => Promise<{ quote: QuotePlan; timing: Timing }>
+export interface FundingPlanningOptions {
+  /** The same monotonic clock used to timestamp quote requests, never the device wall clock. */
+  monoMs?: () => number
+  signal?: AbortSignal
+  maxDurationMs?: number
+  maxQuotes?: number
+}
+export const FUNDING_PLAN_DURATION_MS = 120_000
+export const FUNDING_PLAN_QUOTE_LIMIT = 12
+export const FUNDING_REVIEW_MARGIN_MS = SEND_MARGIN_MS + 15_000
 
-/** First look for one source. Combine only when no quoted single source can cover the net amount. */
+/** First look for one source. Incomplete/busy discovery is never reported as insufficient funds. */
 export async function planFunding(input: {
   destinationChainId: 4663 | 8453 | 42161
   destinationToken: string
@@ -44,70 +55,150 @@ export async function planFunding(input: {
   quote: QuoteFunding
   spendable?: (holding: Holding) => bigint
   cancelled(): boolean
-}): Promise<PricedLeg[] | null> {
+} & FundingPlanningOptions): Promise<PricedLeg[] | null> {
   if (input.required <= 0n) return null
-  const capacity = (holding: Holding) => {
-    const ordinary = sendable(holding), revised = input.spendable?.(holding) ?? ordinary
-    return revised < 0n ? 0n : revised < ordinary ? revised : ordinary
+  const now = input.monoMs ?? (() => performance.now())
+  const duration = input.maxDurationMs ?? FUNDING_PLAN_DURATION_MS
+  const deadline = now() + duration
+  const controller = new AbortController()
+  let timedOut = false, quoteCount = 0
+  const abort = () => controller.abort()
+  input.signal?.addEventListener('abort', abort, { once: true })
+  const timeout = setTimeout(() => { timedOut = true; controller.abort() }, duration)
+  const guard = () => {
+    if (input.cancelled() || input.signal?.aborted) throw new Error('funding_cancelled')
+    if (timedOut || now() >= deadline) throw new Error('funding_plan_timeout')
   }
-  const partial: Holding[] = []
-  let unavailable = false
-  const ask = async (holding: Holding, amount: bigint, max: bigint | null, gas: boolean): Promise<PricedLeg> => ({ holding,
-    ...await input.quote(quoteRequestOf({ originChainId: holding.chainId, originToken: holding.token,
-      destinationChainId: input.destinationChainId, destinationToken: input.destinationToken,
-      amountRaw: amount.toString(), ...(max === null ? {} : { maxInputRaw: max.toString() }),
-      slippageBps: FUNDS_DEFAULT_SLIPPAGE_BPS, destinationGas: gas })) })
-  for (const holding of input.holdings) {
-    if (input.cancelled()) throw new Error('funding_cancelled')
-    const cap = capacity(holding)
-    if (cap <= 0n) continue
-    const full = await ask(holding, input.required, cap, input.destinationGas)
-    if (winningMinimum(full.quote) >= input.required) return [full]
-    unavailable ||= full.quote.candidates.some((candidate) => candidate.status === 'unavailable' || candidate.status === 'rate_limited')
-    // Only a priced route above the cap can become a valid smaller contribution. No blind drain-all fallback.
-    if (full.quote.candidates.some((candidate) => candidate.status === 'input_above_max')) partial.push(holding)
+  // A silent quote or scheduler must also settle: abort alone does not make an arbitrary Promise reject.
+  const bounded = async <T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+    guard()
+    return new Promise<T>((resolve, reject) => {
+      const stopped = () => reject(new Error(timedOut ? 'funding_plan_timeout' : 'funding_cancelled'))
+      controller.signal.addEventListener('abort', stopped, { once: true })
+      Promise.resolve().then(() => { guard(); return work(controller.signal) }).then(resolve, reject)
+        .finally(() => controller.signal.removeEventListener('abort', stopped))
+    })
   }
-  if (!partial.length && unavailable) throw new Error('funding_routes_busy')
-  const capacities: PricedLeg[] = []
-  for (const holding of partial) {
-    if (input.cancelled()) throw new Error('funding_cancelled')
-    const contribution = await ask(holding, capacity(holding), null, input.destinationGas && capacities.length === 0)
-    if (winningMinimum(contribution.quote) > 0n) capacities.push(contribution)
-    else unavailable ||= contribution.quote.candidates.some((candidate) => candidate.status === 'unavailable' || candidate.status === 'rate_limited')
-  }
-  // One holding per origin avoids reusing a network's native gas allowance for two independent deposits.
-  // All holdings were considered for a single transfer above; retain the largest actual net contribution per chain.
-  const perOrigin = new Map<number, PricedLeg>()
-  for (const leg of capacities) {
-    const previous = perOrigin.get(leg.holding.chainId)
-    if (!previous || winningMinimum(leg.quote) > winningMinimum(previous.quote)) perOrigin.set(leg.holding.chainId, leg)
-  }
-  const chosen = chooseContributions([...perOrigin.values()], input.required)
-  if (!chosen && unavailable) throw new Error('funding_routes_busy')
-  if (!chosen || chosen.length > 8) return null
-  // Keep the already-priced gas contribution first. If it was not selected, price the first selected capacity
-  // with gas before assigning its output; otherwise adding gas to its full net capacity would exceed the source cap.
-  if (input.destinationGas) {
-    const gasIndex = chosen.findIndex((leg) => leg.quote.request.destinationGas)
-    if (gasIndex > 0) chosen.unshift(...chosen.splice(gasIndex, 1))
-    else if (gasIndex < 0) {
-      chosen[0] = await ask(chosen[0].holding, capacity(chosen[0].holding), null, true)
-      if (winningMinimum(chosen[0].quote) <= 0n) return null
+  try {
+    guard()
+    const capacity = (holding: Holding) => {
+      const ordinary = sendable(holding), revised = input.spendable?.(holding) ?? ordinary
+      return revised < 0n ? 0n : revised < ordinary ? revised : ordinary
     }
+    const partial: { holding: Holding; estimate: bigint }[] = []
+    let unavailable = false
+    const ask = async (holding: Holding, amount: bigint, max: bigint | null, gas: boolean): Promise<PricedLeg> => {
+      guard()
+      if (quoteCount >= (input.maxQuotes ?? FUNDING_PLAN_QUOTE_LIMIT)) throw new Error('funding_plan_limit')
+      quoteCount += 1
+      const answer = await bounded((signal) => input.quote(quoteRequestOf({ originChainId: holding.chainId, originToken: holding.token,
+        destinationChainId: input.destinationChainId, destinationToken: input.destinationToken,
+        amountRaw: amount.toString(), ...(max === null ? {} : { maxInputRaw: max.toString() }),
+        slippageBps: FUNDS_DEFAULT_SLIPPAGE_BPS, destinationGas: gas }), { signal }))
+      guard()
+      return { holding, ...answer }
+    }
+    const fresh = async (legs: PricedLeg[]): Promise<PricedLeg[]> => {
+      const refreshed = new Set<number>()
+      for (;;) {
+        guard()
+        const stale = legs.findIndex((leg) => quoteDeadlineMono(leg.quote, leg.timing) <= now() + FUNDING_REVIEW_MARGIN_MS)
+        if (stale < 0) return legs
+        // Refresh only a selected leg, once, within its already-priced debit and minimum output.
+        // If refreshing another leg makes this one stale again, stop instead of cycling forever.
+        if (refreshed.has(stale)) throw new Error('funding_quotes_expired')
+        refreshed.add(stale)
+        const previous = legs[stale], need = winningMinimum(previous.quote)
+        const next = await ask(previous.holding, need, BigInt(sentRaw(previous.quote)), previous.quote.request.destinationGas)
+        if (winningMinimum(next.quote) < need) throw new Error('funding_quotes_expired')
+        legs[stale] = next
+      }
+    }
+    const perOrigin = new Map<number, PricedLeg>()
+    const probed = new Set<string>()
+    const identityOf = (holding: Holding) => `${holding.chainId}:${holding.token.toLowerCase()}`
+    const combine = async (): Promise<PricedLeg[] | null> => {
+      // Estimates only order and trigger requests. Actual, newly quoted net minimums establish coverage.
+      partial.sort((a, b) => a.estimate > b.estimate ? -1 : a.estimate < b.estimate ? 1 : 0)
+      for (const { holding } of partial) {
+        guard()
+        const identity = identityOf(holding)
+        if (probed.has(identity)) continue
+        probed.add(identity)
+        const gas = input.destinationGas && ![...perOrigin.values()].some((leg) => leg.quote.request.destinationGas)
+        const contribution = await ask(holding, capacity(holding), null, gas)
+        if (winningMinimum(contribution.quote) > 0n) {
+          const previous = perOrigin.get(holding.chainId)
+          if (!previous || winningMinimum(contribution.quote) > winningMinimum(previous.quote)) perOrigin.set(holding.chainId, contribution)
+          const covered = chooseContributions([...perOrigin.values()], input.required)
+          if (covered && (!input.destinationGas || covered.some((leg) => leg.quote.request.destinationGas))) break
+        }
+        else unavailable ||= contribution.quote.candidates.some((candidate) => candidate.status === 'unavailable' || candidate.status === 'rate_limited')
+      }
+      // One holding per origin avoids reusing a network's native gas allowance for independent deposits.
+      const chosen = chooseContributions([...perOrigin.values()], input.required)
+      if (!chosen || chosen.length > 8) return null
+      // Keep the gas contribution first. Adding gas to an already full capacity would exceed its source cap.
+      if (input.destinationGas) {
+        const gasIndex = chosen.findIndex((leg) => leg.quote.request.destinationGas)
+        if (gasIndex > 0) chosen.unshift(...chosen.splice(gasIndex, 1))
+        else if (gasIndex < 0) {
+          chosen[0] = await ask(chosen[0].holding, capacity(chosen[0].holding), null, true)
+          if (winningMinimum(chosen[0].quote) <= 0n) throw new Error('funding_quotes_changed')
+        }
+      }
+      let remaining = input.required
+      const sized: PricedLeg[] = []
+      for (const [index, leg] of chosen.entries()) {
+        guard()
+        if (remaining <= 0n) break
+        const need = winningMinimum(leg.quote) < remaining ? winningMinimum(leg.quote) : remaining
+        const gas = input.destinationGas && index === 0
+        const next = need === winningMinimum(leg.quote) && leg.quote.request.destinationGas === gas
+          ? leg : await ask(leg.holding, need, capacity(leg.holding), gas)
+        if (winningMinimum(next.quote) < need) throw new Error('funding_quotes_changed')
+        sized.push(next)
+        remaining -= winningMinimum(next.quote)
+      }
+      if (remaining > 0n) throw new Error('funding_quotes_changed')
+      return fresh(sized)
+    }
+    const seen = new Set<string>()
+    for (const holding of input.holdings) {
+      guard()
+      const identity = identityOf(holding)
+      if (seen.has(identity)) continue
+      seen.add(identity)
+      const cap = capacity(holding)
+      if (cap <= 0n) continue
+      const full = await ask(holding, input.required, cap, input.destinationGas)
+      if (winningMinimum(full.quote) >= input.required) return await fresh([full])
+      unavailable ||= full.quote.candidates.some((candidate) => candidate.status === 'unavailable' || candidate.status === 'rate_limited')
+      // Only a priced route above the cap can become a smaller contribution. No blind drain-all fallback.
+      const priced = full.quote.candidates.filter((candidate) => candidate.status === 'input_above_max' && candidate.inputRaw && candidate.minimumOutputRaw)
+      if (priced.length) partial.push({ holding, estimate: priced.reduce((best, candidate) => {
+        const estimate = cap * BigInt(candidate.minimumOutputRaw!) / BigInt(candidate.inputRaw!)
+        return estimate > best ? estimate : best
+      }, 0n) })
+      const estimates = new Map<number, bigint>()
+      for (const entry of partial) {
+        if (entry.estimate > (estimates.get(entry.holding.chainId) ?? 0n)) estimates.set(entry.holding.chainId, entry.estimate)
+      }
+      // Do not exhaust the budget enumerating every wallet token once a useful combination can be priced.
+      // A failed estimate simply continues discovery; it never becomes a displayed balance or spend plan.
+      if ([...estimates.values()].reduce((sum, estimate) => sum + estimate, 0n) >= input.required) {
+        const combined = await combine()
+        if (combined) return combined
+      }
+    }
+    const combined = await combine()
+    if (!combined && unavailable) throw new Error('funding_routes_busy')
+    return combined
+  } finally {
+    clearTimeout(timeout)
+    input.signal?.removeEventListener('abort', abort)
+    controller.abort()
   }
-  let remaining = input.required
-  const sized: PricedLeg[] = []
-  for (const [index, leg] of chosen.entries()) {
-    if (input.cancelled()) throw new Error('funding_cancelled')
-    const need = winningMinimum(leg.quote) < remaining ? winningMinimum(leg.quote) : remaining
-    const gas = input.destinationGas && index === 0
-    const next = need === winningMinimum(leg.quote) && leg.quote.request.destinationGas === gas
-      ? leg : await ask(leg.holding, need, capacity(leg.holding), gas)
-    if (winningMinimum(next.quote) < need) return null
-    sized.push(next)
-    remaining -= winningMinimum(next.quote)
-  }
-  return remaining <= 0n ? sized : null
 }
 
 export const winningMinimum = (quote: QuotePlan): bigint => {
@@ -218,7 +309,7 @@ export const gasRecoveryKey = (intent: FundingIntent) => JSON.stringify([intent.
   intent.legs.map((leg) => [leg.id, leg.state, leg.depositTxHash, leg.maxInputRaw, leg.minimumOutputRaw, leg.reserveRaw])])
 
 /** A new proposal, never a send: keep the position target, debit caps and all transferred contributions intact. */
-export async function planGasRecovery(intent: FundingIntent, holdings: readonly Holding[], quote: QuoteFunding, cancelled: () => boolean, reviewId: string): Promise<{ intent: FundingIntent; quotes: PricedLeg[]; recoveryFrom: string } | null> {
+export async function planGasRecovery(intent: FundingIntent, holdings: readonly Holding[], quote: QuoteFunding, cancelled: () => boolean, reviewId: string, options: FundingPlanningOptions = {}): Promise<{ intent: FundingIntent; quotes: PricedLeg[]; recoveryFrom: string } | null> {
   if (!intent.gasRecovery?.reviewNeeded || intent.legs.some((leg) => leg.state === 'sending' || leg.state === 'unknown')) return null
   const outstanding = outstandingLegs(intent), kept = intent.legs.filter((leg) => !outstanding.includes(leg))
   const usedOrigins = new Set(kept.map((leg) => leg.originChainId))
@@ -230,7 +321,7 @@ export async function planGasRecovery(intent: FundingIntent, holdings: readonly 
   }
   const quoted = await planFunding({ destinationChainId: intent.destinationChainId, destinationToken: intent.destinationToken,
     required: outstanding.reduce((sum, leg) => sum + BigInt(leg.minimumOutputRaw), 0n), holdings: usable,
-    destinationGas: !kept.some((leg) => leg.destinationGas) && outstanding.some((leg) => leg.destinationGas), quote, cancelled, spendable: caps })
+    destinationGas: !kept.some((leg) => leg.destinationGas) && outstanding.some((leg) => leg.destinationGas), quote, cancelled, spendable: caps, ...options })
   if (!quoted || kept.length + quoted.length > 8) return null
   const next = freezeFunding(intent, quoted)
   // New ids prevent a stale observer for a stopped leg from mutating the replacement.

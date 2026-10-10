@@ -810,28 +810,45 @@ export function payLacks(chainId: number, token: string, text: string, decimals:
 /** A network's ETH as a chain-balances answer read it, raw; null when that network or that balance was not read (pure). */
 export const nativeOn = (answer: ChainBalancesResponse, chainId: number): bigint | null => balanceOn(answer, chainId, ZERO)?.raw ?? null
 
-/**
- * Added 2026-10-06 (the owner, on production's New position: AI/PONS and CASHCAT/AI short on Robinhood Chain with no
- * offer at all, since neither token is one a deposit delivers): the one token "Pay with … instead" names, which Domino V2's
- * zap swaps for the pool's two (position-plan-v1: "exactly one other token"): the network's ETH, or its stable when the
- * wallet holds more value in dollars than in ether, there and on the other networks, at the qualified prices Domino's
- * service read (`answer`); ETH while either is not known. Null when a token of the pool is one a deposit delivers: the
- * offer to bring it stands, as before (pure).
- */
+/** Preferred observed payment asset. A bridgeable pool token never suppresses local alternatives. */
 export function payToken(chainId: number, poolTokens: readonly string[], answer: ChainBalancesResponse | null): { address: string; symbol: string; decimals: number } | null {
-  if (deliverableTokens(chainId, poolTokens).length > 0) return null
-  const worth: Record<Kind, bigint | null> = { ether: 0n, dollar: 0n }
-  for (const chain of answer?.chains ?? []) {
-    for (const read of chain.status === 'current' ? chain.balances : []) {
-      const kind = kindOf(chain.chainId, read.address)
-      const held = kind === null ? null : worth[kind]
-      if (kind === null || read.balanceRaw === null || read.balanceRaw === '0') continue
-      const micro = read.valueUsd === null ? null : microUsd(read.valueUsd)
-      worth[kind] = micro === null || held === null ? null : held + micro
+  const first = payCandidates(chainId, poolTokens, answer)[0]
+  return first ? { address: first.address, symbol: first.symbol, decimals: first.decimals } : null
+}
+
+/** Actual payment candidates. Local spendable funds take priority; ETH and WETH retain their own identities. */
+export function payCandidates(chainId: number, poolTokens: readonly string[], answer: ChainBalancesResponse | null): { address: string; symbol: string; decimals: number; origins: number[] }[] {
+  if (!answer) return []
+  const pool = new Set(poolTokens.map(lower))
+  const tokens = originCandidate(chainId)?.tokens.filter((token) => !pool.has(lower(token.address))) ?? []
+  const native = nativeOn(answer, chainId)
+  const local = tokens.flatMap((token) => {
+    const balance = balanceOn(answer, chainId, token.address)
+    const available = balance ? maxSpend(balance.raw, token.address === ZERO) : 0n
+    if (available <= 0n) return []
+    const value = valueUsdOf(answer, chainId, token.address)
+    const worth = value === null ? null : microUsd(value)
+    const spendableWorth = worth === null || !balance || balance.raw === 0n ? null : worth * available / balance.raw
+    return [{ ...token, origins: [] as number[], gas: token.address === ZERO || (native !== null && native >= REVIEW_GAS_RESERVE_WEI), worth: spendableWorth }]
+  }).sort((a, b) => Number(b.gas) - Number(a.gas) || (a.worth !== null && b.worth !== null ? (a.worth > b.worth ? -1 : a.worth < b.worth ? 1 : 0) : 0))
+  const result = local.map(({ gas: _gas, worth: _worth, ...token }) => token)
+  // Directly bridgeable pool tokens already have their own funding offer. Other pools need a destination
+  // payment asset, but only when the wallet actually holds usable source funds of that kind.
+  if (deliverableTokens(chainId, poolTokens).length === 0) {
+    for (const target of tokens.filter((token) => token.address === ZERO || kindOf(chainId, token.address) === 'dollar')) {
+      const origins = answer.chains.filter((chain) => chain.chainId !== chainId && chain.status === 'current').filter((chain) => {
+        const gas = nativeOn(answer, chain.chainId)
+        return gas !== null && gas > 0n && chain.balances.some((balance) => {
+          const held = balanceOn(answer, chain.chainId, balance.address)
+          return held !== null && kindOf(chain.chainId, balance.address) === kindOf(chainId, target.address) && sendable({ chainId: chain.chainId, token: balance.address, raw: held.raw }) > 0n
+        })
+      }).map((chain) => chain.chainId)
+      const existing = result.find((token) => token.address === target.address)
+      if (existing) existing.origins = origins
+      else if (origins.length > 0) result.push({ ...target, origins })
     }
   }
-  const dollar = worth.dollar !== null && worth.ether !== null && worth.dollar > worth.ether
-  return destinationChoices().find((d) => d.chainId === chainId)?.tokens.find((t) => (dollar ? kindOf(chainId, t.address) === 'dollar' : t.address === ZERO)) ?? null
+  return result
 }
 
 /** One balance's value in USD as the answer gives it (a qualified price only, read-v6 1.1.0-rc.1); null without one (pure). */

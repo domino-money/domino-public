@@ -1,11 +1,13 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { crosschainSessionAccess } from '../../finance/v2/http'
 import type { PairBalancesState } from '../../components/create/usePairBalances'
-import { rawBalances } from '../../components/create/valuation'
+import { rawBalances, usdOf } from '../../components/create/valuation'
+import { paymentEstimate, preferredPayment } from '../../lib/create/payFunding'
 import { wholeFromOther } from '../../lib/create/depositPlan'
 import { takesOnly, type JourneyState, type PayWith } from '../../lib/create/journey'
 import type { PayFacts } from '../../lib/create/poolPrices'
 import { reviewPlan, reviewTerms } from '../../lib/create/reviewPlan'
+import { maxSpend, REVIEW_GAS_RESERVE_WEI } from '../../lib/create/reviewPlan'
 import type { TokenCandidate } from '../../lib/read/screens/tokens'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import { isV2ChainId } from '../../v2/chains'
@@ -19,31 +21,7 @@ import { fundsServices } from './services'
 
 const ZERO = '0x0000000000000000000000000000000000000000'
 
-/**
- * The inline "Bring {token} from {network}" offer under New position's amounts, in a build with Domino V2 (opened lazily
- * from components/create/StageAmount.tsx, behind the bare `__DOMINO_V2__` define, through components/Deferred.tsx: drawn
- * as soon as its chunk is in, nothing while it loads, nothing should it fail). V1's own amounts (PairedAmounts) are mounted
- * by the step itself, above this, never by this chunk, so the inputs never remount and the caret is never lost when the
- * chunk lands (review of 2026-10-03, #15). Here only the offer (./BringFunds.tsx), where the gate opens S2 on the
- * position's chain, only while the position can't be funded there at all, counting the one-token swap (decided [owner,
- * 2026-10-02 evening]; ./model.ts lackingTokens), for a token a deposit from another network can deliver.
- *
- * Everything the offer decides from is the amount step's own: the pool, the range, the typed amount, and the wallet's
- * balances as the step read them (Review's own plan for them, lib/create/reviewPlan.ts). When the deposit has
- * arrived, the same position continues through the step's own handlers: the typed token's field, or the other token's
- * row, exactly as typing in it would. The offer's services (./services.ts, over the page's parts in ./live.ts) exist
- * only under a `live` gate, which the crosschain route's own capabilities decide; otherwise they are null and the offer
- * runs locked, still reading what the wallet holds on other networks.
- *
- * Changed on purpose 2026-10-06 (the owner, on production: AI/PONS and CASHCAT/AI short on Robinhood Chain, and no offer at
- * all, since neither token is one a deposit delivers): the deposit may also be paid with one other token, the network's
- * ETH or its stable, which Domino V2's zap swaps for the pool's two (lib/create/journey.ts PayWith; ./PayWith.tsx), where
- * Domino's service says what that would be (`pay`, lib/create/poolPrices.ts PayFacts: only where the network's S1 gate is
- * live and no token of the pool can be brought). Offered in one line while the wallet is short of the amounts typed, first,
- * outside the offer's card, whatever S2's gate says (the review of 2026-10-06); chosen, its one panel and the way back are
- * the step's own (components/create/PairedAmounts.tsx), and the offer under it is about that token (`poolTokens` that
- * token alone, what it lacks against the balance `pay` says, "Use" setting its amount).
- */
+/** Funding assistance below the stable amount inputs. S1 local conversion remains independent of S2 bridging. */
 export default function FundsAmounts({
   state,
   balances,
@@ -90,7 +68,7 @@ export default function FundsAmounts({
   })
   // The amount step's own reading of ETH on the position's chain, when the pool holds ETH.
   const nativeSide = pool.currencies.findIndex((currency) => currency.address === ZERO)
-  const nativeOnDestination = state.payWith && pay?.nativeRaw != null ? pay.nativeRaw.toString() : raw && (nativeSide === 0 || nativeSide === 1) ? raw[nativeSide] : null
+  const nativeOnDestination = state.payWith && !pay?.stale && pay?.nativeRaw != null ? pay.nativeRaw.toString() : raw && (nativeSide === 0 || nativeSide === 1) ? raw[nativeSide] : null
   // Added 2026-10-06: the amount typed, once the wallet covers it (after an arrival): "Use" keeps it as it is.
   const keep = keptAmount(planned?.plan ?? null, independent, state.budget, independent !== null ? pool.currencies[independent].symbol : null, independent !== null ? pool.currencies[independent].decimals : null)
   // Added 2026-10-06 (the integration review): a range beside today's price takes one token alone (the amount step types
@@ -103,16 +81,28 @@ export default function FundsAmounts({
   // offer sizes its inputs (model.ts payLacks); "Use" after an arrival keeps that amount once covered.
   const paid = state.payWith
   const amount = paid && amountRawOf(paid.text, paid.token.decimals)
-  const held = paid && pay?.token.chainId === paid.token.chainId && pay.token.address.toLowerCase() === paid.token.address.toLowerCase() ? pay.raw : null
+  const held = paid && !pay?.stale && pay?.token.chainId === paid.token.chainId && pay.token.address.toLowerCase() === paid.token.address.toLowerCase() ? pay.raw : null
   const paidLacks = paid ? payLacks(chainId, paid.token.address, paid.text, paid.token.decimals, held) : lacks
+  const totalUsd = planned ? usdOf(pool, planned.need) : null
+  const alternative = preferredPayment(pay, totalUsd)
+  const estimate = alternative ? paymentEstimate(totalUsd, alternative) : null
+  const offerPayment = !!onPayWith && !paid && alternative !== null && (planned === null || planned.plan?.kind === 'short')
+  const localAvailable = alternative?.raw != null ? maxSpend(alternative.raw, alternative.token.address === ZERO) : 0n
+  const localGas = alternative?.token.address === ZERO || (alternative?.nativeRaw != null && alternative.nativeRaw >= REVIEW_GAS_RESERVE_WEI)
+  const usableLocal = offerPayment && localGas && localAvailable > 0n && (planned === null || (estimate !== null && localAvailable >= estimate.raw))
+  const choosePayment = () => {
+    if (alternative && onPayWith) onPayWith({ token: alternative.token, text: estimate?.text ?? '', ...(estimate ? { estimated: true } : {}) })
+  }
 
   return (
     <>
-      {onPayWith && !paid && pay && planned?.plan?.kind === 'short' && <PayLine token={pay.token} pair={pool.currencies} onPay={() => onPayWith({ token: pay.token, text: '' })} />}
+      {offerPayment && alternative && <PayLine facts={alternative} pair={pool.currencies} onPay={choosePayment} />}
       {gate && gate.mode !== 'off' && wallet !== null && (
         <BringFunds
           key={`${identity.kind === 'connected' ? identity.connectorName : ''}|${wallet}`}
           gate={gate}
+          optional={usableLocal}
+          checking={paid ? pay === undefined || held === null : raw === null}
           services={services}
           chainId={chainId}
           intentKey={JSON.stringify([chainId, pool.key, state.range?.lower, state.range?.upper, paid ? [paid.token.chainId, paid.token.address.toLowerCase(), paid.text] : [state.token?.key, state.budget]])}

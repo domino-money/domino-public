@@ -54,7 +54,7 @@ export const S1_PLAN_TIMEOUT_MS = 22_000
 export type RawPost = (
   url: string,
   init: { headers: Record<string, string>; body: string },
-  options: { contractHeader: string; maxBytes: number; timeoutMs: number; signal?: AbortSignal },
+  options: { contractHeader: string; maxBytes: number; timeoutMs: number; signal?: AbortSignal; onStart?: () => void; priority?: 'action' | 'preview' },
 ) => Promise<TransportResult>
 
 export function createHttpS1PlanTransport({ post, csrf }: { post: RawPost; csrf: () => string | null }): S1PlanTransport {

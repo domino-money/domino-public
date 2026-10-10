@@ -83,6 +83,8 @@ export const DEFAULT_UPSIDE_PERCENT = 50
  * units; `token` is the network's own currency as its profile names it.
  */
 export interface PayWith {
+  /** Indicative USD-budget conversion; the plan still confirms the actual output. */
+  estimated?: boolean
   token: TokenDisplay
   text: string
 }

@@ -328,7 +328,8 @@ test('both bridges above what can be sent: what each needs against the most the 
   // Partial capacity is useful only inside a complete funding proposal. No isolated drain-all button is offered.
   const intent = readFileSync(new URL('../../src/v2in/funds/fundingIntent.ts', import.meta.url), 'utf8');
   assert.match(intent, /candidate\.status === 'input_above_max'/, 'only supported priced routes can become partial contributions');
-  assert.match(intent, /return remaining <= 0n \? sized : null/, 'the aggregate must cover the full required net output');
+  assert.match(intent, /if \(remaining > 0n\) throw new Error\('funding_quotes_changed'\)/, 'the aggregate must cover the full required net output before it can be returned');
+  assert.match(intent, /return fresh\(sized\)/, 'every selected leg must also remain valid for review');
   assert.match(intent, /maxInputRaw: sentRaw\(leg\.quote\)/, 'the reviewed spending amount bounds each later quote');
 });
 

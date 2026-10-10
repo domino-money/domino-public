@@ -19,13 +19,13 @@ import { CROSSCHAIN_CONTRACT, CROSSCHAIN_HEADER } from './version'
 export type RawPost = (
   url: string,
   init: { headers: Record<string, string>; body: string },
-  options: { contractHeader: string; maxBytes: number; timeoutMs: number; signal?: AbortSignal },
+  options: { contractHeader: string; maxBytes: number; timeoutMs: number; signal?: AbortSignal; onStart?: () => void; priority?: 'action' | 'preview' },
 ) => Promise<TransportResult>
 
 export function createHttpCrosschainTransport({ post }: { post: RawPost }): CrosschainTransport {
   return {
     kind: 'http',
-    send(route, body, { csrf, signal }) {
+    send(route, body, { csrf, signal, onStart, priority }) {
       return post(
         CROSSCHAIN_PREFIX + route,
         {
@@ -37,7 +37,7 @@ export function createHttpCrosschainTransport({ post }: { post: RawPost }): Cros
           },
           body,
         },
-        { contractHeader: CROSSCHAIN_HEADER, maxBytes: MAX_RESPONSE_BYTES, timeoutMs: CROSSCHAIN_TIMEOUT_MS, signal },
+        { contractHeader: CROSSCHAIN_HEADER, maxBytes: MAX_RESPONSE_BYTES, timeoutMs: CROSSCHAIN_TIMEOUT_MS, signal, ...(onStart ? { onStart } : {}), ...(priority ? { priority } : {}) },
       )
     },
   }

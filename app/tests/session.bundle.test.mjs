@@ -1236,7 +1236,11 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // Windows gzip 9 measures the separately deferred pool chart at 12,066 B: its own 13 kB cap leaves room for
     // platform/name variation. These same bytes still count against the unchanged all-lazy ceiling. No existing
     // budget or test-only allowance grows when the chart leaves the session/read startup path.
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 384_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 651_000], ['V2 fixture data', fixtureData, 13_000]]) {
+    // 2026-10-10 (bounded funding preparation): shared request admission/cooldowns, wallet/origin caches,
+    // cancellable quote planning and local-payment retention add deferred V2 code without a dependency.
+    // Linux CI and Windows both measure 653,623 B gzip. Rebase only V2 to the next kB plus 1 kB for
+    // platform/chunk-name variation; the initial-entry ceiling and every other family stay unchanged.
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 384_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 655_000], ['V2 fixture data', fixtureData, 13_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir !== DIST && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

@@ -130,6 +130,7 @@ export function PairedAmounts({
             />
           </div>
         </div>
+        {paid.estimated && <p className="dm-hint" data-pay-estimate="">Estimated budget. Review confirms the tokens you receive.</p>}
         <button type="button" className="dm-funds-more" onClick={() => onPayWith(null)} data-pay-with-back="">
           Use <SymbolText token={pool.currencies[0]} /> and <SymbolText token={pool.currencies[1]} /> instead
         </button>
@@ -310,8 +311,8 @@ export function PairedAmounts({
         </p>
       )}
       {plan && plan.kind === 'short' && (
-        <p id={shortId} role="status" className="dm-flow-position" data-tone="warn" data-amount-short={plan.token}>
-          {CREATE.amount.shortOf(pool.currencies[plan.token].symbol ?? '', pool.currencies[plan.token === 0 ? 1 : 0].symbol ?? '')}
+        <p id={shortId} role="status" className={pay ? 'sr-only' : 'dm-flow-position'} data-tone={onPayWith ? 'neutral' : 'warn'} data-amount-short={plan.token}>
+          {pay ? 'Choose a funding option below.' : onPayWith ? 'This amount needs more funds on this network.' : CREATE.amount.shortOf(pool.currencies[plan.token].symbol ?? '', pool.currencies[plan.token === 0 ? 1 : 0].symbol ?? '')}
         </p>
       )}
     </div>

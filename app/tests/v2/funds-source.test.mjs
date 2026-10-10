@@ -84,7 +84,7 @@ test('paying with one other token: the panel and its way back are the step\'s ow
   const chunk = ALL.find(({ path }) => path === 'v2in/funds/FundsAmounts.tsx').code;
   assert.doesNotMatch(chunk, /data-pay-with-amount|data-pay-with-back|PayPanel/);
   // The line first, then the offer's card: never inside it, so no branch of the card remounts it.
-  assert.match(chunk, /return \(\s*<>\s*\{onPayWith && !paid && pay && planned\?\.plan\?\.kind === 'short' && <PayLine /);
+  assert.match(chunk, /return \(\s*<>\s*\{offerPayment && alternative && <PayLine /);
   const offer = ALL.find(({ path }) => path === 'v2in/funds/BringFunds.tsx').code;
   assert.doesNotMatch(offer, /PayLine|payWith|\bpaid\b/, 'the offer\'s card knows nothing of it');
 });
@@ -205,12 +205,12 @@ test('the funding proposal preserves consent, source caps, unknown outcomes and 
   const status = ALL.find(({ path }) => path === 'v2in/funds/DepositStatus.tsx').code;
   assert.equal([...offer.matchAll(/data-funds-deposit-button/g)].length, 1, 'one primary transfer action');
   assert.equal([...offer.matchAll(/<details/g)].length, 1, 'one progressive details disclosure');
-  assert.match(offer, /onClick=\{\(\) => void execute\(\)\}/, 'wallet sends require the user action');
+  assert.match(offer, /onClick=\{\(\) => void \(expired && !intent \? prepare\(\) : execute\(\)\)\}/, 'wallet sends require the user action; an expired preview must be renewed first');
   assert.match(offer, /withFundingLock\(wallet/);
   assert.match(offer, /respectsLeg\(accepted, leg, checked\.quote\)/, 'replacement quotes must fit accepted spending and output');
   assert.match(intent, /maxInputRaw: sentRaw\(leg\.quote\)/, 'the accepted debit, never the whole available wallet, caps refreshes');
   assert.match(intent, /leg\.state === 'sending' \? 'unknown' : leg\.state/, 'a reload never makes a sendable leg out of an uncertain wallet request');
-  assert.match(offer, /quoteBudgetWait/);
+  assert.match(offer, /services\.client\.quote\(request, \{ owner: wallet, signal, priority \}\)/, 'quotes use the shared authenticated request budget and cancellation');
   assert.match(offer, /requestFailure/);
   assert.match(offer, /SEND_MARGIN_MS/);
   assert.match(offer, /data-funds-destination-gas/);

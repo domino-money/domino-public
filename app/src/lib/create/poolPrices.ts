@@ -34,18 +34,23 @@ export interface PoolPrices {
   pay: (pool: PoolOption, owner: string, signal: AbortSignal, later: (facts: PayFacts | null) => void, selected?: TokenDisplay | null) => Promise<PayFacts | null>
 }
 
-/**
- * Added 2026-10-06: the token "Pay with … instead" names (the network's ETH, or its stable when the wallet holds more
- * value in dollars, there and on the other networks), with the wallet's balance of it on the pool's network, raw, and its
- * qualified USD price per whole token (18 decimals), as Domino's service read them; each null when it was not read (never
- * a zero in its place).
- */
-export interface PayFacts {
+/** An observed payment asset and its qualified price. Null balances remain unknown, never zero. */
+export interface PayOption {
   token: TokenDisplay
   raw: bigint | null
   /** Native balance on the destination, independent of the selected wallet network. */
   nativeRaw?: bigint | null
   usd: string | null
+  /** Networks with observed eligible source funds; a route still needs a quote. */
+  origins?: readonly number[]
+  /** Retained for display after an unread refresh; cannot authorize Review until read again. */
+  stale?: boolean
+}
+
+export interface PayFacts extends PayOption {
+  alternatives?: readonly PayOption[]
+  /** Destination tokens actually read, including confirmed zero balances. */
+  observedTokens?: readonly string[]
 }
 
 export const PoolPricesContext = createContext<PoolPrices | null>(null)
@@ -60,29 +65,57 @@ export const usePoolPrices = (): PoolPrices | null => useContext(PoolPricesConte
  * Changed on purpose 2026-10-06 (the review of rugged97's #379): what `read` hands `later` (a read that answered after
  * the first changed it) replaces its answer for the same key, whichever of the two arrives first.
  */
-export function useKeyedRead<T>(key: string | null, read: (signal: AbortSignal, later: (value: T) => void) => Promise<T>): T | undefined {
+export function useKeyedRead<T>(key: string | null, read: (signal: AbortSignal, later: (value: T) => void) => Promise<T>, refresh?: { everyMs: number; revision: number; reconcile?: (previous: T | undefined, next: T) => T; onError?: (previous: T | undefined) => T }): T | undefined {
   const [got, setGot] = useState<{ key: string; value: T } | null>(null)
   const latest = useRef(read)
+  const reconcile = useRef(refresh?.reconcile)
+  const unavailable = useRef(refresh?.onError)
+  const refreshMs = refresh?.everyMs
+  const refreshRevision = refresh?.revision
   useEffect(() => {
     latest.current = read
+    reconcile.current = refresh?.reconcile
+    unavailable.current = refresh?.onError
   })
   useEffect(() => {
     if (key === null) return
     const controller = new AbortController()
-    let replaced = false
+    let busy = false
+    let last = -Infinity
+    let generation = 0
     const keep = (value: T) => {
-      if (!controller.signal.aborted) setGot({ key, value })
+      const merge = reconcile.current
+      if (!controller.signal.aborted) setGot((previous) => ({ key, value: merge ? merge(previous?.key === key ? previous.value : undefined, value) : value }))
     }
-    void latest.current(controller.signal, (value) => {
-      replaced = true
-      keep(value)
-    }).then(
-      (value) => {
-        if (!replaced) keep(value)
-      },
-      () => undefined,
-    )
-    return () => controller.abort()
-  }, [key])
+    const ask = () => {
+      if (busy || controller.signal.aborted || (refreshMs !== undefined && document.hidden) || Date.now() - last < 10_000) return
+      busy = true
+      last = Date.now()
+      const mine = ++generation
+      const publish = (value: T) => { if (mine === generation) keep(value) }
+      let replaced = false
+      void latest.current(controller.signal, (value) => {
+        replaced = true
+        publish(value)
+      }).then((value) => { if (!replaced) publish(value) }, () => {
+        const retain = unavailable.current
+        if (!replaced && !controller.signal.aborted && mine === generation && retain) {
+          setGot((previous) => ({ key, value: retain(previous?.key === key ? previous.value : undefined) }))
+        }
+      }).finally(() => { busy = false })
+    }
+    ask()
+    const timer = refreshMs !== undefined ? setInterval(ask, refreshMs) : null
+    if (refreshMs !== undefined) {
+      window.addEventListener('focus', ask)
+      document.addEventListener('visibilitychange', ask)
+    }
+    return () => {
+      controller.abort()
+      if (timer !== null) clearInterval(timer)
+      window.removeEventListener('focus', ask)
+      document.removeEventListener('visibilitychange', ask)
+    }
+  }, [key, refreshMs, refreshRevision])
   return got !== null && got.key === key ? got.value : undefined
 }

@@ -232,7 +232,7 @@ test('what is held on Ethereum and OP Mainnet joins the same logic: kinds, marks
   assert.equal(model.holdingFor(holdings, USDG, 4663, 1, listing).token, USDC_1, 'the one the listing bridges');
   // The token to pay with weighs what is held there too: US$500 of USDC on Ethereum against US$40 of ETH here.
   const elsewhere = answerOf({ 4663: { [ZERO]: [E18 / 100n, '40.000000'], [USDG]: [0n, null] }, 1: { [USDC_1]: [500_000_000n, '500.000000'] } });
-  assert.deepEqual(model.payToken(4663, [AI, PONS], elsewhere), { address: USDG, symbol: 'USDG', decimals: 6 });
+  assert.equal(model.payToken(4663, [AI, PONS], elsewhere).address, ZERO, 'local spendable ETH takes priority over remote USDC');
   assert.equal(model.payToken(4663, [AI, PONS], answerOf({ 4663: { [ZERO]: [E18 / 100n, '40.000000'], [USDG]: [0n, null] } })).address, ZERO, 'without it, ETH');
   // Their qualified prices count where Domino's networks gave none, after any of Domino's.
   assert.deepEqual(model.kindPrices(answerOf({ 1: { [ZERO]: [E18, '2714.286500', '2714.286500000000000000'] } })), { ether: 2_714_286_500n, dollar: null });

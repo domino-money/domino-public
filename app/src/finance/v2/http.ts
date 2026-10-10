@@ -41,9 +41,51 @@ import { createHttpReadV6Transport } from '../../v2/read/v6HttpTransport'
 import { createV2RouteProbe, type RawGet, type V2RouteProbe } from '../../v2/routes'
 import { sessionController } from '../../wallet/session'
 import { financialFetch } from '../http'
+import { authenticatedRequestPriority, authenticatedRetryDelay } from './requestCoordinator'
+import { coordinatedRequests } from './requestCoordinatorLive'
 
-/** One same-origin POST and its bounded reply (lib/http/rawReply.ts fetchRaw over the financial fetch). Never throws. */
-export const v2Post: RawPost = (url, init, options) => fetchRaw(financialFetch, url, init, { ...options, clock: realClock })
+/**
+ * Admission happens before the per-request timeout and quote's send clock start.
+ * Account + epoch are checked again after waiting; no credential is persisted.
+ */
+export const v2Post: RawPost = async (url, init, options) => {
+  const priority = authenticatedRequestPriority(url)
+  if (!priority) {
+    options.onStart?.()
+    return fetchRaw(financialFetch, url, init, { ...options, clock: realClock })
+  }
+  const epoch = LIVE_SESSION.epoch()
+  const identity = sessionController.getSnapshot().identity
+  if (epoch === null || identity.kind !== 'connected') return { kind: 'aborted' }
+  const owner = identity.address.toLowerCase()
+  const current = () => {
+    const snapshot = sessionController.getSnapshot()
+    return LIVE_SESSION.epoch() === epoch && snapshot.identity.kind === 'connected' && snapshot.identity.address.toLowerCase() === owner
+  }
+  const controller = new AbortController()
+  const aborted = () => controller.abort()
+  if (options.signal?.aborted) controller.abort()
+  else options.signal?.addEventListener('abort', aborted, { once: true })
+  const unsubscribe = sessionController.subscribe(() => { if (!current()) controller.abort() })
+  try {
+    const coordinator = coordinatedRequests()
+    const scheduled = await coordinator.schedule({ owner, priority: priority === 'tracking' ? priority : options.priority ?? priority, signal: controller.signal, isCurrent: current }, async () => {
+      if (controller.signal.aborted || !current()) return { kind: 'aborted' } as const
+      options.onStart?.()
+      const result = await fetchRaw(financialFetch, url, init, { ...options, signal: controller.signal, clock: realClock })
+      if (controller.signal.aborted || !current()) return { kind: 'aborted' } as const
+      if (result.kind === 'reply' && (result.reply.status === 429 || (result.reply.status === 503 && result.reply.retryAfterHeader !== null))) {
+        await coordinator.defer(owner, authenticatedRetryDelay(result.reply.retryAfterHeader, realClock.wallMs()))
+      }
+      return result
+    })
+    return scheduled.kind === 'completed' ? scheduled.value : { kind: scheduled.kind }
+  } catch { return { kind: controller.signal.aborted ? 'aborted' : 'network' } }
+  finally {
+    unsubscribe()
+    options.signal?.removeEventListener('abort', aborted)
+  }
+}
 
 /** One same-origin GET and its bounded reply, as fetchRaw reads a POST's: the page's deadline, the caller's abort. Never throws. */
 export const v2Get: RawGet = async (path, options) => {

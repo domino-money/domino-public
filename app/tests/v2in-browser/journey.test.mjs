@@ -2486,7 +2486,7 @@ test('(z) a pair nothing can bring, the wallet short and holding ETH: one line "
     await line.waitFor({ timeout: 30_000 });
     assert.equal(await page.locator('[data-pay-with]').count(), 1, 'at most one line');
     assert.equal(await page.locator('[data-funds-offer]').count(), 0, 'no offer to bring TOKEN or OTHER');
-    assert.equal(await words(line), 'Pay with ETH instead · Domino swaps it for TOKEN and OTHER');
+    assert.equal(await words(line), 'Use your ETH on Robinhood Chain We’ll check a conversion into TOKEN and OTHER. Use ETH');
     assert.ok(reads.calls.some((call) => call.route === 'chain-balances'), 'what the wallet holds, as Domino’s service read it');
     await bothWidths(page, 'journey-pay-with-line');
     await line.click();
@@ -2530,7 +2530,7 @@ test('(z) a pair nothing can bring, the wallet short and holding ETH: one line "
 });
 
 test('(z2) paying with ETH the wallet lacks too: the offer to bring ETH from another network, sized for what is missing', async () => {
-  const { s, chain, page } = await shortOfPair(10n ** 14n, payPlanner([]));
+  const { s, chain, page } = await shortOfPair(10n ** 15n, payPlanner([]));
   try {
     await page.locator(`button[data-pay-with="${ZERO}"]`).click({ timeout: 30_000 });
     const panel = page.locator(`[data-pay-with-amount="${ZERO}"]`);
@@ -2538,9 +2538,9 @@ test('(z2) paying with ETH the wallet lacks too: the offer to bring ETH from ano
     await panel.locator('#create-amount-pay').fill('0.5');
     const offer = page.locator(`[data-funds-offer][data-funds-token="${ZERO}"]`);
     await offer.waitFor({ timeout: 30_000 });
-    assert.equal(await words(offer.locator('[data-funds-title]')), 'Your funds, together');
+    assert.equal(await words(offer.locator('[data-funds-title]')), 'Find funds for this position');
     // 0.5 ETH and the gas Review keeps, less the 0.0001 ETH there.
-    assert.equal(await offer.locator('[data-funds-lack]').getAttribute('data-funds-lack-raw'), '500400000000000000');
+    assert.equal(await offer.locator('[data-funds-lack]').getAttribute('data-funds-lack-raw'), '499500000000000000');
     assert.equal(await footerButton(current(page, 'amount'), 'Continue').isDisabled(), true);
     await bothWidths(page, 'journey-pay-with-bring');
     assert.equal(s.planned.length, 0, 'no plan before Continue');
@@ -2558,7 +2558,7 @@ test('(z3) S2 not live: the line and the panel all the same; the wallet gone, th
     const line = page.locator(`button[data-pay-with="${ZERO}"]`);
     await line.waitFor({ timeout: 30_000 });
     assert.equal(await page.locator('[data-funds-offer]').count(), 0, 'no offer without S2');
-    assert.equal(await words(line), 'Pay with ETH instead · Domino swaps it for TOKEN and OTHER');
+    assert.equal(await words(line), 'Use your ETH on Robinhood Chain We’ll check a conversion into TOKEN and OTHER. Use ETH');
     assert.ok(reads.calls.some((call) => call.route === 'chain-balances'), 'read under the S1 gate');
     await line.click();
     const panel = page.locator(`[data-pay-with-amount="${ZERO}"]`);
@@ -2583,7 +2583,7 @@ test('(z3) S2 not live: the line and the panel all the same; the wallet gone, th
 // Added 2026-10-06 (the review of rugged97's #379: the token to pay with waited for Ethereum's and OP Mainnet's read, and
 // failed with it): the line comes from Domino's read alone while theirs is still out; theirs, once back, only adds what is
 // held there, and the line names USDG once the dollars held there are worth more than the ETH here.
-test('(z5) Ethereum and OP Mainnet never hold the line back: it comes while their read is out; their USDC, once read, makes it USDG', async () => {
+test('(z5) Ethereum and OP Mainnet never hold local payment back or replace it with remote wealth', async () => {
   const USDC_1 = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
   const WETH_1 = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
   let release = () => {};
@@ -2601,14 +2601,15 @@ test('(z5) Ethereum and OP Mainnet never hold the line back: it comes while thei
     const line = page.locator('button[data-pay-with]');
     await line.waitFor({ timeout: 15_000 });
     assert.equal(await line.getAttribute('data-pay-with'), ZERO);
-    assert.equal(await words(line), 'Pay with ETH instead · Domino swaps it for TOKEN and OTHER', 'from Domino’s read alone');
+    assert.equal(await words(line), 'Use your ETH on Robinhood Chain We’ll check a conversion into TOKEN and OTHER. Use ETH', 'from Domino’s read alone');
     assert.ok(reads.calls.some((call) => call.route === 'chain-balances'), 'Domino’s three read');
     assert.ok(asked.length >= 1 && asked.every((request) => request.tokens.every((t) => t.chainId === 1 || t.chainId === 10)), 'Ethereum and OP Mainnet asked, in a request of their own');
     assert.equal(ethereum.calls.length, 0, 'and not answered yet');
     release();
-    await page.locator(`button[data-pay-with="${USDG_RH}"]`).waitFor({ timeout: 30_000 });
-    assert.equal(await page.locator('button[data-pay-with]').count(), 1, 'still one line');
-    assert.equal(await words(page.locator('button[data-pay-with]')), 'Pay with USDG instead · Domino swaps it for TOKEN and OTHER', 'their dollars count once read');
+    await page.waitForFunction(() => true);
+    await page.waitForTimeout(250);
+    assert.equal(await page.locator('button[data-pay-with]').count(), 1, 'one preferred action');
+    assert.equal(await page.locator('button[data-pay-with]').getAttribute('data-pay-with'), ZERO, 'local ETH stays preferred after remote USDC arrives');
     assert.equal(chain.sends.length, 0);
   } finally {
     release();
@@ -2625,7 +2626,7 @@ test('(z4) a 40-character symbol: the line and the way back stay inside a phone�
   try {
     const line = page.locator(`button[data-pay-with="${ZERO}"]`);
     await line.waitFor({ timeout: 30_000 });
-    const cut = line.locator('bdi').last();
+    const cut = line.locator('.dm-funds-line-usd bdi').last();
     assert.equal(await cut.textContent(), symbol, 'the whole symbol is in the element');
     assert.equal(await cut.evaluate((el) => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === 'ellipsis'), true, 'cut with “…”');
     await bothWidths(page, 'journey-pay-with-long-symbol-line');

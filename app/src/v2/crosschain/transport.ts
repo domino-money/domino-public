@@ -48,7 +48,7 @@ export type TransportResult =
 
 export interface CrosschainTransport {
   readonly kind: 'fixture' | 'http'
-  send(route: CrosschainRoute, body: string, options: { csrf: string; signal?: AbortSignal }): Promise<TransportResult>
+  send(route: CrosschainRoute, body: string, options: { csrf: string; signal?: AbortSignal; onStart?: () => void; priority?: 'action' | 'preview' }): Promise<TransportResult>
 }
 
 /** The gate's JSON refusal, byte for byte as functions/_middleware.ts sends it. */

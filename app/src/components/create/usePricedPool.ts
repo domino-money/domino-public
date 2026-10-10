@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { poolOnOtherChain } from '../../lib/create/otherChains'
 import { useKeyedRead, usePoolPrices, type PayFacts } from '../../lib/create/poolPrices'
+import { reconcilePayFacts, unavailablePayFacts } from '../../lib/create/payFunding'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { TokenDisplay } from '../../lib/read/types'
 import { useWalletIdentity } from '../../lib/walletIdentity'
@@ -29,18 +30,14 @@ export function usePricedPool(pool: PoolOption | null): PoolOption | null {
   return useMemo(() => (pool && pool.usdPrices === undefined && usd ? { ...pool, usdPrices: usd } : pool), [pool, usd])
 }
 
-/**
- * Added 2026-10-06 (the owner, on production: AI/PONS and CASHCAT/AI short on Robinhood Chain, and no offer at all, since
- * neither token is one a deposit from another network delivers): what paying the chosen pool's deposit with one other
- * token would be for the connected wallet (lib/create/poolPrices.ts PayFacts), read once per pool, wallet and `revision`
- * (funds that arrived read it again); null where none is offered, undefined while it is read or with nothing to read.
- */
+/** Observed funding alternatives, refreshed while visible and after arrival. Background reads retain the
+ * current owner/token facts; changing wallet or payment token immediately invalidates the previous scope. */
 export function usePayFacts(pool: PoolOption | null, revision: number, selected: TokenDisplay | null = null): PayFacts | null | undefined {
   const prices = usePoolPrices()
   const identity = useWalletIdentity()
   const owner = identity.kind === 'connected' ? identity.address : null
   // Read only for a key, which says there is a pool, a reader and a wallet; said again when a later read changes it.
-  return useKeyedRead(prices && pool && owner ? `${pool.currencies[0].chainId}|${pool.key}|${owner}|${selected?.address ?? 'offer'}|${revision}` : null, (signal, later) => prices!.pay(pool!, owner!, signal, later, selected))
+  return useKeyedRead(prices && pool && owner ? `${pool.currencies[0].chainId}|${pool.key}|${owner}|${selected?.address ?? 'offer'}` : null, (signal, later) => prices!.pay(pool!, owner!, signal, later, selected), { everyMs: 30_000, revision, reconcile: reconcilePayFacts, onError: unavailablePayFacts })
 }
 
 /** Visible Amount keeps its price current. The caller preserves the typed token, amount and ticks. */
