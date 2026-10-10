@@ -84,7 +84,7 @@ test('paying with one other token: the panel and its way back are the step\'s ow
   const chunk = ALL.find(({ path }) => path === 'v2in/funds/FundsAmounts.tsx').code;
   assert.doesNotMatch(chunk, /data-pay-with-amount|data-pay-with-back|PayPanel/);
   // The line first, then the offer's card: never inside it, so no branch of the card remounts it.
-  assert.match(chunk, /return \(\s*<>\s*\{offerPayment && alternative && <PayLine /);
+  assert.match(chunk, /return \(\s*<>\s*\{showPayment && alternative && <PayLine /);
   const offer = ALL.find(({ path }) => path === 'v2in/funds/BringFunds.tsx').code;
   assert.doesNotMatch(offer, /PayLine|payWith|\bpaid\b/, 'the offer\'s card knows nothing of it');
 });

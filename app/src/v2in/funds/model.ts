@@ -68,6 +68,18 @@ export interface PairToken {
   decimals: number | null
 }
 
+/** An explicit budget to bring, independent of what the destination wallet already holds. */
+export interface FundingBudget {
+  side: 0 | 1
+  token: string
+  symbol: string
+  decimals: number
+  /** Minimum destination receipt, including only a known missing native-gas reserve. */
+  requiredRaw: bigint
+  /** Exact input to use after arrival when a third token will fund the position; excludes gas. */
+  paymentRaw?: bigint
+}
+
 /** A token to offer bringing to the position's chain: one a deposit can deliver there, while the position can't be funded. */
 export interface Lack {
   /** Its side in the pool's order. */

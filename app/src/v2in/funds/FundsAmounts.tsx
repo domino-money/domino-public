@@ -15,7 +15,8 @@ import type { V2ChainId } from '../../v2/types'
 import { BringFunds } from './BringFunds'
 import { fundsPage } from './live'
 import { useS2Gate } from './useS2Gate'
-import { amountRawOf, keptAmount, lackingTokens, payLacks } from './model'
+import { amountRawOf, deliverableTokens, keptAmount, lackingTokens, payLacks } from './model'
+import { remoteFundingChoice, remotePayment } from './fundingBudget'
 import { PayLine } from './PayWith'
 import { fundsServices } from './services'
 
@@ -68,7 +69,7 @@ export default function FundsAmounts({
   })
   // The amount step's own reading of ETH on the position's chain, when the pool holds ETH.
   const nativeSide = pool.currencies.findIndex((currency) => currency.address === ZERO)
-  const nativeOnDestination = state.payWith && !pay?.stale && pay?.nativeRaw != null ? pay.nativeRaw.toString() : raw && (nativeSide === 0 || nativeSide === 1) ? raw[nativeSide] : null
+  const nativeOnDestination = raw && (nativeSide === 0 || nativeSide === 1) && raw[nativeSide] !== null ? raw[nativeSide] : !pay?.stale && pay?.nativeRaw != null ? pay.nativeRaw.toString() : null
   // Added 2026-10-06: the amount typed, once the wallet covers it (after an arrival): "Use" keeps it as it is.
   const keep = keptAmount(planned?.plan ?? null, independent, state.budget, independent !== null ? pool.currencies[independent].symbol : null, independent !== null ? pool.currencies[independent].decimals : null)
   // Added 2026-10-06 (the integration review): a range beside today's price takes one token alone (the amount step types
@@ -93,15 +94,22 @@ export default function FundsAmounts({
   const choosePayment = () => {
     if (alternative && onPayWith) onPayWith({ token: alternative.token, text: estimate?.text ?? '', ...(estimate ? { estimated: true } : {}) })
   }
+  const remote = remoteFundingChoice({ state, planned, pay, alternative, nativeRaw: nativeOnDestination })
+  const showPayment = offerPayment && !(remote?.payment && localAvailable <= 0n)
+  const poolTokens = pool.currencies.map((currency) => currency.address.toLowerCase())
+  const conversionAfterArrival = !paid && deliverableTokens(chainId, poolTokens).length === 0 && !!onPayWith
+  const selectionKey = JSON.stringify([chainId, pool.key, state.range?.lower, state.range?.upper, paid ? [paid.token.chainId, paid.token.address.toLowerCase()] : state.token?.key])
 
   return (
     <>
-      {offerPayment && alternative && <PayLine facts={alternative} pair={pool.currencies} onPay={choosePayment} />}
+      {showPayment && alternative && <PayLine facts={alternative} pair={pool.currencies} onPay={choosePayment} />}
       {gate && gate.mode !== 'off' && wallet !== null && (
         <BringFunds
           key={`${identity.kind === 'connected' ? identity.connectorName : ''}|${wallet}`}
           gate={gate}
-          optional={usableLocal}
+          optional={usableLocal || remote !== null}
+          remoteBudget={remote?.budget}
+          selectionKey={selectionKey}
           checking={paid ? pay === undefined || held === null : raw === null}
           services={services}
           chainId={chainId}
@@ -118,6 +126,10 @@ export default function FundsAmounts({
           takes={paid ? null : takes}
           // Arriving funds never replace the amount the person typed with a smaller or larger bridge result.
           onUse={() => onArrived?.()}
+          onRemoteUse={conversionAfterArrival ? (token, inputRaw) => {
+            const payment = remotePayment(chainId, poolTokens, token, inputRaw)
+            if (payment) onPayWith?.(payment)
+          } : undefined}
           onArrived={onArrived}
         />
       )}

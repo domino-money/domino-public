@@ -2,12 +2,12 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from '../support/close-browser.mjs';
 import { WALLET_V2_DIST } from '../support/wallet-dist.mjs';
+import { openFundingChoice, amountStep, typeSide, changeFundingPool, VIRTUAL, WETH } from '../support/funding-choices.mjs';
 
 const APP = resolve(import.meta.dirname, '../..');
 if (!existsSync(join(WALLET_V2_DIST, 'index.html'))) throw new Error('.wallet-test-v2-dist is missing. Run npm run build:wallet-test-v2 first (npm run test:v2in does).');
@@ -21,7 +21,6 @@ const { installS2Wallet, S2_ACCOUNT, S2_OWNER } = await import('../support/s2-wa
 const { createWalletServer } = await import('../support/wallet-server.mjs');
 const { createChainReads } = await import('../support/chain-reads.mjs');
 const { quoteFor, recorded } = await import('../support/crosschain-quotes.mjs');
-const { createOriginChain } = await import('../support/s2-origin-chain.mjs');
 const readV6Runtime = await import('../../../api-contracts/read-v6/runtime.mjs');
 
 const V2_DIST = WALLET_V2_DIST;
@@ -50,12 +49,6 @@ before(async () => {
 after(async () => {
   await closeBrowser(browser);
 });
-
-const shot = (page, name) => {
-  const dir = resolve(import.meta.dirname, '../../.test-artifacts');
-  mkdirSync(dir, { recursive: true });
-  return page.screenshot({ path: resolve(dir, name), fullPage: true });
-};
 
 /** The wallet's balances as the read service reports them: read-v1 wallet-assets.zero, TOKEN as USDG, and `ethWei` of ETH. */
 function walletAssets(ethWei) {
@@ -244,12 +237,19 @@ function awaitingFor(body) {
 const typeUsdg = (s, text) => s.page.locator('li[data-step="amount"] [data-pair-side="1"] input[inputmode="decimal"]').fill(text);
 
 const OUT = process.env.DOMINO_R5_SHOTS;
-async function capture(s, name, selector = '[data-funds-offer]') {
+async function capture(s, name, selector = '[data-funds-offer]', action = null) {
   if (!OUT) return;
   mkdirSync(OUT, { recursive: true });
   for (const width of [1440, 390, 320]) {
     await s.page.setViewportSize({ width, height: 1080 });
     await s.page.locator(selector).first().scrollIntoViewIfNeeded();
+    if (action) {
+      const button = s.page.locator(action);
+      await button.scrollIntoViewIfNeeded();
+      assert.equal(await button.isVisible(), true, `funding action visible at ${width}`);
+      const box = await button.boundingBox();
+      assert.ok(box && box.width > 40 && box.x >= 0 && box.x + box.width <= width + 1, `funding action fits ${width}`);
+    }
     await s.page.screenshot({ path: resolve(OUT, name + '-' + width + '.png'), fullPage: true });
     // The part itself, close up, at each width.
     await s.page.locator(selector).first().screenshot({ path: resolve(OUT, name + '-' + width + '-part.png') });
@@ -264,7 +264,6 @@ const signIn = async (s) => {
   await s.page.keyboard.press('Escape');
 };
 const ARB_USDC = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
-const ARB_WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
 const BASE_USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
 const ETH_USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
 const OP_USDC = '0x0b2c639c533813f4aa9d7837caf62653d097ff85';
@@ -452,5 +451,119 @@ test('an expired idle proposal stays visible and only refreshes when the user re
     await s.page.locator('[data-funding-state="ready"] [data-funds-deposit-button]').getByText('Use these funds', { exact: true }).waitFor({ timeout: 30_000 });
     assert.equal(s.quotes().length, firstQuote + 1);
     assert.equal(s.bridgeCalls.filter((call) => call.route === 'origins').length, 1, 'explicit renewal still reuses destination discovery');
+  } finally { await s.close(); }
+});
+
+// The complete Journey is important here: Edit → Change pool unmounts the previous amount panel.
+// A component-only prop change cannot establish whether a quote survives a real pool change.
+for (const scenario of [
+  { name: 'ETH/USDG', poolIndex: 0, destinationToken: ZERO },
+  { name: 'ETH/USDG entered in ETH', poolIndex: 0, side: 0, text: '0.005', destinationToken: ZERO },
+  { name: 'WETH/USDG', poolIndex: 3, weth: 10n ** 18n, destinationToken: WETH },
+]) {
+  test(`source choice: ${scenario.name} keeps remote funds available when local funds cover the position`, async () => {
+    const s = await openFundingChoice(browser, scenario);
+    try {
+      const side = scenario.side ?? 1, typed = scenario.text ?? '30';
+      await typeSide(s.page, side, typed); await signIn(s);
+      const remote = s.page.locator('button[data-funds-sources]');
+      await remote.waitFor();
+      assert.match(await remote.innerText(), /Arbitrum One/);
+      const proceed = amountStep(s.page).locator('[data-journey-footer] button').last();
+      assert.equal(await proceed.isDisabled(), false, 'the local conversion is still usable');
+      await s.page.waitForTimeout(900);
+      assert.equal(s.quotes().length, 0, 'discovering another network never spends a quote');
+      if (scenario.name === 'ETH/USDG') await capture(s, 'funding-choice-local-and-remote', 'li[data-step="amount"][aria-current="step"]', 'button[data-funds-sources]');
+      await remote.click();
+      await s.page.locator('[data-funding-state="ready"] [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+      assert.equal(s.quotes().length, 1);
+      assert.equal(s.quotes()[0].destinationToken, scenario.destinationToken);
+      assert.equal(s.quotes()[0].amountKind, 'output');
+      if (side === 0) assert.equal(s.quotes()[0].amountRaw, '5000000000000000', 'typing the funding asset preserves the complete exact-input budget');
+      else assert.ok(BigInt(s.quotes()[0].amountRaw) > 15_000_000_000_000_000n, 'the funding asset covers both sides, including the local swap');
+      assert.equal(await proceed.isDisabled(), false, 'exploring a transfer does not lock the local route');
+      assert.equal(await amountStep(s.page).locator(`[data-pair-side="${side}"] input`).inputValue(), typed);
+      if (scenario.name === 'ETH/USDG') await capture(s, 'funding-choice-open', 'li[data-step="amount"][aria-current="step"]', '[data-funds-deposit-button]');
+      await s.page.locator('[data-funds-close]').click();
+      await remote.waitFor();
+      assert.equal(await s.page.locator('[data-funds-quote]').count(), 0);
+      assert.equal(s.quotes().length, 1, 'closing the preview never refreshes or submits it');
+      assert.equal(s.wallet.state.sends.length, 0);
+    } finally { await s.close(); }
+  });
+}
+
+test('source choice: USDG/VIRTUAL edits replace the quote; changing the pool restores the closed choice', async () => {
+  const s = await openFundingChoice(browser, { poolIndex: 1 });
+  try {
+    await typeSide(s.page, 0, '30'); await signIn(s);
+    await s.page.locator(`button[data-pay-with="${ZERO}"]`).waitFor();
+    const remote = s.page.locator('button[data-funds-sources]');
+    await remote.waitFor();
+    assert.equal(s.quotes().length, 0);
+    await remote.click();
+    await s.page.locator('[data-funding-state="ready"]').waitFor();
+    assert.equal(s.quotes().at(-1).amountRaw, '30000000');
+    await typeSide(s.page, 0, '40');
+    await s.page.waitForFunction(() => document.querySelector('[data-funding-state="ready"] [data-funds-lack-raw]')?.getAttribute('data-funds-lack-raw') === '40000000');
+    assert.deepEqual(s.quotes().map((quote) => quote.amountRaw), ['30000000', '40000000']);
+    await changeFundingPool(s.page, 2);
+    await typeSide(s.page, 0, '45');
+    await remote.waitFor();
+    assert.equal(await s.page.locator('[data-funds-quote]').count(), 0, 'the prior pool proposal is gone');
+    await s.page.waitForTimeout(900);
+    assert.equal(s.quotes().length, 2, 'the pool change did not keep the previous remote choice open');
+    await remote.click();
+    await s.page.locator('[data-funding-state="ready"]').waitFor();
+    assert.deepEqual(s.quotes().map((quote) => [quote.destinationToken, quote.amountRaw]), [[USDG, '30000000'], [USDG, '40000000'], [USDG, '45000000']]);
+    assert.match(await s.page.locator('[data-funds-lack]').innerText(), /45 USDG/);
+    assert.equal(await amountStep(s.page).locator('[data-pair-side="0"] input').inputValue(), '45');
+  } finally { await s.close(); }
+});
+
+test('source choice: a delayed quote from the previous pool cannot reopen or replace the new pool choice', async () => {
+  let release = () => {}, entered = 0, finished = false;
+  const s = await openFundingChoice(browser, { poolIndex: 1, quoteReply: async (_request, reply) => {
+    if (++entered === 1) { await new Promise((done) => { release = done; }); finished = true; }
+    return reply();
+  } });
+  try {
+    await typeSide(s.page, 0, '30'); await signIn(s);
+    await s.page.locator('button[data-funds-sources]').click();
+    await s.page.locator('[data-funds-quote-loading]').waitFor();
+    for (let i = 0; entered === 0 && i < 100; i++) await s.page.waitForTimeout(50);
+    assert.equal(entered, 1, 'the old pool request really reached the service');
+    await changeFundingPool(s.page, 2);
+    await typeSide(s.page, 0, '45');
+    const remote = s.page.locator('button[data-funds-sources]');
+    await remote.waitFor();
+    release();
+    await s.page.waitForTimeout(900);
+    assert.equal(finished, true, 'the old response arrived after the pool changed');
+    assert.equal(await s.page.locator('[data-funds-quote], [data-funds-deposit-button]').count(), 0);
+    assert.equal(await remote.isVisible(), true);
+    assert.equal(s.quotes().length, 1);
+    await remote.click();
+    await s.page.locator('[data-funding-state="ready"]').waitFor();
+    assert.deepEqual(s.quotes().map((quote) => quote.amountRaw), ['30000000', '45000000']);
+    assert.match(await s.page.locator('[data-funds-lack]').innerText(), /45 USDG/);
+  } finally { release(); await s.close(); }
+});
+
+test('source choice: a generic pair keeps one explicit local payment choice instead of assuming its pool tokens are bridgeable', async () => {
+  const s = await openFundingChoice(browser, { searchToken: VIRTUAL, poolIndex: 1 });
+  try {
+    await typeSide(s.page, 0, '30');
+    const local = s.page.locator(`button[data-pay-with="${ZERO}"]`);
+    await local.waitFor();
+    await local.click();
+    const panel = s.page.locator(`[data-pay-with-amount="${ZERO}"]`);
+    await panel.waitFor();
+    await panel.locator('input[inputmode="decimal"]').fill('0.01');
+    await s.page.locator('button[data-funds-sources]').waitFor();
+    assert.equal(s.quotes().length, 0, 'a funding asset can be discovered without quoting unsupported pool tokens');
+    assert.equal(await panel.locator('input[inputmode="decimal"]').inputValue(), '0.01');
+    assert.equal(await s.page.locator('[data-funds-quote]').count(), 0);
+    assert.equal(s.wallet.state.sends.length, 0);
   } finally { await s.close(); }
 });

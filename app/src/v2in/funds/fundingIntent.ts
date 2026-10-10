@@ -28,6 +28,8 @@ export interface FundingIntent {
   destinationToken: string
   scope: string
   requiredRaw: string
+  /** Optional position input, excluding any destination gas included in requiredRaw. */
+  paymentRaw?: string
   createdAt: number
   legs: FundingLeg[]
   gasRecovery?: { mode: 'native' | 'token'; reviewNeeded: boolean }
@@ -275,10 +277,12 @@ export function parseFunding(raw: string | null, owner: string, destination: num
       (leg.depositTxHash !== null && !HASH.test(leg.depositTxHash)))) return null
     if (value.legs.some((leg) => leg.reserveRaw !== undefined && (leg.originChainId !== 1 || leg.originToken !== ZERO || leg.reserveRaw !== ETHEREUM_RETRY_RESERVE.toString()))) return null
     if (value.gasRecovery !== undefined && (!value.gasRecovery || !['native', 'token'].includes(value.gasRecovery.mode) || typeof value.gasRecovery.reviewNeeded !== 'boolean')) return null
+    if (value.paymentRaw !== undefined && (typeof value.paymentRaw !== 'string' || !RAW.test(value.paymentRaw) || BigInt(value.paymentRaw) > BigInt(value.requiredRaw))) return null
     if (new Set(value.legs.map((leg) => leg.id)).size !== value.legs.length) return null
     // Explicit projection also discards injected quote/calldata fields.
     return { version: 1, id: value.id, owner: value.owner, destinationChainId: value.destinationChainId,
       destinationToken: value.destinationToken, scope: value.scope, requiredRaw: value.requiredRaw, createdAt: value.createdAt,
+      ...(value.paymentRaw !== undefined ? { paymentRaw: value.paymentRaw } : {}),
       ...(value.gasRecovery ? { gasRecovery: { mode: value.gasRecovery.mode, reviewNeeded: value.gasRecovery.reviewNeeded } } : {}),
       legs: value.legs.map((leg) => ({ id: leg.id, originChainId: leg.originChainId, originToken: leg.originToken,
         symbol: leg.symbol, decimals: leg.decimals, maxInputRaw: leg.maxInputRaw, minimumOutputRaw: leg.minimumOutputRaw,

@@ -15,6 +15,7 @@ const { FIXTURE_TOKEN, createReadStub } = await import('../support/read-stub.mjs
 const { installS2Wallet, S2_ACCOUNT, S2_OWNER } = await import('../support/s2-wallet.mjs');
 const { createWalletServer } = await import('../support/wallet-server.mjs');
 const { createChainReads } = await import('../support/chain-reads.mjs');
+const { contractsFor } = await import('../support/v2-chain.mjs');
 const { quoteFor, recorded } = await import('../support/crosschain-quotes.mjs');
 const readV6Runtime = await import('../../../api-contracts/read-v6/runtime.mjs');
 
@@ -48,15 +49,15 @@ function walletAssets(ethWei) {
  * sends on (../support/s2-wallet.mjs; nothing is sent anywhere else); `batches`, deposits sent as one batch on an earlier
  * visit and kept until the wallet names their transaction (finance/v2/crosschain.ts's store, in localStorage).
  */
-export async function openFundingPage(browser, { gateOpen = true, ethWei = 0n, balances = {}, bridge = false, switching = false, served = null, journal = null, clock = false, range = null, relayDown = false, held = null, sendOn = null, batches = null, intent = null, statusReply = null, walletAssetsReply = null } = {}) {
+export async function openFundingPage(browser, { gateOpen = true, ethWei = 0n, balances = {}, bridge = false, switching = false, served = null, journal = null, clock = false, range = null, relayDown = false, held = null, sendOn = null, batches = null, intent = null, statusReply = null, walletAssetsReply = null, readReply = null, quoteReply = null, localLive = false, searchToken = USDG, poolKey = null } = {}) {
   const fake = createFakeSession();
   const errors = [];
   // The read stub's own fixture for each read (tests/support/read-stub.mjs), TOKEN as USDG, and the wallet's balances.
   const read = createReadStub({
-    answer: (route, body) =>
+    answer: (route, body) => readReply?.(route, body) ?? (
       route === 'wallet-assets'
         ? walletAssetsReply?.() ?? walletAssets(ethWei)
-        : asUsdg({ 'pool-market': 'pool-market.not-requested', token: body.token === ZERO ? 'token.native' : 'token.success' }[route] ?? `${route}.success`),
+        : asUsdg({ 'pool-market': 'pool-market.not-requested', token: body.token === ZERO ? 'token.native' : 'token.success' }[route] ?? `${route}.success`)),
   });
 
   const bridgeCalls = [];
@@ -79,7 +80,8 @@ export async function openFundingPage(browser, { gateOpen = true, ethWei = 0n, b
     if (route === 'quote') {
       // ETH for USDG: at a price, through Relay alone (Added 2026-10-06).
       const crossKind = body.originToken === ZERO && body.destinationToken === USDG ? { rate: ETH_AS_USDG, relayOnly: true } : {};
-      return Response.json(quoteFor(body, S2_OWNER, body.destinationGas ? 'variants/quote.destination-gas' : body.amountRaw === NO_ROUTE_RAW ? 'variants/quote.none' : 'responses/quote', crossKind), { headers });
+      const reply = () => quoteFor(body, S2_OWNER, body.destinationGas ? 'variants/quote.destination-gas' : body.amountRaw === NO_ROUTE_RAW ? 'variants/quote.none' : 'responses/quote', crossKind);
+      return Response.json(quoteReply ? await quoteReply(body, reply) : reply(), { headers });
     }
     // A deposit sent here (Added 2026-10-06): Relay has not seen it yet, about the very deposit asked.
     if (route === 'status' && statusReply) return Response.json(await statusReply(body), { headers });
@@ -140,7 +142,13 @@ export async function openFundingPage(browser, { gateOpen = true, ethWei = 0n, b
   // Deposits sent as one batch on an earlier visit (finance/v2/crosschain.ts's store, in localStorage).
   if (batches) await context.addInitScript(({ key, value }) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, batches);
   // The gate's test-build hook (src/v2/gate.ts): opens V2 options on this server's origin; S2 is then `preview` here.
-  if (gateOpen) await context.addInitScript(() => { window.__dominoV2Test = { originOpen: true }; });
+  if (gateOpen) {
+    if (localLive && served) await context.exposeFunction('__fundingChainRead', (request) => served.answer('chain-balances', request));
+    await context.addInitScript(({ contracts, reads }) => {
+      window.__dominoV2Test = { originOpen: true, ...(contracts ? { backendOn: true, contracts: { 4663: contracts } } : {}),
+        ...(reads ? { read6: { 'chain-balances': (request) => window.__fundingChainRead(request) } } : {}) };
+    }, { contracts: localLive ? contractsFor(4663) : null, reads: localLive && served !== null });
+  }
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   const s = {
@@ -172,9 +180,9 @@ export async function openFundingPage(browser, { gateOpen = true, ethWei = 0n, b
     await page.waitForFunction(() => window.__dominoSessionProbe?.view().status !== 'no_wallet');
     await page.keyboard.press('Escape');
     // Step 1: USDG and its pool; step 2: the range the pool's price gives; then the amount step.
-    await page.getByRole('combobox', { name: 'Search a token' }).fill(USDG);
-    await page.locator(`[data-token-option="${USDG}"]`).click();
-    await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.getByRole('combobox', { name: 'Search a token' }).fill(searchToken);
+    await page.locator(`[data-token-option="${searchToken}"]`).click();
+    await (poolKey ? page.locator(`[data-picker="pool"] [data-pool-key="${poolKey}"] input[name="pool-option"]`) : page.locator('[data-picker="pool"] input[name="pool-option"]').first()).click({ timeout: 30_000 });
     await page.locator('[data-chosen-pool]').waitFor();
     const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
     await pressContinue(current('pool'));
@@ -223,9 +231,7 @@ const signIn = async (s) => {
   await s.page.keyboard.press('Escape');
 };
 const ARB_USDC = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
-const ARB_WETH = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
 const BASE_USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
-const ETH_USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
 const token = (address, symbol, decimals) => ({ address, symbol, decimals });
 const homeReads = (native = 0n) => createChainReads({ chainId: 4663, tokens: [token(ZERO, 'ETH', 18), token(USDG, 'USDG', 6)], balances: { [ZERO]: native } });
 const chainReads = (chainId, stable, raw = 100_000_000n, gas = 10n ** 16n) => createChainReads({ chainId,

@@ -27,6 +27,25 @@ const restoredIntent = (state = 'sending') => ({ version: 1, id: 'accepted-befor
   legs: [{ id: 'arb-usdc', originChainId: 42161, originToken: ARB_USDC, symbol: 'USDC', decimals: 6, maxInputRaw: '51000000', minimumOutputRaw: '50000000', destinationGas: false, state, depositTxHash: null }],
 });
 
+for (const state of ['ready', 'stopped']) {
+  test(`an old ${state} plan with no submitted transaction is cleared before funding a new position`, async () => {
+    const intent = { key: fundingKey, value: JSON.stringify(restoredIntent(state)) };
+    const s = await openFundingPage(browser, { bridge: true, served: together(homeReads(), chainReads(42161, ARB_USDC)), intent });
+    try {
+      await typeUsdg(s, '20'); await signIn(s);
+      await s.page.locator('[data-funding-state="ready"] [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+      assert.equal(await s.page.evaluate((key) => localStorage.getItem(key), fundingKey), null, 'an unsent old plan is not retained as a transfer');
+      assert.deepEqual(s.quotes().map((quote) => [quote.destinationToken, quote.amountRaw]), [[USDG, '20000000']]);
+      assert.match(await s.page.locator('[data-funds-title]').innerText(), /Use your funds on Arbitrum One/);
+      assert.doesNotMatch(await s.page.locator('[data-funds-offer]').innerText(), /Your transfer|already sent|On the way/);
+      assert.match(await s.page.locator('[data-funds-lack]').innerText(), /20 USDG/);
+      assert.equal(await amount(s.page).inputValue(), '20');
+      assert.equal(s.wallet.calls('wallet_switchEthereumChain').length, 0);
+      assert.equal(s.wallet.calls('wallet_sendCalls').length + s.wallet.calls('eth_sendTransaction').length, 0);
+    } finally { await s.close(); }
+  });
+}
+
 test('a restored fill refreshes the amount balance after the cache advances, while the wallet stays on its origin', async () => {
   const raw = { [ZERO]: 10n ** 16n, [USDG]: 0n };
   const destination = createChainReads({ chainId: 4663, tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: USDG, symbol: 'USDG', decimals: 6 }], balances: raw });

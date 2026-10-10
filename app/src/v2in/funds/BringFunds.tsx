@@ -21,11 +21,12 @@ import { FUNDS_RECEIPT_POLL_MS, FUNDS_TYPED_QUOTE_DEBOUNCE_MS } from './constant
 import { FUNDS_TEXT, senderCopy } from './copy'
 import { DepositStatus, PendingDeposit, type TrackedDeposit } from './DepositStatus'
 import { runDeposit, type FlowStage } from './flow'
-import { balanceChainsRequest, balancesRequest, holdingsFromChainBalances, kindOf, mergeBalances, nativeOn, originCandidate, originName, originToken, requestFailure, sendable, valueUsdOf, type Lack } from './model'
+import { balanceChainsRequest, balancesRequest, holdingsFromChainBalances, kindOf, mergeBalances, nativeOn, originCandidate, originName, originToken, requestFailure, sendable, valueUsdOf, type FundingBudget, type Lack } from './model'
 import { freezeFunding, fundingSpendable, fundingStorageKey, gasRecoveryKey, outstandingLegs, parseFunding, planFunding, planGasRecovery, requestForLeg, respectsLeg, withGasFailure, type FundingIntent, type PricedLeg } from './fundingIntent'
 import type { FundsServices } from './services'
 import { invalidateFundingBalances, readFundingBalanceGroup } from './balanceCache'
 import { fundingOrigins, fundingWait } from './originsCache'
+import { canDiscardFunding, fundingNeverSent } from './fundingLifecycle'
 
 const ZERO = '0x0000000000000000000000000000000000000000'
 const rawValue = (raw: string | null) => raw !== null && /^\d+$/.test(raw) ? BigInt(raw) : null
@@ -70,6 +71,10 @@ export interface BringFundsProps {
   poolTokens: readonly string[]
   /** Pool/range and the original user input, excluding prices and balances. */
   intentKey?: string
+  /** Pool/range/payment choice, excluding the amount: typing keeps an opened alternative open. */
+  selectionKey?: string
+  /** An explicit alternative budget, never a fabricated deficit in the current wallet. */
+  remoteBudget?: FundingBudget | null
   discreet?: boolean
   /** A usable local payment is already offered. Remote funds stay available without unsolicited quotes. */
   optional?: boolean
@@ -80,6 +85,8 @@ export interface BringFundsProps {
   takes?: { side: 0 | 1; symbol: string | null } | null
   onUse: (side: 0 | 1, text: string) => void
   onUseToken?: (token: string, text: string) => void
+  /** Select a received payment token after verified arrival; never creates or signs a position. */
+  onRemoteUse?: (token: string, paymentRaw: string) => void
   onArrived?: () => void
 }
 
@@ -88,7 +95,7 @@ export function BringFunds(props: BringFundsProps) {
   return <FundingOffer key={`${props.wallet.toLowerCase()}:${props.chainId}`} {...props} />
 }
 
-function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, lacks, nativeOnDestination, poolTokens, intentKey, discreet = false, optional = false, checking = false, keep = null, takes = null, onUse, onUseToken, onArrived }: BringFundsProps) {
+function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, lacks, nativeOnDestination, poolTokens, intentKey, selectionKey, remoteBudget = null, discreet = false, optional = false, checking = false, keep = null, takes = null, onUse, onUseToken, onRemoteUse, onArrived }: BringFundsProps) {
   const live = gate.mode === 'live' && services !== null
   const ready = access.startsWith('ready:')
   const destination = v2Chain(chainId)
@@ -129,11 +136,13 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const automaticAttempts = useRef(0)
   const retryAfter = useRef(0)
   const [prepareRevision, setPrepareRevision] = useState(0)
-  const [remoteOpened, setRemoteOpened] = useState(false)
+  const [remoteSelection, setRemoteSelection] = useState<string | null>(null)
   const [visible, setVisible] = useState(typeof document === 'undefined' || !document.hidden)
   const [expired, setExpired] = useState(false)
   const mounted = useRef(true)
   const scope = intentKey ?? poolTokens.join(':')
+  const selection = selectionKey ?? scope
+  const remoteOpened = remoteSelection === selection
   const latest = useRef({ ready, walletChainId, scope })
   useEffect(() => { latest.current = { ready, walletChainId, scope } }, [ready, walletChainId, scope])
   const knownNative = rawValue(nativeOnDestination) ?? (balances ? nativeOn(balances, chainId) : null)
@@ -144,8 +153,20 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const [previousLack, setPreviousLack] = useState<{ scope: string; lack: Lack | null }>({ scope, lack: observedLack })
   if (!checking && (previousLack.scope !== scope || previousLack.lack?.token !== observedLack?.token || previousLack.lack?.shortRaw !== observedLack?.shortRaw || previousLack.lack?.haveRaw !== observedLack?.haveRaw)) setPreviousLack({ scope, lack: observedLack })
   const targetLack = checking && previousLack.scope === scope ? previousLack.lack : observedLack
-  const target = targetLack?.token ?? lacks[0]?.token ?? null
-  const need = targetLack?.shortRaw ?? null
+  // A selected alternative may fund the whole budget even when local tokens already cover it.
+  const budget = remoteBudget && remoteBudget.requiredRaw > 0n && (optional || !targetLack) ? remoteBudget : null
+  const targetAmount = budget ?? targetLack
+  const target = targetAmount?.token ?? lacks[0]?.token ?? null
+  const need = budget?.requiredRaw ?? targetLack?.shortRaw ?? null
+  const [shownContext, setShownContext] = useState({ scope, target, selection })
+  if (shownContext.scope !== scope || shownContext.target !== target || shownContext.selection !== selection) {
+    setShownContext({ scope, target, selection })
+    if (shownContext.scope !== scope || shownContext.target !== target) {
+      setProposal(null); setNotice(null); setExpired(false)
+      if (!run) setScreen(intent ? 'tracking' : 'checking')
+    }
+    if (shownContext.selection !== selection) setRemoteSelection(null)
+  }
   const wantedKey = `${scope}|${target}|${need?.toString() ?? ''}`
   const proposal = prepared?.intent.scope === scope && prepared.intent.destinationToken === target && (prepared.recoveryFrom ? intent !== null && prepared.recoveryFrom === gasRecoveryKey(intent) : need !== null && (rawValue(prepared.intent.requiredRaw) ?? 0n) >= need) ? prepared : null
   const displayScreen = screen === 'ready' && !proposal && !intent ? 'checking' : screen
@@ -178,6 +199,28 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     intentRef.current = next
     if (mounted.current) setIntent(next)
   }, [storage, storageKey, readIntent])
+  const clearChangedUnsent = useCallback(async (expectedId: string, showBusy = false) => {
+    if (!live || running.current) return
+    try {
+      await withFundingLock(wallet, async () => {
+        if (!mounted.current || latest.current.scope !== scope || running.current) return
+        const stored = readIntent(true)
+        if (stored?.id !== expectedId) return
+        if (!canDiscardFunding(stored, scope, { running: running.current,
+          deposits: Math.max(deposits.length, journal?.list(chainId, wallet).length ?? 0),
+          pending: batches.list(wallet).length, unsettled: unsettled.list(wallet).length })) return
+        save(null); setProposal(null); setNotice(null); setExpired(false); setScreen('checking')
+        attempted.current = ''; setPrepareRevision((value) => value + 1)
+      }, () => {
+        if (showBusy && mounted.current) setNotice({ copy: 'This transfer is being checked in another tab. Return there before choosing new funds.', code: 'funding_other_tab' })
+      })
+    } catch {
+      if (mounted.current) setNotice({ copy: 'The previous transfer needs checking before new funds can be chosen.', code: 'funding_storage_unavailable' })
+    }
+  }, [live, wallet, scope, readIntent, deposits.length, journal, chainId, batches, unsettled, save])
+  useEffect(() => {
+    if (intent && intent.scope !== scope && fundingNeverSent(intent) && !run) void clearChangedUnsent(intent.id)
+  }, [intent, scope, run, clearChangedUnsent])
   const observe = (legId: string, state: 'sent' | 'settled' | 'stopped', hash: string | null = null) => {
     void withFundingLock(wallet, async () => {
       const current = readIntent(true)
@@ -270,7 +313,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     throw new FundingError('Could not update this transfer.', 'quote_unavailable')
   }, [services, wallet])
   const prepare = async () => {
-    if (!live || !services || !ready || !targetLack || need === null || need <= 0n || intentRef.current || foreignPending || running.current || preparation.current || !holdings.length || !visible) return
+    if (!live || !services || !ready || !targetAmount || need === null || need <= 0n || intentRef.current || foreignPending || running.current || preparation.current || !holdings.length || !visible || optional && !remoteOpened) return
     const controller = new AbortController()
     preparation.current = controller
     attempted.current = wantedKey
@@ -284,22 +327,24 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     }, 120_000)
     setScreen('quoting'); setNotice(null); setProposal(null); setExpired(false)
     try {
-      const reply = await fundingWait(fundingOrigins(services, access, { destinationChainId: chainId, destinationToken: targetLack.token }), controller.signal)
+      const reply = await fundingWait(fundingOrigins(services, access, { destinationChainId: chainId, destinationToken: targetAmount.token }), controller.signal)
       if (!current()) return
       if (!reply.ok) { const failure = requestFailure(reply.failure, 1); throw new FundingError(failure.copy, failure.code ?? reply.failure.kind, failure.retryMs) }
       const list = reply.data.origins; setListing(list)
       const usable = holdings.filter((holding) => { const token = originToken(list, holding.chainId, holding.token); return token !== null && token.decimals === holding.decimals })
       if (!usable.length) throw new FundingError('No supported transfer is available for these tokens right now.', 'funding_routes_busy')
       const native = nativeOnDestination ?? (balances ? nativeOn(balances, chainId)?.toString() ?? null : null)
-      if (targetLack.token !== ZERO && native === null) throw new FundingError('Checking the ETH needed for network fees. Try again shortly.', 'funding_gas_unread')
-      const gas = targetLack.token !== ZERO && native !== null && BigInt(native) < REVIEW_GAS_RESERVE_WEI
-      const quoted = await planFunding({ destinationChainId: chainId, destinationToken: targetLack.token,
+      if (targetAmount.token !== ZERO && native === null) throw new FundingError('Checking the ETH needed for network fees. Try again shortly.', 'funding_gas_unread')
+      const gas = targetAmount.token !== ZERO && native !== null && BigInt(native) < REVIEW_GAS_RESERVE_WEI
+      const quoted = await planFunding({ destinationChainId: chainId, destinationToken: targetAmount.token,
         required: need, holdings: usable, destinationGas: gas, monoMs: services.clock.monoMs, signal: controller.signal,
         quote: (request, options) => quote(request, current, options?.signal), cancelled: () => !current() })
       if (!current()) return
       if (!quoted) { setScreen('empty'); setNotice({ copy: 'No available transfer covers this amount and its costs. Choose a smaller amount or check again.', code: 'funding_insufficient' }); return }
       const next = freezeFunding({ id: crypto.randomUUID(), owner: wallet.toLowerCase(), destinationChainId: chainId,
-        destinationToken: targetLack.token, scope, requiredRaw: need.toString(), createdAt: Math.max(...quoted.map((entry) => entry.quote.retrievedAt)) * 1_000 }, quoted)
+        destinationToken: targetAmount.token, scope, requiredRaw: need.toString(),
+        ...(budget?.paymentRaw ? { paymentRaw: budget.paymentRaw.toString() } : {}),
+        createdAt: Math.max(...quoted.map((entry) => entry.quote.retrievedAt)) * 1_000 }, quoted)
       automaticAttempts.current = 0
       setProposal({ intent: next, quotes: quoted }); setScreen('ready')
     } catch (error) {
@@ -469,9 +514,33 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       }, () => { throw new Error('funding_other_tab') })
     } catch { setNotice({ copy: 'Could not confirm that the wallet request was cancelled. Nothing will be sent again.', code: 'funding_unknown' }) }
   }
+  const useRemotePayment = async () => {
+    if (!onRemoteUse || !services?.readBalances || running.current) return
+    running.current = true; setRun(true); setNotice(null)
+    try {
+      await withFundingLock(wallet, async () => {
+        const accepted = readIntent(true)
+        const current = () => mounted.current && latest.current.scope === scope && latest.current.ready
+        if (!current() || !accepted?.paymentRaw || accepted.scope !== scope || !accepted.legs.every((leg) => leg.state === 'settled') || unsettled.list(wallet).length || batches.list(wallet).length) return
+        const answer = await services.readBalances!(chainId, [...new Set([accepted.destinationToken, ZERO])])
+        if (!current()) return
+        const restored = readIntent(true)
+        if (restored?.id !== accepted.id || restored.scope !== scope || !restored.legs.every((leg) => leg.state === 'settled')) return
+        const have = answer.kind === 'ok' ? rawValue(answer.snapshot.balances.find((entry) => entry.token === accepted.destinationToken)?.raw ?? null) : null
+        const gas = answer.kind === 'ok' ? rawValue(answer.snapshot.balances.find((entry) => entry.token === ZERO)?.raw ?? null) : null
+        const payment = BigInt(accepted.paymentRaw)
+        if (have === null || gas === null || gas < REVIEW_GAS_RESERVE_WEI || have < payment + (accepted.destinationToken === ZERO ? REVIEW_GAS_RESERVE_WEI : 0n)) throw new FundingError('Your funds are still being checked. Try again when your wallet balance updates.', 'funding_balance_changed')
+        onRemoteUse(accepted.destinationToken, accepted.paymentRaw)
+        onArrived?.()
+      }, () => { throw new FundingError('This transfer is being handled in another tab. Return there to continue.', 'funding_other_tab') })
+    } catch (error) {
+      if (mounted.current) setNotice({ copy: error instanceof FundingError ? error.copy : 'Could not check the received funds. Your transfer is still tracked.', code: error instanceof FundingError ? error.code : 'funding_balance_unread' })
+    } finally { running.current = false; if (mounted.current) setRun(false) }
+  }
 
   const changed = intent !== null && intent.scope !== scope
-  const proposed = proposal?.recoveryFrom ? proposal.intent : intent ?? proposal?.intent
+  const previousUnsent = changed && intent !== null && fundingNeverSent(intent)
+  const proposed = proposal?.recoveryFrom ? proposal.intent : previousUnsent ? null : intent ?? proposal?.intent
   const selected = proposed?.legs ?? []
   const networks = [...new Set(selected.map((leg) => originName(leg.originChainId)))]
   const available = [...new Set(holdings.map((holding) => originName(holding.chainId)))]
@@ -480,30 +549,30 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     return balances && candidate && candidate.chainId !== chainId && (holdingsFromChainBalances(balances, candidate)?.holdings.some((holding) => holding.raw > 0n) ?? false)
   }).map((profile) => originName(profile.chainId))
   const names = (values: readonly string[]) => values.length > 1 ? `${values.slice(0, -1).join(', ')} and ${values.at(-1)}` : values[0] ?? ''
-  const receiptAmount = proposed ? shortAmountText(proposed.requiredRaw, proposed.destinationToken, targetLack ?? name.book(chainId, proposed.destinationToken), 'up') : null
+  const receiptAmount = proposed ? shortAmountText(proposed.requiredRaw, proposed.destinationToken, targetAmount ?? name.book(chainId, proposed.destinationToken), 'up') : null
   const resume = intent !== null && outstandingLegs(intent).length > 0 && !hasUnknown && !changed
   const gasReview = intent?.gasRecovery?.reviewNeeded === true
   const needsReview = notice?.code === 'funding_quote_changed' || notice?.code === 'funding_balance_changed' || gasReview && !proposal?.recoveryFrom
   const unknownOrigin = intent?.legs.find((leg) => leg.state === 'unknown')?.originChainId ?? held.find((entry) => entry.state === 'open')?.originChainId
-  if (!lacks.length && !gasOnly && !intent && !deposits.length && !pending.length && !held.length) {
+  if (!lacks.length && !gasOnly && !budget && !intent && !deposits.length && !pending.length && !held.length) {
     if (!discreet || !readDone || !observedNetworks.length) return null
     return <div className="dm-funds-discovery" data-funds-line="" data-funds-sources=""><strong>Use funds from {names(observedNetworks)}</strong><span>Enter an amount. Domino will check the transfer and prepare the tokens for this position.</span></div>
   }
   if (optional && !remoteOpened && !intent && !deposits.length && !pending.length && !held.length) {
     if (!observedNetworks.length) return null
-    return <button type="button" className="dm-funds-line dm-funds-remote" data-funds-sources="" onClick={() => setRemoteOpened(true)}><span className="dm-funds-line-text">Also available on {names(observedNetworks)}</span><span className="dm-funds-line-action">Use another network</span></button>
+    return <button type="button" className="dm-funds-line dm-funds-remote" data-funds-sources="" onClick={() => setRemoteSelection(selection)}><span className="dm-funds-line-text">Funds available on {names(observedNetworks)}</span><span className="dm-funds-line-action">Use another network</span></button>
   }
   return <section className="dm-funds-offer dm-funding" data-funds-offer="" data-funds-mode={gate.mode} data-funds-services={services?.source ?? 'none'} data-funds-token={target} data-funding-state={displayScreen} aria-label="Fund this position">
     <div className="dm-funds-heading"><span className="dm-funds-icon" aria-hidden="true">↗</span><div>
-      <h4 data-funds-title="">{run ? 'Getting your funds ready' : proposal?.recoveryFrom ? 'Your updated transfer' : intent || foreignPending ? 'Your transfer' : proposal ? `Use your funds on ${names(networks)}` : observedNetworks.length ? `Funds available on ${names(observedNetworks)}` : 'Find funds for this position'}</h4>
-      <p data-funds-lack={targetLack ? 'short' : undefined} data-funds-lack-raw={targetLack?.shortRaw?.toString()}>{!live ? FUNDS_TEXT.locked : changed ? 'Your position changed. Transfers already sent continue to your wallet.' : hasUnknown ? 'Waiting for a clear answer from your wallet.' : intent || foreignPending ? 'Funds arrive in your wallet. Your position amount stays the same.' : proposal ? `Move ${receiptAmount ?? 'the missing funds'} to ${destination.name} to continue.` : !readDone || screen === 'quoting' ? 'Finding the funds for this position…' : holdings.length ? `You have funds on ${names(available)}.` : 'Checking the networks supported by Domino.'}</p>
+      <h4 data-funds-title="">{run ? 'Getting your funds ready' : previousUnsent ? 'Choose funds for this position' : proposal?.recoveryFrom ? 'Your updated transfer' : intent || foreignPending ? 'Your transfer' : proposal ? `Use your funds on ${names(networks)}` : observedNetworks.length ? `Funds available on ${names(observedNetworks)}` : 'Find funds for this position'}</h4>
+      <p data-funds-lack={targetLack && !budget ? 'short' : undefined} data-funds-lack-raw={!budget ? targetLack?.shortRaw?.toString() : undefined}>{!live ? FUNDS_TEXT.locked : previousUnsent ? 'Checking the previous request before choosing funds for this position.' : changed ? 'Your position changed. Transfers already sent continue to your wallet.' : hasUnknown ? 'Waiting for a clear answer from your wallet.' : intent || foreignPending ? 'Funds arrive in your wallet. Your position amount stays the same.' : proposal ? `Move ${receiptAmount ?? 'funds'} to ${destination.name} for this position.` : !readDone || screen === 'quoting' ? 'Finding the funds for this position…' : holdings.length ? `You have funds on ${names(available)}.` : 'Checking the networks supported by Domino.'}</p>
     </div></div>
     <div className="dm-funds-body" data-funds-body="">
       {!live && <p data-funds-locked="">{FUNDS_TEXT.locked}</p>}
       {live && !readDone && <p role="status" data-funds-checking="" className="dm-funds-status">Checking your wallet…</p>}
       {live && screen === 'quoting' && !run && <p role="status" className="dm-funds-status" data-funds-quote-loading="">Checking transfer costs…</p>}
       {notice && <p role="status" className="dm-funding-notice" data-funds-run-notice="" data-error-code={notice.code}>{notice.copy}</p>}
-      {gasReview && !notice && !proposal?.recoveryFrom && screen !== 'quoting' && <p className="dm-funding-notice" data-funds-gas-recovery="">{GAS_RECOVERY_COPY}</p>}
+      {gasReview && !previousUnsent && !notice && !proposal?.recoveryFrom && screen !== 'quoting' && <p className="dm-funding-notice" data-funds-gas-recovery="">{GAS_RECOVERY_COPY}</p>}
       {proposal?.recoveryFrom && <p className="dm-hint" data-funds-gas-recovery="">{proposal.intent.legs.some((leg) => leg.reserveRaw) ? 'Keep 0.006 ETH on Ethereum for network fees. ' : 'Use another available network. '}Your position amount stays the same. Confirm the amounts below before continuing.</p>}
       {live && readDone && !proposal && !intent && !foreignPending && screen !== 'quoting' && !notice && <p className="dm-hint" data-funds-nothing="">{holdings.length === 0 ? !readSnapshot?.complete ? 'Some wallet balances could not be checked yet. We will try again automatically.' : observedNetworks.length ? 'These networks need ETH for the transfer fee. Add a little ETH there to use these tokens.' : 'No available funds found on the supported networks. Add funds or choose a smaller amount.' : need === null ? 'Enter an amount. Domino will check how to bring your funds here.' : !ready ? 'Sign in to prepare your transfer. This does not move funds.' : 'Checking a transfer for this amount.'}</p>}
       {proposed && <div className="dm-funding-summary" data-funds-quote="" data-funding-sources={selected.length}>
@@ -515,12 +584,15 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       {stage && <p role="status" className="dm-funds-status" data-funds-run-status={stage.value.stage}>{stage.value.stage === 'switching' ? `Your wallet needs ${originName(stage.origin)} for this transfer.` : stage.value.stage === 'batch_wallet' ? 'Confirm approval and transfer together in your wallet.' : stage.value.stage === 'approval_wallet' ? 'Approve the token in your wallet.' : stage.value.stage === 'deposit_wallet' ? 'Confirm the transfer in your wallet.' : `Preparing your transfer from ${originName(stage.origin)}…`}</p>}
       {live && !run && ready && !changed && !hasUnknown && !needsReview && ((!intent && proposal) || resume) && <Button variant="accent" className="dm-funds-go" data-funds-deposit-button="" onClick={() => void (expired && !intent ? prepare() : execute())}>{proposal?.recoveryFrom ? 'Use this updated transfer' : resume ? 'Continue remaining transfer' : expired ? 'Update transfer' : 'Use these funds'}</Button>}
       {live && !run && ready && !changed && !hasUnknown && gasReview && !proposal?.recoveryFrom && screen !== 'quoting' && <Button variant="accent" data-funds-gas-review="" onClick={() => void prepareGasRecovery()}>Review transfer</Button>}
-      {live && !ready && !run && (lacks.length > 0 || gasOnly) && !hasUnknown && <Button variant="accent" data-funds-signin="" onClick={openWalletDialog}>Continue with wallet</Button>}
+      {live && !ready && !run && (lacks.length > 0 || gasOnly || budget !== null) && !hasUnknown && <Button variant="accent" data-funds-signin="" onClick={openWalletDialog}>Continue with wallet</Button>}
+      {optional && remoteOpened && !intent && !foreignPending && !run && <Button variant="ghost" size="sm" data-funds-close="" onClick={() => { generation.current++; preparation.current?.abort(); setRemoteSelection(null); setProposal(null); setNotice(null); setExpired(false); attempted.current = ''; setScreen('checking') }}>Back to funding options</Button>}
+      {onRemoteUse && intent?.paymentRaw && !changed && !run && ready && !activeDeposits.length && !pending.length && !held.length && intent.legs.every((leg) => leg.state === 'settled') && <Button variant="accent" data-funds-remote-use="" onClick={() => void useRemotePayment()}>Use these funds for this position</Button>}
       {live && !run && unknownOrigin !== undefined && <Button variant="outline" size="sm" data-funds-run-forget="" onClick={() => void resolveUnknown(unknownOrigin)}>I cancelled the request in my wallet</Button>}
       {live && !run && ready && !intent && !foreignPending && !proposal && !needsReview && readDone && (screen === 'unavailable' || screen === 'paused' || notice?.code === 'funding_insufficient' || !reading && !readSnapshot?.complete) && <Button variant="outline" size="sm" data-funds-renew="" onClick={() => { attempted.current = ''; automaticAttempts.current = 0; setNotice(null); setRevision((n) => n + 1); setPrepareRevision((n) => n + 1) }}>Check again</Button>}
       {live && !run && ready && !intent && needsReview && <Button variant="outline" size="sm" data-funding-review="" onClick={() => void prepare()}>Review transfer</Button>}
       {proposal && <details className="dm-details dm-funds-details" data-funds-details=""><summary>Transfer details</summary><div className="dm-funding-details">
         <p>Only the amounts above can leave your wallet. Network fees are separate. Different networks may need separate confirmations.</p>
+        {proposal.intent.paymentRaw && <p>You will review the token conversion before creating your position.</p>}
         {proposal.quotes.map((entry) => { const view = presentQuote(entry.quote, name); const winner = entry.quote.candidates.find((candidate) => candidate.provider === entry.quote.decision)
           return <div key={`${entry.holding.chainId}:${entry.holding.token}`} data-funds-candidate={entry.quote.decision ?? 'none'}>
             <strong>{originName(entry.holding.chainId)}</strong>
@@ -541,8 +613,13 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
           onRemove={() => { journal?.drop(wallet, deposit.record); setDeposits((previous) => previous.filter((entry) => entry.record.depositTxHash !== deposit.record.depositTxHash)) }} />)}
       </div>}
       {intent && !run && !hasUnknown && (!gasReview || changed) && !activeDeposits.length && !pending.length && !held.length && (changed || needsReview || intent.legs.every((leg) => leg.state === 'settled') && (lacks.length > 0 || gasOnly)) && <Button variant="outline" size="sm" data-funding-review="" onClick={() => {
-        void withFundingLock(wallet, async () => { save(null); setProposal(null); setNotice(null); attempted.current = ''; setRevision((n) => n + 1) }, () => { throw new Error('busy') }).catch(() => setNotice({ copy: 'This transfer is being handled in another tab. Return there to continue.', code: 'funding_other_tab' }))
-      }}>Review remaining amount</Button>}
+        if (previousUnsent) { void clearChangedUnsent(intent.id, true); return }
+        void withFundingLock(wallet, async () => {
+          const stored = readIntent(true)
+          if (running.current || latest.current.scope !== scope || stored?.id !== intent.id || stored.legs.some((leg) => !['ready', 'stopped', 'settled'].includes(leg.state)) || unsettled.list(wallet).length || batches.list(wallet).length || journal?.list(chainId, wallet).some((record) => !settled.has(record.depositTxHash))) return
+          save(null); setProposal(null); setNotice(null); attempted.current = ''; setRevision((n) => n + 1)
+        }, () => { throw new Error('busy') }).catch(() => setNotice({ copy: 'This transfer is being handled in another tab. Return there to continue.', code: 'funding_other_tab' }))
+      }}>{previousUnsent ? 'Check this position' : 'Review remaining amount'}</Button>}
     </div>
   </section>
 }
