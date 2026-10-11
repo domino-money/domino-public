@@ -31,6 +31,7 @@
     "src/v2in/journey/model/*.ts",
     "src/v2in/journey/receiptFollow.ts",
     "src/v2in/lists/model.ts",
+    "src/v2in/lists/priceRecovery.ts",
     "src/v2in/lists/positionCollection.ts",
     "src/v2in/lists/closeGroups.ts",
     "src/v2in/lists/positionSync.ts",

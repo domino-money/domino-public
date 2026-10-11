@@ -73,6 +73,7 @@ execFileSync(
     'tests/session.siwe.test.mjs',
     'tests/session.machine.test.mjs',
     'tests/session.controller.test.mjs',
+    'tests/sign-in-flow.test.mjs',
     'tests/session.refresh.test.mjs',
     'tests/session.privateQuery.test.mjs',
     'tests/session.forwarder.test.mjs',

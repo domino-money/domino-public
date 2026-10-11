@@ -39,6 +39,7 @@ import { useActivityHistory } from '../lists/activity'
 import PositionHistory from '../lists/PositionHistory'
 import { useCreatedPositions, useKeyed, useKeyedLatest } from '../lists/hooks'
 import { OWN_PORTFOLIO } from '../lists/source'
+import { POSITION_VALUATIONS } from '../lists/valuation'
 import type { OpenGate } from './wallet'
 import RecordedInsights from './RecordedInsights'
 
@@ -206,13 +207,18 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   const identity = poolIdentity(chainId, position.pool)
   const custody = successor ? COPY.custody.successor : position.vault?.role === 'root' ? COPY.custody.root : COPY.custody.walletHolds
   // Added 2026-10-06 (read-v6 1.1.0-rc.1's qualified USD): what it holds and its fees in USD, as V1's page shows them
-  // (components/positions/KeyFigures.tsx), the token amounts under the figure; only from a fresh read, every token held
-  // above zero priced. Otherwise the token amounts alone, as before.
+  // (components/positions/KeyFigures.tsx), with token amounts in Details. Only a fresh read with every nonzero amount
+  // priced provides a new USD valuation; a brief unread price can preserve the exact unchanged complete snapshot.
   const fresh = position.freshness?.status === 'fresh' && !stale
   const pair = [position.pool.currency0, position.pool.currency1] as const
-  const holdsUsd = fresh ? usdOfAmounts(book, pair, position.principal) : null
+  const currentHoldsUsd = fresh ? usdOfAmounts(book, pair, position.principal) : null
+  const currentFeesUsd = fresh ? usdOfAmounts(book, pair, position.feesOwed) : null
+  const savedUsd = fresh && (currentHoldsUsd === null || currentFeesUsd === null)
+    ? POSITION_VALUATIONS.get(answer, { chainId, positionManager: position.manager, tokenId: position.tokenId.toString() }) : null
+  const holdsUsd = savedUsd?.value ?? currentHoldsUsd
   const holdsText = holdsUsd !== null ? formatUsdFloor(holdsUsd) : null
-  const feesUsd = fresh ? usdOfAmounts(book, pair, position.feesOwed) : null
+  const feesUsd = savedUsd?.fees ?? currentFeesUsd
+  const usdTitle = savedUsd ? `Previous complete valuation from ${new Date(savedUsd.at).toISOString()}. Refreshing the USD source.` : position.snapshotBlock !== null ? `Qualified valuation at block ${position.snapshotBlock}` : undefined
 
   return (
     <div data-position-detail="" data-position-workspace-page="" data-position-id={position.tokenId.toString()} data-position-v2={`${chain.slug}-v${position.dex}`} data-snapshot={position.snapshotBlock ?? undefined}>
@@ -265,29 +271,18 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
         indexed={{ portfolio: answer, subscriber: position.custody.subscriber }} toolbar={automationToolbar} onChanged={onChanged} />
       <StatStrip layout="tiles" className="dm-pos-stats" title={position.snapshotBlock !== null ? `Read at block ${position.snapshotBlock}` : undefined} data-position-stats="" data-position-overview="">
         <Stat
-          label={COPY.page.holds}
+          label="Position value"
           info={COPY.page.holdsInfo}
           className="dm-pos-stat"
           data-cell="principal"
           data-value-width={holdsText && holdsText.length > 11 ? 'wide' : holdsText && holdsText.length > 8 ? 'medium' : undefined}
-          sub={
-            holdsUsd !== null && (
-              <span className="dm-pos-amounts" data-stat="principal">
-                <CardAmount amount={card.principal[0]} />
-                <CardAmount amount={card.principal[1]} />
-              </span>
-            )
-          }
         >
           {holdsUsd !== null ? (
-            <span className="dm-arrive" title={position.snapshotBlock !== null ? `Pool price at block ${position.snapshotBlock}` : undefined} data-usd="principal">
+            <span className="dm-arrive" title={usdTitle} data-usd="principal" data-usd-snapshot={savedUsd ? '' : undefined}>
               <LiveFigure value={holdsText!} mode="digits" dimCents className="dm-fig-lg" />
             </span>
           ) : (
-            <span className="dm-pos-amounts" data-stat="principal">
-              <CardAmount amount={card.principal[0]} />
-              <CardAmount amount={card.principal[1]} />
-            </span>
+            <span className="dm-pos-usd-unavailable" data-usd-unavailable="principal" title="USD estimate unavailable. Token amounts are in Details."><span className="sr-only">USD estimate unavailable. Token amounts are in Details.</span></span>
           )}
         </Stat>
         <Stat
@@ -295,24 +290,13 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
           info={position.dex === 3 ? COPY.page.collectableInfo : COPY.page.feesInfo}
           className="dm-pos-stat"
           data-cell="fees"
-          sub={
-            feesUsd !== null && (
-              <span className="dm-pos-amounts" data-stat="fees">
-                <CardAmount amount={card.unsettledFees[0]} />
-                <CardAmount amount={card.unsettledFees[1]} />
-              </span>
-            )
-          }
         >
           {feesUsd !== null ? (
-            <span data-usd="fees">
-              <UsdText value={feesUsd} block={position.snapshotBlock ?? undefined} floor className="dm-fig-lg dm-arrive" />
+            <span data-usd="fees" title={usdTitle} data-usd-snapshot={savedUsd ? '' : undefined}>
+              <UsdText value={feesUsd} block={savedUsd ? undefined : position.snapshotBlock ?? undefined} floor className="dm-fig-lg dm-arrive" />
             </span>
           ) : (
-            <span className="dm-pos-amounts" data-stat="fees">
-              <CardAmount amount={card.unsettledFees[0]} />
-              <CardAmount amount={card.unsettledFees[1]} />
-            </span>
+            <span className="dm-pos-usd-unavailable" data-usd-unavailable="fees" title="USD estimate unavailable. Token amounts are in Details."><span className="sr-only">USD estimate unavailable. Token amounts are in Details.</span></span>
           )}
         </Stat>
         <Stat label={COPY.page.apr} info={COPY.page.aprInfo} className="dm-pos-stat" data-cell="apr" data-apr="no_qualified_source" sub={COPY.page.aprMissing}>
@@ -354,8 +338,11 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
             <IconChevronDown size={16} />
           </summary>
           <KeyValueList className="dm-pos-facts">
+            <KeyValue label="Tokens in this position"><span className="dm-pos-amounts" data-stat="principal"><CardAmount amount={card.principal[0]} /><CardAmount amount={card.principal[1]} /></span></KeyValue>
+            <KeyValue label="Fees ready to collect"><span className="dm-pos-amounts" data-stat="fees"><CardAmount amount={card.unsettledFees[0]} /><CardAmount amount={card.unsettledFees[1]} /></span></KeyValue>
+            {savedUsd && <KeyValue label="USD valuation"><span>{usdTitle}</span></KeyValue>}
             {chainId !== 4663 && <KeyValue label="APR data"><span>Lifetime fee history isn’t available from this network’s current data source. Recorded balances do not establish APR.</span></KeyValue>}
-            {chainId !== 4663 && holdsUsd === null && <KeyValue label="USD valuation"><span>{!fresh ? 'Waiting for a current reading.' : 'Token amounts are shown because a reliable USD price isn’t available for every token held.'}</span></KeyValue>}
+            {chainId !== 4663 && holdsUsd === null && <KeyValue label="USD valuation"><span>{!fresh ? 'Waiting for a current reading.' : 'A reliable USD price isn’t available for every token held.'}</span></KeyValue>}
             {chainId !== 4663 && pair.filter((_, index) => (position.principal?.[index] ?? 0n) > 0n || (position.feesOwed?.[index] ?? 0n) > 0n).map(address => {
               const token = answer.tokens.find(item => item.chainId === chainId && item.address.toLowerCase() === address)
               if (token?.price || !token?.priceReason) return null
@@ -364,7 +351,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
                 : token.priceReason === 'decimals_unknown' ? 'Token precision could not be verified.'
                 : token.priceReason === 'eth_usd_stale' || token.priceReason === 'price_read_failed' || token.priceReason === 'sequencer_down' ? 'The USD price source is temporarily unavailable.'
                 : 'A qualified USD price source isn’t available.'
-              return <KeyValue key={address} label={`${labelOf(book, address)} price`}><span>{reason}</span></KeyValue>
+              return <KeyValue key={address} label={`${labelOf(book, address)} price`}><span data-usd-price-reason={token.priceReason}>{reason}</span></KeyValue>
             })}
             <KeyValue label={COPY.page.nftId}>
               <Address value={position.tokenId.toString()} />

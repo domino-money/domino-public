@@ -250,11 +250,12 @@ export function totalWithheld(list: ListWholeness, holdings: HoldingsView): stri
   return null
 }
 
-/** One complete valuation, never a sum of refreshed rows and earlier prices. Only used with a visible updating label. */
+/** One complete valuation, never a sum of refreshed rows and earlier prices. Its original provenance stays accessible. */
 export interface WalletTotalSnapshot {
   total: bigint
   until: number
   balances: ReadonlyMap<string, string>
+  holdings: ReadonlyMap<string, Holding>
 }
 
 export function walletTotalSnapshot(rows: readonly WalletRow[], book: PriceBook, at: number, now: number): WalletTotalSnapshot | null {
@@ -263,11 +264,11 @@ export function walletTotalSnapshot(rows: readonly WalletRow[], book: PriceBook,
   if (rows.some(row => row.old) || totalWithheld(WHOLE_LIST, holdings) !== null) return null
   // Each original price answer keeps its own expiry. Re-reading the list cannot renew it.
   const until = Math.min(at + WALLET_MEMORY_MAX_AGE_MS, ...addressesToPrice(rows).map(source => (book.prices.get(source)?.at ?? 0) + WALLET_PRICE_MAX_AGE_MS))
-  return until > now ? { total: holdings.total, until, balances: new Map(rows.filter(held).map(row => [row.key, row.raw])) } : null
+  return until > now ? { total: holdings.total, until, balances: new Map(rows.filter(held).map(row => [row.key, row.raw])), holdings: new Map(holdings.all.map(holding => [holding.row.key, holding])) } : null
 }
 
 /** A read change, including an explicit zero, invalidates the snapshot before the rest of the pages finish. */
 export function walletSnapshotValid(snapshot: WalletTotalSnapshot | null, fresh: readonly WalletRow[], now: number): boolean {
-  return snapshot !== null && now < snapshot.until && !fresh.some(row => !row.old && snapshot.balances.has(row.key)
-    && (held(row) || row.amount.state === 'zero') && snapshot.balances.get(row.key) !== row.raw)
+  return snapshot !== null && now < snapshot.until && !fresh.some(row => !row.old
+    && (held(row) || (row.amount.state === 'zero' && snapshot.balances.has(row.key))) && snapshot.balances.get(row.key) !== row.raw)
 }

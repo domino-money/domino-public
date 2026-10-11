@@ -314,7 +314,7 @@ test('the list and the detail display the same verified APR for a new V2 NFT', a
   } finally { await s.close(); }
 });
 
-test('fees remain visible as token balances when USD pricing is unavailable, across desktop and phone widths', async () => {
+test('USD columns keep their layout when pricing is unavailable, with token amounts available in their titles', async () => {
   const own = about('portfolio', fixture('portfolio.json'), OWNER);
   own.positions = [own.positions[0]];
   own.positions[0].vault = null;
@@ -337,9 +337,10 @@ test('fees remain visible as token balances when USD pricing is unavailable, acr
     await s.page.waitForFunction(key => document.querySelector(`[data-v2-position-row="${key}"] [data-cell="fees"]`)?.getAttribute('title')?.includes('0.0028 USDG'), rowKey('7'));
     assert.equal(await cell.locator('[data-usd], .dm-own-dash').count(), 0, 'missing pricing neither hides fees nor retains the old USD total');
     assert.match(await cell.getAttribute('title'), /^USD estimate unavailable\.[\s\S]*0\.0028 USDG/);
-    assert.match(await cell.locator('.dm-own-amounts').innerText(), /0\.0028 USDG/, 'the same measured fees as the detail page are visible');
-    assert.equal(await cell.locator('.dm-own-amounts .dm-acct-amount').count(), 2);
-    assert.equal(await cell.locator('.dm-own-amounts').isVisible(), true);
+    assert.match(await cell.locator('[data-token-amounts]').textContent(), /0\.0028 USDG/, 'the measured fees remain available to assistive readers');
+    assert.equal(await cell.locator('[data-token-amounts] .dm-acct-amount').count(), 2);
+    assert.equal(await cell.locator('.dm-own-usd-unavailable').isVisible(), true);
+    assert.match(await row.getAttribute('data-usd-reason'), /no_qualified_price_source/);
     for (const width of [1320, 1024, 736, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
       assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `fees fit ${width}px`);
@@ -357,7 +358,72 @@ test('fees remain visible as token balances when USD pricing is unavailable, acr
   } finally { await s.close(); }
 });
 
-test('Base fees without a qualified USD price stay visible beside principal without inventing USD or APR', async () => {
+test('an unchanged position retains a complete USD valuation during a transient price read and invalidates it on new amounts', async () => {
+  const own = about('portfolio', fixture('portfolio.json'), OWNER);
+  own.positions = [own.positions[0]];
+  own.positions[0].vault = null; own.vaults = []; own.mandates = [];
+  own.tokens[1].decimals = 18; own.tokens[1].status = 'available';
+  own.servedAt = Math.floor(Date.now() / 1000);
+  for (const token of own.tokens) if (token.price?.snapshot) token.price.snapshot.timestamp = own.servedAt;
+  const s = await scenario({ hooks: LIVE, refresh: true, readV6: routeOn(route => ({ status: 200, body: route === 'portfolio' ? own : activityOf({ wallet: OWNER }).body })) });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="${rowKey('7')}"]`);
+    await row.locator('[data-usd="principal"]').waitFor();
+    const before = await row.locator('[data-usd]').allTextContents();
+    own.tokens[1].price = null; own.tokens[1].priceReason = 'price_read_failed';
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await row.locator('[data-usd="principal"][data-usd-snapshot]').waitFor();
+    assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before, 'principal and fees remain the same complete observation');
+    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /Previous complete valuation from/);
+    assert.equal(await row.getAttribute('data-usd-reason'), 'price_read_failed');
+    own.positions[0].state.feesOwed[0] = '8800';
+    own.positions[0].state.snapshot.number += 10;
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await row.locator('[data-cell="principal"] .dm-own-usd-unavailable').waitFor();
+    assert.equal(await row.locator('[data-usd-snapshot]').count(), 0, 'new balances cannot borrow earlier USD values');
+    assert.match(await row.locator('[data-cell="fees"]').getAttribute('title'), /0\.0088 USDG/);
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+test('a portfolio price-budget miss is recovered through the existing targeted chain-pools route and one coherent reread', async () => {
+  const pools = fixture('chain-pools.json'), token = pools.tokens.find(token => token.address === pools.token);
+  const usdc = pools.tokens.find(token => token.symbol === 'USDC'), manager = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1';
+  const ready = portfolioOf({ wallet: OWNER, tokens: [token, usdc].map(token => ({ ...token, chainId: 8453 })), positions: [
+    livePosition({ chainId: 8453, dex: 3, manager, tokenId: '6238188', owner: OWNER,
+      pool: { currency0: token.address, currency1: usdc.address, fee: 3000, tickSpacing: 60 }, tickLower: -60, tickUpper: 60, liquidity: '1000000000', sqrtPriceX96: String(2n ** 96n), tick: 0,
+      principal: ['1000000000000000000', '1000000'], feesOwed: ['100000000000000', '10000'] }),
+  ] }).body;
+  const missing = structuredClone(ready);
+  missing.tokens.find(item => item.address === token.address).price = null;
+  missing.tokens.find(item => item.address === token.address).priceReason = 'pricing_limit_reached';
+  let warmed = false, release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const s = await scenario({ hooks: LIVE, refresh: true, readV6: async (method, route) => {
+    if (route === 'capabilities') return { status: 200, body: { ...CAPABILITIES, enabledReads: [...CAPABILITIES.enabledReads, 'chain-pools'] }, contract: true };
+    if (route === 'chain-pools') { await pending; warmed = true; return { status: 200, body: pools, contract: true }; }
+    return { status: 200, body: route === 'portfolio' ? warmed ? ready : missing : activityOf({ wallet: OWNER }).body, contract: true };
+  } });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="8453:${manager}:6238188"]`);
+    await row.locator('[data-cell="principal"] .dm-own-usd-unavailable').waitFor();
+    await s.page.waitForFunction(() => document.querySelector('[data-usd-reason="pricing_limit_reached"]'));
+    release();
+    await row.locator('[data-usd="principal"]').waitFor();
+    assert.equal(await row.locator('[data-usd="principal"]').textContent(), '$1,001.03');
+    assert.equal(await row.locator('[data-usd="fees"]').textContent(), '$0.11');
+    const targets = s.asked.filter(request => request.route === 'chain-pools');
+    assert.deepEqual(targets.map(request => request.body), [{ chainId: 8453, token: token.address }], 'the target uses its full address and chain, never a paired pool or another provider');
+    assert.equal(s.asked.filter(request => request.route === 'portfolio').length, 2, 'one initial portfolio plus one coherent reread');
+    warmed = false;
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await s.page.waitForFunction(() => document.querySelector('[data-usd-reason="pricing_limit_reached"]'));
+    assert.equal(s.asked.filter(request => request.route === 'chain-pools').length, 1, 'the same missing source cannot trigger an automatic loop');
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { release(); await s.close(); }
+});
+
+test('Base without qualified USD keeps fixed value slots and token amounts in details, without inventing USD or APR', async () => {
   const usdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
   const basecat = '0xb2000000000000000000004c27f6523082f41d01';
   const manager = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1';
@@ -370,16 +436,17 @@ test('Base fees without a qualified USD price stay visible beside principal with
   try {
     const row = s.page.locator(`[data-v2-position-row="8453:${manager}:6238157"]`);
     const fees = row.locator('[data-cell="fees"]');
-    await fees.locator('.dm-own-amounts').waitFor();
-    assert.match(await text(fees), /0\.005193 USDC\s+0\.317608 BASECAT/);
-    assert.match(await text(row.locator('[data-cell="principal"]')), /0\.412537 USDC\s+22\.675 BASECAT/);
+    await fees.locator('.dm-own-usd-unavailable').waitFor();
+    assert.match(await fees.getAttribute('title'), /0\.005193 USDC \+ 0\.317608 BASECAT/);
+    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /0\.412537 USDC \+ 22\.675 BASECAT/);
     assert.equal(await row.locator('[data-usd]').count(), 0);
     assert.equal(await row.locator('[data-cell="apr"] .dm-own-dash').innerText(), '—');
     assert.ok(s.ledgerAsked.every(request => !request.tokenIds.includes('6238157')), 'a Base NFT never goes to the Robinhood ledger');
     for (const width of [1320, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
       assert.ok(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      assert.equal(await fees.locator('.dm-own-amounts').isVisible(), true);
+      assert.equal(await fees.locator('.dm-own-usd-unavailable').isVisible(), true);
+      assert.equal(await s.page.locator('.dm-acct-token-units').evaluateAll(nodes => nodes.every(node => node.getBoundingClientRect().height <= parseFloat(getComputedStyle(node).lineHeight) + 0.5)), true, 'even an extreme balance remains one line');
       if (width !== 320) await s.page.screenshot({ path: join(shots(), `positions-base-visible-fees-${width}.png`), fullPage: true });
     }
     assert.equal(s.wallet.state.signed.length, 0);

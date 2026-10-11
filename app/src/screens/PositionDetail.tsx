@@ -254,8 +254,8 @@ function Back() {
 /**
  * One position NFT, read from chain, for someone who may know nothing of pools (the owner, 2026-09-27): its pair and
  * state, then its key figures (what it is worth now, the fees ready to collect, Your APR and the price against its
- * range), Fees earned, Price range, Activity and, closed until opened, the technical Details. The owner, connected on
- * Robinhood Chain, also gets Collect fees and Close position in the title row; anyone else reads the same page with
+ * range), Fees earned, Price range, Activity and, closed until opened, the technical Details. The connected owner,
+ * on any network, also gets Collect fees and Close position in the title row; anyone else reads the same page with
  * no action on it. Every figure but the fees history's is from one chain read, at its block (the figures' title).
  */
 /** Why a ledger cannot measure Fees earned, in Details' own words (lib/fees/types.ts LedgerWhy). */
@@ -305,10 +305,10 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
   const [base, quote] = card.currencies
   const token = base.address === NATIVE_CURRENCY ? quote.address : base.address
   const { tickLower, tickUpper } = card.range
-  // The owner's actions, chunk and all, only for the NFT's owner at the read's block, connected on Robinhood Chain:
-  // any other visitor downloads nothing of them. PositionActions checks the owner again on chain before anything is sent.
+  // Ownership is independent of the wallet's selected network. An intentional action switches to this position's
+  // network before preparing its review, and checks the owner again before anything is sent.
   const identity = useWalletIdentity()
-  const mine = walletKey(identity) !== null && identity.kind === 'connected' && identity.address.toLowerCase() === card.owner.address
+  const mine = identity.kind === 'connected' && identity.address.toLowerCase() === card.owner.address
   // Read again after each of the owner's actions (`changes`), and never offered for a position this read shows closed:
   // after a Close, Automate and the Plain position pill go at once (2026-09-25, audit of 754014c: the wallet's list, read
   // before the Close, still offered them until the page was opened again).

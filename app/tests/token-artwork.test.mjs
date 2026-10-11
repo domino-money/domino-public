@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
-import { artworkFromPairs, createTokenArtworkResolver, safeTokenImage, tokenArtworkKey } from '../src/lib/tokenArtwork.ts';
+import { artworkFromPairs, createTokenArtworkResolver, DEX_EDGE, safeTokenImage, tokenArtworkKey } from '../src/lib/tokenArtwork.ts';
 import { bundledTokenArtwork } from '../src/lib/bundledTokenArtwork.ts';
 
 const address = `0x${'a'.repeat(40)}`;
@@ -114,14 +114,14 @@ test('artwork and pool hints share one guarded GET per token, joined in flight a
 
 // Review 2026-09-23: a failed read (a timeout, a 429, a network error, a body that is not JSON) was kept as the body
 // for 30 s, so one artwork lookup that ran out of time turned New position's pool hints off for that token.
-test('a failed token-pairs read is not kept: a hint request within 30 s asks again; the artwork keeps its own negative cache', async () => {
+test('a failed read is not kept and a successful hint read repairs the artwork cache immediately', async () => {
   let now = 0;
   let calls = 0;
   let failing = true;
   const body = [pair()];
   const resolver = createTokenArtworkResolver({ now: () => now, fetch: async () => {
     calls++;
-    return failing ? new Response('{"error":"busy"}', { status: 429, headers: { 'content-type': 'application/json' } }) : json(body);
+    return failing ? new Response('{"error":"busy"}', { status: 503, headers: { 'content-type': 'application/json' } }) : json(body);
   } });
   assert.equal(await resolver.resolve(4663, address), null, 'the artwork lookup failed');
   assert.equal(calls, 1);
@@ -129,13 +129,12 @@ test('a failed token-pairs read is not kept: a hint request within 30 s asks aga
   failing = false;
   assert.deepEqual(await resolver.pairs(4663, address), body, 'the hints ask again, within 30 s');
   assert.equal(calls, 2);
-  // Changed on purpose 2026-09-28 (speed wave, item 42): the artwork keeps a failed lookup 30 s, not five minutes.
-  assert.equal(await resolver.resolve(4663, address), null, 'the artwork keeps its failure for 30 s');
+  assert.equal(await resolver.resolve(4663, address), expected, 'the successful hints body repairs the transient artwork miss');
   assert.deepEqual(await resolver.pairs(4663, address), body, 'a body is kept');
   assert.equal(calls, 2);
   now += 30_000;
   assert.equal(await resolver.resolve(4663, address), expected, 'then asks again, and finds its image');
-  assert.equal(calls, 3);
+  assert.equal(calls, 2, 'the image is cached, no second metadata lookup');
   // A failed hints read is not kept either.
   let broken = 0;
   const other = createTokenArtworkResolver({ now: () => now, fetch: async () => (++broken === 1 ? new Response('{bad', { headers: { 'content-type': 'application/json' } }) : json(body)) });
@@ -378,4 +377,108 @@ test('our edge given up for one chain only: a miss on Base keeps Robinhood Chain
   at += 300_001;
   await resolver.pairs(8453, `0x${'c'.repeat(40)}`);
   assert.deepEqual(asked, [`/api/read/dex/token-pairs/base/0x${'c'.repeat(40)}`], 'then Base’s on our edge again');
+});
+
+test('a slower empty artwork response cannot erase a newer price seed, and observers receive that seed', async () => {
+  let finish;
+  const resolver = createTokenArtworkResolver({ fetch: () => new Promise(done => { finish = done; }) });
+  const images = [];
+  const stop = resolver.observe(4663, address, image => images.push(image));
+  const pending = resolver.resolve(4663, address);
+  resolver.seed(4663, address, image);
+  assert.equal(images.at(-1), expected, 'already mounted marks receive the image');
+  finish(json([]));
+  assert.equal(await pending, expected);
+  assert.equal(resolver.peek(4663, address), expected, 'late empty result cannot erase the seed');
+  stop();
+  resolver.rejectImage(4663, address);
+  assert.equal(images.at(-1), expected, 'unmounted observers are removed');
+});
+
+test('visible observers retry transient failures at most twice and stop all timers on unsubscribe', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let at = 0;
+  let calls = 0;
+  const resolver = createTokenArtworkResolver({ now: () => at, fetch: async () => { calls++; return new Response(null, { status: 503 }); } });
+  const flush = () => new Promise(done => setImmediate(done));
+  const stop = resolver.observe(4663, address, () => {});
+  await flush();
+  for (let turn = 0; turn < 4; turn++) { at += 30_000; t.mock.timers.tick(30_000); await flush(); }
+  assert.equal(calls, 3, 'initial read and two retries, never a polling loop');
+  stop();
+  const stopOther = resolver.observe(4663, other, () => {});
+  await flush();
+  stopOther();
+  at += 30_000; t.mock.timers.tick(30_000); await flush();
+  assert.equal(calls, 4, 'leaving before a retry cancels it');
+});
+
+test('429 honours Retry-After across metadata and price calls without bypassing the edge', async () => {
+  let at = 0;
+  const asked = [];
+  const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, now: () => at, fetch: async url => {
+    asked.push(url);
+    return asked.length === 1 ? new Response(null, { status: 429, headers: { 'Retry-After': '90' } }) : json([pair()]);
+  } });
+  assert.equal(await resolver.resolve(4663, address), null);
+  assert.equal(await resolver.pairs(8453, other), null);
+  assert.equal(await resolver.tokenPrices([other]), null);
+  assert.equal(asked.length, 1, 'no direct fallback or calls to other token URLs during the cooldown');
+  at = 89_999;
+  assert.equal(await resolver.resolve(4663, address), null);
+  assert.equal(asked.length, 1);
+  at = 90_000;
+  assert.equal(await resolver.resolve(4663, address), expected);
+  assert.equal(asked.length, 2);
+  assert.ok(asked.every(url => url.startsWith(DEX_EDGE)), 'rate limiting never causes a direct-provider bypass');
+});
+
+test('prices retain answered batches and mark only failed per-token fallbacks unavailable', async () => {
+  const addresses = Array.from({ length: 12 }, (_, i) => `0x${(i + 1).toString(16).padStart(40, '0')}`);
+  const asked = [];
+  const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, fetch: async url => {
+    asked.push(url);
+    if (url.startsWith(DEX_EDGE) && url.includes(addresses[10])) return new Response(null, { status: 502 });
+    if (url.startsWith('https:') && url.endsWith(addresses[11])) return new Response(null, { status: 503 });
+    const named = url.split('/').at(-1).split(',');
+    return json(named.map(address => pair({ baseToken: { address }, liquidity: { usd: 100_000 }, priceUsd: '2' })));
+  } });
+  const reply = await resolver.tokenPrices(addresses);
+  assert.deepEqual(reply.unavailable, [addresses[11]]);
+  assert.deepEqual(reply.pairs.map(pair => pair.baseToken.address), addresses.slice(0, 11));
+  assert.deepEqual(asked.filter(url => url.startsWith('https:')), addresses.slice(10).map(address => `https://api.dexscreener.com/token-pairs/v1/robinhood/${address}`));
+  assert.ok(!asked.some(url => url.includes('/tokens/v1/')), 'fallback covers the same v4 pairs as the edge');
+});
+
+test('a cancelled price observer leaves a shared artwork read running; sole price reads cancel promptly', async () => {
+  let finish;
+  let received;
+  const resolver = createTokenArtworkResolver({ fetch: (_url, init) => {
+    received = init.signal;
+    return new Promise(done => { finish = done; });
+  } });
+  const artwork = resolver.resolve(4663, address);
+  const controller = new AbortController();
+  const prices = resolver.tokenPrices([address], controller.signal);
+  controller.abort();
+  assert.equal(await prices, null);
+  assert.equal(received.aborted, false, 'another observer still owns this shared read');
+  finish(json([pair()]));
+  assert.equal(await artwork, expected);
+});
+
+test('a result scrolled away or removed before its queue slot does not start an artwork request', async () => {
+  const pending = [];
+  const asked = [];
+  const resolver = createTokenArtworkResolver({ fetch: url => {
+    asked.push(url);
+    return new Promise(done => pending.push(() => done(json([]))));
+  } });
+  const stops = [address, other, `0x${'c'.repeat(40)}`].map(token => resolver.observe(4663, token, () => {}));
+  assert.equal(asked.length, 2);
+  stops[2]();
+  pending.forEach(done => done());
+  await new Promise(done => setImmediate(done));
+  assert.equal(asked.length, 2, 'the queued row no longer visible never reaches the provider');
+  stops.forEach(stop => stop());
 });

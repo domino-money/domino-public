@@ -1,6 +1,8 @@
 import { getConnection } from 'wagmi/actions'
 import { numberToHex } from 'viem'
 import { walletConfig } from '../wallet/config'
+import { switchToRobinhood } from '../wallet/port'
+import { ensurePositionNetwork, type PositionWalletIdentity } from '../lib/positions/positionNetwork'
 import { WALLETCONNECT_ID } from '../wallet/walletConnect'
 import type { WalletHandoff } from '../deposit/handoff'
 import { livePort } from '../session/livePort'
@@ -17,6 +19,19 @@ const confirmedDelegates = new Set<string>()
 /** Records that the person set up this unrecognized delegate for this account themselves; funding may continue. */
 export function confirmDelegate(owner: string, delegate: string) {
   confirmedDelegates.add(`${owner.toLowerCase()}|${delegate.toLowerCase()}`)
+}
+/** An owner action may start on another network. Switching prepares a fresh review and never sends a transaction. */
+export async function positionWallet(owner: string, current: () => boolean, onSwitch: () => void): Promise<{ wallet: WalletRpc; key: string }> {
+  const identity = (): PositionWalletIdentity => {
+    const value = getConnection(walletConfig)
+    return value.status === 'connected' && value.connector && value.chainId !== undefined
+      ? { address: value.address, connectorUid: value.connector.uid, chainId: value.chainId } : null
+  }
+  const key = await ensurePositionNetwork({ owner, chainId: 4663, identity, switchChain: switchToRobinhood, current, onSwitch })
+  const wallet = await setupWallet()
+  const after = identity()
+  if (!current() || !wallet.current() || !after || `${after.connectorUid}|${after.address.toLowerCase()}` !== key) throw new Error('wallet_identity_changed')
+  return { wallet, key }
 }
 /** Owner recovery deliberately does not require a Domino session or backend. */
 export async function setupWallet(): Promise<WalletRpc> {

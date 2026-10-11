@@ -3,7 +3,7 @@ import { CreatedNext } from '../../components/create/CreatedNext'
 import type { PairBalancesState } from '../../components/create/usePairBalances'
 import { heldRaw, rawBalances } from '../../components/create/valuation'
 import { Button } from '../../components/ui'
-import { openWalletDialog } from '../../finance/signedOut'
+import { openWalletDialog, signInWithWallet } from '../../finance/signedOut'
 import { crosschainSessionAccess } from '../../finance/v2/http'
 import { CREATE } from '../../lib/create/copy'
 import { publishCreated, publishFlowMade } from '../../lib/create/createProgress'
@@ -218,7 +218,7 @@ function LiveCreate({ state, balances, pay, onBusy, onReadAgain, gate, chainId }
     // (styles/flow.css places the footer's [data-create-position]); without it the grid drew Sign in as a small button.
     return (
       <>
-        <Button type="button" variant="primary" size="xl" className="w-full" onClick={openWalletDialog} data-create-position="signin" data-create-signin="" aria-describedby="create-reason">
+        <Button type="button" variant="primary" size="xl" className="w-full" onClick={signInWithWallet} data-create-position="signin" data-create-signin="" aria-describedby="create-reason">
           {JOURNEY.review.signIn}
         </Button>
         <p id="create-reason" className="dm-flow-reason" data-align="start" data-zap-reason="signed-out">

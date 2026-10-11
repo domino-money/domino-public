@@ -16,7 +16,6 @@ import { NO_PRICES, WALLET_MEMORY_MAX_AGE_MS, bookQuotes, recallWallet, remember
 import { walletPrices } from '../../lib/walletPrices'
 import { LiveFigure } from '../figures'
 import { exploreHref } from '../explore/routes'
-import { Figure } from '../positions/Figure'
 import { TokenLabel } from '../read/TokenLabel'
 import { TokenMark } from '../TokenIcon'
 import { Button, Skeleton } from '../ui'
@@ -121,12 +120,15 @@ function valueTitle(holding: Holding): string {
 /**
  * One holding: its mark (artwork, or a monogram disc), its symbol linked to
  * Markets with the amount small and muted under it, and its USD value
- * right-aligned, or a quiet dash when the token has no price (a resting bar
+ * right-aligned, or an empty value slot when the token has no price (a resting bar
  * while its price is `due` on the wire). A symbol another listed holding
  * shares is followed by its short address.
  */
-function HoldingRow({ holding, due }: { holding: Holding; due: boolean }) {
-  const { row, value, twin } = holding
+function HoldingRow({ holding, due, cached }: { holding: Holding; due: boolean; cached?: Holding }) {
+  const { row, twin } = holding
+  // Use the earlier complete observation as a whole; never reprice an old balance with a newer quote.
+  const previous = row.old && cached?.row.raw === row.raw && cached.value !== null ? cached : undefined
+  const value = holding.value ?? previous?.value ?? null
   const balance = balanceOf(row)
   return (
     <li className="dm-acct-token" data-wallet-row={addressOf(row.token)} data-wallet-row-via={row.via} data-wallet-row-old={row.old ? '' : undefined} data-wallet-priced={value === null ? undefined : ''}>
@@ -135,9 +137,9 @@ function HoldingRow({ holding, due }: { holding: Holding; due: boolean }) {
         <TokenName token={row.token} />
         <span className="dm-acct-token-sub">
           <span className="dm-acct-token-units tnum" data-balance={row.amount.state} title={balance.title}>
-            {balance.text === null ? '—' : <Figure text={balance.text} />}
+            {balance.text === null ? <span className="sr-only">Balance unavailable</span> : balance.text}
           </span>
-          {row.old && <span data-wallet-balance-earlier=""> · Last known</span>}
+          {row.old && <span className="sr-only" data-wallet-balance-earlier="">Balance from the previous reading; refreshing.</span>}
           {twin && (
             <span className="dm-acct-token-twin" translate="no" title={row.token.address}>
               {shortAddress(row.token.address)}
@@ -151,11 +153,10 @@ function HoldingRow({ holding, due }: { holding: Holding; due: boolean }) {
         </span>
       ) : value === null ? (
         <span className="dm-acct-token-usd dm-acct-token-none" data-no-price="" title={valueTitle(holding)}>
-          <span aria-hidden="true">—</span>
           <span className="sr-only">{row.old ? 'Balance updating' : 'No price'}</span>
         </span>
       ) : (
-        <span className="dm-acct-token-usd tnum" data-usd="" title={valueTitle(holding)}>
+        <span className="dm-acct-token-usd tnum" data-usd="" data-wallet-value-snapshot={previous ? '' : undefined} title={previous ? 'Previous complete valuation. Checking the current balance.' : valueTitle(holding)}>
           {usdText(value)}
         </span>
       )}
@@ -280,8 +281,8 @@ const wholenessOf = (snap: WalletSnapshot, unread: number, reading: boolean): Li
  *   keeps its row where it stood. Missing or rejected replacement prices
  *   preserve that order, but never contribute an old USD value to the total.
  *
- * A missing value gets one quiet explanation; remembered balances say "Last
- * known". A read that failed only for the moment is asked again on its own,
+ * Missing values and remembered balances keep their explanation in accessible text
+ * and titles without changing the row's layout. A failed read is asked again on its own,
  * a few times, while the page is visible; one that stays failed leaves the
  * rows already shown, or an empty line, with its reason in a title and a data
  * attribute. No list is called complete: a provider's pages hold only what it
@@ -683,18 +684,12 @@ export function PortfolioTokens({ address }: { address: string }) {
         <p className="dm-acct-total" data-wallet-total="" data-wallet-total-snapshot={previousTotal !== null ? '' : undefined} title={previousTotal !== null ? 'Last complete valuation. Balances and prices are being checked again.' : 'The sum of the tokens on this card, at provider-reported prices with USDG at $1. Indicative, not a quote.'}>
           <span className="sr-only">{previousTotal !== null ? 'Last known total value ' : 'Total value '}</span>
           <LiveFigure value={usdText(displayedTotal)} mode="digits" dimCents className="dm-fig-xl" />
-          {previousTotal !== null && <span className="dm-hint block mt-1" data-wallet-total-updating="">Last known · Updating…</span>}
+          {previousTotal !== null && <span className="sr-only" data-wallet-total-updating="">Previous complete valuation. Refreshing balances and prices.</span>}
         </p>
       ) : (
-        holdPlace && (
-          <p className="dm-acct-total" aria-hidden="true">
-            <Skeleton className="dm-acct-total-skel" />
-          </p>
-        )
-      )}
-
-      {!waiting && displayedTotal === null && holdings.all.length > 0 && !holdPlace && (
-        <p className="dm-hint" data-wallet-value-unavailable="">{loading ? 'Updating balances…' : 'Some values are unavailable.'}</p>
+        <p className="dm-acct-total" data-wallet-value-unavailable={!holdPlace ? '' : undefined} title={!holdPlace ? 'The wallet total is unavailable until all balances and prices can be verified.' : undefined}>
+          {holdPlace ? <Skeleton className="dm-acct-total-skel" /> : <span className="sr-only">Wallet value unavailable.</span>}
+        </p>
       )}
 
       {(visible.length > 0 || waiting) && (
@@ -707,7 +702,7 @@ export function PortfolioTokens({ address }: { address: string }) {
                   No price found
                 </li>
               )}
-              <HoldingRow holding={holding} due={due && holding.due} />
+              <HoldingRow holding={holding} due={due && holding.due} cached={previousTotal !== null ? complete.snapshot?.holdings.get(holding.row.key) : undefined} />
             </Fragment>
           ))}
           {waiting &&

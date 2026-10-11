@@ -182,7 +182,7 @@ test('the positions route reads nothing and offers no lookup by NFT id; every re
  * would fail here.
  */
 const ARTWORK_LOOKUP = /^\/token-pairs\/v1\/robinhood\/0x[0-9a-fA-F]{40}$/;
-const WALLET_PRICES = /^\/tokens\/v1\/robinhood\/0x[0-9a-f]{40}(,0x[0-9a-f]{40}){0,29}$/;
+const WALLET_PRICES = /^\/token-pairs\/v1\/robinhood\/0x[0-9a-f]{40}$/;
 function ownRequestsOnly(requests, { walletAddress = null } = {}) {
   const built = distText();
   for (const r of requests) {
@@ -221,8 +221,8 @@ test('an address’s Wallet card: its pages are read on their own, then ONE pric
   const walletReads = (await fixtureReads(page)).filter((r) => r.route === 'wallet-assets');
   assert.equal(walletReads.length, 2, 'page 1, then page 2 with its handle');
   assert.equal(walletReads[1].request.cursor !== undefined, true);
-  const prices = asked.filter((url) => new URL(url).pathname.startsWith('/tokens/'));
-  assert.deepEqual(prices, [`https://api.dexscreener.com/tokens/v1/robinhood/${TOKEN}`], 'one price GET, for the one token held; native ETH at zero needs none');
+  const prices = asked.filter((url) => new URL(url).pathname.startsWith('/token-pairs/'));
+  assert.deepEqual(prices, [`https://api.dexscreener.com/token-pairs/v1/robinhood/${TOKEN}`], 'one shared price/artwork GET for the one token held; native ETH at zero needs none');
   ownRequestsOnly(requests, { walletAddress: OWNER });
   // Changed on purpose (round 6, 2026-09-27; the owner: the Wallet card's tokens took far too long to appear): the card
   // keeps its last list per address in the browser, under one key (src/lib/walletMemory.ts), and draws it at once on the

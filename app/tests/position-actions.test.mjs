@@ -22,6 +22,43 @@ const pairAmount = require('../.test-build/app/src/lib/create/pairAmount.js');
 const poolRange = require('../.test-build/app/src/lib/read/screens/poolRange.js');
 const mintPlan = require('../.test-build/app/src/lib/create/mintPlan.js');
 const steps = require('../.test-build/app/src/components/positions/walletSteps.js');
+const { ensurePositionNetwork, PositionNetworkError } = require('../.test-build/app/src/lib/positions/positionNetwork.js');
+
+test('position network preparation covers every supported source and target without switching an already-correct wallet', async () => {
+  for (const source of [4663, 8453, 42161]) for (const target of [4663, 8453, 42161]) {
+    let identity = { address: '0xabc', connectorUid: 'chosen-wallet', chainId: source };
+    const calls = [];
+    const key = await ensurePositionNetwork({ owner: '0xAbC', chainId: target, identity: () => identity, current: () => true,
+      onSwitch: () => calls.push('waiting'), switchChain: async chainId => { calls.push(chainId); identity = { ...identity, chainId }; return 'switched'; } });
+    assert.equal(key, 'chosen-wallet|0xabc');
+    assert.deepEqual(calls, source === target ? [] : ['waiting', target]);
+  }
+});
+
+test('position network preparation preserves wallet refusals and never treats an uncompleted switch as ready', async () => {
+  for (const outcome of ['user_rejected', 'pending', 'unknown_chain', 'unsupported', 'phantom', 'error']) {
+    await assert.rejects(ensurePositionNetwork({ owner: '0xabc', chainId: 4663, identity: () => ({ address: '0xabc', connectorUid: 'wallet', chainId: 8453 }),
+      current: () => true, onSwitch() {}, switchChain: async () => outcome }), error => error instanceof PositionNetworkError && error.outcome === outcome);
+  }
+  await assert.rejects(ensurePositionNetwork({ owner: '0xabc', chainId: 4663, identity: () => ({ address: '0xabc', connectorUid: 'wallet', chainId: 8453 }),
+    current: () => true, onSwitch() {}, switchChain: async () => 'switched' }), /wallet_identity_changed/);
+});
+
+test('position network preparation stops for an unknown owner and for account, provider or intent changes during the switch', async () => {
+  for (const first of [null, { address: '0xdef', connectorUid: 'wallet', chainId: 8453 }]) {
+    await assert.rejects(ensurePositionNetwork({ owner: '0xabc', chainId: 4663, identity: () => first, current: () => true,
+      onSwitch() { assert.fail('must not request a switch'); }, switchChain: async () => { assert.fail('must not ask the wallet'); } }), /wallet_identity_changed/);
+  }
+  for (const change of ['account', 'connector', 'cancel']) {
+    let current = true, identity = { address: '0xabc', connectorUid: 'wallet', chainId: 8453 };
+    await assert.rejects(ensurePositionNetwork({ owner: '0xabc', chainId: 4663, identity: () => identity, current: () => current,
+      onSwitch() {}, switchChain: async () => {
+        identity = { address: change === 'account' ? '0xdef' : '0xabc', connectorUid: change === 'connector' ? 'other-wallet' : 'wallet', chainId: 4663 };
+        if (change === 'cancel') current = false;
+        return 'switched';
+      } }), /wallet_identity_changed/);
+  }
+});
 
 const USDG = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168', UFG = '0xEfAb538Cf3C29237A47c6aFB145D50Ddf204A0A3', OWNER = '0xf6184F814543b88Dd867C34cE6E9f56Ab7d18C0a';
 const GOLDEN_DEADLINE = 1790205733n;

@@ -15,6 +15,7 @@ import { rawAmounts, usdOfRaw } from '../usd'
 import { positionOfState } from '../../lib/walletCards'
 import { minimumPositionBlock, positionBurn, positionKey, positionObservation } from './positionSync'
 import { automationState, confirmedPositionAutomation } from '../automate/store'
+import { POSITION_VALUATIONS } from './valuation'
 
 /**
  * What the Positions screen's two lists take from read-v6 (spec F7 rev4 §6.2, §6.3, §2.11; the integration brief's data
@@ -220,6 +221,9 @@ export interface PositionRowView {
    */
   valueUsd: string | null
   feesUsd: string | null
+  /** An unchanged complete USD snapshot while the qualified source is temporarily unread. */
+  usdSavedAt?: number
+  usdReason?: string
   /** The stale badge's age ("updated 6 min ago"): the chain's when it is behind, else the position's own read's. */
   stale: string | null
   vault: VaultBadge | null
@@ -343,6 +347,14 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
     const raws = fresh && values.length === 2 ? rawAmounts(values) : null
     return raws ? usdOfRaw(raws.map((raw, index) => ({ raw, decimals: tokens[index].decimals, usd: tokens[index].usd }))) : null
   }
+  const valueUsd = usdOf(state.principalAtSpot), feesUsd = usdOf(state.feesOwed)
+  // A newer direct observation is a separate set of amounts; it cannot borrow the index's complete USD snapshot.
+  const saved = fresh && !ownRead && (valueUsd === null || feesUsd === null) && answer.wallet
+    ? POSITION_VALUATIONS.get({ ...answer, wallet: answer.wallet, positions: [position] }, position) : null
+  const usdReason = valueUsd === null || feesUsd === null
+    ? !fresh ? pending ? 'awaiting_receipt_block' : 'stale_position_or_chain'
+      : [...new Set(tokens.flatMap(token => token.usd !== null ? [] : answer.tokens.find(item => item.chainId === chainId && item.address === token.address)?.priceReason ?? 'token_price_unavailable'))].join(',') || 'amount_unavailable'
+    : undefined
   return {
     ...base,
     status: 'live',
@@ -353,8 +365,10 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
     unread: null,
     value: pair(state.principalAtSpot),
     fees: pair(state.feesOwed),
-    valueUsd: usdOf(state.principalAtSpot),
-    feesUsd: usdOf(state.feesOwed),
+    valueUsd: saved?.value ?? valueUsd,
+    feesUsd: saved?.fees ?? feesUsd,
+    ...(saved ? { usdSavedAt: saved.at } : {}),
+    ...(usdReason ? { usdReason } : {}),
     stale: pending ? 'Updating' : chainStale ?? (state.freshness.status === 'stale' ? `updated ${agoWords(state.freshness.ageSeconds)}` : null),
     hooked: state.pool.dex === 4 && state.pool.hooks.toLowerCase() !== ZERO_ADDRESS,
   }

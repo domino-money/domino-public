@@ -513,7 +513,7 @@ test('I3: the token-pairs body is asked of our own edge first, with the beta coo
   await resolver.pairs(4663, UFG_COPY);
   assert.deepEqual(asked.slice(1), [[`/api/read/dex/token-pairs/${UFG_COPY}`, 'same-origin', 'no-referrer'], [`https://api.dexscreener.com/token-pairs/v1/robinhood/${UFG_COPY}`, 'omit', 'no-referrer']]);
   await resolver.tokenPrices([UFG]);
-  assert.deepEqual(asked.at(-1), [`https://api.dexscreener.com/tokens/v1/robinhood/${UFG}`, 'omit', 'no-referrer'], 'for five minutes the provider directly');
+  assert.deepEqual(asked.at(-1), [`https://api.dexscreener.com/token-pairs/v1/robinhood/${UFG}`, 'omit', 'no-referrer'], 'for five minutes the provider directly, with the same pair coverage');
   at += 300_001;
   edgeUp = true;
   await resolver.tokenPrices([UFG, USDG]);
@@ -525,7 +525,7 @@ test('I3: the token-pairs body is asked of our own edge first, with the beta coo
   assert.deepEqual(direct, [`https://api.dexscreener.com/token-pairs/v1/robinhood/${UFG}`]);
 });
 
-test('I3: a wallet’s price list goes to our edge ten tokens a GET, side by side, as one answer; a GET without one sends the whole list to the provider', async () => {
+test('I3: a wallet’s price list goes to our edge ten tokens a GET; a failed batch alone uses equivalent per-token coverage', async () => {
   const tokens = Array.from({ length: 12 }, (_, i) => `0xb${String(i).padStart(39, '0')}`)
   const asked = []
   let failOne = false
@@ -541,6 +541,6 @@ test('I3: a wallet’s price list goes to our edge ten tokens a GET, side by sid
   asked.length = 0
   failOne = true
   const direct = await resolver.tokenPrices(tokens)
-  assert.deepEqual(asked.slice(2), [`https://api.dexscreener.com/tokens/v1/robinhood/${tokens.join(',')}`], 'a gap: the provider directly, the whole list in one GET as before')
+  assert.deepEqual(asked.slice(2), tokens.slice(10).map(token => `https://api.dexscreener.com/token-pairs/v1/robinhood/${token}`), 'only the unanswered tokens are asked, once each')
   assert.equal(direct.length, 12)
 })

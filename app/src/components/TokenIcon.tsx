@@ -170,23 +170,33 @@ export function TokenMark({ token, size = 24, ring, style, monogram }: MarkProps
 function RemoteTokenMark({ token, size = 24, ring, style, monogram = false }: MarkProps) {
   // Artwork the resolver already holds paints on the first frame, with no disc before it.
   const [src, setSrc] = useState<string | null>(() => tokenArtwork.peek(token.chainId, token.address) ?? null)
-  const [loaded, setLoaded] = useState(false)
-  const [broken, setBroken] = useState(false)
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
+  const [element, setElement] = useState<HTMLElement | null>(null)
+  const [visible, setVisible] = useState(false)
+  const loaded = src !== null && loadedSrc === src
   useEffect(() => {
-    let alive = true
-    if (token.readStatus !== 'no_contract' && tokenArtworkKey(token.chainId, token.address)) {
-      void tokenArtwork.resolve(token.chainId, token.address).then((image) => { if (alive) setSrc(image) })
-    }
-    return () => { alive = false }
-  }, [token.chainId, token.address, token.readStatus])
+    if (!element) return
+    let inView = false
+    const update = () => setVisible(inView && document.visibilityState !== 'hidden')
+    const observer = new IntersectionObserver(([entry]) => {
+      inView = entry.isIntersecting && entry.intersectionRect.width > 0 && entry.intersectionRect.height > 0
+      update()
+    }, { root: element.closest('[role="listbox"]'), rootMargin: '40px' })
+    observer.observe(element)
+    document.addEventListener('visibilitychange', update)
+    return () => { observer.disconnect(); document.removeEventListener('visibilitychange', update) }
+  }, [element])
   useEffect(() => {
-    if (!src || loaded || broken) return
+    if (!visible || token.readStatus === 'no_contract' || !tokenArtworkKey(token.chainId, token.address)) return
+    return tokenArtwork.observe(token.chainId, token.address, setSrc)
+  }, [visible, token.chainId, token.address, token.readStatus])
+  useEffect(() => {
+    if (!visible || !src || loaded) return
     const timer = setTimeout(() => {
-      setBroken(true)
       tokenArtwork.rejectImage(token.chainId, token.address)
     }, 6000)
     return () => clearTimeout(timer)
-  }, [src, loaded, broken, token.chainId, token.address])
+  }, [visible, src, loaded, token.chainId, token.address])
   const markStyle: CSSProperties = {
     width: rem(size), height: rem(size), borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined,
     display: 'inline-block', flexShrink: 0, background: 'var(--surface-3)',
@@ -194,9 +204,9 @@ function RemoteTokenMark({ token, size = 24, ring, style, monogram = false }: Ma
     boxShadow: loaded ? undefined : DISC_LINE,
     ...style,
   }
-  if (src && !broken) return <img src={src} alt="" width={size} height={size} draggable={false}
-    decoding="async" referrerPolicy="no-referrer" data-token-mark="provider" className="dm-token-img"
-    onLoad={() => setLoaded(true)} onError={() => { setBroken(true); tokenArtwork.rejectImage(token.chainId, token.address) }}
+  if (src) return <img ref={setElement} src={src} alt="" width={size} height={size} draggable={false}
+    loading="lazy" decoding="async" referrerPolicy="no-referrer" data-token-mark="provider" className="dm-token-img"
+    onLoad={() => setLoadedSrc(src)} onError={() => { setSrc(null); tokenArtwork.rejectImage(token.chainId, token.address) }}
     style={{ ...markStyle, outlineOffset: ring ? -3 : -1, objectFit: 'cover' }} />
   // No inline background or shadow here: inline styles would beat the disc's class.
   const letters = monogram ? monogramOf(token.symbol, token.address) : ''
@@ -208,6 +218,7 @@ function RemoteTokenMark({ token, size = 24, ring, style, monogram = false }: Ma
   // The letters are drawn by the class from `data-letters` (shell.css), not as text: a copied row reads "UFG", never "UF UFG".
   return (
     <span
+      ref={setElement}
       aria-hidden="true"
       data-token-mark="unknown"
       data-letters={letters || undefined}

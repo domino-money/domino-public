@@ -495,10 +495,8 @@ export function TokenSearch({
     return homePaste.state === 'failed' ? [result] : []
   })
   const { results: ranked, twins, preselect } = disambiguate(found, (key) => factsOf(found.flatMap((result) => (result.kind === 'known' && result.token.key === key ? [result.token] : []))[0] ?? null, key), symbolReading)
-  const asked = [...twins].filter((key) => dexStore.token(key) === null).sort().join()
-  useEffect(() => {
-    for (const key of asked ? asked.split(',') : []) dexStore.ask(key)
-  }, [asked])
+  // Visible marks share their bounded metadata reads with dexStore. Do not separately fetch every offscreen
+  // namesake: a crowded search used to bypass the artwork queue and spend requests for rows never viewed.
   // A known token with no read of its own that the stored search verified (the catalogue's USDG, WETH...): choosing it
   // hands over the search's answer instead of reading it again (study item 28, 2026-09-28).
   const verifiedBySearch = new Map(persisted.flatMap((token) => (token.candidate ? [[token.key, token.candidate] as const] : [])))
@@ -545,6 +543,9 @@ export function TokenSearch({
   const highlighted = total === 0 ? -1 : active === null ? preselectAt : merged.findIndex((entry) => entryId(entry) === active)
   const highlightedEntry = highlighted < 0 ? undefined : merged[highlighted]
   const highlightedId = highlightedEntry === undefined ? undefined : entryId(highlightedEntry)
+  useEffect(() => {
+    if (expanded && active !== null && highlightedId) document.getElementById(highlightedId)?.scrollIntoView({ block: 'nearest' })
+  }, [expanded, active, highlightedId])
   // The row pointed at while the list is open: New position asks its pool hints now (speed wave, 2026-09-28).
   const pointed = expanded && highlightedEntry !== undefined && 'home' in highlightedEntry ? keyOf(highlightedEntry.home) : null
   useEffect(() => {

@@ -12,14 +12,16 @@
  *
  * A second exception, since 2026-09-25 (owner's request: the Positions Wallet
  * card lists only the main tokens, largest first, by their USD value): the
- * card asks the provider's `tokens` endpoint once for the prices of the
- * tokens the wallet holds, up to 30 addresses in one GET (`tokenPrices`),
+ * card asks our edge for the prices of the tokens the wallet holds, up to
+ * 30 addresses per call (`tokenPrices`, split into batches of ten),
  * through the same guarded read (no credentials, no referrer, no redirect,
  * a bounded body and deadline). Those prices are an indicative figure in that
  * card only (lib/walletPrices.ts): never an amount, a quote, a position
  * figure or anything sent anywhere. The same reply's artwork is kept for the
  * addresses it names (`seed`), so the card's rows ask no token-pairs GET of
- * their own. Only token addresses leave the page, never the wallet's.
+ * their own. Direct fallback reuses token-pairs reads, with two concurrent
+ * requests per call and explicit gaps for partial failures. Only token
+ * addresses leave the page, never the wallet's.
  *
  * Changed 2026-10-01 (audit I3, privacy): where the deployment has it, every one
  * of these GETs goes to our own edge first (functions/api/read/dex/[[path]].ts,
@@ -61,7 +63,7 @@ const BODY_TTL = 30000
 const FOUND_TTL = 3600000
 const NONE_TTL = 300000
 const FAILED_TTL = 30000
-/** Addresses one `tokens` GET may name: the provider's own limit. */
+/** Maximum addresses in one Wallet price read. */
 export const PRICE_BATCH = 30
 
 /** A token's artwork key: its chain and its address (Robinhood Chain, and since 2026-10-06 Base and Arbitrum One); never native ETH. */
@@ -119,7 +121,10 @@ type Options = {
   /** Our own edge's route, asked first; null or absent: the provider only (the test builds, the node tests). */
   edge?: string | null
 }
-type Entry = { value: string | null; expires: number }
+type Entry = { value: string | null; expires: number; failed: boolean }
+type Reading = { result: Promise<unknown>; deadline: number; users: number; controller: AbortController; settled: boolean }
+/** A partial price read names its gaps explicitly: an unfetched token is not an unpriced token. */
+export type TokenPricesAnswer = unknown[] | { pairs: unknown[]; unavailable: readonly string[] } | null
 /**
  * A token-pairs body as it was read: who it is about, when it was retrieved (wall ms, the edge's own retrieval where it
  * answered), and on which chain (added 2026-10-06; Robinhood Chain's bodies say 4663).
@@ -140,13 +145,18 @@ export function createTokenArtworkResolver(options: Options = {}) {
   const edgeDownUntil = new Map<string, number>()
   const edgeUp = (slug: string) => now() >= (edgeDownUntil.get(slug) ?? -Infinity)
   const pairsListeners = new Set<PairsListener>()
+  const observers = new Map<string, Set<() => void>>()
   const cache = new Map<string, Entry>()
   const pending = new Map<string, Promise<string | null>>()
+  const required = new Set<string>()
   const queue: Array<() => void> = []
   let active = 0
   const bodies = new Map<string, { body: unknown; expires: number }>()
   /** Reads in flight, each with the time (on `now`) it gives up at. */
-  const reading = new Map<string, { result: Promise<unknown>; deadline: number }>()
+  const reading = new Map<string, Reading>()
+  // A 429 is a request to wait, including when it came from our edge. Do not evade it with a direct fallback.
+  const cooldown = new Map<string, number>()
+  const cooling = (own: boolean) => now() < (cooldown.get(own ? 'edge' : 'provider') ?? 0)
 
   /**
    * One guarded GET of a provider body (`token-pairs/…` or `tokens/…` on Robinhood, `token-pairs/…` on Base or Arbitrum
@@ -160,6 +170,7 @@ export function createTokenArtworkResolver(options: Options = {}) {
       const started = now()
       const answered = await get(`${edge}${viaEdge}`, Math.min(remaining, EDGE_TIMEOUT), signal, true)
       if (answered !== null || signal?.aborted) return answered
+      if (cooling(true)) return null
       edgeDownUntil.set(slug, now() + EDGE_RETRY_MS)
       remaining -= now() - started
       if (remaining <= 0) return null
@@ -167,13 +178,9 @@ export function createTokenArtworkResolver(options: Options = {}) {
     return get(`https://api.dexscreener.com/${path}`, remaining, signal, false)
   }
 
-  async function retrieve(path: string, remaining: number, signal?: AbortSignal): Promise<unknown> {
-    return (await retrieveDated(path, remaining, signal))?.body ?? null
-  }
-
   /** One bounded GET: our edge's (same origin, the beta cookie goes with it) or the provider's (no credentials, no referrer). */
   async function get(url: string, remaining: number, signal: AbortSignal | undefined, own: boolean): Promise<{ body: unknown; retrievedAt: number } | null> {
-    if (signal?.aborted) return null
+    if (signal?.aborted || cooling(own)) return null
     const controller = new AbortController()
     const cancel = () => controller.abort()
     signal?.addEventListener('abort', cancel, { once: true })
@@ -183,6 +190,11 @@ export function createTokenArtworkResolver(options: Options = {}) {
         signal: controller.signal, credentials: own ? 'same-origin' : 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
         headers: { Accept: 'application/json' },
       })
+      if (response.status === 429) {
+        const header = response.headers.get('Retry-After')
+        const delay = header !== null && /^\d+$/.test(header) ? Number(header) * 1000 : header === null ? FAILED_TTL : Date.parse(header) - wall()
+        cooldown.set(own ? 'edge' : 'provider', now() + Math.max(FAILED_TTL, Math.min(3600000, Number.isFinite(delay) ? delay : FAILED_TTL)))
+      }
       if (!response.ok || response.redirected || !response.headers.get('content-type')?.startsWith('application/json') || !response.body) return null
       const declared = response.headers.get('content-length')
       if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > MAX_BODY)) return null
@@ -222,30 +234,53 @@ export function createTokenArtworkResolver(options: Options = {}) {
    *
    * `chainId` names the chain (2026-10-06): one body per chain and address.
    */
-  function pairsWithin(chainId: number, address: string, remaining: number): Promise<unknown> {
+  function lease(entry: Reading, signal?: AbortSignal): Promise<unknown> {
+    entry.users++
+    return new Promise((resolve) => {
+      let done = false
+      const finish = (body: unknown) => {
+        if (done) return
+        done = true
+        signal?.removeEventListener('abort', cancel)
+        entry.users--
+        if (entry.users === 0 && !entry.settled) entry.controller.abort()
+        resolve(body)
+      }
+      const cancel = () => finish(null)
+      signal?.addEventListener('abort', cancel, { once: true })
+      if (signal?.aborted) cancel()
+      void entry.result.then(finish)
+    })
+  }
+
+  function pairsWithin(chainId: number, address: string, remaining: number, signal?: AbortSignal): Promise<unknown> {
     const slug = dexChainSlug(chainId)
-    if (slug === null) return Promise.resolve(null)
+    if (slug === null || signal?.aborted) return Promise.resolve(null)
     const key = `${chainId}:${address}`
     const kept = bodies.get(key)
     if (kept && kept.expires > now()) return Promise.resolve(kept.body)
     const deadline = now() + remaining
     const joined = reading.get(key)
     if (joined) {
-      if (joined.deadline >= deadline) return joined.result
-      return joined.result.then((body) => {
+      const answer = lease(joined, signal)
+      if (joined.deadline >= deadline) return answer
+      return answer.then((body) => {
         const left = deadline - now()
-        return body !== null || left <= 0 ? body : pairsWithin(chainId, address, left)
+        return body !== null || left <= 0 || signal?.aborted ? body : pairsWithin(chainId, address, left, signal)
       })
     }
-    const entry: { result: Promise<unknown>; deadline: number } = {
-      deadline,
-      result: retrieveDated(`token-pairs/v1/${slug}/${address}`, remaining).then((dated) => {
+    const entry: Reading = { deadline, users: 0, controller: new AbortController(), settled: false, result: Promise.resolve(null) }
+    entry.result = retrieveDated(`token-pairs/v1/${slug}/${address}`, remaining, entry.controller.signal).then((dated) => {
+        entry.settled = true
         if (reading.get(key) === entry) reading.delete(key)
         const body = dated?.body ?? null
         if (dated !== null && body !== null) {
           bodies.delete(key)
           bodies.set(key, { body, expires: now() + BODY_TTL })
           while (bodies.size > 16) bodies.delete(bodies.keys().next().value!)
+          // Pool hints and pricing can discover the artwork too. Mounted marks observe this cache, so a previous
+          // transient miss never hides a logo until the user closes and opens the search again.
+          seed(chainId, address, artworkFromPairs(body, address, chainId))
           for (const listener of pairsListeners) {
             try {
               listener(address, body, dated.retrievedAt, chainId)
@@ -255,10 +290,9 @@ export function createTokenArtworkResolver(options: Options = {}) {
           }
         }
         return body
-      }),
-    }
+      })
     reading.set(key, entry)
-    return entry.result
+    return lease(entry, signal)
   }
 
   /** The token's artwork, null when the provider's answer names none, or undefined when no answer came. */
@@ -269,30 +303,43 @@ export function createTokenArtworkResolver(options: Options = {}) {
     } catch { return undefined }
   }
 
-  function remember(key: string, value: string | null, failed = false) {
+  function remember(key: string, value: string | null, failed = false, force = false) {
+    const kept = cache.get(key)
+    // A slower, empty/failed read must not erase an image seeded by a newer successful response.
+    if (!force && value === null && kept?.value && kept.expires > now()) return
     cache.delete(key)
-    cache.set(key, { value, expires: now() + (value ? FOUND_TTL : failed ? FAILED_TTL : NONE_TTL) })
+    const expires = now() + (value ? FOUND_TTL : failed ? FAILED_TTL : NONE_TTL)
+    cache.set(key, { value, expires: failed ? Math.max(expires, ...cooldown.values()) : expires, failed })
     while (cache.size > 128) cache.delete(cache.keys().next().value!)
+    for (const listener of observers.get(key) ?? []) listener()
   }
 
-  function resolve(chainId: number, address: string): Promise<string | null> {
+  function resolve(chainId: number, address: string, visibleOnly = false): Promise<string | null> {
     const key = tokenArtworkKey(chainId, address)
     if (!key) return Promise.resolve(null)
     const cached = cache.get(key)
     if (cached && cached.expires > now()) return Promise.resolve(cached.value)
+    if (!visibleOnly) required.add(key)
     const joined = pending.get(key)
     if (joined) return joined
-    if (pending.size >= 32) { remember(key, null, true); return Promise.resolve(null) }
+    if (pending.size >= 32) { required.delete(key); remember(key, null, true); return Promise.resolve(null) }
     const result = new Promise<string | null>((done) => {
       // Its six seconds start when its read does, not while it waits for a slot (2026-09-28, speed wave, item 42:
       // a token late in the queue used to run out of time without ever being asked, then showed none for 5 minutes).
       const run = () => {
+        if (visibleOnly && !required.has(key) && !observers.get(key)?.size) {
+          pending.delete(key)
+          done(null)
+          queue.shift()?.()
+          return
+        }
         active++
         void artworkOf(chainId, address.toLowerCase()).then((found) => {
           remember(key, found ?? null, found === undefined)
-          done(found ?? null)
+          done(cache.get(key)?.value ?? null)
         }).finally(() => {
           pending.delete(key)
+          required.delete(key)
           active--
           queue.shift()?.()
         })
@@ -316,28 +363,51 @@ export function createTokenArtworkResolver(options: Options = {}) {
   }
 
   /**
-   * The provider's `tokens` body for up to PRICE_BATCH Robinhood token
-   * addresses (lowercased, deduplicated, sorted, so one set is one URL), or
-   * null: one guarded GET with the artwork's deadline, never retried here.
+   * Prices for up to PRICE_BATCH Robinhood tokens, through our edge in
+   * bounded batches. Missing batches fall back to shared token-pairs reads;
+   * successful batches are retained and failed tokens are named separately.
    * The Wallet card's prices (lib/walletPrices.ts) are its one caller.
    */
-  function tokenPrices(addresses: readonly string[], signal?: AbortSignal): Promise<unknown> {
+  async function tokenPrices(addresses: readonly string[], signal?: AbortSignal): Promise<TokenPricesAnswer> {
     const list = [...new Set(addresses.map((address) => address.toLowerCase()))].filter((address) => ADDRESS.test(address)).sort().slice(0, PRICE_BATCH)
-    if (list.length === 0) return Promise.resolve(null)
-    if (edge === null || !edgeUp('robinhood') || list.length <= EDGE_BATCH) return retrieve(`tokens/v1/robinhood/${list.join(',')}`, TIMEOUT, signal)
-    // Through our edge, EDGE_BATCH tokens a GET, side by side, as one answer; any GET without one sends the whole list
-    // to the provider directly, as before (audit I3).
-    return (async () => {
-      const parts: string[][] = []
-      for (let i = 0; i < list.length; i += EDGE_BATCH) parts.push(list.slice(i, i + EDGE_BATCH))
-      const started = now()
-      const answers = await Promise.all(parts.map((part) => get(`${edge}tokens/${part.join(',')}`, Math.min(TIMEOUT, EDGE_TIMEOUT), signal, true)))
-      if (answers.every((answer) => answer !== null && Array.isArray(answer.body))) return answers.flatMap((answer) => answer?.body as unknown[])
-      if (signal?.aborted) return null
-      edgeDownUntil.set('robinhood', now() + EDGE_RETRY_MS)
-      const left = TIMEOUT - (now() - started)
-      return left > 0 ? get(`https://api.dexscreener.com/tokens/v1/robinhood/${list.join(',')}`, left, signal, false).then((answer) => answer?.body ?? null) : null
-    })()
+    if (list.length === 0 || signal?.aborted) return null
+    const parts: string[][] = []
+    for (let i = 0; i < list.length; i += EDGE_BATCH) parts.push(list.slice(i, i + EDGE_BATCH))
+    const found: unknown[] = []
+    const missing: string[] = []
+    const answers = edge !== null && edgeUp('robinhood')
+      ? await Promise.all(parts.map((part) => get(`${edge}tokens/${part.join(',')}`, EDGE_TIMEOUT, signal, true)))
+      : parts.map(() => null)
+    if (signal?.aborted) return null
+    for (const [index, answer] of answers.entries()) {
+      if (answer !== null && Array.isArray(answer.body)) found.push(...answer.body)
+      else missing.push(...parts[index])
+    }
+    if (missing.length && edge !== null && !cooling(true)) edgeDownUntil.set('robinhood', now() + EDGE_RETRY_MS)
+    const unavailable: string[] = []
+    // Same token-pairs coverage as our edge: the old tokens/v1 fallback omitted liquid v4 pools (including UFG).
+    // Keep successful batches and read only their gaps. Two lanes, shared bodies/inflight, never an unbounded fanout.
+    let next = 0
+    await Promise.all(Array.from({ length: Math.min(2, missing.length) }, async () => {
+      while (next < missing.length) {
+        const address = missing[next++]
+        if (signal?.aborted || cooling(true) || cooling(false)) { unavailable.push(address); continue }
+        const body = await pairsWithin(4663, address, TIMEOUT, signal)
+        if (Array.isArray(body) && body.length <= 100) {
+          // Match the edge's bounded price subset: most liquid four pairs plus the most liquid base pair.
+          const belongs = (token: unknown) => !!token && typeof token === 'object' && 'address' in token && typeof token.address === 'string' && token.address.toLowerCase() === address
+          const ranked = body.filter(pair => pair?.chainId === 'robinhood' && (belongs(pair.baseToken) || belongs(pair.quoteToken)))
+            .sort((a, b) => (typeof b.liquidity?.usd === 'number' && Number.isFinite(b.liquidity.usd) ? b.liquidity.usd : 0) - (typeof a.liquidity?.usd === 'number' && Number.isFinite(a.liquidity.usd) ? a.liquidity.usd : 0))
+          const kept = ranked.slice(0, 4)
+          const base = ranked.find(pair => belongs(pair.baseToken))
+          if (base && !kept.includes(base)) kept.push(base)
+          found.push(...kept)
+        }
+        else { unavailable.push(address); remember(`4663:${address}`, null, true) }
+      }
+    }))
+    if (signal?.aborted) return null
+    return unavailable.length === list.length ? null : unavailable.length ? { pairs: found, unavailable } : found
   }
 
   /**
@@ -366,9 +436,49 @@ export function createTokenArtworkResolver(options: Options = {}) {
     return () => pairsListeners.delete(listener)
   }
 
-  return { resolve, pairs, tokenPrices, seed, peek, onPairs, rejectImage: (chainId: number, address: string) => {
+  /** A visible mark observes later seeds and retries transient misses at most twice; absence needs no polling. */
+  function observe(chainId: number, address: string, listener: (image: string | null) => void): () => void {
     const key = tokenArtworkKey(chainId, address)
-    if (key) remember(key, null)
+    if (!key) return () => undefined
+    let alive = true
+    let tries = 0
+    let reading = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const later = () => {
+      clearTimeout(timer)
+      const kept = cache.get(key)
+      if (alive && !reading && kept?.failed && tries < 3) timer = setTimeout(ask, Math.max(1, kept.expires - now()))
+    }
+    const changed = () => {
+      if (alive) listener(peek(chainId, address) ?? null)
+      later()
+    }
+    const listeners = observers.get(key) ?? new Set<() => void>()
+    observers.set(key, listeners)
+    listeners.add(changed)
+    const ask = () => {
+      if (!alive) return
+      tries++
+      reading = true
+      void resolve(chainId, address, true).then(() => {
+        reading = false
+        if (!alive) return
+        changed()
+      })
+    }
+    changed()
+    ask()
+    return () => {
+      alive = false
+      clearTimeout(timer)
+      listeners.delete(changed)
+      if (listeners.size === 0) observers.delete(key)
+    }
+  }
+
+  return { resolve, pairs, tokenPrices, seed, peek, onPairs, observe, rejectImage: (chainId: number, address: string) => {
+    const key = tokenArtworkKey(chainId, address)
+    if (key) remember(key, null, true, true)
   } }
 }
 

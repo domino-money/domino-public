@@ -66,6 +66,8 @@
     "src/lib/walletReads.ts",
     "src/lib/chain/chainCode.ts",
     "src/lib/positions/gatewayRow.ts",
+    "src/lib/positions/positionNetwork.ts",
+    "src/session/signInFlow.ts",
     "src/lib/automate/features.ts",
     "src/lib/read/pin.ts",
     "src/lib/read/types.ts",

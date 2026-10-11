@@ -125,15 +125,15 @@ const browserTimers: ReaderTimers = {
  * and the page is visible. `failures` counts the answers in a row `failed` called failed, for a growing wait. Never a
  * Retry button: a read that failed is asked again by the page.
  */
-export function createKeyedReader<T>(read: (key: string) => Promise<T>, policy: { next: (answer: T, failures: number) => number | null; failed: (answer: T) => boolean }, timers: ReaderTimers = browserTimers): KeyedReader<T> {
-  interface Entry { value: T | null; latest: T | null; listeners: Set<() => void>; timer: unknown; reading: boolean; failures: number; due: boolean; generation: number; notBefore: number; waking: (() => void) | null }
+export function createKeyedReader<T>(read: (key: string, active: () => boolean) => Promise<T>, policy: { next: (answer: T, failures: number) => number | null; failed: (answer: T) => boolean }, timers: ReaderTimers = browserTimers): KeyedReader<T> {
+  interface Entry { value: T | null; latest: T | null; listeners: Set<() => void>; timer: unknown; reading: boolean; failures: number; due: boolean; generation: number; observing: number; notBefore: number; waking: (() => void) | null }
   const entries = new Map<string, Entry>()
   const now = () => timers.now?.() ?? Date.now()
   let stopWake: (() => void) | null = null
   const entry = (key: string): Entry => {
     let found = entries.get(key)
     if (!found) {
-      found = { value: null, latest: null, listeners: new Set(), timer: null, reading: false, failures: 0, due: true, generation: 0, notBefore: 0, waking: null }
+      found = { value: null, latest: null, listeners: new Set(), timer: null, reading: false, failures: 0, due: true, generation: 0, observing: 0, notBefore: 0, waking: null }
       entries.set(key, found)
     }
     return found
@@ -160,8 +160,9 @@ export function createKeyedReader<T>(read: (key: string) => Promise<T>, policy: 
     }
     e.due = false
     e.reading = true
-    const generation = e.generation
-    void read(key).then(
+    const generation = ++e.generation, observing = e.observing
+    // Follow-up work belongs only to this visible, observed generation, including after the primary reply lands.
+    void read(key, () => e.listeners.size > 0 && generation === e.generation && observing === e.observing && timers.visible()).then(
       (value) => {
         e.reading = false
         const failed = policy.failed(value)
@@ -206,6 +207,7 @@ export function createKeyedReader<T>(read: (key: string) => Promise<T>, policy: 
       return () => {
         e.listeners.delete(listener)
         if (e.listeners.size > 0) return
+        e.observing++
         if (e.timer !== null) {
           timers.clear(e.timer)
           e.timer = null

@@ -45,8 +45,10 @@ const kept = new Map<string, PositionConnection>()
 
 /** Right before a step: the wallet back on the position's chain if it moved (switchToChain first, spec §1.3). */
 export async function onChain(connection: PositionConnection): Promise<void> {
+  if (!connection.wallet.current()) throw new Error('wallet_identity_changed')
   if (connection.wallet.chainId() === connection.chainId) return
   const outcome = await switchToChain(connection.chainId)
+  if (!connection.wallet.current()) throw new Error('wallet_identity_changed')
   if (outcome !== 'switched') throw new WalletNotice(v2SwitchNotice(outcome, v2Chain(connection.chainId).name), outcome)
 }
 
@@ -61,14 +63,16 @@ export function inTurn<T>(work: () => Promise<T>): Promise<T> {
   return next
 }
 
-export async function connectPosition(gate: OpenGate): Promise<PositionConnection> {
+export async function connectPosition(gate: OpenGate, allowSwitch = true): Promise<PositionConnection> {
   const chainId = gate.chainId
   const chain = v2Chain(chainId)
   const wallet = await v2Wallet()
+  if (!wallet.current()) throw new Error('wallet_identity_changed')
   if (wallet.chainId() !== chainId) {
     // The preview only reads: no switch is asked for a read (the dialog asks for it only on the position's chain anyway).
-    if (gate.mode === 'preview') throw new Error('wallet_wrong_chain')
+    if (gate.mode === 'preview' || !allowSwitch) throw new Error('wallet_wrong_chain')
     const outcome = await switchToChain(chainId)
+    if (!wallet.current()) throw new Error('wallet_identity_changed')
     if (outcome !== 'switched') throw new WalletNotice(v2SwitchNotice(outcome, chain.name), outcome)
   }
   const contracts = gate.contracts
@@ -92,8 +96,10 @@ export async function connectPosition(gate: OpenGate): Promise<PositionConnectio
 /** Checking an already offered close never depends on the planner's availability and exposes no sender. */
 export async function connectPositionReceipt(chainId: V2ChainId) {
   const wallet = await v2Wallet()
+  if (!wallet.current()) throw new Error('wallet_identity_changed')
   if (wallet.chainId() !== chainId) {
     const outcome = await switchToChain(chainId)
+    if (!wallet.current()) throw new Error('wallet_identity_changed')
     if (outcome !== 'switched') throw new WalletNotice(v2SwitchNotice(outcome, v2Chain(chainId).name), outcome)
   }
   const direct = createDirectClient(wallet, v2Chain(chainId), undefined, directCode(chainId), null, null)

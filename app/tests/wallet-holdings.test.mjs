@@ -40,7 +40,8 @@ test('the updating total is one complete valuation with the original price and b
   assert.equal(walletTotalSnapshot(rows, book, now + 300_000, now + 300_000).until, snapshot.until, 'a new balance read cannot rejuvenate cached prices');
   assert.equal(walletSnapshotValid(snapshot, [rows[0]], now + 300_000), true, 'a still incomplete page does not alter the saved valuation');
   assert.equal(snapshot.total, 1004n * ONE, 'the snapshot never sums the partial refresh');
-  assert.equal(walletSnapshotValid(snapshot, [...rows, row(addr(99), 'NEW', '20')], now + 300_000), true, 'a new token may wait for its price while the previous total is labelled');
+  assert.equal(walletSnapshotValid(snapshot, [...rows, row(addr(99), 'NEW', '20')], now + 300_000), false, 'a newly confirmed holding invalidates the earlier total');
+  assert.equal(snapshot.holdings.get(rows[0].key).value, 3n * ONE, 'cached rows retain their original complete valuation rather than current price times an old balance');
   assert.equal(walletSnapshotValid(snapshot, [], snapshot.until), false, 'snapshot expires without a successful response');
   assert.equal(walletTotalSnapshot(rows, book, now, snapshot.until), null);
   const stableOnly = walletTotalSnapshot([rows[2]], NO_PRICES, now - WALLET_MEMORY_MAX_AGE_MS + 500, now);
@@ -298,6 +299,25 @@ test('prices publish each completed batch without waiting for the slow batch or 
   assert.equal(pending.length, 2, 'progress adds no provider calls');
 });
 
+test('a partial provider answer prices successful tokens without turning unread tokens into authoritative no-price', async () => {
+  const asked = [], seeded = [];
+  const prices = createWalletPrices({
+    get: async list => {
+      asked.push(list);
+      return asked.length === 1 ? { pairs: [pair(UFG, '0.003', 100000)], unavailable: [MANY] } : [];
+    },
+    seed: (address, mark) => seeded.push([address, mark]), now: () => 1000,
+  });
+  const first = await prices.price([UFG, MANY]);
+  assert.equal(first.quotes.get(UFG).usd, '0.003');
+  assert.equal(first.quotes.has(MANY), false, 'a failed token read remains unanswered');
+  assert.equal(seeded.some(([address]) => address === MANY), false, 'failure cannot poison the artwork cache either');
+  const second = await prices.price([UFG, MANY]);
+  assert.deepEqual(asked, [[UFG, MANY], [MANY]], 'only the unread token is retried');
+  assert.equal(second.quotes.get(UFG).usd, '0.003');
+  assert.equal(second.quotes.get(MANY), null, 'an answered empty response is authoritative no qualified pair');
+});
+
 test('prices abort only when the last joined consumer leaves and reject late cancelled answers', async () => {
   const pending = [];
   const prices = createWalletPrices({
@@ -517,7 +537,7 @@ test('the total stands for the wallet only when the list is whole: every page, e
   assert.equal(totalWithheld(WHOLE_LIST, walletHoldings([row(UFG, 'UFG', '1')], new Map([[UFG, null]]))), 'nothing_valued', 'nothing priced: no headline');
 });
 
-test('the artwork resolver: one guarded tokens GET for a sorted, deduplicated batch; seeded artwork is served without a GET', async () => {
+test('the artwork resolver: guarded token-pairs reads for a sorted, deduplicated batch; seeded artwork needs no extra GET', async () => {
   const urls = [];
   const resolver = createTokenArtworkResolver({ now: () => 0, fetch: async (url, init) => {
     urls.push(url);
@@ -525,9 +545,9 @@ test('the artwork resolver: one guarded tokens GET for a sorted, deduplicated ba
     return new Response('[]', { headers: { 'content-type': 'application/json' } });
   } });
   assert.deepEqual(await resolver.tokenPrices([UFG, MANY.toUpperCase().replace('0X', '0x'), UFG, 'WETH']), []);
-  assert.deepEqual(urls, [`https://api.dexscreener.com/tokens/v1/robinhood/${[MANY, UFG].join(',')}`]);
+  assert.deepEqual(urls, [MANY, UFG].map(token => `https://api.dexscreener.com/token-pairs/v1/robinhood/${token}`));
   assert.equal(await resolver.tokenPrices([]), null, 'nothing to ask: no GET');
-  assert.equal(urls.length, 1);
+  assert.equal(urls.length, 2);
 
   resolver.seed(4663, UFG, 'https://cdn.dexscreener.com/cms/images/abcdefghijklmnop');
   assert.equal(resolver.peek(4663, UFG), 'https://cdn.dexscreener.com/cms/images/abcdefghijklmnop?width=64&height=64&quality=85&format=auto');
@@ -537,7 +557,7 @@ test('the artwork resolver: one guarded tokens GET for a sorted, deduplicated ba
   resolver.seed(4663, MANY, 'https://127.0.0.1/logo.png');
   assert.equal(resolver.peek(4663, MANY), null, 'an unsafe image is none');
   assert.equal(resolver.peek(4663, addr(1)), undefined);
-  assert.equal(urls.length, 1, 'seeded artwork asked nothing');
+  assert.equal(urls.length, 2, 'seeded artwork asked nothing');
 });
 
 // Changed on purpose (round 6, 2026-09-27; the owner: the tokens took far too long to appear): the card now keeps its

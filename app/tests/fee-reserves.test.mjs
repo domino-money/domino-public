@@ -33,7 +33,7 @@ const batch = require('../.test-build/app/src/finance/batch.js');
 const { createNonceJournal } = require('../.test-build/app/src/finance/nonce.js');
 
 async function loadFakeChain() {
-  const source = readFileSync(join(APP, 'tests/finance.browser.test.mjs'), 'utf8');
+  const source = readFileSync(join(APP, 'tests/finance.browser.test.mjs'), 'utf8').replaceAll('\r\n', '\n');
   const start = source.indexOf('const chainAbi = parseAbi([');
   const marker = 'holdNext: () => { hold = true; }, simulate: calls => batchResults(calls).results };\n}';
   const end = source.indexOf(marker, start);

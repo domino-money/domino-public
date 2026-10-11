@@ -61,7 +61,7 @@ before(async () => { browser = await launchBrowser(); });
 after(async () => { await closeBrowser(browser); });
 
 /** V1's position page for NFT 3135288 on the V2 build, the gate open (`preview`), the wallet connected and not signed in. */
-async function atPage() {
+async function atPage(initialChain = 4663) {
   const chain = createPositionChain(OWNER, { timestamp: TIMESTAMP, positions: [NFT] });
   const rpc = browserChain({
     positions: [{ tokenId: '3135288', holder: OWNER, key: NFT.key, tickLower: NFT.tickLower, tickUpper: NFT.tickUpper, liquidity: NFT.liquidity, unclaimed: FEES }],
@@ -88,6 +88,12 @@ async function atPage() {
   await context.route(/^https:\/\/(api|cdn)\.dexscreener\.com\//, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   const routed = await routeChain(context, rpc);
   await context.exposeFunction('__dominoV1PageWallet', async (method, params) => {
+    if (method === 'eth_chainId') return { result: `0x${initialChain.toString(16)}` };
+    if (method === 'wallet_switchEthereumChain') {
+      chain.log.push(method);
+      initialChain = Number(params[0].chainId);
+      return { result: null };
+    }
     const call = method === 'eth_call' ? params?.[0] : null;
     if (call && String(call.to).toLowerCase() === POSITION_MANAGER && ADDED_READS.has(String(call.data ?? call.input ?? '').slice(0, 10))) {
       added.push(String(call.data ?? call.input).slice(0, 10));
@@ -135,7 +141,7 @@ async function atPage() {
     // The header's Connect wallet, by its name (its `aria-haspopup` trigger is not findable in the V2 test build).
     await page.getByRole('button', { name: /Connect wallet/ }).first().click();
     await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Connect Position Wallet', exact: true }).click();
-    await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await page.waitForFunction(() => ['signed_out', 'wrong_network'].includes(window.__dominoSessionProbe?.view().status));
     await page.keyboard.press('Escape');
     return s;
   } catch (error) {
@@ -143,6 +149,21 @@ async function atPage() {
     throw error;
   }
 }
+
+test('Robinhood keeps its complete action row when the wallet is on Base or Arbitrum without switching on page load', async () => {
+  for (const chainId of [8453, 42161]) {
+    const s = await atPage(chainId);
+    try {
+      const actions = s.page.locator('[data-position-detail] .dm-pos-actions[data-position-actions]');
+      await actions.locator('[data-position-action="close"]').waitFor();
+      await actions.locator('[data-position-v2-action="exit"]').waitFor();
+      assert.deepEqual(await actions.locator('button').allInnerTexts(), ['Collect fees', 'Add liquidity', 'Change range', 'Withdraw', 'Close position']);
+      for (const button of await actions.locator('button').all()) assert.equal(await button.isVisible(), true);
+      assert.equal(s.chain.log.includes('wallet_switchEthereumChain'), false, 'viewing or checking approval never switches the wallet');
+      assert.deepEqual(s.chain.sends, []);
+    } finally { await s.close(); }
+  }
+});
 
 test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and ends with Domino\'s "···" menu; each action runs to its review, then the gate\'s sentence; nothing is sent', async () => {
   const s = await atPage();

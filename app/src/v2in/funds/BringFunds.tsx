@@ -4,7 +4,7 @@ import { Button } from '../../components/ui'
 import { browserBatchJournal, browserDepositJournal, browserOriginWallet, browserUnsettledStore, createOriginSender, quoteKeyOf, OriginStepError, type OriginSender } from '../../finance/v2/crosschain'
 import { browserFundingStorage, withFundingLock } from '../../finance/v2/fundingJournal'
 import { CANDIDATE_ORIGINS, type Holding } from '../../finance/v2/holdings'
-import { openWalletDialog } from '../../finance/signedOut'
+import { signInWithWallet } from '../../finance/signedOut'
 import { REVIEW_GAS_RESERVE_WEI } from '../../lib/create/reviewPlan'
 import type { FundingContinuation } from '../../lib/create/fundingContext'
 import { v2Chain } from '../../v2/chains'
@@ -654,7 +654,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       {stage && <p role="status" className="dm-funds-status" data-funds-run-status={stage.value.stage}>{stage.value.stage === 'switching' ? `Your wallet needs ${originName(stage.origin)} for this transfer.` : stage.value.stage === 'batch_wallet' ? 'Confirm approval and transfer together in your wallet.' : stage.value.stage === 'approval_wallet' ? 'Approve the token in your wallet.' : stage.value.stage === 'deposit_wallet' ? 'Confirm the transfer in your wallet.' : `Preparing your transfer from ${originName(stage.origin)}…`}</p>}
       {live && !run && ready && !changed && !hasUnknown && !needsReview && ((!intent && proposal) || resume) && <Button variant="accent" className="dm-funds-go" data-funds-deposit-button="" onClick={() => void (expired && !intent ? prepare() : execute())}>{proposal?.recoveryFrom ? 'Use this updated transfer' : resume ? 'Continue remaining transfer' : expired ? 'Update transfer' : 'Use these funds'}</Button>}
       {live && !run && ready && !changed && !hasUnknown && gasReview && !proposal?.recoveryFrom && screen !== 'quoting' && <Button variant="accent" data-funds-gas-review="" onClick={() => void prepareGasRecovery()}>Review transfer</Button>}
-      {live && !ready && !run && !allArrived && (lacks.length > 0 || gasOnly || budget !== null) && !hasUnknown && <Button variant="accent" data-funds-signin="" onClick={openWalletDialog}>Continue with wallet</Button>}
+      {live && !ready && !run && !allArrived && (lacks.length > 0 || gasOnly || budget !== null) && !hasUnknown && <Button variant="accent" data-funds-signin="" onClick={signInWithWallet}>Sign in to continue</Button>}
       {optional && remoteOpened && !intent && !foreignPending && !run && <Button variant="ghost" size="sm" data-funds-close="" onClick={() => { generation.current++; preparation.current?.abort(); setRemoteSelection(null); setProposal(null); setNotice(null); setExpired(false); attempted.current = ''; setScreen('checking') }}>Back to funding options</Button>}
       {!onContinuationChange && onRemoteUse && intent?.paymentRaw && continueReady && <Button variant="accent" data-funds-remote-use="" onClick={() => void useArrivedFunds()}>Use these funds for this position</Button>}
       {live && !run && unknownOrigin !== undefined && <Button variant="outline" size="sm" data-funds-run-forget="" onClick={() => void resolveUnknown(unknownOrigin)}>I cancelled the request in my wallet</Button>}

@@ -117,45 +117,19 @@ function RowStatus({ row }: { row: PositionRowView }) {
 }
 
 /**
- * Value or Fees ready to collect: the two token amounts, or a dash saying why. Changed on purpose 2026-10-06 (read-v6
- * 1.1.0-rc.1's qualified USD): with a USD figure, V1's row (components/positions/PositionRow.tsx Money): the figure, its
- * two amounts under it.
+ * Value and fees keep one USD slot. Exact token amounts and unavailable/saved provenance remain accessible in the
+ * title and to screen readers; opening the position exposes its token breakdown in Details.
  */
-function Amounts({ amounts, which, label, unread, usd }: { amounts: readonly [AmountShown, AmountShown] | null; which: 'principal' | 'fees'; label: string; unread: string | null; usd: string | null }) {
-  // Missing USD pricing is not missing fees. Keep the actual token balances visible, as on the detail page.
-  if (which === 'fees') return <span className="dm-own-cell" data-cell="fees" title={amounts ? `${usd === null ? 'USD estimate unavailable. ' : ''}${amounts.map(amount => `${amount.exact ?? amount.text} ${amount.token.label}`).join(' + ')}` : unread ?? 'Not reported'}>
+function Amounts({ amounts, which, label, unread, usd, savedAt }: { amounts: readonly [AmountShown, AmountShown] | null; which: 'principal' | 'fees'; label: string; unread: string | null; usd: string | null; savedAt?: number }) {
+  const detail = amounts?.map(amount => `${amount.exact ?? amount.text} ${amount.token.label}`).join(' + ')
+  const status = savedAt !== undefined ? `Previous complete valuation from ${new Date(savedAt).toISOString()}. Refreshing the USD source. ` : usd === null ? 'USD estimate unavailable. ' : ''
+  return <span className="dm-own-cell dm-own-usd-cell" data-cell={which} title={`${status}${detail ?? unread ?? 'Not reported'}`}>
     <span className="dm-own-label">{label}</span>
-    {usd !== null ? <span className="dm-own-fig" data-usd="fees">{formatUsdFloor(usd)}</span>
-      : amounts ? <span className="dm-own-amounts"><AmountText amount={amounts[0]} /><AmountText amount={amounts[1]} /></span>
-      : <span className="dm-own-dash" aria-label={unread ?? 'Fees not reported'}>—</span>}
-    {usd === null && amounts && <span className="sr-only">USD estimate unavailable.</span>}
-    {usd !== null && amounts && <span className="sr-only"><AmountText amount={amounts[0]} /> + <AmountText amount={amounts[1]} /></span>}
+    {usd !== null ? <span className="dm-own-fig" data-usd={which} data-usd-snapshot={savedAt !== undefined ? '' : undefined}>{formatUsdFloor(usd)}</span>
+      : <span className="dm-own-usd-unavailable" data-figure="none"><span className="sr-only">USD estimate unavailable. Open the position for token amounts.</span></span>}
+    {savedAt !== undefined && <span className="sr-only">Previous complete valuation; refreshing.</span>}
+    {amounts && <span className="sr-only" data-token-amounts=""><AmountText amount={amounts[0]} /> + <AmountText amount={amounts[1]} /></span>}
   </span>
-  return (
-    <span className="dm-own-cell" data-cell={which}>
-      <span className="dm-own-label">{label}</span>
-      {amounts && usd !== null ? (
-        <>
-          <span className="dm-own-fig dm-arrive" data-usd={which}>
-            {formatUsdFloor(usd)}
-          </span>
-          <span className="dm-own-split">
-            <AmountText amount={amounts[0]} />
-            <AmountText amount={amounts[1]} />
-          </span>
-        </>
-      ) : amounts ? (
-        <span className="dm-own-amounts">
-          <AmountText amount={amounts[0]} />
-          <AmountText amount={amounts[1]} />
-        </span>
-      ) : (
-        <span className="dm-own-dash" title={unread ?? 'Not reported'} aria-label={unread ?? 'Not reported'} data-figure="none">
-          —
-        </span>
-      )}
-    </span>
-  )
 }
 
 /** Same bounded chain/address artwork as the position detail, including its shared cache. */
@@ -200,7 +174,7 @@ export function V2PositionRow({ row, apr = null }: { row: PositionRowView; apr?:
   )
   return (
     <div className="dm-own-item" data-v2-position-item={row.key}>
-      <a href={row.href} className="dm-own-row" data-v2-position-row={row.key} data-v2-row-status={row.status} data-position-block={row.block ?? undefined} data-row-state={closed ? 'closed' : 'open'}>
+      <a href={row.href} className="dm-own-row" data-v2-position-row={row.key} data-v2-row-status={row.status} data-position-block={row.block ?? undefined} data-row-state={closed ? 'closed' : 'open'} data-usd-reason={row.usdReason}>
         <span className="dm-own-pool">
           <Marks tokens={row.tokens} />
           <span className="dm-own-name">
@@ -231,8 +205,8 @@ export function V2PositionRow({ row, apr = null }: { row: PositionRowView; apr?:
           </span>
         </span>
         <span className={closed && ((emptyValue && emptyFees) || burned) ? 'dm-own-figs dm-own-empty-figure' : 'dm-own-figs'}>
-          <span className={emptyValue || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.value} which="principal" label="Value" unread={row.unread} usd={row.valueUsd} /></span>
-          <span className={emptyFees || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.fees} which="fees" label="Fees to collect" unread={row.unread} usd={row.feesUsd} /></span>
+          <span className={emptyValue || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.value} which="principal" label="Value" unread={row.unread} usd={row.valueUsd} savedAt={row.usdSavedAt} /></span>
+          <span className={emptyFees || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.fees} which="fees" label="Fees to collect" unread={row.unread} usd={row.feesUsd} savedAt={row.usdSavedAt} /></span>
           {!closed && <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : apr?.kind ?? 'none'}>
             <span className="dm-own-label">Your APR</span>
             {apr?.kind === 'loading' ? <Skeleton className="dm-collection-apr-loading" /> : apr?.kind === 'rate' ? <span className="dm-own-fig" title={apr.saved ? 'Last verified position history. Updating automatically.' : 'Annualized fees earned by this position since it opened.'}>{apr.text}</span> : <span className="dm-own-dash" title={apr?.kind === 'missing' ? apr.words : 'The position’s verified fee history is not available yet.'}>—</span>}

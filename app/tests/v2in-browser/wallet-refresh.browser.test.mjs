@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { createReadStub } from '../support/read-stub.mjs';
 import { createDirectChain } from '../support/v2-direct-chain.mjs';
@@ -58,7 +58,7 @@ test('Wallet rechecks an omitted remembered UFG without discovery, retains it wh
     const card = page.locator('[data-portfolio-tokens]'), ufg = card.locator(`[data-wallet-row="${UFG}"]`);
     await card.locator('[data-wallet-value-unavailable]').waitFor();
     await page.waitForFunction(() => document.querySelector('[data-portfolio-tokens]')?.getAttribute('data-wallet-source') === 'read');
-    assert.match(await ufg.locator('[data-wallet-balance-earlier]').innerText(), /Last known/);
+    assert.match(await ufg.locator('[data-wallet-balance-earlier]').innerText(), /previous reading/);
     assert.equal(await ufg.locator('[data-usd]').count(), 0);
     assert.ok(checks > 0, 'the existing exact-address API was used for the omitted holding');
     assert.equal(await card.locator('[data-wallet-total]').count(), 0, 'the remaining USDG is not misrepresented as the whole wallet');
@@ -89,7 +89,7 @@ test('Wallet keeps a previously priced UFG in the top rows when its quote disapp
     await s.page.reload();
     const card = s.page.locator('[data-portfolio-tokens]');
     await card.locator(`[data-wallet-row="${UFG}"][data-wallet-priced]`).waitFor();
-    assert.match(await card.locator('[data-wallet-total]').innerText(), /\$3,001\.00$/);
+    assert.equal(await card.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$3,001.00');
     priced = false;
     await s.page.reload();
     await card.locator('[data-wallet-value-unavailable]').waitFor();
@@ -103,6 +103,62 @@ test('Wallet keeps a previously priced UFG in the top rows when its quote disapp
     assert.equal(await card.locator(`[data-wallet-row="${UFG}"] [data-wallet-balance-earlier]`).count(), 0, 'only the price is missing; the current token balance still reads normally');
     assert.equal(chain.sends.length, 0);
   } finally { await s.close(); }
+});
+
+test('returning to Positions retains one complete wallet valuation and stable rows during a delayed balance read', { timeout: 60_000 }, async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const chain = createDirectChain({ chainId: 4663, timestamp: now, v4: [] });
+  const read6 = { portfolio: portfolioOf({ wallet: chain.owner }), activity: activityOf({ wallet: chain.owner }) };
+  let hold = false, release;
+  const delayed = new Promise(resolve => { release = resolve; });
+  const read = createReadStub({ reads: 'wallet-assets', answer: async route => {
+    if (route !== 'wallet-assets') return undefined;
+    if (hold) await delayed;
+    return walletAnswer(now, 1363607);
+  } });
+  const s = await openPositionPage(browser, chain, { hash: '#/positions', read6, routes: [read.handle], s1: { directCode: { 4663: chain.codeHashes } } });
+  try {
+    await s.context.route(/^https:\/\/(api|cdn)\.dexscreener\.com\//, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ chainId: 'robinhood', baseToken: { address: UFG, symbol: 'UFG' }, quoteToken: { address: USDG }, priceUsd: '0.003', liquidity: { usd: 100000 } }]) }));
+    await s.page.reload();
+    const card = s.page.locator('[data-portfolio-tokens]');
+    const row = card.locator(`[data-wallet-row="${UFG}"]`);
+    await row.locator('[data-usd]').waitFor();
+    await s.page.waitForFunction(() => document.querySelector('[data-portfolio-tokens]')?.getAttribute('data-wallet-source') === 'read');
+    const geometry = async () => ({ total: await card.locator('.dm-acct-total').boundingBox(), row: await row.boundingBox() });
+    const before = await geometry();
+    const total = await card.locator('[data-wallet-total] .dm-fig-xl').textContent();
+    const price = await row.locator('[data-usd]').textContent();
+    hold = true;
+    await s.page.evaluate(() => { location.hash = '#/'; });
+    await card.waitFor({ state: 'detached' });
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await row.locator('[data-wallet-value-snapshot]').waitFor();
+    assert.equal(await card.locator('[data-wallet-total] .dm-fig-xl').textContent(), total);
+    assert.equal(await row.locator('[data-usd]').textContent(), price);
+    assert.match(await row.locator('[data-usd]').getAttribute('title'), /Previous complete valuation/);
+    const updating = await geometry();
+    assert.equal(updating.total.height, before.total.height, 'the total occupies the same slot during refresh');
+    assert.equal(updating.row.height, before.row.height, 'the token row never adds a status line');
+    assert.ok(Math.abs((updating.row.y - updating.total.y) - (before.row.y - before.total.y)) < 0.5, 'the token list keeps its spacing under the total, independent of the card entry animation');
+    for (const width of [1180, 390, 320]) {
+      await s.page.setViewportSize({ width, height: 960 });
+      const layout = await row.evaluate(node => {
+        const units = node.querySelector('.dm-acct-token-units');
+        return { nowrap: getComputedStyle(units).whiteSpace, oldHidden: getComputedStyle(node.querySelector('[data-wallet-balance-earlier]')).clip !== 'auto', overflow: document.documentElement.scrollWidth > innerWidth, height: units.getBoundingClientRect().height, line: parseFloat(getComputedStyle(units).lineHeight) };
+      });
+      assert.equal(layout.nowrap, 'nowrap');
+      assert.equal(layout.oldHidden, true, 'read status remains accessible without a visible extra label');
+      assert.equal(layout.overflow, false, `the wallet fits ${width}px`);
+      assert.ok(layout.height <= layout.line + 0.5, 'the token quantity occupies exactly one line');
+      const directory = resolve(process.env.DOMINO_POSITION_SHOTS ?? 'app/.test-artifacts');
+      mkdirSync(directory, { recursive: true });
+      await card.screenshot({ path: join(directory, `wallet-refresh-stable-${width}.png`), animations: 'disabled' });
+    }
+    release();
+    await row.locator('[data-wallet-value-snapshot]').waitFor({ state: 'detached' });
+    assert.equal(await row.locator('[data-usd]').textContent(), price);
+    assert.equal(chain.sends.length, 0);
+  } finally { release(); await s.close(); }
 });
 
 test('Wallet refreshes after its owner confirms, rejects pre-receipt balances and updates in place at the receipt block', { timeout: 60_000 }, async () => {

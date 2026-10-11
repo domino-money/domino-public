@@ -240,8 +240,8 @@ test('(b) live on Base: the same page from read-v6, no USD and no APR; Domino\'s
     assert.doesNotMatch(await text(detail), /v4|v3/, 'the version is never text on screen');
     assert.equal(await detail.locator('.dm-pos-chips [title="Uniswap v4"]').count(), 1);
     assert.doesNotMatch(await text(detail), /Test data/, 'real data: nothing marked as test data');
-    assert.match(await text(detail.locator('[data-stat="principal"]')), /ETH.*USDC/);
-    assert.match(await text(detail.locator('[data-stat="fees"]')), /0\.001\s+ETH.*2\.5\s+USDC/);
+    assert.match(await detail.locator('[data-position-details] [data-stat="principal"]').textContent(), /ETH.*USDC/);
+    assert.match(await detail.locator('[data-position-details] [data-stat="fees"]').textContent(), /0\.001\s+ETH.*2\.5\s+USDC/);
     assert.equal(await detail.locator('[data-cell="apr"] [data-figure="none"]').count(), 1, 'no APR without a qualified source: a dash');
     // Changed on purpose 2026-10-03: the price's two sides are the app's one way round (lib/read/orientation.ts), as its
     // figure and the Price range chart are; the tile wrote the pool's order beside it ("1 ETH = 0.000333 USDC").
@@ -822,7 +822,7 @@ test('V2 Auto-exit on Base, preview: current custody opens the range\'s exact ed
 // Added 2026-10-06 (rugged97's delta of 5 Oct, item 4: read-v6 1.1.0-rc.1's qualified USD): with its tokens priced, the
 // page shows what the position holds and its fees in dollars, as V1's page does, the token amounts under each figure;
 // still no APR. Base's ETH at the fixtures' Chainlink round, its USDC at 1.
-test('(b3) live on Base with qualified prices: what it holds and its fees in dollars, the token amounts under them, still no APR', async () => {
+test('(b3) live on Base with qualified prices: fixed USD figures, token amounts in Details, still no APR', async () => {
   const pools = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/valid/chain-pools.json', import.meta.url), 'utf8'));
   const priced = (token, symbol) => ({ ...token, price: pools.tokens.find((one) => one.symbol === symbol).price, priceReason: null });
   const portfolio = portfolioOf({ wallet: OWNER, tokens: [priced(TOKENS[0], 'ETH'), priced(TOKENS[1], 'USDC')], positions: [live(5_100_001, { approved: ZAP_V4 })] });
@@ -833,10 +833,11 @@ test('(b3) live on Base with qualified prices: what it holds and its fees in dol
     const holds = detail.locator('[data-cell="principal"]');
     await holds.locator('[data-usd="principal"]').waitFor({ timeout: 30_000 });
     assert.match((await holds.locator('[data-usd="principal"]').textContent()).trim(), /^\$[\d,]+(\.\d{2})?$/, 'what it holds, in dollars; read the exact value across its animated digit spans');
-    assert.match(await text(holds.locator('[data-stat="principal"]')), /ETH.*USDC/, 'its token amounts under the figure');
+    assert.equal(await holds.locator('[data-stat="principal"]').count(), 0, 'the headline layout remains USD only');
+    assert.match(await detail.locator('[data-position-details] [data-stat="principal"]').textContent(), /ETH.*USDC/, 'its token amounts remain in Details');
     // 0.001 ETH at $4,000.12 and 2.5 USDC at $1: $6.50.
     assert.equal(await text(detail.locator('[data-cell="fees"] [data-usd="fees"]')), '$6.50');
-    assert.match(await text(detail.locator('[data-cell="fees"] [data-stat="fees"]')), /0\.001\s+ETH.*2\.5\s+USDC/);
+    assert.match(await detail.locator('[data-position-details] [data-stat="fees"]').textContent(), /0\.001\s+ETH.*2\.5\s+USDC/);
     assert.equal(await detail.locator('[data-cell="apr"] [data-figure="none"]').count(), 1, 'still no APR');
     for (const width of [1280, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });

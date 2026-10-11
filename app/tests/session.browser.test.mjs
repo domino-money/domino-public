@@ -260,13 +260,30 @@ test('clean wallet picker uses only bundled brand icons; connection shows the ad
   assert.equal(await dialog(page).getByRole('button', { name: 'Connect Rabby Wallet' }).locator('img').evaluate((image) => image.complete && image.naturalWidth > 0), true);
   await dialog(page).getByRole('button', { name: 'Connect Rabby Wallet' }).click();
   await viewIs(page, 'signed_out');
-  assert.match(await trigger(page).innerText(), new RegExp(`${ADDR_A.slice(0, 6)}…${ADDR_A.slice(-4)}`));
+  assert.equal(await page.locator('header [data-wallet-signin]').innerText(), 'Sign in', 'authentication is visible without opening the menu');
   assert.doesNotMatch(await trigger(page).innerText(), /Signed in/);
   assert.equal(await trigger(page).getAttribute('title'), ADDR_A);
   assert.equal(s.wallet.state.signed.length, 0, 'showing the address does not sign in');
   await dialog(page).getByRole('button', { name: 'Disconnect wallet', exact: true }).click();
   await viewIs(page, 'no_wallet');
   assert.equal(await trigger(page).innerText(), 'Connect wallet');
+  await s.close();
+});
+
+test('sign-in is visible in the header; one click signs in and account changes offer it again without layout overflow', async () => {
+  const s = await scenario(); const page = await s.open();
+  await connect(page); await page.keyboard.press('Escape');
+  const entry = page.locator('header [data-wallet-signin]');
+  assert.equal(await entry.isVisible(), true); assert.equal(s.wallet.state.signed.length, 0);
+  await page.setViewportSize({ width: 320, height: 760 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  if (process.env.DOMINO_SESSION_SHOTS) { mkdirSync(process.env.DOMINO_SESSION_SHOTS, { recursive: true }); await page.screenshot({ path: join(process.env.DOMINO_SESSION_SHOTS, 'signin-needed-mobile.png') }); }
+  s.signClicks += 1; await entry.click();
+  await dialog(page).getByRole('button', { name: 'Sign out', exact: true }).waitFor();
+  assert.equal(await entry.count(), 0); assert.equal(s.wallet.state.signed.length, 1);
+  await s.wallet.switchAccount('a', 1);
+  await viewIs(page, 'signed_out'); await page.keyboard.press('Escape');
+  assert.equal(await entry.isVisible(), true); assert.equal(s.wallet.state.signed.length, 1);
   await s.close();
 });
 
@@ -499,9 +516,10 @@ test('switching network signs out once, reads nothing on the wrong chain, and sw
   assert.deepEqual(await privateKeys(page), []);
 
   await openDialog(page);
-  await dialog(page).getByRole('button', { name: 'Switch to Robinhood Chain' }).click();
-  const back = await viewIs(page, 'signed_out');
-  assert.equal(back.reason, 'none', 'the old session is gone; a fresh sign-in is required');
+  s.signClicks += 1;
+  await dialog(page).getByRole('button', { name: 'Sign in', exact: true }).click();
+  await dialog(page).getByRole('button', { name: 'Sign out', exact: true }).waitFor();
+  assert.equal(s.wallet.state.signed.length, 2, 'the explicit Sign in replaces the expired session');
   assert.deepEqual(s.wallet.calls('wallet_switchEthereumChain').map((call) => call.params[0].chainId), ['0x1237']);
   await s.close();
 });
@@ -519,8 +537,8 @@ test('a session held on Base: the wallet dialog says signed in there, with Sign 
   await viewIs(page, 'wrong_network');
   await openDialog(page);
   const said = (want, label) => until(page, (text) => document.querySelector('#wallet-dialog-status')?.textContent === text, want, label);
-  const switchButton = dialog(page).getByRole('button', { name: 'Switch to Robinhood Chain' });
-  const asked = 'Your wallet is on Base. Domino works on Robinhood Chain. Switch to continue.';
+  const switchButton = dialog(page).getByRole('button', { name: 'Sign in', exact: true });
+  const asked = 'Sign in to continue. Your wallet will ask to switch to Robinhood Chain for the sign-in message.';
   if (WALLET_DIST === WALLET_V2_DIST) {
     await said('Signed in. Your wallet is on Base.', 'the held session said');
     assert.equal(s.fake.count('logout'), 0, 'the session is kept');
@@ -558,11 +576,11 @@ test('a wallet that does not know Robinhood Chain is asked to add it, with the n
   await viewIs(page, 'wrong_network');
   s.wallet.forgetChain('a', 4663);
   await openDialog(page);
-  await dialog(page).getByRole('button', { name: 'Switch to Robinhood Chain' }).click();
-  const back = await viewIs(page, 'signed_out');
-  assert.equal(back.reason, 'none');
+  s.signClicks += 1;
+  await dialog(page).getByRole('button', { name: 'Sign in', exact: true }).click();
+  await dialog(page).getByRole('button', { name: 'Sign out', exact: true }).waitFor();
   assert.deepEqual(s.wallet.added('a'), [ROBINHOOD_CHAIN], 'the fixed details, and nothing a server or the wallet said');
-  assert.deepEqual(s.wallet.calls('wallet_switchEthereumChain').map((call) => call.params[0].chainId), ['0x1237']);
+  assert.deepEqual(s.wallet.calls('wallet_switchEthereumChain').map((call) => call.params[0].chainId), WALLET_DIST === WALLET_V2_DIST ? ['0x1237', '0x1'] : ['0x1237']);
   assert.equal(await dialog(page).getByRole('alert').count(), 0, 'nothing to say: it worked');
   await s.close();
 });
@@ -586,10 +604,11 @@ test('every way a switch ends is said in plain words: wrapped 4902, declined add
     await dialog(page).getByRole('button', { name: `Connect ${wallet.name}` }).click();
     await viewIs(page, 'wrong_network');
     if (reject) s.wallet.rejectNext('a', reject);
-    await dialog(page).getByRole('button', { name: 'Switch to Robinhood Chain' }).click();
+    s.signClicks += 1;
+    await dialog(page).getByRole('button', { name: 'Sign in', exact: true }).click();
     if (said === null) {
       // MetaMask Mobile's 4902 comes wrapped in a -32603 (data.originalError): still recognized, and the network added.
-      await viewIs(page, 'signed_out');
+      await dialog(page).getByRole('button', { name: 'Sign out', exact: true }).waitFor();
       assert.deepEqual(s.wallet.added('a'), [ROBINHOOD_CHAIN]);
     } else {
       await dialog(page).getByRole('alert').waitFor();
@@ -607,9 +626,10 @@ test('a wallet that switches without saying so is caught up at once: the page re
   await openDialog(page);
   await dialog(page).getByRole('button', { name: 'Connect Quiet Wallet' }).click();
   await viewIs(page, 'wrong_network');
-  await dialog(page).getByRole('button', { name: 'Switch to Robinhood Chain' }).click();
+  s.signClicks += 1;
+  await dialog(page).getByRole('button', { name: 'Sign in', exact: true }).click();
   // No chainChanged ever comes: the page reads eth_chainId after the switch and catches up (it stayed "wrong network").
-  await viewIs(page, 'signed_out');
+  await dialog(page).getByRole('button', { name: 'Sign out', exact: true }).waitFor();
   assert.ok(s.wallet.calls('eth_chainId').length >= 2);
   await s.close();
 });
@@ -1348,10 +1368,18 @@ test('a switched-off or unrouted session service explains the missing sign-in an
     // tell every visitor "Sign in with your wallet…" while the dialog said sign-in was unavailable.
     // Changed on purpose 2026-10-01 (the D2 follow-up): with nothing to show for the same reason, one line for both cards.
     await page.keyboard.press('Escape');
-    const merged = page.locator('[data-automation-empty="session_disabled"]');
-    await merged.waitFor();
-    assert.equal((await merged.locator('.dm-acct-merged-line').innerText()).trim(), 'Your automated positions and their receipts will show here once wallet sign-in is available.');
-    assert.equal(await merged.locator('button').count(), 0);
+    if (WALLET_DIST === WALLET_V2_DIST) {
+      // V2 integrates automation into the positions themselves; only its private receipts need the unavailable service.
+      const receipts = page.locator('[data-automation-cards="integrated"] [data-execution="signed_out"] [data-signed-out="session_disabled"]');
+      await receipts.waitFor();
+      assert.equal((await receipts.innerText()).trim(), 'Your receipts will show here once wallet sign-in is available.');
+      assert.equal(await receipts.locator('button').count(), 0);
+    } else {
+      const merged = page.locator('[data-automation-empty="session_disabled"]');
+      await merged.waitFor();
+      assert.equal((await merged.locator('.dm-acct-merged-line').innerText()).trim(), 'Your automated positions and their receipts will show here once wallet sign-in is available.');
+      assert.equal(await merged.locator('button').count(), 0);
+    }
     assert.doesNotMatch(await page.locator('main').innerText(), /Sign in with your wallet/);
     await page.locator('[data-positions-receipts]').click();
     await page.locator('[data-execution="signed_out"] [data-signed-out="session_disabled"]').waitFor();

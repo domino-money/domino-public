@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useConnectors, type Connector } from 'wagmi'
 import { privateScope, type Snapshot } from '../../session/controller'
 import { useSignedInIdentity } from '../../session/privateQuery'
-import { cancelConnect, connectingState, connectWallet, disconnectWallet, subscribeConnecting, switchToRobinhood } from '../../wallet/port'
+import { cancelConnect, connectingState, connectWallet, disconnectWallet, subscribeConnecting } from '../../wallet/port'
 import { sessionController } from '../../wallet/session'
 import { walletConnectOffered } from '../../wallet/walletConnect'
 import { PREVIEW_ALIAS } from '../../chains/elysium/mode'
@@ -11,11 +11,13 @@ import { useDialog } from '../../lib/useDialog'
 import { Button, Card } from '../ui'
 import { IconChevronRight, IconClose } from '../icons'
 import { knownDelegateAt } from '../../finance/delegates'
-import { approveIn, connectNotice, describe, NO_BROWSER_WALLET, OPEN_IN_WALLET_APP, OPEN_IN_WALLET_APP_NOTE, REFRESH_UNAVAILABLE, shortAddress, SWITCH_NOTICE, WALLETCONNECT } from './copy'
+import { approveIn, connectNotice, describe, NO_BROWSER_WALLET, OPEN_IN_WALLET_APP, OPEN_IN_WALLET_APP_NOTE, REFRESH_UNAVAILABLE, shortAddress, WALLETCONNECT } from './copy'
 import { CopyButton } from '../read/screens/CopyButton'
 import { tokenHue } from '../../lib/format/tokenHue'
 import { WalletConnectPanel } from './WalletConnectPanel'
 import { WalletLogo } from './WalletLogo'
+import { signInFlow, useSignInProgress } from '../../wallet/signIn'
+import { networkName } from '../../lib/networkName'
 
 /** Wallet names come from the extension that announced them: shown as text, shortened. */
 const MAX_NAME = 40
@@ -149,6 +151,8 @@ export function WalletSessionDialog({
   const [notice, setNotice] = useState<Notice | null>(null)
   const [pending, setPending] = useState(false)
   const [phone] = useState(onPhone)
+  const progress = useSignInProgress()
+  const signing = ['switching', 'checking', 'signing', 'returning'].includes(progress.phase)
 
   // Each step swaps the footer buttons, and a wallet action disables them
   // while it runs. When the button that had focus goes away or is disabled,
@@ -166,7 +170,6 @@ export function WalletSessionDialog({
   if (!open) return null
 
   const { view, identity, busy } = session
-  const note = (text: string) => setNotice({ text, epoch: session.epoch, status: view.status })
   const shown = notice && notice.epoch === session.epoch && notice.status === view.status ? notice.text : null
 
   async function act<T>(task: () => Promise<T>, onDone: (result: T) => void) {
@@ -189,10 +192,6 @@ export function WalletSessionDialog({
       setNotice({ text: connectNotice(result, walletName(connector.name)), epoch, status: after.status })
     }
   }
-  const switchNetwork = () =>
-    act(switchToRobinhood, (result) => {
-      if (result !== 'switched') note(SWITCH_NOTICE[result])
-    })
   const disconnect = () => act(disconnectWallet, () => {})
 
   const disconnectButton = (
@@ -212,7 +211,7 @@ export function WalletSessionDialog({
   // Domino uses or brings funds from (session/machine.ts heldAway) is signed in there, with Sign out, and no switch to
   // Robinhood Chain, which would take the wallet away from the network the page is using.
   const away = view.status === 'wrong_network' && session.away
-  const status = waiting !== null ? (pairing ? null : approveIn(walletName(waiting.name))) : quiet ? null : describe(view, away)
+  const status = waiting !== null ? (pairing ? null : approveIn(walletName(waiting.name))) : quiet ? null : signing || progress.phase === 'error' ? progress.message : describe(view, away)
 
   let actions: React.ReactNode = null
   if (waiting !== null) {
@@ -221,6 +220,10 @@ export function WalletSessionDialog({
         Cancel
       </Button>
     )
+  } else if (signing) {
+    actions = <Button variant="ghost" onClick={() => signInFlow.cancel()}>Cancel sign-in</Button>
+  } else if (progress.returnChain !== undefined && (view.status === 'signed_in' || away)) {
+    actions = <Button onClick={() => void signInFlow.start()}>Switch back to {networkName(progress.returnChain)}</Button>
   } else {
     switch (view.status) {
       case 'wrong_network':
@@ -229,9 +232,7 @@ export function WalletSessionDialog({
         ) : (
           <>
             {disconnectButton}
-            <Button onClick={switchNetwork} disabled={pending} aria-busy={pending || undefined}>
-              Switch to Robinhood Chain
-            </Button>
+            <Button onClick={() => void signInFlow.start()} disabled={pending || busy}>Sign in</Button>
           </>
         )
         break
@@ -239,14 +240,14 @@ export function WalletSessionDialog({
         actions = (
           <>
             {disconnectButton}
-            <Button onClick={() => sessionController.dispatch({ type: 'sign_in' })}>Sign in</Button>
+            <Button onClick={() => void signInFlow.start()} disabled={busy}>Sign in</Button>
           </>
         )
         break
       case 'signing_in':
         if (view.step !== 'recovering' && view.step !== 'closing') {
           actions = (
-            <Button variant="ghost" onClick={() => sessionController.dispatch({ type: 'cancel' })}>
+            <Button variant="ghost" onClick={() => signInFlow.cancel()}>
               Cancel sign-in
             </Button>
           )
@@ -308,7 +309,7 @@ export function WalletSessionDialog({
           <button type="button" onClick={onClose} aria-label="Close" className="dm-icon-btn dm-icon-btn--ghost dm-icon-btn--sm dm-press-icon absolute -top-1.5 -right-1.5">
             <IconClose />
           </button>
-          {status && <p id="wallet-dialog-status" className="text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-status={waiting ? 'connecting' : view.status}>
+          {status && <p id="wallet-dialog-status" role={progress.phase === 'error' ? 'alert' : 'status'} className="text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-status={waiting ? 'connecting' : view.status}>
             {status}
           </p>}
         </div>
@@ -364,11 +365,12 @@ export function WalletSessionDialog({
               </div>
             </dl>
           )}
-          {view.status === 'signed_in' && (
+          {(view.status === 'signed_in' || away || view.status === 'signed_out' || (view.status === 'wrong_network' && !away)) && (
             // Changed on purpose 2026-10-01 (audit E5): one plain sentence for what the session does; the docs' Sessions
             // and signing out says the rest.
             <p className="text-caption text-fg-subtle">Stays signed in while Domino is open, for up to 12 hours. You may need to sign in again after closing the site or losing your connection.</p>
           )}
+          {(view.status === 'signed_out' || (view.status === 'wrong_network' && !away) || signing) && <p className="text-caption text-fg-subtle">Sign a message to continue. No transaction or network fee.</p>}
 
           {view.status === 'signed_in' && view.notice === 'refresh_unavailable' && (
             <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-testid="refresh-notice">

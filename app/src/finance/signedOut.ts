@@ -37,3 +37,10 @@ export function signedOutLine(kind: SessionKind, what: 'receipts' | 'managed' | 
 
 /** Opens the header's wallet dialog, where the action happens. */
 export const openWalletDialog = () => document.querySelector<HTMLButtonElement>('header [aria-haspopup="dialog"]')?.click()
+
+/** Explicit inline Sign in actions share the header's single attempt. Connection remains a separate choice. */
+export const signInWithWallet = () => {
+  const signIn = document.querySelector<HTMLButtonElement>('header [data-wallet-signin]')
+  if (signIn) signIn.click()
+  else openWalletDialog()
+}

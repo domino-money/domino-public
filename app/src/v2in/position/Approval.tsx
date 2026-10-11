@@ -9,7 +9,7 @@ import { connectPosition, inTurn, type OpenGate } from './wallet'
 
 /** Whether the zap holds this NFT's individual approval and this wallet may revoke it: the zap client's own read. */
 async function readApproval(gate: OpenGate, dex: Dex, tokenId: bigint): Promise<boolean | null> {
-  const connection = await connectPosition(gate)
+  const connection = await connectPosition(gate, false)
   if (!connection.zap) return null
   const answer = await connection.zap.positionApproval(dex, tokenId)
   return answer.zapApproved && answer.revocable

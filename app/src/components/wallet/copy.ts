@@ -101,7 +101,7 @@ export function describe(view: View, away = false): string {
       // there too (Base, Arbitrum One, a deposit's network), so nothing asks to switch to Robinhood Chain.
       if (away) return `Signed in. Your wallet is on ${networkName(view.chainId)}.`
       // Changed on purpose 2026-10-01 (audit E6): the network by its name, never its number, and what Domino needs.
-      return `Your wallet is on ${networkName(view.chainId)}. Domino works on Robinhood Chain. Switch to continue.`
+      return 'Sign in to continue. Your wallet will ask to switch to Robinhood Chain for the sign-in message.'
     case 'checking':
       return 'Checking for an existing session…'
     case 'signed_out':

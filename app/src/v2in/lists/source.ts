@@ -1,11 +1,14 @@
 import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/types'
 import { V2_CHAINS } from '../../v2/chains'
-import { v2OriginOpen } from '../../v2/gate'
+import { v2Gate, v2OriginOpen } from '../../v2/gate'
 import type { V2ChainId } from '../../v2/types'
-import { v2ReadTransports } from '../transports'
+import { v2PageProbe, v2ReadTransports } from '../transports'
+import { chainPoolsOn } from '../journey/served'
 import { createKeyedReader, createListsReads, readAgainAfter, type ListsReply, type ListsTransports } from './read'
 import { createPortfolioCatchup, reconcilePortfolio, subscribePositionChanges } from './positionSync'
 import { CREATED_POSITIONS } from './createdPositions'
+import { POSITION_VALUATIONS } from './valuation'
+import { createPriceRecovery } from './priceRecovery'
 
 /**
  * The lists' one read-v6 source in the page (Domino V2 builds only: the lists' chunks are opened behind `__DOMINO_V2__`).
@@ -43,11 +46,27 @@ export const ACTIVITY_PAGE = 20
 
 /** The person's own portfolio, from the site's route, by wallet (lowercase). */
 const catchup = createPortfolioCatchup()
-export const OWN_PORTFOLIO = createKeyedReader<ListsReply<PortfolioResponse>>(async (wallet) => {
+const priceRecovery = createPriceRecovery({
+  async warm(target, active) {
+    if (!readsOpen() || !active()) return false
+    const gate = await v2Gate('vault', target.chainId, undefined, v2PageProbe)
+    if (gate.mode === 'off' || !active()) return false
+    // No pairedToken: the backend surveys the token's own qualified sources and offers the answer to its shared Pricer.
+    // This shared request may finish after navigation; active() prevents another read or any stale-wallet refresh.
+    const reply = await chainPoolsOn(gate, target.chainId, target.address)
+    return active() && reply.kind === 'ok' && reply.body.freshness.status === 'fresh'
+      && reply.body.chainId === target.chainId && reply.body.token.toLowerCase() === target.address
+      && reply.body.tokens.some(token => token.address.toLowerCase() === target.address && token.price !== null)
+  },
+  refresh: wallet => OWN_PORTFOLIO.again(wallet),
+})
+export const OWN_PORTFOLIO = createKeyedReader<ListsReply<PortfolioResponse>>(async (wallet, active) => {
   // A reloaded page may know only the receipt's NFT identity. It speeds discovery, never supplies chain state.
   for (const created of CREATED_POSITIONS.get(wallet)) catchup.note({ ...created, tokenIds: [created.tokenId] })
   const answer = await LISTS_SOURCE.ownPortfolio(wallet)
   if (answer.kind === 'ok') CREATED_POSITIONS.reconcile(answer.body)
+  if (answer.kind === 'ok') POSITION_VALUATIONS.record(answer.body)
+  if (answer.kind === 'ok' && active()) void priceRecovery.run(answer.body, active)
   return answer.kind === 'ok' ? { ...answer, body: reconcilePortfolio(answer.body) } : answer
 }, { next: (reply, failures) => reply.kind === 'ok' && REFRESH ? catchup.delay(reply.body) ?? 30_000 : again(reply, failures), failed })
 /** The first page of the person's own receipts, by wallet (lowercase). */

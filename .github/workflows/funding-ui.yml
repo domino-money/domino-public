@@ -39,7 +39,7 @@ jobs:
       - run: npm --prefix app run build:wallet-test-v2
       - name: Verify funding, recovery, automation and history with local wallets and services
         working-directory: app
-        run: node --test --test-force-exit tests/v2in-browser/funds-offer.test.mjs tests/v2in-browser/funds-zap.test.mjs tests/v2in-browser/funds-recovery.test.mjs tests/v2in-browser/journey.test.mjs tests/v2in-browser/automate.test.mjs tests/v2in-browser/lists.test.mjs tests/v2in-browser/position.test.mjs tests/v2in-browser/position-v1-page.test.mjs tests/v2in-browser/bulk-close.browser.test.mjs tests/v2in-browser/wallet-refresh.browser.test.mjs
+        run: node --test --test-force-exit tests/v2in-browser/funds-offer.test.mjs tests/v2in-browser/funds-zap.test.mjs tests/v2in-browser/funds-recovery.test.mjs tests/v2in-browser/journey.test.mjs tests/v2in-browser/automate.test.mjs tests/v2in-browser/lists.test.mjs tests/v2in-browser/position.test.mjs tests/v2in-browser/position-v1-page.test.mjs tests/v2in-browser/bulk-close.browser.test.mjs tests/v2in-browser/wallet-refresh.browser.test.mjs tests/v2in-browser/token-artwork.test.mjs
       - name: Keep browser failure evidence
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

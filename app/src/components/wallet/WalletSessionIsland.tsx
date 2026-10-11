@@ -13,6 +13,7 @@ import { tokenHue } from '../../lib/format/tokenHue'
 import { announcement, shortAddress } from './copy'
 import { PrivateReadProbe } from './PrivateReadProbe'
 import { WalletSessionDialog } from './WalletSessionDialog'
+import { signInFlow, useSignInProgress } from '../../wallet/signIn'
 
 /**
  * The wallet session feature, loaded as its own chunk and only in builds that
@@ -34,6 +35,10 @@ function WalletControl() {
   const session = useSession()
   const [open, setOpen] = useState(false)
   const { view, identity } = session
+  const progress = useSignInProgress()
+  const signing = ['switching', 'checking', 'signing', 'returning'].includes(progress.phase) || view.status === 'signing_in'
+  const needsSignIn = identity.kind === 'connected' && !session.away && (view.status === 'signed_out' || view.status === 'wrong_network')
+  const startSignIn = () => { setOpen(true); void signInFlow.start() }
 
   // Published outward for the screens that mention the connected address;
   // they may not import this feature, so the store is their only way in.
@@ -90,17 +95,23 @@ function WalletControl() {
       </p>
       {(
         <>
+          <span className="dm-wallet-control" data-signin-needed={needsSignIn || undefined}>
+          {(needsSignIn || signing) && <Button variant="accent" className="dm-wallet-signin" disabled={signing || session.busy} onClick={startSignIn} data-wallet-signin="" aria-busy={signing || undefined}>
+            {signing ? 'Signing in…' : 'Sign in'}
+          </Button>}
           <Button
             variant={identity.kind === 'connected' ? 'outline' : 'soft'}
-            className={identity.kind === 'connected' ? 'dm-wallet-pill whitespace-nowrap' : 'whitespace-nowrap'}
+            className={identity.kind === 'connected' ? `dm-wallet-pill whitespace-nowrap${needsSignIn || signing ? ' dm-wallet-menu' : ''}` : 'whitespace-nowrap'}
+            aria-label={needsSignIn || signing ? 'Wallet menu' : undefined}
             aria-haspopup="dialog"
             aria-expanded={open}
             aria-busy={session.busy || undefined}
             title={identity.kind === 'connected' ? identity.address : undefined}
             onClick={() => setOpen(true)}
           >
-            {label}
+            {needsSignIn || signing ? <IconChevronDown size={14} /> : label}
           </Button>
+          </span>
           <WalletSessionDialog open={open} onClose={() => setOpen(false)} session={session} />
         </>
       )}

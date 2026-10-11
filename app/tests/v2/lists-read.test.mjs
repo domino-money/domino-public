@@ -201,3 +201,22 @@ test('shared wake refreshes active keys once and projects observed state without
   a(); b();
   assert.equal(wakesRemoved, 1, 'listeners leave no global wake handler behind');
 });
+
+test('follow-up reads remain valid only for the observed visible owner and current generation', async () => {
+  const clock = fakeTimers(), contexts = [];
+  const reader = read.createKeyedReader(async (key, active) => { contexts.push({ key, active }); return { kind: 'ok' }; }, { next: () => null, failed: () => false }, clock.timers);
+  const stop = reader.subscribe('owner-a', () => {});
+  await clock.advance(0);
+  assert.equal(contexts[0].active(), true);
+  await clock.show(false); assert.equal(contexts[0].active(), false);
+  await clock.show(true); assert.equal(contexts[0].active(), true);
+  reader.again('owner-a'); await clock.advance(0);
+  assert.equal(contexts[0].active(), false, 'the older generation cannot launch recovery after a newer read starts');
+  assert.equal(contexts[1].active(), true);
+  stop();
+  const remounted = reader.subscribe('owner-a', () => {});
+  assert.equal(contexts[1].active(), false, 'a remount cannot revive abandoned follow-up work');
+  remounted(); reader.subscribe('owner-b', () => {}); await clock.advance(0);
+  assert.equal(contexts[1].active(), false, 'changing owner cancels follow-up work for the former owner');
+  assert.equal(contexts[2].active(), true);
+});

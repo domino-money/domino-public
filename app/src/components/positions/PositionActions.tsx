@@ -2,13 +2,15 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { suggestGasBudget } from '../../finance/gas'
 import { closeMinimums, createPositionClient, positionTokenId, type PositionClient, type PositionState, type PreparedPosition } from '../../finance/position'
 import type { GasBudget } from '../../finance/setup'
-import { setupWallet } from '../../finance/wallet'
+import { positionWallet } from '../../finance/wallet'
 import { errorCode, financeErrorText } from '../../finance/words'
 import { CREATE } from '../../lib/create/copy'
 import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom, slippageWritten } from '../../lib/create/slippage'
 import { formatUsd, usdgValue } from '../../lib/format/usd'
 import type { TokenDisplay } from '../../lib/read/types'
-import { useWalletIdentity, walletKey } from '../../lib/walletIdentity'
+import { useWalletIdentity } from '../../lib/walletIdentity'
+import { PositionNetworkError } from '../../lib/positions/positionNetwork'
+import { v2SwitchNotice, type ChainSwitchOutcome } from '../../wallet/port'
 import { SlippageChoice } from '../create/SlippageChoice'
 import { TokenMark } from '../TokenIcon'
 import { Button, Skeleton } from '../ui'
@@ -28,7 +30,7 @@ import { personRefused as isRejection } from '../../finance/nonce'
  * network fee may be, and sends one transaction when pressed. Closing takes
  * out all of the liquidity and the fees; the empty NFT stays in the wallet.
  *
- * Shown only when the connected wallet, on Robinhood Chain, is the NFT's
+ * Shown only when the connected wallet, on any network, is the NFT's
  * owner as the read service reported it; the chain is asked again before
  * anything is sent. Opened lazily by the Positions screens in wallet builds.
  *
@@ -65,13 +67,13 @@ export interface PositionActionsProps {
 }
 
 type Action = 'collect' | 'close'
-type Stage = 'reading' | 'ready' | 'wallet' | 'chain' | 'done' | 'failed'
+type Stage = 'switching' | 'reading' | 'ready' | 'wallet' | 'chain' | 'done' | 'failed'
 interface Run { action: Action; stage: Stage; prepared: PreparedPosition | null; notice: { text: string; code: string | null } | null }
 
 const NO_HOOKS = '0x0000000000000000000000000000000000000000'
 const TITLE: Readonly<Record<Action, string>> = { collect: 'Collect fees', close: 'Close position' }
 const PRIMARY: Readonly<Record<Action, string>> = { collect: 'Collect in wallet', close: 'Close in wallet' }
-const PROGRESS: Partial<Record<Stage, string>> = { wallet: 'Confirm in your wallet…', chain: 'Waiting for the network', done: 'Done' }
+const PROGRESS: Partial<Record<Stage, string>> = { switching: 'Switch to Robinhood Chain in your wallet…', reading: 'Checking your position…', wallet: 'Confirm in your wallet…', chain: 'Waiting for the network', done: 'Done' }
 const AUTOMATION = 'Collecting fees or closing stops Domino automation for this position.'
 const HOOKED = 'Positions in pools with hooks can’t be collected or closed here.'
 const UNKNOWN_CONTRACT = 'Uniswap’s position contract on this network is not the one this site knows. Nothing was sent.'
@@ -102,6 +104,7 @@ const OWN_TEXT: Readonly<Record<string, string>> = {
   invalid_slippage: 'Choose a slippage limit from 0.1% to 5%.',
 }
 function failureText(error: unknown): { text: string; code: string | null } {
+  if (error instanceof PositionNetworkError) return { text: v2SwitchNotice(error.outcome as Exclude<ChainSwitchOutcome, 'switched'>, 'Robinhood Chain'), code: error.message }
   const code = errorCode(error)
   if (isRejection(error)) return { text: 'You declined in your wallet. Nothing was sent.', code: 'declined' }
   if (code && Object.hasOwn(OWN_TEXT, code)) return { text: OWN_TEXT[code], code }
@@ -177,18 +180,19 @@ const LEDE: Readonly<Record<Action, string>> = {
 
 export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null, automate = null, automationSlot = null, primary }: PositionActionsProps) {
   const identity = useWalletIdentity()
-  const wallet = walletKey(identity)
+  const wallet = identity.kind === 'connected' ? `${identity.connectorName}|${identity.address.toLowerCase()}` : null
   const mine = wallet !== null && identity.kind === 'connected' && identity.address.toLowerCase() === owner.toLowerCase()
   const [open, setOpen] = useState<Action | null>(null)
   const [run, setRun] = useState<Run | null>(null)
   const [slippage, setSlippage] = useState(String(SLIPPAGE_DEFAULT_BPS))
   const generation = useRef(0)
-  const client = useRef<PositionClient | null>(null)
+  const client = useRef<{ key: string; positions: PositionClient } | null>(null)
+  const preparing = useRef<number | null>(null)
   const changed = useRef(onChanged)
   useEffect(() => {
     changed.current = onChanged
   }, [onChanged])
-  // Another wallet or network: nothing prepared or watched for the previous one applies.
+  // Another owner/provider invalidates the review. The network change requested by this dialog must not close it.
   const [seenWallet, setSeenWallet] = useState(wallet)
   if (seenWallet !== wallet) {
     setSeenWallet(wallet)
@@ -203,10 +207,14 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
 
   if (!mine) return null
 
-  async function connect(): Promise<{ positions: PositionClient; gas: GasBudget }> {
-    const rpc = await setupWallet()
-    if (!client.current) client.current = createPositionClient(rpc)
-    return { positions: client.current, gas: await suggestGasBudget(rpc) }
+  async function connect(gen: number, action: Action): Promise<{ positions: PositionClient; gas: GasBudget }> {
+    const { wallet: rpc, key } = await positionWallet(owner, () => generation.current === gen, () => {
+      setRun({ action, stage: 'switching', prepared: null, notice: null })
+    })
+    if (generation.current !== gen) throw new Error('wallet_identity_changed')
+    setRun((before) => before?.stage === 'switching' ? { ...before, stage: 'reading' } : before)
+    if (client.current?.key !== key) client.current = { key, positions: createPositionClient(rpc) }
+    return { positions: client.current.positions, gas: await suggestGasBudget(rpc) }
   }
   async function prepareFor(action: Action, positions: PositionClient, gas: GasBudget, bps: number) {
     const id = positionTokenId(tokenId)
@@ -217,15 +225,19 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
   /** Opens an action's dialog. A step already on its way is shown, never prepared again; otherwise the position is read fresh. */
   async function show(action: Action) {
     setOpen(action)
+    if (preparing.current === generation.current) return
     if (run?.action === action && (run.stage === 'wallet' || run.stage === 'chain')) return
     const gen = ++generation.current
+    preparing.current = gen
     setRun({ action, stage: 'reading', prepared: null, notice: null })
     try {
-      const { positions, gas } = await connect()
+      const { positions, gas } = await connect(gen, action)
       const prepared = await prepareFor(action, positions, gas, bps ?? SLIPPAGE_DEFAULT_BPS)
       if (generation.current === gen) setRun({ action, stage: 'ready', prepared, notice: null })
     } catch (error) {
       if (generation.current === gen) setRun({ action, stage: 'failed', prepared: null, notice: failureText(error) })
+    } finally {
+      if (preparing.current === gen) preparing.current = null
     }
   }
 
@@ -236,14 +248,16 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
    */
   async function confirm(action: Action) {
     if (bps === null && action === 'close') return
+    if (preparing.current === generation.current) return
     const gen = ++generation.current
+    preparing.current = gen
     const alive = () => generation.current === gen
     const reviewed = run?.action === action ? run.prepared : null
     let prepared = reviewed
     let sent = false
     setRun({ action, stage: 'wallet', prepared, notice: null })
     try {
-      const { positions, gas } = await connect()
+      const { positions, gas } = await connect(gen, action)
       const step = await prepareFor(action, positions, gas, bps ?? SLIPPAGE_DEFAULT_BPS)
       prepared = step
       if (!alive()) return
@@ -289,6 +303,8 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
       // Once sent, a failure is a watch that could not conclude, never a step known to have failed.
       if (sent) setRun({ action, stage: 'failed', prepared, notice: { text: WATCHED_TEXT.unknown, code: errorCode(error) ?? 'unknown' } })
       else setRun({ action, stage: isRejection(error) ? 'ready' : 'failed', prepared, notice: failureText(error) })
+    } finally {
+      if (preparing.current === gen) preparing.current = null
     }
   }
 
@@ -298,10 +314,10 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
   // reported none (unknown counts as zero). The dialog itself always reads the fees again on chain.
   const noFees = unsettledFeesRaw === null || (unsettledFeesRaw[0] === '0' && unsettledFeesRaw[1] === '0')
   const collectReason = hooked ? HOOKED : empty ? 'This position is closed: it holds no liquidity.' : unsettledFeesRaw === null ? 'The fees could not be read just now.' : noFees ? 'No fees to collect yet.' : undefined
-  const pending = run !== null && (run.stage === 'wallet' || run.stage === 'chain')
+  const pending = run !== null && (run.stage === 'switching' || run.stage === 'reading' || run.stage === 'wallet' || run.stage === 'chain')
   const shown = open && run?.action === open ? run : null
   const prepared = shown?.prepared ?? null
-  const busy = shown !== null && (shown.stage === 'reading' || shown.stage === 'wallet' || shown.stage === 'chain')
+  const busy = shown !== null && (shown.stage === 'switching' || shown.stage === 'reading' || shown.stage === 'wallet' || shown.stage === 'chain')
   // What the close pays at least at the limit chosen now: the principal minimums at that limit and the fees.
   const minimums = open === 'close' && prepared && bps !== null
     ? closeMinimums(prepared.state.sqrtPriceX96, prepared.state.tickLower, prepared.state.tickUpper, prepared.state.liquidity, bps)
@@ -315,6 +331,13 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
   // What the dialog receives in USD at the fees relay's pool price (1 USDG = $1): a line of its own, beside the pinned amounts.
   const [d0, d1] = [currencies[0].decimals, currencies[1].decimals]
   const receiveUsd = usd && prepared && d0 !== null && d1 !== null ? formatUsd(usdgValue({ amounts: prepared.receive, decimals: [d0, d1], usdgIndex: usd.usdgIndex, sqrtPriceX96: usd.sqrtPriceX96 })) : null
+  const closeDialog = () => {
+    if (run?.stage === 'switching' || run?.stage === 'reading') {
+      generation.current++
+      setRun(null)
+    }
+    setOpen(null)
+  }
 
   return (
     <>
@@ -362,13 +385,15 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
             id={`position-${open}`}
             title={TITLE[open]}
             lede={LEDE[open]}
-            onClose={() => setOpen(null)}
+            onClose={closeDialog}
             data-position-dialog={open}
             footer={
               shown?.stage === 'done' ? (
                 <Button type="button" variant="secondary" size="lg" onClick={() => setOpen(null)}>
                   Back to position
                 </Button>
+              ) : shown?.stage === 'failed' && !prepared ? (
+                <Button type="button" variant="primary" size="lg" onClick={() => void show(open)} data-position-retry="">Try again</Button>
               ) : (
                 <Button type="button" variant="primary" size="lg" disabled={!canSend} aria-busy={busy || undefined} data-position-send={open} onClick={() => void confirm(open)}>
                   {PRIMARY[open]}

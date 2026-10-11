@@ -4,6 +4,7 @@ import { SheetCard, SheetFact, SheetFacts, SheetMore, TokenRow, TokenRows } from
 import { Button, FigureDash, LinkButton, Skeleton } from '../../components/ui'
 import { slippageBpsFrom } from '../../lib/create/slippage'
 import { useWalletIdentity } from '../../lib/walletIdentity'
+import { v2Chain } from '../../v2/chains'
 import { ethText, keptWhileRequoting, priceText, rangeBothWays } from '../../v2/plan/present'
 import type { S1PlanRequest } from '../../v2/plan/types'
 import type { ActionName, Address } from '../../v2/types'
@@ -132,6 +133,8 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   const identity = useWalletIdentity()
   const directReads = gate.mode === 'live' || (identity.kind === 'connected' && identity.chainId === chainId)
   const view = run.view
+  const switching = identity.kind === 'connected' && identity.chainId !== chainId && gate.mode === 'live' &&
+    (direct.stage === 'reading' || direct.stage === 'wallet' || view.stage === 'quoting' || view.busy)
   const reviewed = view.reviewed
   const kept = useKeptReview(view)
   const ready = bps !== null && (mode === 'increase' ? inputs !== null : mode === 'changeRange' ? ticks !== null && !sameRange && position.liquidity > 0n : position.liquidity > 0n)
@@ -280,7 +283,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
 
       {phase === 'review' && !usesDirect && (
         <div className="dm-pa-field" data-position-review-stage={view.stage}>
-          {view.stage === 'quoting' && <Progress data-position-quoting="">{view.requoting ? COPY.review.requoting : COPY.review.quoting}</Progress>}
+          {switching ? <Progress data-position-progress="switching">Switch to {v2Chain(chainId).name} in your wallet…</Progress> : view.stage === 'quoting' && <Progress data-position-quoting="">{view.requoting ? COPY.review.requoting : COPY.review.quoting}</Progress>}
           {view.stage === 'failed' && <ErrorLine error={view.error} onRejected={run.forgetUnsettled} busy={view.busy} />}
           {view.stage === 'failed' && view.error?.recovery === 'offer-both' && (
             <Button type="button" variant="outline" size="sm" className="justify-self-start" onClick={receiveBoth} data-position-receive-both="">{COPY.review.receiveBoth}</Button>
@@ -360,7 +363,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
             <Tick checked={direct.ticked} disabled={direct.ticked} onChange={(next) => next && direct.tick()} data-position-pause-confirm="">{ROOT_PAUSE_COPY}</Tick>
           )}
           <ErrorLine error={direct.error} />
-          {direct.stage === 'wallet' && <Progress data-position-progress="wallet">{COPY.wallet.inWallet}</Progress>}
+          {switching ? <Progress data-position-progress="switching">Switch to {v2Chain(chainId).name} in your wallet…</Progress> : direct.stage === 'wallet' && <Progress data-position-progress="wallet">{COPY.wallet.inWallet}</Progress>}
           {direct.stage === 'sent' && !direct.receipt && <Progress data-position-progress="chain">{COPY.wallet.pendingNetwork}</Progress>}
           {direct.stage === 'unknown' && <Note data-position-direct-unknown="">{COPY.wallet.sentUnknown}</Note>}
           {direct.receipt && <DirectReceiptView chainId={chainId} receipt={direct.receipt} book={book} />}

@@ -138,7 +138,7 @@ test('live V2 Amount finds its exact shortfall without network choices or automa
     const readsBefore = s.walletMethods.filter((method) => method === 'eth_getBalance').length;
     await s.zap.locator(`[data-zap-amount="${USDG}"] input`).fill('60');
     await offer.locator('[data-funds-lack-raw="60000000"]').waitFor({ state: 'attached' });
-    assert.equal(await offer.getByRole('button', { name: 'Continue with wallet', exact: true }).isVisible(), true, 'the funding action remains visible after the shortfall changes');
+    assert.equal(await offer.getByRole('button', { name: 'Sign in to continue', exact: true }).isVisible(), true, 'the explicit sign-in action remains visible after the shortfall changes');
     assert.equal(s.walletMethods.filter((method) => method === 'eth_getBalance').length, readsBefore, 'typing reuses the destination read');
     assert.equal(await offer.locator('#funds-origin-chain, [data-funds-scan], button[data-funds-network]').count(), 0, 'no network chooser or manual scan');
     assert.equal(await offer.getByText('Other networks', { exact: true }).count(), 0);
@@ -186,11 +186,16 @@ const etherOnly = (chainId) => createChainReads({
   tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: chainId === 8453 ? BASE_WETH : ARB_WETH, symbol: 'WETH', decimals: 18 }, { address: chainId === 8453 ? BASE_USDC : ARB_USDC, symbol: 'USDC', decimals: 6 }],
   balances: { [ZERO]: 20_000_000_000_000_000n },
 });
-const signInFromDialog = async (page) => {
-  const dialog = page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
-  await dialog.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await page.waitForFunction(() => window.__dominoSessionProbe.view().status === 'signed_in');
-  await page.keyboard.press('Escape');
+const signInFromFunding = async (s) => {
+  assert.equal(s.walletMethods.includes('personal_sign'), false, 'opening funding cannot request a signature');
+  await s.zap.locator('[data-funds-signin]').click();
+  await s.page.waitForFunction(() => window.__dominoSessionProbe.view().status === 'signed_in');
+  assert.equal(s.walletMethods.filter((method) => method === 'personal_sign').length, 1, 'one explicit funding click signs in once');
+  const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+  assert.equal(await dialog.getByRole('button', { name: 'Sign in', exact: true }).count(), 0, 'the progress dialog needs no second sign-in click');
+  await s.page.keyboard.press('Escape');
+  assert.equal(s.walletMethods.includes('wallet_sendCalls'), false, 'sign-in alone cannot confirm a transfer');
+  assert.equal(s.chain.sends.length, 0);
 };
 const ALL_ETH = 20_000_000_000_000_000n - 500_000_000_000_000n; // 0.02 ETH less the gas Review keeps
 
@@ -200,8 +205,7 @@ test('ETH held on Base for the USDG the position lacks: one quote by output, abo
   const s = await openFunding({ served: etherOnly(8453) });
   try {
     const offer = s.zap.locator('[data-funds-offer][data-funds-mode="live"]');
-    await offer.locator('[data-funds-signin]').click();
-    await signInFromDialog(s.page);
+    await signInFromFunding(s);
     const quote = offer.locator('[data-funds-quote]');
     await offer.locator('[data-funds-deposit-button]').waitFor({ timeout: 30_000 });
     const asked = s.calls.filter((c) => c.route === 'quote').map((c) => c.body);
@@ -224,8 +228,7 @@ test('ETH held on Arbitrum One with no price read: still ONE quote, by output, n
   const s = await openFunding({ served: etherOnly(42161) });
   try {
     const offer = s.zap.locator('[data-funds-offer][data-funds-mode="live"]');
-    await offer.locator('[data-funds-signin]').click();
-    await signInFromDialog(s.page);
+    await signInFromFunding(s);
     const quote = offer.locator('[data-funds-quote]:not([aria-busy])');
     await offer.locator('[data-funds-deposit-button]').waitFor({ timeout: 30_000 });
     assert.match(await quote.locator('[data-funds-network="42161"] strong').innerText(), /^0\.01\d* ETH$/);
@@ -250,8 +253,7 @@ const HASH_OF = (i) => `0x${(0xa0 + i).toString(16).padStart(64, '0')}`;
 
 async function bringFromArbitrum(s) {
   const offer = s.zap.locator('[data-funds-offer][data-funds-mode="live"]');
-  await offer.locator('[data-funds-signin]').click();
-  await signInFromDialog(s.page);
+  await signInFromFunding(s);
   await offer.locator('[data-funds-deposit-button]').waitFor({ timeout: 30_000 });
   return { offer, quote: offer };
 }

@@ -155,14 +155,22 @@ export function createWalletPrices(deps: WalletPriceDeps) {
   /** Reads one batch and keeps what it answered (and hands on its artwork); false when the provider gave no usable answer. */
   async function read(batch: readonly string[], signal: AbortSignal): Promise<boolean> {
     const body = await deps.get(batch, signal).catch(() => null)
-    if (signal.aborted || body === null || !Array.isArray(body)) return false
+    if (signal.aborted || body === null) return false
+    const partial = !Array.isArray(body) && typeof body === 'object' && 'pairs' in body && 'unavailable' in body
+      ? body as { pairs: unknown; unavailable: unknown } : null
+    const source = partial?.pairs ?? body
+    if (!Array.isArray(source) || (partial && (!Array.isArray(partial.unavailable) || !partial.unavailable.every(value => typeof value === 'string')))) return false
+    // A partial provider read is not proof that the unanswered token has no qualified market.
+    const unavailable = new Set((partial?.unavailable as string[] | undefined)?.map(value => value.toLowerCase()))
+    const answered = batch.filter(address => !unavailable.has(address))
+    if (answered.length === 0) return false
     const at = deps.now()
-    const pairs = pairsOf(body)
-    for (const [address, quote] of quotesFromTokens(body, batch)) {
+    const pairs = pairsOf(source)
+    for (const [address, quote] of quotesFromTokens(source, answered)) {
       kept.set(address, { quote, at })
       // The reply names the token's artwork when the token is a base there: its one image, or none. A token no pair names
       // at all is one the provider does not know (round 6: the card lists those too): no artwork, and no GET per row.
-      if (pairs.some((pair) => baseOf(pair, address))) deps.seed(address, artworkFromPairs(body, address))
+      if (pairs.some((pair) => baseOf(pair, address))) deps.seed(address, artworkFromPairs(source, address))
       else if (!pairs.some((pair) => quoteOf(pair, address))) deps.seed(address, null)
     }
     return true

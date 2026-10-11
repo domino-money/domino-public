@@ -119,12 +119,105 @@ async function atLab(chain, spec, { hash = null, rpc: chainRpc = undefined } = {
     await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
     await page.locator('header [aria-haspopup="dialog"]').click();
     await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Connect Position Wallet', exact: true }).click();
-    await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await page.waitForFunction(() => ['signed_out', 'wrong_network'].includes(window.__dominoSessionProbe?.view().status));
     await page.keyboard.press('Escape');
     return s;
   } catch (error) { await s.close().catch(() => {}); throw error; }
 }
 const chainFor = (options = {}) => createPositionChain(OWNER, { timestamp: TIMESTAMP, positions: [{ ...NFT, ...options.position }], deposits: options.deposits ?? [], finality: options.finality });
+/** A wallet initially on Base/Arbitrum. It deliberately omits chainChanged, as some injected wallets do. */
+function networkWallet(chain, initial, outcomes = []) {
+  const request = chain.request;
+  let network = initial;
+  chain.request = async (method, params) => {
+    if (method === 'eth_chainId') { chain.log.push(method); return { result: `0x${network.toString(16)}` }; }
+    if (method === 'wallet_switchEthereumChain') {
+      chain.log.push(method);
+      const next = outcomes.shift();
+      const outcome = typeof next === 'function' ? await next() : next;
+      if (outcome) return { error: { code: outcome, message: 'Network change declined or pending.' } };
+      network = Number(params[0].chainId);
+      return { result: null };
+    }
+    return request(method, params);
+  };
+  return chain;
+}
+
+test('position actions stay visible on Base and Arbitrum; an intentional collect switches and reads before any send', async () => {
+  for (const network of [8453, 42161]) {
+    const chain = networkWallet(chainFor(), network);
+    const s = await atLab(chain, { position: actionsFor() });
+    try {
+      await s.page.locator('[data-position-action="collect"]').waitFor();
+      await s.page.locator('[data-position-action="close"]').waitFor();
+      assert.equal(chain.log.includes('wallet_switchEthereumChain'), false, 'visiting does not switch the wallet');
+      await s.page.locator('[data-position-action="collect"]').click();
+      const dialog = s.page.locator('[data-position-dialog="collect"]');
+      await dialog.locator('[data-position-send="collect"]:not([disabled])').waitFor();
+      assert.equal(chain.log.filter(method => method === 'wallet_switchEthereumChain').length, 1);
+      assert.deepEqual(chain.sends, [], 'network switch and fresh review never send');
+      assert.match(await text(dialog.locator('[data-position-receive]')), /0\.001234 USDG/);
+      await dialog.locator('[data-position-send="collect"]').click();
+      await dialog.locator('[data-position-progress="done"]').waitFor();
+      assert.equal(chain.sends.length, 1, 'only the separate reviewed confirmation sends');
+    } finally { await s.close(); }
+  }
+});
+
+test('a refused network switch keeps the position dialog and offers a working retry without another transaction', async () => {
+  const chain = networkWallet(chainFor(), 8453, [4001]);
+  const s = await atLab(chain, { position: actionsFor() });
+  try {
+    await s.page.locator('[data-position-action="close"]').click();
+    const dialog = s.page.locator('[data-position-dialog="close"]');
+    await dialog.locator('[data-position-notice="position_network_user_rejected"]').waitFor();
+    assert.match(await text(dialog), /Your wallet declined the network switch/);
+    assert.deepEqual(chain.sends, []);
+    await dialog.locator('[data-position-retry]').click();
+    await dialog.locator('[data-position-send="close"]:not([disabled])').waitFor();
+    assert.equal(chain.log.filter(method => method === 'wallet_switchEthereumChain').length, 2);
+    assert.deepEqual(chain.sends, [], 'retry only prepares the review');
+  } finally { await s.close(); }
+});
+
+test('a pending network switch explains the wallet request; dismissing it cancels further preparation', async () => {
+  let finish;
+  const waiting = new Promise(resolve => { finish = resolve; });
+  const chain = networkWallet(chainFor(), 8453, [() => waiting]);
+  const s = await atLab(chain, { position: actionsFor() });
+  try {
+    await s.page.locator('[data-position-action="collect"]').click();
+    const dialog = s.page.locator('[data-position-dialog="collect"]');
+    await dialog.locator('[data-position-progress="switching"]').waitFor();
+    assert.match(await text(dialog), /Switch to Robinhood Chain in your wallet/);
+    assert.equal(await dialog.locator('[data-position-send="collect"]').isDisabled(), true);
+    assert.equal(await s.page.locator('[data-position-action="close"]').isDisabled(), true, 'another action cannot replace a pending wallet intent');
+    await dialog.screenshot({ path: join(shots(), 'position-network-pending.png') });
+    await s.page.keyboard.press('Escape');
+    finish(null);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    assert.equal(chain.log.includes('eth_call'), false, 'dismissed intent performs no position preparation');
+    assert.deepEqual(chain.sends, []);
+    await s.page.locator('[data-position-action="collect"]').waitFor();
+  } finally { finish(null); await s.close(); }
+});
+
+test('the Robinhood position page retains the owner action row while the connected wallet is on Base', async () => {
+  const chain = networkWallet(chainFor(), 8453);
+  const rpc = browserChain({
+    positions: [{ tokenId: '3135288', holder: OWNER, key: NFT.key, tickLower: NFT.tickLower, tickUpper: NFT.tickUpper, liquidity: NFT.liquidity, unclaimed: FEES }],
+    pools: { [poolIdOf(NFT.key)]: { sqrtPriceX96: NFT.sqrtPriceX96, tick: NFT.tick } },
+    tokens: { [USDG]: { symbol: 'USDG', decimals: 6 }, [UFG]: { symbol: 'UFG', decimals: 18 } },
+  });
+  const s = await atLab(chain, null, { hash: '/positions/3135288', rpc });
+  try {
+    await s.page.locator('[data-position-detail] [data-position-action="collect"]').waitFor();
+    await s.page.locator('[data-position-detail] [data-position-action="close"]').waitFor();
+    assert.equal(chain.log.includes('wallet_switchEthereumChain'), false);
+    assert.deepEqual(chain.sends, []);
+  } finally { await s.close(); }
+});
 const text = (locator) => locator.innerText();
 /** The one transaction sent, decoded: where it went, with what value, and the DECREASE / TAKE_PAIR it carries. */
 function sentStep(chain) {
