@@ -172,3 +172,29 @@ test('pending: a text some network has still to answer; never a short text or ha
   assert.equal(store.pending('0x12'), false);
   assert.equal(store.pending('usdc'), true, 'not answered yet: the search is still on its way');
 });
+
+test('unavailable discovery is distinct from a successful empty search and clears before a reopened lookup', async () => {
+  const { store, answer } = harness();
+  const close = store.ask('basecat');
+  await answer(8453, { kind: 'off' });
+  await answer(42161, { kind: 'hits', rows: [] });
+  assert.deepEqual(store.unavailable('basecat'), [8453], 'empty Arbitrum results are available, Base was not searched');
+  close();
+  store.ask('basecat');
+  assert.deepEqual(store.unavailable('basecat'), [], 'the retried network is pending, not permanently unavailable');
+  await answer(8453, { kind: 'hits', rows: [row(8453, 'BASECAT')] });
+  assert.deepEqual(store.unavailable('basecat'), []);
+  const pasted = harness();
+  pasted.store.ask(TOKEN);
+  await pasted.answer(8453, { kind: 'pasted', said: { state: 'unread' } });
+  await pasted.answer(42161, { kind: 'pasted', said: { state: 'none' } });
+  assert.deepEqual(pasted.store.unavailable(TOKEN), [8453], 'unread is not a missing token');
+  const metadata = harness();
+  const closeMetadata = metadata.store.ask(TOKEN);
+  await metadata.answer(8453, { kind: 'pasted', said: { state: 'metadata_unavailable' } });
+  await metadata.answer(42161, { kind: 'pasted', said: { state: 'token', token: row(42161, 'CAT').token } });
+  assert.deepEqual(metadata.store.unavailable(TOKEN), [8453]);
+  closeMetadata();
+  metadata.store.ask(TOKEN);
+  assert.deepEqual(metadata.store.unavailable(TOKEN), [], 'unread metadata can recover on another search');
+});

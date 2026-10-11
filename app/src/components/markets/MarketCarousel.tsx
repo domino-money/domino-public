@@ -195,20 +195,21 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
         ))}
       </span>
     ) : null
+  const navigation = railed && (
+    <div className="dm-mkt-nav">
+      {dots('bar')}
+      <div className="dm-mkt-arrows">
+        <IconButton label="Previous pools" icon={<IconChevronLeft />} variant="round" aria-controls="market-rail" disabled={edges.start} onClick={() => scrollPage(-1)} />
+        <IconButton label="Next pools" icon={<IconChevronRight />} variant="round" aria-controls="market-rail" disabled={edges.end} onClick={() => scrollPage(1)} />
+      </div>
+    </div>
+  )
   return (
     <>
-      <div className="dm-mkt-titlebar">
+      {heading !== null && <div className="dm-mkt-titlebar">
         <div className="min-w-0 animate-rise">{heading}</div>
-        {railed && (
-          <div className="dm-mkt-nav">
-            {dots('bar')}
-            <div className="dm-mkt-arrows">
-              <IconButton label="Previous pools" icon={<IconChevronLeft />} variant="round" aria-controls="market-rail" disabled={edges.start} onClick={() => scrollPage(-1)} />
-              <IconButton label="Next pools" icon={<IconChevronRight />} variant="round" aria-controls="market-rail" disabled={edges.end} onClick={() => scrollPage(1)} />
-            </div>
-          </div>
-        )}
-      </div>
+        {navigation}
+      </div>}
       {unsettled && (
         <div className="dm-mkt-rail" aria-hidden="true" data-featured-pending="">
           {[0, 1, 2].map((index) => (
@@ -245,6 +246,7 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
           })}
         </div>
       )}
+      {heading === null && <div className="dm-mkt-footer-nav">{navigation}</div>}
       {dots('rail')}
     </>
   )

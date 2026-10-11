@@ -186,15 +186,15 @@ test('a pool read again keeps its figures (they are about the pool, not its pric
   assert.equal(reads.rereadOf(figured, networks.refOf(figured), fixture('chain-pools-paired'), 2_000_000).v3FeeProtocol, 0x44);
 });
 
-test('a pasted address is named where it is a token on that network, and nothing where it is not', () => {
+test('a pasted address is named where it is a token; missing metadata stays unknown rather than claiming no contract', () => {
   const named = reads.pastedOf(8453, LIVE.toUpperCase().replace('0X', '0x'), fixture('chain-pools'));
   assert.equal(named.state, 'token');
   assert.deepEqual([named.token.address, named.token.symbol, named.token.decimals, named.token.chainId], [LIVE, 'LIVE', 18, 8453]);
-  assert.deepEqual(reads.pastedOf(8453, '0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f', fixture('chain-pools-none')), { state: 'none' }, 'no contract there: not listed');
+  assert.deepEqual(reads.pastedOf(8453, '0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f', fixture('chain-pools-none')), { state: 'metadata_unavailable' }, 'the response does not distinguish no contract from unread metadata');
   const partial = structuredClone(fixture('chain-pools'));
   const live = partial.tokens.find((token) => token.address === LIVE);
   Object.assign(live, { decimals: null, status: 'partial' });
-  assert.deepEqual(reads.pastedOf(8453, LIVE, partial), { state: 'none' }, 'a contract without decimals is no token to use');
+  assert.deepEqual(reads.pastedOf(8453, LIVE, partial), { state: 'metadata_unavailable' }, 'unknown decimals cannot prove absence');
   assert.equal(reads.pastedOf(8453, USDC_BASE, fixture('chain-pools')).token.symbol, 'USDC', 'the network’s own currency as the profile names it');
 });
 

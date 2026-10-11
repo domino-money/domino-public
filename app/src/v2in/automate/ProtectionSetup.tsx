@@ -33,7 +33,7 @@ function Picker({ positions, selected, onSelect }: { positions: readonly Protect
       const range = rangeView(position)
       return <button key={key} type="button" role="radio" aria-checked={selected === key} tabIndex={focusable === key ? 0 : -1}
         className="dm-seq-pick" data-protection-position={key} onClick={() => onSelect(key)} onKeyDown={(event) => move(event, index)}>
-        <span className="dm-seq-pick-marks" aria-hidden="true">{target.tokens.map((token) => <AddressMark key={token.address} address={token.address} size={28} />)}</span>
+        <span className="dm-seq-pick-marks" aria-hidden="true">{target.tokens.map((token) => <AddressMark key={token.address} address={token.address} chainId={target.chainId} size={28} />)}</span>
         <span className="dm-seq-pick-name">
           <bdi className="dm-seq-pick-pair">{target.tokens.map((token) => token.label).join(' / ')}</bdi>
           <span className="dm-seq-pick-meta"><span className="dm-chip">{v2Chain(target.chainId).name}</span><span>{feeWords(feeText(position.fee))}</span><span className="dm-seq-pick-id">#{position.tokenId}</span></span>

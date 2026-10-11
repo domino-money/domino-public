@@ -361,7 +361,7 @@ test('Load more sends the handle back exactly, keeps focus, and the handle never
   assert.deepEqual(log.errors.filter((e) => !/status of 401/.test(e)), []);
 });
 
-test('the fixture landing is the real app, labelled as fixture data by its banner and its ticker; the table’s fixture notice is the lab’s', async () => {
+test('the fixture landing is the real app, labelled by its visible fixture banner; the lab keeps its fixture notice and ticker', async () => {
   const landing = await context.newPage();
   await landing.goto(`${origin}/`, { waitUntil: 'networkidle' });
   await landing.locator('#pools tbody tr').first().waitFor();
@@ -369,16 +369,18 @@ test('the fixture landing is the real app, labelled as fixture data by its banne
   assert.match(text, /Selected pools/);
   assert.match(text, /\$12\.3K/);
   // Home's table shows the pools and their figures and nothing else (the owner's decision on the redesign), so the
-  // fixture build is labelled by its banner and its ticker there, and the notice stays in the read lab.
+  // fixture build is labelled by its visible banner; V3 Home has no ticker, and the notice stays in the read lab.
   assert.doesNotMatch(text, /Fixture data|Contract fixtures from read-v1/);
   assert.equal(await landing.locator('[data-build-banner="fixture"]').count(), 1);
-  assert.match(await landing.locator('[data-build-banner="fixture"]').innerText(), /read-v1 contract fixtures[\s\S]*not deployable/);
-  // textContent: the tag is set in capitals by the stylesheet, and innerText follows that.
-  assert.equal(await landing.locator('[data-ticker] [title="Contract fixtures, not observations"]').textContent(), 'Fixture');
+  assert.equal(await landing.locator('[data-build-banner="fixture"]').isVisible(), true, 'fixture data cannot be mistaken for a deployable build');
+  assert.match(await landing.locator('[data-build-banner="fixture"]').innerText(), /read-v1 contract fixtures[\s\S]*Not observations, not deployable/);
+  assert.equal(await landing.locator('[data-ticker]').count(), 0, 'Home keeps the approved V3 presentation without a ticker');
   await landing.close();
   const lab = await section('market-provider').innerText();
   assert.match(lab, /Fixture data/);
   assert.match(lab, /Contract fixtures from read-v1 1\.1\.0-rc\.3/);
+  // textContent: the lab's tag is set in capitals by the stylesheet, and innerText follows that.
+  assert.equal(await section('market-provider').locator('[data-ticker] [title="Contract fixtures, not observations"]').textContent(), 'Fixture');
 });
 
 test('Refresh keeps keyboard focus through its read; it is busy, never unmounted, while the read runs', async () => {

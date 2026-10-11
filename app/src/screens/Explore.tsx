@@ -1,9 +1,9 @@
 // The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
 import '../styles/screens.css'
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { SELECTED_POOL_CATALOGUE, catalogueTokens } from '../config/selectedPoolCatalogue'
-import { exploreHref, marketsHref, parseExploreHash, poolHref } from '../components/explore/routes'
+import { exploreHref, marketsHref, marketsNetworkHref, newNetworkHref, parseExploreHash, parseMarketsNetworkHash, poolHref } from '../components/explore/routes'
 import { useHash } from '../components/explore/useHash'
 import { IconChevronLeft, IconSearch } from '../components/icons'
 import { FilterBar } from '../components/markets/FilterBar'
@@ -13,18 +13,24 @@ import { Address } from '../components/read/screens/Address'
 import { CatalogueCandidates, PoolPicker } from '../components/read/screens/PoolPicker'
 import { SymbolText } from '../components/read/screens/SymbolText'
 import { TokenLookup } from '../components/read/screens/TokenLookup'
+import { NetworkTokenExplorer } from '../components/read/screens/NetworkTokenExplorer'
 import { TokenSearch } from '../components/read/screens/TokenSearch'
 import { StoredTokenExplorer } from '../components/read/screens/StoredTokenExplorer'
 import { SectionHead } from '../components/figures'
-import { Button, Card, Display, EmptyState, PageShell } from '../components/ui'
+import { Button, Card, Display, EmptyState, LinkButton, PageShell } from '../components/ui'
 import { parseAddressInput } from '../lib/read/screens/identity'
-import { featuredTitle, shortCount } from '../lib/read/featuredList'
+import { featuredTitle } from '../lib/read/featuredList'
 import { useFeatured } from '../lib/read/featuredSource'
 import { useRouteTitle } from '../lib/routeTitle'
 import { useReadSource } from '../lib/read/screens/readContext'
 import { askAgainLater } from '../lib/read/screens/screenRead'
 import { knownTokens } from '../lib/read/screens/tokenSearch'
 import { handoffFor, selectable, type TokenCandidate } from '../lib/read/screens/tokens'
+import type { NetworkToken, OtherChains } from '../lib/create/otherChains'
+import { recovering } from '../lib/staleRelease'
+
+type NetworksProps = { children: (others: OtherChains | null, checking: boolean) => ReactNode }
+const MarketsNetworks = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/journey/MarketsNetworks'), () => ({ default: ({ children }: NetworksProps) => children(null, false) }))) : null
 
 const NONE: ReadonlySet<string> = new Set()
 
@@ -42,47 +48,37 @@ function Title() {
 
 /**
  * The list: the rail of selected pools with their last 24 hours, the table
- * with its two filters, and a way to any other token's pools. Filters live in
- * this page's state only. A token chosen in either search goes to the token
+ * with its token filter, and a way to any other token's pools. The filter lives in
+ * this page's state only. A token chosen in the main search goes to the token
  * view by the address bar.
  *
  * Changed on purpose 2026-10-02 (owner: only today's list on Markets): one table, today's list. The second table audit
  * B5 (2026-10-01) put under it, "Selected pools" with the embedded pools the list did not name, is gone, and the pools
  * the list does not name are not read here (tests/release.browser.test.mjs (v)).
  */
-function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void }) {
+function MarketsList({ onToken, others, onNetwork }: { onToken: (candidate: TokenCandidate) => void; others: OtherChains | null; onNetwork: (row: NetworkToken) => Promise<{ ok: true }> }) {
   const source = useReadSource()
   const [asset, setAsset] = useState<string | null>(null)
-  const [query, setQuery] = useState('')
   const [count, setCount] = useState<{ shown: number; total: number } | null>(null)
+  const catalogueSearch = useRef<HTMLDivElement>(null)
   // The list on screen (lib/read/featuredSource.ts) names the section and the tokens the search knows by name.
   const featured = useFeatured()
-  // A short list (fewer pools than its rules ask for) opens the way to every other pool (audit B1, B5). Changed on purpose
-  // 2026-10-03 (the owner): it no longer says "5 of 6 today" beside the title.
-  const short = featured.settled ? shortCount(featured) : null
-  const [catalogueChoice, setCatalogueOpen] = useState<boolean | null>(null)
-  const catalogueOpen = catalogueChoice ?? short !== null
+  // The catalogue is always within reach. TokenSearch still reads only for an entered query.
   // The embedded list's tokens stay known by name after the list's own, so a featured list never makes one unfindable.
   const known = knownTokens({ catalogue: catalogueTokens(featured.source === 'bundled' ? featured.entries : [...featured.entries, ...SELECTED_POOL_CATALOGUE]), candidates: [] })
   const ranked = __DOMINO_POOL_SET__ === 'selected' && featured.source === 'server'
-  // An address typed as a pair name matches no pool; the token search starts from it instead.
-  const pasted = parseAddressInput(query.trim())
-  const seed = pasted.ok ? pasted.wire : undefined
-  const filtered = asset !== null || query.trim() !== ''
-  const clear = () => {
-    setAsset(null)
-    setQuery('')
-  }
+  const filtered = asset !== null
+  const clear = () => setAsset(null)
 
   const empty = (
     <EmptyState
       icon={<IconSearch />}
       title="No selected pool matches"
-      body="Find a listed token by name, or paste any Robinhood Chain token address to see its pools."
+      body="Search a token name or contract address to see its pools."
       className="dm-mkt-empty"
       action={
         <div className="dm-mkt-empty-actions">
-          {source && <TokenSearch key={seed ?? ''} source={source} known={known} onFound={onToken} id="markets-token" label="Token name or address" initialValue={seed} />}
+          {source && <Button size="sm" onClick={() => catalogueSearch.current?.querySelector('input')?.focus()}>Search all pools</Button>}
           <Button variant="ghost" size="sm" onClick={clear}>
             Clear filters
           </Button>
@@ -93,44 +89,41 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
 
   return (
     <>
-      <MarketCarousel heading={<Title />} />
+      <header className="dm-v3-market-heading animate-rise">
+        <Title />
+        <div ref={catalogueSearch} className="dm-v3-market-search" data-catalogue-search="">
+          {source && <TokenSearch source={source} known={known} onFound={onToken} id="markets-catalogue-token" label="Token name or address" placeholder="Search token or address" home={others?.home} others={others?.tokens} othersSearch={others?.search} onOther={others ? onNetwork : undefined} />}
+        </div>
+      </header>
+      <section className="dm-v3-market-featured animate-rise" style={rise(1)} aria-label="Featured pool charts">
+        <MarketCarousel heading={null} />
+      </section>
+      <section className="dm-mkt-pools animate-rise" style={rise(2)} aria-labelledby="markets-pools-title">
+        <div className="dm-mkt-pools-toolbar">
+          <SectionHead
+            id="markets-pools-title"
+            title={featuredTitle(ranked ? 'server' : 'bundled')}
+            className="dm-mkt-pools-head"
+            aside={
+              filtered && count && count.shown > 0 ? (
+                <span className="tnum" role="status">
+                  {count.shown} of {count.total}
+                </span>
+              ) : undefined
+            }
+          />
+          <FilterBar asset={asset} onAsset={setAsset} />
+        </div>
+        <div className="dm-mkt-pools-table">
+          <MarketsTable variant="full" filter={{ asset, query: '' }} onMatchCount={(shown, total) => setCount({ shown, total })} empty={empty} />
+        </div>
+      </section>
       <details className="dm-details dm-mkt-guide">
         <summary>New to pools? Start here</summary>
         <div className="dm-mkt-guide-grid">
-          <div><span className="dm-guide-number" aria-hidden="true">01</span><h2>Choose a token pair</h2><p>A pool holds two tokens. People pay a fee to trade between them.</p></div>
+          <div><span className="dm-guide-number" aria-hidden="true">01</span><h2>Choose a pair</h2><p>A pool holds two tokens. People pay a fee to trade between them.</p></div>
           <div><span className="dm-guide-number" aria-hidden="true">02</span><h2>Compare the activity</h2><p>TVL is the money in the pool. Volume is how much people traded. APR is an estimate, not a promise.</p></div>
-          <div><span className="dm-guide-number" aria-hidden="true">03</span><h2>Make it your position</h2><p>Open a pool to explore it, choose a price range and review your amount before connecting your wallet.</p></div>
-        </div>
-      </details>
-      <section className="dm-mkt-pools animate-rise" style={rise(2)} aria-labelledby="markets-pools-title">
-        <SectionHead
-          id="markets-pools-title"
-          title={featuredTitle(ranked ? 'server' : 'bundled')}
-          className="dm-mkt-pools-head"
-          aside={
-            filtered && count && count.shown > 0 ? (
-              <span className="tnum" role="status">
-                {count.shown} of {count.total}
-              </span>
-            ) : undefined
-          }
-        />
-        <FilterBar asset={asset} query={query} onAsset={setAsset} onQuery={setQuery} />
-        <div className="dm-mkt-pools-table">
-          <MarketsTable variant="full" filter={{ asset, query }} onMatchCount={(shown, total) => setCount({ shown, total })} empty={empty} />
-        </div>
-      </section>
-      <details className="dm-details dm-mkt-catalogue animate-rise" style={rise(3)} data-catalogue-search="" open={catalogueOpen} onToggle={(event) => setCatalogueOpen(event.currentTarget.open)}>
-        <summary>
-          <IconSearch size={16} className="dm-mkt-catalogue-icon" />
-          Search the pool catalogue
-        </summary>
-        <div className="grid gap-4">
-          {catalogueOpen && source && (
-            <div className="dm-mkt-catalogue-search">
-              <TokenSearch source={source} known={known} onFound={onToken} id="markets-catalogue-token" label="Find a token by name or address" />
-            </div>
-          )}
+          <div><span className="dm-guide-number" aria-hidden="true">03</span><h2>Create your position</h2><p>Choose a price range and an amount. Review everything before your wallet signs.</p></div>
         </div>
       </details>
     </>
@@ -147,11 +140,13 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
  * opened it. The catalogue is paged on request, and a candidate opens its page
  * only once the pools route has verified it at the latest block.
  */
-export function Explore() {
+function ExploreBody({ others = null, checkingNetworks = false }: { others?: OtherChains | null; checkingNetworks?: boolean }) {
   const source = useReadSource()
-  const location = parseExploreHash(useHash())
+  const hash = useHash()
+  const location = parseExploreHash(hash)
+  const networkLocation = parseMarketsNetworkHash(hash)
   // The tab's name (lib/routeTitle.ts, audit E11): Markets, or a token's pools.
-  useRouteTitle(location.token ? 'Token pools' : 'Markets')
+  useRouteTitle(location.token || networkLocation ? 'Token pools' : 'Markets')
   const [storedReads, setStoredReads] = useState<'checking' | 'enabled' | 'legacy' | 'failed'>('checking')
   // The quiet re-asks of the token view's capabilities check, by token (audit A11, 2026-10-01).
   const [checked, setChecked] = useState<{ token: string; attempt: number } | null>(null)
@@ -187,6 +182,7 @@ export function Explore() {
   const [finding, setFinding] = useState<string | null>(null)
   // The answer the token search read for the address it opens, handed to that token view once.
   const [handoff, setHandoff] = useState<TokenCandidate | null>(null)
+  const [networkHandoff, setNetworkHandoff] = useState<NetworkToken | null>(null)
   // The token chosen on this page, so a link from elsewhere is told apart
   // from a search made here: a link says "find pools", a search asks first.
   const typed = useRef<string | null>(null)
@@ -231,6 +227,12 @@ export function Explore() {
     window.location.hash = exploreHref(chosen.wire)
   }
 
+  const onNetwork = async (row: NetworkToken): Promise<{ ok: true }> => {
+    flushSync(() => setNetworkHandoff(row))
+    window.location.hash = marketsNetworkHref(row.chainId, row.token.address)
+    return { ok: true }
+  }
+
   const open = (poolId: string, token: string) => {
     window.location.hash = poolHref(poolId, token)
   }
@@ -238,10 +240,19 @@ export function Explore() {
   const showPools = candidate !== null && finding === candidate.key && selectable(candidate)
   const canBrowse = candidate !== null && selectable(candidate)
 
+  if (networkLocation) {
+    return <PageShell data-markets=""><NetworkTokenExplorer
+      key={`${networkLocation.chainId}:${networkLocation.token.toLowerCase()}`}
+      location={networkLocation} others={others} checking={checkingNetworks} initial={networkHandoff}
+      navigation={<a href={marketsHref()} className="dm-mkt-back"><IconChevronLeft size={14} />Markets</a>}
+      actions={(token) => <LinkButton href={newNetworkHref(networkLocation.chainId, token.address)} data-network-new-position="">New position</LinkButton>}
+    /></PageShell>
+  }
+
   if (!wire) {
     return (
       <PageShell data-markets="">
-        <MarketsList onToken={onToken} />
+        <MarketsList onToken={onToken} others={others} onNetwork={onNetwork} />
       </PageShell>
     )
   }
@@ -313,4 +324,11 @@ export function Explore() {
       </details>}
     </PageShell>
   )
+}
+
+export function Explore() {
+  if (!MarketsNetworks) return <ExploreBody />
+  return <Suspense fallback={<PageShell data-markets=""><Title /></PageShell>}>
+    <MarketsNetworks>{(others, checking) => <ExploreBody others={others} checkingNetworks={checking} />}</MarketsNetworks>
+  </Suspense>
 }

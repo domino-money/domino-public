@@ -543,7 +543,6 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const proposed = proposal?.recoveryFrom ? proposal.intent : previousUnsent ? null : intent ?? proposal?.intent
   const selected = proposed?.legs ?? []
   const networks = [...new Set(selected.map((leg) => originName(leg.originChainId)))]
-  const available = [...new Set(holdings.map((holding) => originName(holding.chainId)))]
   const observedNetworks = CANDIDATE_ORIGINS.filter((profile) => {
     const candidate = originCandidate(profile.chainId)
     return balances && candidate && candidate.chainId !== chainId && (holdingsFromChainBalances(balances, candidate)?.holdings.some((holding) => holding.raw > 0n) ?? false)
@@ -556,16 +555,16 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const unknownOrigin = intent?.legs.find((leg) => leg.state === 'unknown')?.originChainId ?? held.find((entry) => entry.state === 'open')?.originChainId
   if (!lacks.length && !gasOnly && !budget && !intent && !deposits.length && !pending.length && !held.length) {
     if (!discreet || !readDone || !observedNetworks.length) return null
-    return <div className="dm-funds-discovery" data-funds-line="" data-funds-sources=""><strong>Use funds from {names(observedNetworks)}</strong><span>Enter an amount. Domino will check the transfer and prepare the tokens for this position.</span></div>
+    return <div className="dm-funds-discovery" data-funds-line="" data-funds-sources=""><strong>Use funds from {names(observedNetworks)}</strong><span>Enter an amount to check your options.</span></div>
   }
   if (optional && !remoteOpened && !intent && !deposits.length && !pending.length && !held.length) {
     if (!observedNetworks.length) return null
-    return <button type="button" className="dm-funds-line dm-funds-remote" data-funds-sources="" onClick={() => setRemoteSelection(selection)}><span className="dm-funds-line-text">Funds available on {names(observedNetworks)}</span><span className="dm-funds-line-action">Use another network</span></button>
+    return <button type="button" className="dm-funds-line dm-funds-remote" data-funds-sources="" onClick={() => setRemoteSelection(selection)}><span className="dm-funds-remote-mark" aria-hidden="true">↗</span><span className="dm-funds-line-text">Funds available on {names(observedNetworks)}</span><span className="dm-funds-line-action">Use another network</span></button>
   }
   return <section className="dm-funds-offer dm-funding" data-funds-offer="" data-funds-mode={gate.mode} data-funds-services={services?.source ?? 'none'} data-funds-token={target} data-funding-state={displayScreen} aria-label="Fund this position">
     <div className="dm-funds-heading"><span className="dm-funds-icon" aria-hidden="true">↗</span><div>
       <h4 data-funds-title="">{run ? 'Getting your funds ready' : previousUnsent ? 'Choose funds for this position' : proposal?.recoveryFrom ? 'Your updated transfer' : intent || foreignPending ? 'Your transfer' : proposal ? `Use your funds on ${names(networks)}` : observedNetworks.length ? `Funds available on ${names(observedNetworks)}` : 'Find funds for this position'}</h4>
-      <p data-funds-lack={targetLack && !budget ? 'short' : undefined} data-funds-lack-raw={!budget ? targetLack?.shortRaw?.toString() : undefined}>{!live ? FUNDS_TEXT.locked : previousUnsent ? 'Checking the previous request before choosing funds for this position.' : changed ? 'Your position changed. Transfers already sent continue to your wallet.' : hasUnknown ? 'Waiting for a clear answer from your wallet.' : intent || foreignPending ? 'Funds arrive in your wallet. Your position amount stays the same.' : proposal ? `Move ${receiptAmount ?? 'funds'} to ${destination.name} for this position.` : !readDone || screen === 'quoting' ? 'Finding the funds for this position…' : holdings.length ? `You have funds on ${names(available)}.` : 'Checking the networks supported by Domino.'}</p>
+      <p data-funds-lack={targetLack && !budget ? 'short' : undefined} data-funds-lack-raw={!budget ? targetLack?.shortRaw?.toString() : undefined}>{!live ? null : previousUnsent ? 'Checking the previous request before choosing funds for this position.' : changed ? 'Your position changed. Transfers already sent continue to your wallet.' : hasUnknown ? 'Waiting for a clear answer from your wallet.' : intent || foreignPending ? 'Funds arrive in your wallet. Your position amount stays the same.' : proposal ? `Move ${receiptAmount ?? 'funds'} to ${destination.name} for this position.` : null}</p>
     </div></div>
     <div className="dm-funds-body" data-funds-body="">
       {!live && <p data-funds-locked="">{FUNDS_TEXT.locked}</p>}

@@ -15,7 +15,6 @@ import type { TokenDisplay } from '../../../lib/read/types'
 import { automationImpact, useVaultRecord } from '../../../lib/automationImpact'
 import { useAutomation } from '../../../lib/automationState'
 import { AUTOMATION_NAME, AutomationImpact } from './AutomationImpact'
-import { AutomationFrame } from './AutomationFrame'
 import { FeesActivity, TokenFigure } from './FeesActivity'
 import { FeesChart } from './FeesChart'
 import { PendingPlot } from './PendingPlot'
@@ -23,7 +22,6 @@ import { feesView, periodView, type FeesView } from './model'
 import { anyPositive, basisOf, type Basis, growth, positive, stateToken, unitsNumber, unitsText, valueFigure, valueUnits } from './value'
 
 export interface FeesCardProps {
-  kind: 'plain' | 'compound' | 'domino'
   /** One position. */
   source: { tokenId: string }
   /** The page already shows UNCLAIMED FEES (the value band): no compact card repeats it. */
@@ -34,10 +32,14 @@ export interface FeesCardProps {
   tokens?: readonly [TokenDisplay, TokenDisplay]
   /** §12.4: under a position read that failed, the card names its pair itself. */
   standalone?: boolean
-  /** Automation kinds: the caller's existing sentence. */
-  empty?: ReactNode
   /** Whether the card lists the activity under its chart (a position's page shows it in a card of its own, 2026-09-27). */
   activity?: boolean
+  /** Integrated charts workspace: exact breakdown is available on demand. */
+  workspace?: boolean
+}
+
+function Breakdown({ compact, children }: { compact: boolean; children: ReactNode }) {
+  return compact ? <details className="dm-position-fee-breakdown"><summary>Breakdown</summary><div>{children}</div></details> : children
 }
 
 /** A symbol from /state as text (untrusted), or the short address when unreadable. */
@@ -205,10 +207,10 @@ const savedWhen = (timestamp: number) => `${shortDate(timestamp)} ${shortTime(ti
  * read says so in one calm line (the page asks again by itself). The hero and the legend are exact all along. A history
  * with nothing earned yet, a saved copy without the points, and a page where no past read can be made show All alone.
  */
-export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standalone = false, empty, activity = true }: FeesCardProps) {
+export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone = false, activity = true, workspace = false }: FeesCardProps) {
   const titleId = useId()
   const id = source.tokenId
-  const first = useFeeHistory(kind === 'plain' ? id : null, 'page')
+  const first = useFeeHistory(id, 'page')
   const [chosen, setChosen] = useState<FeesPeriod | null>(null)
   const [inspected, setInspected] = useState<number | null>(null)
 
@@ -221,16 +223,16 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
   }, [view])
   const fallback = view ? defaultPeriodFor(view.span) : 'all'
   const period: FeesPeriod = chosen && offered.includes(chosen) ? chosen : offered.includes(fallback) ? fallback : 'all'
-  const periodState = usePastReads(kind === 'plain' && drawn ? id : null, period)
+  const periodState = usePastReads(drawn ? id : null, period)
   const start = drawn ? periodStart(drawn.history, period) : null
   const pv = useMemo(() => (view && start ? periodView(view, period, start) : null), [view, period, start])
-  useLoadMilestone('position', 'chart', kind === 'plain' && view && (pv || periodState === 'unavailable') ? historyLoadQuality(first) : null)
+  useLoadMilestone('position', 'chart', view && (pv || periodState === 'unavailable') ? historyLoadQuality(first) : null)
 
   // 2026-09-27 (the owner: show what Domino's automation did): one position's page reads its sequence (the chip's own
   // read, shared) and, when a vault holds it, that vault's record up to the NFT's latest settlement.
   const state = first.phase === 'loading' || first.phase === 'unclaimed-only' || first.phase === 'verified' || first.phase === 'cached' ? first.state : null
   // The early/saved card must not start a duplicate automation scan before the shared state read supplies it.
-  const automation = useAutomation(kind === 'plain' && state && first.phase !== 'cached' ? id : null)
+  const automation = useAutomation(state && first.phase !== 'cached' ? id : null)
   const sequence = automation.phase === 'ready' && automation.state.automation !== 'plain' && automation.state.automation !== 'other' ? automation.state : null
   // A saved chart never drives automation attribution or its additional reads.
   const own = first.phase === 'verified' && view ? view.sources[0] : null
@@ -243,10 +245,6 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
     () => (sequence && own && record ? automationImpact({ tokenId: id, kind: sequence.automation, history: own.history, state: own.state, basis: own.basis, record }) : null),
     [sequence, own, record, id],
   )
-
-  if (kind !== 'plain') {
-    return <AutomationFrame title="Fees earned" art={kind} empty={empty} />
-  }
 
   const saved = first.phase === 'cached' ? first : null
   // Changed on purpose 2026-10-01 (items A13 and D4): plain words and the page's UTC time; the block is in Details.
@@ -356,7 +354,7 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
             )}
           </p>
 
-          {view.zero ? (
+          <Breakdown compact={workspace}>{view.zero ? (
             // Nothing earned yet: one quiet row says both figures; no split bar (a bare track reads as an empty progress bar).
             <div className="dm-fees-legend dm-fees-legend--zero">
               <div className="dm-fees-legend-row" title={blockTitle}>
@@ -416,7 +414,7 @@ export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standa
                 <div className="dm-fees-impact-slot" data-kind={sequence.automation} aria-hidden="true" />
               ) : null)}
             </>
-          )}
+          )}</Breakdown>
         </div>
         {plot}
       </div>

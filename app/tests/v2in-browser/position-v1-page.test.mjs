@@ -167,10 +167,19 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     const setup = page.locator('[data-v2in-exit="plain"]');
     assert.equal(await setup.isVisible(), false, 'the empty setup card is no longer repeated below the position');
     assert.equal(await detail.locator('[data-position-v2-blocked]').count(), 0, 'nothing is blocked on this position');
-    for (const width of [1440,390,320]) {
+    for (const width of [1440,1280,390,320]) {
       await page.setViewportSize({width,height:960});
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      await page.screenshot({path:join(shots(),'position-'+width+'.png'),fullPage:true});
+      if (width === 320) {
+        const header = await page.evaluate(() => {
+          const brand = document.querySelector('.dm-wordmark');
+          const wallet = document.querySelector('.dm-wallet-pill');
+          return { brandWidth: brand.getBoundingClientRect().width, brandContent: brand.scrollWidth, gap: wallet.getBoundingClientRect().left - brand.getBoundingClientRect().right };
+        });
+        assert.ok(header.brandContent <= header.brandWidth + 1 && header.gap >= 6, `connected header keeps visible branding clear of the wallet: ${JSON.stringify(header)}`);
+      }
+      await page.screenshot({path:join(shots(),'position-'+width+'.png'),fullPage:true,animations:'disabled'});
+      assert.equal(await detail.locator('[data-cell="price"] .dm-pos-price .dm-fig-lg').evaluate(node => { const range = document.createRange(); range.selectNodeContents(node); return range.getClientRects().length; }), 1, 'current price keeps its exact digits together at '+width);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth),true,'position fits at '+width);
     }
     await page.setViewportSize({width:1180,height:900});
@@ -222,8 +231,12 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     assert.equal(await text(add.locator('[data-position-locked]')), LOCKED);
     assert.equal(await add.locator('[data-position-locked]').count(), 1, 'the gate\'s sentence once');
     assert.equal(await add.locator('[data-position-confirm], [data-position-send], [data-position-preview-note], [data-position-test-data]').count(), 0, 'no wallet step, no second note and no test data in the preview');
-    await page.keyboard.press('Escape');
+    await inspectDialog(add, 'add-liquidity-review');
+    await add.getByRole('button', { name: 'Back', exact: true }).click();
+    assert.equal(await add.locator('[data-position-amount] input').first().inputValue(), '1', 'Back preserves the amount without submitting it');
+    await add.getByRole('button', { name: 'Close', exact: true }).click();
     await add.waitFor({ state: 'detached' });
+    assert.equal(await actions.locator('[data-position-v2-action="increase"]').evaluate(node => node === document.activeElement), true, 'cancel restores focus to the action that opened the sheet');
 
     // Change range: the same.
     await pick('changeRange');
@@ -245,7 +258,10 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     await range.locator('[data-position-request="changeRange"]').waitFor({ timeout: 30_000 });
     assert.match(await text(range.locator('[data-position-request="changeRange"]')), /^Price range 1 USDG = \S+ to \S+ UFG How much All Slippage 0\.5%$/);
     assert.equal(await text(range.locator('[data-position-locked]')), LOCKED);
-    await page.keyboard.press('Escape');
+    await inspectDialog(range, 'change-range-review');
+    await range.getByRole('button', { name: 'Back', exact: true }).click();
+    assert.equal(await range.getByRole('radio', { name: 'Medium', exact: true }).getAttribute('aria-checked'), 'true', 'Back keeps the chosen range');
+    await range.getByRole('button', { name: 'Close', exact: true }).click();
     await range.waitFor({ state: 'detached' });
 
     // Withdraw in one token: through Domino (its fee said); what was chosen, then the gate's sentence.
@@ -259,6 +275,7 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     await exit.locator('[data-position-request="exit"]').waitFor({ timeout: 30_000 });
     assert.match(await text(exit.locator('[data-position-request="exit"]')), /^How much All Receive (USDG|UFG) Slippage 0\.5%$/);
     assert.equal(await text(exit.locator('[data-position-locked]')), LOCKED);
+    await inspectDialog(exit, 'withdraw-one-token-review');
     // Back to the form: in both tokens, straight at Uniswap, the position read through the wallet (already on Robinhood
     // Chain: no switch is asked), no Domino fee.
     await exit.locator('[data-position-review-back]').click();
@@ -269,6 +286,7 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     assert.match(await text(exit.locator('[data-position-receive="close"]')), /^You receive 0\.99\d* USDG 325\.70\d* UFG At least 0\.99\d* USDG 32\d\.\d+ UFG Domino fee No Domino fee Network fee Up to [\d.]+ ETH$/, 'principal and fees as the chain has them now');
     assert.equal(await text(exit.locator('[data-position-locked]')), LOCKED);
     assert.equal(await exit.locator('[data-position-send], [data-position-request]').count(), 0, 'no wallet button in the preview; the chain\'s figures, not the request');
+    await inspectDialog(exit, 'withdraw-both-review');
     await page.screenshot({ path: join(shots(), 'position-v2-v1-page-withdraw.png') });
     await page.keyboard.press('Escape');
     await exit.waitFor({ state: 'detached' });

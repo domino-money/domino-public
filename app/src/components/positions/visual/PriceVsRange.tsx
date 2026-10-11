@@ -16,6 +16,7 @@ import { rem } from '../../../lib/rootScale'
 import { PAD_BOTTOM, PAD_TOP, PLOT_HEIGHT, PLOT_HEIGHT_PHONE, RangeFactsContext, RangeHead } from './RangeStatus'
 import { dateTicks, spacedTimeTicks } from './ticks'
 import { usePoolHistory, type PoolHistory, type PoolHistoryAsk } from './usePoolHistory'
+import { positionPlotHeight, usePositionChartOptions } from '../PositionChartOptions'
 
 /** The labels' room at the plot's right: wide enough for the widest figure it shows, within these. */
 const GUTTER_MIN = 76
@@ -75,6 +76,7 @@ export function PriceVsRange({ history = null, openedAt = null, closedAt = null,
 function PriceChart({ facts, ask, openedAt, closedAt, observations }: { facts: RangeFacts; ask: PoolHistoryAsk | null; openedAt: number | null; closedAt: number | null; observations: PoolPriceObservations | null }) {
   const { base, quote, lower, upper, lowerText, upperText, now, nowText, where } = facts
   const phone = useMediaQuery('(max-width: 767px)')
+  const { expanded, showPoints } = usePositionChartOptions()
   const knownMint = openedAt !== null && Number.isSafeInteger(openedAt) && openedAt > 0 ? openedAt : null
   // Fetch independently of the mint/financial ledger. The line still requires verified lifecycle evidence below.
   const history = usePoolHistory(ask)
@@ -178,10 +180,11 @@ function PriceChart({ facts, ask, openedAt, closedAt, observations }: { facts: R
               <g clipPath={`url(#${inId})`}>{strokes('in')}</g>
             </>
           )}
+          {showPoints && <g data-measured-points="range">{points.map((point, index) => <circle key={index} cx={x(point.t)} cy={y(point.price)} r={3} className="dm-position-measured-point" data-tone={closed ? 'closed' : point.inRange ? 'in' : 'out'} />)}</g>}
         </>
       )
     },
-    [scales, edges, line, closed, inId, outId, bandId, hasUpper, hasLower, start, knownMint],
+    [scales, edges, line, closed, inId, outId, bandId, hasUpper, hasLower, start, knownMint, showPoints, points],
   )
 
   const axes = useCallback(
@@ -283,7 +286,7 @@ function PriceChart({ facts, ask, openedAt, closedAt, observations }: { facts: R
       <RangeHead facts={facts} />
       <ChartFrame
         className="dm-pvr"
-        height={phone ? PLOT_HEIGHT_PHONE : PLOT_HEIGHT}
+        height={positionPlotHeight(phone ? PLOT_HEIGHT_PHONE : PLOT_HEIGHT, phone, expanded)}
         padding={{ top: PAD_TOP, right: gutter, bottom: PAD_BOTTOM, left: 0 }}
         label={`Price range chart. ${words}.`}
         points={drawn ? points.length : 0}

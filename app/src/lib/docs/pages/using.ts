@@ -5,7 +5,7 @@ import type { DocPage } from '../types'
 export const MARKETS: DocPage = {
   slug: 'markets',
   title: 'Markets',
-  summary: 'The Uniswap pools you can use on Robinhood Chain, their figures, and how to find any token’s pools.',
+  summary: 'Find pools on Robinhood Chain, Base and Arbitrum One, and understand their figures.',
   sections: [
     {
       id: 'pools-table',
@@ -27,7 +27,7 @@ export const MARKETS: DocPage = {
           [b('24h volume'), ': how much was traded through the pool over the last day.'],
           [b('APR'), ': the pool’s fees over a year, as a rate, worked out from the last day. It describes the pool, not your position, and is not a promise.'],
         ),
-        p('The APR is Domino’s own where its history covers the day, and the estimated APR otherwise. Filter the rows by asset or by pair name.'),
+        p('The APR is Domino’s own where its history covers the day, and the estimated APR otherwise. Filter the rows by asset.'),
       ],
     },
     {
@@ -44,10 +44,11 @@ export const MARKETS: DocPage = {
       id: 'find-a-token',
       title: 'Find a token’s pools',
       blocks: [
-        // Changed on purpose 2026-10-01 (audit E19, live note L12): no Find pools button; any name works.
-        p(b('Search the pool catalogue'), ', under the table, reaches every other pool. Type a token’s name or paste its address; its pools are listed, each verified on chain.'),
+        p('The search at the top finds tokens on Robinhood Chain, Base and Arbitrum One. Search a known token by name, or paste its contract address. Check the network label before choosing.'),
         // 2026-10-01 (items V2, V3, I1).
-        p('A token’s page lists the pools Domino stores and those a market data provider lists, each once: today’s list first, then by liquidity. Pools with a very high fee, or that Domino can’t open positions in, are flagged and kept behind ', b('Show all'), '.'),
+        p('On Robinhood Chain, a token’s page lists stored and provider-listed pools, each once: today’s list first, then by liquidity. High-fee or unsupported pools stay behind ', b('Show all'), '.'),
+        p('On Base and Arbitrum One, the token’s page shows pools verified by Domino’s reader. ', b('New position'), ' keeps the token and network; choose the pool in the next screen.'),
+        p('An unavailable lookup does not mean the token does not exist.'),
         p('Anyone can name a token anything. Tokens that share a name show their liquidity and say so, and one posing as USDG, WETH or ETH is called out; a pool holding one shows a warning instead of ', b('Create a position'), '.'),
       ],
     },
@@ -126,7 +127,7 @@ export const NEW_POSITION: DocPage = {
       title: 'Pool',
       blocks: [
         shot('new-pool', 'Step 1: choosing the pool.'),
-        p('Find other pools by their tokens, Uniswap version and fee.'),
+        p('Search by name or contract address, then choose a pool. Check the network; Markets keeps your selection.'),
       ],
       subsections: [
         {
@@ -190,27 +191,25 @@ export const BRING_FUNDS: DocPage = {
       id: 'where',
       title: 'Where it appears',
       blocks: [
-        // Changed on purpose 2026-10-06 (the owner's points 1 and 2): one line before an amount; after one the wallet can't
-        // fund, the networks holding something, and Other networks.
-        p('Before you type an amount, one line under the amounts shows what you hold on another network; select it to bring it all (a little ETH stays for fees). Once your wallet can’t fund the amount, even with a swap, the networks holding something are listed, and ', b('Other networks'), ' reaches more, such as Ethereum.'),
-        p('Domino reads your balances on Robinhood Chain, Base and Arbitrum One without your wallet, and picks the token and the amount. You sign in once; nothing is sent until you confirm.'),
+        // 2026-10-10: transfer offers follow the position amount; remote funding is optional when local funds cover it.
+        p('In the Amount step, Domino shows funds available on other networks. Enter your position amount to check a transfer. If you can already pay on the position’s network, ', b('Use another network'), ' lets you check this option too.'),
+        p('Domino checks supported balances on Robinhood Chain, Ethereum, Base, Arbitrum One and OP Mainnet, excluding the position’s network. Transfers need an available route and ETH for fees. Nothing moves until you confirm in your wallet.'),
       ],
     },
     {
       id: 'how',
       title: 'How it works',
       blocks: [
-        // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct): the fees in view; one confirmation where it batches.
         {
           kind: 'steps',
           items: [
-            { title: 'Choose', body: ['The network. The amount is what the position lacks, worked out from the bridge’s own quote, never more than you hold. Change amount lets you set it yourself.'] },
-            { title: 'Get a quote', body: ['Domino’s service asks two bridges, Relay and Across, and offers the one that delivers more after every fee. The quote shows what you receive, the least you receive, about how long it takes, Domino’s fee and the network fee.'] },
-            { title: 'Deposit', body: ['Your wallet switches to that network and sends it: a token takes an approval of the exact amount and then the deposit, in one confirmation when your wallet can send both together; ETH takes one.'] },
-            { title: 'Use it', body: ['It arrives in your own wallet on the position’s network, your wallet goes back there, and the same position continues with it.'] },
+            { title: 'Check your funds', body: ['Domino quotes what your position needs, using one or more networks. Each amount is the maximum to send; network fees are separate. Edit the position amount to change it.'] },
+            { title: 'Get a quote', body: ['Domino compares quotes from Relay and Across. The quote shows what you receive, the least you receive, about how long it takes, Domino’s fee and the network fee.'] },
+            { title: 'Confirm the transfer', body: ['Select Use these funds, then confirm in your wallet: a token takes an approval of the exact amount and then the deposit, in one confirmation when your wallet can send both together; ETH takes one. Different networks may need separate confirmations.'] },
+            { title: 'Continue your position', body: ['The funds arrive in your own wallet on the position’s network. Continue to review any token conversion and confirm the position. The transfer itself does not create it.'] },
           ],
         },
-        p('A quote lasts 2 minutes; past it, the step asks for a new one. The step follows your deposit until it arrives, even after a reload. With no ETH on the position’s network for fees, ', b('Get gas'), ' lets Relay deliver a little ETH out of the deposit; Across can’t.'),
+        p('Open ', b('Transfer details'), ' to see the fees and arrival estimate. If the quote expires, select ', b('Update transfer'), ' before continuing. Domino follows transfers already sent, even after a reload or a change of pool.'),
       ],
     },
     {

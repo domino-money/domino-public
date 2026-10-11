@@ -364,22 +364,17 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
       {actions && <div className="dm-pool-actions">{actions}</div>}
     </div>
 
-    <div className="dm-pool-a-lead grid gap-3">
-      {notice}
-      <p className="dm-pool-intro" data-pool-intro="">
-        {usable ? 'Add tokens to share the fees when people swap ' : 'People swap '}<b><SymbolText token={base} /></b> and <b><SymbolText token={quote} /></b>{usable ? '.' : ' in this pool.'}
-      </p>
-    </div>
+    {notice && <div className="dm-pool-a-lead grid gap-3">{notice}</div>}
 
     <div className="dm-pool-figures dm-pool-a-figs" data-pool-figures="" data-market-read={shown ? (answered?.origin ?? 'read') : loading ? 'loading' : 'none'} data-market-reason={failure?.state}>
       <StatStrip cols={metricsListed ? 5 : 4} layout="tiles" className="dm-pool-stats">
         {aprFromHistory && apr
-          ? <Stat label="APR" info="What the pool’s fees come to over a year, from Domino’s own history of its last day. It describes the pool, not your position, and is not a promise." className="dm-pool-stat" sub="A year, at recent activity">{figure(<MetricCell metric={apr} percent tone="in" />)}</Stat>
-          : <Stat label="APR" info="What the pool’s fees come to over a year, estimated from its last day of trading. It describes the pool, not your position, and is not a promise." className="dm-pool-stat" sub={shown || aprStandIn ? (usable || aprNumber !== null ? 'A year, at recent activity' : 'Not estimated for this pool') : loading ? <Skeleton className="dm-pool-fig-sub-skel" /> : undefined}>{figure(shown && (aprStandIn ? <FallbackApr apr={aprStandIn} compact /> : <PoolAprEstimate observation={shown.feeAprEstimate} now={now} compact />), aprStandIn && <FallbackApr apr={aprStandIn} compact />)}</Stat>}
-        <Stat label="24h volume" info="How much people swapped through the pool over the last 24 hours." className="dm-pool-stat" sub={shown && fromHistory(shown.volume24hUsd) ? 'Trading · Domino history' : 'Trading in the pool'}>{figure(shown && <MetricCell metric={shown.volume24hUsd} retrieved={retrieved} />, standIns?.volume && <MetricCell metric={standIns.volume} />)}</Stat>
-        <Stat label="TVL" info="Total value locked: the reported value of all tokens in the pool." className="dm-pool-stat" sub={shown && fromHistory(shown.tvlUsd) ? 'In the pool · Domino history' : 'Value in the pool'}>{figure(shown && <MetricCell metric={shown.tvlUsd} retrieved={retrieved} />, standIns?.tvl && <MetricCell metric={standIns.tvl} />)}</Stat>
+          ? <Stat label="APR" info="What the pool’s fees come to over a year, from Domino’s own history of its last day. It describes the pool, not your position, and is not a promise." className="dm-pool-stat">{figure(<MetricCell metric={apr} percent tone="in" />)}</Stat>
+          : <Stat label="APR" info="What the pool’s fees come to over a year, estimated from its last day of trading. It describes the pool, not your position, and is not a promise." className="dm-pool-stat" sub={(shown || aprStandIn) && !usable && aprNumber === null ? 'Not estimated for this pool' : undefined}>{figure(shown && (aprStandIn ? <FallbackApr apr={aprStandIn} compact /> : <PoolAprEstimate observation={shown.feeAprEstimate} now={now} compact />), aprStandIn && <FallbackApr apr={aprStandIn} compact />)}</Stat>}
+        <Stat label="24h volume" info="How much people swapped through the pool over the last 24 hours." className="dm-pool-stat">{figure(shown && <MetricCell metric={shown.volume24hUsd} retrieved={retrieved} />, standIns?.volume && <MetricCell metric={standIns.volume} />)}</Stat>
+        <Stat label="TVL" info="Total value locked: the reported value of all tokens in the pool." className="dm-pool-stat">{figure(shown && <MetricCell metric={shown.tvlUsd} retrieved={retrieved} />, standIns?.tvl && <MetricCell metric={standIns.tvl} />)}</Stat>
         {metricsListed && (
-          <Stat label="24h fees" info="What the pool’s swaps paid to the people who provide its money over the last 24 hours, from Domino’s own history." className="dm-pool-stat" sub={shown ? 'Paid to the pool, Domino history' : undefined}>
+          <Stat label="24h fees" info="What the pool’s swaps paid to the people who provide its money over the last 24 hours, from Domino’s own history." className="dm-pool-stat">
             {shown && !metricsRead ? <Skeleton className="dm-pool-fig-skel" /> : shown && metricsFailed ? <FigureDash reason={metricsFailed} /> : figure(shown && shown.lpFees24hUsd && <MetricCell metric={shown.lpFees24hUsd} />)}
           </Stat>
         )}
@@ -403,23 +398,24 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
       <PoolEarnings apr={aprNumber} tvl={tvl} loading={loading || (metricsListed && !metricsRead && !!shown)} saved={aprNumber !== null && (savedApr || (tvl !== null && tvl > 0 && tvlMetric?.state === 'stale'))} />
     </div>}
 
-    <div className="dm-pool-a-recent">
+    <div className="dm-pool-a-recent dm-v3-pool-recent">
       <PoolActivitySummary read={activityRead} listed={activityListed} option={option} now={now} day={day} usd={usd} volume={volumeText} loading={loading} />
     </div>
 
-    {usable && <div className="dm-pool-a-range">
+    {usable && <details className="dm-pool-a-range dm-v3-pool-disclosure">
+      <summary>Choosing a price range<span aria-hidden="true" /></summary>
       <PoolRangeGuide guide={guide} day={day} unit={unit} saved={price.state === 'usable' && price.stale} />
-    </div>}
+    </details>}
 
-    <div className="dm-pool-a-auto">
+    {usable ? <details className="dm-pool-a-auto dm-v3-pool-disclosure">
+      <summary>Automate your position<span aria-hidden="true" /></summary>
       <PoolAutomation usable={usable} why={refusal(option)} />
-    </div>
+    </details> : <div className="dm-pool-a-auto"><PoolAutomation usable={usable} why={refusal(option)} /></div>}
 
     {/* Everything technical, at the end and closed until asked for, as on a position's page. */}
     <details className="dm-card dm-pool-details dm-pool-a-details" data-pool-details="">
       <summary className="dm-pool-details-head">
-        <h2 className="dm-title">Details</h2>
-        <span className="dm-pool-details-hint">Contract data for this pool</span>
+        <h2 className="dm-title">Pool details</h2>
         <span aria-hidden="true" className="dm-pool-details-chevron" />
       </summary>
       <dl className="dm-kv dm-kv--two dm-pool-kv">

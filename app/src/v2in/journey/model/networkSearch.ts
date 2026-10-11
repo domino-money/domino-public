@@ -28,7 +28,7 @@ export function searchable(query: string): string | null {
 }
 
 /** A pasted address on one network, as the search lists it: named, not a token there, or not read (looked up once chosen). */
-export type Pasted = { state: 'token'; token: TokenDisplay } | { state: 'none' } | { state: 'unread' }
+export type Pasted = { state: 'token'; token: TokenDisplay } | { state: 'none' } | { state: 'unread' } | { state: 'metadata_unavailable' }
 
 /** What one network said to a search's read. */
 export type SearchAnswer =
@@ -171,7 +171,8 @@ export function createNetworkSearch(deps: SearchDeps): SearchStore {
           const key = keyOf(chainId, text)
           settled.delete(key)
           spent.delete(key)
-          if (pastes.get(key)?.state === 'unread') pastes.delete(key)
+          const state = pastes.get(key)?.state
+          if (state === 'unread' || state === 'metadata_unavailable') pastes.delete(key)
         }
         notify()
       }
@@ -179,6 +180,15 @@ export function createNetworkSearch(deps: SearchDeps): SearchStore {
     pending(query) {
       const text = searchable(query)
       return text !== null && deps.chains.some((chainId) => open(chainId, text))
+    },
+    unavailable(query) {
+      const text = searchable(query)
+      if (text === null) return []
+      return deps.chains.filter((chainId) => {
+        const key = keyOf(chainId, text)
+        const state = pastes.get(key)?.state
+        return ADDRESS.test(text) ? state === 'unread' || state === 'metadata_unavailable' : settled.has(key)
+      })
     },
     found: (chainId, text) => found.get(keyOf(chainId, text)),
     pasted: (chainId, address) => pastes.get(keyOf(chainId, address)),

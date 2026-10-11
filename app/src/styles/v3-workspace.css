@@ -1,0 +1,266 @@
+/* V3 presentation only. The existing position/funding components keep their
+   mounts, event handlers, data states and transaction boundaries. */
+@layer v3 {
+  /* Portfolio: the positions lead, with a quieter wallet rail. */
+  .dm-positions-page .dm-acct-title { align-items: center; padding-bottom: 0; border: 0; }
+  .dm-positions-page .dm-acct-grid { margin-top: 1.25rem; gap: 1rem; }
+  .dm-positions-page .dm-acct-col { gap: 1rem; }
+  .dm-positions-page :is(.dm-own-card, .dm-acct-card, .dm-acct-wallet) { padding: 0.375rem; }
+  .dm-own-head { min-height: 3.75rem; padding: 0.75rem 1rem; gap: 0.625rem; }
+  .dm-own-head > .dm-title { font-size: 1.0625rem; }
+  .dm-own-head .dm-tabs { flex-shrink: 0; }
+  .dm-own-card .dm-empty.dm-own-connect { min-height: 0; padding: 1.5rem 1rem 2rem; gap: 0.875rem; }
+  .dm-own-collection .dm-own-list { padding-inline: 0.375rem; }
+  .dm-collection-head { grid-template-columns: minmax(12rem, 2.5fr) minmax(5.5rem, 1fr) minmax(6.75rem, 1fr) minmax(4.5rem, .75fr); gap: 0.75rem; padding: 0.75rem; font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-collection-head > span { white-space: nowrap; }
+  .dm-collection-head[data-collection-tab="closed"] { grid-template-columns: minmax(0, 1fr) auto; }
+  .dm-own-collection .dm-own-row { grid-template-columns: minmax(12rem, 2.5fr) minmax(5.5rem, 1fr) minmax(6.75rem, 1fr) minmax(4.5rem, .75fr); gap: 0.75rem; min-height: 4.875rem; padding: 0.875rem 0.75rem; border-radius: 0.625rem; transition: background-color 160ms ease; }
+  .dm-own-pair { font-size: 0.9375rem; line-height: 1.375rem; font-weight: 600; letter-spacing: -0.02em; }
+  .dm-own-fee { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-own-state { gap: 0.3125rem; font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-own-fig { font-size: 1rem; line-height: 1.5rem; font-weight: 600; letter-spacing: -0.025em; }
+  .dm-own-amounts .dm-acct-amount { font-size: 0.9375rem; line-height: 1.25rem; }
+  .dm-own-est, .dm-collection-family, .dm-collection-id { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-own-collection .dm-own-row[data-row-state="closed"] { grid-template-columns: minmax(0, 1fr) auto; min-height: 4.75rem; padding-block: 0.875rem; }
+  .dm-own-row[data-row-state="closed"] .dm-own-closed-caption { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-own-row[data-row-state="closed"] .dm-own-closed-caption::after { content: ' ↗'; color: var(--primary-ink); }
+  .dm-own-row[data-row-state="closed"] .dm-own-label { font-size: 0.875rem; }
+  .dm-own-row[data-row-state="closed"] :is(.dm-own-fig, .dm-acct-amount) { font-size: 0.875rem; }
+  .dm-own-more { padding: 0.75rem; }
+  .dm-positions-page .dm-acct-wallet { background: var(--card); }
+  .dm-acct-wallet > .dm-acct-rail-head { min-height: 3rem; padding: 0.75rem 1rem 0.375rem; }
+  .dm-acct-total { padding: 0 1rem 0.75rem; }
+  .dm-acct-total .dm-fig-xl { font-size: 2rem; line-height: 1.2; letter-spacing: -0.045em; }
+  .dm-acct-tokens .dm-acct-token { min-height: 3.125rem; padding: 0.5rem 1rem; }
+  .dm-acct-token-name, .dm-acct-token-usd { font-size: 0.875rem; }
+  .dm-acct-token-sub { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-acct-rail-actions > .dm-btn { min-height: 2.75rem; }
+  .dm-acct-auto { padding: 1rem; gap: 0.75rem; background: transparent; box-shadow: none; }
+  .dm-acct-auto-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+  .dm-acct-auto-head > .dm-btn { margin-right: -0.5rem; }
+  .dm-acct-auto-list { gap: 0.875rem; }
+  .dm-acct-auto-list > li { gap: 0.625rem; align-items: center; }
+  .dm-acct-auto-list .dm-icon-tile { width: 2.25rem; height: 2.25rem; background: transparent; box-shadow: none; }
+  .dm-acct-auto-name { font-size: 0.9375rem; font-weight: 600; }
+  .dm-acct-auto-text { font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-subtle); }
+
+  /* Receipts: one readable event per row; technical detail remains expandable. */
+  .dm-acct-card-head, .dm-auto-frame-head { padding: 0.75rem 1rem; }
+  .dm-activity-list, .dm-rcpt-list { background: transparent; box-shadow: none; border-radius: 0.75rem; }
+  .dm-activity-list .dm-rcpt-operation > summary { min-height: 3.875rem; padding: 0.75rem 1rem; gap: 0.375rem 0.75rem; }
+  .dm-rcpt-what { font-size: 0.875rem; line-height: 1.375rem; font-weight: 500; }
+  .dm-activity-time { font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-subtle); }
+  .dm-rcpt-detail { padding: 0.375rem 1rem 1.125rem; }
+  .dm-activity-internal > summary { min-height: 2.75rem; display: flex; align-items: center; }
+  .dm-rcpt-all { min-height: 2.75rem; align-items: center; font-size: 0.9375rem; }
+
+  /* An open position: clear identity, one action family, and calm key figures. */
+  .dm-pos-back { min-height: 2.75rem; }
+  .dm-pos-title { margin-top: 0.5rem; padding-bottom: 1.125rem; gap: 1.125rem; }
+  .dm-pos-name { gap: 1rem; max-width: 100%; }
+  .dm-pos-pair { font-size: clamp(2rem, 3vw, 2.5rem); line-height: 1.15; }
+  .dm-pos-chips { gap: 0.5rem; margin-top: 0.625rem; }
+  .dm-pos-chips > .dm-chip { background: transparent; padding-inline: 0; border-radius: 0; box-shadow: none; font-size: 0.875rem; }
+  .dm-pos-chips > .dm-chip + .dm-chip::before { content: '·'; margin-right: 0.5rem; color: var(--fg-subtle); }
+  .dm-pos-actions { gap: 0.5rem; }
+  .dm-pos-actions .dm-btn { min-height: 2.625rem; padding: 0.5rem 0.875rem; border-radius: 0.625rem; font-size: 0.9375rem; font-weight: 500; box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-pos-actions [data-automation-control]:not(:disabled):not([aria-disabled="true"]) { background: color-mix(in srgb, var(--primary) 9%, var(--card)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 22%, transparent); }
+  .dm-pos-stats { margin-top: 1.125rem; gap: 0; background: var(--card); border-radius: 0.875rem; box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-pos-stat { padding: 1.125rem; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  .dm-pos-stat > dt { font-size: 0.875rem; line-height: 1.25rem; letter-spacing: 0; text-transform: none; }
+  .dm-pos-stat .dm-fig-lg { font-size: 1.625rem; line-height: 2rem; letter-spacing: -0.035em; }
+  .dm-pos-stats [data-cell="principal"] { background: transparent; }
+  .dm-pos-stat > .dm-stat-value { margin-top: 0.5rem; }
+  .dm-pos-stat > .dm-stat-sub { margin-top: 0.5rem; }
+  .dm-pos-stats .dm-stat-sub .dm-acct-amount { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-pos-stat[data-cell="apr"] .dm-stat-sub, .dm-pos-lines, .dm-pos-price-side, .dm-pos-span-ends { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-pos-card { padding: 1.125rem; gap: 1rem; }
+  .dm-fees-quiet { height: 7.5rem; min-height: 0; padding-bottom: 0.5rem; }
+  .dm-fees-quiet[data-fees-quiet="few_points"] { height: 5.5rem; }
+  .dm-fees-quiet .dm-pending-plot { display: grid; grid-template-rows: minmax(0.5rem, 1fr) auto; gap: 0.5rem; height: 100%; min-height: 0; padding-top: 0; }
+  .dm-fees-quiet .dm-pending-plot > svg { height: 100%; }
+  .dm-fees-quiet .dm-pending-plot .dm-fees-quiet-note { position: static; font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-pos-details { background: transparent; }
+  .dm-pos-details-head { min-height: 3.25rem; padding-inline: 1.125rem; }
+  .dm-pos-details > :not(summary) { margin-inline: 1.125rem; }
+  .dm-pos-facts > div { gap: 0.5rem 1.5rem; }
+  .dm-pos-facts dd { overflow-wrap: anywhere; min-width: 0; }
+
+  /* Creation: the current step owns the attention. Completed choices stay editable. */
+  .dm-np { row-gap: 1.25rem; }
+  .dm-np-head > div > p { max-width: 42ch; }
+  .dm-np .dm-flow-card { padding: 0.5rem; background: var(--card); }
+  .dm-np .dm-flow-row { min-height: 3.125rem; gap: 0.75rem; padding-inline: 1rem; }
+  .dm-np .dm-flow-row-title { font-size: 0.9375rem; }
+  .dm-np .dm-flow-row-summary { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-np .dm-flow-edit { font-size: 0.875rem; }
+  .dm-np .dm-flow-step[data-state="upcoming"] > .dm-flow-collapse .dm-flow-row { color: var(--fg-subtle); }
+  .dm-np .dm-flow-body { padding: 1.125rem 1rem 1.25rem 3.625rem; }
+  .dm-np .dm-flow-head { margin-left: -2.625rem; gap: 0.875rem; align-items: flex-start; }
+  .dm-np .dm-flow-head > .dm-step-marker { margin-top: 0.0625rem; }
+  .dm-np .dm-flow-title { font-size: 1.375rem; line-height: 1.75rem; font-weight: 500; letter-spacing: -0.025em; }
+  .dm-np .dm-flow-lead { margin-top: 0.5rem; font-size: 0.9375rem; line-height: 1.375rem; }
+  .dm-np .dm-flow-content { margin-top: 1.125rem; }
+  .dm-np .dm-flow-stack[data-stage="amount"] { gap: 0.875rem; }
+  .dm-np .dm-flow-amount { padding: 1rem; border-radius: 0.75rem; background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-np .dm-flow-amount:focus-within { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--primary-line), 0 0 0 0.1875rem var(--primary-wash); }
+  .dm-np .dm-flow-amount[data-invalid] { box-shadow: inset 0 0 0 1px var(--money-out); }
+  .dm-np .dm-flow-amount-input { font-size: 1.875rem; line-height: 2.375rem; letter-spacing: -0.04em; }
+  .dm-np .dm-flow-amount-input[data-len="m"] { font-size: 1.75rem; }
+  .dm-np .dm-flow-amount-input[data-len="l"] { font-size: 1.5rem; }
+  .dm-np .dm-flow-amount-input[data-len="xl"] { font-size: 1.375rem; }
+  .dm-np .dm-flow-amount-unit { height: 2.125rem; background: var(--surface-3); font-size: 0.875rem; }
+  .dm-np .dm-flow-balance-line, .dm-np .dm-flow-amount-usd { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-np .dm-flow-balance > .dm-btn--sm { min-height: 2rem; height: auto; padding-inline: 0.75rem; }
+  .dm-np .dm-flow-link { width: 2rem; height: 2rem; margin-block: -0.75rem; }
+  .dm-np .dm-flow-deposit-total { padding: 0.875rem 0.25rem; background: transparent; box-shadow: none; border-radius: 0; border-bottom: 1px solid var(--border); }
+  .dm-np .dm-flow-deposit-total-head > span { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-np .dm-flow-deposit-total-head > strong { font-size: 1.375rem; line-height: 1.75rem; }
+  .dm-np .dm-flow-deposit-total[data-amount-total="unavailable"] strong { font-size: 0.9375rem; line-height: 1.25rem; }
+  .dm-np .dm-flow-deposit-total > p { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-np .dm-flow-advanced { border: 0; border-radius: 0.75rem; box-shadow: none; background: transparent; }
+  .dm-np .dm-flow-advanced > summary { min-height: 3rem; padding: 0.625rem 0; font-size: 0.9375rem; }
+  .dm-np .dm-flow-advanced-value { font-size: 0.875rem; }
+  .dm-np .dm-flow-foot { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+  .dm-np .dm-flow-foot > .dm-btn { min-height: 2.875rem; }
+  .dm-np .dm-flow-foot > .dm-btn:first-child { min-width: 5.5rem; padding-inline: 1.25rem; }
+  .dm-np .dm-flow-reason { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-np .dm-flow-preview { border-radius: 0.875rem; background: var(--card); }
+  .dm-np .dm-flow-pv-pool { padding: 1.125rem; }
+  .dm-np .dm-flow-pv-pair { font-size: 0.9375rem; }
+  .dm-np .dm-flow-pv-range { height: 8rem; }
+  .dm-np .dm-flow-pv-bounds { padding: 1rem 1.125rem; }
+  .dm-np .dm-flow-headline { padding: 1.125rem; background: transparent; }
+  .dm-np .dm-flow-headline-amounts { font-size: 1.375rem; line-height: 1.875rem; }
+
+  /* Funding sources use the same calm choice surface, with actual network names
+     always visible. A quote is still requested only by the existing action. */
+  .dm-funds-line, .dm-funds-discovery { min-height: 3.75rem; padding: 0.875rem; border-radius: 0.625rem; background: transparent; box-shadow: inset 0 0 0 1px var(--border); border: 0; }
+  .dm-funds-line { gap: 0.75rem; font-size: 0.9375rem; line-height: 1.375rem; }
+  .dm-funds-line-text { flex-basis: 10rem; }
+  .dm-funds-line-text strong, .dm-funds-discovery strong { font-size: 0.9375rem; line-height: 1.375rem; font-weight: 600; }
+  .dm-funds-payment .dm-funds-line-usd, .dm-funds-discovery > span { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-funds-line-action { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-funds-line-mark, .dm-funds-remote-mark { display: grid; place-items: center; width: 2rem; height: 2rem; flex: 0 0 2rem; border-radius: 0.625rem; background: var(--surface-3); color: var(--primary-ink); font-size: 1.125rem; }
+  .dm-funds-offer { border-radius: 0.75rem; background: transparent; }
+  .dm-funds-heading { padding: 1rem 1rem 0.625rem; }
+  .dm-funds-heading > p:empty { display: none; }
+  .dm-funds-heading h4 { font-size: 0.875rem; line-height: 1.375rem; }
+  .dm-funds-heading p { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-funds-body { padding: 0 1rem 1rem; gap: 0.75rem; }
+  .dm-funding-summary { border: 0; border-radius: 0; background: transparent; border-block: 1px solid var(--border); }
+  .dm-funding-leg { padding: 0.875rem 0; font-size: 0.9375rem; line-height: 1.375rem; }
+  .dm-funding-leg-status { font-size: 0.875rem; line-height: 1.25rem; }
+  .dm-funding-leg strong { text-align: right; }
+  .dm-funds-status, .dm-funding-notice, .dm-funding-details { font-size: 0.9375rem; line-height: 1.375rem; }
+  .dm-funds-go { min-height: 2.875rem; }
+  .dm-funds-details > summary { min-height: 2.75rem; font-size: 0.875rem; }
+  .dm-funds-details { margin-block: -0.25rem; }
+
+  /* One sheet family: roomy actions and contained scrolling at every width. */
+  .dm-dialog.dm-pa { width: min(34rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); border-radius: 1rem; }
+  .dm-pa-title { font-family: var(--font-sans); font-size: 1.5rem; font-weight: 500; line-height: 1.875rem; letter-spacing: -0.03em; }
+  .dm-flow-dialog.dm-pa > .dm-pa-head { padding: 1.25rem 3.75rem 1rem 1.25rem; }
+  .dm-flow-dialog.dm-pa > .dm-pa-body { padding: 0 1.25rem 1.125rem; gap: 1rem; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+  .dm-flow-dialog.dm-pa > .dm-pa-foot { padding: 1rem 1.25rem 1.25rem; }
+  .dm-pa-card { padding: 1rem; border-radius: 0.75rem; background: var(--surface-1); box-shadow: none; }
+  .dm-pa-token-amount { font-size: 1.625rem; line-height: 2rem; overflow-wrap: anywhere; }
+  .dm-pa-facts > div { padding-block: 0.625rem; }
+  .dm-pa-facts :is(dt, dd) { font-size: 0.9375rem; line-height: 1.375rem; }
+  .dm-pa-more > summary { min-height: 2.875rem; }
+  .dm-pa-note, .dm-pa-alert, .dm-pa-status, .dm-pa-locked { font-size: 0.9375rem; line-height: 1.375rem; }
+  .dm-pa-foot .dm-btn { min-height: 2.875rem; }
+  .dm-automation-panel { gap: 0.875rem; }
+  .dm-automation-recovery { padding: 0.75rem 0; }
+  .dm-automation-choices > .dm-btn { min-height: 2.75rem; }
+  .dm-automation-panel .dm-key-value dd { overflow-wrap: anywhere; }
+
+  @media (min-width: 56.25rem) {
+    .dm-np:not([data-create-step="review"]) { grid-template-columns: minmax(0, 1fr) minmax(17rem, 0.5fr); gap: 1.75rem; }
+    .dm-np .dm-flow-step:not(:last-child)::before { left: 1.9375rem; }
+  }
+  @media (min-width: 64rem) {
+    .dm-positions-page .dm-acct-grid { grid-template-columns: minmax(0, 1fr) 19.5rem; }
+    .dm-pos-stat + .dm-pos-stat { border-inline-start: 1px solid var(--border); }
+  }
+  @media (min-width: 48rem) and (max-width: 63.999rem) {
+    .dm-pos-stat:nth-child(even) { border-inline-start: 1px solid var(--border); }
+    .dm-pos-stat:nth-child(n + 3) { border-top: 1px solid var(--border); }
+  }
+  @container acct-nft (max-width: 44rem) {
+    .dm-own-collection .dm-own-row:not([data-row-state="closed"]) { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.875rem 0.75rem; padding: 1rem 0.75rem; }
+    .dm-own-collection .dm-own-row:not([data-row-state="closed"]) .dm-own-pool { grid-column: 1 / -1; }
+    .dm-own-collection .dm-own-label { position: static; width: auto; height: auto; margin: 0 0 0.25rem; clip: auto; overflow: visible; font-size: 0.875rem; line-height: 1.25rem; white-space: normal; }
+    .dm-own-collection .dm-own-fig { font-size: 1rem; }
+    .dm-own-collection .dm-own-row:not([data-row-state="closed"]) [data-cell="apr"] { grid-column: auto; display: grid; justify-content: start; gap: 0; }
+    .dm-own-collection .dm-acct-amount { font-size: 0.9375rem; }
+  }
+  @container acct-nft (max-width: 21rem) {
+    .dm-own-collection .dm-own-row:not([data-row-state="closed"]) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .dm-own-collection .dm-own-row:not([data-row-state="closed"]) [data-cell="apr"] { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; }
+  }
+  @container acct-nft (max-width: 26rem) {
+    .dm-own-collection .dm-own-row[data-row-state="closed"] { grid-template-columns: minmax(0, 1fr); gap: 0.625rem; }
+    .dm-own-collection .dm-own-row[data-row-state="closed"] .dm-own-pool { grid-column: 1 / -1; }
+    .dm-own-collection .dm-own-row[data-row-state="closed"] .dm-own-closed-caption { grid-column: 1 / -1; grid-row: 2; justify-self: end; }
+  }
+  @container dm-rcpt (max-width: 22rem) {
+    .dm-activity-list .dm-rcpt-operation > summary { grid-template-columns: minmax(0, 1fr) 1rem; padding: 0.875rem 0.625rem; }
+  }
+  @media (max-width: 55.999rem) {
+    .dm-np .dm-flow-preview { position: static; }
+  }
+  @media (max-width: 47.999rem) {
+    .dm-positions-page .dm-acct-grid { margin-top: 1rem; }
+    .dm-own-head { padding: 0.875rem 0.75rem; }
+    .dm-own-head > .dm-title { font-size: 1rem; }
+    .dm-own-collection .dm-own-list { padding-inline: 0; }
+    .dm-pos-name { gap: 0.75rem; }
+    .dm-pos-pair { font-size: 2rem; }
+    .dm-pos-actions .dm-btn { min-height: 2.75rem; padding-inline: 0.625rem; font-size: 0.875rem; }
+    .dm-pos-stat { padding: 1rem; }
+    .dm-pos-stat:not([data-cell="principal"]) { border-top: 1px solid var(--border); }
+    .dm-pos-stat[data-cell="apr"] { border-inline-start: 1px solid var(--border); }
+    .dm-pos-stat .dm-fig-lg { font-size: 1.625rem; line-height: 2rem; }
+    .dm-pos-card { padding: 1.125rem; }
+    .dm-np { row-gap: 1.25rem; }
+    .dm-np .dm-flow-card { padding: 0.25rem; }
+    .dm-np .dm-flow-row { min-height: 3.5rem; padding-inline: 0.875rem; gap: 0.625rem; }
+    .dm-np .dm-flow-row-summary { font-size: 0.875rem; }
+    .dm-np .dm-flow-body { padding: 1.25rem 0.875rem 1.5rem; }
+    .dm-np .dm-flow-head { margin-left: 0; gap: 0.75rem; }
+    .dm-np .dm-flow-title { font-size: 1.375rem; }
+    .dm-np .dm-flow-content { margin-top: 1rem; }
+    .dm-np .dm-flow-amount { padding: 0.875rem; }
+    .dm-np .dm-flow-amount-input { font-size: 1.75rem; }
+    .dm-np .dm-flow-amount-input[data-len="xl"] { font-size: 1.125rem; letter-spacing: -0.025em; }
+    .dm-np .dm-flow-amount-unit { max-width: 45%; font-size: 0.9375rem; padding-right: 0.5rem; }
+    .dm-np .dm-flow-pv-range { height: 7.5rem; }
+    .dm-np .dm-flow-preview { border-radius: 1.125rem; }
+    .dm-funds-line, .dm-funds-discovery { padding: 0.875rem; }
+    .dm-funds-heading { padding: 1rem 1rem 0.75rem; }
+    .dm-funds-body { padding: 0 1rem 1rem; }
+    .dm-funds-line-action { margin-left: 2.75rem; white-space: normal; }
+    .dm-funds-discovery { gap: 0.5rem; }
+    .dm-dialog.dm-pa { width: 100%; max-height: calc(100dvh - 0.75rem); border-radius: 1.25rem 1.25rem 0 0; }
+    .dm-flow-dialog.dm-pa > .dm-pa-head { padding: 1.5rem 3.75rem 1rem 1.125rem; }
+    .dm-flow-dialog.dm-pa > .dm-pa-body { padding: 0 1.125rem 1.25rem; }
+    .dm-flow-dialog.dm-pa > .dm-pa-foot { padding: 1rem 1.125rem max(1.125rem, env(safe-area-inset-bottom)); }
+    .dm-pa-title { font-size: 1.5rem; }
+  }
+  @media (pointer: coarse) {
+    .dm-pos-actions .dm-btn, .dm-pa-foot .dm-btn, .dm-np .dm-flow-foot > .dm-btn,
+    .dm-funds-go, .dm-acct-auto-head > .dm-btn, .dm-automation-choices > .dm-btn { min-height: 2.75rem; }
+  }
+  @media (max-width: 23rem) {
+    .dm-pos-stat:is([data-cell="fees"], [data-cell="apr"]) { padding-inline: 0.75rem; }
+    .dm-pos-stat[data-cell="fees"] > dt { font-size: 0.8125rem; }
+    .dm-pos-span-ends { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.125rem 0.5rem; }
+    .dm-pos-span-ends > span { white-space: nowrap; overflow-wrap: normal; }
+    .dm-pos-span-ends > .dm-pos-span-word { grid-column: 1 / -1; grid-row: 2; text-align: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dm-np .dm-flow-rise, .dm-np .dm-flow-collapse[data-open] .dm-flow-body { animation: none; }
+    .dm-np .dm-flow-collapse, .dm-own-row { transition: none; }
+  }
+}

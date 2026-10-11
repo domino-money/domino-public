@@ -230,16 +230,15 @@ const trail = () => edge.map((r) => `${r.method} ${r.path}`);
 const POOL = '0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941';
 
 /**
- * Searches an address on Markets: typed as a pair name it matches no selected pool, so the empty state's token search
- * starts from it, and choosing the address there is one token read that opens the token's view by the address bar.
+ * Searches an address in Markets' main token search. Choosing it makes one token read and opens its view by the
+ * address bar; the selected-pool filter is independent of this discovery flow.
  */
 async function search(page, address) {
   await poolsSettled(page);
-  await page.locator('#markets-search').fill(address);
   const combobox = page.getByRole('combobox', { name: 'Token name or address' });
   await combobox.waitFor();
-  assert.equal(await combobox.inputValue(), address, 'the token search starts from the typed address');
-  await combobox.click();
+  await combobox.fill(address);
+  assert.equal(await combobox.inputValue(), address);
   await page.locator(`[data-token-option="${address.toLowerCase()}"]`).click();
   await page.waitForFunction((wire) => location.hash === `#/markets/${wire}`, address);
 }
@@ -283,10 +282,10 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     // Changed on purpose 2026-09-28 (speed wave, item 1): the budget it shares is the gateway's, no longer 1.1 s apart.
     assert.ok(cardIndex > 0, 'the independent card reads after the table');
     assertWithinBudget(posts());
-    await page.locator('#markets-search').fill(TOKEN);
     const combobox = page.getByRole('combobox', { name: 'Token name or address' });
     await combobox.waitFor();
-    assert.equal(await combobox.inputValue(), TOKEN, 'no selected pool matches, so the token search starts from the address');
+    await combobox.fill(TOKEN);
+    assert.equal(await combobox.inputValue(), TOKEN, 'the main search keeps the pasted address');
     await page.waitForTimeout(300);
     assert.deepEqual(trail().sort(), [...MOUNT].sort(), 'typing an address reads nothing: only choosing it asks');
     await combobox.click();
@@ -342,8 +341,11 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     // Changed on purpose 2026-10-01 (audit I1): the pool was read on chain; its tokens are not called verified.
     assert.match(await workspace.innerText(), /On chain at block 700/);
     await page.waitForFunction(() => document.querySelectorAll('[data-pool-figures] [data-metric]').length > 0, null, { timeout: 30_000 });
-    // Changed on purpose (2026-09-27, round 6): a typical range to read, drawn on the pool's price, replaces the planner.
+    // The typical range stays behind its guide until the user asks, then shows the pool's current price without an inert planner.
     const range = page.locator('[data-pool-range-guide]');
+    await range.waitFor({ state: 'attached' });
+    assert.equal(await range.isVisible(), false, 'the optional range explanation starts closed');
+    await workspace.getByText('Choosing a price range', { exact: true }).click();
     await range.waitFor();
     assert.equal(await range.getAttribute('data-pool-range-guide'), 'ready');
     assert.equal(await page.locator('main [data-picker="range"], main input[type="range"]').count(), 0, 'nothing to drag that saves nothing');

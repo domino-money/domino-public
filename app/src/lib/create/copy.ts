@@ -64,7 +64,7 @@ export const CREATE = {
     searchPlaceholder: 'Name or address, like USDG',
     preselectHeading: 'Pool from the link',
     preselectChecking: 'Verifying the linked pool on Robinhood Chain…',
-    preselectVerified: (block: number) => `Verified at block ${block}.`,
+    preselectVerified: 'Pool selected.',
     preselectNotFound: 'The linked pool id was not returned by the read service, so it is not preselected. Search for a token below to choose a pool.',
     preselectMalformed: 'The link does not carry a valid pool id, so nothing is preselected.',
     // A pool the featured list withdrew by a safety rule (featured pools v1 §11.5), or one with a token that passes for a
@@ -88,7 +88,7 @@ export const CREATE = {
   amount: {
     entered: 'You enter',
     paired: 'Paired automatically',
-    total: 'Estimated total in this position',
+    total: 'Estimated total',
     // Changed on purpose 2026-10-06 (the owner's point 4: little text): the total's note in a few words. Network fees are
     // paid in ETH on top, never taken from the position, so they are "extra", not something the total is "before".
     totalNote: 'Network fees are extra.',

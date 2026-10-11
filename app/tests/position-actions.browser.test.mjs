@@ -537,6 +537,7 @@ test('after Collect and Close on a position’s page, its figures, its fees card
     await card.waitFor({ timeout: 15_000 });
     await page.waitForFunction(() => /0\.001234 USDG[\s\S]*0\.5 UFG/.test(document.querySelector('[data-fees-card]')?.innerText ?? ''), null, { timeout: 15_000 });
     assert.match(await text(card), /0\.001234 USDG[\s\S]*0\.5 UFG/, 'the card’s unclaimed figure');
+    await detail.locator('[data-cell="fees"]').getByText('Token amounts', { exact: true }).click();
     assert.match(await text(detail.locator('[data-stat="fees"]')), /0\.001234\s+USDG/);
 
     // Collect fees: the page's figures and the card's are 0 at once, not a minute later.

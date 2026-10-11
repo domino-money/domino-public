@@ -223,7 +223,8 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
               <svg width="100%" height="15rem" viewBox={`0 0 ${plot.width} ${plot.height}`} preserveAspectRatio="none" role="slider"
                 aria-label="Inspect the pool’s price by hour" aria-valuemin={1} aria-valuemax={plot.points.length} aria-valuenow={index + 1}
                 aria-valuetext={ratioCandleText(point.candle)} tabIndex={0} className="dm-pool-chart-svg"
-                onPointerMove={inspectAt} onPointerDown={inspectAt} onPointerLeave={() => setInspected(null)}
+                onPointerMove={inspectAt} onPointerDown={event => { event.currentTarget.focus({ preventScroll: true }); inspectAt(event) }}
+                onPointerLeave={event => { if (event.pointerType !== 'touch') setInspected(null) }} onPointerCancel={() => setInspected(null)}
                 onKeyDown={inspectByKey} onBlur={() => setInspected(null)}>
                 <defs>
                   <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">

@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore, type ReactNode } from 'react'
 import type { IndexedToken } from 'api-contracts/read-v6/types'
-import { IconChevronDown } from '../../components/icons'
+import { IconCheck, IconChevronDown } from '../../components/icons'
 import { Pill } from '../../components/ui'
 import { shortDate, shortTime } from '../../lib/format/time'
 import { v2TxUrl } from '../../v2/explorers'
@@ -21,7 +21,7 @@ export function LocalReceiptRow({ receipt, at, tokens, children }: { receipt: Lo
   return <li data-local-close-receipt={receipt.hash} data-local-close-count={count}>
     <details className="dm-rcpt-row dm-rcpt-operation">
       <summary>
-        <span className="dm-rcpt-what"><span>{receipt.state === 'finalized' && <span className="dm-receipt-check" aria-label="Confirmed">✓ </span>}{count === 1 ? 'Position closed' : `${count} positions closed`}</span>
+        <span className="dm-rcpt-what"><span className="dm-receipt-title">{receipt.state === 'finalized' && <span className="dm-receipt-check" role="img" aria-label="Confirmed"><IconCheck size={14} /></span>}<span>{count === 1 ? 'Position closed' : `${count} positions closed`}</span></span>
           {receipt.state === 'included' && <Pill tone="neutral" className="dm-receipt-exception">Confirming</Pill>}
           <span className="dm-activity-time">{at === null ? 'Date unavailable' : <time dateTime={new Date(at * 1000).toISOString()}>{shortDate(at)} {shortTime(at)}</time>}</span>
         </span><span className="dm-rcpt-amount" /><IconChevronDown size={16} className="dm-rcpt-chevron" />

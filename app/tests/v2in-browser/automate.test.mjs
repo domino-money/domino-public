@@ -342,11 +342,13 @@ test('Auto-exit entry chooses a chain-qualified NFT and opens the existing dialo
   const holder = ACCOUNTS[0].address.toLowerCase();
   const v1 = browserChain({ positions: [{ tokenId: ID, holder, key: KEY, tickLower: -600, tickUpper: 600, liquidity: 10n ** 18n }], tokens: TOKENS });
   const { v2Chain } = require('../../.test-build/app/src/v2/chains.js');
+  const usdcBase = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
   const portfolio = plainPortfolio(v1, holder, (body) => {
     const original = body.positions[0];
     body.positions.push({ ...structuredClone(original), chainId: 8453, dex: 3, positionManager: v2Chain(8453).uniswap.v3.positionManager,
-      state: { ...structuredClone(original.state), pool: { ...original.state.pool, dex: 3, currency0: v2Chain(8453).wrappedNative.address, currency1: `0x${'f'.repeat(40)}` } } });
+      state: { ...structuredClone(original.state), pool: { ...original.state.pool, dex: 3, currency0: v2Chain(8453).wrappedNative.address, currency1: usdcBase } } });
     body.tokens.push({ ...body.tokens[0], chainId: 8453, address: v2Chain(8453).wrappedNative.address, symbol: 'WETH' });
+    body.tokens.push({ ...body.tokens[0], chainId: 8453, address: usdcBase, symbol: 'USDC', decimals: 6 });
     body.chains = body.chains.map((chain) => ({ ...body.chains[0], chainId: chain.chainId }));
     body.coverage = 'complete';
     body.truncated = { positions: false, mandates: false, vaults: false };
@@ -364,6 +366,10 @@ test('Auto-exit entry chooses a chain-qualified NFT and opens the existing dialo
     assert.equal(await page.locator('[data-protection-position]').count(), 2, 'same numeric ID in two namespaces remains two choices');
     assert.equal(await page.locator('[data-sequence-action="protection"]').isDisabled(), true);
     const base = page.locator(`[data-protection-position="8453:3:${ID}"]`);
+    const usdc = base.locator('img[src="/tokens/usdc.svg"]');
+    await usdc.waitFor();
+    await usdc.evaluate(image => image.decode());
+    assert.ok(await usdc.evaluate(image => image.naturalWidth > 0), 'Base USDC uses its real bundled artwork in the Auto-exit picker');
     await base.click();
     await page.locator('[data-sequence-action="protection"]').click();
     const dialog = page.locator('[data-v2in-dialog="mandate"]');
@@ -489,12 +495,12 @@ test('preview: Auto-exit on a plain position the wallet holds: the range\'s two 
     // Added 2026-10-06 (the integration review, ux #9): Automate's Auto-exit sends the person here: Auto-exit is named.
     const automation = page.locator('section[aria-labelledby="automation-title"]');
     assert.deepEqual(await automation.locator('.dm-acct-auto-name').allInnerTexts(), ['Auto-compound', 'Domino-compound', 'Auto-exit']);
-    assert.equal(await automation.locator('[data-automation-feature="auto-exit"] .dm-acct-auto-text').innerText(), 'Closes it at the end of its range and sends the tokens to your wallet.');
+    assert.equal(await automation.locator('[data-automation-feature="auto-exit"] .dm-acct-auto-text').innerText(), 'Close at the range limit');
     await automation.screenshot({ path: join(shots(), 'v2in-positions-automation-card.png'), animations: 'disabled' });
     // …and Automate itself is about more than fees now.
     await page.evaluate(() => { location.hash = '#/automate'; });
     await page.locator('main [data-feature="protection"]').waitFor({ timeout: 30_000 });
-    assert.match(await page.locator('main').innerText(), /Choose what Domino does for your position\./);
+    assert.deepEqual(await page.locator('[data-automate] .dm-automation-choice-heading > h2').allInnerTexts(), ['New position', 'Auto-compound', 'Domino-compound', 'Auto-exit']);
     assert.doesNotMatch(await page.locator('main').innerText(), /Choose how to use your earned fees/);
 
     const asked = s.wallet.state.log.map((entry) => entry.method);
@@ -1053,6 +1059,23 @@ test('live: a protection-only automation with its Auto-exit on is ONE card: "Clo
     await page.locator('[data-position-actions] [data-position-v2-more]').waitFor({ timeout: 30_000 });
     assert.equal(await page.locator('[data-position-v2-action="protect"]').count(), 0, 'one Auto-exit per position: no second one offered');
     assert.doesNotMatch(await card.innerText(), /vault|stop-loss|take-profit|order/i);
+    await page.keyboard.press('Escape');
+    await page.locator('[data-automation-management]').waitFor({ state: 'detached' });
+    const valueFigure = page.locator('[data-position-overview] [data-cell="principal"] .dm-tick-fig');
+    const fullValue = await valueFigure.textContent();
+    assert.match(fullValue, /^\$[\d,]+\.\d{2}$/);
+    for (const width of [1440, 1220, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.screenshot({ path: join(shots(), `position-autoexit-${width}.png`), fullPage: true, animations: 'disabled' });
+      assert.equal(await valueFigure.textContent(), fullValue, `the complete principal amount remains at ${width}`);
+      assert.equal(await valueFigure.evaluate(node => {
+        const cell = node.closest('[data-cell]').getBoundingClientRect();
+        return [...node.querySelectorAll('.dm-tick-d, .dm-position-amount-group')].every(digit => { const box = digit.getBoundingClientRect(); return box.left >= cell.left && box.right <= cell.right; });
+      }), true, `every principal digit stays within its own card at ${width}`);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `position with Auto-exit fits ${width}`);
+      assert.equal(await page.locator('[data-position-actions] [data-automation-control]').count(), 1, 'Auto-exit remains beside the position actions');
+    }
+    await expandAutomation(page);
     await card.screenshot({ path: join(shots(), 'v2in-autoexit-card-on.png'), animations: 'disabled' });
     for (const width of [1280, 390, 320]) {
       await page.setViewportSize({ width, height: 844 });
@@ -1234,7 +1257,7 @@ test('live: Auto-exit on a plain position is ONE signature and ONE wallet_sendCa
   } finally { await s.close(); }
 });
 
-test('V2 detail: one visible setup link preselects the current NFT without a legacy setup release or a default mode', async () => {
+test('V2 detail: one setup link preselects the NFT, and both compounding reviews keep consent, exact fees and mobile layout', async () => {
   const ID = '3135288';
   const holder = ACCOUNTS[0].address.toLowerCase();
   const v1 = browserChain({ positions: [{ tokenId: ID, holder, minter: OTHER, key: KEY, tickLower: -600, tickUpper: 600, liquidity: 1000000n, unclaimed: [0n, 0n] }], tokens: TOKENS });
@@ -1259,6 +1282,33 @@ test('V2 detail: one visible setup link preselects the current NFT without a leg
     assert.equal(s.requests.some((url) => /\/api\/setup\/v1\/sequence-release/.test(url)), false, 'V1 release cannot gate V2 setup');
     assert.equal(s.requests.some((url) => /\/api\/owned\/v2\/positions(?:\?|$)/.test(url)), false, 'the legacy SetupV1 catalogue is not needed for the direct detail-to-setup path');
     await page.screenshot({ path: join(shots(), 'v2-setup-preselected-local-fixture.png'), fullPage: true, animations: 'disabled' });
+    const flow = page.locator('[data-v2in-setup="preview"]');
+    for (const [mode, title, fee] of [['compound', 'Auto-compound', '2%'], ['domino', 'Domino-compound', '4%']]) {
+      await flow.locator(`[data-sequence-mode="${mode}"]`).click();
+      const consent = flow.locator('[data-v2in-consent]');
+      assert.equal(await consent.isChecked(), false, 'each mode needs its own explicit consent');
+      assert.equal(await flow.locator('[data-v2in-review]').count(), 0, 'a new mode clears the previous review');
+      const reviewAction = flow.getByRole('button', { name: 'Review', exact: true });
+      assert.equal(await reviewAction.isDisabled(), true);
+      await consent.check();
+      await reviewAction.click();
+      const review = flow.locator('[data-v2in-review]');
+      await review.waitFor();
+      assert.equal(await review.locator('dd').nth(1).innerText(), title);
+      assert.equal(await review.locator('dd').nth(2).innerText(), `${fee} of earned fees used, once`);
+      for (const width of [1280, 390, 320]) {
+        await page.setViewportSize({ width, height: 960 });
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${mode} review fits at ${width}`);
+        assert.ok(await flow.locator('.dm-mode-copy').evaluateAll(copies => copies.every(copy => {
+          const content = copy.getBoundingClientRect();
+          const choice = copy.closest('button').getBoundingClientRect();
+          return content.top >= choice.top && content.bottom <= choice.bottom;
+        })), `${mode} choice text and fees remain inside the card at ${width}`);
+        await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+        await page.screenshot({ path: join(shots(), `v2-setup-${mode}-review-${width}-local-fixture.png`), fullPage: true, animations: 'disabled' });
+      }
+      await page.setViewportSize({ width: 1280, height: 960 });
+    }
     for (const method of SENDS_AND_SIGNATURES) assert.equal(s.wallet.state.log.some((entry) => entry.method === method), false, 'opening setup never signs or sends');
   } finally { await s.close(); }
 });
@@ -1962,4 +2012,88 @@ test('Auto-exit recoverable credits stay in management; a different recipient is
     await expandAutomation(page);
     assert.equal(await page.locator('[data-automation-management] [data-claim]').count(), 0, 'the completed claim updates the available balance without a reload');
   } finally { await s.close(); }
+});
+
+// Final frontend pass: exercise both setup modes through the real UI and the fake wallet, including completion.
+for (const [mode, title, policyMode, fee] of [['compound', 'Auto-compound', 1, '2%'], ['domino', 'Domino-compound', 2, '4%']]) {
+  test(`final pass: ${title} setup validates limits, requires consent and completes its wallet steps`, async () => {
+    const liquidity = 10n ** 18n;
+    const chain = createVaultChain({ chainId: 4663, atomic: 'ready', simulateV1: true, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -600, tickUpper: 600, liquidity }] });
+    const v1 = rootOnV1({ liquidity });
+    const s = await openLive(chain, { hash: `/sequence/${mode}/${ROOT}`, read6: { portfolio: plainPortfolio(v1, OWNER) }, v1 });
+    try {
+      const { page } = s;
+      const flow = page.locator('[data-v2in-setup="live"]');
+      await flow.locator(`[data-sequence-position="${ROOT}"][aria-checked="true"]`).waitFor();
+      assert.equal(await flow.locator(`[data-sequence-mode="${mode}"]`).getAttribute('aria-checked'), 'true');
+      assert.match(await flow.locator(`[data-sequence-mode="${mode}"]`).innerText(), new RegExp(fee));
+      const send = flow.locator('[data-sequence-action="run"]');
+      assert.equal(await send.isDisabled(), true, 'a preselected mode does not supply consent');
+      await flow.getByText('More limits', { exact: true }).click();
+      const slippage = flow.locator('[data-setting-input="maxSlippagePercent"]');
+      await slippage.fill('6');
+      assert.equal(await slippage.getAttribute('aria-invalid'), 'true');
+      await flow.locator('[data-v2in-consent]').check();
+      assert.equal(await send.isDisabled(), true, 'invalid limits cannot open the wallet');
+      await slippage.fill('0.5');
+      assert.equal(await flow.locator('[data-v2in-consent]').isChecked(), false, 'editing a limit clears earlier consent');
+      if (await slippage.evaluate(node => node.closest('details')?.open)) await flow.getByText('More limits', { exact: true }).click();
+      await flow.locator('[data-v2in-consent]').check();
+      await flow.locator('[data-sequence-action="run"]:not([disabled])').waitFor({ timeout: 30_000 });
+      assert.deepEqual(chain.sends, [], 'review does not send');
+      assert.equal(chain.log.includes('wallet_sendCalls'), false);
+      for (const width of [1280, 390, 320]) {
+        await page.setViewportSize({ width, height: 960 });
+        await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${mode} fits at ${width}`);
+        await page.screenshot({ path: join(shots(), `final-${mode}-ready-${width}.png`), fullPage: true, animations: 'disabled' });
+      }
+      await send.click();
+      const done = page.locator('[data-v2in-created]');
+      await done.waitFor({ timeout: 60_000 });
+      const vault = await done.getAttribute('data-v2in-created');
+      assert.equal(chain.vault(vault).policy.mode, policyMode, 'the chosen mode reaches the simulated chain');
+      assert.equal(chain.vault(vault).limits.maxSlippageBps, 50, 'the exact edited limit reaches the simulated chain');
+      assert.equal(chain.vault(vault).paused, false);
+      assert.equal(chain.log.filter(method => method === 'wallet_sendCalls').length, 1, 'approval and setup share one supported wallet confirmation');
+      assert.match(await done.innerText(), new RegExp(`${title} is set up`));
+      assert.equal(await done.getByRole('link', { name: 'View position', exact: true }).getAttribute('href'), `#/positions/${ROOT}`);
+      await done.screenshot({ path: join(shots(), `final-${mode}-complete-320.png`), animations: 'disabled' });
+    } finally { await s.close(); }
+  });
+}
+
+test('final pass: all three automation entries have an honest empty state and compounding read failures recover in place', async () => {
+  const holder = ACCOUNTS[0].address.toLowerCase();
+  const emptyChain = browserChain({ positions: [], tokens: TOKENS });
+  for (const mode of ['compound', 'domino', 'protection']) {
+    const completeEmpty = plainPortfolio(emptyChain, holder, body => {
+      body.chains = body.chains.map(chain => ({ ...body.chains[0], chainId: chain.chainId }));
+      body.coverage = 'complete';
+      body.truncated = { positions: false, mandates: false, vaults: false };
+    });
+    const empty = await openPreview(emptyChain, `/sequence/${mode}`, { portfolio: completeEmpty });
+    try {
+      await empty.page.locator('[data-sequence-positions="empty"]').waitFor();
+      assert.equal(await empty.page.getByRole('link', { name: 'View positions', exact: true }).getAttribute('href'), '#/positions');
+      assert.equal(await empty.page.locator('[data-v2in-consent], [data-mandate-send]').count(), 0);
+      await empty.page.setViewportSize({ width: 320, height: 800 });
+      assert.ok(await empty.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await empty.page.locator('main').screenshot({ path: join(shots(), `final-${mode}-empty-320.png`), animations: 'disabled' });
+      assert.deepEqual(empty.wallet.state.log.filter(entry => SENDS_AND_SIGNATURES.includes(entry.method)), []);
+    } finally { await empty.close(); }
+  }
+  const v1 = browserChain({ positions: [{ tokenId: String(ROOT), holder, key: KEY, tickLower: -600, tickUpper: 600, liquidity: 10n ** 18n }], tokens: TOKENS });
+  for (const mode of ['compound', 'domino']) {
+    const s = await openPreview(v1, `/sequence/${mode}`, { portfolio: { status: 503, body: { error: 'upstream_unavailable' } } });
+    try {
+      await s.page.locator('[data-sequence-positions="failed"]').waitFor();
+      assert.equal(await s.page.locator('[data-sequence-positions="empty"]').count(), 0, 'read failure is not an empty portfolio');
+      await s.page.evaluate(value => { window.__dominoV2Test.read6.portfolio = () => value; }, plainPortfolio(v1, holder));
+      await s.page.getByRole('button', { name: 'Try again', exact: true }).click();
+      await s.page.locator(`[data-sequence-position="${ROOT}"]`).waitFor();
+      assert.equal(await s.page.locator('[data-v2in-consent]').count(), 0, 'recovery has not picked an NFT or supplied consent');
+      assert.deepEqual(s.wallet.state.log.filter(entry => SENDS_AND_SIGNATURES.includes(entry.method)), []);
+    } finally { await s.close(); }
+  }
 });

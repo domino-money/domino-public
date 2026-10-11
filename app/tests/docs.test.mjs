@@ -471,10 +471,13 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   // the selected pools. And the 2026-10 package's token page: one list from two sources, flagged pools behind Show all,
   // look-alikes called out (the markets workstream's V2, V3, I1).
   const find = sectionText(markets, 'find-a-token');
-  assert.match(find, /Search the pool catalogue, under the table, reaches every other pool\. Type a token’s name or paste its address; its pools are listed, each verified on chain\./);
-  assert.match(find, /Pools with a very high fee, or that Domino can’t open positions in, are flagged and kept behind Show all\./);
+  assert.match(find, /The search at the top finds tokens on Robinhood Chain, Base and Arbitrum One\./);
+  assert.match(find, /Search a known token by name, or paste its contract address\. Check the network label before choosing\./);
+  assert.match(find, /High-fee or unsupported pools stay behind Show all\./);
+  assert.match(find, /New position keeps the token and network; choose the pool in the next screen\./);
+  assert.match(find, /An unavailable lookup does not mean the token does not exist\./);
   assert.match(find, /one posing as USDG, WETH or ETH is called out; a pool holding one shows a warning instead of Create a position\./);
-  assert.doesNotMatch(textOf(markets), /Find pools|from the selected pools/);
+  assert.doesNotMatch(textOf(markets), /Search the pool catalogue, under the table|from the selected pools/);
   // Changed on purpose 2026-10-01: a pool's page has a docs page of its own, so Markets keeps to its 450 words.
   const poolPage = textOf(page('pool-page'));
   // Changed on purpose (2026-09-27, round 6, the pool page for beginners): the page leads with what the pool earns, its

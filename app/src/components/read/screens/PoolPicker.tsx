@@ -40,7 +40,7 @@ const plainNotes = (option: PoolOption) =>
  * and APR, always in that order, a dash for a figure nobody reports. No
  * details to open and no note lines: what they said is in titles and data.
  */
-function PoolRow({ option, checked, onPick, name, compact = false, open = false, plain = false, network = null }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean; open?: boolean; plain?: boolean; network?: string | null }) {
+function PoolRow({ option, checked, onPick, name, compact = false, open = false, plain = false, network = null, readOnly = false }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean; open?: boolean; plain?: boolean; network?: string | null; readOnly?: boolean }) {
   // New position's plain rows sit flat on the card: 32px marks ringed in the card, the pair over its id, the fee right after them.
   // The pair is named as its price is written, "TOKEN / USDG" (audit E21, lib/read/orientation.ts).
   const pair = pricePair(option.currencies[0], option.currencies[1])
@@ -68,7 +68,7 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false,
       {network === null && fee}
     </>
   )
-  const head = open ? (
+  const head = readOnly ? <div className="dm-mkt-option-head">{identity}</div> : open ? (
     <button type="button" onClick={onPick} className="dm-mkt-option-head" data-open-pool="">
       {identity}
       <IconChevronRight size={14} />
@@ -663,12 +663,15 @@ export function NetworkPoolPicker({
   pending,
   onPending,
   onPreview,
+  browse = false,
 }: {
   read: (signal: AbortSignal) => Promise<NetworkPools>
   network: string | null
   pending: PoolOption | null
   onPending: (option: PoolOption | null) => void
   onPreview?: (option: PoolOption | null) => void
+  /** Markets can compare the same verified rows without presenting a deposit selection. */
+  browse?: boolean
 }) {
   // The read as it was handed in when this list mounted: the caller remounts the list (its key) for another token.
   const reader = useRef(read)
@@ -685,7 +688,7 @@ export function NetworkPoolPicker({
         if (!controller.signal.aborted) setAnswer({ owner, result: pools })
       },
       () => {
-        if (!controller.signal.aborted) setAnswer({ owner, result: { kind: 'failed', code: 'unavailable', reason: COPY.picker.poolsNone } })
+        if (!controller.signal.aborted) setAnswer({ owner, result: { kind: 'failed', code: 'unavailable', reason: 'Pools are temporarily unavailable.' } })
       },
     )
     return () => controller.abort()
@@ -733,7 +736,7 @@ export function NetworkPoolPicker({
   const list = (
     <ul className="dm-flow-pool-rows">
       {options.map((option) => (
-        <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} compact plain network={network} />
+        <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} compact plain network={network} readOnly={browse} />
       ))}
     </ul>
   )
@@ -751,7 +754,7 @@ export function NetworkPoolPicker({
           {COPY.picker.poolsNone}
         </p>
       )}
-      {options.length > 0 && (
+      {options.length > 0 && (browse ? list : (
         <fieldset className="grid gap-2">
           <legend className="dm-flow-pools-legend">{COPY.picker.poolsLegend}</legend>
           {onPreview ? (
@@ -776,7 +779,7 @@ export function NetworkPoolPicker({
             list
           )}
         </fieldset>
-      )}
+      ))}
     </div>
   )
 }

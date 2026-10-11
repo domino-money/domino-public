@@ -21,28 +21,26 @@ import { FigureDash } from '../ui'
 import { rem } from '../../lib/rootScale'
 
 /**
- * The card plot's height (px): what the card's fixed height (markets.css, 300px) leaves under the head and the price
- * row. The plot runs full bleed into the card's bottom edge; the caption rests over its foot (markets.css).
+ * Plot dimensions in the shared 16px design scale. V3 puts its metadata outside the plot,
+ * leaving the whole chart area to the data instead of reserving a caption band inside it.
  */
-const LINE_HEIGHT = 164
+const LINE_HEIGHT = 108
 /** Bars carry no price, so they take the price row's room as well. */
-const BARS_HEIGHT = 200
+const BARS_HEIGHT = 164
 /**
- * The line keeps 14px under the price row and 40px over the card's bottom edge (the caption's band), so a peak or a
- * trough never meets either; it starts at its first close (the card's left edge when that hour opens the window) and
- * ends 20px from the right edge, under the TVL figure, with room for the end dot's rings. The area under it runs to the
- * bottom edge and fades out before it.
+ * Small vertical insets keep peaks clear of the price and footer. The last point leaves room for its live rings.
+ * This changes the plot's frame only; every candle and the window's direction are preserved.
  */
-const LINE_PAD = { left: 0, right: 20, top: 14, bottom: 40 }
+const LINE_PAD = { left: 0, right: 16, top: 10, bottom: 10 }
 
 /** Bundled artwork by address where the catalogue has it; a read-token mark for other bound addresses; a plain disc otherwise. */
 function CatalogueMarks({ entry }: { entry: PoolCatalogueEntry }) {
   return (
     <span className="inline-flex shrink-0 items-center" aria-hidden="true">
       {entry.artwork.map((artwork, index) => {
-        const style = { marginLeft: index ? rem(-6) : 0 }
-        if (artwork) return <TokenIcon key={index} symbol={artwork} size={20} ring="var(--surface-3)" style={style} />
-        if (entry.addresses) return <TokenMark key={index} token={unreadToken(entry.addresses[index])} size={20} ring="var(--surface-3)" style={style} />
+        const style = { marginLeft: index ? rem(-9) : 0 }
+        if (artwork) return <TokenIcon key={index} symbol={artwork} size={32} ring="var(--card)" style={style} />
+        if (entry.addresses) return <TokenMark key={index} token={unreadToken(entry.addresses[index])} size={32} ring="var(--card)" style={style} />
         return <span key={index} className="dm-mkt-disc" style={style} />
       })}
     </span>
@@ -55,25 +53,23 @@ function Pair({ market, catalogue }: { market: Market | null; catalogue?: PoolCa
     // Named as its price is written, "TOKEN/USDG" (audit E21, lib/read/orientation.ts).
     const pair = pricePair(market.tokens.base, market.tokens.quote)
     return (
-      <span className="dm-chip dm-chip--plate dm-mkt-pair">
-        <TokenMarkPair base={pair.base} quote={pair.quote} size={20} ring="var(--surface-3)" />
-        <span className="dm-mkt-pair-name">
-          <PoolTokenLabel token={pair.base} />/<PoolTokenLabel token={pair.quote} />
+      <span className="dm-mkt-pair">
+        <TokenMarkPair base={pair.base} quote={pair.quote} size={32} ring="var(--card)" />
+        <span className="dm-mkt-pair-identity">
+          <span className="dm-mkt-pair-name"><PoolTokenLabel token={pair.base} /> / <PoolTokenLabel token={pair.quote} /></span>
+          <span className="dm-mkt-pair-fee">{feeWords(fee)}</span>
         </span>
-        {/* The fee as every chip writes it (lib/format/fee.ts, audit E21), without "Uniswap · ": a card is narrow, and the
-            table under the rail names the exchange. */}
-        <span className="dm-mkt-pair-fee">· {feeWords(fee)}</span>
       </span>
     )
   }
   if (!catalogue) return null
   return (
-    <span className="dm-chip dm-chip--plate dm-mkt-pair">
+    <span className="dm-mkt-pair">
       <CatalogueMarks entry={catalogue} />
-      <span className="dm-mkt-pair-name">
-        <CatalogueLabel text={catalogue.labels[0]} />/<CatalogueLabel text={catalogue.labels[1]} />
+      <span className="dm-mkt-pair-identity">
+        <span className="dm-mkt-pair-name"><CatalogueLabel text={catalogue.labels[0]} /> / <CatalogueLabel text={catalogue.labels[1]} /></span>
+        <span className="dm-mkt-pair-fee">{feeWords(catalogue.fee)}</span>
       </span>
-      <span className="dm-mkt-pair-fee">· {feeWords(catalogue.fee)}</span>
     </span>
   )
 }
@@ -124,7 +120,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   } else if (bars) {
     caption = (
       <span className="tnum">
-        Volume by hour · {bars.returned} {bars.returned === 1 ? 'candle' : 'candles'}
+        Volume by hour
       </span>
     )
   } else if (series.kind === 'figure') {
@@ -192,11 +188,19 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   }
 
   return (
-    <a href={poolHref(poolId, token)} data-market-card={poolId} data-card-series={series.kind} className="dm-plate dm-dots-chart dm-mkt-card animate-rise" style={style}>
+    <a href={poolHref(poolId, token)} data-market-card={poolId} data-card-series={series.kind} data-card-direction={tone} className="dm-plate dm-dots-chart dm-mkt-card animate-rise" style={style}>
       <div className="dm-mkt-card-head">
         <Pair market={market} catalogue={catalogue} />
+        <span className="dm-mkt-card-open" aria-hidden="true">↗</span>
+      </div>
+      {price}
+      <div className="dm-mkt-plot" data-series-stale={(line ?? bars)?.stale ? '' : undefined}>
+        {plot}
+      </div>
+      <div className="dm-mkt-card-foot">
+        <p className="dm-mkt-card-caption">{caption}{((line ?? bars)?.stale || (series.kind === 'figure' && (market?.volume24hUsd ?? series.metric)?.state === 'stale' && (market?.volume24hUsd ?? series.metric)?.value !== null)) && <span className="sr-only" data-saved-data="chart"> · Last available history</span>}</p>
         <span className="dm-mkt-card-tvl">
-          <span className="dm-mkt-card-label">TVL</span>
+          <span className="dm-mkt-card-label" title="Total value held in the pool">TVL</span>
           <span className="dm-mkt-card-figure">
             {market && !(market.figuresPending && presentMetric(market.tvlUsd).kind === 'unavailable') ? (
               <MetricCell metric={market.tvlUsd} retrieved={retrieved} />
@@ -209,11 +213,6 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
           </span>
         </span>
       </div>
-      {price}
-      <div className="dm-mkt-plot" data-series-stale={(line ?? bars)?.stale ? '' : undefined}>
-        {plot}
-      </div>
-      <p className="dm-mkt-card-caption">{caption}{((line ?? bars)?.stale || (series.kind === 'figure' && (market?.volume24hUsd ?? series.metric)?.state === 'stale' && (market?.volume24hUsd ?? series.metric)?.value !== null)) && <span className="sr-only" data-saved-data="chart"> · Last available history</span>}</p>
     </a>
   )
 }

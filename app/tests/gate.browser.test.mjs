@@ -249,8 +249,8 @@ test('the right password opens the full app, which runs under the CSP without a 
 
   const text = await page.locator('#root').innerText();
   assert.ok(text.length > 500, `the app rendered only ${text.length} characters`);
-  // Changed on purpose 2026-10-03 (the owner: Domino covers more than one network): Home's headline, not a chain's name.
-  assert.match(text, /Earn fees on your tokens/);
+  // The V3 Home headline proves the app opened; cookie and CSP checks below remain the access contract.
+  assert.match(await page.getByRole('heading', { level: 1 }).innerText(), /^Earn fees\.\s*Keep control\.$/);
 
   const [cookie] = await context.cookies();
   assert.equal(cookie.name, '__Host-domino-beta');

@@ -259,6 +259,7 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
     if (nearest.candle.startTimestamp !== inspected) setInspected(nearest.candle.startTimestamp)
   }
   const inspectByKey = (event: ReactKeyboardEvent<SVGSVGElement>) => {
+    if (event.key === 'Escape') { setInspected(null); return }
     if (!INSPECT_KEYS.includes(event.key) || points.length === 0) return
     event.preventDefault()
     const from = index === -1 ? points.length - 1 : index
@@ -349,12 +350,12 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
                 {reason}
               </p>
               <span className="text-[0.8125rem] leading-[1.125rem] text-fg-subtle" title={reason}>
-                —
+                Price history is unavailable.
               </span>
             </div>
           ) : candles.length === 0 ? (
             <div className="dm-pool-plot-empty">
-              <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted">No candles reported.</p>
+              <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted">No prices reported for this period.</p>
             </div>
           ) : plot && current && last ? (
             <svg
@@ -373,8 +374,9 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
               aria-busy={reading || undefined}
               data-candle-chart=""
               onPointerMove={inspectAt}
-              onPointerDown={inspectAt}
-              onPointerLeave={() => setInspected(null)}
+              onPointerDown={event => { event.currentTarget.focus({ preventScroll: true }); inspectAt(event) }}
+              onPointerLeave={event => { if (event.pointerType !== 'touch') setInspected(null) }}
+              onPointerCancel={() => setInspected(null)}
               onKeyDown={inspectByKey}
               onBlur={() => setInspected(null)}
             >

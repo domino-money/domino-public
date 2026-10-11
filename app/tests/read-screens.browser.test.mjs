@@ -1141,6 +1141,7 @@ test('the pool page reads its figures, Domino’s 24h history and its chain acti
   await workspace.waitFor({ timeout: 20_000 });
   // Changed on purpose (2026-09-27, round 6, the pool page for beginners): the activity figures, the pool's details and
   // the APR's method are parts of one closed Details card at the end of the page.
+  assert.equal(await workspace.locator('[data-pool-details]').evaluate((details) => details.open), false, 'technical details begin folded');
   await workspace.locator('[data-pool-details] > summary').click();
   await page.locator('[data-pool-activity="ok"]').waitFor({ timeout: 20_000 });
   await page.waitForFunction(() => document.querySelector('[data-pool-figures] [data-metric="qualified"]'));
@@ -1161,7 +1162,7 @@ test('the pool page reads its figures, Domino’s 24h history and its chain acti
   assert.deepEqual(stats.map(([label]) => label), ['APR', '24H VOLUME', 'TVL', '24H FEES', 'POOL PRICE'], 'Domino’s 24h fees beside the figures, and its APR where the estimate would be');
   // Changed on purpose 2026-10-01 (integration pass 3, after audit E21): the APR as the one APR rule writes it, whole from 100%.
   assert.deepEqual(stats.slice(0, 4).map(([, value]) => value), ['158%', '$0.000029', '$0.000020', '<$0.000001'], 'the qualified figures take precedence over the provider’s');
-  assert.match(await figures.innerText(), /Domino history/);
+  assert.match(await workspace.locator('[data-pool-details] [data-market-provenance]').innerText(), /^Domino history/, 'the figures source remains available in Pool details');
   assert.equal(await workspace.locator('[data-pool-positions]').count(), 0, 'no positions section where pool-positions is not listed');
 
   // The activity card: turnover, LP fees and LP assets in each token's units; no USD and no APR in it.

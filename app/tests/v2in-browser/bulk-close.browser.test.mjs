@@ -184,13 +184,13 @@ for (const changed of [false, true]) test(`a wallet ${changed ? 'replacement wit
   } finally { await s.close(); }
 });
 
-test('four Automate choices fit two columns desktop and one mobile, with native art and no playback controls', async () => {
+test('Automate leads with New position above three desktop choices, stacks on mobile, and preserves native art without playback controls', async () => {
   const s = await scenario({ width: 1320, height: 960 }, '#/automate');
   try {
     await s.page.getByRole('link', { name: 'Choose a position', exact: true }).waitFor();
     const cards = s.page.locator('[data-automation-card]');
     assert.equal(await cards.count(), 4);
-    const slugs = ['new-position', 'auto-exit', 'auto-compound', 'domino-compound'];
+    const slugs = ['new-position', 'auto-compound', 'domino-compound', 'auto-exit'];
     for (const [index, slug] of slugs.entries()) {
       const link = cards.nth(index).locator('.dm-automation-choice-doc');
       assert.equal(await link.getAttribute('href'), `#/docs/${slug}`);
@@ -204,31 +204,36 @@ test('four Automate choices fit two columns desktop and one mobile, with native 
     assert.equal(await cards.first().locator('.choice-create-band').count(), 1, 'one destination range');
     assert.equal(await cards.first().locator('.choice-create-tile').count(), 1, 'two inputs create one position');
     assert.equal(await cards.first().locator('.choice-fund').count(), 2);
-    const exit = cards.nth(1);
-    assert.equal(await exit.locator('.choice-exit-band').count(), 1);
-    assert.equal(await exit.locator('.choice-edge').count(), 1, 'the price reaches the range boundary');
-    assert.equal(await exit.locator('.choice-wallet').count(), 1);
-    assert.equal(await exit.locator('.choice-transfer').count(), 2, 'both tokens return to the wallet');
+    const exit = cards.nth(3);
+    assert.equal(await exit.locator('.as-exit-fill').count(), 1);
+    assert.equal(await exit.locator('.as-boundary').count(), 1, 'the price reaches the range boundary');
+    assert.equal(await exit.locator('.as-wallet').count(), 1);
+    assert.equal(await exit.locator('.as-wallet-token').count(), 2, 'both tokens return to the wallet');
+    assert.match(await exit.innerText(), /Price reaches your limit[\s\S]*Position closes[\s\S]*Your wallet/);
     assert.equal(await s.page.getByRole('button', { name: /Replay|Pause/ }).count(), 0);
     for (const width of [1320, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
-      const boxes = await cards.evaluateAll((elements) => elements.map((element) => { const r = element.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, width: r.width }; }));
+      const boxes = await cards.evaluateAll((elements) => elements.map((element) => { const r = element.getBoundingClientRect(); return { x: r.x, y: r.y, bottom: r.bottom, right: r.right, width: r.width }; }));
       assert.ok(boxes.every((box) => box.right <= width && box.x >= 0));
-      if (width === 1320) { assert.equal(boxes[0].y, boxes[1].y); assert.ok(Math.abs(boxes[0].width - boxes[1].width) < 1); assert.equal(boxes[0].x, boxes[2].x); assert.equal(boxes[1].x, boxes[3].x); }
-      else assert.ok(boxes[1].y > boxes[0].y);
+      assert.ok(boxes[1].y > boxes[0].bottom, 'New position leads above the automation choices');
+      if (width === 1320) {
+        assert.equal(boxes[1].y, boxes[2].y); assert.equal(boxes[2].y, boxes[3].y);
+        assert.ok(Math.abs(boxes[1].width - boxes[2].width) < 1 && Math.abs(boxes[2].width - boxes[3].width) < 1);
+        assert.ok(boxes[2].x > boxes[1].right && boxes[3].x > boxes[2].right, 'three separated columns');
+      } else for (let i = 1; i < boxes.length; i++) assert.ok(boxes[i].y > boxes[i - 1].bottom, 'one separated column on mobile');
       await s.page.screenshot({ path: resolve(shots, `automate-compact-${width}.png`), fullPage: true });
     }
     await s.page.emulateMedia({ reducedMotion: 'reduce' });
-    assert.equal(await s.page.locator('.choice-tip').evaluate((node) => getComputedStyle(node).animationName), 'none');
+    assert.equal(await exit.locator('.as-exit-price').evaluate((node) => getComputedStyle(node).animationName), 'none');
     assert.equal(await s.page.locator('.choice-fund').first().evaluate((node) => getComputedStyle(node).animationName), 'none');
     assert.equal(await cards.first().locator('.choice-create-tile').evaluate((node) => getComputedStyle(node).opacity), '1', 'the still creation picture shows its completed position');
-    assert.equal(await exit.evaluate((node) => getComputedStyle(node.querySelector('.choice-exit-band')).stroke === getComputedStyle(node.querySelector('.choice-exit-tile .t-body')).fill), true, 'the still exit picture has a closed range and tile');
+    assert.equal(await exit.locator('.as-exit-fill').evaluate((node) => getComputedStyle(node).fillOpacity), '0.05', 'the still exit picture has a closed, unfilled range');
     assert.equal(await exit.evaluate((node) => {
-      const wallet = node.querySelector('.choice-wallet').getBoundingClientRect();
-      return [...node.querySelectorAll('.choice-transfer')].every((token) => {
+      const wallet = node.querySelector('.as-wallet').getBoundingClientRect();
+      return [...node.querySelectorAll('.as-wallet-token')].every((token) => {
         const bounds = token.getBoundingClientRect();
         const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-        return x >= wallet.left && x <= wallet.right && y >= wallet.top && y <= wallet.bottom;
+        return getComputedStyle(token).opacity === '1' && x >= wallet.left && x <= wallet.right && y >= wallet.top && y <= wallet.bottom;
       });
     }), true, 'the returned tokens are already inside the wallet in reduced motion');
     await cards.first().hover();

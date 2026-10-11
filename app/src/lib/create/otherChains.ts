@@ -80,6 +80,8 @@ export interface NetworkSearch {
   subscribe: (listener: () => void) => () => void
   version: () => number
   pending: (query: string) => boolean
+  /** A failed or unavailable lookup is not evidence that this network has no matching token. */
+  unavailable?: (query: string) => readonly OtherChainId[]
 }
 
 /**
@@ -383,6 +385,8 @@ export function preselectOf<E>(entries: readonly E[], factsOf: (entry: E) => Hit
 export type NetworkResolved = { ok: true; token: TokenDisplay } | { ok: false; code: string; reason: string }
 
 export interface OtherChains {
+  /** Public pool discovery can be available while this origin's creation service remains closed. */
+  creationAvailable?: (chainId: number) => boolean
   /** Robinhood Chain's own tag, for today's rows once other networks are listed beside them. */
   home: string
   /** A network's name by id, for its tag; null for one this page does not offer. */

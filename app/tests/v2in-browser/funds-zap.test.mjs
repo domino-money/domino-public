@@ -137,7 +137,8 @@ test('live V2 Amount finds its exact shortfall without network choices or automa
     await captureCard(s, 'offer');
     const readsBefore = s.walletMethods.filter((method) => method === 'eth_getBalance').length;
     await s.zap.locator(`[data-zap-amount="${USDG}"] input`).fill('60');
-    await offer.locator('[data-funds-lack-raw="60000000"]').waitFor();
+    await offer.locator('[data-funds-lack-raw="60000000"]').waitFor({ state: 'attached' });
+    assert.equal(await offer.getByRole('button', { name: 'Continue with wallet', exact: true }).isVisible(), true, 'the funding action remains visible after the shortfall changes');
     assert.equal(s.walletMethods.filter((method) => method === 'eth_getBalance').length, readsBefore, 'typing reuses the destination read');
     assert.equal(await offer.locator('#funds-origin-chain, [data-funds-scan], button[data-funds-network]').count(), 0, 'no network chooser or manual scan');
     assert.equal(await offer.getByText('Other networks', { exact: true }).count(), 0);

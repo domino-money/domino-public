@@ -998,6 +998,7 @@ test('what every visitor downloads first, the route screens, the session/read cl
   // entry 216 kB (was 214), financial 320 kB (was 319), elysium section 43 kB (new); every other ceiling unchanged. The
   // wallet-test all-lazy overhead measures 1,196 B.
   const productionBytes = new Map();
+  const budgetFailures = [];
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -1100,7 +1101,16 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // their own, measured in the deployed build that carries them. The V1 wallet-test build carries none.
     // 2026-10-05 (the owner: his New position screens, with V2 connected behind them): and JourneyCreateV2, his journey's
     // Review and Create position on the new contracts: 604,752 B gzip for the family then, so its budget 606,000.
-    const v2Roots = js.filter((file) => /^(NewPositionV2|JourneyCreateV2|PoolAdvanced|PositionV2Actions|PositionAutomation|PositionPage|ManagedVaults|OwnedRows|Receipts|SetupEntry|ProtectionSetup|AutomateProtection|FundsAmounts|MandateDialog|PositionDialog|VaultDialog|actions|ccip|secp256k1)-/.test(file));
+    // V3 Markets also opens the public multi-network discovery adapter lazily. Charge its complete static closure
+    // to the existing V2 family; it shares discovery with New position and receives no separate allowance.
+    const marketsNetworkRoots = js.filter((file) => /^MarketsNetworks-/.test(file));
+    assert.equal(marketsNetworkRoots.length, dir === WALLET ? 0 : 1, 'multi-network Markets discovery belongs only to V2 builds');
+    for (const file of marketsNetworkRoots) {
+      const discoverable = routeRoots.filter((root) => root.startsWith('Explore-')).some((root) =>
+        [...nodes(moduleTree(dir, root))].some((node) => node.type === 'ImportExpression' && node.source.value === `./${file}`));
+      assert.ok(discoverable, 'Markets opens its network discovery adapter through a dynamic import');
+    }
+    const v2Roots = js.filter((file) => /^(MarketsNetworks|NewPositionV2|JourneyCreateV2|PoolAdvanced|PositionV2Actions|PositionAutomation|PositionPage|ManagedVaults|OwnedRows|Receipts|SetupEntry|ProtectionSetup|AutomateProtection|FundsAmounts|MandateDialog|PositionDialog|VaultDialog|actions|ccip|secp256k1)-/.test(file));
     if (dir === WALLET) assert.deepEqual(v2Roots, [], 'the V1 wallet-test build carries no V2');
     else assert.ok(v2Roots.length >= 14, `the deployed build carries V2's screens: ${v2Roots.join(', ')}`);
     const v2 = new Set([...staticClosure(dir, v2Roots)].filter((file) => !initial.has(file)));
@@ -1252,8 +1262,9 @@ test('what every visitor downloads first, the route screens, the session/read cl
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);
       // Compare instrumentation overhead between builds with the same V2 feature set. The legacy fixture still
       // counts every byte against its absolute budget; neither build discounts shared runtime or feature chunks.
-      if (testOnly && dir === WALLET_V2) assert.ok(total - productionBytes.get(family) <= 3_000, `${family}: V2 wallet test-only overhead exceeds 3 kB`);
-      assert.ok(total <= budget, `${label} ${family} is ${total} bytes gzip, over the ${budget} budget`);
+      if (testOnly && dir === WALLET_V2 && total - productionBytes.get(family) > 3_000) budgetFailures.push(`${family}: V2 wallet test-only overhead exceeds 3 kB`);
+      if (total > budget) budgetFailures.push(`${label} ${family} is ${total} bytes gzip, over the ${budget} budget`);
     }
   }
+  assert.deepEqual(budgetFailures, [], 'every measured family must stay within its unchanged budget');
 });

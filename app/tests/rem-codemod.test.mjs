@@ -7,6 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { convertClasses, convertCss, run, svgKeyframes } from '../scripts/rem-codemod.mjs';
 
@@ -85,12 +86,50 @@ test('Tailwind arbitrary px values become rem; variants (media queries), hairlin
   assert.equal(convertClasses(classes(after)), classes(after), 'a second run changes nothing');
 });
 
-test('the root font-size steps at the widths src/lib/rootScale.ts watches: 0.8 from 1024px with a fine pointer, 0.9 from 768px, the browser\'s own below', () => {
+test('the root font-size follows browser text preferences: compact from 768px with a fine pointer, full size on touch', () => {
   const tokens = readFileSync(new URL('../src/styles/tokens.css', import.meta.url), 'utf8');
-  assert.match(tokens, /@media \(min-width: 768px\) \{\s*html \{ font-size: 14\.4px; \}\s*\}/);
-  // Changed on purpose 2026-10-03: a touch tablet held wide keeps 0.9 (its targets stay finger-sized).
-  assert.match(tokens, /@media \(min-width: 1024px\) and \(pointer: fine\) \{\s*html \{ font-size: 12\.8px; \}\s*\}/);
-  assert.doesNotMatch(tokens, /html \{[^}]*font-size: (?!1[24]\.[48]px)/, 'no other root font-size');
+  assert.match(tokens, /html \{ font-size: 100%; \}/);
+  assert.match(tokens, /@media \(min-width: 768px\) and \(pointer: fine\) \{\s*html \{ font-size: 67\.5%; \}\s*\}/);
+  assert.doesNotMatch(tokens, /html \{[^}]*font-size: (?!100%|67\.5%)/, 'no other root font-size');
   const scale = readFileSync(new URL('../src/lib/rootScale.ts', import.meta.url), 'utf8');
-  assert.match(scale, /ROOT_SCALE_QUERIES = \['\(min-width: 768px\)', '\(min-width: 1024px\) and \(pointer: fine\)'\]/);
+  assert.match(scale, /ROOT_SCALE_QUERIES = \['\(min-width: 768px\)', '\(min-width: 768px\) and \(pointer: fine\)'\]/);
+});
+
+test('SVG subscribers see a fine-to-touch pointer change at 900px without a viewport resize or reload', () => {
+  const require = createRequire(import.meta.url);
+  const ts = require('typescript');
+  const source = readFileSync(new URL('../src/lib/rootScale.ts', import.meta.url), 'utf8');
+  const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  let fine = true;
+  let updates = 0;
+  const queries = new Map();
+  const matches = (query) => Number(query.match(/min-width: (\d+)px/)[1]) <= 900 && (!query.includes('pointer: fine') || fine);
+  const window = { matchMedia: (query) => {
+    if (!queries.has(query)) queries.set(query, { matches: matches(query), listeners: [], addEventListener(type, listener) { assert.equal(type, 'change'); this.listeners.push(listener); } });
+    return queries.get(query);
+  } };
+  const document = { documentElement: {}, readyState: 'complete' };
+  const module = { exports: {} };
+  const mockRequire = (name) => {
+    assert.equal(name, 'react');
+    return { useSyncExternalStore(subscribe, snapshot) { subscribe(() => { updates += 1; }); return snapshot(); } };
+  };
+  new Function('require', 'module', 'exports', 'window', 'document', 'getComputedStyle', compiled)(mockRequire, module, module.exports, window, document, () => ({ fontSize: fine ? '10.8px' : '16px' }));
+  const setPointer = (next) => {
+    fine = next;
+    for (const [query, media] of queries) {
+      const nextMatch = matches(query);
+      if (nextMatch !== media.matches) {
+        media.matches = nextMatch;
+        for (const listener of media.listeners) listener({ matches: nextMatch });
+      }
+    }
+  };
+  assert.equal(module.exports.useRootScale(), 0.675);
+  setPointer(false);
+  assert.equal(module.exports.rootScale(), 1, 'switching to touch updates the cached scale');
+  assert.equal(updates, 1, 'chart subscribers redraw once');
+  setPointer(true);
+  assert.equal(module.exports.rootScale(), 0.675, 'switching back restores the compact scale');
+  assert.equal(updates, 2);
 });

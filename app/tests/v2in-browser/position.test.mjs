@@ -162,7 +162,7 @@ test('(b) live on Base: the same page from read-v6, no USD and no APR; Domino\'s
     // figure and the Price range chart are; the tile wrote the pool's order beside it ("1 ETH = 0.000333 USDC").
     // Changed on purpose 2026-10-05 (New position on Base and Arbitrum One): Base's USDC is a quote there as USDG is on
     // Robinhood Chain, so ether is priced in dollars, as Domino V2's review writes it ("1 USDC = 0.00044 ETH" before).
-    assert.match(await text(detail.locator('[data-stat="price"]')), /^1 ETH = \S+ USDC$/, 'the price now, in V1\'s own words');
+    assert.match(await text(detail.locator('[data-stat="price"]')), /^\S+ USDC per ETH$/, 'the current price with its quote unit, matching the other position pages');
     assert.doesNotMatch(await text(detail), /\$/, 'no USD anywhere');
     // V1's row (review #5): one primary Collect fees, then the "···" menu with the three other actions.
     const automation = detail.locator('[data-automation-control]');
@@ -195,6 +195,11 @@ test('(b) live on Base: the same page from read-v6, no USD and no APR; Domino\'s
     // Activity: the position's own S1 receipts, from read-v6; the fee's label, then its amount and its base (review #16).
     const activity = detail.locator('[data-position-activity-item]').first();
     await activity.waitFor();
+    assert.equal(await activity.getByRole('img', { name: 'Confirmed', exact: true }).count(), 1, 'confirmation stays accessible without a text check glued to the title');
+    assert.doesNotMatch(await activity.locator('summary').innerText(), /✓/);
+    assert.ok(await activity.locator('.dm-rcpt-what').evaluate((node) => parseFloat(getComputedStyle(node).fontSize)) >= 14, 'activity actions remain readable at the compact desktop scale');
+    assert.ok(await activity.locator('.dm-activity-time').evaluate((node) => parseFloat(getComputedStyle(node).fontSize)) >= 12, 'activity dates remain readable');
+    assert.equal(await activity.locator('details').getAttribute('open'), null, 'technical receipt details start collapsed');
     await activity.locator('summary').click();
     assert.match(await text(activity), /Added to position #5100001/);
     assert.match(await text(activity), /Domino fee \(0\.65% of the amount swapped\).*0\.325 USDC/);
@@ -737,12 +742,19 @@ test('(b3) live on Base with qualified prices: what it holds and its fees in dol
     await detail.waitFor({ timeout: 30_000 });
     const holds = detail.locator('[data-cell="principal"]');
     await holds.locator('[data-usd="principal"]').waitFor({ timeout: 30_000 });
-    assert.match(await text(holds.locator('[data-usd="principal"]')), /^\$[\d,]+(\.\d{2})?$/, 'what it holds, in dollars');
+    assert.match((await holds.locator('[data-usd="principal"]').textContent()).trim(), /^\$[\d,]+(\.\d{2})?$/, 'what it holds, in dollars; read the exact value across its animated digit spans');
     assert.match(await text(holds.locator('[data-stat="principal"]')), /ETH.*USDC/, 'its token amounts under the figure');
     // 0.001 ETH at $4,000.12 and 2.5 USDC at $1: $6.50.
     assert.equal(await text(detail.locator('[data-cell="fees"] [data-usd="fees"]')), '$6.50');
     assert.match(await text(detail.locator('[data-cell="fees"] [data-stat="fees"]')), /0\.001\s+ETH.*2\.5\s+USDC/);
     assert.equal(await detail.locator('[data-cell="apr"] [data-figure="none"]').count(), 1, 'still no APR');
+    for (const width of [1280, 390, 320]) {
+      await s.page.setViewportSize({ width, height: 960 });
+      await s.page.screenshot({ path: join(shots(), `position-base-qualified-page-${width}.png`), fullPage: true, animations: 'disabled' });
+      assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `qualified figures fit ${width}px`);
+      assert.equal(await holds.locator('.dm-tick-d').evaluateAll((digits) => new Set(digits.map((digit) => Math.round(digit.getBoundingClientRect().top))).size), 1, `the qualified dollar value stays on one line at ${width}px`);
+      await detail.screenshot({ path: join(shots(), `position-base-qualified-${width}.png`), animations: 'disabled' });
+    }
   } finally { await s.close(); }
 });
 

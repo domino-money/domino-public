@@ -10,7 +10,6 @@ import { IconAutomate, IconChevronLeft, IconPositions, IconRange, IconWallet } f
 import type { DepositsSlot, OwnedPositionsProps } from '../components/positions/OwnedPositions'
 import { PendingRows, PendingSummary } from '../components/positions/PositionRow'
 import { AutomationFrame } from '../components/positions/visual/AutomationFrame'
-import { POSITION_KIT } from '../components/positions/visual/kit'
 import { PositionSkeleton } from '../components/positions/visual/PositionSkeleton'
 import { Button, Chip, Display, EmptyState, LinkButton, PageShell } from '../components/ui'
 import { MANAGED_LINE, NO_SIGN_IN_BOTH, automationLayout, sameShows, type CardShows } from '../lib/automationCards'
@@ -19,7 +18,7 @@ import { warmState } from '../lib/fees/client'
 import { parseAddressInput, shortAddress } from '../lib/read/screens/identity'
 import { portfolioRoute, positionDetailId } from '../lib/read/screens/positions'
 import { useWalletIdentity, walletKey, type WalletIdentityView } from '../lib/walletIdentity'
-import { AUTO_EXIT_FEATURE, FEATURES } from '../lib/automate/features'
+import { AUTO_EXIT_FEATURE } from '../lib/automate/features'
 import { useRouteTitle } from '../lib/routeTitle'
 
 type Connected = Extract<WalletIdentityView, { kind: 'connected' }>
@@ -60,7 +59,7 @@ const V2Managed = __DOMINO_V2__ ? lazy<ComponentType<ManagedProps>>(recovering((
 // their fallback as a Suspense boundary reveals them.
 const OwnedPositions = __DOMINO_WALLET_SESSION__ ? deferred<OwnedPositionsProps>(recovering(() => import('../components/positions/OwnedPositions'), couldNotLoad)) : null
 // Its default only (2026-10-03): the module also carries the test builds' Price range lab (PositionDetail.tsx RangeLab).
-const PositionDetail = deferred<{ tokenId: string; kit?: unknown }>(recovering(() => import('./PositionDetail').then((module) => ({ default: module.default })), couldNotLoad))
+const PositionDetail = deferred<{ tokenId: string }>(recovering(() => import('./PositionDetail').then((module) => ({ default: module.default })), couldNotLoad))
 // Changed on purpose (data) 2026-10-02 (Domino V2 integration): a position V1's reads do not cover (`#/positions/<chain>-
 // v<dex>-<id>`, src/v2in/route.ts: v3, Base, Arbitrum One) opens the same page from its own chunk, in a build with V2
 // only; where V2 is off there it draws this list, as any other segment does.
@@ -292,9 +291,10 @@ function ReceiptsPage() {
 function AutomationCard() {
   return (
     <section className="dm-card dm-acct-rail dm-acct-auto dm-acct-o6" aria-labelledby="automation-title">
-      <h2 id="automation-title" className="dm-title">
-        Automation
-      </h2>
+      <div className="dm-acct-auto-head">
+        <h2 id="automation-title" className="dm-title">Automation</h2>
+        <LinkButton href={automateHref} variant="ghost" size="sm" aria-label="Open Automate">Explore <span aria-hidden="true">↗</span></LinkButton>
+      </div>
       <ul className="dm-acct-auto-list">
         <li>
           <IconTile icon={<IconAutomate />} />
@@ -302,7 +302,7 @@ function AutomationCard() {
             <p className="dm-acct-auto-name">
               <span>Auto-compound</span>
             </p>
-            <p className="dm-acct-auto-text">{FEATURES.compound.line}</p>
+            <p className="dm-acct-auto-text">Reinvest earned fees</p>
           </div>
         </li>
         <li>
@@ -311,7 +311,7 @@ function AutomationCard() {
             <p className="dm-acct-auto-name">
               <span>Domino-compound</span>
             </p>
-            <p className="dm-acct-auto-text">{FEATURES.domino.line}</p>
+            <p className="dm-acct-auto-text">Fund the next range</p>
           </div>
         </li>
         {__DOMINO_V2__ && (
@@ -321,14 +321,11 @@ function AutomationCard() {
               <p className="dm-acct-auto-name">
                 <span>{AUTO_EXIT_FEATURE.name}</span>
               </p>
-              <p className="dm-acct-auto-text">{AUTO_EXIT_FEATURE.line}</p>
+              <p className="dm-acct-auto-text">Close at the range limit</p>
             </div>
           </li>
         )}
       </ul>
-      <LinkButton href={automateHref} variant="outline" size="sm" className="justify-self-start">
-        Open Automate
-      </LinkButton>
     </section>
   )
 }
@@ -411,7 +408,7 @@ function PositionsList() {
           <div className="dm-acct-slot dm-acct-o1 dm-own-slot animate-rise" style={rise(1)}>
             {OwnedPositions ? (
               <Suspense fallback={<ListWaiting />}>
-                <OwnedPositions fallback={<ListWaiting />} identity={identity} deposits={heldDeposits} onEmptyAction={setListEmpty} viewed={viewing ? linked : null} kit={POSITION_KIT} />
+                <OwnedPositions fallback={<ListWaiting />} identity={identity} deposits={heldDeposits} onEmptyAction={setListEmpty} viewed={viewing ? linked : null} />
               </Suspense>
             ) : (
               <NoWalletHere />
@@ -459,7 +456,7 @@ export function Positions({ param = '' }: { param?: string }) {
   if (!detail) return <PositionsList />
   return (
     <Suspense fallback={<DetailWaiting />}>
-      <PositionDetail key={detail} fallback={<DetailWaiting />} tokenId={detail} kit={POSITION_KIT} />
+      <PositionDetail key={detail} fallback={<DetailWaiting />} tokenId={detail} />
     </Suspense>
   )
 }

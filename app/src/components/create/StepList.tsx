@@ -188,11 +188,10 @@ export function StepList({ steps, onOpen, locked = false }: { steps: readonly St
                     <div className="dm-flow-head">
                       <StepMarker index={number} state={open ? 'current' : step.state} label={label} />
                       <div className="min-w-0">
-                        <p className="dm-flow-eyebrow" aria-hidden="true">{CREATE.page.stepOf(number, steps.length)}</p>
                         <h2 ref={open ? title : undefined} tabIndex={-1} className="dm-flow-title">
                           {words.title}
                         </h2>
-                        <p className="dm-flow-lead">{step.lead ?? words.lead}</p>
+                        {(step.lead ?? words.lead) && <p className="dm-flow-lead">{step.lead ?? words.lead}</p>}
                       </div>
                     </div>
                     <div className="dm-flow-content">{step.body}</div>

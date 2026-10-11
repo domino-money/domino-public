@@ -1551,6 +1551,27 @@ test('hash routes: a token or a pool id is taken only in its exact shape, and ol
   }
 })
 
+test('network token routes keep identical addresses on different chains distinct and reject malformed handoffs', () => {
+  const routes = load('src/components/explore/routes.ts', {})
+  const token = `0x${'A'.repeat(40)}`
+  for (const chainId of [8453, 42161]) {
+    const markets = routes.marketsNetworkHref(chainId, token)
+    const create = routes.newNetworkHref(chainId, token)
+    assert.deepEqual(routes.parseMarketsNetworkHash(markets), { chainId, token })
+    assert.deepEqual(routes.parseNewNetworkHash(create), { chainId, token })
+    assert.deepEqual(routes.parseExploreHash(markets), { token: null, linkedPool: null }, 'another network never becomes the home-chain address route')
+    assert.deepEqual(routes.parseNewHash(create), { poolId: null, token: null }, 'a network id never becomes a home-chain pool')
+    assert.equal(routes.parseNewNetworkHash(markets), null)
+    assert.equal(routes.parseMarketsNetworkHash(create), null)
+  }
+  for (const suffix of [`4663/${token}`, `1/${token}`, `08453/${token}`, `8453/0x1234`, `8453/${token}/extra`, `8453/${encodeURIComponent('<script>')}`]) {
+    assert.equal(routes.parseMarketsNetworkHash(`#/markets/network/${suffix}`), null)
+    assert.equal(routes.parseNewNetworkHash(`#/new/network/${suffix}`), null)
+  }
+  assert.equal(routes.parseMarketsNetworkHash(routes.marketsHref(token)), null, 'legacy links stay home-only')
+  assert.equal(routes.parseNewNetworkHash(routes.newPositionHref(id('a'), token)), null)
+})
+
 // Added 2026-09-20. OverviewResponse.acquisitionAccepted is the producer saying
 // whether it took the acquisition on at all; false is its capacity ceiling. The
 // page read only `acquisition.status`, so a refused batch looked identical to a
@@ -1776,14 +1797,13 @@ test('round 6: the page asks the stored overview again every 5 s only while the 
   }
 })
 
-test('round 6: the page opens with what the pool is and what it earns, and gives the estimate the pool’s own rate', async () => {
+test('the compact pool page gives the estimate the pool’s own rate without repeating its introduction', async () => {
   const projectMarketRow = ({ market }) => ({ ...row(market.data.poolId), feeAprEstimate: { data: { feeAprEstimate24hPercent: '100.349999941681629604' }, receivedAt: 0 } })
   const fixture = workspace({ dependencies: { projectMarketRow } }); const host = mount(fixture.PoolWorkspace, fixture.props)
   assert.equal(part(host, 'PoolEarnings').props.apr, null)
   assert.equal(part(host, 'PoolEarnings').props.loading, true, 'resting while the figures are read')
   fixture.reads[0].resolve(ok()); await flush(); host.render()
-  const intro = elements(host.tree, (node) => node.props?.['data-pool-intro'] === '')[0]
-  assert.match(renderToStaticMarkup(intro).replace(/<[^>]+>/g, ''), /^Add tokens to share the fees when people swap {2}and \.$/, 'symbols are stubbed out here; APR is not repeated in the intro')
+  assert.equal(elements(host.tree, (node) => node.props?.['data-pool-intro'] === '').length, 0, 'the pair and its figures do not repeat an introductory paragraph')
   assert.equal(part(host, 'PoolEarnings').props.apr, 100.349999941681629604)
   assert.equal(part(host, 'PoolAutomation').props.usable, true)
   assert.equal(part(host, 'PoolHistoryChart').props.quote, 1, 'the chart opens on the page’s direction')

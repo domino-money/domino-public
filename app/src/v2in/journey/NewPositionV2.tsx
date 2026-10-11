@@ -1,27 +1,19 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Journey } from '../../components/create/Journey'
+import type { NetworkTokenLocation } from '../../components/explore/routes'
 import { PageHeader, PageShell } from '../../components/ui'
 import { CREATE } from '../../lib/create/copy'
-import { OtherChainsContext } from '../../lib/create/otherChains'
+import { networkCandidate, OtherChainsContext, type NetworkResolved } from '../../lib/create/otherChains'
 import { PoolPricesContext } from '../../lib/create/poolPrices'
-import { whenVisibleAfter } from '../../lib/read/screens/quietRead'
 import { SlotBoundary, SlotFailed } from '../../lib/read/screens/slots'
-import { quietDelayMs } from '../../lib/read/screens/transient'
 import type { V2ChainId } from '../../v2/types'
 import { JourneyNetworkContext, type JourneyNetwork } from './context'
 import { JOURNEY_STAYS_ON_ROBINHOOD, SETUP_STAYS_WHILE_PREVIEW } from './constants'
-import { mergeGates } from './model/networks'
 import { robinhoodFinderOpen, routeFor, ROBINHOOD, type GateMode } from './model/routing'
-import { otherChainsFor } from './otherChains'
 import { poolPricesFor } from './poolPrices'
-// A gate read that may pass, as the read screens' one rule waits for one (lib/read/screens/transient.ts): the chain
-// reads' own (./served.ts, the same object since 2026-10-06).
-import { PASSING } from './served'
-import { journeyGatesRead, type JourneyGates } from './source'
+import { otherChainsFor } from './otherChains'
+import { useOtherChainsDiscovery } from './useOtherChainsDiscovery'
 import { ZapJourney } from './ZapJourney'
-
-/** On the page's focus the gates are read again at most this often, while reading again could change them. */
-const FOCUS_EVERY_MS = 15_000
 
 /**
  * New position in a build that carries Domino V2 (the integrated journey, 2026-10-02): the one screen New position opens
@@ -55,59 +47,29 @@ const zapOnRobinhood = (): boolean =>
   TEST_HOOKS && typeof window !== 'undefined' &&
   (window as unknown as { __dominoV2Test?: { journey?: { zapOnRobinhood?: unknown } } }).__dominoV2Test?.journey?.zapOnRobinhood === true
 
-export default function NewPositionV2({ flow, poolId, linkToken }: { flow: number; poolId: string; linkToken: string | null }) {
-  const [gates, setGates] = useState<JourneyGates | null>(null)
+export default function NewPositionV2({ flow, poolId, linkToken, networkToken = null }: { flow: number; poolId: string; linkToken: string | null; networkToken?: NetworkTokenLocation | null }) {
+  const { gates, others } = useOtherChainsDiscovery()
+  const linkedChainId = networkToken?.chainId
+  const linkedAddress = networkToken?.token.toLowerCase()
+  const linkKey = linkedChainId && linkedAddress ? `${linkedChainId}:${linkedAddress}` : ''
+  const linkedReader = useMemo(() => otherChainsFor(gates, { walletFallback: false }), [gates])
+  const [linked, setLinked] = useState<{ key: string; result: NetworkResolved } | null>(null)
+  useEffect(() => {
+    if (!linkedChainId || !linkedAddress || !linkedReader) return
+    const controller = new AbortController()
+    const network = linkedReader.name(linkedChainId) ?? 'this network'
+    void linkedReader.resolve({ chainId: linkedChainId, network, unread: true, token: { origin: 'read', chainId: linkedChainId, address: linkedAddress, symbol: null, decimals: null, readStatus: 'unavailable', artwork: null } }, controller.signal).then((result) => {
+      if (!controller.signal.aborted) setLinked({ key: linkKey, result })
+    }, () => {
+      if (!controller.signal.aborted) setLinked({ key: linkKey, result: { ok: false, code: 'network_search_unavailable', reason: `Pool search on ${network} is unavailable right now.` } })
+    })
+    return () => controller.abort()
+  // Route identity, rather than the parsed object's reference, owns this read.
+  }, [linkKey, linkedChainId, linkedAddress, linkedReader])
+  const linkedResult = linked?.key === linkKey ? linked.result : null
+  const linkedCandidate = linkedResult?.ok ? networkCandidate(linkedResult.token) : null
   const chainId: V2ChainId = ROBINHOOD
   const [finder, setFinder] = useState(false)
-  useEffect(() => {
-    let alive = true
-    let reading = false
-    // Whether reading again could change the gates: a failed read, or a word that could not be had for the moment.
-    let wanted = false
-    let attempt = 0
-    let lastRead = 0
-    let cancelWait: (() => void) | null = null
-    const later = () => {
-      const wait = quietDelayMs(PASSING, attempt)
-      if (wait === null) return
-      attempt += 1
-      cancelWait = whenVisibleAfter(wait, read)
-    }
-    function read() {
-      if (!alive || reading) return
-      reading = true
-      lastRead = Date.now()
-      cancelWait?.()
-      cancelWait = null
-      void journeyGatesRead().then(
-        ({ gates: next, again }) => {
-          reading = false
-          if (!alive) return
-          setGates((held) => mergeGates(held, next))
-          wanted = again
-          if (again) later()
-        },
-        () => {
-          reading = false
-          if (!alive) return
-          wanted = true
-          later()
-        },
-      )
-    }
-    const onFocus = () => {
-      if (wanted && document.visibilityState === 'visible' && Date.now() - lastRead >= FOCUS_EVERY_MS) read()
-    }
-    window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', onFocus)
-    read()
-    return () => {
-      alive = false
-      cancelWait?.()
-      window.removeEventListener('focus', onFocus)
-      document.removeEventListener('visibilitychange', onFocus)
-    }
-  }, [])
   // A new flow (screens/NewPosition.tsx useFlowKey: New position followed again after a position was made) starts on today's journey.
   const [seenFlow, setSeenFlow] = useState(flow)
   if (seenFlow !== flow) {
@@ -118,13 +80,12 @@ export default function NewPositionV2({ flow, poolId, linkToken }: { flow: numbe
   const zapHook = zapOnRobinhood()
   const route = routeFor(chainId, mode, SETUP_STAYS_WHILE_PREVIEW && !zapHook, JOURNEY_STAYS_ON_ROBINHOOD && !zapHook)
   const gate = gates?.[chainId]
-  const others = useMemo(() => otherChainsFor(gates), [gates])
   // Added 2026-10-06 (the owner: "USD estimate unavailable" for Robinhood Chain pairs without USDG): their qualified prices,
   // read by Domino's service while Robinhood Chain's S1 gate is live; and (the owner: AI/PONS short and nothing offered)
   // what paying with one other token would be, under the pool's network's live S1 gate (./poolPrices.ts).
   const prices = useMemo(() => poolPricesFor(gates), [gates])
   const robinhoodFinder = route === 'setup' && robinhoodFinderOpen(mode)
-  const zap = gate !== undefined && gate.mode !== 'off' && (route === 'zap' || (robinhoodFinder && finder)) ? gate : null
+  const zap = !networkToken && gate !== undefined && gate.mode !== 'off' && (route === 'zap' || (robinhoodFinder && finder)) ? gate : null
   const network: JourneyNetwork = {
     chainId,
     findOther: robinhoodFinder && !finder ? () => setFinder(true) : null,
@@ -137,12 +98,20 @@ export default function NewPositionV2({ flow, poolId, linkToken }: { flow: numbe
     setFinder(false)
     window.location.hash = `#/new/${id}`
   }
-  const body: ReactNode = zap ? (
+  const body: ReactNode = networkToken && !linkedCandidate ? (
+    <PageShell width="flow">
+      <PageHeader size="display" title={CREATE.page.title} />
+      <p className="dm-hint" role="status" data-network-handoff={linkedResult?.ok === false || (gates && !linkedReader) ? 'unavailable' : 'loading'}>
+        {linkedResult?.ok === false ? linkedResult.reason : gates && !linkedReader ? 'This network is unavailable right now.' : 'Finding pools on this network…'}
+      </p>
+      {(linkedResult?.ok === false || (gates && !linkedReader)) && <a href="#/new">Search again</a>}
+    </PageShell>
+  ) : zap ? (
     <ZapJourney key={`${flow}:${chainId}:${finder ? 'finder' : 'zap'}`} chainId={chainId} gate={zap} finderOnly={robinhoodFinder} onListed={onListed} poolId={poolId} linkToken={linkToken} />
   ) : (
     <OtherChainsContext.Provider value={others}>
       <PoolPricesContext.Provider value={prices}>
-        <Journey key={flow} poolId={poolId} linkToken={linkToken} />
+        <Journey key={`${flow}:${linkKey}`} poolId={poolId} linkToken={linkToken} initialToken={linkedCandidate} />
       </PoolPricesContext.Provider>
     </OtherChainsContext.Provider>
   )

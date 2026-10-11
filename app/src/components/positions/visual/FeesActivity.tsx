@@ -83,9 +83,9 @@ export function FeesActivity({ events, bare = false, automatic }: { events: Read
                 <span>{ROW_VERB[kind]}</span>
               </span>
               <span className="dm-fees-act-when">
-                <span className="dm-fees-act-date">
+                <time className="dm-fees-act-date" dateTime={new Date(event.timestamp * 1000).toISOString()}>
                   {shortDate(event.timestamp)} {shortTime(event.timestamp)}
-                </span>
+                </time>
               </span>
               {/* What it settled, value first (USD or the quote token), then the tokens on one quiet line; a re-add, what it put back and by whom. An opening settles nothing: no column. */}
               {figure !== null && (

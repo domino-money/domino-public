@@ -1,13 +1,18 @@
+@layer theme, base, components, utilities, v3;
 @import 'tailwindcss';
 @import './fonts.css';    /* foundation: the three families, served from this site (was Google Fonts; 2026-09-28) */
 @import './font-fallbacks.css';  /* foundation: what text is drawn in until they load, at their widths (2026-10-01) */
 @import './shell.css';    /* foundation: header, menu, footer, ticker, primitives' component classes */
-@import './charts.css';   /* foundation: the shared charts kit */
 @import './art.css';      /* home: hero and feature vignettes, nav icon gestures */
 @import './home.css';     /* home: Home-only overrides */
-@import './markets.css';  /* markets: carousel, filter bar */
+@import './markets.css';  /* Home and Markets: the shared pool table only */
 @import './account.css';  /* foundation: pieces shared by the account screens (Home's feature pills use .dm-acct-status) */
-@import './refinement.css'; /* shared UI refresh, including the market comparison surface */
+@import './refinement.css'; /* shared UI refinements; market-only rules load with screens.css */
+@import './v3-foundation.css';
+@import './v3-tables.css';
+@import './v3-marketing.css';
+@import './v3-home-pools.css';
+@import './v3-home-capabilities.css';
 /* The screens' own partials (pool, flow, positions, automate, account-screens, docs, three) follow these in
    screens.css, which each screen imports itself (2026-10-01, platform workstream, F8): Home's first paint waits for
    none of them. */
@@ -32,10 +37,10 @@
 
   /* Surfaces: page, plate, (control), control, control hover. Hue 22 to 30 degrees, visibly warm; lightness
      4 / 8 / 11 / 16 / 21 % */
-  --bg: #0d0a08;
-  --surface-1: #171310;
-  --surface-2: #1f1a17;
-  --surface-3: #2c2723;
+  --bg: #0d0c0a;
+  --surface-1: #171512;
+  --surface-2: #211e19;
+  --surface-3: #2d2923;
   --surface-4: #3a332f;   /* control hover (never behind fg-subtle text) */
   --wash: rgb(255 236 220 / 0.05);         /* hover wash on transparent controls */
   --wash-strong: rgb(255 236 220 / 0.08);  /* chip fill */
@@ -43,24 +48,24 @@
   --skeleton-shine: rgb(255 236 220 / 0.07);
 
   /* Cards (V2): a flat fill, a 1px ring, a lit lip */
-  --card: #14100d;
-  --card-hover: #181411;
+  --card: #161411;
+  --card-hover: #1c1915;
   --card-lip: rgb(255 236 220 / 0.05);
-  --border-card: rgb(255 236 220 / 0.11);        /* 1.27:1 on the page: decorative */
+  --border-card: rgb(255 236 220 / 0.09);
   --border-card-hover: rgb(255 236 220 / 0.18);
   --band: rgb(255 236 220 / 0.045);     /* table and list header band */
   --row-hover: rgb(255 236 220 / 0.04); /* table and list row hover */
   --page-glow: rgb(255 157 98 / 0.07);  /* the warm light over the header */
 
   /* Text: primary, secondary, muted, faint */
-  --fg: #f7f1ea;         /* 16.87:1 on --card, 17.60:1 on --bg */
-  --fg-muted: #c8beb4;   /* 10.35:1 on --card: descriptions, idle nav */
-  --fg-subtle: #9b9289;  /* 6.19:1 on --card, 6.45:1 on --bg, 6.04:1 on --surface-1, 4.83:1 on --surface-3: labels, captions, units */
+  --fg: #f7f1ea;         /* 16.39:1 on --card, 17.43:1 on --bg */
+  --fg-muted: #c3bcb2;
+  --fg-subtle: #9b9289;  /* 6.01:1 on --card, 6.39:1 on --bg, 5.96:1 on --surface-1, 4.73:1 on --surface-3: labels, captions, units */
   --fg-faint: #6e665e;   /* 3.36:1 on --card: graphics only (idle bars, dashed slots), never text */
 
   /* Lines */
   --border: rgb(255 236 220 / 0.07);        /* inner ring, dividers */
-  --border-lip: rgb(255 236 220 / 0.10);    /* key/value row rules, field and outline-button ring */
+  --border-lip: rgb(255 236 220 / 0.12);    /* key/value row rules, field and outline-button ring */
   --border-strong: rgb(255 236 220 / 0.16); /* hover ring, focus of fields, crosshair */
 
   /* The pre-V2 ink button, kept for old callers; V2 buttons do not use it */
@@ -144,15 +149,15 @@
 
   /* Spacing: 4px base with half steps. Use Tailwind's own scale (p-1.5 = 6px, gap-6 = 24px) — it already matches, so there is no --space-* token to reach for. */
 
-  /* A compact page frame; small type and the chart's root scale stay unchanged. */
-  --header-h: 4rem;     /* 56px below 768px */
-  --ticker-h: 2.5rem;
-  --gutter: 1rem;       /* 24px from 768px, 40px from 1024px */
-  --content: 70rem;
+  /* Full-scale page frames. The fine-pointer override preserves desktop working widths at the denser scale. */
+  --header-h: 4rem;
+  --ticker-h: 2rem;
+  --gutter: clamp(1rem, 3vw, 2.25rem);
+  --content: 75rem;
   --content-pool: var(--content);
   /* Creation keeps room for its steps and live preview; tighter pages share the compact frame. */
-  --content-flow: 75rem;
-  --content-narrow: var(--content);
+  --content-flow: 66rem;
+  --content-narrow: 64rem;
 
   /* Type families: unchanged */
   --font-display: 'Instrument Serif', 'Instrument Serif Fallback', ui-serif, Georgia, 'Times New Roman', serif;
@@ -162,13 +167,13 @@
   /* Motion (DESIGN-V2 §2.9, §5): fast, small, transform and opacity. Every entrance delay is a multiple of --stagger. */
   --dur-instant: 80ms;    /* tooltip fade */
   --dur-press: 100ms;
-  --dur-hover: 120ms;
+  --dur-hover: 160ms;
   --dur-fast: 150ms;      /* thumbs, toggles, card lift */
   --dur-fade: 200ms;
   --dur-menu: 160ms;
   --dur-step: 250ms;      /* accordion, step panels, range bands */
   --dur-enter: 320ms;     /* UI entrances, first load only */
-  --dur-page: 180ms;      /* route crossfade */
+  --dur-page: 160ms;      /* route crossfade */
   --dur-sheet: 280ms;     /* bottom sheet */
   --dur-tick: 180ms;      /* value roll */
   --dur-flash: 600ms;     /* up/down tint */
@@ -196,10 +201,15 @@
   --backdrop: rgb(0 0 0 / 0.6);
 }
 
-@media (min-width: 768px) { :root { --gutter: 1.5rem; } }
-@media (min-width: 1024px) { :root { --gutter: 2.25rem; } }
-@media (min-width: 768px) and (pointer: coarse) { :root { --header-h: 4.5rem; } }
-@media (max-width: 767px) { :root { --header-h: 3.5rem; } }
+@media (max-width: 767px) { :root { --header-h: 6rem; } }
+/* Compact controls should not squeeze the app into a narrow column: retain 1050/924/896px at the default font size. */
+@media (min-width: 768px) and (pointer: fine) {
+  :root {
+    --content: 87.5rem;
+    --content-flow: 77rem;
+    --content-narrow: 74.666667rem;
+  }
+}
 
 /* The spinner's angle, registered so it animates as a number rather than a transform (DESIGN-V2 §3.18). */
 @property --dm-spin {
@@ -322,27 +332,19 @@
     scroll-padding-top: calc(var(--header-h) + 0.75rem);
   }
 
-  /* Changed on purpose 2026-10-03 (the owner: the site looks too big at 100%; at 80% it looks right): every length is
-     written in rem, 16 design px to the rem (scripts/rem-codemod.mjs), so the root's font-size is the whole page's
-     scale. A laptop or a desktop draws the design at 0.8 (12.8 px to the rem: at 100 % zoom it looks as it did at 80 %),
-     a tablet at 0.9 (14.4 px); a phone keeps the browser's own size, 16 px, so it looks as it did. Media queries still
-     measure CSS pixels, so every breakpoint is where it was. Sizes written in script follow the same steps through
-     lib/rootScale.ts (ROOT_SCALE_QUERIES). The 0.8 step asks for a fine pointer (a mouse or a trackpad): a touch tablet
-     held wide, an iPad in landscape, keeps 0.9, so its targets stay large enough for a finger. */
-  @media (min-width: 768px) {
-    html { font-size: 14.4px; }
-  }
-  @media (min-width: 1024px) and (pointer: fine) {
-    html { font-size: 12.8px; }
-  }
+  /* Desktop density matches the owner's approved 90% view of the previous 75% scale.
+     Touch devices retain the full text/control scale;
+     percentages still follow the reader's font preference. Charts measure this root via rootScale. */
+  html { font-size: 100%; }
+  @media (min-width: 768px) and (pointer: fine) { html { font-size: 67.5%; } }
 
   /* The page ground: the warm light over the header is part of the body's own background, so nothing overflows. */
   body {
-    background: radial-gradient(68.75rem 32.5rem at 50% -10rem, var(--page-glow), transparent 70%) no-repeat, var(--bg);
+    background: radial-gradient(64rem 40rem at 90% -18rem, rgb(255 157 98 / 0.09), transparent 74%) no-repeat, var(--bg);
     color: var(--fg);
     font-family: var(--font-sans);
-    font-size: 0.875rem;
-    line-height: 1.25rem;
+    font-size: 0.9375rem;
+    line-height: 1.5;
     letter-spacing: -0.2px;
     margin: 0;
     -webkit-font-smoothing: antialiased;

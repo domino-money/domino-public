@@ -10,6 +10,10 @@
    @layer components, ordered after the site's own layers by tokens.css's Tailwind import, and no rule of tokens.css's
    own body shares that layer. Checked by comparing every element's computed style on every route, one stylesheet
    against two (C:/dwt/pacote/platform/measure/cssdiff.mjs): no difference. */
+/* Chart and market-only styles load with their first screen. Home keeps the shared pool-table rules eager. */
+@import './charts.css';
+@import './markets-screen.css';
+@import './markets-screen-refinement.css';
 @import './pool.css';     /* pool: chart card, stat strip specifics */
 @import './flow.css';     /* new position: step list */
 @import './positions.css';        /* positions: list, position page, Performance, Execution */
@@ -32,3 +36,13 @@
 @import '../v2in/automate/automate.css';
 @import '../v2in/funds/funds.css';
 @import '../v2in/position/range-dialog.css';
+@import './v3-markets.css';
+@import './v3-workspace.css';
+@import './v3-position-detail.css';
+@import './v3-docs.css';
+@import './v3-market-surfaces.css';
+@import './v3-product-surfaces.css';
+@import './home-automation-story.css';
+@import './v3-position-surfaces.css';
+@import './v3-automate-surfaces.css';
+@import './v3-journey-surfaces.css';

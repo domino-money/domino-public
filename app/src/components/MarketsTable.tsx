@@ -155,7 +155,7 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
   )
 }
 
-function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; now: Instant; full: boolean; onFigures: () => void; poolToken?: string | null; pinned: boolean }) {
+function Row({ m: read, now, full, home, onFigures, poolToken, pinned }: { m: Market; now: Instant; full: boolean; home: boolean; onFigures: () => void; poolToken?: string | null; pinned: boolean }) {
   const p = read.provenance
   const age = p ? retrievedAgeSeconds(p.market, now) : null
   const stale = p ? providerStale(p.market, now) : false
@@ -229,12 +229,15 @@ function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; 
         <PriceCell market={m} now={now} />
       </Td>
       <Td numeric className="dm-mkt-num">
+        {home && <span className="dm-home-pool-label">TVL</span>}
         {coming(m.tvlUsd) ? <PendingFigure label="TVL" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={m.tvlUsd} retrieved={retrieved} />}
       </Td>
       <Td numeric col="wide" className="dm-mkt-num dm-mkt-volume">
+        {home && <span className="dm-home-pool-label">24h volume</span>}
         {coming(m.volume24hUsd) ? <PendingFigure label="24h volume" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={m.volume24hUsd} retrieved={retrieved} />}
       </Td>
       <Td numeric className="dm-mkt-num dm-mkt-apr">
+        {home && <span className="dm-home-pool-label">APR</span>}
         {qualified ? (
           <MetricCell metric={m.feeAprPercent} percent tone="in" />
         ) : aprComing ? (
@@ -312,10 +315,11 @@ function PinnedChip() {
  * A pool from the list on screen whose live row has not arrived: its
  * labels only, every figure a dash. It still opens its pool page.
  */
-function CatalogueRow({ poolId, entry, full, loading, token, pinned, standIn }: {
+function CatalogueRow({ poolId, entry, full, home, loading, token, pinned, standIn }: {
   poolId: string
   entry: PoolCatalogueEntry
   full: boolean
+  home: boolean
   loading: boolean
   token: string | null
   pinned: boolean
@@ -348,12 +352,15 @@ function CatalogueRow({ poolId, entry, full, loading, token, pinned, standIn }: 
         {loading ? <span className="dm-mkt-bubbles">{bubble('dm-mkt-bubble--price')}{bubble('dm-mkt-bubble--unit')}</span> : <FigureDash reason="Price unavailable" />}
       </Td>
       <Td numeric>
+        {home && <span className="dm-home-pool-label">TVL</span>}
         {tvl ? <MetricCell metric={tvl} /> : loading ? bubble('dm-mkt-bubble--figure') : <FigureDash reason="TVL unavailable" />}
       </Td>
       <Td numeric col="wide" className="dm-mkt-volume">
+        {home && <span className="dm-home-pool-label">24h volume</span>}
         {volume ? <MetricCell metric={volume} /> : loading ? bubble('dm-mkt-bubble--figure') : <FigureDash reason="24h volume unavailable" />}
       </Td>
       <Td numeric>
+        {home && <span className="dm-home-pool-label">APR</span>}
         {apr ? <FallbackApr apr={apr} compact /> : loading ? bubble('dm-mkt-bubble--apr') : <FigureDash reason="Pool APR unavailable" />}
       </Td>
       <Td numeric className="dm-mkt-end">
@@ -384,7 +391,7 @@ export function MarketsTable({
   includeCatalogue = true,
   poolToken,
 }: {
-  variant?: 'featured' | 'full'
+  variant?: 'featured' | 'full' | 'home'
   /** Full only. */
   filter?: MarketsFilter
   /** Full only: how many listings pass the filter, of how many. */
@@ -403,6 +410,7 @@ export function MarketsTable({
   poolToken?: string
 }) {
   const full = variant === 'full'
+  const home = variant === 'home'
   const { state, provider } = useMarkets()
   useQuietRecovery(provider, !diagnostics)
   const result = shownResult(state)
@@ -494,7 +502,7 @@ export function MarketsTable({
   const table = (
     <TableShell
       label={title}
-      className="dm-mkt-table"
+      className={cx('dm-mkt-table', home && 'dm-mkt-table--home')}
       title={full ? undefined : unsettled ? <Skeleton className="dm-mkt-title-skel h-5 w-40" /> : title}
       data={{
         'featured-source': unsettled ? 'pending' : listed ? featured.source : 'bundled',
@@ -559,10 +567,10 @@ export function MarketsTable({
         <tbody key={filtering} className={full ? 'animate-fade' : undefined}>
           {matches.map(({ poolId, market, catalogue, token }) =>
             market ? (
-              <Row key={poolId} m={market} now={now} full={full} onFigures={() => setFiguresKey(market.key)} poolToken={poolToken ?? token} pinned={ranked && catalogue?.pinned === true} />
+              <Row key={poolId} m={market} now={now} full={full} home={home} onFigures={() => setFiguresKey(market.key)} poolToken={poolToken ?? token} pinned={ranked && catalogue?.pinned === true} />
             ) : catalogue ? (
               // A pool the store is about to collect for the first time keeps its placeholder briefly (marketsProvider.ts).
-              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} loading={state.phase === 'loading' || (state.phase === 'ready' && state.placeholders?.includes(poolId.toLowerCase()) === true)} token={token} pinned={ranked && catalogue.pinned === true} standIn={standIns.get(poolId)} />
+              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} home={home} loading={state.phase === 'loading' || (state.phase === 'ready' && state.placeholders?.includes(poolId.toLowerCase()) === true)} token={token} pinned={ranked && catalogue.pinned === true} standIn={standIns.get(poolId)} />
             ) : null,
           )}
         </tbody>

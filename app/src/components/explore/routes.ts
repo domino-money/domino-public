@@ -75,6 +75,26 @@ export const exploreHref = (token: string | null = null) => (token ? `#/markets/
 /** The same link under the page's own name. */
 export const marketsHref: typeof exploreHref = exploreHref
 
+/** A cross-network token is always identified by both network and address. Existing address-only links stay on Robinhood. */
+export interface NetworkTokenLocation {
+  chainId: 8453 | 42161
+  token: string
+}
+
+function networkLocation(hash: string, page: 'markets' | 'new'): NetworkTokenLocation | null {
+  const { segments } = hashParts(hash)
+  const [route = '', network = '', chain = '', token = ''] = segments
+  if (route !== page || network !== 'network' || segments.length !== 4 || !ADDRESS.test(token)) return null
+  if (chain !== '8453' && chain !== '42161') return null
+  return { chainId: Number(chain) as NetworkTokenLocation['chainId'], token }
+}
+
+export const parseMarketsNetworkHash = (hash: string): NetworkTokenLocation | null => networkLocation(hash, 'markets')
+export const parseNewNetworkHash = (hash: string): NetworkTokenLocation | null => networkLocation(hash, 'new')
+export const marketsNetworkHref = (chainId: NetworkTokenLocation['chainId'], token: string) => `#/markets/network/${chainId}/${token}`
+/** Handoff is a token, never a trusted pool selection; New position reads its metadata and pools on the named network again. */
+export const newNetworkHref = (chainId: NetworkTokenLocation['chainId'], token: string) => `#/new/network/${chainId}/${token}`
+
 export const poolHref = (poolId: string, token: string | null = null) => (token ? `#/pool/${poolId}/${token}` : `#/pool/${poolId}`)
 
 /** New position, or New position with a pool chosen; `token` is one of the pool's tokens to verify it with (parseNewHash). */

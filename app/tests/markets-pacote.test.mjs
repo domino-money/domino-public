@@ -391,11 +391,12 @@ test('B5 withdrawn 2026-10-02: Markets draws one pools table, today’s list, an
   const markets = explore.slice(explore.indexOf('function MarketsList('), explore.indexOf('export function Explore('));
   assert.ok(markets.length > 0, 'MarketsList is found');
   assert.equal(markets.match(/<MarketsTable\b/g)?.length, 1, 'one table on Markets');
-  assert.equal(markets.match(/<section\b/g)?.length, 1, 'one pools section on Markets');
+  assert.equal(markets.match(/aria-labelledby="markets-pools-title"/g)?.length, 1, 'one pools table section on Markets');
   assert.doesNotMatch(explore, /SelectedBeyond|data-selected-beyond|markets-selected-title|createReadMarketsProvider|MarketsContext/, 'no second table, and no markets provider of its own');
   // Changed on purpose 2026-10-03 (the owner): a short list no longer says how many of its pools it shows ("5 of 6 today").
   assert.doesNotMatch(markets, /data-featured-count|\{short\.shown\} of/, 'no count beside the title');
-  assert.match(markets, /const catalogueOpen = catalogueChoice \?\? short !== null/, 'the catalogue search still opens on a short list');
+  assert.match(markets, /id="markets-catalogue-token"/, 'the catalogue search is always available, including a short list');
+  assert.doesNotMatch(markets, /catalogueOpen && source/, 'the search is not hidden behind an accordion');
   assert.match(markets, /data-catalogue-search=""/, 'the catalogue search stays');
 });
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { mainTokenAt } from '../../../config/mainTokens'
 import { mergeHits, preselectOf, type HitFacts, type NetworkSearch, type NetworkToken } from '../../../lib/create/otherChains'
 import { unreadToken } from '../../../lib/read/project'
@@ -240,6 +240,26 @@ function NetworkRow({ row }: { row: NetworkToken }) {
 
 /** What choosing another network's token came to: chosen, or why not, in words for the line under the field. */
 export type NetworkChoice = { ok: true } | { ok: false; code: string; reason: string }
+
+type SearchEntry = { home: SearchResult } | { network: NetworkToken }
+type SearchGroup = { key: string; label: string; entries: SearchEntry[] }
+
+/** Presentation only: groups follow their first ranked hit, preserve internal order, and keep blocked hits last. */
+function groupedHits(ranked: readonly SearchEntry[], home: string | undefined, excluded: (result: SearchResult) => boolean) {
+  const byGroup = new Map<string, SearchGroup>()
+  for (const entry of ranked) {
+    const blocked = 'home' in entry ? excluded(entry.home) : entry.network.warning !== undefined
+    const key = blocked ? 'unavailable' : String('home' in entry ? 4663 : entry.network.chainId)
+    const label = blocked ? 'Unavailable to select' : 'home' in entry ? (home ?? 'Robinhood Chain') : entry.network.network
+    const group = byGroup.get(key) ?? { key, label, entries: [] }
+    group.entries.push(entry)
+    byGroup.set(key, group)
+  }
+  const groups = [...byGroup.values()].filter(group => group.key !== 'unavailable')
+  const unavailable = byGroup.get('unavailable')
+  if (unavailable) groups.push(unavailable)
+  return { groups, entries: groups.flatMap(group => group.entries) }
+}
 
 /**
  * A token found by name, the way an exchange finds one: type a few letters
@@ -490,40 +510,41 @@ export function TokenSearch({
   const named = home !== undefined && WHOLE_ADDRESS.test(query) && (ranked.some((result) => result.kind === 'known') || offered.some((row) => !row.unread))
   const results = named ? ranked.filter((result) => result.kind !== 'address') : ranked
   const extra = named ? offered.filter((row) => !row.unread) : offered
-  // One list for the eye and the keyboard (2026-10-06, the owner's point 3: an exact match on Base must not sit under
-  // twenty Robinhood Chain rows): every hit by match quality, today's first between two of one quality, each list in its
-  // own order; with other networks listed, a token known to have no liquidity after the ones that may have some (review
-  // of the same day). Without other networks it is today's list exactly.
-  const merged = mergeHits(
+  // Preserve match quality and liquidity ranking for qualification and initial Enter selection. V3 groups the
+  // rendered list only after this decision; a group starts where its best ranked selectable hit appeared.
+  const rankedMerged = mergeHits(
     results,
     (result) => (result.kind === 'known' ? result.rank : 0),
     extra,
     query,
     home === undefined ? {} : { home: (result) => result.kind === 'known' && emptyOf(factsOf(result.token, result.token.key)), network: (row) => emptyOf(networkFacts(row)) },
   )
-  const total = merged.length
   const listboxId = `${id}-listbox`
   const optionId = (result: SearchResult) => `${id}-option-${keyOf(result)}`
   const networkOptionId = (row: NetworkToken) => `${id}-option-${row.chainId}-${row.token.address}`
-  const entryId = (entry: (typeof merged)[number]) => ('home' in entry ? optionId(entry.home) : networkOptionId(entry.network))
+  const entryId = (entry: (typeof rankedMerged)[number]) => ('home' in entry ? optionId(entry.home) : networkOptionId(entry.network))
   // The hit Enter takes. Today's rule (audit V3) over today's hits alone; with other networks listed, the same rule over
   // every network's hits (review of 2026-10-06): a copy on Robinhood Chain is never highlighted beside the real token on
   // Base, nor a weaker match below exact ones.
   const preselected = preselect >= 0 ? ranked[preselect] : undefined
-  const preselectAt =
+  const rankedPreselectAt =
     home === undefined
       ? preselected === undefined
         ? -1
-        : merged.findIndex((entry) => 'home' in entry && entry.home === preselected)
-      : preselectOf(merged, (entry) => ('home' in entry ? homeFacts(entry.home) : networkHitFacts(entry.network)))
+        : rankedMerged.findIndex((entry) => 'home' in entry && entry.home === preselected)
+      : preselectOf(rankedMerged, (entry) => ('home' in entry ? homeFacts(entry.home) : networkHitFacts(entry.network)))
+  // V3: group the presentation by network, then unavailable choices. Qualification and Enter's initial choice
+  // still use the original ranked list. Keyboard navigation and drawing share this same flattened group order.
+  const warned = (result: SearchResult) => result.kind === 'known' && tokenWarning({ symbol: result.token.label, address: result.token.key }) !== null
+  const excluded = (result: SearchResult) => (exclude !== null && keyOf(result) === exclude) || warned(result)
+  const { groups, entries: merged } = groupedHits(rankedMerged, home, excluded)
+  const total = merged.length
+  const preselectAt = rankedPreselectAt < 0 ? -1 : merged.indexOf(rankedMerged[rankedPreselectAt])
   // Changed on purpose 2026-10-06 (review of the same day): the hit moved to is kept by its option, not its place, so a
   // network's answer arriving above it never moves the highlight, nor Enter's choice, to another token.
   const highlighted = total === 0 ? -1 : active === null ? preselectAt : merged.findIndex((entry) => entryId(entry) === active)
   const highlightedEntry = highlighted < 0 ? undefined : merged[highlighted]
   const highlightedId = highlightedEntry === undefined ? undefined : entryId(highlightedEntry)
-  // A hit that passes for one of the site's main tokens, or carries a misleading name, is listed and never chosen (I1).
-  const warned = (result: SearchResult) => result.kind === 'known' && tokenWarning({ symbol: result.token.label, address: result.token.key }) !== null
-  const excluded = (result: SearchResult) => (exclude !== null && keyOf(result) === exclude) || warned(result)
   // The row pointed at while the list is open: New position asks its pool hints now (speed wave, 2026-09-28).
   const pointed = expanded && highlightedEntry !== undefined && 'home' in highlightedEntry ? keyOf(highlightedEntry.home) : null
   useEffect(() => {
@@ -537,6 +558,8 @@ export function TokenSearch({
     ((storedWanted && answered === null && settled !== query) ||
       (pasteKey !== null && homePaste?.key !== pasteKey) ||
       (othersSearch?.pending(query) ?? false))
+  const unavailableNetworks = othersSearch?.unavailable?.(query) ?? []
+  const unavailableNames = unavailableNetworks.map((chainId) => chainId === 8453 ? 'Base' : 'Arbitrum One').join(' and ')
 
   /** Stops whatever the last choice still has running or waiting. */
   const stop = () => {
@@ -739,15 +762,17 @@ export function TokenSearch({
               on this list, which closes as the input blurs, so focus fell to the page's end. The options are reached
               through aria-activedescendant, and Tab moves on from the input to the next control. */}
           <div id={listboxId} role="listbox" aria-label={LISTBOX_LABEL} className="dm-flow-listbox-scroll" tabIndex={-1}>
-            {expanded &&
-              merged.map((entry, index) => {
-                const current = index === highlighted
-                if ('home' in entry) {
-                  const result = entry.home
-                  const key = keyOf(result)
-                  const disabled = excluded(result)
-                  return (
-                    // Options are reached through aria-activedescendant, never by Tab: the input keeps focus.
+            {expanded && merged.map((entry, index) => {
+              const current = index === highlighted
+              const group = groups.find(group => group.entries[0] === entry)
+              const heading = group && (groups.length > 1 || group.key === 'unavailable') ? <div className="dm-v3-token-group" data-token-group={group.key} aria-hidden="true">{group.label}</div> : null
+              if ('home' in entry) {
+                const result = entry.home
+                const key = keyOf(result)
+                const disabled = excluded(result)
+                return (
+                  <Fragment key={key}>
+                    {heading}
                     <button
                       key={key}
                       type="button"
@@ -768,10 +793,13 @@ export function TokenSearch({
                       {disabled && !warned(result) && <span className="dm-flow-hit-meta shrink-0">{ALREADY_CHOSEN}</span>}
                       {home !== undefined && <NetworkTag chainId={4663} name={home} />}
                     </button>
-                  )
-                }
-                const row = entry.network
-                return (
+                  </Fragment>
+                )
+              }
+              const row = entry.network
+              return (
+                <Fragment key={`${row.chainId}:${row.token.address}`}>
+                  {heading}
                   <button
                     key={`${row.chainId}:${row.token.address}`}
                     type="button"
@@ -789,13 +817,19 @@ export function TokenSearch({
                   >
                     <NetworkRow row={row} />
                   </button>
-                )
-              })}
+                </Fragment>
+              )
+            })}
           </div>
           {/* Changed on purpose 2026-10-06: never "no token" while a search is still out; an address no network names says so. */}
-          {expanded && total === 0 && (
+          {expanded && total === 0 && (lookingUp || unavailableNetworks.length === 0) && (
             <p className="dm-flow-listbox-empty" data-searching={lookingUp ? '' : undefined}>
               {lookingUp ? SEARCHING : home !== undefined && WHOLE_ADDRESS.test(query) ? NO_TOKEN_AT : NO_MATCH}
+            </p>
+          )}
+          {expanded && total === 0 && !lookingUp && unavailableNetworks.length > 0 && (
+            <p className="dm-flow-listbox-empty" role="status" data-search-unavailable={unavailableNetworks.join(',')}>
+              {WHOLE_ADDRESS.test(query.trim()) ? `Token data on ${unavailableNames} is unavailable right now.` : `${unavailableNames} search is unavailable right now.`}
             </p>
           )}
         </div>

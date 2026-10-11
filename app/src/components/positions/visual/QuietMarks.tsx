@@ -1,20 +1,16 @@
 import type { CSSProperties } from 'react'
-import { TokenIcon } from '../../TokenIcon'
-import { tokenHue } from '../../../lib/format/tokenHue'
+import { TokenMark } from '../../TokenIcon'
 import { unreadToken } from '../../../lib/read/project'
 import { rem } from '../../../lib/rootScale'
 
 /**
- * A token's mark from its address alone, with no request: the bundled
- * artwork of a curated token, or the calm disc its address gives (§3.8).
- * For places that hold only an address (held deposits), where a lookup of
- * remote artwork would be a new request.
+ * A Robinhood Chain mark for legacy deposits and reserves, whose records hold
+ * addresses rather than token metadata. It shares the same bounded decoration
+ * cache as the surrounding positions; missing artwork stays a neutral disc.
  */
 export function QuietMark({ address, size = 24, ring, style }: { address: string; size?: number; ring?: string; style?: CSSProperties }) {
   const token = unreadToken(address)
-  if (token.artwork) return <TokenIcon symbol={token.artwork} size={size} ring={ring} style={style} />
-  const disc = { width: rem(size), height: rem(size), borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined, display: 'inline-block', flexShrink: 0, '--mark-h': tokenHue(address), ...style } as CSSProperties
-  return <span aria-hidden="true" data-token-mark="unknown" className="dm-token-disc" style={disc} />
+  return <TokenMark token={token} size={size} ring={ring} style={style} />
 }
 
 /** Two quiet marks, the second overlapping the first by 30 %. */

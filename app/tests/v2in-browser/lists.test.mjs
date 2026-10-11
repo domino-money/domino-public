@@ -40,7 +40,7 @@ const fixture = (name) => JSON.parse(readFileSync(join(CONTRACTS, 'read-v6', 'fi
 const OWNER = ACCOUNTS[0].address.toLowerCase();
 /** Where the screens are kept for a look (V1's suites' own place, .test-artifacts). */
 const shots = () => {
-  const dir = resolve(APP, '.test-artifacts');
+  const dir = resolve(process.env.DOMINO_POSITION_SHOTS ?? join(APP, '.test-artifacts'));
   mkdirSync(dir, { recursive: true });
   return dir;
 };
@@ -200,9 +200,13 @@ for (const connect of [false, true]) test(`Robinhood V4 prefixed links load publ
     await detail.locator('[data-fees-card][data-fees-state="verified"]').waitFor();
     await detail.locator('[data-cell="apr"][data-apr="ready"]').waitFor();
     assert.match(await detail.locator('h1').innerText(), /PONS/);
-    assert.match(await detail.locator('[data-cell="apr"]').innerText(), /Since opened \(40 minutes\)/);
+    const apr = detail.locator('[data-cell="apr"]');
+    assert.equal(await apr.locator('details').getAttribute('open'), null, 'period accounting starts behind its disclosure');
+    await apr.getByText('Period details', { exact: true }).click();
+    assert.match(await apr.innerText(), /Since opened \(40 minutes\)/);
     assert.doesNotMatch(await detail.innerText(), /Not measured on this network yet/);
     assert.equal(await s.page.locator('[data-position-v2]').count(), 0, 'the write gate never selects a different read page');
+    await detail.getByRole('tab', { name: 'Price range', exact: true }).click();
     const range = detail.locator('[data-pvr-where][data-pvr-line]');
     await range.locator('.dm-pvr-line').first().waitFor();
     assert.equal(Number(await range.getAttribute('data-pvr-first')), openedAt, 'the price line starts at the verified mint measurement');
@@ -694,6 +698,7 @@ test('a matching creation receipt dates the position price chart and retries the
     const activity = s.page.locator('[data-position-activity]');
     await activity.getByRole('button', { name: 'Show more', exact: true }).waitFor();
     await s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"][data-fees-reason="rpc_unavailable"]').waitFor();
+    await s.page.getByRole('tab', { name: 'Price range', exact: true }).click();
     const range = s.page.locator('[data-pvr-where]');
     assert.equal(await range.getAttribute('data-pvr-history'), 'unknown_mint');
     assert.equal(await range.getAttribute('data-pvr-opened'), null);
@@ -713,6 +718,7 @@ test('a matching creation receipt dates the position price chart and retries the
     assert.equal(Number(await range.getAttribute('data-pvr-start')), openedAt);
     assert.ok(Number(await range.getAttribute('data-pvr-first')) >= openedAt, 'the price line contains no point before mint');
     assert.ok(priceReads.some(answer => answer.candles.some(candle => candle.startTimestamp < openedAt)), 'the full pool history actually contained older candles to exclude');
+    await s.page.getByRole('tab', { name: 'Fees', exact: true }).click();
     await s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"][data-fees-reason="rpc_unavailable"]').waitFor();
     assert.equal(await s.page.locator('[data-cell="apr"][data-apr="ready"]').count(), 0, 'a creation date never fabricates fee accounting or APR');
     assert.doesNotMatch(await s.page.locator('[data-cell="apr"]').innerText(), /[\d,.]+%/);
@@ -852,7 +858,7 @@ test('compact Open and Closed rows resolve real token artwork by identity and re
     assert.match(await fees.locator('[data-cell="fees"]').innerText(), /1 USDG/, 'uncollected fees on a closed NFT stay visible');
     assert.ok(await fees.locator('[data-cell="fees"]').evaluate(node => node.getBoundingClientRect().height > 1));
     assert.equal(askedArtwork.filter(url => url.endsWith(`/robinhood/${pons}`)).length, 1, 'all open/closed NFTs share one bounded lookup for the same chain/address');
-    for (const width of [1320, 1024, 736, 390, 320]) {
+    for (const width of [1440, 1320, 1280, 1024, 736, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
       assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Closed fits ${width}px`);
       assert.ok(await closed.evaluate(node => node.getBoundingClientRect().height >= 44), 'whole-row touch target remains usable');

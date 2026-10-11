@@ -26,6 +26,12 @@ export function offeredNetworks(gates: JourneyGates | null): OtherChainId[] {
   return ([8453, 42161] as const).filter((chainId) => gates[chainId]?.mode === 'live')
 }
 
+/** Discovery uses read-v6, independently of whether creating a position is enabled at this origin. */
+export function readableNetworks(gates: JourneyGates | null): OtherChainId[] {
+  if (!gates) return []
+  return ([8453, 42161] as const).filter((chainId) => gates[chainId]?.mode !== 'off')
+}
+
 /**
  * The S1 gates read again, merged into the ones the page holds (pure; 2026-10-06, the owner's point 3: one failed read
  * of the plan route's word used to leave Base and Arbitrum One out for the whole visit): a network once live stays live,

@@ -6297,7 +6297,7 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     assert.match(await detail.locator('h1').innerText(), /^ETH\s*\/\s*TOKEN$/);
     // Changed on purpose (2026-09-27, the owner: plain words for someone who knows nothing of pools): the fee tier says
     // "fee" beside Your APR; the key figures are Position value, Fees to collect, Your APR and Current price, the
-    // price written "1 ETH = …" and the range under it as a bar with its two ends, without "≈"; the facts are in Details,
+    // price followed by its quote unit, and the range under it as a bar with its two ends, without "≈"; the facts are in Details,
     // closed until opened.
     // Changed on purpose 2026-10-01 (audit E5): the NFT's number is no longer in the chip; a screen reader still hears it.
     assert.match(await detail.locator('.dm-pos-chips').innerText(), /Uniswap · 0\.30% fee\s+Position #3135288\s+In range/);
@@ -6306,16 +6306,16 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // Changed on purpose 2026-09-28 (one-sided): TOKEN's price in ETH, the app's one way round (lib/read/orientation.ts).
     // Changed on purpose 2026-10-03 (the owner's point 10: "tokens go from $0.001 to $1,000,000"): a tiny price with its
     // zeros after the point counted ("0.0₁₁1" is 0.000000000001), as the Price range chart writes it too.
-    assert.match(stats, /CURRENT PRICE\s+1 TOKEN = 0\.0₁₁1 ETH\s+0\.0₁₂994018\s+Your range\s+0\.0₁₁100602\s+In range: earning fees/, 'the pool’s price from the same read, with no button to ask for it');
+    assert.match(stats, /Current price\s+0\.0₁₁1\s+ETH per TOKEN\s+0\.0₁₂994018\s+Your range\s+0\.0₁₁100602\s+In range: earning fees/, 'the pool’s price from the same read, with no button to ask for it');
     assert.equal(await detail.locator('[data-stat="price"] [data-current-price="usable"]').getAttribute('title'), `Pool price at block ${await detail.getAttribute('data-snapshot')}: ≈0.000000000001`, 'every digit in its title');
-    assert.match(stats, /FEES TO COLLECT\s+<?[\d.,]+ ETH\s+0 TOKEN/);
-    assert.match(stats, /POSITION VALUE\s+[\d.,]+ ETH/);
+    assert.match(stats, /Fees to collect\s+<?[\d.,]+ ETH\s+0 TOKEN/);
+    assert.match(stats, /Position value\s+[\d.,]+ ETH/);
     // Your APR waits for the fees history (a skeleton meanwhile); this chain has none to give it, so a dash and why.
     const apr = detail.locator('[data-cell="apr"]:not([data-apr="loading"]):not([data-apr="idle"])');
     await apr.waitFor({ timeout: 15_000 });
     // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): this chain holds none of the position's events (not even its mint
     // above block 69,249,061), so its ledger cannot measure its fees earned, and says so.
-    assert.match(await apr.innerText(), /^YOUR APR\s+—\s+Not measured for this position$/, 'no fees history on this chain: a dash and why, never a guess');
+    assert.match(await apr.innerText(), /^Your APR\s+—\s+Not measured for this position$/, 'no fees history on this chain: a dash and why, never a guess');
     // 2026-09-27 (review): a pair without USDG stacks each tile in its own flow (the rows line up across the tiles only
     // for one-line USD figures), so the reason stands right under its dash, not at the foot of the tallest tile.
     const under = await apr.evaluate((tile) => tile.querySelector('.dm-stat-sub').getBoundingClientRect().top - tile.querySelector('.dm-stat-value').getBoundingClientRect().bottom);
@@ -7549,7 +7549,9 @@ test('a position’s fees history is its own ledger, read from the site’s ledg
     // today's prices; the last 24 hours only from a point measured about a day ago (here the mint).
     const apr = s.page.locator('[data-cell="apr"][data-apr="ready"]');
     await apr.waitFor({ timeout: 5_000 });
-    assert.match(await apr.innerText(), /^YOUR APR\s+[\d,]+(\.\d)?%\s+Since opened \([^)]+\)(\s+Last 24 hours: [\d,]+(\.\d)?%)?$/);
+    assert.equal(await apr.locator('details').getAttribute('open'), null, 'period details stay quiet until requested');
+    await apr.getByText('Period details', { exact: true }).click();
+    assert.match(await apr.innerText(), /^Your APR\s+[\d,]+(\.\d)?%\s+Period details\s+Since opened \([^)]+\)(\s+Last 24 hours: [\d,]+(\.\d)?%)?$/);
     assert.doesNotMatch(await s.page.locator('main').innerText(), /\best\./, 'no estimate anywhere');
     // Its Activity in a card of its own: the three compounds, each one row, and its opening.
     assert.equal(await verified.first().locator('.dm-fees-act').count(), 0, 'the fees card lists no activity');
@@ -8043,6 +8045,7 @@ test('a position’s Activity names Domino’s automation only where the engine�
       await card.waitFor({ timeout: 60_000 });
       if (name === 'automated') {
         await s.page.locator('[data-position-activity] .dm-fees-act[data-auto]').first().waitFor({ timeout: 20_000 });
+        await card.getByText('Breakdown', { exact: true }).click();
         await card.locator('[data-automation-impact] [data-impact="added"]').waitFor({ timeout: 20_000 });
       }
       rows[name] = await activityRowsOf(s.page);
@@ -8136,7 +8139,7 @@ test('the site’s chain routes without their node, then with it: Your positions
     await detail.waitFor({ timeout: 30_000 });
     assert.match(await detail.locator('.dm-pos-name').innerText(), new RegExp(`#${OWNED_OPEN}`));
     assert.equal(await detail.locator('[data-position-status]').getAttribute('data-position-status'), 'in-range');
-    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES TO COLLECT\s+<?[\d.,]+ ETH/);
+    assert.match(await detail.locator('[data-position-stats]').innerText(), /Fees to collect\s+<?[\d.,]+ ETH/);
     await feesSettled();
     const fees = await detail.locator('[data-fees-card]').first().getAttribute('data-fees-state');
     assert.ok(!['loading', 'unavailable'].includes(fees), `the fees card is drawn (${fees})`);
@@ -8175,7 +8178,7 @@ test('a position’s page with the site’s chain routes without their node: the
     // The gateway's row: its own block, the pair, the range and the fees ready to collect, and no action for the owner.
     await at(NFTS.snapshot.number).waitFor({ timeout: 30_000 });
     assert.match(await detail.locator('.dm-pos-name').innerText(), /ETH/);
-    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES TO COLLECT\s+<?[\d.,]+ ETH/);
+    assert.match(await detail.locator('[data-position-stats]').innerText(), /Fees to collect\s+<?[\d.,]+ ETH/);
     assert.equal((await detail.locator('[data-ticks]').textContent()).trim(), '-60 to 60');
     assert.equal(await detail.locator('[data-position-actions]').count(), 0, 'no action on the gateway’s row');
     assert.equal(await detail.getAttribute('data-position-read'), 'gateway');
@@ -8202,7 +8205,7 @@ test('a position’s page with the site’s chain routes without their node: the
     await detail.locator('[data-position-action="close"]').waitFor();
     assert.equal(await detail.getAttribute('data-position-read'), 'chain');
     assert.equal(await waiting.count(), 0, 'the explanation leaves when the original owner controls return');
-    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES TO COLLECT\s+<?[\d.,]+ ETH/);
+    assert.match(await detail.locator('[data-position-stats]').innerText(), /Fees to collect\s+<?[\d.,]+ ETH/);
     assert.deepEqual(nftReads(read), [[OWNED_OPEN]], 'the gateway was not asked again over the page’s own read');
     assert.deepEqual(chain.publicAsked, [], 'no public RPC, ever');
     assert.deepEqual(site.asked, [], 'nothing reached the server behind the site’s routes');

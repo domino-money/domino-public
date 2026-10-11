@@ -267,7 +267,7 @@ declare const opaque: unique symbol
 export type OpaqueCursor = string & { readonly [opaque]: true }
 
 /** Curated artwork keys: the token files this app ships in public/tokens. */
-export type ArtworkKey = 'ETH' | 'WETH' | 'USDG' | 'MARLIN' | 'UNI'
+export type ArtworkKey = 'ETH' | 'WETH' | 'USDG' | 'USDC' | 'MARLIN' | 'UNI'
 
 /**
  * The networks a token on screen can be on: Robinhood Chain, and since 2026-10-05 (the owner: New position across the

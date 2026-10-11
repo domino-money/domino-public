@@ -138,8 +138,6 @@ export interface OwnedPositionsProps {
    * positions, read-only, with no wallet needed. Unset, or the connected wallet's own: the wallet's list.
    */
   viewed?: string | null
-  /** The positions screens' entry anchor (components/positions/visual/kit.ts): passed, never read. */
-  kit?: unknown
 }
 
 /**
@@ -218,7 +216,7 @@ export default function OwnedPositions({ identity, deposits, onEmptyAction, view
  * same rows and tabs, read once (no refresh, no browser copy, the fees lanes not held, no APR read ahead) and with nothing
  * to act on (no Automate, no held deposits, no New position).
  */
-function YourPositions({ owner, deposits, onEmptyAction, readOnly = false }: Omit<OwnedPositionsProps, 'identity' | 'kit' | 'viewed'> & { owner: string; readOnly?: boolean }) {
+function YourPositions({ owner, deposits, onEmptyAction, readOnly = false }: Omit<OwnedPositionsProps, 'identity' | 'viewed'> & { owner: string; readOnly?: boolean }) {
   // How many times the page has asked again after an action (a refund) changed the answer: each asks fresh.
   const [asked, setAsked] = useState(0)
   // A held deposit's refund on its way: the refresh waits until it is over (its timer reads the ref, set after each render).

@@ -240,7 +240,7 @@ const OUT = process.env.DOMINO_R5_SHOTS;
 async function capture(s, name, selector = '[data-funds-offer]', action = null) {
   if (!OUT) return;
   mkdirSync(OUT, { recursive: true });
-  for (const width of [1440, 390, 320]) {
+  for (const width of [1440, 1280, 390, 320]) {
     await s.page.setViewportSize({ width, height: 1080 });
     await s.page.locator(selector).first().scrollIntoViewIfNeeded();
     if (action) {
@@ -250,9 +250,11 @@ async function capture(s, name, selector = '[data-funds-offer]', action = null) 
       const box = await button.boundingBox();
       assert.ok(box && box.width > 40 && box.x >= 0 && box.x + box.width <= width + 1, `funding action fits ${width}`);
     }
-    await s.page.screenshot({ path: resolve(OUT, name + '-' + width + '.png'), fullPage: true });
+    // Reset the viewport before a full-page capture so the sticky header is at the page top.
+    await s.page.evaluate(() => scrollTo(0, 0));
+    await s.page.screenshot({ path: resolve(OUT, name + '-' + width + '.png'), fullPage: true, animations: 'disabled' });
     // The part itself, close up, at each width.
-    await s.page.locator(selector).first().screenshot({ path: resolve(OUT, name + '-' + width + '-part.png') });
+    await s.page.locator(selector).first().screenshot({ path: resolve(OUT, name + '-' + width + '-part.png'), animations: 'disabled' });
     assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'no horizontal overflow at ' + width);
   }
   await s.page.setViewportSize({ width: 1320, height: 1100 });

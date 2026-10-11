@@ -25,11 +25,11 @@ import { apiOf, close, dexOf, go, leaving, open as openPage, problemsOf, reload,
 import { feesAnswer } from './support/fees/stub.mjs';
 
 const DIST = resolve(import.meta.dirname, '../dist');
-async function captureUI(page, name, selector, { animations = 'disabled' } = {}) {
+async function captureUI(page, name, selector, { animations = 'disabled', fullPage = false } = {}) {
   if (!process.env.DOMINO_UI_CAPTURE_DIR) return;
   await mkdir(process.env.DOMINO_UI_CAPTURE_DIR, { recursive: true });
   const target = selector ? page.locator(selector) : page;
-  await target.screenshot({ path: join(process.env.DOMINO_UI_CAPTURE_DIR, `${name}.png`), animations });
+  await target.screenshot({ path: join(process.env.DOMINO_UI_CAPTURE_DIR, `${name}.png`), animations, ...(!selector ? { fullPage } : {}) });
 }
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -149,8 +149,8 @@ test('the built landing page renders its content without a single browser error'
   const body = await page.locator('#root').innerText();
   assert.ok(body.length > 500, `the page rendered only ${body.length} characters of text`);
   assert.match(body, /Domino/);
-  // Changed on purpose 2026-10-03 (the owner: Domino covers more than one network): Home names no chain; its headline proves it rendered.
-  assert.match(body, /Earn fees on your tokens, on your own terms\./);
+  // The headline proves Home rendered; its funding examples name the supported origin networks separately.
+  assert.match(body, /Earn fees\.\s*Keep control\./);
 
   // The blank-page failure left an empty root behind while the HTML shell and
   // the script both loaded fine, so the text assertion above is the real gate.
@@ -192,15 +192,15 @@ test('every route in the header renders', async (t) => {
   // This route-render check has no data service. Its optional market fallback must be deterministic offline too.
   await context.route('https://api.dexscreener.com/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   for (const [route, expected, settled] of [
-    ['/', /Earn fees on your tokens/],
-    ['/markets', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
+    ['/', /Earn fees\.\s*Keep control\./],
+    ['/markets', /Markets[\s\S]*Token name or address[\s\S]*Selected pools/],
     [`/markets/0x${'1'.repeat(40)}`, /Markets[\s\S]*Search the pool catalogue/],
     // Changed on purpose 2026-10-01 (audit B8): a pool page with no token, for a pool outside the list, says in plain words
     // how to open it once the list has answered and nothing can verify it by its id (no read service behind this
     // server): no "selected six", no hex id.
     [`/pool/0x${'2'.repeat(64)}`, /Open this pool from Markets[\s\S]*This link doesn’t say which token to check the pool with\./],
-    ['/explore', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
-    ['/pools', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
+    ['/explore', /Markets[\s\S]*Token name or address[\s\S]*Selected pools/],
+    ['/pools', /Markets[\s\S]*Token name or address[\s\S]*Selected pools/],
     ['/positions', /Positions[\s\S]*Your positions[\s\S]*Receipts/],
     ['/app', /Positions[\s\S]*Your positions[\s\S]*Receipts/],
     ['/portfolio', /Wallet/],
@@ -272,10 +272,17 @@ test('Home navigation is neutral until hovered or focused, and only the current 
   assert.equal(await color(positions),neutral,'hovering one link does not light its neighbors');
   await captureUI(page,'navigation-home-hover','header');
   await page.mouse.move(0,0);
-  await positions.focus();
+  // Programmatic focus after a pointer action need not match :focus-visible. Exercise an actual keyboard step.
+  await markets.focus();
+  await page.keyboard.press('Tab');
+  assert.equal(await positions.evaluate(el => el === document.activeElement && el.matches(':focus-visible')), true, 'Tab reaches Positions with visible keyboard focus');
   await page.waitForTimeout(220);
   assert.notEqual(await color(positions),neutral,'keyboard focus has the same emphasis');
-  await positions.click();
+  assert.equal(await positions.evaluate(el => {
+    const style = getComputedStyle(el);
+    return style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 2;
+  }), true, 'keyboard focus has an outline as well as a color change');
+  await page.keyboard.press('Enter');
   await shown(page,'/positions');
   assert.equal(await positions.getAttribute('aria-current'),'page');
   await page.mouse.move(0,0);
@@ -296,23 +303,21 @@ test('the mobile Positions screen leads to Markets: reachable, bounded to the vi
   assert.equal(await entrance.isVisible(), true, 'the mobile Positions screen has a visible entrance');
   await entrance.click();
   await page.getByRole('heading', { name: 'Markets', exact: true }).waitFor();
+  // The lazy network adapter's fallback already has this heading. Wait for the real table's answer before counting reads.
+  await page.waitForFunction(() => document.querySelector('[data-selected-pools] [data-read-status]')?.getAttribute('data-read-status') === 'not_connected');
   await shown(page, '/markets');
   // The selected pools are on the page, so Markets asks the featured list and the capabilities the way the landing does, and posts nothing else.
   const trail = () => [...(apiOf(page).at(-1) ?? [])];
   assert.deepEqual(trail(), CAPABILITIES, 'Markets asks the list and checks each needed namespace once');
 
-  // A pair-name filter that no selected pool matches: nothing is read to decide.
+  // The main token search is the only text search; typing a Robinhood address reads nothing until it is chosen.
   const address = '0x1111111111111111111111111111111111111111';
-  const search = page.locator('#markets-search');
-  assert.equal(await search.isVisible(), true);
-  await search.fill(address);
-  await page.waitForTimeout(300);
-  assert.deepEqual(trail(), CAPABILITIES, 'filtering the selected pools reads nothing');
-
-  // The empty state offers the token search, already holding that address, and it reads nothing until a token is chosen.
   const combobox = page.getByRole('combobox', { name: 'Token name or address' });
-  await combobox.waitFor();
-  assert.equal(await combobox.inputValue(), address, 'the token search starts from the address typed as a pair name');
+  assert.equal(await combobox.isVisible(), true);
+  assert.equal(await page.getByRole('combobox', { name: 'Asset', exact: true }).isVisible(), true, 'the token filter remains available');
+  assert.equal(await page.getByPlaceholder('Pair', { exact: true }).count(), 0, 'no second text filter beneath Top pools');
+  await combobox.fill(address);
+  assert.equal(await combobox.inputValue(), address);
   await page.waitForTimeout(300);
   assert.deepEqual(trail(), CAPABILITIES, 'an address in the token search reads nothing until it is chosen');
 
@@ -362,11 +367,18 @@ test('every token the app shows has real artwork, and an unknown one still gets 
     Array.from(document.querySelectorAll('img[src*="/tokens/"]')).every((img) => img.complete),
   );
 
-  // Nothing on screen may be a lettered fallback: every registered symbol has
-  // a file. The fallback exists for symbols we have not registered, not for
-  // the ones the app itself chooses to display.
+  // The labelled OP Mainnet network mark intentionally uses its initials; it is not a token fallback.
+  const opMarks = page.locator('.dm-network-mark[data-network="OP Mainnet"]');
+  assert.equal(await opMarks.count(), 2, 'the hero and funding section identify OP Mainnet');
+  for (const mark of await opMarks.all()) {
+    assert.equal(await mark.getAttribute('aria-hidden'), 'true', 'the neighbouring network name labels the decorative mark');
+    assert.equal(await mark.innerText(), 'OP');
+    assert.match(await mark.evaluate(el => el.parentElement.textContent), /OP Mainnet/);
+  }
+  // Every registered token still needs artwork. No other lettered disc is exempt from the fallback guard.
   const discs = await page.evaluate(() =>
     Array.from(document.querySelectorAll('span[aria-hidden="true"]'))
+      .filter(el => !el.matches('.dm-network-mark[data-network="OP Mainnet"]'))
       .map((el) => el.textContent.trim())
       .filter((t) => /^[A-Z]{1,3}$/.test(t)),
   );
@@ -417,6 +429,7 @@ for (const [width, height] of [[390, 844], [768, 1024], [1280, 800]]) {
     await page.waitForTimeout(100);
     assert.equal(await page.locator('footer button').count(), 0, 'no control in the footer');
     assert.deepEqual(await page.locator('footer nav').evaluateAll((navs) => navs.map((nav) => nav.getAttribute('aria-label'))), ['Product', 'Guides']);
+    for (const name of ['Product', 'Guides']) assert.equal(await page.locator('footer').getByRole('heading', { name, exact: true }).isVisible(), true, 'each group has a visible title');
     assert.doesNotMatch(await page.locator('footer').innerText(), /Network|Robinhood|Pause motion/);
     assert.equal(await page.evaluate(() => document.documentElement.classList.contains('dm-still')), false, 'nothing stills the page by itself');
     clean(page, `footer at ${width}px`);
@@ -437,7 +450,7 @@ test('the site is dark whatever the system asks for, and offers no light theme',
       classes: document.documentElement.className.split(/\s+/).filter((name) => /dark|light|theme/i.test(name)),
       themed: document.documentElement.hasAttribute('data-theme'),
     }));
-    assert.deepEqual(look, { scheme: 'dark', page: 'rgb(13, 10, 8)', body: 'rgb(13, 10, 8)', text: 'rgb(247, 241, 234)', classes: [], themed: false }, `system ${scheme}`);
+    assert.deepEqual(look, { scheme: 'dark', page: 'rgb(13, 12, 10)', body: 'rgb(13, 12, 10)', text: 'rgb(247, 241, 234)', classes: [], themed: false }, `system ${scheme}`);
   }
   assert.equal(await page.getByRole('button', { name: /light|dark|appearance|theme/i }).count(), 0, 'no control to change the look');
   clean(page, 'dark only');
@@ -514,7 +527,7 @@ const num = (page, sel) => page.locator(sel).inputValue().then(Number);
 
 /**
  * CSS px per design px on this page (changed on purpose 2026-10-03, the owner: the site looks too big at 100%): the
- * root's font-size over 16 (styles/tokens.css, src/lib/rootScale.ts), 0.8 from 1024px wide and 1 on a phone.
+ * root's font-size over 16 (styles/tokens.css, src/lib/rootScale.ts): compact on a desktop, full size on touch.
  */
 const rootScale = (page) => page.evaluate(() => Number.parseFloat(getComputedStyle(document.documentElement).fontSize) / 16);
 
@@ -573,9 +586,25 @@ async function sectionTop(page, id) {
   return page.evaluate((id) => document.getElementById(id)?.getBoundingClientRect().top ?? null, id);
 }
 
+/** A compact page can run out of document below its last section before that section reaches the header. */
+async function assertSectionLanded(page, id) {
+  await sectionTop(page, id);
+  const geometry = await page.evaluate((id) => {
+    const target = document.getElementById(id);
+    if (!target) return null;
+    const top = target.getBoundingClientRect().top;
+    const header = document.querySelector('header')?.getBoundingClientRect().height ?? 0;
+    const gap = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const maxScroll = Math.max(0, document.documentElement.scrollHeight - innerHeight);
+    return { top, header, viewport: innerHeight, scrollY, maxScroll, expected: Math.min(maxScroll, Math.max(0, top + scrollY - header - gap)) };
+  }, id);
+  assert.ok(geometry, `#${id} exists`);
+  assert.ok(Math.abs(geometry.scrollY - geometry.expected) <= 2, `#${id} did not reach its header offset or the document's scroll limit: ${JSON.stringify(geometry)}`);
+  assert.ok(geometry.top >= geometry.header - 1 && geometry.top < geometry.viewport, `#${id} starts visibly below the header: ${JSON.stringify(geometry)}`);
+}
+
 test('section links land on their target, across routes and within one route', async () => {
   const page = await open('/');
-  const header = await page.evaluate(() => document.querySelector('header')?.getBoundingClientRect().height ?? 0);
 
   // Cross-route to a route with no section: the header's Positions link opens that screen at its top.
   leaving(page);
@@ -592,19 +621,15 @@ test('section links land on their target, across routes and within one route', a
   leaving(page);
   await page.locator('footer').getByRole('link', { name: 'How it works' }).click();
   await page.waitForFunction(() => location.hash === '#/#learn');
-  const learnTop = await sectionTop(page, 'learn');
-  assert.ok(learnTop >= 0 && learnTop <= header + 40, `#learn landed at ${learnTop}px, header is ${header}px`);
+  await assertSectionLanded(page, 'learn');
 
   // Same route, different section: only the hash section changes.
   await page.evaluate(() => { location.hash = '#/#pools'; });
-  const poolsTop = await sectionTop(page, 'pools');
-  assert.ok(poolsTop >= 0 && poolsTop <= header + 40, `#pools landed at ${poolsTop}px`);
+  await assertSectionLanded(page, 'pools');
   await page.evaluate(() => { location.hash = '#/#ranges'; });
-  const rangesTop = await sectionTop(page, 'ranges');
-  assert.ok(rangesTop >= 0 && rangesTop <= header + 40, `#ranges landed at ${rangesTop}px`);
+  await assertSectionLanded(page, 'ranges');
   await page.evaluate(() => { location.hash = '#/#learn'; });
-  const backTop = await sectionTop(page, 'learn');
-  assert.ok(backTop >= 0 && backTop <= header + 40, `#learn (second time) landed at ${backTop}px`);
+  await assertSectionLanded(page, 'learn');
 
   // A route with no section starts at the top. (Changed on purpose, 2026-09-27: the docs, since Settings is gone.)
   await page.evaluate(() => { location.hash = '#/docs'; });
@@ -636,7 +661,7 @@ test('every footer and navigation link goes somewhere this app has: no "#/" plac
   // Changed on purpose (2026-09-27, the owner's round 6, point 6): Settings is gone from the footer with its page.
   assert.deepEqual(
     links.filter((l) => l.footer && l.href.startsWith('#')).map((l) => l.text),
-    ['Markets', 'Positions', 'Automate', 'New position', 'Docs', 'How it works', 'Ranges explained', 'What Domino does not do'],
+    ['Markets', 'Positions', 'Automate', 'New position', 'Docs', 'How it works', 'Ranges', 'Risks'],
     'the footer names the product pages, the docs and the guides on the landing',
   );
   // The routes App.tsx wires, with the older spellings it keeps: `#/explore` and `#/pools` are Markets, `#/app` is Positions.
@@ -688,6 +713,8 @@ async function openSimulator() {
   await page.route('https://api.dexscreener.com/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await page.goto(`${origin}/#/`, { waitUntil: 'networkidle' });
   await shown(page, '/');
+  await page.locator('#ranges > summary').click();
+  await page.locator('#sim-price').waitFor({ state: 'visible' });
   return page;
 }
 
@@ -788,21 +815,27 @@ test('the compact range scene keeps the correct token mix and fixed range withou
   }
   assert.equal(await demo.locator('details[open]').count(), 0);
   await demo.locator('summary').click();
-  assert.match(await demo.locator('details[open]').innerText(), /near the top.*when your settings allow/i);
+  assert.match(await demo.locator('details[open]').innerText(), /Outside it, you hold one token and stop earning trading fees/);
   assert.match(await demo.locator('details[open]').innerText(), /can lose value even when it earns fees/);
   await demo.locator('summary').click();
   assert.equal(await demo.locator('button').count(), 0, 'no replay, play, pause, preset or mode buttons');
   assert.deepEqual(await page.evaluate(() => Object.keys(localStorage)), []);
-  for (const width of [320, 390, 960, 1440]) {
+  for (const width of [320, 390, 960, 1280, 1440]) {
     await page.setViewportSize({ width, height: 960 });
     await setRange(page, '#sim-price', 0);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no overflow at ' + width);
+    if (width < 768) {
+      const tileHeights = await page.locator('#pools tbody tr').evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height));
+      assert.ok(tileHeights.every(height => height < 128), `Home pool tiles do not inherit table cell heights: ${tileHeights}`);
+    }
     const box = await demo.boundingBox();
     assert.ok(box.height < (width >= 960 ? 370 : 600), 'the scene stays compact at ' + width + ': ' + box.height);
     await captureUI(page, 'simulator-r3-' + width, '[data-sim-example]');
-    if (width === 390 || width === 1440) {
+    if (width !== 960) {
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await captureUI(page, 'home-viewport-' + width);
+      await captureUI(page, 'home-r3-' + width, undefined, { fullPage: true });
       await captureUI(page, 'hero-r3-' + width, '.dm-hero');
-      await captureUI(page, 'home-r3-' + width);
     }
   }
   clean(page, 'compact range scene');
@@ -811,55 +844,62 @@ test('the compact range scene keeps the correct token mix and fixed range withou
 
 test('shared decorative motion repeats, rests outside the viewport or hidden tab, and honors reduced motion', async () => {
   const page = await openSimulator();
-  const features = page.locator('.dm-features');
+  const features = page.locator('#funding');
   await features.scrollIntoViewIfNeeded();
-  const art = features.locator('.dm-vig-compound');
-  await page.waitForFunction(() => document.querySelector('.dm-features .dm-vig-compound')?.classList.contains('is-running'));
-  const drop = art.locator('.drop-1');
-  assert.equal(await drop.evaluate(el => getComputedStyle(el).animationIterationCount), 'infinite');
-  await drop.evaluate(el => { el.getAnimations()[0].currentTime = 20_000; });
-  assert.equal(await drop.evaluate(el => el.getAnimations()[0].playState), 'running', 'continues beyond the old three-cycle stop');
+  const art = features.locator('.dm-funding-demonstration');
+  await page.waitForFunction(() => document.querySelector('.dm-funding-demonstration')?.classList.contains('is-running'));
+  assert.ok(await art.evaluate(el => el.getAnimations({ subtree: true }).some(animation => animation.effect.getComputedTiming().iterations === Infinity)), 'the visible funding route has a repeating illustration');
+  await art.evaluate(el => { el.getAnimations({ subtree: true })[0].currentTime = 20_000; });
+  assert.equal(await art.evaluate(el => el.getAnimations({ subtree: true })[0].playState), 'running', 'continues beyond the old three-cycle stop');
   const reads = structuredClone(apiOf(page));
   await page.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, value: true });
     document.dispatchEvent(new Event('visibilitychange'));
   });
-  await page.waitForFunction(() => !document.querySelector('.dm-features .dm-vig-compound')?.classList.contains('is-running'));
-  assert.equal(await drop.evaluate(el => getComputedStyle(el).animationPlayState), 'paused');
+  await page.waitForFunction(() => !document.querySelector('.dm-funding-demonstration')?.classList.contains('is-running'));
+  assert.equal(await art.evaluate(el => el.getAnimations({ subtree: true })[0].playState), 'paused');
   // The pause settles on the next frame (2026-10-04, PR #335's CI: sampled while still pending, the time moved by 2 µs).
   await page.waitForFunction(() => {
-    const animation = document.querySelector('.dm-features .dm-vig-compound .drop-1')?.getAnimations()[0];
+    const animation = document.querySelector('.dm-funding-demonstration')?.getAnimations({ subtree: true })[0];
     return animation?.playState === 'paused' && !animation.pending;
   });
-  const paused = await drop.evaluate(el => el.getAnimations()[0].currentTime);
+  const paused = await art.evaluate(el => el.getAnimations({ subtree: true })[0].currentTime);
   await page.waitForTimeout(100);
-  assert.equal(await drop.evaluate(el => el.getAnimations()[0].currentTime), paused, 'hidden-tab drawing spends no animation time');
+  assert.equal(await art.evaluate(el => el.getAnimations({ subtree: true })[0].currentTime), paused, 'hidden-tab drawing spends no animation time');
   await page.evaluate(() => {
     delete document.hidden;
     document.dispatchEvent(new Event('visibilitychange'));
   });
-  await page.waitForFunction(() => document.querySelector('.dm-features .dm-vig-compound')?.classList.contains('is-running'));
-  assert.ok(await drop.evaluate(el => el.getAnimations()[0].currentTime) >= paused, 'resumes the same timeline instead of restarting it');
+  await page.waitForFunction(() => document.querySelector('.dm-funding-demonstration')?.classList.contains('is-running'));
+  assert.ok(await art.evaluate(el => el.getAnimations({ subtree: true })[0].currentTime) >= paused, 'resumes the same timeline instead of restarting it');
   await page.locator('footer').scrollIntoViewIfNeeded();
-  await page.waitForFunction(() => !document.querySelector('.dm-features .dm-vig-compound')?.classList.contains('is-running'));
-  assert.equal(await drop.evaluate(el => getComputedStyle(el).animationPlayState), 'paused');
+  await page.waitForFunction(() => !document.querySelector('.dm-funding-demonstration')?.classList.contains('is-running'));
+  assert.equal(await art.evaluate(el => el.getAnimations({ subtree: true })[0].playState), 'paused');
+  for (const mode of ['compound', 'domino', 'autoexit']) {
+    const selector = '#learn [data-feature="' + mode + '"] .dm-automation-story-art';
+    const scene = page.locator(selector);
+    await scene.scrollIntoViewIfNeeded();
+    await page.waitForFunction(selector => document.querySelector(selector)?.classList.contains('is-running'), selector);
+    assert.ok(await scene.evaluate(el => el.getAnimations({ subtree: true }).some(animation => animation.effect.getComputedTiming().iterations === Infinity)), mode + ' has a repeating demonstration when visible');
+  }
   await features.scrollIntoViewIfNeeded();
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  assert.equal(await drop.evaluate(el => getComputedStyle(el).animationName), 'none');
-  assert.equal(await features.locator('.dm-art').evaluateAll(nodes => nodes.every(el => el.getAnimations({ subtree: true }).length === 0)), true);
+  assert.equal(await art.evaluate(el => el.getAnimations({ subtree: true }).length), 0);
+  assert.equal(await page.locator('#learn .dm-automation-story-art').count(), 3, 'each automation keeps its own demonstration');
+  assert.equal(await page.locator('#learn .dm-automation-story-art').evaluateAll(nodes => nodes.every(el => el.getAnimations({ subtree: true }).length === 0)), true);
   assert.deepEqual(apiOf(page), reads, 'decorative loops do not poll for new data');
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 960 });
-    await captureUI(page, 'feature-motion-r4-' + width, '.dm-features');
+    await captureUI(page, 'funding-motion-' + width, '#funding');
   }
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.setViewportSize({ width: 1440, height: 960 });
   await go(page, '/automate');
-  for (const mode of ['compound', 'domino']) {
-    const drawing = page.locator(`[data-automation-card="${mode}"] .dm-mode-art`);
+  for (const mode of ['compound', 'domino', 'protection']) {
+    const drawing = page.locator(`[data-automation-card="${mode}"] .dm-automation-story-art`);
     await drawing.scrollIntoViewIfNeeded();
-    await page.waitForFunction(selector => document.querySelector(selector)?.classList.contains('is-running'), `[data-automation-card="${mode}"] .dm-mode-art`);
-    assert.equal(await drawing.locator('.drop-1').evaluate(el => getComputedStyle(el).animationIterationCount), 'infinite');
+    await page.waitForFunction(selector => document.querySelector(selector)?.classList.contains('is-running'), `[data-automation-card="${mode}"] .dm-automation-story-art`);
+    assert.ok(await drawing.evaluate(el => el.getAnimations({ subtree: true }).some(animation => animation.effect.getComputedTiming().iterations === Infinity)), 'the same meaningful demonstration continues from Home into Automate');
   }
   await captureUI(page, 'automate-motion-r4-1440', 'main');
   await go(page, '/new');
@@ -872,11 +912,12 @@ test('shared decorative motion repeats, rests outside the viewport or hidden tab
   await close(page);
 });
 
-test('New position forms one position, while Auto-exit closes the whole position before returning tokens; both rest accessibly', async () => {
+test('New position forms one position, while the shared Auto-exit story reaches the limit before returning tokens; both rest accessibly', async () => {
   const page = await openSimulator();
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await go(page, '/automate');
-  const drawing = (kind) => page.locator(`[data-automation-card="${kind}"] .dm-position-choice-art`);
+  const selector = (kind) => `[data-automation-card="${kind}"] ${kind === 'plain' ? '.dm-position-choice-art' : '.dm-automation-story-art'}`;
+  const drawing = (kind) => page.locator(selector(kind));
   // Freeze every moving part on the same timeline. Screenshots must preserve this paused frame:
   // Playwright's usual animations:disabled resets infinite loops to their initial composition.
   const frame = async (kind, fraction) => {
@@ -895,11 +936,23 @@ test('New position forms one position, while Auto-exit closes the whole position
       return timing;
     }, fraction);
     assert.ok(timing.length > 2, `${kind} has its coordinated moving parts`);
-    assert.deepEqual([...new Set(timing.map(({ duration }) => duration))], [8000], 'one duration for every part');
-    assert.ok(timing.every(({ delay, repeats }) => delay === 0 && repeats), 'no separately delayed or finite timelines');
+    assert.deepEqual([...new Set(timing.map(({ duration }) => duration))], [kind === 'plain' ? 8000 : 11000], 'one duration for every part');
+    assert.ok(timing.every(({ repeats }) => repeats), 'the educational scenes keep their coordinated loops');
     return art;
   };
   const picture = (art) => art.evaluate((node) => {
+    if (node.classList.contains('dm-automation-story-art')) {
+      const style = selector => getComputedStyle(node.querySelector(selector));
+      return {
+        rangeFill: Number(style('.as-exit-fill').fillOpacity),
+        priceRemaining: parseFloat(style('.as-exit-price').strokeDashoffset),
+        tokens: [...node.querySelectorAll('.as-exit-hop')].map(token => ({
+          opacity: Number(getComputedStyle(token).opacity),
+          distance: parseFloat(getComputedStyle(token).offsetDistance),
+        })),
+        received: [...node.querySelectorAll('.as-wallet-token')].map(token => Number(getComputedStyle(token).opacity)),
+      };
+    }
     // Interpolated and static CSS colors can serialize differently. Compare their sRGB pixels.
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 1;
@@ -943,7 +996,6 @@ test('New position forms one position, while Auto-exit closes the whole position
     };
   });
   let completed;
-  let closed;
   for (const width of [1440, 320]) {
     await page.setViewportSize({ width, height: 960 });
     const emptyArt = await frame('plain', 0.24);
@@ -964,22 +1016,22 @@ test('New position forms one position, while Auto-exit closes the whole position
     await captureUI(page, `new-position-created-${width}`, '[data-automation-card="plain"]', { animations: 'allow' });
 
     const warm = await picture(await frame('protection', 0.32));
-    assert.ok(warm.tip.opacity === 1 && warm.tip.distance > 0 && warm.tip.distance < 100, 'the price moves toward the range boundary');
+    assert.ok(warm.priceRemaining > 0 && warm.priceRemaining < 100, 'the price moves toward the range boundary');
     assert.ok(warm.tokens.every(({ opacity }) => opacity === 0), 'no withdrawal before the trigger');
     await captureUI(page, `auto-exit-active-${width}`, '[data-automation-card="protection"]', { animations: 'allow' });
-    closed = await picture(await frame('protection', 0.535));
-    assert.notDeepEqual(closed.band.fill, warm.band.fill, 'the large range changes to its closed fill');
-    assert.notDeepEqual(closed.band.stroke, warm.band.stroke, 'the range outline closes too');
-    assert.notDeepEqual(closed.tile.fill, warm.tile.fill, 'the tile body changes to its closed color');
-    assert.deepEqual(closed.band.stroke, closed.tile.fill, 'the large range and its tile share the closed color');
-    assert.equal(closed.tip.distance, 100, 'closure follows the price reaching the boundary');
-    assert.ok(closed.tokens.every(({ opacity, distance }) => opacity === 0 && distance === 0), 'the whole position closes before tokens start returning');
+    // Price reaches the boundary at 38%; transfer opacity begins interpolating
+    // after 40%. Sample that real gap, before either staggered token appears.
+    const triggered = await picture(await frame('protection', 0.39));
+    assert.equal(triggered.priceRemaining, 0, 'the boundary is reached before any tokens return');
+    assert.ok(triggered.tokens.every(({ opacity }) => opacity === 0), 'no transfer is shown ahead of the trigger');
+    const closing = await picture(await frame('protection', 0.58));
+    assert.ok(closing.rangeFill < warm.rangeFill, 'the whole range fades when it closes');
+    assert.ok(closing.tokens.every(({ distance }) => distance > 0 && distance < 100), 'both tokens move from the range toward the wallet');
     await captureUI(page, `auto-exit-closed-${width}`, '[data-automation-card="protection"]', { animations: 'allow' });
     const received = await picture(await frame('protection', 0.82));
-    assert.deepEqual(received.band, closed.band, 'the range remains closed after withdrawal');
-    assert.deepEqual(received.tile.fill, closed.tile.fill, 'its tile stays closed too');
-    assert.ok(received.tokens.every(({ opacity, distance, arrived }) => opacity === 1 && distance === 100 && arrived), 'both returned tokens arrive inside the wallet');
-    assert.notDeepEqual(received.wallet, closed.wallet, 'the wallet acknowledges receipt');
+    assert.ok(received.rangeFill <= .025, 'the range remains dim after withdrawal');
+    assert.ok(received.tokens.every(({ distance }) => distance === 100), 'both tokens complete the path');
+    assert.ok(received.received.every(opacity => opacity === 1), 'both received tokens are visible in the wallet');
     await captureUI(page, `auto-exit-returned-${width}`, '[data-automation-card="protection"]', { animations: 'allow' });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, `no page overflow at ${width}px`);
   }
@@ -990,10 +1042,10 @@ test('New position forms one position, while Auto-exit closes the whole position
   await go(page, '/automate');
   const reads = structuredClone(apiOf(page));
   for (const kind of ['plain', 'protection']) {
-    const selector = `[data-automation-card="${kind}"] .dm-position-choice-art`;
+    const sceneSelector = selector(kind);
     const art = drawing(kind);
     await art.scrollIntoViewIfNeeded();
-    await page.waitForFunction((selector) => document.querySelector(selector)?.classList.contains('is-running'), selector);
+    await page.waitForFunction((selector) => document.querySelector(selector)?.classList.contains('is-running'), sceneSelector);
     await page.evaluate(() => {
       Object.defineProperty(document, 'hidden', { configurable: true, value: true });
       document.dispatchEvent(new Event('visibilitychange'));
@@ -1002,17 +1054,17 @@ test('New position forms one position, while Auto-exit closes the whole position
       const node = document.querySelector(selector);
       const animations = node?.getAnimations({ subtree: true });
       return !node?.classList.contains('is-running') && animations?.length && animations.every((animation) => animation.playState === 'paused' && !animation.pending);
-    }, selector);
+    }, sceneSelector);
     const paused = await art.evaluate((node) => node.getAnimations({ subtree: true }).map((animation) => animation.currentTime));
     await page.waitForTimeout(100);
     assert.deepEqual(await art.evaluate((node) => node.getAnimations({ subtree: true }).map((animation) => animation.currentTime)), paused, `${kind} spends no timeline time in a hidden tab`);
     await page.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); });
-    await page.waitForFunction((selector) => document.querySelector(selector)?.classList.contains('is-running'), selector);
+    await page.waitForFunction((selector) => document.querySelector(selector)?.classList.contains('is-running'), sceneSelector);
     await page.locator('footer').scrollIntoViewIfNeeded();
     await page.waitForFunction((selector) => {
       const node = document.querySelector(selector);
       return !node?.classList.contains('is-running') && node?.getAnimations({ subtree: true }).every((animation) => animation.playState === 'paused' && !animation.pending);
-    }, selector);
+    }, sceneSelector);
   }
   await page.setViewportSize({ width: 320, height: 960 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -1025,44 +1077,40 @@ test('New position forms one position, while Auto-exit closes the whole position
   assert.deepEqual(stillNew.band, completed.band, 'the static new-position picture is its completed composition');
   assert.ok(stillNew.tokens.every(({ arrived }) => arrived));
   const stillExit = await picture(drawing('protection'));
-  assert.deepEqual(stillExit.band, closed.band, 'reduced motion retains the visibly closed range');
-  assert.deepEqual(stillExit.tile.fill, closed.tile.fill);
-  assert.ok(stillExit.tokens.every(({ opacity, arrived }) => opacity === 1 && arrived), 'the static exit picture already shows the tokens in the wallet');
+  assert.equal(stillExit.priceRemaining, 0, 'the static exit picture reaches the boundary');
+  assert.ok(stillExit.rangeFill <= .05, 'the static range is subdued');
+  assert.ok(stillExit.received.every(opacity => opacity === 1), 'the static exit picture shows both tokens in the wallet');
   await captureUI(page, 'position-choice-reduced-320', 'main');
   assert.deepEqual(apiOf(page), reads, 'decorative phases do not fetch data');
   clean(page, 'position choice phases');
   await close(page);
 });
 
-test('the home scene plays automatically with the shared compound drawings, and stops offscreen or with reduced motion', async () => {
+test('the compact home range scene plays automatically without duplicating automation cards, and stops offscreen or with reduced motion', async () => {
   const page = await openSimulator();
   const demo = page.locator('[data-sim-example]');
   const hero = page.locator('.dm-hero-art');
   assert.equal(await page.getByRole('button', { name: /Replay|Watch fees move|Pause/ }).count(), 0);
-  assert.equal(await hero.locator('.chain .tip').count(), 19);
-  assert.equal(await hero.locator('.chain .tip').first().evaluate(el => getComputedStyle(el).animationIterationCount), 'infinite');
+  assert.equal(await hero.locator('.dm-sculpture-front').isVisible(), true);
+  assert.equal(await hero.locator('.dm-sculpture-front').evaluate(el => getComputedStyle(el).animationIterationCount), 'infinite');
   const reads = structuredClone(apiOf(page));
   await demo.scrollIntoViewIfNeeded();
   await page.waitForFunction(() => document.querySelector('[data-sim-example]').dataset.simRunning === 'yes');
-  assert.equal(await demo.locator('.dm-vig-compound, .dm-vig-seq').count(), 2, 'same SVG components as the actual feature drawings');
+  assert.equal(await demo.locator('.dm-vig-compound, .dm-vig-seq').count(), 0, 'automation is explained once in its feature cards, not repeated inside the range example');
+  assert.equal(await demo.getAttribute('data-sim-compact'), '', 'Home uses the concise range-only presentation');
   assert.equal(await demo.locator('[aria-live]').count(), 0, 'automatic motion never repeatedly announces changes');
   assert.doesNotMatch(await demo.innerText(), /Interactive example|Example data|Watch fees move/);
-  assert.equal(await demo.locator('.dm-vig-compound .drop-1').evaluate(el => getComputedStyle(el).animationIterationCount), '1', 'one complete fee cycle per eligible phase');
-  assert.equal(await demo.locator('.dm-vig-seq .drop-1').evaluate(el => getComputedStyle(el).animationName), 'none', 'the next range waits until price is near the upper edge');
   await page.waitForFunction(() => Number(document.getElementById('sim-price').value) > 0.1);
   await page.locator('#sim-price').focus();
   const controlled = await num(page, '#sim-price');
   await page.waitForTimeout(160);
   assert.equal(await num(page, '#sim-price'), controlled, 'focus gives control to the visitor');
   await setRange(page, '#sim-price', 0.5);
-  assert.equal(await demo.locator('[data-sim-fee-mode="domino"]').getAttribute('data-active'), '');
-  assert.equal(await demo.locator('.dm-vig-seq .drop-1').evaluate(el => getComputedStyle(el).animationPlayState), 'running');
-  assert.equal(await demo.locator('.dm-vig-compound .drop-1').evaluate(el => getComputedStyle(el).animationName), 'none');
+  assert.equal(await demo.getAttribute('data-sim-state'), 'inside');
   await setRange(page, '#sim-price', 0.85);
   assert.equal(await demo.locator('.dm-sim-fee-option[data-active]').count(), 0, 'outside the range neither drawing depicts new earned fees');
-  for (const selector of ['.dm-vig-compound .drop-1', '.dm-vig-seq .drop-1']) {
-    assert.equal(await demo.locator(selector).evaluate(el => getComputedStyle(el).animationName), 'none');
-  }
+  assert.equal(await demo.getAttribute('data-sim-state'), 'above');
+  assert.deepEqual(await demo.locator('.dm-sim-pct').allInnerTexts(), ['0%', '100%']);
   await setRange(page, '#sim-price', 0);
   await page.locator('#sim-price').blur();
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -1070,7 +1118,6 @@ test('the home scene plays automatically with the shared compound drawings, and 
   const reduced = await num(page, '#sim-price');
   await page.waitForTimeout(160);
   assert.equal(await num(page, '#sim-price'), reduced);
-  assert.equal(await demo.locator('.dm-vig-compound .drop-1').evaluate(el => getComputedStyle(el).animationName), 'none');
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await hero.scrollIntoViewIfNeeded();
   await page.waitForFunction(() => document.querySelector('[data-sim-example]').dataset.simRunning === 'no');
@@ -1096,20 +1143,20 @@ async function catalogueOnly(page, label) {
   assert.equal(await page.locator('#pools tbody tr[data-pool-catalogue]').count(), 6, `${label}: every row is a catalogue row, labels only`);
   assert.equal(await page.locator('#pools tbody [data-metric], #pools tbody [data-apr-estimate]').count(), 0, `${label}: no figure in any cell`);
   for (const row of await rows.all()) {
-    const cells = await row.locator('td').evaluateAll((tds) => tds.slice(1, 5).map((td) => [td.innerText.trim(), td.querySelector('[aria-label]')?.getAttribute('aria-label') ?? null]));
+    // Home puts a small TVL/APR label above the same figure. Inspect the full cell without those decorative labels,
+    // including the price and volume kept for the shared table, so no extra or invented value can pass this check.
+    const cells = await row.locator('td').evaluateAll((tds) => tds.slice(1, 5).map((td) => {
+      const figure = td.cloneNode(true);
+      figure.querySelectorAll('.dm-home-pool-label').forEach((label) => label.remove());
+      return [figure.textContent.trim(), td.querySelector('[aria-label]')?.getAttribute('aria-label') ?? null];
+    }));
     assert.deepEqual(cells, ['Price', 'TVL', '24h volume', 'Pool APR'].map((figure) => ['—', `${figure} unavailable`]), `${label}: every figure is a dash that says so`);
     assert.equal(await row.locator('a').first().getAttribute('title'), 'Listed on Uniswap. Pool figures are unavailable.');
   }
   assert.doesNotMatch(await page.locator('#pools').innerText(), /\$\s?\d/, `${label}: no dollar figure`);
   assert.equal(await page.locator('[data-metric], [data-apr-estimate]').count(), 0, `${label}: no figure anywhere on the landing`);
-  // The strip lists the same six by their labels, an APR dash each and no figure: the one label a read row
-  // without an estimate has too, so nothing changes words as rows land.
-  const items = page.locator('.dm-marquee > a[data-pool-catalogue]');
-  assert.equal(await items.count(), 6, `${label}: the ticker lists the six catalogue pools`);
-  for (const text of await items.allInnerTexts()) assert.match(text, /Est\. APR —$/, `${label}: the ticker names no APR`);
-  assert.equal(await page.locator('[data-ticker] [data-metric], [data-ticker] [data-apr-estimate]').count(), 0, `${label}: no figure in the ticker`);
-  // A fee tier (0.02%) is a label from the catalogue; a dollar figure or an APR percentage would be an invention.
-  assert.doesNotMatch(await page.locator('[data-ticker]').innerText(), /\$\s?\d|\d%\s*est/, `${label}: no figure in the ticker`);
+  // Home displays the selection once. Ticker presentation remains covered in ReadLab without duplicating it here.
+  assert.equal(await page.locator('[data-ticker]').count(), 0, `${label}: no duplicate pool ticker on Home`);
   // 2026-09-26 (featured pools v1 §11.2): with no list served, the embedded list in its order under today's title and
   // no Pinned chip; every link names the pool and USDG, the token to verify it with (§11.6). The method line is gone
   // for every list since 2026-09-28 (the owner).
@@ -1119,7 +1166,6 @@ async function catalogueOnly(page, label) {
   assert.equal(await page.locator('[data-pinned]').count(), 0, `${label}: no Pinned chip`);
   const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
   assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SELECTED.map((id) => `#/pool/${id}/${USDG}`), `${label}: row links`);
-  assert.deepEqual(await items.evaluateAll((as) => as.map((a) => a.getAttribute('href'))), SELECTED.map((id) => `#/pool/${id}/${USDG}`), `${label}: ticker links`);
 }
 
 /**
@@ -1171,8 +1217,8 @@ test('selected pools and New position read their public catalogue; disconnected 
   const seen = [];
   const dex = [];
   for (const route of ROUTES) {
-    const page = await open(route);
-    await reload(page, route);
+    const page = await open(route).catch((cause) => { throw new Error(`The public-read check could not open ${route}`, { cause }); });
+    await reload(page, route).catch((cause) => { throw new Error(`The public-read check could not reload ${route}`, { cause }); });
     seen.push([route, apiOf(page)]);
     dex.push(...dexOf(page));
     clean(page, `requests on ${route}`);
@@ -1306,8 +1352,8 @@ test('Settings is gone: an old link opens the docs with no error, and neither th
   await close(page);
 });
 
-// Four compact alternatives lead to their existing guarded flows; no extra explanation panel or control is added.
-test('Automate shows four compact choices with exact fees and equally sized entries; unavailable Auto-exit stays guarded', async () => {
+// Three automation choices lead to their guarded flows; creating a plain position remains a secondary entry.
+test('Automate connects three visual choices to their guarded flows and keeps exact fees and the plain-position entry', async () => {
   const page = await open('/automate');
   const ways = await Promise.all(['Set up Auto-compound', 'Set up Domino-compound'].map((name) =>
     page.getByRole('link', { name, exact: true }).evaluate((link) => ({ height: link.getBoundingClientRect().height, outline: link.classList.contains('dm-btn--outline'), sm: link.classList.contains('dm-btn--sm') }))));
@@ -1316,19 +1362,30 @@ test('Automate shows four compact choices with exact fees and equally sized entr
   assert.equal(await page.locator('main .dm-inset, main .dm-acct-auto-note').count(), 0, 'no panel under the cards');
   assert.doesNotMatch(await page.locator('main').innerText(), /Setup checks the deployment/, 'no note under the cards');
   // Changed on purpose 2026-10-01 (audit E4, live note L12): plain words, no "consumed", and no promise about the APR.
-  assert.deepEqual(await page.locator('main .dm-automation-choice-fee').allInnerTexts(), ['No automation fee', '0.2% of the position, only when it closes', '2% of earned fees used, once', '4% of earned fees used, once']);
+  assert.deepEqual(await page.locator('main .dm-automation-choice-fee').allInnerTexts(), ['No automation fee', '2% of earned fees used, once', '4% of earned fees used, once', '0.2% of the position, only when it closes']);
   assert.equal(await page.locator('[data-automation-card="compound"] .dm-automation-choice-description').innerText(), 'Adds earned fees back into the same position, in the same range.');
   assert.equal(await page.locator('main .dm-automation-choice-description').count(), 4, 'one short explanation per choice');
   assert.doesNotMatch(await page.locator('main').innerText(), /improving|consumed|hold’s/, 'no broken possessive, no "consumed", no promise');
   const plain = page.locator('main [data-feature="plain"]');
-  assert.match(await plain.innerText(), /^New position\s+How it works\s+Choose a pool, add your tokens and start earning fees\.\s+No automation fee\s+New position$/);
+  assert.match(await plain.locator('.dm-automation-choice-body').innerText(), /^New position\s+Choose a pool, add your tokens and start earning fees\.\s+No automation fee\s+New position\s+How it works$/);
   assert.doesNotMatch(await plain.innerText(), /\bfree\b/i, 'no claim that a plain position has no costs');
-  assert.deepEqual(await plain.getByRole('link').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [['How it works', '#/docs/new-position'], ['New position', '#/new']]);
-  assert.deepEqual(await page.locator('main [data-automation-card]').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-automation-card'))), ['plain', 'protection', 'compound', 'domino']);
+  assert.deepEqual(await plain.getByRole('link').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [['New position', '#/new'], ['How it works', '#/docs/new-position']]);
+  assert.deepEqual(await page.locator('main .dm-automation-choice-grid [data-automation-card]').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-automation-card'))), ['compound', 'domino', 'protection']);
+  assert.equal(await page.locator('.dm-automation-start [data-automation-card="plain"]').count(), 1, 'plain setup stays available outside the automation comparison');
+  assert.equal(await page.locator('.dm-automation-start').evaluate(start => start.nextElementSibling?.classList.contains('dm-automation-choice-grid')), true, 'New position precedes the three automation choices');
+  assert.equal(await page.locator('.dm-automation-choice-grid .dm-automation-story-art').count(), 3, 'all three demonstrations stay visible');
   const protection = page.locator('[data-automation-card="protection"]');
   await protection.getByRole('button', { name: 'Unavailable right now', exact: true }).waitFor();
   assert.equal(await protection.getByRole('button').isDisabled(), true, 'a missing execution capability never becomes an actionable Auto-exit entry');
   assert.deepEqual(await protection.getByRole('link').evaluateAll((links) => links.map((a) => a.getAttribute('href'))), ['#/docs/auto-exit'], 'docs stay available without opening an unavailable execution');
+  if (process.env.DOMINO_UI_CAPTURE_DIR) {
+    for (const width of [320, 390, 1280, 1440]) {
+      await page.setViewportSize({ width, height: width < 768 ? 844 : 900 });
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await captureUI(page, 'automate-viewport-' + width);
+      await captureUI(page, 'automate-full-' + width, undefined, { fullPage: true });
+    }
+  }
   clean(page, 'automate');
   await close(page);
 });
@@ -1463,32 +1520,25 @@ test('the receipts page keeps Positions lit, and with no wallet asks for one and
   await close(page);
 });
 
-test('the explanatory sections stay, in relative terms, and say plainly what is not enabled', async () => {
+test('Home connects funding, pools, three automations and risks, with the optional range guide in relative terms', async () => {
   const page = await openSimulator();
   const text = await page.locator('#root').innerText();
-  // Home: the hero, the feature cards and the pools; below them how it works, the range simulator, what Domino does not do.
-  for (const heading of [/Earn fees on your tokens, on your own terms\./, /Your first position, in four steps\./, /Price moves\. Your position adapts\./, /What Domino does not do\./]) {
+  for (const heading of [/Earn fees\.\s*Keep control\./, /Start with\s*what you have\./, /Choose what\s*happens next\./, /What is a price range\?/, /Stay informed\.\s*Stay in control\./]) {
     assert.match(text, heading);
   }
-  // The Uniswap strip, the old headlines and the simulator's explanation are gone (owner, 2026-09-14).
-  assert.doesNotMatch(text, /Built on Uniswap|Put fees to work|one tile at a time|Choose what fees do|A position opened at the start price/);
-  // Changed on purpose 2026-10-03 (the owner: "Starts paused" is not needed on Home): neither the two automation feature
-  // cards nor How it works wear ROADMAP's pill; the docs pages still say where each automation stands. Nor does the hero
-  // name a network any more (Domino covers more than one).
-  assert.doesNotMatch(text, /Starts paused|On Robinhood Chain/);
-  assert.equal(await page.locator('.dm-features .dm-pill, #learn .dm-pill').count(), 0, 'no pill on the feature cards or the steps');
-  assert.doesNotMatch(text, /Per sequence|never principal|the sequence stops at a cap/, 'plain words on Home');
-  assert.doesNotMatch(text, /Not running|automation is running/i);
-  // The pools card has no caption any more (the owner's decision on the redesign): each figure names its source and age in its own title.
+  assert.deepEqual(await page.locator('main section[id]').evaluateAll(sections => sections.map(section => section.id)), ['funding', 'pools', 'learn', 'limits'], 'the page follows a readable sequence from funding to managing the position');
+  assert.deepEqual(await page.locator('.dm-hero-funding li > span:last-child').allInnerTexts(), ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain'], 'the hero names all five funding networks');
+  assert.deepEqual(await page.locator('#learn article h3').allInnerTexts(), ['Auto-compound', 'Domino-compound', 'Auto-exit']);
+  for (const article of await page.locator('#learn article').all()) assert.equal(await article.isVisible(), true, 'each automation is visible without choosing a tab');
+  assert.equal(await page.locator('#limits details:not([open])').count(), 4, 'risk explanations stay available without overwhelming the page');
+  await page.locator('#limits summary').filter({ hasText: 'Your position can lose value' }).click();
+  assert.match(await page.locator('#limits details[open]').innerText(), /be worth less than holding the tokens/);
+  assert.doesNotMatch(text, /Built on Uniswap|one tile at a time|Starts paused|Not running|automation is running/i);
   assert.doesNotMatch(text, /Every figure on this page names its source and its age|describes a pool, not a position, and is not a forecast/);
-  // The product describes itself as the product, never as an unfinished one.
   assert.doesNotMatch(text, /\balpha\b|\bv4\b|not enabled yet|read-only/i, 'no self-description as an alpha, a version or a read-only build');
-  assert.doesNotMatch(text, /Made for every way to hold liquidity|One position sets up the next/, 'no product cards, no Domino sequence');
-  // The owner's compact scene keeps the fixed range, automatically shows both fee destinations and folds away explanation.
+  // This scene illustrates a token mix, never a forecast of earnings.
   const sim = await page.locator('#ranges').innerText();
-  for (const words of [/Only ETH/, /Your range/, /Only USDG/, /−30%/, /\+50%/, /Start/, /Token mix/, /Inside range/, /Auto-compound/]) {
-    assert.match(sim, words);
-  }
+  for (const words of [/Your price range/, /Only ETH/, /Your range/, /Only USDG/, /−30%/, /\+50%/, /Start/, /Token mix/, /Inside range/]) assert.match(sim, words);
   assert.doesNotMatch(sim, /×|Closer|Wider|Per sequence|Starts paused|Figures, and the other range|Domino steps in|Stablecoin|Token share|trades have paid/, 'no range switch, jargon or invented trade count');
   assert.equal(await page.locator('#ranges input').count(), 1, 'one control: the price');
   assert.equal(await page.locator('#ranges [data-sim-preset]').count(), 3, 'three price reference markers');
@@ -1496,14 +1546,12 @@ test('the explanatory sections stay, in relative terms, and say plainly what is 
   assert.doesNotMatch(sim, /Interactive example|Example data/, 'no persistent example badge');
   assert.doesNotMatch(text, /MEME|Example token/, 'no example token');
   assert.equal(await page.locator('#hero-amount, #amount').count(), 0, 'no amount to type in');
-  // The hero's two ways in.
   assert.equal(await page.locator('main').getByRole('link', { name: 'New position', exact: true }).first().getAttribute('href'), '#/new');
   assert.equal(await page.locator('main').getByRole('link', { name: 'Explore markets', exact: true }).first().getAttribute('href'), '#/markets');
-  // No Domino token card on Home any more (owner, 2026-09-14).
   assert.equal(await page.locator('[data-domino-token]').count(), 0, 'no Domino token card on Home');
   assert.doesNotMatch(text, /The Domino token is coming|Ticker, supply and launch date/);
   assert.doesNotMatch(await page.locator('#pools').innerText(), /COMBINED TVL|NETWORK/, 'the six-pool stat strip is gone');
-  clean(page, 'explanatory sections');
+  clean(page, 'Home story and optional range guide');
   await close(page);
 });
 
@@ -1704,33 +1752,71 @@ test('a docs section lands just under the header: opened directly, from On this 
   await close(page);
 });
 
-// Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "it goes in the home page cards, in place of
-// Non-custodial"): the third card is Auto-exit, with its own drawing, and opens its page of the docs.
-test('the Auto-exit card on Home, in Non-custodial’s place, opens its page of the docs', async (t) => {
+// Educational funding controls explain the existing flows without initiating wallet reads or transfers.
+test('Home funding examples preserve consent, show available networks and disclose each automation fee before linking to the existing flows', async (t) => {
   const context = await browser.newContext();
   t.after(() => context.close());
   await context.route('https://api.dexscreener.com/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   const page = await context.newPage();
   watch(page);
-  await page.goto(`${origin}/#/`);
+  await page.goto(origin + '/#/');
   await shown(page, '/');
-  assert.deepEqual(await page.locator('.dm-features [data-feature]').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-feature'))), ['compound', 'domino', 'autoexit']);
-  assert.equal(await page.locator('#dm-features-title').innerText(), 'Your position. A choice of next steps.');
-  const card = page.locator('main article[data-feature="autoexit"]');
-  assert.equal(await card.locator('.dm-feature-kind').innerText(), 'Auto-exit');
-  assert.equal(await card.locator('.dm-feature-title').innerText(), 'Close at the edge.');
-  assert.equal(await card.locator('.dm-feature-text').innerText(), 'When the price reaches the end of your range, Domino closes the position and sends the tokens to your wallet.');
-  assert.equal(await card.locator('svg.dm-vig-exit').count(), 1, 'its own drawing');
-  assert.equal(await page.locator('main article', { hasText: 'Non-custodial' }).count(), 0);
-  // Scoped to the card: the footer also has a "How it works" link, to the landing section.
-  const link = card.getByRole('link', { name: 'How it works', exact: true });
-  assert.equal(await link.getAttribute('href'), '#/docs/auto-exit');
-  await captureUI(page, 'home-autoexit-card', 'main article[data-feature="autoexit"]');
+  const funding = page.locator('#funding');
+  assert.equal(await funding.getByRole('link', { name: 'Find your funds', exact: true }).getAttribute('href'), '#/new');
+  assert.equal(await funding.locator('details[open]').count(), 0, 'route conditions start folded');
+  assert.equal(await page.locator('#ranges').getAttribute('open'), null, 'the range lesson starts optional');
+  assert.equal(await page.getByRole('slider', { name: 'ETH price, against the start' }).isVisible(), false, 'the lesson does not expose a control before it is opened');
+  const reads = structuredClone(apiOf(page));
+  const across = funding.getByRole('button', { name: 'From another network', exact: true });
+  const local = funding.getByRole('button', { name: 'On this network', exact: true });
+  assert.equal(await across.getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(await funding.locator('.dm-funding-networks > span').evaluateAll(nodes => nodes.map(node => [...node.childNodes].filter(child => child.nodeType === Node.TEXT_NODE).map(child => child.textContent).join('').trim())), ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain']);
+  assert.equal(await funding.getByRole('img', { name: 'Tokens from another network are transferred and swapped into the two tokens for your position.', exact: true }).isVisible(), true);
+  await local.click();
+  assert.equal(await local.getAttribute('aria-pressed'), 'true');
+  assert.equal(await across.getAttribute('aria-pressed'), 'false');
+  assert.equal(await funding.locator('.dm-funding-networks').innerText(), 'Robinhood Chain');
+  assert.equal(await funding.getByRole('img', { name: 'A token in your wallet is swapped into the two tokens for your position.', exact: true }).isVisible(), true);
+  assert.match(await funding.innerText(), /Use one supported token for both sides of your pair/);
+  assert.match(await funding.innerText(), /You approve each step/);
+  await across.click();
+  assert.equal(await across.getAttribute('aria-pressed'), 'true');
+  await funding.locator('summary').click();
+  assert.match(await funding.locator('details').innerText(), /Ethereum, Base, Arbitrum One, OP Mainnet and Robinhood Chain/);
+  assert.match(await funding.locator('details').innerText(), /depend on the token and destination/);
+  assert.match(await funding.locator('details').innerText(), /Review swaps, transfer costs and network fees before you approve in your wallet/);
+  const automations = page.locator('#learn');
+  for (const [name, fee, href] of [
+    ['Auto-compound', '2% of earned fees used, once. Your original deposit is not charged.', '#/automate'],
+    ['Domino-compound', '4% of earned fees used, once. Your original deposit is not charged.', '#/automate'],
+    ['Auto-exit', '0.2% of the position, only when it closes.', '#/docs/auto-exit'],
+  ]) {
+    const card = automations.getByRole('article').filter({ has: page.getByRole('heading', { name, exact: true }) });
+    assert.equal(await card.isVisible(), true, name + ' is presented without a carousel or tab');
+    assert.equal(await card.locator('details[open]').count(), 0);
+    await card.locator('summary').click();
+    assert.equal(await card.locator('details p').innerText(), fee);
+    assert.equal(await card.getByRole('link', { name: 'How ' + name + ' works', exact: true }).getAttribute('href'), href);
+  }
+  assert.deepEqual(apiOf(page), reads, 'switching examples and opening explanations never asks for a balance, route or financial plan');
+  await captureUI(page, 'home-funding-details', '#funding');
+  await captureUI(page, 'home-automation-details', '#learn');
   leaving(page);
-  await link.click();
+  await funding.getByRole('link', { name: 'Find your funds', exact: true }).click();
+  await page.waitForFunction(() => location.hash === '#/new');
+  await page.getByRole('heading', { name: 'New position', exact: true }).waitFor();
+  await go(page, '/');
+  leaving(page);
+  await page.locator('#learn').getByRole('link', { name: 'Explore automation', exact: true }).click();
+  await page.waitForFunction(() => location.hash === '#/automate');
+  await page.locator('[data-automation-card="protection"]').waitFor();
+  const docs = page.locator('[data-automation-card="protection"]').getByRole('link', { name: 'How Auto-exit works', exact: true });
+  assert.equal(await docs.getAttribute('href'), '#/docs/auto-exit');
+  leaving(page);
+  await docs.click();
   await page.waitForFunction(() => location.hash === '#/docs/auto-exit');
   await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Auto-exit');
-  clean(page, 'home auto-exit card');
+  clean(page, 'Home funding and automation flows');
   await close(page);
 });
 

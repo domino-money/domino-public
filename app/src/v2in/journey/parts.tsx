@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { TokenIcon } from '../../components/TokenIcon'
+import { TokenMark } from '../../components/TokenIcon'
 import { Button } from '../../components/ui'
-import { tokenHue } from '../../lib/format/tokenHue'
+import { unreadToken } from '../../lib/read/project'
 import { rem } from '../../lib/rootScale'
 import { v2Chain } from '../../v2/chains'
 import { ZERO_ADDRESS, type Address, type Dex, type V2ChainId } from '../../v2/types'
@@ -26,22 +26,15 @@ export function TokenName({ token }: { token: Pick<JourneyToken, 'address' | 'sy
 
 /**
  * A token's mark on any of the three networks: the bundled artwork for native ETH, the chain's WETH and Robinhood Chain's
- * USDG (matched by ADDRESS against the chain profile, never by symbol); any other token a calm disc whose hue comes from
- * its address. Nothing is fetched (the remote artwork lookup is Robinhood Chain's, components/TokenIcon.tsx).
+ * USDG (matched by ADDRESS against the chain profile, never by symbol). Other tokens reuse the same bounded artwork
+ * resolver as search and positions, keyed by chain plus address, with its neutral fallback when no image is known.
  */
 export function TokenDisc({ chainId, token, size = 24, ring, style }: { chainId: V2ChainId; token: Pick<JourneyToken, 'address'>; size?: number; ring?: string; style?: CSSProperties }) {
   const chain = v2Chain(chainId)
   const address = token.address.toLowerCase()
-  const art = address === ZERO_ADDRESS ? 'ETH' : address === chain.wrappedNative.address ? 'WETH' : chainId === 4663 && chain.chargeCurrencies.some((currency) => currency.rank === 1 && currency.address === address) ? 'USDG' : null
-  if (art) return <TokenIcon symbol={art} size={size} ring={ring} style={style} />
-  return (
-    <span
-      aria-hidden="true"
-      data-token-mark="disc"
-      className="dm-token-disc"
-      style={{ width: rem(size), height: rem(size), borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined, display: 'inline-block', flexShrink: 0, '--mark-h': tokenHue(address), ...style } as CSSProperties}
-    />
-  )
+  const base = unreadToken(address)
+  const artwork = address === ZERO_ADDRESS ? 'ETH' : address === chain.wrappedNative.address ? 'WETH' : chainId === 4663 ? base.artwork : null
+  return <TokenMark token={{ ...base, chainId, artwork }} size={size} ring={ring} style={style} />
 }
 
 /** Two marks, the second overlapping the first by 30%, as the journey draws a pair. */

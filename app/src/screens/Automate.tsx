@@ -11,24 +11,26 @@ const protectionUnavailable = () => <Button disabled>Unavailable right now</Butt
 const V2Protection = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/automate/AutomateProtection'), () => ({ default: protectionUnavailable }))) : null
 const OFF = <p className="dm-acct-auto-off"><IconLock />Wallet sign-in isn’t available here.</p>
 
-/** Four alternatives, each continuing into its existing, independently guarded setup. */
+/** The three automations share Home's visual language; each keeps its independently guarded setup. */
 export function Automate() {
   useRouteTitle('Automate')
   return <PageShell data-automate="">
-    <PageHeader title="Automate" description="Choose what Domino does for your position." />
-    <div className="dm-automation-choice-grid">
+    <PageHeader title="Automate" />
+    <div className="dm-automation-start">
       <AutomationChoice kind="plain">
         <LinkButton href={newPositionHref()} variant="outline"><IconPlus />New position</LinkButton>
       </AutomationChoice>
-      {V2Protection && <AutomationChoice kind="protection">
-        <Suspense fallback={<Button disabled>Checking availability…</Button>}><V2Protection /></Suspense>
-      </AutomationChoice>}
+    </div>
+    <div className="dm-automation-choice-grid">
       <AutomationChoice kind="compound">
         {__DOMINO_WALLET_SESSION__ ? <LinkButton href="#/sequence/compound" variant="outline">Set up Auto-compound<IconChevronRight /></LinkButton> : OFF}
       </AutomationChoice>
       <AutomationChoice kind="domino">
         {__DOMINO_WALLET_SESSION__ ? <LinkButton href="#/sequence/domino" variant="outline">Set up Domino-compound<IconChevronRight /></LinkButton> : OFF}
       </AutomationChoice>
+      {V2Protection && <AutomationChoice kind="protection">
+        <Suspense fallback={<Button disabled>Checking availability…</Button>}><V2Protection /></Suspense>
+      </AutomationChoice>}
     </div>
   </PageShell>
 }

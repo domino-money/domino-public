@@ -3,6 +3,7 @@ import { statusWords, type RangeFacts } from '../../../lib/chart/priceFacts'
 import { useMediaQuery } from '../../../lib/useMediaQuery'
 import { rem } from '../../../lib/rootScale'
 import { TokenLabel } from '../../read/TokenLabel'
+import { positionPlotHeight, usePositionChartOptions } from '../PositionChartOptions'
 
 /**
  * The Price range card's own parts that load with the page (2026-10-03, the owner's point 10): the page's facts handed
@@ -52,11 +53,12 @@ export function RangeHead({ facts }: { facts: RangeFacts }) {
  */
 export function RangeChartWaiting({ facts, note }: { facts: RangeFacts; note?: string }) {
   const phone = useMediaQuery('(max-width: 767px)')
+  const { expanded } = usePositionChartOptions()
   return (
     <div className="dm-pvr-wrap" data-pvr-waiting={note ? undefined : ''} data-pvr-unavailable={note ? '' : undefined} aria-busy={note ? undefined : true}>
       <RangeHead facts={facts} />
       {/* In design px through rem, as ChartFrame sizes the chart that replaces it (lib/rootScale.ts), so nothing moves. */}
-      <div className="dm-pvr" style={{ height: rem(PAD_TOP + (phone ? PLOT_HEIGHT_PHONE : PLOT_HEIGHT) + PAD_BOTTOM) }} />
+      <div className="dm-pvr" style={{ height: rem(PAD_TOP + positionPlotHeight(phone ? PLOT_HEIGHT_PHONE : PLOT_HEIGHT, phone, expanded) + PAD_BOTTOM) }} />
       <div className="dm-pvr-legend">
         <span className="dm-pvr-key" data-key="range">
           <span aria-hidden="true" className="dm-pvr-swatch" />

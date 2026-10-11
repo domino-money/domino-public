@@ -15,7 +15,7 @@
  *                                          stale, null or failed pool never takes the others with it;
  *                                          a pool still busy after R-1 is asked again on its own
  *   (n) pool-metrics listed                the lean load, then one pool-metrics read a row; qualified
- *                                          figures in the cells, the ticker and the figures dialog
+ *                                          figures in the cells and the figures dialog; no ticker on Home
  *   (o)-(p) markets-snapshot listed        one snapshot read puts every row on screen before any token
  *                                          read; only what it could not answer for is read on demand,
  *                                          and a failed snapshot is never shown or said
@@ -370,7 +370,7 @@ async function nothingInvented(page, label) {
     catalogue: document.querySelectorAll('#pools tbody tr[data-pool-catalogue]').length,
     live: document.querySelectorAll('#pools tbody tr:not([data-pool-catalogue])').length,
     metrics: document.querySelectorAll('[data-metric], [data-apr-estimate]').length,
-    dashes: Array.from(document.querySelectorAll('#pools tbody tr[data-pool-catalogue] td')).filter((td) => td.innerText.trim() === '—').length,
+    dashes: Array.from(document.querySelectorAll('#pools tbody tr[data-pool-catalogue] [data-figure="none"]')).filter((figure) => figure.innerText.trim() === '—').length,
     unavailable: Array.from(document.querySelectorAll('#pools tbody tr[data-pool-catalogue] [aria-label]')).map((el) => el.getAttribute('aria-label')).filter((text) => /^(Price|TVL|24h volume|Pool APR) unavailable$/.test(text)).length,
     dollars: /\$\s?\d/.test(document.querySelector('#pools').innerText),
     sample: /sample|practice/i.test(document.body.innerText),
@@ -378,22 +378,18 @@ async function nothingInvented(page, label) {
   assert.deepEqual(found, { rows: 6, catalogue: 6, live: 0, metrics: 0, dashes: 24, unavailable: 24, dollars: false, sample: false }, label);
 }
 
-/** The strip lists the six catalogue pools by their labels, an APR dash each, and no figure. */
-async function tickerFromCatalogue(page, label) {
-  const items = page.locator('.dm-marquee > a[data-pool-catalogue]');
-  assert.equal(await items.count(), 6, `${label}: the ticker lists the six catalogue pools`);
-  for (const text of await items.allInnerTexts()) assert.match(text, /Est\. APR —$/, `${label}: the ticker names no APR, in the words a read row without an estimate has`);
-  assert.equal(await page.locator('[data-ticker] [data-metric], [data-ticker] [data-apr-estimate]').count(), 0, `${label}: no figure in the ticker`);
-  assert.doesNotMatch(await page.locator('[data-ticker]').innerText(), /\$\s?\d|\d%\s*est/, `${label}: no figure in the ticker`);
+/** Home presents pool figures in its table without repeating them in a ticker. */
+async function noHomeTicker(page, label) {
+  assert.equal(await page.locator('[data-ticker]').count(), 0, `${label}: no ticker mounted on Home`);
 }
 
-test('(a) no bridge behind the forwarder: live data is not connected, one capabilities GET per attempted namespace, no POST, no Retry, and the ticker shows no figure either', async () => {
+test('(a) no bridge behind the forwarder: live data is not connected, one capabilities GET per attempted namespace, no POST, no Retry, and no ticker on Home', async () => {
   const { context, page, errors } = await visit(forwarder(503, 'bridge_unavailable'));
   try {
     assert.equal(await settled(page), 'not_connected');
     await saidQuietly(page, 'not_connected', 'Live data unavailable');
     await nothingInvented(page, 'not connected');
-    await tickerFromCatalogue(page, 'not connected');
+    await noHomeTicker(page, 'not connected');
     await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
     // The stored capabilities refusal permits the legacy check; that refusal ends the load before the estimate namespace is asked.
     assert.deepEqual(wire(), ['GET v3 capabilities', 'GET capabilities'], 'each namespace asked once, and never again on its own, not even when a busy service would have been');
@@ -431,7 +427,7 @@ test('(c) live reads switched off on the server, or the pool route not listed: s
       assert.equal(await settled(page), 'disabled', label);
       await saidQuietly(page, 'disabled', 'Live data is switched off for now', label);
       await nothingInvented(page, label);
-      await tickerFromCatalogue(page, label);
+      await noHomeTicker(page, label);
       assert.deepEqual(wire(), expected, label);
     } finally {
       await closeContext(context);
@@ -467,7 +463,7 @@ test('(d) reads enabled: one capabilities GET per namespace and the lean load in
       assert.doesNotMatch(await price.innerText(), /\$/, 'a ratio between two tokens, never dollars');
       const apr = row.locator('td').nth(4);
       // Without an estimate the cell shows the same dash as a catalogue row; the reason stays in its title.
-      assert.equal(await apr.innerText(), '—');
+      assert.equal(await apr.locator('[data-apr-estimate]').innerText(), '—');
       assert.equal(await apr.locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable', 'no APR is provided, so none is shown');
       assert.match(await apr.locator('[title]').getAttribute('title'), /Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\./, 'and says why');
     }
@@ -481,23 +477,21 @@ test('(d) reads enabled: one capabilities GET per namespace and the lean load in
     // 2026-09-28 (one-sided): a token's price in ETH, the app's one way round (lib/read/orientation.ts).
     assert.equal((await rowView(rows.nth(0))).price.text, '1 TKY = 0.000000000001 ETH');
     assert.equal(await page.locator('a[href*="geckoterminal"]').count(), 0, 'sourceUrl is never linked');
-    // #93: the headers name who reported each figure, on a phone as on a laptop; the ratio is Domino's; the estimate says what it is.
+    // The semantic columns and provenance stay intact. Home displays comparison headers on a laptop,
+    // then labels each figure in its compact phone rows; the ratio is available in Details/the pool page.
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      const heads = await page.locator('#pools thead th').evaluateAll((ths) => ths.map((th) => th.innerText.replace(/\s+/g, ' ').trim()));
+      const heads = await page.locator('#pools thead th').evaluateAll((ths) => ths.map((th) => th.textContent.replace(/\s+/g, ' ').trim()));
       assert.deepEqual(heads, ['Pool', 'Price', 'TVL reported by a market data provider', '24h volume reported by a market data provider', 'APR', 'Details'], `${width}px`);
+      assert.equal(await page.locator('#pools thead').isVisible(), width >= 768, 'headers and their help controls enter or leave layout together');
+      assert.equal(await rows.first().locator('td').nth(1).isVisible(), false, 'Home does not repeat the price column');
+      assert.equal(await rows.first().locator('td').nth(2).isVisible(), true, 'TVL remains visible');
+      assert.equal(await rows.first().locator('td').nth(3).isVisible(), true, '24h volume remains visible');
     }
     await page.setViewportSize({ width: 1280, height: 900 });
     assert.doesNotMatch(await page.locator('body').innerText(), /geckoterminal\.com/i, 'nor shown');
     assert.match(await rows.nth(1).innerText(), /TKY[\s\S]*TKZ/);
-    const ticker = await page.locator('.dm-marquee').innerText();
-    assert.match(ticker, /TKZ[\s\S]*Est\. APR —/, 'the ticker shows the same result set');
-    assert.doesNotMatch(ticker, /APR unavailable/, 'one label for a pool without an APR figure, read or not');
-    assert.equal(await page.locator('.dm-marquee > a[data-pool-catalogue]').count(), 0, 'and no catalogue-only item');
-    const aprStates = await page.locator('.dm-marquee [data-apr-estimate]').evaluateAll((els) => els.map((el) => el.getAttribute('data-apr-estimate')));
-    assert.ok(aprStates.length >= 6 && aprStates.every((state) => state === 'unavailable'), `and no APR figure: ${aprStates}`);
-    const aprTitles = await page.locator('.dm-marquee [data-apr-estimate] [title]').evaluateAll((els) => els.map((el) => el.getAttribute('title')));
-    assert.ok(aprTitles.every((title) => /^Pool estimate, not position APR, APY or a return forecast\. Estimated APR is /.test(title)), `the reason is in the title: ${aprTitles}`);
+    await noHomeTicker(page, 'live rows');
 
     leaving(page);
     await page.reload({ waitUntil: 'networkidle' });
@@ -534,7 +528,7 @@ test('(f) a producer 503: temporarily unavailable, with no Retry on Home, never 
     // The read service's own words ("answered: read service unavailable") are the read lab's to show now.
     await saidQuietly(page, 'unavailable', 'Temporarily unavailable');
     await nothingInvented(page, 'producer 503');
-    await tickerFromCatalogue(page, 'producer 503');
+    await noHomeTicker(page, 'producer 503');
     const failed = wire();
     assert.deepEqual(failed, ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities', ...SELECTED.map(() => 'POST pool-market')], 'each pool asked once');
     await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
@@ -603,7 +597,7 @@ async function rowView(row) {
   const [price, ...cells] = await row.locator('td').evaluateAll((tds) => tds.slice(1, 5).map((td) => {
     const el = td.querySelector('[data-metric], [data-apr-estimate], [data-pool-price]');
     return {
-      text: td.innerText.replace(/\s+/g, ' ').trim(),
+      text: (el ?? td).innerText.replace(/=\s*/g, '= ').replace(/\s+/g, ' ').trim(),
       metric: el?.getAttribute('data-metric') ?? el?.getAttribute('data-apr-estimate') ?? null,
       state: el?.getAttribute('data-pool-price') ?? null,
       title: el?.getAttribute('title') ?? el?.querySelector('[title]')?.getAttribute('title') ?? null,
@@ -633,7 +627,7 @@ async function nothingStandsIn(page, liveCount) {
   assert.equal(await fallen.count(), 6 - liveCount, 'the failed pool falls back to its catalogue labels');
   assert.equal(await fallen.locator('[data-metric], [data-apr-estimate]').count(), 0, 'with no figure at all');
   for (const row of await fallen.all()) {
-    assert.deepEqual(await row.locator('td').evaluateAll((tds) => tds.slice(1, 5).map((td) => td.innerText.trim())), ['—', '—', '—', '—']);
+    assert.deepEqual(await row.locator('td').evaluateAll((tds) => tds.slice(1, 5).map((td) => td.querySelector('[data-figure="none"]')?.innerText.trim() ?? null)), ['—', '—', '—', '—']);
   }
 }
 
@@ -793,7 +787,7 @@ test('(l) #93 per row: a 429 that outlasts R-1 on one pool leaves the other pool
   }
 });
 
-test('(n) pool-metrics listed: the lean load, then one pool-metrics read a row; qualified figures in the cells, the ticker and the figures dialog', async () => {
+test('(n) pool-metrics listed: the lean load, then one pool-metrics read a row; qualified figures in the cells and the figures dialog, with no ticker on Home', async () => {
   const { context, page, errors } = await visit(
     bridgeStub({ capabilities: listing([...PRODUCTION_READS, 'pool-metrics']), reply: (route, body) => (route === 'pool-metrics' ? bridge(200, metricsFor(body.poolId)) : undefined) }),
   );
@@ -806,7 +800,7 @@ test('(n) pool-metrics listed: the lean load, then one pool-metrics read a row; 
     for (const row of await rows.all()) {
       const view = await rowView(row);
       // Changed on purpose 2026-10-01 (integration pass 3, after the copy workstream's audit E21): the table's APR follows the
-      // one APR rule of every screen too, whole percents from 100%, as the ticker below already did.
+      // one APR rule of every screen too, whole percents from 100%.
       assert.deepEqual(view.cells.map((c) => [c.text, c.metric]), [['$0.000020', 'qualified'], ['$0.000029', 'qualified'], ['158%', 'qualified']], 'Domino’s qualified figures, its APR where the estimate would be');
       assert.match(view.provenance, /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago · Domino history fresh, 10 s$/);
       assert.equal(await row.locator('[data-apr-estimate]').count(), 0, 'no estimate beside a qualified APR');
@@ -814,16 +808,7 @@ test('(n) pool-metrics listed: the lean load, then one pool-metrics read a row; 
     const heads = await page.locator('#pools thead th').evaluateAll((ths) => ths.map((th) => th.innerText.replace(/\s+/g, ' ').trim()));
     assert.deepEqual(heads.slice(2, 4), ['TVL', '24h volume'], 'no provider named in the headers of figures that are not the provider’s');
 
-    // The ticker shows the same APR, in its own ink and never yellow, and no estimate beside it.
-    const items = page.locator('.dm-marquee > a');
-    assert.equal(await items.count(), 6);
-    const aprs = await items.evaluateAll((els) => els.map((el) => {
-      const apr = el.querySelector('[data-metric]');
-      return [apr?.innerText.trim(), apr?.getAttribute('data-metric'), apr?.getAttribute('style'), el.querySelectorAll('[data-apr-estimate]').length];
-    }));
-    // Changed on purpose 2026-10-01 (audit E21): the one APR rule of every screen: whole percents from 100%.
-    for (const apr of aprs) assert.deepEqual(apr, ['158% APR', 'qualified', 'color: var(--money-in);', 0]);
-    assert.doesNotMatch(await page.locator('[data-ticker]').innerHTML(), /money-wait/);
+    await noHomeTicker(page, 'qualified figures');
 
     // The compact popup preserves verified figures, with only their basis folded away.
     await rows.first().locator('[data-pool-figures]').click();
@@ -884,7 +869,8 @@ test('(o) markets-snapshot listed: one snapshot read puts all six rows on screen
       assert.equal(view.cells[2].title, 'Pool estimate, not position APR, APY or a return forecast. Estimated APR is read with the pool’s own market figures, not with stored ones.', 'the estimate cell says what it is and why a stored row has none');
       assert.equal(view.price.state, 'usable');
     }
-    assert.doesNotMatch(`${await page.locator('#pools').innerText()} ${await page.locator('[data-ticker]').innerText()}`, /snapshot|stored/i, 'no word about where the rows came from');
+    assert.doesNotMatch(await page.locator('#pools').innerText(), /snapshot|stored/i, 'no word about where the rows came from');
+    await noHomeTicker(page, 'stored rows');
     assert.deepEqual(errors, []);
   } finally {
     await closeContext(context);
@@ -1019,7 +1005,7 @@ test('(r) a list served and current: its pools in its order, read first, under "
     assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SERVED_LINKS);
     assert.equal(await catalogueRows(page).count(), 0);
     assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('[data-pinned]')?.textContent ?? null)), ['Pinned', null], 'the pinned pool says so, in words');
-    assert.deepEqual(await page.locator('.dm-marquee > a:not([data-pool-catalogue])').evaluateAll((as) => as.map((a) => a.getAttribute('href'))), SERVED_LINKS, 'the ticker shows the same list');
+    await noHomeTicker(page, 'served list');
     assert.deepEqual(errors, []);
   } finally {
     await closeContext(context);
@@ -1084,8 +1070,8 @@ test('(u) New position refuses a pool the list withdrew, opened by a link, with 
 // Changed on purpose 2026-10-02 (owner: only today's list on Markets). Audit B5 (2026-10-01) put a second table,
 // "Selected pools", under today's list on Markets: the embedded pools the list did not name (on production, WETH/USDG
 // 0.02%, cbBTC/USDG, U/USDG, ETH/USDG 0.01%). The owner had removed it before and wants only today's list. A short
-// list keeps its count and opens the catalogue search; no second table, and the pools the list does not name are not read.
-test('(v) Markets with a short list: today’s table alone, with its count and the catalogue search open; no second "Selected pools" table, and the pools the list does not name are never read', async () => {
+// list keeps the catalogue search available; no second table, and the pools the list does not name are not read.
+test('(v) Markets with a short list: today’s table alone and the catalogue search directly available; no second "Selected pools" table, and the pools the list does not name are never read', async () => {
   const { context, page, errors } = await visit(withList(() => v5(200, servedList())));
   try {
     assert.equal(await settled(page), 'none');
@@ -1105,9 +1091,13 @@ test('(v) Markets with a short list: today’s table alone, with its count and t
     assert.equal(await page.locator('#markets-pools-title').innerText(), 'Top pools · last 24h', 'today’s title');
     assert.doesNotMatch(await page.locator('main').innerText(), /Selected pools/, 'no "Selected pools" heading anywhere on Markets');
     assert.deepEqual(await page.locator('main [data-selected-pools] tbody tr').evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SERVED_LINKS, 'today’s pools, in its order, and nothing else');
-    // Changed on purpose 2026-10-03 (the owner): a short list no longer says "2 of 6 today"; it still opens the catalogue search.
+    // V3 keeps the catalogue search in the header for every list length, without a disclosure or an invented count.
     assert.equal(await page.locator('main [data-featured-count]').count(), 0, 'no count beside the title');
-    assert.equal(await page.locator('[data-catalogue-search]').evaluate((details) => details.open), true, 'the catalogue search is open on a short list');
+    const search = page.locator('[data-catalogue-search]').getByRole('combobox', { name: 'Token name or address', exact: true });
+    assert.equal(await search.isVisible(), true, 'the catalogue search is visible without opening a disclosure');
+    assert.equal(await search.isEditable(), true, 'the wider catalogue remains reachable with a short list');
+    await search.focus();
+    assert.equal(await search.evaluate((input) => document.activeElement === input), true, 'the catalogue search accepts keyboard focus');
     const others = SELECTED.filter((poolId) => !SERVED.includes(poolId));
     assert.deepEqual(reads.slice(from).filter((r) => r.path.endsWith('/pool-market') && others.includes(r.body.poolId)).map((r) => r.body.poolId), [], 'the pools the list does not name are never read');
     assert.deepEqual(errors, []);

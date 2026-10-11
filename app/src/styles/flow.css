@@ -155,7 +155,7 @@
   .dm-flow-pool-rows > li:nth-child(n + 5) { animation-delay: calc(var(--stagger) * 4); }
   /* Changed on purpose 2026-10-06 (the review of the next update: from 900 to 1023 px, and on a tablet held wide, the
      list sits beside the preview at a phone's width, and its chips lay over the figures): a row follows its list's width,
-     not the screen's. A list no wider than 34rem stacks its rows as a phone does (the figures under the pair, the fee chip
+     not the screen's. A list no wider than 36.5rem stacks its rows as a phone does (the figures under the pair, the fee chip
      in the corner); a wider one keeps the figures beside the pair. */
   [data-picker="pool"][data-picker-variant="create"] { container: dm-pools / inline-size; }
   /* Changed on purpose 2026-10-06 (the review of the next update: "Robinhood Chain" and the fee chip, side by side under
@@ -190,7 +190,7 @@
      that was cut wraps. Since 2026-10-06 (the same review) this holds where the figures sit beside the pair, and there
      the network chip has the fee chip's look. */
   @media (min-width: 768px) {
-    @container dm-pools (width > 34rem) {
+    @container dm-pools (width > 36.5rem) {
       [data-picker-variant="create"] .dm-flow-pool-pair { width: calc(100% + 0.25rem); }
       [data-picker-variant="create"] .dm-flow-pool-net { border-radius: var(--radius-sm); background: var(--surface-3); }
     }
@@ -222,7 +222,7 @@
     .dm-flow-pool-figures > [data-provider-figure] > div,
     .dm-flow-pool-figures > .dm-mkt-option-apr { align-items: flex-start !important; }
   }
-  @container dm-pools (width <= 34rem) {
+  @container dm-pools (width <= 36.5rem) {
     [data-picker-variant="create"] .dm-mkt-option { position: relative; grid-template-columns: minmax(0, 1fr); row-gap: 0; min-height: 0; padding: 0 0.75rem 0.625rem 0; }
     [data-picker-variant="create"] .dm-mkt-option-head { min-height: 3rem; padding-left: 0.75rem; }
     [data-picker-variant="create"] .dm-mkt-option-head > .dm-chip,

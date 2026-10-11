@@ -79,11 +79,12 @@ export function resolvedOf(chainId: OtherChainId, address: string, answer: Chain
 /**
  * What a pasted address is on a network, from the chain-pools answer about it (pure; 2026-10-06, the owner's point 3: a
  * pasted contract came as three unnamed "Look up this address" rows): the token, named, where it is one that can be used
- * there (read, with its decimals); none where it is not (no contract, or not a token). The search lists only the first.
+ * there (read, with its decimals). Missing metadata cannot prove absence: read-v6 does not distinguish no contract
+ * from a failed metadata read, so the search keeps that uncertainty without adding an unnamed duplicate row.
  */
-export function pastedOf(chainId: OtherChainId, address: string, answer: ChainPoolsResponse): { state: 'token'; token: TokenDisplay } | { state: 'none' } {
+export function pastedOf(chainId: OtherChainId, address: string, answer: ChainPoolsResponse): { state: 'token'; token: TokenDisplay } | { state: 'metadata_unavailable' } {
   const live = answer.tokens.find((token) => token.address.toLowerCase() === address.toLowerCase())
-  if (!live || live.status === 'unavailable' || live.decimals === null) return { state: 'none' }
+  if (!live || live.status === 'unavailable' || live.decimals === null) return { state: 'metadata_unavailable' }
   return { state: 'token', token: tokenOf(chainId, live) }
 }
 

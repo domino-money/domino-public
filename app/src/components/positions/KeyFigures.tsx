@@ -45,6 +45,10 @@ function Amounts({ card, which }: { card: LiveCard; which: 'principal' | 'unsett
   )
 }
 
+function FigureDetail({ active, label, children }: { active: boolean; label: string; children: ReactNode }) {
+  return active ? <details className="dm-position-figure-detail"><summary>{label}</summary>{children}</details> : children
+}
+
 /**
  * Your APR: the rate since the position opened, at today's prices, and over the last 24 hours when its chart has a
  * measured point about a day old (lib/positionApr.ts). A skeleton while its history is read; a dash with a few plain
@@ -53,7 +57,7 @@ function Amounts({ card, which }: { card: LiveCard; which: 'principal' | 'unsett
  * start, read at a past block when the history has none a day old (lib/fees/pastReads.ts); the line's title says from
  * when and which block.
  */
-function YourApr({ tokenId }: { tokenId: string }) {
+function YourApr({ tokenId, compact = false }: { tokenId: string; compact?: boolean }) {
   const fees = useFeeHistory(tokenId)
   // Asks for the 24H start while the tile is shown (no read when the history has one, or for a saved copy); no fills.
   usePastReads(tokenId, '24h', false)
@@ -102,7 +106,7 @@ function YourApr({ tokenId }: { tokenId: string }) {
       data-apr={rates ? (rates.all.ok ? 'ready' : rates.all.reason) : fees.phase}
       data-apr-source={saved ? 'saved-public-history' : undefined}
       title={saved ? 'A copy this browser saved of this position’s public history. Historical, not a current rate.' : undefined}
-      sub={sub}
+      sub={compact && rates?.all.ok ? <details className="dm-position-figure-detail"><summary>Period details</summary>{sub}</details> : sub}
     >
       <span className="dm-fig-lg dm-pos-apr">{figure}</span>
     </Stat>
@@ -110,8 +114,8 @@ function YourApr({ tokenId }: { tokenId: string }) {
 }
 
 /**
- * The pool's price as a person says it, "1 UFG = 0.003009 USDG" (changed on purpose 2026-09-28, one-sided: the app's
- * one way round, lib/read/orientation.ts, where it read "1 USDG = 332.36 UFG"); a dash whose reason is its title otherwise.
+ * The current price leads; its quote unit directly below keeps the orientation explicit without crowding the figure.
+ * The app's one way round is unchanged. A dash whose reason is its title remains when a price cannot be written.
  */
 function PriceNow({ price, card }: { price: CardPrice; card: LiveCard }) {
   const { base, quote } = shownCardRange(card)
@@ -119,12 +123,9 @@ function PriceNow({ price, card }: { price: CardPrice; card: LiveCard }) {
   if (state.phase === 'ready' && state.price.state === 'usable') {
     return (
       <span className="dm-pos-price" data-current-price="usable" title={`Pool price at block ${state.price.block}: ${state.price.text}`}>
-        <span className="dm-pos-price-side">
-          1 <TokenLabel token={base} /> =
-        </span>{' '}
         <span className="dm-fig-lg">{plain(state.price.text)}</span>{' '}
-        <span className="dm-pos-price-side">
-          <TokenLabel token={quote} />
+        <span className="dm-pos-price-side dm-pos-price-unit">
+          <TokenLabel token={quote} /> per <TokenLabel token={base} />
         </span>
       </span>
     )
@@ -141,7 +142,7 @@ function PriceNow({ price, card }: { price: CardPrice; card: LiveCard }) {
  * The position's range as one bar from its lower end to its upper end, the price now a dot on it (outside its end when
  * the price is beyond it), the two ends under it and, while it holds liquidity, whether it earns fees now.
  */
-function RangeLine({ price, card }: { price: CardPrice; card: LiveCard }) {
+function RangeLine({ price, card, cached = false }: { price: CardPrice; card: LiveCard; cached?: boolean }) {
   const { fullRange } = card.range
   // The app's one way round (2026-09-28): the lowest price of the priced token at the bar's left.
   const { low, high, ticks } = shownCardRange(card)
@@ -149,13 +150,13 @@ function RangeLine({ price, card }: { price: CardPrice; card: LiveCard }) {
   // The band from 5% to 95% of the bar; a price beyond it sits in the room outside its end.
   const share = usable ? (shownCardTick(usable) - ticks.lower) / Math.max(1, ticks.upper - ticks.lower) : null
   const at = share === null ? null : share < 0 ? 0.015 : share > 1 ? 0.985 : 0.05 + 0.9 * share
-  const live = card.hasLiquidity ? card.inRange : null
+  const live = !cached && card.hasLiquidity ? card.inRange : null
   return (
     <div className="dm-pos-span" data-stat="range" data-full-range={fullRange ? '' : undefined}>
-      <RangeBar lower={0.05} upper={0.95} current={at} inRange={live} label={rangeWords(card, price)} />
+      <RangeBar lower={0.05} upper={0.95} current={at} inRange={live} label={`${cached ? 'Last known range. ' : ''}${rangeWords(card, price)}`} />
       <span className="dm-pos-span-ends">
         <span>{endText(low.end, low.tick)}</span>
-        <span className="dm-pos-span-word">Your range</span>
+        <span className="dm-pos-span-word">{cached ? 'Last known range' : card.hasLiquidity ? 'Your range' : 'Closed range'}</span>
         <span>{endText(high.end, high.tick)}</span>
       </span>
       {live !== null && (
@@ -167,36 +168,42 @@ function RangeLine({ price, card }: { price: CardPrice; card: LiveCard }) {
   )
 }
 
-/** The four tiles. `state`: the page's read as a valued state (a pair with USDG), null otherwise. */
-export function KeyFigures({ card, state, price, block, cached = false }: { card: LiveCard; state: PositionState | null; price: CardPrice; block: number; cached?: boolean }) {
+/** `state`: the page's read as a valued state (a pair with USDG), null otherwise. */
+export function KeyFigures({ card, state, price, block, cached = false, workspace = false }: { card: LiveCard; state: PositionState | null; price: CardPrice; block: number; cached?: boolean; workspace?: boolean }) {
   const principal = cardUsd(card, state, 'principal')
   const fees = cardUsd(card, state, 'unsettledFees')
+  const principalText = principal ? formatUsdFloor(unitsText(principal.units)) : null
+  const longPrincipal = !!principalText && principalText.length > 13
   const basis = state && principal ? basisOf(state) : null
   const raw = rawPair([card.principal[0].raw, card.principal[1].raw])
   const shares = basis && raw ? valueShares(basis, raw) : null
   const valueQuality = principal ? 'current' : visibleAmountQuality(card.principal)
   useLoadMilestone('position', 'value', valueQuality && cached ? 'cached' : valueQuality)
   return (
-    <StatStrip layout="tiles" className="dm-pos-stats" title={blockTitle(block)} data-position-stats="" data-valued={principal ? '' : undefined}>
+    <StatStrip layout="tiles" className="dm-pos-stats" title={blockTitle(block)} data-position-stats="" data-position-overview={workspace ? '' : undefined} data-valued={principal ? '' : undefined}>
       <Stat
         label="Position value"
         info="What your position is worth now, at the pool’s price. Fees not included."
         className="dm-pos-stat"
         data-cell="principal"
+        data-long-value={longPrincipal ? '' : undefined}
+        data-value-width={principalText && principalText.length > 11 ? 'wide' : principalText && principalText.length > 8 ? 'medium' : undefined}
         sub={
           principal && (
-            <>
+            <FigureDetail active={workspace} label="Token amounts">
               {/* Neutral inks: on this page Tangerine means the fees series, so the tokens' split never borrows it. A
                   position all in one token has nothing to split: no bar. */}
               {shares && shares[0] > 0 && shares[1] > 0 && <StackedBar className="dm-pos-split" height={4} parts={[{ share: shares[0], tone: 'neutral' }, { share: shares[1], tone: 'muted' }]} />}
               <Amounts card={card} which="principal" />
-            </>
+            </FigureDetail>
           )
         }
       >
         {principal ? (
           <span className="dm-arrive" title={`Pool price at block ${principal.block}`}>
-            <LiveFigure value={formatUsdFloor(unitsText(principal.units))} mode="digits" dimCents className="dm-fig-lg" />
+            <LiveFigure value={principalText!} mode={longPrincipal ? 'whole' : 'digits'} dimCents className={cx('dm-fig-lg', longPrincipal && 'dm-position-long-figure')}>
+              {longPrincipal && principalText!.split(/(?<=,)/).map((part, index) => <span className="dm-position-amount-group" key={index}>{part}</span>)}
+            </LiveFigure>
           </span>
         ) : (
           <Amounts card={card} which="principal" />
@@ -207,17 +214,17 @@ export function KeyFigures({ card, state, price, block, cached = false }: { card
         info="Fees this position earned and has not collected yet."
         className="dm-pos-stat"
         data-cell="fees"
-        sub={fees && <Amounts card={card} which="unsettledFees" />}
+        sub={fees && (workspace ? <details className="dm-position-figure-detail"><summary>Token amounts</summary><Amounts card={card} which="unsettledFees" /></details> : <Amounts card={card} which="unsettledFees" />)}
       >
         {fees ? <UsdText value={unitsText(fees.units)} block={fees.block} floor className={cx('dm-fig-lg dm-arrive', positive(fees.units) && 'dm-fees-in')} /> : <Amounts card={card} which="unsettledFees" />}
       </Stat>
-      <YourApr tokenId={card.tokenId} />
+      <YourApr tokenId={card.tokenId} compact={workspace} />
       <Stat
-        label="Current price"
+        label={cached ? 'Last known price' : 'Current price'}
         info="The position earns fees while this price is inside its range."
         className="dm-pos-stat"
         data-cell="price"
-        sub={<RangeLine price={price} card={card} />}
+        sub={<RangeLine price={price} card={card} cached={cached} />}
       >
         <span data-stat="price">
           <PriceNow price={price} card={card} />

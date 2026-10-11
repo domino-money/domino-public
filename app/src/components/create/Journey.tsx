@@ -136,10 +136,10 @@ const fail = (reason: string): Check => ({ ok: false, reason })
  * here asks about automation: that is applied from Automate, to a position
  * that exists.
  */
-export function Journey({ poolId, linkToken = null }: { poolId: string; linkToken?: string | null }) {
+export function Journey({ poolId, linkToken = null, initialToken = null }: { poolId: string; linkToken?: string | null; initialToken?: TokenCandidate | null }) {
   const source = useReadSource()
   const now = useNow(false).wall
-  const [state, setState] = useState<JourneyState>(initialState)
+  const [state, setState] = useState<JourneyState>(() => initialToken ? withToken(initialState(), initialToken) : initialState())
   const [part, setPart] = useState<AmountPart>('range')
   // Create position is asking the wallet: Back waits, so leaving Review cannot drop the flow mid-way.
   const [creating, setCreating] = useState(false)
@@ -589,14 +589,14 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
       summary: done ? summaryOf(step) : null,
       body: mounted ? bodyOf(step) : null,
       footer: isCurrent ? footer : null,
-      lead: step === 'amount' ? amountLead : undefined,
+      lead: step === 'amount' ? amountLead ?? '' : step === 'range' ? undefined : '',
     }
   })
 
   // The page is the steps and, on a wide screen, the position they make, drawn beside them as it takes shape.
   return (
     <PageShell width="flow" className="dm-np" data-create-journey="" data-create-step={current}>
-      <PageHeader size="display" title={CREATE.page.title} description={CREATE.page.description} className="dm-np-head dm-flow-rise" />
+      <PageHeader size="display" title={CREATE.page.title} className="dm-np-head dm-flow-rise" />
       <div className="dm-card dm-flow-card dm-flow-rise" style={{ '--delay': '40ms' } as CSSProperties}>
         <StepList steps={steps} onOpen={reopen} locked={creating} />
       </div>

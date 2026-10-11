@@ -312,7 +312,7 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
     </>
   const renderManagement = (exitContent: ReactNode = null, actionOpen = false) => {
     const panel = <div id={controlId} className="dm-automation-panel" data-automation-panel="">
-      {proof && <p className="dm-acct-note" role="status" data-automation-confirmed="">Your change is confirmed. Controls update automatically.</p>}
+      {proof && <p className="dm-acct-note" role="status" data-automation-confirmed="">Your change is confirmed.</p>}
       {/* The chain's status before any figure of it: behind or unavailable, and §5.3's halt banner (the owner's actions stay). */}
       {body && views.length > 0 && chainState && (chainState.state !== 'current' || chainState.halted === true) && <IndexStatus chains={body.chains} chainId={chainId} what="Your automation" />}
       {unread && answer && answer.reply.kind !== 'ok' && <IndexStatus failed={answer.reply} chainId={chainId} what="Your automation" />}

@@ -57,9 +57,9 @@ const shots = () => { const dir = process.env.DOMINO_CHART_SHOTS || resolve(impo
 const DESKTOP = { viewport: { width: 1280, height: 900 } };
 const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 /**
- * CSS px per design px on a page (changed on purpose 2026-10-03, the owner: the site looks too big at 100%; at 80% it
- * looks right): the root's font-size over 16 (styles/tokens.css, src/lib/rootScale.ts), 0.8 in DESKTOP's window and 1
- * on PHONE. A chart's paddings and offsets are design px, so a box measured in CSS px is compared at this scale.
+ * CSS px per design px on a page: the root's font-size over 16 (styles/tokens.css, src/lib/rootScale.ts), 0.675 in
+ * DESKTOP's window and 1 on PHONE at the default text preference. A chart's paddings and offsets are design px,
+ * so a box measured in CSS px is compared at this scale.
  */
 const rootScale = (page) => page.evaluate(() => Number.parseFloat(getComputedStyle(document.documentElement).fontSize) / 16);
 const ID = '3325113';
@@ -172,6 +172,21 @@ async function headerPrice(page) {
 
 /** The Price range card around the chart. */
 const rangeCard = (page) => page.locator('section.dm-pos-card:has([data-range])');
+/** V3 keeps both charts mounted; open the view whose visible geometry the test is about to inspect. */
+async function showChart(page, name) {
+  const tab = page.getByRole('tab', { name, exact: true });
+  // The optional pre-V3 compiled baseline has no chart tabs.
+  if (process.env.DOMINO_CHART_BASELINE_DIST && !await tab.count()) return;
+  await tab.click({ timeout: 30_000 });
+  // A newly visible panel needs a ResizeObserver pass to restore its SVG geometry after having zero hidden width.
+  const panel = page.getByRole('tabpanel', { name, exact: true });
+  await panel.locator(name === 'Price range' ? '.dm-pvr-band' : '.dm-chart-layer, [data-pending-plot] svg').first().waitFor({ state: 'visible', timeout: 30_000 });
+}
+async function openDetails(details) {
+  if (await details.count() && await details.getAttribute('open') === null) await details.locator(':scope > summary').click();
+}
+const showBreakdown = (card) => openDetails(card.locator('.dm-position-fee-breakdown'));
+const showAprPeriods = (page) => openDetails(page.locator('[data-cell="apr"] .dm-position-figure-detail'));
 /** A range end's figure on the chart, as the key figures write it (2026-10-03: its word "Max" or "Min" over it). */
 const endFigure = (range, end) => range.locator(`[data-pvr-end="${end}"] .dm-pvr-label-fig`).innerText();
 
@@ -210,6 +225,7 @@ test('an automated position: the card says in two lines what Auto-compound put b
     await page.locator(`[data-position-detail][data-position-id="${ID}"]`).waitFor({ timeout: 20_000 });
     const card = page.locator('[data-fees-card][data-fees-state="verified"]');
     await card.waitFor({ timeout: 60_000 });
+    await showBreakdown(card);
     // The chart is the ledger's; the attribution appears once the vault's record covers its settlements.
     const impact = card.locator('[data-automation-impact="compound"]');
     await impact.locator('[data-impact="added"]').filter({ hasText: /^Auto-compound added \$[\d,]+\.\d\d back · 3 times$/ }).waitFor({ timeout: 20_000 });
@@ -224,13 +240,16 @@ test('an automated position: the card says in two lines what Auto-compound put b
     // Your APR since opened, from the ledger at today's prices; the last 24 hours from the mint, a measured point a day old.
     const apr = page.locator('[data-cell="apr"][data-apr="ready"]');
     await apr.waitFor({ timeout: 10_000 });
-    assert.match(await apr.innerText(), /^YOUR APR\s+[\d,]+(\.\d)?%\s+Since opened \(\d+ hours\)\s+Last 24 hours: [\d,]+(\.\d)?%$/);
+    await showAprPeriods(page);
+    assert.match(await apr.innerText(), /^Your APR\s+[\d,]+(\.\d)?%\s+Period details\s+Since opened \(\d+ hours\)\s+Last 24 hours: [\d,]+(\.\d)?%$/);
     assert.doesNotMatch(await apr.innerText(), /est\./);
 
     // The Activity says which settlements were the automation's: each compound one row, "Fees added back".
     assert.equal(await card.locator('.dm-fees-act').count(), 0, 'the card lists no activity on the position’s page');
     const activity = page.locator('[data-position-activity]');
     await activity.waitFor({ timeout: 10_000 });
+    assert.ok(await activity.locator('.dm-fees-act-verb').first().evaluate((node) => parseFloat(getComputedStyle(node).fontSize)) >= 14, 'legacy activity actions remain readable at the compact desktop scale');
+    assert.ok(await activity.locator('.dm-fees-act-date').first().evaluate((node) => parseFloat(getComputedStyle(node).fontSize)) >= 12, 'legacy activity dates remain readable');
     const more = activity.getByRole('button', { name: /^Show \d+ more$/ });
     if (await more.count()) await more.click();
     assert.deepEqual(await activity.locator('.dm-fees-act[data-auto] .dm-fees-act-verb').allInnerTexts(), ['Fees added back', 'Fees added back', 'Fees added back']);
@@ -266,6 +285,11 @@ test('an automated position: the card says in two lines what Auto-compound put b
       assert.match(said, /^Auto-compound added \$[\d,]+\.\d\d back into your position\.\s+Service fee \$[\d,]+\.\d{2,6}$/, said);
       const [value, fee] = [...said.matchAll(/\$([\d,]+\.\d+)/g)].map((m) => Number(m[1].replace(/,/g, '')));
       assert.ok(value > 0 && fee > 0 && fee < value, `the engine's own service fee: ${fee} on ${value}`);
+      for (const offset of [-box.width / 4, box.width / 4]) {
+        await page.mouse.move(box.x + box.width / 2 + offset, box.y + box.height / 2);
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.equal(await tip.innerText(), said, 'the entire visible marker keeps the same exact event amounts');
+      }
       if (index === 1) {
         await page.waitForTimeout(400);
         await page.screenshot({ path: join(shots(), 'desktop-automated-tooltip.png'), clip: await card.boundingBox() });
@@ -277,6 +301,7 @@ test('an automated position: the card says in two lines what Auto-compound put b
     // No stored pool history is listed here. The verified mint/current prices remain useful, but the unknown day
     // between them must stay empty, rather than showing a fabricated trajectory.
     const range = page.locator('[data-pvr-where]');
+    await showChart(page, 'Price range');
     await range.waitFor();
     assert.equal(await range.getAttribute('data-pvr-where'), 'inside');
     await page.locator('[data-pvr-history="not_listed"]').waitFor({ timeout: 10_000 });
@@ -287,7 +312,7 @@ test('an automated position: the card says in two lines what Auto-compound put b
     assert.match(await page.locator('[data-stat="range"]').innerText(), new RegExp(`^${low.replaceAll('.', '[.]')}\\s+Your range\\s+${high.replaceAll('.', '[.]')}\\s`));
     assert.deepEqual(await range.locator('.dm-pvr-legend > *').allInnerTexts(), ['Your range', 'Price inside it', 'Since opened · Some hours are missing.']);
     assert.equal(await range.locator('.dm-pvr-unit').innerText(), 'USDG per UFG');
-    assert.match(await page.locator('[data-stat="price"]').innerText(), /1 UFG =\s+0\.00\d+\s+USDG/);
+    assert.match(await page.locator('[data-stat="price"]').innerText(), /0\.00\d+\s+USDG per UFG/);
     await rangeCard(page).screenshot({ path: join(shots(), 'desktop-price-range-in.png') });
   } finally { await s.close(); }
 });
@@ -298,6 +323,7 @@ test('an automated position on a phone: the same two lines and marks, the chart 
     const page = s.page;
     const card = page.locator('[data-fees-card][data-fees-state="verified"]');
     await card.waitFor({ timeout: 60_000 });
+    await showBreakdown(card);
     await card.locator('[data-automation-impact="compound"] [data-impact="added"]').filter({ hasText: /^Auto-compound added \$[\d,]+\.\d\d back · 3 times$/ }).waitFor({ timeout: 20_000 });
     assert.equal(await card.locator('[data-automation-impact="compound"]').count(), 1);
     assert.equal(await card.locator('.dm-fees-auto').count(), 3);
@@ -315,6 +341,7 @@ test('an automated position on a phone: the same two lines and marks, the chart 
     assert.equal(await chart.getAttribute('aria-valuenow'), await chart.getAttribute('aria-valuemax'), 'keyboard reaches the last measured point');
     await chart.press('Escape');
     await page.screenshot({ path: join(shots(), 'phone-automated-all.png'), fullPage: true });
+    await showChart(page, 'Price range');
     await page.locator('[data-pvr-where]').scrollIntoViewIfNeeded();
     assert.equal(await page.locator('[data-pvr-now]').innerText(), await headerPrice(page));
     await rangeCard(page).screenshot({ path: join(shots(), 'phone-price-range-in.png') });
@@ -340,6 +367,7 @@ test('a Domino-compound position: the chart draws before the vault’s record, t
   try {
     const card = s.page.locator('[data-fees-card][data-fees-state="verified"]');
     await Promise.all([card.waitFor({ timeout: 60_000 }), recordStarted]);
+    await showBreakdown(card);
     assert.equal(await card.locator('.dm-fees-chart').count(), 1, 'the verified chart does not wait for attribution');
     assert.equal(await card.locator('[data-automation-impact]').count(), 0, 'nothing presented before the record is read');
     release();
@@ -370,6 +398,7 @@ test('a plain position: no automation line, no mark and no vault read; the price
     assert.equal(await activity.locator('.dm-fees-act[data-auto]').count(), 0);
     assert.equal(await activity.locator('.dm-fees-act[data-kind="collect"]').count(), 2, 'the owner’s two collects');
     const range = page.locator('[data-pvr-where]');
+    await showChart(page, 'Price range');
     await range.waitFor();
     // UFG's price in USDG sits over this range (the pool's tick is under its lower one).
     assert.equal(await range.getAttribute('data-pvr-where'), 'over');
@@ -388,6 +417,7 @@ test('a plain position: no automation line, no mark and no vault read; the price
     const card = phone.page.locator('[data-fees-card][data-fees-state="verified"]');
     await card.waitFor({ timeout: 60_000 });
     await phone.page.screenshot({ path: join(shots(), 'phone-plain-all.png'), fullPage: true });
+    await showChart(phone.page, 'Price range');
     await phone.page.locator('[data-pvr-where]').scrollIntoViewIfNeeded();
     await rangeCard(phone.page).screenshot({ path: join(shots(), 'phone-price-range-out.png') });
   } finally { await phone.close(); }
@@ -404,6 +434,7 @@ test('the position’s page draws the pool’s last 7 days from the read service
     try {
       const range = s.page.locator('[data-pvr-where]');
       await s.page.locator('[data-fees-card][data-fees-state="verified"]').waitFor({ timeout: 60_000 });
+      await showChart(s.page, 'Price range');
       await s.page.locator('[data-pvr-line][data-pvr-history="answered"]').waitFor({ timeout: 30_000 });
       assert.equal(await range.getAttribute('data-pvr-where'), 'inside');
       assert.equal((await range.locator('.dm-pvr-says').textContent()).replace(/\s+/g, ' ').trim(), 'Earning fees — the price is inside your range');
@@ -440,7 +471,8 @@ test('R5: real mint bounds price history and 7D fees at 1440, 390 and 320; the s
       const card = page.locator('[data-fees-card][data-fees-state="verified"]');
       const range = page.locator('[data-pvr-line]');
       await card.locator('.dm-fees-chart').waitFor({ timeout: 30_000 });
-      await range.waitFor();
+      await range.waitFor({ state: 'attached' });
+      await showBreakdown(card);
       const total = await card.locator('.dm-fees-hero').innerText();
       const legend = await card.locator('.dm-fees-legend').innerText();
       if (!baseline) {
@@ -470,9 +502,12 @@ test('R5: real mint bounds price history and 7D fees at 1440, 390 and 320; the s
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await page.waitForTimeout(900);
       await card.screenshot({ path: join(shots(), `fees-recent-${label}.png`) });
+      await showChart(page, 'Price range');
       await rangeCard(page).screenshot({ path: join(shots(), `range-recent-${label}.png`) });
       if (!baseline) {
         for (const [chart, name] of [[card.locator('.dm-fees-chart'), 'fees'], [range.locator('.dm-pvr'), 'range']]) {
+          await showChart(page, name === 'fees' ? 'Fees' : 'Price range');
+          await chart.locator(':scope > svg').first().waitFor();
           const axis = await chart.locator(':scope > svg:first-child text.dm-axis').evaluateAll((nodes) => nodes
             .filter((node) => /^(Opened|\d{2}:\d{2}|\d{2}-\d{2})$/.test(node.textContent))
             .map((node) => { const r = node.getBoundingClientRect(); return { text: node.textContent, x: r.x, right: r.right }; })
@@ -519,6 +554,7 @@ test('a position whose owner added liquidity by hand: Fees ready to collect stay
  */
 async function priceOnBar(page) {
   const range = page.locator('[data-pvr-where]');
+  await showChart(page, 'Price range');
   await range.waitFor({ timeout: 20_000 });
   const nowText = await headerPrice(page);
   const price = (end) => range.locator(`[data-pvr-end="${end}"] [data-pvr-price]`).getAttribute('data-pvr-price').then((text) => Number(text.replace(/,/g, '')));
@@ -571,6 +607,7 @@ test('a range that reaches the pool’s limits: the chart labels such an end wit
       const page = s.page;
       await page.locator(`[data-position-detail][data-position-id="${ID}"]`).waitFor({ timeout: 20_000 });
       const range = page.locator('[data-pvr-where]');
+      await showChart(page, 'Price range');
       await range.waitFor({ timeout: 20_000 });
       const header = label === 'full-range' ? /^0\s+Your range\s+∞\s/ : new RegExp(`^0\\s+Your range\\s+${(await endFigure(range, 'max')).replaceAll('.', '[.]')}\\s`);
       assert.match(await page.locator('[data-stat="range"]').innerText(), header);
@@ -620,6 +657,7 @@ test('while the ledger is read the card shows the chain’s unclaimed figure and
       // The price range, from the page's own read: the status, the band and the price now, in the chart's final box, and
       // no historical observations before the held ledger verifies its mint.
       const range = s.page.locator('[data-pvr-where]');
+      await showChart(s.page, 'Price range');
       await range.waitFor({ timeout: 10_000 });
       assert.equal(await range.getAttribute('data-pvr-line'), null);
       assert.equal(await range.getAttribute('data-pvr-first'), null, 'no opening price is invented while mint verification is pending');
@@ -629,6 +667,7 @@ test('while the ledger is read the card shows the chain’s unclaimed figure and
       assert.equal(await rangeCard(s.page).locator('.dm-acct-range-bar, .dm-pos-ends, .dm-pos-preview-wrap').count(), 0);
       const early = await rangeCard(s.page).boundingBox();
       await s.page.waitForTimeout(900);
+      await showChart(s.page, 'Fees');
       await loading.screenshot({ path: join(shots(), `${label}-plain-loading.png`) });
       release();
       const card = s.page.locator('[data-fees-card][data-fees-state="verified"]');
@@ -636,6 +675,7 @@ test('while the ledger is read the card shows the chain’s unclaimed figure and
       const drawn = await card.locator('.dm-fees-chart').boundingBox();
       assert.equal(Math.round(drawn.height), Math.round(skeleton.height), 'the chart takes the skeleton’s place at its size');
       await s.page.waitForTimeout(500);
+      await showChart(s.page, 'Price range');
       const late = await rangeCard(s.page).boundingBox();
       assert.equal(Math.round(late.height), Math.round(early.height), 'the price range never moved');
       await assertIsolatedBlockPrices(range, world);
@@ -669,6 +709,118 @@ test('a measured zero remains a full chart, then the first atomic fee and APR ap
     assert.match(await chart.locator('.dm-chart-tooltip').innerText(), /<\$0\.01/);
     assert.ok(await chart.locator('.dm-series-line').count() > 0, 'positive raw fees draw a measured series below the money display precision');
     keptToTheRules(world);
+  } finally { await s.close(); }
+});
+
+test('position workspace: keyboard tabs preserve both charts and period, sub-cent axes remain distinct, and both views fit desktop and mobile', async () => {
+  const world = plain({ steps: [], unclaimed: [8000n, 0n] });
+  const s = await scenario(world, HASH);
+  try {
+    const { page } = s;
+    const card = page.locator('[data-fees-card][data-fees-state="verified"]');
+    await card.locator('.dm-fees-chart').waitFor({ timeout: 60_000 });
+    const tabs = page.getByRole('tablist', { name: 'Position chart', exact: true });
+    const feesTab = tabs.getByRole('tab', { name: 'Fees', exact: true });
+    const rangeTab = tabs.getByRole('tab', { name: 'Price range', exact: true });
+    const feePanel = page.locator('[data-position-chart-panel="fees"]');
+    const rangePanel = page.locator('[data-position-chart-panel="range"]');
+    const initialPeriod = await card.getAttribute('data-fees-period');
+    await page.evaluate(() => { window.__workspaceRetained = [...document.querySelectorAll('[data-position-chart-panel] > *')]; });
+    assert.equal(await page.locator('[data-position-overview] > [data-cell]').count(), 4, 'value, fees, APR and current price form one overview');
+    assert.equal(await page.locator('.dm-position-context').count(), 0, 'range context lives in the fourth tile instead of a separate sidebar');
+    assert.equal(await rangePanel.isVisible(), false, 'Fees is the default view');
+    assert.equal(await rangeTab.getAttribute('tabindex'), '-1');
+    const display = page.getByRole('group', { name: 'Chart display', exact: true });
+    const pointsToggle = display.getByRole('button', { name: 'Show measured points', exact: true });
+    const expand = display.getByRole('button', { name: 'Expand chart', exact: true });
+    assert.equal(await pointsToggle.getAttribute('aria-pressed'), 'false');
+    assert.equal(await expand.getAttribute('aria-expanded'), 'false');
+    await page.waitForLoadState('networkidle');
+    const readsBeforeDisplay = { edge: world.chain.edgeLog.length, past: s.reads.length, history: s.histories.length };
+    await pointsToggle.click();
+    await expand.click();
+    assert.equal(await pointsToggle.getAttribute('aria-pressed'), 'true');
+    assert.equal(await display.getByRole('button', { name: 'Collapse chart' }).getAttribute('aria-expanded'), 'true');
+    assert.equal(await card.locator('[data-measured-points="fees"] circle').count(), Number(await card.locator('.dm-fees-chart').getAttribute('aria-valuemax')) + 1, 'dots are the actual measured interval boundaries, not interpolated samples');
+
+    for (const width of [1440, 1280, 1220, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      const expandedFeesHeight = (width < 768 ? 280 + 32 + 40 : 320 + 16 + 40) * await rootScale(page);
+      await page.waitForFunction(expected => Math.abs(document.querySelector('.dm-fees-chart').getBoundingClientRect().height - expected) < 2, expandedFeesHeight);
+      await card.locator('.dm-fees-chart').focus();
+      await page.keyboard.press('End');
+      assert.equal(await card.locator('.dm-fees-chart').getAttribute('aria-valuenow'), await card.locator('.dm-fees-chart').getAttribute('aria-valuemax'), 'keyboard inspection stays aligned after resizing the expanded chart');
+      assert.ok((await card.locator('.dm-fees-chart').getAttribute('aria-valuetext')).includes('earned'), 'the resized chart keeps its measured accessible value');
+      await page.keyboard.press('Escape');
+      const tiles = await page.locator('[data-position-overview] > [data-cell]').evaluateAll(nodes => nodes.map(node => {
+        const rect = node.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      }));
+      assert.equal(new Set(tiles.map(tile => Math.round(tile.y))).size, width >= 1024 ? 1 : 2, `four overview tiles use ${width >= 1024 ? 'one row' : 'two rows'} at ${width}`);
+      assert.ok(tiles.every(tile => tile.width >= 120), 'each metric retains readable space');
+      const analysis = await page.locator('.dm-position-analysis').boundingBox();
+      const overview = await page.locator('[data-position-overview]').boundingBox();
+      assert.ok(Math.abs(analysis.width - overview.width) < 2, 'charts occupy the same full width as the overview');
+      const ends = await page.locator('[data-position-overview] .dm-pos-span-ends > :not(.dm-pos-span-word)').evaluateAll(nodes => nodes.map(node => {
+        const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+      }));
+      assert.ok(ends[0].right <= ends[1].left || ends[0].bottom <= ends[1].top, `the exact range boundaries never overlap at ${width}`);
+      await card.locator('.dm-fees-chart svg').first().waitFor();
+      const levels = await card.locator('text.dm-axis').allTextContents();
+      const money = levels.filter(label => label.startsWith('$'));
+      assert.ok(money.length >= 2, `sub-cent scale has multiple levels at ${width}: ${money}`);
+      assert.equal(new Set(money).size, money.length, `each currency axis level is distinct at ${width}`);
+      assert.ok(money.every(label => !label.includes('<')), 'axis values are measured levels, not repeated dust summaries');
+      assert.match(await card.locator('.dm-fees-hero').innerText(), /<\$0\.01/, 'the money summary still communicates less than one cent');
+      await page.screenshot({ path: join(shots(), `workspace-fees-${width}.png`), fullPage: true });
+      await feesTab.focus();
+      await page.keyboard.press('ArrowRight');
+      assert.equal(await rangeTab.getAttribute('aria-selected'), 'true');
+      assert.equal(await rangeTab.evaluate(node => node === document.activeElement), true, 'keyboard selection moves focus');
+      assert.equal(await feePanel.isVisible(), false);
+      await rangePanel.locator('.dm-pvr svg').first().waitFor();
+      assert.equal(await pointsToggle.getAttribute('aria-pressed'), 'true', 'point preference survives tab changes');
+      assert.equal(await display.getByRole('button', { name: 'Collapse chart' }).getAttribute('aria-expanded'), 'true', 'expanded view survives tab changes');
+      const priceChart = rangePanel.locator('.dm-pvr');
+      const count = Number(await priceChart.getAttribute('aria-valuemax'));
+      assert.equal(await priceChart.locator('[data-measured-points="range"] circle').count(), count, 'price dots name only inspectable recorded observations');
+      const visibleRange = await rangePanel.locator('.dm-pvr').boundingBox();
+      assert.ok(visibleRange.width > 200 && Math.abs(visibleRange.height - ((width < 768 ? 280 : 320) + 46) * await rootScale(page)) < 2, 'previously hidden chart keeps the expanded measured frame');
+      await page.screenshot({ path: join(shots(), `workspace-range-${width}.png`), fullPage: true });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `the workspace fits ${width}`);
+      await page.keyboard.press('Home');
+      assert.equal(await feesTab.getAttribute('aria-selected'), 'true');
+      await card.locator('.dm-fees-chart svg').first().waitFor();
+      assert.equal(await card.getAttribute('data-fees-period'), initialPeriod, 'chart selection never resets the fee period');
+      assert.equal(await page.evaluate(() => window.__workspaceRetained.every((node, index) => node === document.querySelectorAll('[data-position-chart-panel] > *')[index])), true, 'the same chart components stay mounted');
+    }
+    await display.getByRole('button', { name: 'Collapse chart', exact: true }).click();
+    await pointsToggle.click();
+    assert.equal(await page.locator('[data-measured-points]').count(), 0, 'turning dots off removes only their visual layer');
+    assert.ok(Math.abs((await card.locator('.dm-fees-chart').boundingBox()).height - 220) < 2, 'collapse restores the compact phone chart');
+    assert.deepEqual({ edge: world.chain.edgeLog.length, past: s.reads.length, history: s.histories.length }, readsBeforeDisplay, 'chart display controls and viewport changes start no reads');
+    keptToTheRules(world);
+  } finally { await s.close(); }
+});
+
+test('closed position workspace keeps its closed status and never substitutes a current price for unproven closing history', async () => {
+  const world = plain({ steps: [{ block: HEAD - 50, kind: 'decrease', delta: OWNER_MINT.liquidity }], unclaimed: [0n, 0n] });
+  const s = await scenario(world, HASH, PHONE);
+  try {
+    const { page } = s;
+    const context = page.locator('[data-position-overview] > [data-cell="price"]');
+    await context.waitFor({ timeout: 30_000 });
+    assert.equal(await context.locator('.dm-pos-span-word').innerText(), 'Closed range');
+    assert.equal(await context.locator('[data-in]').count(), 0, 'a closed range does not claim that it is earning fees');
+    assert.equal(await page.locator('[data-position-overview] > [data-cell]').count(), 4);
+    await page.getByRole('tab', { name: 'Price range', exact: true }).click();
+    const range = page.locator('[data-pvr-where="closed"]');
+    await range.waitFor({ timeout: 30_000 });
+    assert.equal(await range.locator('.dm-pvr-now-line').count(), 0, 'a closed position never draws the current price as its history');
+    assert.match(await range.locator('.dm-pvr-says').textContent(), /Closed/);
+    await page.screenshot({ path: join(shots(), 'workspace-closed-390.png'), fullPage: true });
+    await page.getByRole('tab', { name: 'Fees', exact: true }).click();
+    assert.equal(await page.locator('[data-position-chart-panel="fees"]').isVisible(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   } finally { await s.close(); }
 });
 
@@ -710,6 +862,10 @@ test('an automated position fills in without a jump: its chart draws before attr
         recordStarted,
       ]);
       const card = s.page.locator('[data-fees-card][data-fees-state="verified"]');
+      await showBreakdown(card);
+      // Opening the user-requested disclosure precedes the measured arrival of attribution.
+      await s.page.evaluate(() => { window.__frames = []; });
+      await s.page.waitForFunction(() => window.__frames.length >= 10);
       assert.equal(await card.locator('.dm-fees-chart').count(), 1, `${label}: the chart does not wait for attribution`);
       assert.equal(await card.locator('[data-automation-impact]').count(), 0, `${label}: no incomplete totals`);
       assert.equal(await card.locator('.dm-fees-impact-slot[data-kind="compound"]').count(), 1, `${label}: the known sequence reserves its lines`);
@@ -782,6 +938,7 @@ test('a position eight days old: 24H, 7D, 30D and All; 7D first, its start read 
     assert.match(await delta.getAttribute('title'), new RegExp(`^Earned since \\d\\d-\\d\\d \\d\\d:\\d\\d UTC \\(7 days\\), measured at block ${week}$`));
     // Your APR: the last 24 hours from the day's read, which its line names.
     const day = page.locator('[data-cell="apr"][data-apr="ready"] [data-apr-day]');
+    await showAprPeriods(page);
     await day.waitFor({ timeout: 20_000 });
     assert.match(await day.innerText(), /^Last 24 hours: [\d,]+(\.\d)?%$/);
     const dayBlock = Number((await day.getAttribute('title')).match(/block (\d+)/)[1]);
@@ -818,6 +975,7 @@ test('a position eight days old: 24H, 7D, 30D and All; 7D first, its start read 
     const again = page.locator('[data-fees-card][data-fees-state="verified"]');
     await again.waitFor({ timeout: 60_000 });
     assert.equal(await again.getAttribute('data-fees-period-state'), 'drawn', 'the 7D start is a kept point');
+    await showAprPeriods(page);
     await page.locator('[data-cell="apr"][data-apr="ready"] [data-apr-day]').waitFor({ timeout: 20_000 });
     await page.waitForTimeout(8_000);
     const warm = s.reads.slice(cold.length).map((body) => body.blockNumber);

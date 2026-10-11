@@ -8,26 +8,15 @@ import { linearScale, niceTicks } from '../../../lib/chart/scale'
 import { areaPath, linePath, type Point } from '../../../lib/chart/paths'
 import { group } from '../../../lib/format/decimal'
 import { bucketLabel, shortDate, shortTime } from '../../../lib/format/time'
-import { formatUsd } from '../../../lib/format/usd'
 import type { AutoAdd } from '../../../lib/automationImpact'
 import { useMediaQuery } from '../../../lib/useMediaQuery'
 import { TokenFigure } from './FeesActivity'
 import type { FeesPeriodView, FeesView } from './model'
 import { dateTicks, spacedTimeTicks } from './ticks'
 import { anyPositive, positive, valueNumber, valueFigure } from './value'
+import { positionPlotHeight, usePositionChartOptions } from '../PositionChartOptions'
+import { PAD, PAD_PHONE, HEIGHT, HEIGHT_PHONE } from './feesChartLayout'
 
-/**
- * The plot's room. Desktop: the y labels and the last-value chip in a gutter
- * at the right, the dates under the plot. Phone: no
- * gutter (§13.2, padding right 8): the y labels sit inside the plot and the
- * chip rides above the end dot, in the room left at the top.
- */
-const PAD = { top: 16, right: 72, bottom: 40, left: 0 }
-const PAD_PHONE = { top: 32, right: 8, bottom: 40, left: 0 }
-const HEIGHT = 164
-const HEIGHT_PHONE = 148
-/** The drawn chart's whole box, which its skeleton and its quiet plot keep (2026-09-27: nothing moves when it arrives). */
-export const CHART_BOX = { desktop: PAD.top + HEIGHT + PAD.bottom, phone: PAD_PHONE.top + HEIGHT_PHONE + PAD_PHONE.bottom } as const
 /**
  * Nothing earned yet: a timeline waiting for its first fee. The flat line along the foot of a short plot (the room
  * above it is the inspection's), the mint pip at its start, the end dot at now, the first and last dates just under
@@ -40,12 +29,14 @@ const CHIP_GAP = 14
 
 /** An axis figure for a round tick (niceTicks' 1/2/5 steps): `$1,500`, `$0.25`, `$0.002`; a quote amount without its symbol. */
 function axisFigure(view: FeesView, value: number): string {
-  if (value > 0 && value < (view.basis.kind === 'usd' ? 0.01 : 0.000001)) return view.basis.kind === 'usd' ? '<$0.01' : '<0.000001'
+  // Axis levels must remain distinct even when the total's money formatter says < $0.01.
+  // These are the existing geometry ticks, not a new valuation or a change to the underlying series.
+  if (value > 0 && value < 0.000001) return `${view.basis.kind === 'usd' ? '$' : ''}${Number(value.toPrecision(3)).toExponential().replace('e-', 'e−')}`
   const precision = value > 0 && value < 1 ? Math.min(24, Math.max(8, 3 - Math.floor(Math.log10(value)))) : 8
   const [whole, fraction = ''] = value.toFixed(precision).split('.')
   const digits = fraction.replace(/0+$/, '')
   if (view.basis.kind === 'quote') return digits ? `${group(whole)}.${digits}` : group(whole)
-  return digits ? formatUsd(`${whole}.${digits}`) : `$${group(whole)}`
+  return digits ? `$${group(whole)}.${digits}` : `$${group(whole)}`
 }
 
 /**
@@ -53,7 +44,9 @@ function axisFigure(view: FeesView, value: number): string {
  * (`$605.12`), `$0` when the period starts at nothing.
  */
 function baseFigure(view: FeesView, pv: FeesPeriodView): string {
-  return positive(pv.base) || (pv.points[0]?.v ?? 0) > 0 ? valueFigure(view.basis, pv.base, true) : axisFigure(view, 0)
+  const first = pv.points[0]?.v ?? 0
+  if (first > 0 && first < (view.basis.kind === 'usd' ? 0.01 : 0.000001)) return axisFigure(view, first)
+  return positive(pv.base) || first > 0 ? valueFigure(view.basis, pv.base, true) : axisFigure(view, 0)
 }
 
 /** A symbol from /state, as text (untrusted): the short address when unreadable. */
@@ -184,7 +177,8 @@ export function FeesChart({
 }) {
   const adds = automation?.adds ?? NONE
   const phone = useMediaQuery('(max-width: 767px)')
-  const height = phone ? HEIGHT_PHONE : HEIGHT
+  const { expanded, showPoints } = usePositionChartOptions()
+  const height = positionPlotHeight(phone ? HEIGHT_PHONE : HEIGHT, phone, expanded)
   const pad = phone ? PAD_PHONE : PAD
   const { start, end, buckets } = pv
   const baseN = pv.points[0]?.v ?? 0
@@ -217,6 +211,7 @@ export function FeesChart({
       const settled = pv.events.filter((event) => event.kind !== 'mint').map((event) => event.t).sort((a, b) => a - b)
       const collected = collectedSteps(pv.points, settled).map((point) => ({ x: x(point.t), y: y(Math.max(bottomN, point.c)) }))
       const endPoint = line[line.length - 1]
+      const measured = showPoints ? <g data-measured-points="fees">{line.map((point, index) => <circle key={index} cx={point.x} cy={point.y} r={3} className="dm-position-measured-point" />)}</g> : null
       const pips = (
         <EventPips
           events={pv.events
@@ -229,6 +224,7 @@ export function FeesChart({
         return (
           <>
             {line.length > 1 && <path d={linePath(line, 'linear')} className="dm-fees-flat" />}
+            {measured}
             {pips}
             {endPoint && <EndDot x={endPoint.x} y={endPoint.y} />}
           </>
@@ -239,6 +235,7 @@ export function FeesChart({
           <Baseline y={plot.bottom} left={plot.left} right={plot.right} />
           {niceTicks(baseN, topN, phone ? 2 : 3).filter((tick) => tick > baseN && tick < topN).map((tick) => <line key={tick} x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)} className="dm-position-chart-guide" />)}
           <Split earned={line} collected={collected} baseline={plot.bottom} />
+          {measured}
           {pips}
           {marks.map((add, index) => (
             <AutoMark key={add.tx} x={x(add.timestamp)} y={y(lineAt(pv.points, add.timestamp))} index={index} />
@@ -247,7 +244,7 @@ export function FeesChart({
         </>
       )
     },
-    [scales, pv, zero, bottomN, baseN, topN, phone, marks, automatic],
+    [scales, pv, zero, bottomN, baseN, topN, phone, marks, automatic, showPoints],
   )
 
   const lastText = valueFigure(view.basis, pv.last, !view.zero)
@@ -398,6 +395,21 @@ export function FeesChart({
   )
 
   const indexAt = (px: number, plot: Plot) => {
+    // A marker sits on an interval boundary. Its drawn coordinates are rounded, so a pointer on its
+    // centre can otherwise select the preceding interval and omit that marker's own explanation.
+    // Match the visible halo's radius, choosing the nearest marker when two halos meet.
+    const { x } = scales(plot)
+    let closest: AutoAdd | null = null
+    let distance = 10
+    for (const add of marks) {
+      const gap = Math.abs(x(add.timestamp) - px)
+      if (gap <= distance) { closest = add; distance = gap }
+    }
+    if (closest) {
+      const at = closest.timestamp
+      const marked = buckets.findIndex((bucket, index) => at >= bucket.start && (at < bucket.end || (index === buckets.length - 1 && at <= bucket.end)))
+      if (marked !== -1) return marked
+    }
     const t = start + ((px - plot.left) / Math.max(1, plot.right - plot.left)) * (end - start)
     const found = buckets.findIndex((bucket) => bucket.end >= t)
     return found === -1 ? buckets.length - 1 : found

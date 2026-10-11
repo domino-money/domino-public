@@ -4,6 +4,7 @@ import { IconChevronDown, IconChevronLeft, IconMarkets, IconPlus, IconSearch } f
 import { PairName, PositionStatus } from '../components/positions/PositionFigures'
 import { AutomateEntry, AutomationChip, useListedPosition } from '../components/positions/AutomateEntry'
 import { KeyFigures } from '../components/positions/KeyFigures'
+import { PositionInsights } from '../components/positions/PositionInsights'
 import { PositionActivity, useAutomaticAdds } from '../components/positions/PositionActivity'
 import { PositionRange, chainCardPrice, preloadPriceChart } from '../components/positions/PositionRange'
 import { FeesCard } from '../components/positions/visual/FeesCard'
@@ -330,7 +331,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
   // sequence's Turn on or Pause takes its place (2026-09-25), and it stands alone while their chunk loads.
   const entry = __DOMINO_V2__ ? null : <AutomateEntry tokenId={card.tokenId} open={automatable} variant="action" />
   return (
-    <div data-position-detail="" data-position-id={card.tokenId} data-snapshot={block} data-position-read={copy !== undefined ? 'saved' : gateway ? 'gateway' : 'chain'}>
+    <div data-position-detail="" data-position-workspace-page="" data-position-id={card.tokenId} data-snapshot={block} data-position-read={copy !== undefined ? 'saved' : gateway ? 'gateway' : 'chain'}>
       <div className="dm-pos-title">
         <div className="dm-pos-name">
           <TokenMarkPair base={base} quote={quote} size={phone ? 36 : 44} ring="var(--bg)" />
@@ -413,7 +414,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
       </div>
 
       {V2Position && <Suspense fallback={null}><V2Position tokenId={card.tokenId} position={wallet} holder={owner} priceContext={{ block, saved: cached || copy !== undefined || gateway }} toolbar={automationToolbar} onChanged={() => onChanged()} /></Suspense>}
-      <KeyFigures card={card} state={state && usdgIndex !== null ? state : null} price={price} block={block} cached={cached} />
+      <KeyFigures card={card} state={state && usdgIndex !== null ? state : null} price={price} block={block} cached={cached || copy !== undefined || gateway} workspace />
 
       {/* The fees its vault collected and has not reinvested, while any is above zero (2026-10-02): the owner's, from its own
           read through the wallet, so never on a copy or the gateway's row. */}
@@ -425,20 +426,17 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
 
       {/* The fees card's own settlements move to Activity, after Price range (2026-09-27). */}
       {/* The quote of a pair without USDG is the app's one way round's (visual/value.ts basisOf, 2026-09-28). */}
-      <FeesCard kind="plain" source={{ tokenId: card.tokenId }} bandPresent tokens={[base, quote]} activity={false} />
-
-      <div className="dm-pos-grid">
-        <section className="dm-card dm-pos-card" aria-labelledby="position-range-title">
-          <h2 id="position-range-title" className="dm-title">
-            Price range
-          </h2>
+      <PositionInsights
+        fees={<FeesCard source={{ tokenId: card.tokenId }} bandPresent tokens={[base, quote]} activity={false} workspace />}
+        range={<section className="dm-pos-card dm-position-range-panel" aria-label="Price range history">
           {/* The range, its ends and the price now (the page's own read). Changed on purpose 2026-10-02 (RPC-SPEC §11.4):
               no line of the pool's past prices, which came from the fees replay's reads of the pool's history. Changed on
               purpose 2026-10-03 (the owner's point 10: "it doesn't show the history"): the line is back, from the read
               service's stored price history of the pool (read-v3 `history`, the last 7 days), never from a node. */}
           <PositionRange card={card} price={price} variant="page" history openedAt={openedAt} closedAt={ledgerClosedAt(feeHistory)} observations={ledgerPriceObservations(feeHistory)} />
-        </section>
-
+        </section>}
+      />
+      <div className="dm-pos-grid">
         <PositionActivity tokenId={card.tokenId} automatic={automatic} owner={card.owner.address} onMint={onMint} />
 
         {/* Everything technical, at the end and closed until asked for (the owner, 2026-09-27): the main page stays practical. */}
@@ -644,7 +642,7 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
         <p role="status" className="sr-only">
           Reading position {tokenId}…
         </p>
-        <PositionSkeleton fees={<FeesCard kind="plain" source={{ tokenId }} bandPresent={false} standalone />} />
+        <PositionSkeleton fees={<FeesCard source={{ tokenId }} bandPresent={false} standalone />} />
       </div>
     )
   } else if (current.phase === 'failed') {
@@ -654,7 +652,7 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
           <EmptyState icon={<IconSearch />} title={`Position #${tokenId}`} body="Its details could not be read just now." plate data-empty="position-unread" />
         </div>
         {/* The fees card reads this NFT from public chain data on its own (§12.4). */}
-        <FeesCard kind="plain" source={{ tokenId }} bandPresent={false} standalone />
+        <FeesCard source={{ tokenId }} bandPresent={false} standalone />
       </>
     )
   } else if (current.phase === 'gone') {

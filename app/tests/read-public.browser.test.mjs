@@ -27,6 +27,128 @@ const env = { APP_ORIGIN: APP, READ_BRIDGE_ENABLED: 'true', ENABLED_READS: '',
   GATEWAY_ORIGIN: 'https://gateway.test', ACCESS_CLIENT_ID: 'fixture-client', ACCESS_CLIENT_SECRET: 'fixture-secret' }
 const calls = []
 
+test('Home compares pools in one responsive surface with visible figures, full identities and reachable Details', { timeout: 30000 }, async () => {
+  const { startLatencySite, signIn } = await import('./support/markets-latency.mjs')
+  const site = await startLatencySite({ latency: { edge: 0, featured: 0, overview: 0, history: 0, asset: 0 } })
+  const context = await browser.newContext({ reducedMotion: 'reduce' }), page = await context.newPage(), errors = []
+  page.setDefaultTimeout(5000)
+  try {
+    page.on('pageerror', error => errors.push(error.message))
+    await context.route('**/*', route => route.request().url().startsWith(site.origin) ? route.continue() : route.abort())
+    await signIn(context, site.origin)
+    await page.goto(`${site.origin}/#/`)
+    await page.waitForFunction(() => document.querySelectorAll('#pools tbody tr.dm-mkt-row:not([data-pool-catalogue])').length === 6)
+    const table = page.locator('#pools .dm-mkt-table--home')
+    for (const width of [1440, 1000, 390, 320, 305]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      const state = await table.evaluate(surface => {
+        const rect = element => { const box = element.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width, height: box.height } }
+        const visible = element => getComputedStyle(element).display !== 'none'
+        return {
+          overflow: document.documentElement.scrollWidth > innerWidth,
+          root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+          header: visible(surface.querySelector('thead')),
+          rows: [...surface.querySelectorAll('tbody tr')].map(row => {
+            const cells = row.querySelectorAll('td'), control = row.querySelector('[data-pool-figures]'), name = row.querySelector('.dm-mkt-name')
+            return { row: rect(row), name: rect(name), nameClipped: name.scrollWidth > name.clientWidth + 1,
+              font: getComputedStyle(name).fontSize, price: visible(cells[1]), tvl: visible(cells[2]), volume: visible(cells[3]), apr: rect(cells[4]), info: rect(control) }
+          }),
+        }
+      })
+      assert.equal(state.overflow, false, `${width}px page stays within the viewport`)
+      assert.equal(state.header, width >= 768)
+      for (const row of state.rows) {
+        assert.equal(row.price, false)
+        assert.equal(row.tvl, true)
+        assert.equal(row.volume, true)
+        const expectedFont = (width >= 768 ? 1.166667 : 0.875) * state.root
+        assert.ok(Math.abs(Number.parseFloat(row.font) - expectedFont) < 0.01, `${width}px identity follows the reader's root scale`)
+        assert.equal(row.nameClipped, false, `${width}px pool identity is not clipped`)
+        assert.ok(row.name.right <= row.apr.left + 1, `${width}px identity and APR do not overlap`)
+        assert.ok(row.apr.right <= row.info.left + 1, `${width}px APR and Details do not overlap`)
+        const target = width >= 768 ? 3.666667 * state.root : 44
+        assert.ok(row.info.width >= target - 0.1 && row.info.height >= target - 0.1, `${width}px Details keeps its target; touch stays at 44px`)
+        if (width >= 768) assert.ok(row.row.height >= 5.25 * state.root - 1 && row.row.height <= 6 * state.root, 'desktop comparison rows keep the approved compact rhythm')
+      }
+    }
+    const control = table.locator('[data-pool-figures]').first()
+    await control.click()
+    const dialog = page.locator('[data-pool-figures-dialog]')
+    await dialog.waitFor()
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    assert.equal(await control.evaluate(node => node === document.activeElement), true)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await table.getByRole('button', { name: 'About TVL', exact: true }).focus()
+    assert.equal(await page.getByRole('tooltip').innerText(), 'Estimated value held in this pool.')
+    await page.keyboard.press('Escape')
+    assert.deepEqual(errors, [])
+  } finally {
+    await context.close()
+    await site.close()
+  }
+})
+
+test('Markets pool summary stays above navigation and catalogue search on desktop and phone', { timeout: 30000 }, async () => {
+  const { startLatencySite, signIn } = await import('./support/markets-latency.mjs')
+  const site = await startLatencySite({ latency: { edge: 0, featured: 0, overview: 0, history: 0, asset: 0 } })
+  const context = await browser.newContext(), page = await context.newPage(), errors = []
+  page.setDefaultTimeout(5000)
+  try {
+    page.on('pageerror', error => errors.push(error.message))
+    await context.route('**/*', route => route.request().url().startsWith(site.origin) ? route.continue() : route.abort())
+    await signIn(context, site.origin)
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto(`${site.origin}/#/markets`)
+      const control = page.locator('[data-markets] [data-pool-figures]').first()
+      await control.waitFor()
+      await page.waitForFunction(() => document.querySelector('[data-markets] .dm-mkt-pools')?.getAnimations().every(animation => animation.playState !== 'running'))
+      await control.click()
+      const figures = page.locator('[data-pool-figures-dialog]')
+      await figures.waitFor()
+      await page.waitForFunction(() => getComputedStyle(document.querySelector('main')).opacity === '1' && document.querySelector('[data-pool-figures-dialog]')?.getAnimations().every(animation => animation.playState !== 'running'))
+      const coverage = await figures.evaluate(dialog => {
+        const backdrop = dialog.closest('.dm-dialog-backdrop')
+        const hit = node => {
+          const box = node.getBoundingClientRect()
+          const x = Math.max(0, Math.min(innerWidth - 1, box.left + box.width / 2))
+          const y = Math.max(0, Math.min(innerHeight - 1, box.top + box.height / 2))
+          return backdrop.contains(document.elementFromPoint(x, y))
+        }
+        const close = dialog.querySelector('button[aria-label="Close"]')
+        const closeBox = close.getBoundingClientRect()
+        const dialogBox = dialog.getBoundingClientRect()
+        // Inert blocks input but still paints. Temporarily include those painted
+        // surfaces in hit testing, then restore before any user interaction.
+        const inert = [...document.querySelectorAll('[inert]')]
+        inert.forEach(node => node.removeAttribute('inert'))
+        try {
+          return {
+            sectionLayer: getComputedStyle(dialog.closest('.dm-mkt-pools')).zIndex,
+            sectionAnimation: getComputedStyle(dialog.closest('.dm-mkt-pools')).animationName,
+            headerCovered: hit(document.querySelector('.dm-header')),
+            searchCovered: hit(document.querySelector('[data-catalogue-search]')),
+            headingVisible: hit(dialog.querySelector('h2')),
+            closeClickable: close.contains(document.elementFromPoint(closeBox.left + closeBox.width / 2, closeBox.top + closeBox.height / 2)),
+            contained: dialogBox.top >= 0 && dialogBox.bottom <= innerHeight + 1 && dialogBox.left >= 0 && dialogBox.right <= innerWidth + 1,
+          }
+        } finally {
+          inert.forEach(node => node.setAttribute('inert', ''))
+        }
+      })
+      assert.deepEqual(coverage, { sectionLayer: 'auto', sectionAnimation: 'none', headerCovered: true, searchCovered: true, headingVisible: true, closeClickable: true, contained: true }, `${width}px summary overlay`)
+      await figures.getByRole('button', { name: 'Close', exact: true }).click()
+      await figures.waitFor({ state: 'detached' })
+      assert.equal(await control.evaluate(node => node === document.activeElement), true, 'closing restores focus to the same pool')
+    }
+    assert.deepEqual(errors, [])
+  } finally {
+    await context.close()
+    await site.close()
+  }
+})
+
 test('Markets help works with hover, keyboard and touch; mobile tips fit and Details retains the row APR', { timeout: 30000 }, async () => {
   const marketWorker = createWorker({ getClientIp: () => '198.51.100.39', fetch: async (url, init) => {
     const route = new URL(url).pathname.split('/').at(-1), request = JSON.parse(init.body)
@@ -69,14 +191,18 @@ test('Markets help works with hover, keyboard and touch; mobile tips fit and Det
     await page.keyboard.press('Escape')
     await tip.waitFor({ state: 'detached' })
 
-    await page.setViewportSize({ width: 320, height: 760 })
-    for (const control of [tvl, apr]) {
-      await control.tap()
-      await tip.waitFor()
-      const bounds = await tip.boundingBox()
-      assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 320, 'the tooltip stays inside the narrow viewport')
-      await page.keyboard.press('Escape')
-      await tip.waitFor({ state: 'detached' })
+    for (const width of [540, 320]) {
+      await page.setViewportSize({ width, height: 760 })
+      // The narrow comparison keeps APR; TVL remains in Details below 480px.
+      assert.equal(await tvl.isVisible(), width >= 480)
+      for (const control of width >= 480 ? [tvl, apr] : [apr]) {
+        await control.tap()
+        await tip.waitFor()
+        const bounds = await tip.boundingBox()
+        assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width, 'the tooltip stays inside the narrow viewport')
+        await page.keyboard.press('Escape')
+        await tip.waitFor({ state: 'detached' })
+      }
     }
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no document overflow at 320px')
     const row = page.locator('tr.dm-mkt-row').first()
@@ -86,6 +212,7 @@ test('Markets help works with hover, keyboard and touch; mobile tips fit and Det
     await row.locator('[data-pool-figures]').click()
     const figures = page.locator('[data-pool-figures-dialog]')
     await figures.waitFor()
+    assert.match(await figures.locator('[data-figures-summary]').innerText(), /TVL/, 'the narrow table keeps TVL available in Details')
     assert.equal((await figures.locator('[data-figures-summary]').innerText()).match(/[\d,.]+%/)?.[0], value, 'the concise summary preserves the row’s APR')
     assert.equal(await figures.locator('[data-figures-sources]').getAttribute('open'), null, 'sources start folded away')
     assert.doesNotMatch(await figures.innerText(), /Domino history, 24h|Time-weighted TVL|Pool verified|Some figures are taking longer/)
@@ -416,7 +543,7 @@ const RECORDED_FIGURES = {
   '0xa95732060867f07aa9b8ae9a4b7b8d737bc3374f1dfbb952759c5ed676e8737c': ['$407.7K', '$123.1K', '33.0% est.'],
 }
 
-test('Home, its ticker, Markets and its cards show one set of figures for the six pools; pools the store is still collecting wait for theirs, and pools whose collection failed say Unavailable at once', { timeout: 90000 }, async () => {
+test('Home, Markets and its cards show one set of figures for the six pools; pools the store is still collecting wait for theirs, and pools whose collection failed say Unavailable at once', { timeout: 90000 }, async () => {
   if (!existsSync(join(DIST, 'index.html'))) throw new Error('dist/index.html is missing. Run `npm run build` before this test.')
   const recorded = JSON.parse(readFileSync(new URL('./support/selected-overview.recorded.json', import.meta.url), 'utf8'))
   for (const poolId of SELECTED) assert.ok(RECORDED_FIGURES[poolId] && recorded.pools.some(entry => entry.poolId === poolId), `${poolId} is selected but not recorded: add it with the harness's tools/record-selected-overview.mjs --add`)
@@ -460,14 +587,14 @@ test('Home, its ticker, Markets and its cards show one set of figures for the si
   /** Each selected pool's row in `scope`, by pool id: its three figures as shown, and whether any still waits. */
   const rowsIn = scope => page.evaluate(scope => Object.fromEntries([...document.querySelectorAll(`${scope} tbody tr.dm-mkt-row:not([data-pool-catalogue])`)].map(row => {
     const cells = row.querySelectorAll('td')
-    const text = cell => cell.innerText.trim().replace(/\s+/g, ' ')
+    const text = cell => {
+      const figure = cell.cloneNode(true)
+      figure.querySelectorAll('.dm-home-pool-label').forEach(label => label.remove())
+      return figure.textContent.trim().replace(/\s+/g, ' ')
+    }
     return [row.querySelector('a.dm-mkt-name').getAttribute('href').split('/')[2], { tvl: text(cells[2]), volume: text(cells[3]), apr: text(cells[4]),
       waiting: row.querySelector('[data-metric="pending"], [data-apr-estimate="pending"]') !== null }]
   })), scope)
-  /** The ticker's APR per pool: its text and its state. */
-  const tickerApr = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.dm-marquee > a.dm-ticker-item')]
-    .map(item => { const apr = item.querySelector('[data-apr-estimate]'); return [item.getAttribute('href').split('/')[2], { text: apr?.innerText.trim() ?? null, state: apr?.getAttribute('data-apr-estimate') ?? null }] })))
-  const percent = text => text?.match(/([<\d.,]+)%/)?.[1] ?? null
   try {
     page.on('pageerror', error => errors.push(error.message))
     await context.route('**/*', route => route.request().url().startsWith(at) ? route.continue() : route.abort())
@@ -479,14 +606,13 @@ test('Home, its ticker, Markets and its cards show one set of figures for the si
     const rowsAt = Date.now()
     assert.ok(rowsAt - opened < 5000, `Home's rows took ${rowsAt - opened} ms`)
 
-    // The first answer: four pools with figures at once; the two the store is collecting wait, in the table and in
-    // the ticker, and nothing says Unavailable.
+    // The first answer: four pools with figures at once; the two the store is collecting wait in the table,
+    // and nothing says Unavailable. Home no longer duplicates its selection in the ticker.
     const first = await rowsIn('#pools')
     assert.deepEqual(SELECTED.map(poolId => first[poolId].waiting), [false, false, false, false, true, true])
     assert.doesNotMatch(await page.locator('#pools table').innerText(), /Unavailable/)
     for (const poolId of SELECTED.slice(0, 4)) assert.match(first[poolId].tvl, /^\$/)
-    const waitingTicker = await tickerApr()
-    for (const poolId of behind) assert.deepEqual(waitingTicker[poolId], { text: 'Est. APR —', state: 'pending' }, `the ticker for ${poolId}`)
+    assert.equal(await page.locator('[data-ticker]').count(), 0, 'Home has one selection, without a duplicate ticker')
     // The figures dialog of a waiting row says the same: loading, not "no provider figure".
     await page.locator(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="#/pool/${behind[0]}"]) [data-pool-figures]`).click()
     const dialog = page.locator('[data-pool-figures-dialog]')
@@ -505,8 +631,6 @@ test('Home, its ticker, Markets and its cards show one set of figures for the si
     const home = await rowsIn('#pools')
     // The recorded figures, as recorded: nothing invented, nothing left out.
     assert.deepEqual(SELECTED.map(poolId => [home[poolId].tvl, home[poolId].volume, home[poolId].apr]), SELECTED.map(poolId => RECORDED_FIGURES[poolId]))
-    const ticker = await tickerApr()
-    for (const poolId of SELECTED) assert.equal(percent(ticker[poolId].text), percent(home[poolId].apr), `the ticker's APR for ${poolId}`)
 
     // Markets: the same answer, so the same figures in its table and on its cards.
     await page.evaluate(() => { window.location.hash = '#/markets' })
@@ -539,12 +663,16 @@ test('Home, its ticker, Markets and its cards show one set of figures for the si
     await page.waitForFunction(() => document.querySelectorAll('#pools tbody tr.dm-mkt-row:not([data-pool-catalogue])').length === 6, null, { timeout: 15000 })
     // Changed on purpose 2026-09-27 (r6/marketsdata): the reload paints this browser's copy of the last overview at
     // once (marketsPaint.ts), the two pools' figures included; the live answer then says what it has.
-    await page.waitForFunction(ids => ids.every(id => document.querySelector(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="#/pool/${id}"]) td:nth-child(3)`)?.innerText.trim() === 'Unavailable'), behind, { timeout: 15000 })
+    await page.waitForFunction(ids => ids.every(id => {
+      const cell = document.querySelector(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="#/pool/${id}"]) td:nth-child(3)`)
+      if (!cell) return false
+      const figure = cell.cloneNode(true)
+      figure.querySelectorAll('.dm-home-pool-label').forEach(label => label.remove())
+      return figure.textContent.trim() === 'Unavailable'
+    }), behind, { timeout: 15000 })
     const failed = await rowsIn('#pools')
     for (const poolId of behind) assert.deepEqual(failed[poolId], { tvl: 'Unavailable', volume: 'Unavailable', apr: '—', waiting: false }, `the failed pool ${poolId}`)
     for (const poolId of SELECTED.slice(0, 4)) assert.deepEqual(failed[poolId], home[poolId], `the other pools for ${poolId}`)
-    const failedTicker = await tickerApr()
-    for (const poolId of behind) assert.equal(failedTicker[poolId].state, 'unavailable', `the ticker for ${poolId}`)
     await new Promise(resolve => setTimeout(resolve, 8000))
     assert.deepEqual(edge.slice(visit).filter(read => read.method === 'POST').map(read => read.path), ['/api/read/v5/featured-pools', '/api/read/v3/overview'], 'the list and one overview for the visit, no catch-up')
     assert.equal(await page.locator('#pools [data-metric="pending"], #pools [data-apr-estimate="pending"]').count(), 0)
@@ -776,8 +904,18 @@ test('Home and Markets adopt daily featured publications, fresh figures and orde
       }
       await assertPublication(current)
       await page.waitForFunction(() => document.querySelectorAll('[data-featured-source] tbody tr.dm-mkt-row td:nth-child(3)').length === 6
-        && [...document.querySelectorAll('[data-featured-source] tbody tr.dm-mkt-row td:nth-child(3)')].every(cell => cell.innerText === '$200.0K'))
-      if (hash === '#/markets') await page.getByRole('searchbox', { name: 'Filter selected pools by pair name' }).fill('USDG')
+        && [...document.querySelectorAll('[data-featured-source] tbody tr.dm-mkt-row td:nth-child(3)')].every(cell => {
+          const figure = cell.cloneNode(true)
+          figure.querySelectorAll('.dm-home-pool-label').forEach(label => label.remove())
+          return figure.textContent.trim() === '$200.0K'
+        }))
+      const assetFilter = page.getByRole('combobox', { name: 'Asset', exact: true })
+      if (hash === '#/markets') {
+        await assetFilter.click()
+        await page.getByRole('option', { name: 'USDG', exact: true }).click()
+        assert.equal(await assetFilter.innerText(), 'USDG', 'the token filter matches all six featured pools')
+        assert.equal(await rows.count(), 6)
+      }
       const keptLink = await rows.locator('a.dm-mkt-name').first().elementHandle()
       await keptLink.focus()
       for (const generation of [1, 2]) {
@@ -785,10 +923,18 @@ test('Home and Markets adopt daily featured publications, fresh figures and orde
         await page.clock.fastForward(86400000)
         await assertPublication(current)
         await page.waitForFunction(expected => [...document.querySelectorAll('[data-featured-source] tbody tr.dm-mkt-row td:nth-child(3)')]
-          .every(cell => cell.innerText === expected), `$${200 + generation * 200}.0K`)
-        assert.equal(await rows.first().locator('td').nth(4).innerText(), `${200 + generation * 100}% est.`)
+          .every(cell => {
+            const figure = cell.cloneNode(true)
+            figure.querySelectorAll('.dm-home-pool-label').forEach(label => label.remove())
+            return figure.textContent.trim() === expected
+          }), `$${200 + generation * 200}.0K`)
+        assert.equal(await rows.first().locator('td').nth(4).evaluate(cell => {
+          const figure = cell.cloneNode(true)
+          figure.querySelectorAll('.dm-home-pool-label').forEach(label => label.remove())
+          return figure.textContent.trim()
+        }), `${200 + generation * 100}% est.`)
         assert.equal(await keptLink.evaluate(node => node.isConnected && node === document.activeElement), true, 'refresh and reorder retain the focused row link')
-        if (hash === '#/markets') assert.equal(await page.getByRole('searchbox', { name: 'Filter selected pools by pair name' }).inputValue(), 'USDG')
+        if (hash === '#/markets') assert.equal(await assetFilter.innerText(), 'USDG', 'the selected token survives the daily publication')
       }
       // Repairs belong on an already-open page too: reorder now, remove two now, then restore the slots in server
       // order. The person's filter stays put through all three publications.
@@ -800,7 +946,7 @@ test('Home and Markets adopt daily featured publications, fresh figures and orde
         assert.ok(validFeatured('featured-pools', current))
         await page.clock.fastForward(120000)
         await assertPublication(current)
-        if (hash === '#/markets') assert.equal(await page.getByRole('searchbox', { name: 'Filter selected pools by pair name' }).inputValue(), 'USDG')
+        if (hash === '#/markets') assert.equal(await assetFilter.innerText(), 'USDG', 'the selected token survives a same-day repair')
       }
       assert.equal(featuredReads, 6, 'initial publication, two daily refreshes and three same-day repairs')
       assert.deepEqual(navigations, [`${at}/${hash}`], 'the document stayed mounted')

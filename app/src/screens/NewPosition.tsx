@@ -7,7 +7,7 @@ import { useCreated, useFlowMade } from '../lib/create/createProgress'
 import { SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
 import { PageHeader, PageShell } from '../components/ui'
 import { Journey } from '../components/create/Journey'
-import { parseNewHash } from '../components/explore/routes'
+import { parseNewHash, parseNewNetworkHash, type NetworkTokenLocation } from '../components/explore/routes'
 import { useHash } from '../components/explore/useHash'
 import { recovering } from '../lib/staleRelease'
 
@@ -19,8 +19,10 @@ import { recovering } from '../lib/staleRelease'
  * src/v2in/journey/constants.ts SETUP_STAYS_WHILE_PREVIEW), today's Journey where it stays off. Opened lazily, named
  * once; a wrapper that cannot load leaves today's Journey (lib/staleRelease.ts recovering).
  */
-type V2JourneyProps = { flow: number; poolId: string; linkToken: string | null }
-const V2NewPosition = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/journey/NewPositionV2'), () => ({ default: ({ flow, poolId, linkToken }: V2JourneyProps) => <Journey key={flow} poolId={poolId} linkToken={linkToken} /> }))) : null
+type V2JourneyProps = { flow: number; poolId: string; linkToken: string | null; networkToken: NetworkTokenLocation | null }
+const V2NewPosition = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/journey/NewPositionV2'), () => ({ default: ({ flow, poolId, linkToken, networkToken }: V2JourneyProps) => networkToken
+  ? <PageShell width="flow"><PageHeader size="display" title={CREATE.page.title} /><p role="status">This network could not be loaded. <a href="#/new">Search again</a></p></PageShell>
+  : <Journey key={flow} poolId={poolId} linkToken={linkToken} /> }))) : null
 
 /**
  * Which flow New position shows: a new one each time a link to New position is followed after a position was created
@@ -70,11 +72,13 @@ export function NewPosition({ poolId }: { poolId: string }) {
   // The tab's name (lib/routeTitle.ts, audit E11).
   useRouteTitle(CREATE.page.title)
   const flow = useFlowKey()
-  const linkToken = parseNewHash(useHash()).token
+  const hash = useHash()
+  const networkToken = parseNewNetworkHash(hash)
+  const linkToken = parseNewHash(hash).token
   if (__DOMINO_V2__ && V2NewPosition) {
     return (
       <Suspense fallback={<PageShell width="flow"><PageHeader size="display" title={CREATE.page.title} description={CREATE.page.description} /></PageShell>}>
-        <V2NewPosition flow={flow} poolId={poolId} linkToken={linkToken} />
+        <V2NewPosition flow={flow} poolId={networkToken ? '' : poolId} linkToken={linkToken} networkToken={networkToken} />
       </Suspense>
     )
   }

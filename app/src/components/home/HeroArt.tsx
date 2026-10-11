@@ -1,81 +1,23 @@
-import { useRef, type CSSProperties, type PointerEvent } from 'react'
+import { useRef, type PointerEvent } from 'react'
 import '../../styles/hero-refinement.css'
 import { useSvgId } from '../charts/series'
 import { cx } from '../ui'
-import { ArtTile, useInView } from './Vignettes'
+import { useInView } from './Vignettes'
 import { stilled, useStilled } from '../../lib/motion/stilled'
 
-/*
- * The hero's horizon (DESIGN-V2 §7.1-2a): a run of domino tiles across the
- * whole plate, standing on a ground that climbs two steps at the right, the
- * Domino-compound staircase. The run topples left to right and settles as a
- * real chain does, each tile leaning on the next; the last one leans on the
- * first step, the tile on that step tips toward the second, and a new tile
- * rises one step higher: the fees of one position opening the next one up.
- *
- * The drawing uses only shapes and loops by itself while visible. The static frame (and the stilled one) is the
- * whole composition: every tile standing, the new tile on the top step.
- *
- * The loop is 12 s on one shared timeline: every moving part runs its own
- * keyframes in art.css with the same duration and delay, so the whole chain
- * resets at once and nothing drifts out of phase. Tile N of the run plays
- * `dm-hero-tip-N`, which holds its moment to tip and its resting angle; a
- * fallen tile's face warms to a tint, and only the new tile is fully lit. The
- * two halves of a tile always carry different pip counts, and no tile uses the
- * brand mark's layout (two above, one below).
- */
-
-/** Top | bottom pip counts, left to right: 18 on the ground, one on each step. */
-const CHAIN: ReadonlyArray<readonly [number, number]> = [
-  [1, 3], [2, 0], [3, 1], [0, 2], [2, 3], [1, 0], [3, 2], [0, 1], [0, 3],
-  [3, 2], [1, 2], [3, 0], [0, 2], [2, 3], [1, 0], [3, 1], [2, 0], [0, 3],
-  [1, 2], [3, 1],
-]
-
-/** A tile is 36 × 63 (1:1.75); the ground is at y 176, step 1 at 152 (x 900–1040), step 2 at 128 (x 1040–1200). */
-const W = 36
-const H = 63
-const GROUND = 176
-const STEP_1 = 152
-const STEP_2 = 128
-
-/**
- * The run: 18 tiles on the ground and the one on the first step. Where each
- * comes to rest and when it tips live in its keyframes (art.css): a uniform
- * chain 46 apart settles where cos θ = 36 / 46 (38.5°), each tile near the
- * step leans a little more, and the last ones lean on the steps' corners.
- */
-const RUN = 19
-
-const vars = (values: Record<string, string | number>) => values as CSSProperties
-
-/** One tile of the run: its contact shadow stays on the ground while the tile tips about its front foot. */
-function ChainTile({ index, x, y }: { index: number; x: number; y: number }) {
-  return (
-    <g className="stand dm-art-enter" transform={`translate(${x} ${y})`} style={vars({ '--i': index })}>
-      <ellipse className="shadow" cx={W / 2} cy={H} rx={14} ry={2} />
-      <g className="tip" style={{ animationName: `dm-hero-tip-${index}` }}>
-        <ArtTile w={W} layout={CHAIN[index]} parts="outline" />
-        {/* Inset edges stay inside the original tile bounds, preserving its falling pivot and contact points. */}
-        <path className="tile-bevel" d="M30.5 1.5 H5.5 A4 4 0 0 0 1.5 5.5 V56.5" />
-        <path className="tile-depth" d="M34.5 6.5 V57.5 A4 4 0 0 1 30.5 61.5 H5.5" />
-      </g>
-    </g>
-  )
-}
-
-/**
- * The drawing keeps the right end (the staircase) in view at every width and
- * crops the run from the left, where it fades out. `running` forces the loop
- * on or off; by default it plays while at least 30% of the drawing is in view.
- */
+/** A dimensional brand sculpture, with no prices, returns or simulated financial state. */
 export function HeroArt({ className, running }: { className?: string; running?: boolean }) {
   const [ref, seen] = useInView<SVGSVGElement>(0.3, running === undefined)
   const spotlight = useRef<HTMLSpanElement>(null)
   const still = useStilled()
   const active = running ?? seen
-  const glow = useSvgId('dm-hero-glow')
-  const rise = useSvgId('dm-hero-steps')
+  const face = useSvgId('domino-face')
+  const edge = useSvgId('domino-edge')
+  const glass = useSvgId('domino-glass')
+  const metal = useSvgId('domino-metal')
+  const glow = useSvgId('domino-ambient')
+  const shade = useSvgId('domino-shadow')
+  const dots = useSvgId('domino-grid')
   const clearSpotlight = () => {
     const light = spotlight.current
     if (!light) return
@@ -95,48 +37,88 @@ export function HeroArt({ className, running }: { className?: string; running?: 
   }
   return (
     <>
-      <svg
-        ref={ref}
-        className={cx('dm-art dm-hero-art', active && 'is-running', className)}
-        viewBox="0 0 1200 192"
-        preserveAspectRatio="xMaxYMax slice"
-        aria-hidden="true"
-        focusable="false"
-        onPointerMove={illuminate}
-        onPointerLeave={clearSpotlight}
-      >
+      <svg ref={ref} className={cx('dm-art dm-hero-art dm-hero-sculpture', active && 'is-running', className)}
+        viewBox="0 0 640 480" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"
+        onPointerMove={illuminate} onPointerLeave={clearSpotlight}>
         <defs>
-          <radialGradient id={glow} cx="50%" cy="50%" r="50%">
-            <stop offset="0%" className="glow-0" />
-            <stop offset="100%" className="glow-1" />
-          </radialGradient>
-          <linearGradient id={rise} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" className="steps-0" />
-            <stop offset="100%" className="steps-1" />
+          <linearGradient id={face} x1="0" y1="0" x2="0.85" y2="1">
+            <stop offset="0" className="dm-sculpture-peach" /><stop offset="0.52" className="dm-sculpture-orange" /><stop offset="1" className="dm-sculpture-copper" />
           </linearGradient>
+          <linearGradient id={edge} x1="0" y1="0" x2="1" y2="0.8">
+            <stop offset="0" className="dm-sculpture-copper" /><stop offset="1" className="dm-sculpture-dark" />
+          </linearGradient>
+          <linearGradient id={glass} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" className="dm-sculpture-glass-light" /><stop offset="1" className="dm-sculpture-glass-dark" />
+          </linearGradient>
+          <linearGradient id={metal} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" className="dm-sculpture-silver" /><stop offset="1" className="dm-sculpture-silver-dark" />
+          </linearGradient>
+          <radialGradient id={glow}>
+            <stop offset="0" className="dm-sculpture-orange" stopOpacity="0.18" /><stop offset="1" className="dm-sculpture-orange" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id={shade}>
+            <stop offset="0" stopColor="var(--bg)" stopOpacity="0.95" /><stop offset="1" stopColor="var(--bg)" stopOpacity="0" />
+          </radialGradient>
+          <pattern id={dots} width="24" height="24" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="0.75" fill="var(--primary)" opacity="0.14" />
+          </pattern>
         </defs>
-        <rect className="dm-hero-interaction-area" width={1200} height={192} />
+        <ellipse cx="371" cy="272" rx="252" ry="221" fill={`url(#${glow})`} />
+        <rect x="95" y="34" width="480" height="388" fill={`url(#${dots})`} opacity="0.5" />
+        <ellipse cx="352" cy="414" rx="230" ry="45" fill={`url(#${shade})`} />
+        <ellipse cx="335" cy="319" rx="260" ry="86" className="dm-sculpture-orbit" transform="rotate(-18 335 319)" />
         <g data-hero-play="automatic">
-          {/* The warmth under the staircase: it glows brighter as the new tile arrives. */}
-          <ellipse className="warm" cx={1110} cy={150} rx={230} ry={76} fill={`url(#${glow})`} />
-          <path className="steps" d={`M900 192 V${STEP_1} H1040 V${STEP_2} H1200 V192 Z`} fill={`url(#${rise})`} />
-          <path className="ground" d={`M0 ${GROUND} H900 V${STEP_1} H1040 V${STEP_2} H1200`} />
-          <path className="ground-rim" d={`M900 ${STEP_1} H1040 V${STEP_2} H1200`} />
-          <g className="chain">
-            {Array.from({ length: RUN - 1 }, (_, index) => (
-              <ChainTile key={index} index={index} x={24 + 46 * index} y={GROUND - H} />
-            ))}
-            {/* The tile on the first step tips until it leans on the second step's corner. */}
-            <ChainTile index={RUN - 1} x={952} y={STEP_1 - H} />
+          <g transform="translate(90 156) rotate(-12 29 29)">
+            <g className="dm-sculpture-network dm-sculpture-network-base">
+              <circle cx="33" cy="35" r="29" fill="#172d65" />
+              <circle cx="29" cy="29" r="29" fill="#315ee0" />
+              <circle cx="29" cy="29" r="22" fill="none" stroke="#ffffff" strokeOpacity=".18" />
+              <circle cx="29" cy="29" r="14" fill="#f3f4fa" /><path d="M13 29h17" stroke="#315ee0" strokeWidth="3" />
+            </g>
           </g>
-          {/* Where the new tile will stand, while it is away. */}
-          <rect className="ghost" x={1102} y={STEP_2 - H} width={W} height={H} rx={W * 0.14} />
-          <g className="stand dm-art-enter" transform={`translate(1102 ${STEP_2 - H})`} style={vars({ '--i': RUN })}>
-            <g className="next tile-solid">
-              <ellipse className="shadow" cx={W / 2} cy={H} rx={14} ry={2} />
-              <ArtTile w={W} layout={CHAIN[CHAIN.length - 1]} />
-              <path className="tile-bevel" d="M30.5 1.5 H5.5 A4 4 0 0 0 1.5 5.5 V56.5" />
-              <path className="tile-depth" d="M34.5 6.5 V57.5 A4 4 0 0 1 30.5 61.5 H5.5" />
+          <g transform="translate(535 99) rotate(13 25 25)">
+            <g className="dm-sculpture-network dm-sculpture-network-arbitrum">
+              <circle cx="29" cy="31" r="25" fill="#142c3f" /><circle cx="25" cy="25" r="25" fill="#315a79" />
+              <path d="m25 8 15 8v18l-15 8-15-8V16Z" fill="none" stroke="#d5e3ed" strokeWidth="1.4" />
+              <path d="m17 33 7-17h5l-7 17Zm12-10 6 10h-5l-3-5Z" fill="#d5e3ed" />
+            </g>
+          </g>
+          <g transform="translate(177 114) rotate(-18 80 140)">
+            <g className="dm-sculpture-rear">
+              <rect x="11" y="12" width="148" height="256" rx="22" fill="var(--bg)" />
+              <rect width="148" height="256" rx="22" fill={`url(#${glass})`} className="dm-sculpture-glass-rim" />
+              <rect x="5" y="5" width="138" height="246" rx="18" className="dm-sculpture-inset" />
+              <path d="M1 128H147" className="dm-sculpture-glass-rim" />
+              <circle cx="74" cy="64" r="13" className="dm-sculpture-back-pip" />
+              <circle cx="53" cy="174" r="12" className="dm-sculpture-back-pip" /><circle cx="95" cy="210" r="12" className="dm-sculpture-back-pip" />
+            </g>
+          </g>
+          <g transform="translate(329 58) rotate(14 87 146)">
+            <g className="dm-sculpture-front">
+              <rect x="15" y="13" width="174" height="292" rx="25" fill={`url(#${edge})`} />
+              <rect width="174" height="292" rx="25" fill={`url(#${face})`} />
+              <rect x="4" y="4" width="166" height="284" rx="21" className="dm-sculpture-face-rim" />
+              <path d="M1 146H173" className="dm-sculpture-divider" /><path d="M8 147H166" className="dm-sculpture-divider-light" />
+              <g className="dm-sculpture-pips">
+                <circle cx="60" cy="49" r="12" /><circle cx="114" cy="99" r="12" />
+                <circle cx="54" cy="183" r="12" /><circle cx="87" cy="219" r="12" /><circle cx="120" cy="255" r="12" />
+              </g>
+            </g>
+          </g>
+          <g transform="translate(122 307) rotate(-16 47 47)">
+            <g className="dm-sculpture-coin">
+              <ellipse cx="51" cy="57" rx="49" ry="43" fill={`url(#${edge})`} />
+              <circle cx="47" cy="47" r="47" fill={`url(#${metal})`} /><circle cx="47" cy="47" r="40" className="dm-sculpture-coin-rim" />
+              <path d="M47 15L28 47 47 58 66 47ZM28 53L47 79 66 53 47 64Z" fill="var(--bg)" opacity="0.8" />
+              <path d="M47 15V58L66 47Z" fill="var(--bg)" opacity="0.22" />
+            </g>
+          </g>
+          <g transform="translate(483 309) rotate(18 32 32)">
+            <g className="dm-sculpture-satellite">
+              <circle cx="37" cy="39" r="34" fill="#692930" />
+              <circle cx="32" cy="32" r="34" fill="#cf5660" />
+              <circle cx="32" cy="32" r="26" fill="none" stroke="#ffffff" strokeOpacity=".22" />
+              <text x="32" y="39" textAnchor="middle" fill="#fff" fontFamily="var(--font-sans)" fontSize="22" fontWeight="750" fontStyle="italic">OP</text>
             </g>
           </g>
         </g>

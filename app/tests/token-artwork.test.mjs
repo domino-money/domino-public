@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { artworkFromPairs, createTokenArtworkResolver, safeTokenImage, tokenArtworkKey } from '../src/lib/tokenArtwork.ts';
+import { bundledTokenArtwork } from '../src/lib/bundledTokenArtwork.ts';
 
 const address = `0x${'a'.repeat(40)}`;
 const other = `0x${'b'.repeat(40)}`;
@@ -10,6 +11,25 @@ const image = 'https://cdn.dexscreener.com/cms/images/abcdefghijklmnop?width=800
 const expected = 'https://cdn.dexscreener.com/cms/images/abcdefghijklmnop?width=64&height=64&quality=85&format=auto';
 const pair = (overrides = {}) => ({ chainId: 'robinhood', baseToken: { address }, quoteToken: { address: other }, info: { imageUrl: image }, ...overrides });
 const json = (value) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
+
+test('the bundled USDC mark belongs only to its exact chain and contract', () => {
+  const contracts = [
+    [1, '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'],
+    [8453, '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'],
+    [42161, '0xaf88d065e77c8cc2239327c5edb3a432268e5831'],
+    [10, '0x0b2c639c533813f4aa9d7837caf62653d097ff85'],
+  ];
+  for (const [chainId, address] of contracts) {
+    assert.equal(bundledTokenArtwork(chainId, address.toUpperCase()), 'USDC');
+    assert.equal(bundledTokenArtwork(4663, address), null, 'same address on Robinhood is not USDC');
+    for (const [otherChain] of contracts) if (otherChain !== chainId) assert.equal(bundledTokenArtwork(otherChain, address), null);
+  }
+  assert.equal(bundledTokenArtwork(8453, 'USDC'), null, 'a symbol never selects artwork');
+  assert.equal(bundledTokenArtwork(8453, address), null, 'another token keeps its own identity');
+  const svg = readFileSync(new URL('../public/tokens/usdc.svg', import.meta.url), 'utf8');
+  assert.match(svg, /<svg\b/);
+  assert.doesNotMatch(svg, /<script\b|<foreignObject\b|\bon\w+=|(?:href|src)=/i, 'the bundled SVG is self-contained artwork');
+});
 
 // Changed on purpose 2026-10-06 (the owner's point 3: no icon on Base or Arbitrum One): the three chains a token can be
 // on, each its own identity (chain plus address).

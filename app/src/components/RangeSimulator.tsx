@@ -3,7 +3,6 @@ import { previewPosition } from 'core/position'
 import { SIM, UNIT, moved, simAt, simPrice } from '../lib/scenario'
 import { useStilled } from '../lib/motion/stilled'
 import { TokenIcon } from './TokenIcon'
-import { FeeFlowDemo } from './FeeFlowDemo'
 import { useInView } from './home/Vignettes'
 import { Display, Pill } from './ui'
 import '../styles/range-simulator.css'
@@ -36,9 +35,10 @@ function shareText(share: number): string {
   return rounded === 0 ? '<1%' : rounded === 100 ? '>99%' : `${rounded}%`
 }
 
-/** One automatic teaching scene. The optional native scrubber takes priority while focused.
+/** Home's compact range-only teaching scene. Automation examples live in its three separate cards.
+ * The optional native scrubber takes priority while focused.
  * Only relative price changes: balances use core/position, and no fee amount is simulated. */
-export function RangeSimulator() {
+export function RangeSimulator({ title = 'Your price range' }: { title?: string }) {
   const [ref, seen] = useInView<HTMLDivElement>(0.2)
   const still = useStilled()
   const [focused, setFocused] = useState(false)
@@ -81,10 +81,10 @@ export function RangeSimulator() {
   const spoken = `${where}. ${STATE[p.status].pill}. ${STATE[p.status].text} Example mix by value: ${eth} ETH and ${usdg} USDG.`
 
   return (
-    <div ref={ref} className="dm-card dm-sim" data-sim-example="" data-sim-state={p.status} data-sim-paid="0" data-sim-running={seen && !still && !focused ? 'yes' : 'no'}>
+    <div ref={ref} className="dm-card dm-sim" data-sim-compact="" data-sim-example="" data-sim-state={p.status} data-sim-paid="0" data-sim-running={seen && !still && !focused ? 'yes' : 'no'}>
       <div className="dm-sim-heading">
-        <Display as="h2" className="dm-display-card dm-sim-title">Price moves. Your position adapts.</Display>
-        <p>One position. Two ways to put its fees to work.</p>
+        <Display as="h2" className="dm-display-card dm-sim-title">{title}</Display>
+        <p>Drag the price.</p>
       </div>
       <div className="dm-sim-grid">
         <div className="dm-sim-explore">
@@ -123,11 +123,10 @@ export function RangeSimulator() {
             </div>
           </div>
         </div>
-        <FeeFlowDemo running={seen && !still} phase={!inside ? 'outside' : notch >= 0.4 ? 'domino' : 'compound'} />
       </div>
       <details className="dm-sim-details">
         <summary>How it works<span aria-hidden="true">+</span></summary>
-        <p>Inside your range, trades change your token mix and can earn fees. Outside it, you hold one token and stop earning trading fees. Auto-compound can reinvest fees in the same position. Near the top of the range, Domino-compound can use them to open a higher range in the same pool, when your settings allow. Your position can lose value even when it earns fees.</p>
+        <p>Inside your range, trades change your token mix and can earn fees. Outside it, you hold one token and stop earning trading fees. Your position can lose value even when it earns fees.</p>
       </details>
     </div>
   )

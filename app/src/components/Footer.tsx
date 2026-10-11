@@ -19,6 +19,7 @@
  * setting) still stills every drawing, and the ticker still stops under the pointer or focus.
  */
 import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref } from './explore/routes'
+import '../styles/home-footer.css'
 
 /** Domino's X account, confirmed by the owner on 2026-09-26. */
 export const X_PROFILE = 'https://x.com/dominomoney'
@@ -47,8 +48,8 @@ const COLUMNS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: st
     links: [
       { label: 'Docs', href: docsHref() },
       { label: 'How it works', href: '#/#learn' },
-      { label: 'Ranges explained', href: '#/#ranges' },
-      { label: 'What Domino does not do', href: '#/#limits' },
+      { label: 'Ranges', href: '#/#ranges' },
+      { label: 'Risks', href: '#/#limits' },
     ],
   },
 ]
@@ -56,20 +57,15 @@ const COLUMNS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: st
 /** The page's only `<footer>`: the brand and two link columns, with no control in it. */
 export function Footer() {
   return (
-    <footer className="dm-footer">
+    <footer className="dm-footer dm-footer--structured">
       <div className="dm-footer-inner">
         <div className="dm-footer-body">
           <div className="dm-footer-grid">
             {/* Not a link: only the header's wordmark points at Home. */}
             <div className="dm-footer-brand">
-              <span className="inline-flex items-center gap-2 text-fg">
-                <span className="dm-display text-[1.625rem] leading-[1.625rem] md:text-[1.875rem] md:leading-[1.875rem]">
-                  domino<span className="text-primary">.</span>
-                </span>
+              <span className="dm-display dm-footer-wordmark">
+                domino<span className="text-primary">.</span>
               </span>
-              <p className="mt-4 max-w-[42ch] text-body text-fg-muted">
-                Domino opens Uniswap positions and puts their earned fees to work, only within limits your wallet signs.
-              </p>
               <a href={X_PROFILE} target="_blank" rel="noopener noreferrer" className="dm-footer-social" aria-label="Domino on X (opens in a new tab)">
                 <XMark />
                 <span>@dominomoney</span>

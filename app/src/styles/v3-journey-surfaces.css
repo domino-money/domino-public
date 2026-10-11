@@ -1,0 +1,78 @@
+/* The active choice stays central. This is presentation only: the existing
+   step order, funding choices, quotes and wallet review remain unchanged. */
+@layer v3 {
+  .dm-np { row-gap: 1.75rem; }
+  .dm-np .dm-flow-card,
+  .dm-np .dm-flow-preview {
+    background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 3%, var(--surface-2)), var(--surface-1) 65%);
+    border-color: var(--border-lip);
+    box-shadow: inset 0 1px 0 #ffffff04;
+  }
+  .dm-np .dm-flow-card { padding: .75rem; }
+  .dm-np .dm-flow-step[data-state="current"] .dm-flow-body { padding-block: 1.5rem 1.75rem; }
+  .dm-np .dm-flow-title {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 400;
+    line-height: 1.15;
+    letter-spacing: -.025em;
+  }
+  .dm-np .dm-flow-head { align-items: center; }
+  .dm-np .dm-flow-head > .dm-step-marker { margin-top: 0; }
+  .dm-np .dm-flow-content { margin-top: 1.5rem; }
+  .dm-np .dm-flow-row { min-height: 3.5rem; }
+  .dm-np .dm-flow-amount {
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--surface-2) 75%, var(--surface-1));
+    box-shadow: inset 0 0 0 1px var(--border);
+    transition: background-color 160ms ease, box-shadow 160ms ease;
+  }
+  .dm-np .dm-flow-amount:focus-within {
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--primary-line), 0 0 0 .1875rem var(--primary-wash);
+  }
+  .dm-np .dm-flow-amount[data-invalid] { box-shadow: inset 0 0 0 1px var(--money-out); }
+  .dm-np .dm-flow-pv-pool { padding: 1.5rem; border-bottom: 1px solid var(--border); }
+  .dm-np .dm-flow-pv-bounds { padding: 1.25rem 1.5rem; }
+  .dm-np .dm-flow-foot { margin-top: 1.5rem; padding-top: 1.25rem; }
+  .dm-np .dm-flow-headline {
+    border-radius: 1rem;
+    border: 1px solid var(--border);
+    padding: 1.5rem;
+    background: color-mix(in srgb, var(--primary) 4%, var(--surface-1));
+  }
+  .dm-np .dm-flow-headline-amounts { line-height: 1.35; }
+  .dm-np .dm-flow-wsteps { gap: 1rem; }
+  .dm-np .dm-funds-line,
+  .dm-np .dm-funds-discovery,
+  .dm-np .dm-funds-offer { background: color-mix(in srgb, var(--primary) 4%, var(--surface-1)); }
+
+  /* Existing action sheets share one quiet header and one clear footer. */
+  .dm-dialog.dm-pa {
+    border-color: var(--border-lip);
+    background: linear-gradient(155deg, var(--surface-2), var(--surface-1) 55%);
+    box-shadow: 0 1.5rem 5rem #00000050, inset 0 1px 0 #ffffff06;
+  }
+  .dm-dialog.dm-pa .dm-pa-title {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 400;
+    line-height: 1.2;
+    letter-spacing: -.025em;
+  }
+  .dm-dialog.dm-pa .dm-pa-foot { border-top: 1px solid var(--border); }
+  .dm-dialog.dm-pa .dm-pa-card { border-radius: .875rem; }
+
+  @media (max-width: 767px) {
+    .dm-np { row-gap: 1.25rem; }
+    .dm-np .dm-flow-card { padding: .375rem; }
+    .dm-np .dm-flow-title, .dm-dialog.dm-pa .dm-pa-title { font-size: 1.75rem; }
+    .dm-np .dm-flow-step[data-state="current"] .dm-flow-body { padding-block: 1.25rem 1.5rem; }
+    .dm-np .dm-flow-content { margin-top: 1.25rem; }
+    .dm-np .dm-flow-pv-pool, .dm-np .dm-flow-pv-bounds { padding: 1.125rem; }
+    .dm-np .dm-flow-headline { padding: 1.125rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dm-np .dm-flow-amount { transition: none; }
+  }
+}

@@ -3,25 +3,18 @@ import { useFeatured } from '../../lib/read/featuredSource'
 import { READ_CURRENCIES } from '../../lib/read/screens/featuredPools'
 import { unreadToken } from '../../lib/read/project'
 import { TokenMark } from '../TokenIcon'
-import { SearchField, Select } from '../ui'
+import { Select } from '../ui'
 
 /**
- * The two ways to narrow the selected pools on Markets: one token, from the
- * tokens the list on screen names by address (lib/read/featuredSource.ts),
- * and a few letters of a pair's name.
- * Both live in the page's state only: nothing is read, stored or put in the
- * address bar, and typing reads nothing.
+ * Narrow the selected pools by one token from the list on screen.
+ * The page owns this local filter; the main search discovers other pools.
  */
 export function FilterBar({
   asset,
-  query,
   onAsset,
-  onQuery,
 }: {
   asset: string | null
-  query: string
   onAsset: (asset: string | null) => void
-  onQuery: (query: string) => void
 }) {
   const featured = useFeatured()
   const options = [
@@ -39,14 +32,6 @@ export function FilterBar({
   return (
     <div className="dm-mkt-filters">
       <Select<string | null> id="markets-asset" label="Asset" value={asset} options={options} onChange={onAsset} className="dm-mkt-asset" />
-      <SearchField
-        id="markets-search"
-        aria-label="Filter selected pools by pair name"
-        placeholder="Pair name"
-        value={query}
-        onChange={(event) => onQuery(event.target.value)}
-        className="dm-mkt-search"
-      />
     </div>
   )
 }

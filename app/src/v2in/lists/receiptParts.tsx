@@ -2,7 +2,7 @@ import type { ActivityResponse } from 'api-contracts/read-v6/types'
 import type { ReactNode } from 'react'
 import { CopyButton } from '../../components/read/screens/CopyButton'
 import { v2TxUrl } from '../../v2/explorers'
-import { IconChevronDown } from '../../components/icons'
+import { IconCheck, IconChevronDown } from '../../components/icons'
 import { Pill } from '../../components/ui'
 import { shortDate, shortTime } from '../../lib/format/time'
 import { chainNotes, partialSentence, type ReceiptView } from './model'
@@ -48,7 +48,7 @@ export function ReceiptRow({ view, effects = [view], showGas = true, children, p
     <details className="dm-rcpt-row dm-rcpt-operation">
       <summary>
         <span className="dm-rcpt-what">
-          <span>{finalized && !claim && <span className="dm-receipt-check" aria-label="Confirmed">✓ </span>}{what}</span>
+          <span className="dm-receipt-title">{finalized && !claim && <span className="dm-receipt-check" role="img" aria-label="Confirmed"><IconCheck size={14} /></span>}<span>{what}</span></span>
           {(!finalized || claim) && <Pill tone={claim ? 'wait' : 'neutral'} dot className="dm-receipt-exception">{claim ? 'Delivery deferred' : 'Confirming'}</Pill>}
           <span className="dm-activity-time"><time dateTime={new Date(view.at * 1000).toISOString()}>{timeWords(view.at)}</time>{view.chainId !== 4663 && <> · {view.chain}</>}</span>
         </span>

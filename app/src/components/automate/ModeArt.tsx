@@ -318,17 +318,18 @@ export function PositionChoiceArt({ kind }: { kind: 'plain' | 'protection' }) {
     width={rem(240)} height={rem(100)} viewBox="0 0 240 100" aria-hidden="true" focusable="false">
     <Ground id={id} at={[8, 91.5, 224]} />
     {kind === 'plain' ? <>
-      <rect className="choice-band choice-create-band" x="94" y="58" width="126" height="34" rx="10" />
-      <path className="choice-price choice-create-price" pathLength="100" d="M 108 82 L 128 77 L 148 81 L 168 74 L 187 77 L 206 70" />
-      <g transform="translate(148 26.5)"><g className="tile-solid choice-create-tile"><ArtTile w={18} layout={[2, 1]} /></g></g>
-      <path className="choice-create-plus" d="M 151 75 H 163 M 157 69 V 81" />
-      {[0, 1].map((n) => <circle key={n} className={`choice-token choice-fund choice-fund-${n}`} r="9" style={route(n === 0 ? 'M 34 43 C 72 43 92 68 141 75' : 'M 34 75 C 78 75 106 85 174 75')} />)}
+      <rect className="choice-band choice-create-band" x="110" y="21" width="110" height="71" rx="12" />
+      <path className="choice-price choice-create-price" pathLength="100" d="M 125 75 L 139 70 L 151 74 L 166 64 L 183 67 L 203 56" />
+      <g transform="translate(155 32)"><g className="tile-solid choice-create-tile"><ArtTile w={16} layout={[2, 1]} /></g></g>
+      <path className="choice-create-plus" d="M 155 57 H 175 M 165 47 V 67" />
+      <path className="choice-connector" d="M 50 32 C 76 32 82 57 106 57 M 50 76 C 76 76 82 57 106 57" />
+      {[0, 1].map((n) => <circle key={n} className={`choice-token choice-fund choice-fund-${n}`} r="10" style={route(n === 0 ? 'M 39 32 C 81 32 104 48 143 83' : 'M 39 76 C 86 76 111 78 187 83')} />)}
     </> : <>
-      <rect className="choice-band choice-exit-band" x="18" y="58" width="132" height="34" rx="10" />
-      <path className="choice-price choice-exit-price" pathLength="100" d="M 30 82 L 55 77 L 77 81 L 99 71 L 120 74 L 150 58" />
-      <g transform="translate(64 26.5)"><g className="tile-solid choice-exit-tile"><ArtTile w={18} layout={[2, 1]} /></g></g>
-      <line className="choice-edge" x1="150" x2="150" y1="35" y2="86" />
-      <circle className="choice-tip" r="3.5" style={route('M 30 82 L 55 77 L 77 81 L 99 71 L 120 74 L 150 58')} />
+      <rect className="choice-band choice-exit-band" x="18" y="21" width="124" height="71" rx="12" />
+      <path className="choice-price choice-exit-price" pathLength="100" d="M 30 78 L 50 73 L 68 77 L 88 65 L 106 68 L 142 38" />
+      <g transform="translate(69 31)"><g className="tile-solid choice-exit-tile"><ArtTile w={16} layout={[2, 1]} /></g></g>
+      <line className="choice-edge" x1="142" x2="142" y1="13" y2="91" />
+      <circle className="choice-tip" r="3.5" style={route('M 30 78 L 50 73 L 68 77 L 88 65 L 106 68 L 142 38')} />
       <path className="choice-wallet" d="M 185 45 H 221 V 86 H 185 Q 179 86 179 80 V 51 Q 179 45 185 45 Z M 221 60 H 208 V 72 H 221" />
       {[0, 1].map((n) => <circle key={n} className={`choice-token choice-transfer choice-transfer-${n}`} r="5" style={route(`M 131 ${71 + n * 11} C 161 ${42 + n * 12}, 175 ${42 + n * 12}, 195 ${59 + n * 15}`)} />)}
     </>}

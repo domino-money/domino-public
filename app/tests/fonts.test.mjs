@@ -69,7 +69,8 @@ test('the pages link no font or stylesheet from another host, and the app’s st
     assert.doesNotMatch(html, /<link[^>]+href="https?:/, `${page} links nothing from another host`);
   }
   const tokens = readFileSync(join(STYLES, 'tokens.css'), 'utf8');
-  assert.match(tokens, /^@import 'tailwindcss';\n@import '\.\/fonts\.css';/, 'tokens.css imports the fonts first, as the page’s <head> did');
+  // A cascade-order declaration may precede imports; no style block or unrelated import may delay the local fonts.
+  assert.match(tokens, /^(?:@layer [\w-]+(?:,\s*[\w-]+)*;\r?\n)?@import 'tailwindcss';\r?\n@import '\.\/fonts\.css';/, 'tokens.css imports the local fonts immediately after Tailwind, allowing only a layer-order prelude');
   const config = readFileSync(join(APP, 'vite.config.ts'), 'utf8');
   assert.match(config, /assetsInlineLimit: \(file: string\) => \(file\.endsWith\('\.woff2'\) \? false : undefined\)/, 'a font is never inlined as a data: URL, which the CSP refuses');
 });

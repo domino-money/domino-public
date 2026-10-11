@@ -39,7 +39,7 @@ const DEVICES = {
   phone: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
   small: { viewport: { width: 320, height: 760 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
 };
-/** The chart's own room above and under its plot (PriceVsRange.tsx PAD_TOP, PAD_BOTTOM). */
+/** The chart's own room in SVG design units, scaled with its viewBox (RangeStatus.tsx PAD_TOP, PAD_BOTTOM). */
 const PAD = { top: 16, bottom: 30 };
 const byPool = new Map(Object.values(CASES).map((item) => [item.poolId, item]));
 const STATUS = {
@@ -99,6 +99,7 @@ async function open(site, name, device, { line = true, spec = {} } = {}) {
     return {
       frame: box(frame),
       band: box(band),
+      plotScaleY: band?.ownerSVGElement?.getScreenCTM()?.d ?? null,
       card: box(card),
       dot: box(root.querySelector('.dm-pvr-now-dot')),
       labels: [...root.querySelectorAll('[data-pvr-end], .dm-pvr-chip')].map((node) => ({ key: node.getAttribute('data-pvr-end') ?? 'now', ...box(node) })),
@@ -131,7 +132,8 @@ function checkCard({ item, measured: m, errors }, name, device) {
   else { assert.equal(where, 'closed'); assert.equal(m.chip, null, 'a closed NFT never substitutes the current pool price'); }
   assert.equal(item.spec.position.status === 'closed', where === 'closed');
   // The plot: the band's own left and right are the plot's.
-  const plot = { left: m.band.x, right: m.band.right, top: m.frame.y + PAD.top, bottom: m.frame.bottom - PAD.bottom };
+  assert.ok(Number.isFinite(m.plotScaleY) && m.plotScaleY > 0, `${what}: the SVG has a measurable display scale`);
+  const plot = { left: m.band.x, right: m.band.right, top: m.frame.y + PAD.top * m.plotScaleY, bottom: m.frame.bottom - PAD.bottom * m.plotScaleY };
   assert.ok(m.band.h >= 1, `${what}: the band is on the plot (${m.band.h}px)`);
   const finite = m.edges.length === 2;
   if (finite) assert.ok(m.band.h <= (plot.bottom - plot.top) * 0.8, `${what}: the band never fills the plot (${m.band.h} of ${plot.bottom - plot.top})`);

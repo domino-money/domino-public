@@ -38,7 +38,7 @@ export function PayLine({ facts, pair, onPay }: { facts: PayOption; pair: readon
       text={<strong>{remote ? <>You have funds on {facts.origins!.map(originName).join(' and ')}</> : <>Use your <SymbolText token={token} /> on {originName(token.chainId)}</>}</strong>}
       extra={
         <>
-          We’ll check {remote ? 'a transfer and conversion' : 'a conversion'} into <SymbolText token={pair[0]} /> and <SymbolText token={pair[1]} />.
+          {remote ? 'Transfer and convert' : 'Convert'} to <SymbolText token={pair[0]} /> and <SymbolText token={pair[1]} />.
         </>
       }
       action={remote ? 'Check options' : <>Use <SymbolText token={token} /></>}

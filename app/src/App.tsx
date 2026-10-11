@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
-import { Ticker } from './components/Ticker'
 import { deferred } from './components/Deferred'
 import { Landing } from './screens/Landing'
 import { NotFound } from './screens/NotFound'
@@ -14,6 +13,7 @@ import { recovering } from './lib/staleRelease'
 import { MARKETS_TOKEN, ROUTES, type RoutedPage } from './routeTable'
 import { ELYSIUM_STATUS } from './config/chainIdentity'
 import { sectionLinked } from './chains/elysium/mode'
+import { parseMarketsNetworkHash, parseNewNetworkHash } from './components/explore/routes'
 
 // The owner's wallet flows, in builds that carry the wallet session: creating
 // or recovering a position, and setting up a sequence. The
@@ -120,6 +120,10 @@ export function parseHash(hash: string): HashLocation {
   const [, first = '', second = ''] = route.split('/')
   const page: Page = Object.hasOwn(PAGES, first) ? PAGES[first] : 'not-found'
   if (page === 'elysium' && !ELYSIUM_OPEN) return { page: 'not-found', param: second, section }
+  if (second === 'network' && (page === 'markets' || page === 'new')) {
+    const qualified = __DOMINO_V2__ && (page === 'markets' ? parseMarketsNetworkHash(hash) : parseNewNetworkHash(hash))
+    return { page: qualified ? page : 'not-found', param: '', section }
+  }
   return { page: page === 'markets' && second !== '' && !MARKETS_TOKEN.test(second) ? 'not-found' : page, param: second, section }
 }
 
@@ -204,7 +208,7 @@ const FLAGGED: Partial<Record<Page, unknown>> = {
 export default function App() {
   const { page: route, param } = useHashLocation()
   const page: Page = Object.hasOwn(FLAGGED, route) && !FLAGGED[route] ? 'not-found' : route
-  // One provider for the whole app, so the ticker and the table share one load.
+  // One provider for the whole app, so navigating between pool views shares one load.
   const [markets] = useState(appMarketsProvider)
 
   // First load rises, navigation crossfades (DESIGN-V2 §5.5): at the first route change <html> gets dm-booted, which
@@ -230,7 +234,6 @@ export default function App() {
     <MarketsContext.Provider value={markets}>
     <div className="min-h-screen">
       {__DOMINO_LOCAL_LIVE__ ? <LocalDevelopmentBanner /> : !__DOMINO_DEPLOYABLE__ && <BuildBanner mode={__DOMINO_READ_MODE__} />}
-      {page === 'overview' && <Ticker />}
       <Header page={page} />
       <Screen page={page} param={param} />
       {/* Changed on purpose 2026-10-03 (the owner): the footer's Pause motion control is gone; reduced motion still stills the page. */}

@@ -1,0 +1,67 @@
+/* The same bounded, warm surfaces as Home, scoped to existing product groups.
+   Funding plans, action states and financial disclosures remain in their own components. */
+@layer v3 {
+  .dm-positions-page :is(.dm-own-card, .dm-acct-card, .dm-acct-wallet),
+  .dm-np :is(.dm-flow-card, .dm-flow-preview),
+  [data-automate] .dm-automation-choice,
+  .dm-seq-create {
+    border: 1px solid var(--border-lip);
+    border-radius: 1.333333rem;
+    background: var(--surface-1);
+    box-shadow: none;
+  }
+  .dm-positions-page .dm-own-head,
+  .dm-positions-page .dm-acct-card-head { padding: 1.125rem 1.25rem; }
+  .dm-positions-page .dm-own-collection .dm-own-row { border-radius: .75rem; }
+  .dm-positions-page .dm-acct-wallet { background: var(--card); }
+  .dm-np .dm-flow-amount { background: var(--surface-2); border-radius: 1rem; }
+  .dm-np .dm-flow-amount:focus-within { background: var(--surface-2); }
+  .dm-np .dm-flow-pv-bounds dd { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+  .dm-np .dm-flow-pv-bounds :is(.dm-tick-fig, .dm-tick-v) { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .dm-np .dm-flow-step[data-state="current"] .dm-flow-body { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+  .dm-np .dm-funds-line, .dm-np .dm-funds-discovery, .dm-np .dm-funds-offer {
+    background: color-mix(in srgb, var(--primary) 3%, var(--surface-1));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 17%, var(--border));
+    border-radius: .875rem;
+  }
+  [data-automate] .dm-automation-choice-art {
+    height: 10rem; padding: .75rem 1.5rem;
+    background: radial-gradient(ellipse at 50% 100%, rgb(255 157 86 / .04), transparent 75%);
+    border-bottom: 1px solid var(--border);
+  }
+  [data-automate] .dm-automation-choice-art > svg { max-height: 8rem; width: min(100%, 21rem); }
+  [data-automate] .dm-automation-choice-body { padding: 1.25rem 1.5rem 1.5rem; }
+  .dm-dialog.dm-pa { background: var(--surface-1); border-color: var(--border-lip); }
+  .dm-dialog.dm-pa .dm-pa-card { background: var(--surface-2); border: 1px solid var(--border); }
+  @media (min-width: 768px) and (pointer: fine) {
+    .dm-positions-page .dm-own-head > .dm-title,
+    .dm-positions-page .dm-acct-card-head .dm-title { font-size: 1.333333rem; }
+    .dm-positions-page :is(.dm-own-pair, .dm-own-fig, .dm-acct-token-name, .dm-acct-token-usd) { font-size: 1.166667rem; }
+    .dm-positions-page :is(.dm-collection-head, .dm-own-fee, .dm-own-state, .dm-acct-token-sub, .dm-rcpt-what, .dm-activity-time) { font-size: 1rem; line-height: 1.5; }
+    .dm-positions-page .dm-own-collection .dm-own-row { min-height: 6rem; }
+    .dm-positions-page .dm-acct-grid { gap: 1.5rem; grid-template-columns: minmax(0, 1fr) 22rem; }
+    .dm-positions-page .dm-acct-col { gap: 1.5rem; }
+    .dm-np :is(.dm-flow-lead, .dm-flow-row-title, .dm-flow-pv-pair, .dm-flow-hit-name) { font-size: 1.166667rem; }
+    .dm-np :is(.dm-flow-row-summary, .dm-flow-edit, .dm-flow-balance-line, .dm-flow-amount-usd, .dm-flow-reason, .dm-flow-hit-meta) { font-size: 1rem; line-height: 1.5; }
+    .dm-np :is(.dm-funds-line-text strong, .dm-funds-heading h4, .dm-funds-discovery strong) { font-size: 1.166667rem; line-height: 1.5; }
+    .dm-np :is(.dm-funds-line-action, .dm-funds-heading p, .dm-funds-discovery > span) { font-size: 1rem; line-height: 1.5; }
+    [data-automate] .dm-automation-choice-heading > h2 { font-size: 2rem; }
+    [data-automate] .dm-automation-choice-description { font-size: 1.166667rem; min-height: 3em; }
+    [data-automate] :is(.dm-automation-choice-fee, .dm-automation-choice-doc) { font-size: 1rem; }
+    [data-automate] .dm-automation-choice-entry > .dm-btn { font-size: 1.083333rem; min-height: 3.333333rem; }
+    .dm-dialog.dm-pa :is(.dm-pa-note, .dm-pa-alert, .dm-pa-status, .dm-pa-locked, .dm-pa-facts dt, .dm-pa-facts dd) { font-size: 1.083333rem; line-height: 1.5; }
+  }
+  @media (max-width: 767px) {
+    .dm-positions-page :is(.dm-own-card, .dm-acct-card, .dm-acct-wallet),
+    .dm-np :is(.dm-flow-card, .dm-flow-preview),
+    [data-automate] .dm-automation-choice, .dm-seq-create { border-radius: 1rem; }
+    .dm-positions-page .dm-own-head, .dm-positions-page .dm-acct-card-head { padding: 1rem .875rem; }
+    [data-automate] .dm-automation-choice-art { height: 8rem; }
+    [data-automate] .dm-automation-choice-art > svg { max-height: 7rem; }
+    [data-automate] .dm-automation-choice-body { padding: 1rem 1.125rem 1.125rem; }
+  }
+  @media (max-width: 479px) {
+    .dm-np .dm-flow-pv-bounds { grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+    .dm-np .dm-flow-pv-bounds > div:last-child { text-align: left; }
+  }
+}

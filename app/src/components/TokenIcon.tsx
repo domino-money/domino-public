@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { TokenDisplay } from '../lib/read/types'
 import { tokenArtwork, tokenArtworkKey } from '../lib/tokenArtwork'
+import { bundledTokenArtwork } from '../lib/bundledTokenArtwork'
 import { tokenHue } from '../lib/format/tokenHue'
 import { rem } from '../lib/rootScale'
 
@@ -37,6 +38,7 @@ const SPECS: Record<string, Spec> = {
   ETH: { bg: '#627EEA', label: 'Ether' },
   WETH: { bg: '#363c4a', label: 'Wrapped Ether' },
   USDG: { bg: '#16b672', label: 'Global Dollar' },
+  USDC: { bg: '#0B53BF', label: 'USDC' },
   MARLIN: { bg: '#1f6feb', label: 'Marlin', text: 'MR', ext: 'jpg' },
   UNI: { bg: '#FF007A', label: 'Uniswap', text: 'UNI', file: 'uniswap' },
 }
@@ -159,7 +161,8 @@ export function monogramOf(symbol: string | null, address: string): string {
 const DISC_LINE = 'inset 0 0 0 1px var(--border-strong)'
 
 export function TokenMark({ token, size = 24, ring, style, monogram }: MarkProps) {
-  if (token.artwork) return <TokenIcon symbol={token.artwork} size={size} ring={ring} style={style} />
+  const artwork = token.artwork ?? bundledTokenArtwork(token.chainId, token.address)
+  if (artwork) return <TokenIcon symbol={artwork} size={size} ring={ring} style={style} />
   return <RemoteTokenMark key={`${token.chainId}:${token.address}`} token={token} size={size} ring={ring} style={style} monogram={monogram} />
 }
 

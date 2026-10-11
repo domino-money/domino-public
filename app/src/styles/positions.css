@@ -203,9 +203,9 @@
   .dm-own-band > :nth-child(n + 2):nth-child(-n + 4) { text-align: right; }
   /* 2026-09-28 (review: every figure moved left when the badges, then an estimated APR, arrived): the two columns filled
      after the list (Your APR, measured one position at a time; Automation, its own chain read) keep the width of their
-     widest content from the first paint, "1,422% est." and the Domino-compound badge. Named on the Open tab only: the
+     widest content from the first paint, including "not measured" and the Domino-compound badge. Named on the Open tab only: the
      Closed tab has neither, and its figures take the room. The columns stand 16px apart, so the pair keeps its room. */
-  .dm-own-band > :nth-child(4):not(:empty) { min-width: 5.25rem; }
+  .dm-own-band > :nth-child(4):not(:empty) { min-width: 6rem; }
   .dm-own-band > :nth-child(5):not(:empty) { min-width: 9rem; }
   .dm-own-item { position: relative; grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; min-width: 0; }
   .dm-own-row { grid-column: 1 / -1; grid-row: 1; display: grid; grid-template-columns: subgrid; align-items: center; min-width: 0; min-height: 4.25rem; padding: 0.75rem 1rem; border-radius: var(--radius); color: inherit; text-decoration: none; transition: background-color 100ms ease-in-out; }
@@ -872,6 +872,7 @@
 }
 
 /* One automation control; its body appears only in the common action Sheet. */
+@layer components {
 .dm-position-automation { margin: 0 0 1.25rem; padding: 0.25rem 0 0.75rem; }
 .dm-position-automation[data-in-toolbar] { display: contents; }
 .dm-position-automation > :is(button, a) { max-width: 100%; white-space: normal; text-align: left; }
@@ -917,4 +918,5 @@
 @media (max-width: 479px) {
   .dm-own-row[data-row-state="closed"] { column-gap: .5rem; }
   .dm-own-row[data-row-state="closed"] .dm-own-closed-caption { font-size: .9375rem; }
+}
 }

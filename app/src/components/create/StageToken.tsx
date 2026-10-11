@@ -40,7 +40,7 @@ function preselectWords(status: PreselectStatus): string {
     case 'checking':
       return `${CREATE.token.preselectHeading}: ${CREATE.token.preselectChecking}`
     case 'verified':
-      return `${CREATE.token.preselectHeading}: ${CREATE.token.preselectVerified(status.block)}`
+      return CREATE.token.preselectVerified
     case 'not_found':
       return `${CREATE.token.preselectHeading}: ${CREATE.token.preselectNotFound}`
     case 'unsupported':
@@ -166,6 +166,8 @@ export function StageToken({
   const chosen = state.pool && !changing ? state.pool : null
   // While the linked pool is being verified its answer decides what this step shows, so nothing else is offered yet.
   const checking = preselect.kind === 'checking' && !preselect.again && !state.pool
+  const selectedNetwork = state.token?.token.chainId
+  const browsingOnly = selectedNetwork !== undefined && selectedNetwork !== 4663 && others?.creationAvailable?.(selectedNetwork) === false
 
   return (
     <div className="dm-flow-stack" data-stage="token" data-preselect={preselect.kind} data-preselect-reason={preselect.kind === 'failed' ? preselect.line.code : preselect.kind === 'unsupported' ? preselect.reason : undefined}>
@@ -227,6 +229,9 @@ export function StageToken({
           {source && state.token && <PoolList source={source} state={state} onPool={pickPool} onPreview={onPreview} others={others} />}
         </>
       )}
+      {browsingOnly && <p className="dm-hint" role="status" data-network-creation="unavailable">
+        Creating positions on {others?.name(selectedNetwork)} is unavailable right now. You can still explore its pools.
+      </p>}
     </div>
   )
 }

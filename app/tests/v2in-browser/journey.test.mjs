@@ -1,4 +1,4 @@
-/** Current owner-approved journey: Robinhood only, no example pools; fake-chain live create checks exact consent and calldata. */
+/** Current owner-approved journey: verified networks, no example pools; fake-chain live create checks exact consent and calldata. */
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -364,7 +364,7 @@ test('(d) the owner’s journey on V2: his steps, his preview and balances, the 
     await page.getByRole('combobox', { name: 'Search a token' }).fill(USDG_RH);
     await page.locator(`[data-token-option="${USDG_RH}"]`).click();
     await page.locator('[data-picker="pool"] input[name="pool-option"]').first().waitFor({ timeout: 30_000 });
-    assert.equal(await page.locator('li[data-step="pool"] .dm-flow-lead').innerText(), 'Search a token, then pick a pool.');
+    assert.equal(await page.locator('li[data-step="pool"]').getByRole('combobox', { name: 'Search a token' }).isVisible(), true, 'the labelled field guides the step without a repeated subtitle');
     await page.screenshot({ path: join(shots(), 'journey-owner-step1-pools.png'), fullPage: true, animations: 'disabled' });
     await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
     await page.locator('[data-chosen-pool]').waitFor();
@@ -563,11 +563,11 @@ test('(e) his journey on Base: Base\'s USDC in his search with its tag, the wall
     await page.locator('[data-create-journey]').waitFor();
     assert.equal(await page.locator('[data-zap-journey]').count(), 0, 'his journey, never the zap path\'s screens');
     await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
-    // Base's USDC, with Base's tag; Arbitrum One's gate is not live, so it offers nothing.
+    // Read-only discovery includes Arbitrum One even while its creation gate is not live.
     const hit = page.locator(`[data-token-network-option="8453:${USDC_BASE}"]`);
     await hit.waitFor();
     assert.equal((await hit.locator('[data-chain-chip="8453"]').innerText()).trim(), 'Base');
-    assert.equal(await page.locator('[data-token-network-option^="42161:"]').count(), 0);
+    assert.equal(await page.locator('[data-token-network-option^="42161:"]').count(), 1);
     assert.equal(chain.chainNow(), 4663, 'nothing asked of the wallet for a search');
     await hit.click();
     // Base's pools, read through the wallet once it moved to Base, in his list's rows with Base's tag.
@@ -904,22 +904,31 @@ test('(g) his journey on Base read by Domino\'s service: found by name, pools an
     await page.getByRole('combobox', { name: 'Search a token' }).fill('coin');
     const hit = page.locator(`[data-token-network-option="8453:${USDC_BASE}"]`);
     await hit.waitFor({ timeout: 30_000 });
+    const usdcMark = async (scope) => {
+      const mark = scope.locator('img[src="/tokens/usdc.svg"]').first();
+      await mark.waitFor();
+      assert.equal(await mark.evaluate(async image => { await image.decode(); return image.naturalWidth > 0; }), true, 'USDC uses its actual bundled logo');
+    };
+    await usdcMark(hit);
     assert.equal((await hit.locator('[data-chain-chip="8453"]').innerText()).trim(), 'Base');
     assert.ok(reads.calls.some((call) => call.route === 'chain-tokens' && call.request.chainId === 8453 && call.request.query === 'coin'), 'Base searched by Domino\'s service');
     await hit.click();
     const pools = page.locator('[data-picker="pool"][data-picker-network="8453"]');
     await pools.locator('input[name="pool-option"]').first().waitFor({ timeout: 30_000 });
+    await usdcMark(pools);
     assert.equal(await pools.locator(`li[data-pool-key="${poolIdOf(POOL_BASE)}"]`).count(), 1, 'Base\'s pool, from the service');
     assert.equal(chain.chainNow(), 4663, 'the wallet stays on Robinhood Chain for the pools');
     assert.equal(chain.multicalls.length, 0, 'nothing read through the wallet');
     await pools.locator('input[name="pool-option"]').first().click();
     await page.locator('[data-chosen-pool]').waitFor();
+    await usdcMark(page.locator('[data-chosen-pool]'));
     const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
     await pressContinue(current('pool'));
     await current('range').waitFor();
     await pressContinue(current('range'));
     await current('amount').waitFor();
     await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    await usdcMark(current('amount'));
     assert.ok(await page.locator('li[data-step="amount"] [data-pair-max]').count() >= 1, 'his Max, from the balances the service read');
     assert.ok(reads.calls.some((call) => call.route === 'chain-balances' && call.request.wallet === OWNER), 'the balances asked of the service');
     assert.equal(chain.chainNow(), 4663, 'and still on Robinhood Chain for the balances');
@@ -928,6 +937,8 @@ test('(g) his journey on Base read by Domino\'s service: found by name, pools an
     await pressContinue(current('amount'));
     const review = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]');
     await review.waitFor({ timeout: 30_000 });
+    await usdcMark(current('review'));
+    await page.screenshot({ path: join(shots(), 'journey-usdc-artwork-review.png'), fullPage: true, animations: 'disabled' });
     assert.equal(chain.chainNow(), 8453, 'the wallet moved to Base for the review');
     assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 1, 'once');
     assert.deepEqual([s.planned[0].action, s.planned[0].chainId], ['create', 8453]);
@@ -1933,10 +1944,11 @@ test('(i) a pasted address: named on the network where it is a token, left out w
     assert.equal(await page.getByText('Look up this address').count(), 2);
     assert.equal(await page.locator('[data-token-option]').count(), 0);
     assert.equal(await page.locator('[role="option"][data-active]').count(), 0, 'two networks to look it up on: Enter waits for the person’s choice');
-    // A token nowhere: said in one line.
+    // read-v6 has no absence proof: unknown metadata is one honest line, never "No token".
     await search.fill(NOWHERE);
     await page.locator('.dm-flow-listbox-empty:not([data-searching])').waitFor();
-    assert.equal(await page.locator('.dm-flow-listbox-empty').innerText(), 'No token at this address.');
+    assert.equal(await page.locator('.dm-flow-listbox-empty').innerText(), 'Token data on Base and Arbitrum One is unavailable right now.');
+    assert.equal(await page.getByText('No token at this address.').count(), 0);
     // Added 2026-10-06 (review): Robinhood Chain's read could not get through to the address for the moment (an RPC
     // error), and no other network names it: unread, never "no token". Its plain row stays, the way on there.
     await search.fill(FLAKY);
@@ -1956,17 +1968,20 @@ test('(i) a pasted address: named on the network where it is a token, left out w
   } finally { await s.close(); }
 });
 
-test('(j) the gates read again: one failed read of the plan route’s word no longer leaves Base and Arbitrum One out of the visit', async () => {
+test('(j) public discovery stays available while the plan route recovers quietly from a failed capabilities read', async () => {
   const chain = createV2Chain({ chainId: 8453, timestamp: now() });
   chain.switchTo(4663);
   const reads = createChainReads({ chainId: 8453, tokens: BASE_TOKENS });
   const read = createReadStub({ answer: robinhoodRead });
-  // The plan route's capabilities: unavailable the first time, then on (no test contracts: the pinned sets and the route's word).
+  // Keep execution capabilities unavailable until public discovery has answered; then permit their quiet recovery.
   let asked = 0;
+  let recover = false;
+  let recovered = false;
   const plan = (request, url) => {
     if (url.pathname !== '/api/position-plan/v1/capabilities') return undefined;
     asked += 1;
-    if (asked === 1) return new Response('{"error":"bridge_unavailable"}', { status: 503, headers: { 'Content-Type': 'application/json' } });
+    if (!recover) return new Response('{"error":"bridge_unavailable"}', { status: 503, headers: { 'Content-Type': 'application/json' } });
+    recovered = true;
     return new Response(JSON.stringify({ contractVersion: '1.0.0-rc.2', dataMode: 'live', enabledRoutes: ['plan'] }), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Domino-Position-Plan-Contract': '1.0.0-rc.2' } });
   };
   const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, connect: false, routes: [plan, (request, url) => read.handle(request, url) ?? undefined], chainReads: reads, artwork: true });
@@ -1974,16 +1989,20 @@ test('(j) the gates read again: one failed read of the plan route’s word no lo
     const page = s.page;
     await page.locator('[data-create-journey]').waitFor();
     await page.getByRole('combobox', { name: 'Search a token' }).fill('usdc');
-    await page.waitForTimeout(800);
-    assert.equal(await page.locator('[data-token-network-option]').count(), 0, 'the first read could not say: no network offered yet');
-    // Read again on its own after the read screens' quiet wait: Base and Arbitrum One come back, with their tags.
+    // Readable preview networks remain discoverable while execution is unavailable, with their own identities.
     const hit = page.locator(`[data-token-network-option="8453:${USDC_BASE}"]`);
     await hit.waitFor({ timeout: 20_000 });
     assert.equal((await hit.locator('[data-chain-chip="8453"]').innerText()).trim(), 'Base');
-    // Each network then asked by Domino's service, after the search's short pause.
     await page.locator('[data-token-search] .dm-flow-combo:not([data-searching])').waitFor();
     assert.deepEqual([8453, 42161].map((chainId) => reads.calls.some((call) => call.route === 'chain-tokens' && call.request.chainId === chainId)), [true, true], 'Base and Arbitrum One both searched');
+    assert.ok(asked >= 1, 'execution capabilities failed while public discovery answered');
+    assert.equal(recovered, false, 'discovery did not need the execution gate to recover');
+    recover = true;
+    await until(() => recovered, 'execution capabilities asked again after their quiet wait');
     assert.ok(asked >= 2, 'the plan route’s word asked again');
+    assert.ok(await hit.isVisible(), 'the same Base token stays available after recovery');
+    assert.deepEqual(s.planned, [], 'search and recovery never request a financial plan');
+    assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 0, 'public discovery never moves the wallet');
   } finally { await s.close(); }
 });
 
@@ -1997,7 +2016,7 @@ test('(k) a read that failed for the moment is asked again quietly: the name sea
   const chainReads = {
     calls: reads.calls,
     answer: (route, request) => {
-      if (busy[route] > 0 && (route === 'chain-tokens' || request.token === VIRTUAL_BASE)) {
+      if (request.chainId === 8453 && busy[route] > 0 && (route === 'chain-tokens' || request.token === VIRTUAL_BASE)) {
         busy[route] -= 1;
         refused.push(route);
         return route === 'chain-tokens' ? { status: 429, body: { error: 'read_capacity_busy' } } : { status: 503, body: { error: 'upstream_unavailable' } };
@@ -2019,7 +2038,7 @@ test('(k) a read that failed for the moment is asked again quietly: the name sea
     await page.waitForFunction(() => document.querySelectorAll('[data-searching]').length > 0);
     assert.equal(await page.locator('.dm-flow-listbox-empty').innerText(), 'Searching…');
     await hit.waitFor({ timeout: 20_000 });
-    assert.equal(reads.calls.filter((call) => call.route === 'chain-tokens' && call.request.query === 'virtual protocol').length, 1, 'answered when asked again');
+    assert.deepEqual([8453, 42161].map((chainId) => reads.calls.filter((call) => call.route === 'chain-tokens' && call.request.chainId === chainId && call.request.query === 'virtual protocol').length), [1, 1], 'one successful answer per network: Base after its retry, Arbitrum through public discovery');
     await hit.click();
     const pools = page.locator('[data-picker="pool"][data-picker-network="8453"]');
     await pools.locator('li[data-pool-key]').first().waitFor({ timeout: 30_000 });
@@ -2098,14 +2117,14 @@ async function ethWithBase() {
 }
 
 // Added 2026-10-06 (the review of the next update: from 900 to 1023 px, and on a tablet held wide, a row's fee chip lay over
-// its figures, while the suites measured 1280 alone). The widths a pool list is drawn at, with the root size each one gives
-// (styles/tokens.css): a desktop, where the figures stand beside the pair; a narrow laptop window and a tablet held wide,
-// where the list beside the preview is as narrow as a phone's and its rows stack as a phone's do; and a phone.
+// its figures, while the suites measured 1280 alone). V3 has compact desktop density and a full touch scale. These widths cover
+// compact desktop and laptop rows with figures beside the pair; a full-scale touch tablet and phone,
+// where the narrower row stacks its figures beneath the pair.
 const ROW_WIDTHS = [
-  { width: 1280, touch: false, root: '12.8px', beside: true },
-  { width: 1000, touch: false, root: '14.4px', beside: false },
-  { width: 960, touch: false, root: '14.4px', beside: false },
-  { width: 1024, touch: true, root: '14.4px', beside: false },
+  { width: 1280, touch: false, root: '10.8px', beside: true },
+  { width: 1000, touch: false, root: '10.8px', beside: true },
+  { width: 960, touch: false, root: '10.8px', beside: true },
+  { width: 1024, touch: true, root: '16px', beside: false },
   { width: 390, touch: false, root: '16px', beside: false },
 ];
 const widthName = ({ width, touch }) => `${width}px${touch ? ' on a touch screen' : ''}`;
@@ -2168,9 +2187,9 @@ test('(s) "eth" with Base offered: Robinhood Chain’s ETH is highlighted and En
       await drawnAt(page, cdp, at);
       assert.deepEqual(await rows(), [{ pair: 'ETH / USDG', lines: 1, network: 'Robinhood Chain', together: at.beside }], widthName(at));
       assert.deepEqual(await chipsOf(pools), [{ inside: true, clear: true, beside: at.beside }], widthName(at));
-      if (at.width === 1280 || at.touch) {
+      if (at.width === 1280 || at.width === 960 || at.touch) {
         await page.waitForTimeout(600);
-        await page.screenshot({ path: join(shots(), at.touch ? 'journey-robinhood-rows-tablet-1024.png' : 'journey-robinhood-rows-with-networks.png') });
+        await page.screenshot({ path: join(shots(), at.touch ? 'journey-robinhood-rows-tablet-1024.png' : at.width === 960 ? 'journey-robinhood-rows-960.png' : 'journey-robinhood-rows-with-networks.png') });
       }
     }
   } finally { await s.close(); }
@@ -2298,15 +2317,21 @@ test('(y) a Robinhood Chain pair without USDG shows a dollar estimate: ETH at it
   const chain = createV2Chain({ chainId: 4663, timestamp: now(), eth: 10n ** 19n, balances: { [FIXTURE_TOKEN]: 5n * 10n ** 12n }, pools: [{ pool: POOL_ETH_TOKEN, sqrtPriceX96: TOKEN_SQRT, tick: TOKEN_TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);
   const reads = createChainReads({ chainId: 4663, tokens: RH_TOKENS, pools: [{ pool: POOL_ETH_TOKEN, sqrtPriceX96: TOKEN_SQRT, tick: TOKEN_TICK, liquidity: 10n ** 16n }] });
+  const discovery = new Map([8453, 42161].map((chainId) => [chainId, createChainReads({ chainId })]));
+  const chainReads = { answer: (route, request) => (discovery.get(request.chainId) ?? reads).answer(route, request) };
   const read = createReadStub({ answer: ethTokenRead });
   const s = await openJourney(browser, chain, {
     dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]),
-    routes: [(request, url) => read.handle(request, url) ?? undefined], chainReads: reads, artwork: true,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], chainReads, artwork: true,
   });
   try {
     const page = s.page;
     await page.locator('[data-create-journey]').waitFor();
     await page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
+    // Public discovery runs on both other networks even while their creation gates are closed.
+    // Let it settle before choosing the Robinhood result, rather than racing those reads against the click.
+    await until(() => [...discovery.values()].every((remote) => remote.calls.length === 1), 'one address discovery per other network');
+    await page.locator('[data-token-search] .dm-flow-combo:not([data-searching])').waitFor();
     await page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
     await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
     await page.locator('[data-chosen-pool]').waitFor();
@@ -2326,8 +2351,9 @@ test('(y) a Robinhood Chain pair without USDG shows a dollar estimate: ETH at it
     assert.ok(dollars(figure) > 4_000 && dollars(figure) < 20_000, figure);
     for (const side of [0, 1]) assert.match(await page.locator(`li[data-step="amount"] [data-pair-side="${side}"] .dm-flow-amount-usd`).innerText(), /^\$[\d,]+\.\d{2}$/);
     assert.equal(await page.getByText('USD estimate unavailable').count(), 0);
-    // One read for the pool chosen, about its own pair.
+    // One read for the pool chosen, about its own pair; discovery is counted separately with no extra calls allowed.
     assert.deepEqual(reads.calls.filter((call) => call.route === 'chain-pools').map((call) => call.request), [{ chainId: 4663, token: ZERO, pairedToken: FIXTURE_TOKEN }]);
+    for (const [chainId, remote] of discovery) assert.deepEqual(remote.calls, [{ route: 'chain-pools', request: { chainId, token: FIXTURE_TOKEN } }], 'one public discovery read per other network, never a pair-price read or a duplicate');
     await page.screenshot({ path: join(shots(), 'journey-robinhood-usd-1280.png'), fullPage: true, animations: 'disabled' });
     assert.equal(chain.sends.length, 0);
   } finally { await s.close(); }
@@ -2342,12 +2368,15 @@ test('(y2) a busy reader’s Retry-After is waited before the pair’s prices ar
   const chain = createV2Chain({ chainId: 4663, timestamp: now(), eth: 10n ** 19n, balances: { [FIXTURE_TOKEN]: 5n * 10n ** 12n }, pools: [{ pool: POOL_ETH_TOKEN, sqrtPriceX96: TOKEN_SQRT, tick: TOKEN_TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);
   const reads = createChainReads({ chainId: 4663, tokens: RH_TOKENS, pools: [{ pool: POOL_ETH_TOKEN, sqrtPriceX96: TOKEN_SQRT, tick: TOKEN_TICK, liquidity: 10n ** 16n }] });
-  // The first chain-pools is refused by a busy reader that names 6 s; each is timed as it arrives.
+  const discovery = new Map([8453, 42161].map((chainId) => [chainId, createChainReads({ chainId })]));
+  // Only the selected Robinhood pair is refused. Public pasted-address discovery has its own chain identities.
   const asked = [];
   const chainReads = {
     calls: reads.calls,
     answer: (route, request) => {
       if (route !== 'chain-pools') return reads.answer(route, request);
+      if (discovery.has(request.chainId)) return discovery.get(request.chainId).answer(route, request);
+      assert.deepEqual(request, { chainId: 4663, token: ZERO, pairedToken: FIXTURE_TOKEN }, 'the timed read is exactly the selected pair');
       asked.push(Date.now());
       return asked.length === 1 ? { status: 429, body: { error: 'read_capacity_busy' }, retryAfter: '6' } : reads.answer(route, request);
     },
@@ -2359,6 +2388,7 @@ test('(y2) a busy reader’s Retry-After is waited before the pair’s prices ar
   });
   const choose = async (page) => {
     await page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
+    await page.locator('[data-token-search] .dm-flow-combo:not([data-searching])').waitFor();
     await page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
     await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
     await page.locator('[data-chosen-pool]').waitFor();
@@ -2379,6 +2409,7 @@ test('(y2) a busy reader’s Retry-After is waited before the pair’s prices ar
     assert.ok(Date.now() - asked[1] < 20_000, 'still within the 20 s an answer is reused');
     assert.equal(asked.length, 2, 'chain-pools of the same pair is not asked again: one answer serves it');
     assert.deepEqual(reads.calls.filter((call) => call.route === 'chain-pools').map((call) => call.request), [{ chainId: 4663, token: ZERO, pairedToken: FIXTURE_TOKEN }], 'the one answered read, about the pair');
+    for (const [chainId, remote] of discovery) assert.deepEqual(remote.calls.map((call) => call.request), [{ chainId, token: FIXTURE_TOKEN }], 'public discovery also reuses its answer: one read per other network across both visits');
   } finally { await s.close(); }
 });
 
@@ -2466,13 +2497,14 @@ async function shortOfPair(ethWei, planner, { s2 = true, symbol = 'OTHER', elsew
   return { s, chain, reads, page };
 }
 const current = (page, step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
-/** At a phone's width too, with no sideways scroll; then back to the desktop's. */
+/** Desktop and phone widths, with no sideways scroll; then back to the scenario's desktop. */
 async function bothWidths(page, name) {
-  await page.screenshot({ path: join(shots(), `${name}-1280.png`), fullPage: true, animations: 'disabled' });
-  await page.setViewportSize({ width: 390, height: 900 });
-  await page.waitForTimeout(150);
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, `${name}: no horizontal scroll at 390`);
-  await page.screenshot({ path: join(shots(), `${name}-390.png`), fullPage: true, animations: 'disabled' });
+  for (const width of [1440, 1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, `${name}: no horizontal scroll at ${width}`);
+    await page.screenshot({ path: join(shots(), `${name}-${width}.png`), fullPage: true, animations: 'disabled' });
+  }
   await page.setViewportSize({ width: 1280, height: 1000 });
   await page.waitForTimeout(150);
 }
@@ -2486,7 +2518,7 @@ test('(z) a pair nothing can bring, the wallet short and holding ETH: one line "
     await line.waitFor({ timeout: 30_000 });
     assert.equal(await page.locator('[data-pay-with]').count(), 1, 'at most one line');
     assert.equal(await page.locator('[data-funds-offer]').count(), 0, 'no offer to bring TOKEN or OTHER');
-    assert.equal(await words(line), 'Use your ETH on Robinhood Chain We’ll check a conversion into TOKEN and OTHER. Use ETH');
+    assert.equal(await words(line), 'Use your ETH on Robinhood Chain Convert to TOKEN and OTHER. Use ETH');
     assert.ok(reads.calls.some((call) => call.route === 'chain-balances'), 'what the wallet holds, as Domino’s service read it');
     await bothWidths(page, 'journey-pay-with-line');
     await line.click();
@@ -2558,7 +2590,7 @@ test('(z3) S2 not live: the line and the panel all the same; the wallet gone, th
     const line = page.locator(`button[data-pay-with="${ZERO}"]`);
     await line.waitFor({ timeout: 30_000 });
     assert.equal(await page.locator('[data-funds-offer]').count(), 0, 'no offer without S2');
-    assert.equal(await words(line), 'Use your ETH on Robinhood Chain We’ll check a conversion into TOKEN and OTHER. Use ETH');
+    assert.equal(await words(line), 'Use your ETH on Robinhood Chain Convert to TOKEN and OTHER. Use ETH');
     assert.ok(reads.calls.some((call) => call.route === 'chain-balances'), 'read under the S1 gate');
     await line.click();
     const panel = page.locator(`[data-pay-with-amount="${ZERO}"]`);
@@ -2601,7 +2633,7 @@ test('(z5) Ethereum and OP Mainnet never hold local payment back or replace it w
     const line = page.locator('button[data-pay-with]');
     await line.waitFor({ timeout: 15_000 });
     assert.equal(await line.getAttribute('data-pay-with'), ZERO);
-    assert.equal(await words(line), 'Use your ETH on Robinhood Chain We’ll check a conversion into TOKEN and OTHER. Use ETH', 'from Domino’s read alone');
+    assert.equal(await words(line), 'Use your ETH on Robinhood Chain Convert to TOKEN and OTHER. Use ETH', 'from Domino’s read alone');
     assert.ok(reads.calls.some((call) => call.route === 'chain-balances'), 'Domino’s three read');
     assert.ok(asked.length >= 1 && asked.every((request) => request.tokens.every((t) => t.chainId === 1 || t.chainId === 10)), 'Ethereum and OP Mainnet asked, in a request of their own');
     assert.equal(ethereum.calls.length, 0, 'and not answered yet');
@@ -2737,6 +2769,91 @@ test('(g3) a price crossing the range keeps the typed token visible and waits fo
     assert.equal(await footerButton(amount, 'Continue').isDisabled(), true);
     assert.equal(s.planned.length, 0);
     assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 0);
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+
+test('public discovery: a preview finds Base tokens by name and address, and a network handoff never reuses another chain', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now() });
+  chain.switchTo(4663);
+  const reads = virtualReads();
+  const arbitrum = createChainReads({ chainId: 42161, tokens: [] });
+  const read = createReadStub({ answer: (route, body) => route === 'token' && body.token !== ZERO && body.token !== USDG_RH ? noContractOnRobinhood(body.token) : robinhoodRead(route, body) });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, connect: false, live: [],
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+    chainReads: { answer: (route, request) => (request.chainId === 42161 ? arbitrum : reads).answer(route, request) },
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    const search = page.getByRole('combobox', { name: 'Search a token', exact: true });
+    await search.fill('Virtual Protocol');
+    const hit = page.locator('[data-token-network-option="8453:' + VIRTUAL_BASE + '"]');
+    await hit.waitFor({ timeout: 30_000 });
+    assert.match(await hit.innerText(), /VIRTUAL/);
+    await search.fill(VIRTUAL_BASE);
+    await hit.waitFor({ timeout: 30_000 });
+    await page.locator('[data-token-search] .dm-flow-combo:not([data-searching])').waitFor();
+    assert.equal(await page.locator('[data-token-option], [data-token-network-option^="42161:"]').count(), 0);
+    await hit.click();
+    await page.locator('[data-picker-network="8453"] [data-pool-key]').first().waitFor({ timeout: 30_000 });
+    assert.match(await page.locator('[data-network-creation="unavailable"]').innerText(), /Creating positions on Base is unavailable/);
+    await page.evaluate(token => { window.location.hash = '#/new/network/8453/' + token; }, VIRTUAL_BASE);
+    await page.locator('[data-picker-network="8453"] [data-pool-key]').first().waitFor({ timeout: 30_000 });
+    assert.equal(await search.inputValue(), 'VIRTUAL');
+    await page.evaluate(token => { window.location.hash = '#/new/network/42161/' + token; }, VIRTUAL_BASE);
+    await page.locator('[data-network-handoff="unavailable"]').waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('[data-picker-network="8453"]').count(), 0, 'the old Base pools are gone on a same-address chain change');
+    assert.equal(await page.locator('[data-create-journey]').count(), 0, 'an unread Arbitrum token never falls back to Robinhood');
+    assert.ok(reads.calls.some(call => call.route === 'chain-tokens' && call.request.query === 'Virtual Protocol'));
+    assert.ok(arbitrum.calls.some(call => call.route === 'chain-pools' && call.request.token === VIRTUAL_BASE));
+    assert.equal(chain.chainNow(), 4663);
+    assert.equal(chain.multicalls.length, 0);
+    assert.equal(chain.log.filter(method => ['eth_requestAccounts', 'wallet_requestPermissions', 'wallet_switchEthereumChain'].includes(method)).length, 0);
+    assert.equal(chain.signed.length, 0);
+    assert.equal(chain.sends.length, 0);
+    assert.equal(s.planned.length, 0);
+  } finally { await s.close(); }
+});
+
+test('public discovery: preview pool selection reaches a locked review without planning, signing or moving the wallet', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [ZERO]: 10n ** 18n, [USDC_BASE]: 5_000_000_000n } });
+  chain.switchTo(4663);
+  const reads = createChainReads({
+    chainId: 8453,
+    tokens: BASE_TOKENS,
+    pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }],
+    balances: { [ZERO]: 10n ** 18n, [USDC_BASE]: 5_000_000_000n },
+  });
+  const arbitrum = createChainReads({ chainId: 42161, tokens: [] });
+  const read = createReadStub({ answer: robinhoodRead });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, hash: '#/new/network/8453/' + USDC_BASE, live: [],
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+    chainReads: { answer: (route, request) => (request.chainId === 42161 ? arbitrum : reads).answer(route, request) },
+  });
+  try {
+    const page = s.page;
+    const current = step => page.locator('li[data-step="' + step + '"][aria-current="step"]');
+    await page.locator('[data-picker-network="8453"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.locator('[data-network-creation="unavailable"]').waitFor();
+    await pressContinue(current('pool'));
+    await pressContinue(current('range'));
+    await current('amount').waitFor();
+    await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    await current('amount').locator('[data-pair-side="1"] input[inputmode="decimal"]').fill('1000');
+    await pressContinue(current('amount'));
+    const closed = page.locator('[data-create-position="closed"]');
+    await closed.waitFor({ timeout: 30_000 });
+    assert.equal(await closed.isDisabled(), true);
+    assert.match(await page.locator('#create-reason').innerText(), /Base/);
+    assert.equal(await page.locator('[data-create-position="live"]').count(), 0);
+    assert.equal(s.planned.length, 0, 'public reads do not call the position planner');
+    assert.equal(chain.chainNow(), 4663, 'preview cannot switch the wallet');
+    assert.equal(chain.log.filter(method => method === 'wallet_switchEthereumChain').length, 0);
+    assert.equal(chain.signed.length, 0);
     assert.equal(chain.sends.length, 0);
   } finally { await s.close(); }
 });

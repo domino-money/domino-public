@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { IconTile } from '../components/figures'
 import { MarketsTable } from '../components/MarketsTable'
 import { RangeSimulator } from '../components/RangeSimulator'
+import { FUNDING_NETWORKS, HomeCapabilities, NetworkMark } from '../components/home/HomeCapabilities'
 import { FeatureCards } from '../components/home/FeatureCards'
 import { HeroArt } from '../components/home/HeroArt'
 import { useInView } from '../components/home/Vignettes'
@@ -10,11 +11,8 @@ import { Display, LinkButton, PageShell, cx } from '../components/ui'
 import { useRouteTitle } from '../lib/routeTitle'
 
 /*
- * Home (DESIGN-V2 §7). The headline and the two ways in, what automation does
- * with fees, then the selected pools. Below them it explains: how a position
- * comes together, what a range does as the price moves, and what Domino does
- * not do. Home sends no read of its own; the table keeps the app's existing
- * markets provider. The original hero animation is presentation only.
+ * Home introduces wallet funding, pools and their range in the order a new visitor needs them.
+ * The shared table still owns every figure and read; the teaching scene never projects earnings.
  */
 
 /**
@@ -26,77 +24,54 @@ import { useRouteTitle } from '../lib/routeTitle'
 const RISE = 'animate-rise'
 const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSProperties
 
-const STEPS: ReadonlyArray<{ n: string; title: string; body: string }> = [
-  {
-    n: '01',
-    title: 'Choose your tokens',
-    body: 'Pick the two tokens you want to add.',
-  },
-  {
-    n: '02',
-    title: 'Set a price range',
-    body: 'Choose the prices where your position can earn fees.',
-  },
-  {
-    n: '03',
-    title: 'Choose an amount',
-    body: 'Decide how much you want to add.',
-  },
-  {
-    n: '04',
-    title: 'Review and confirm',
-    body: 'Check the details, then confirm in your wallet.',
-  },
-]
-
 const LIMITS: ReadonlyArray<{ title: string; body: string; icon: ReactNode }> = [
   {
-    title: 'It does not remove market risk',
+    title: 'Outside your range, trading fees stop',
     // Changed on purpose 2026-10-01 (audit E13): a range opened above or below the price on purpose holds one token from
     // the start, so naming the token left as the one that fell was not always true; this is.
-    body: 'Prices move and your position moves with them. Outside its range a position holds only one of its two tokens, and earns no fees until the price comes back.',
+    body: 'Outside your range, the position holds one token and stops earning trading fees until the price returns.',
     icon: <IconChartDown size={18} />,
   },
   {
-    title: 'It does not promise a return',
-    body: 'Fees are not profit. A position can collect fees for weeks and still be worth less than holding the assets.',
+    title: 'Your position can lose value',
+    body: 'Your position can lose value, even while earning fees, and be worth less than holding the tokens.',
     icon: <IconCoins size={18} />,
   },
   {
-    title: 'It does not take custody',
-    body: 'Domino never holds your wallet keys. You approve how automation can act, and you can pause or revoke that permission.',
+    title: 'Your wallet, your permissions',
+    body: 'Domino never holds your keys. You approve what automation can do and can pause or revoke its permission.',
     icon: <IconKey size={18} />,
   },
   {
     title: 'Compounding uses earned fees',
-    body: 'Auto-compound and Domino-compound reinvest earned fees, not the tokens you originally deposited.',
+    body: 'Auto-compound and Domino-compound use earned fees. Your original deposit stays in its position.',
     icon: <IconShield size={18} />,
   },
 ]
 
 /**
- * The headline plate: the words centred over a horizon of tiles. The drawing plays while at least 30% of the plate is in view.
- * Changed on purpose 2026-10-03 (the owner: Domino covers more than one network now): no "On Robinhood Chain" chip over
- * the headline; the words start the plate.
+ * A short headline beside a position taking shape.
+ * The drawing plays while at least 30% of the hero is in view.
  */
 function Hero() {
   const [plate, inView] = useInView<HTMLDivElement>(0.3)
   return (
-    <div ref={plate} className="dm-plate dm-dots-hero dm-hero">
+    <div ref={plate} className="dm-hero dm-v3-hero">
       <div className="dm-hero-body">
         <Display as="h1" className={cx('dm-display-hero dm-hero-title', RISE)} style={rise(0)}>
-          Earn fees on your tokens, <span className="dm-hero-accent">on your own terms.</span>
+          <span className="dm-hero-opening">Earn fees.</span><span className="dm-hero-accent">Keep control.</span>
         </Display>
-        <p className={cx('dm-lede-hero dm-hero-lede', RISE)} style={rise(1)}>
-          You pick the pool and the range, and nothing moves until your wallet signs.
-        </p>
-        <div className={cx('dm-hero-actions', RISE)} style={rise(2)}>
+        <div className={cx('dm-hero-actions', RISE)} style={rise(1)}>
           <LinkButton href="#/markets" size="xl">
             Explore markets
           </LinkButton>
-          <LinkButton href="#/new" variant="outline" size="xl">
-            New position
+          <LinkButton href="#/new" variant="ghost" size="xl">
+            New position <IconChevronRight size={16} />
           </LinkButton>
+        </div>
+        <div className="dm-hero-funding" aria-label="Networks to bring funds from">
+          <span>Bring funds from</span>
+          <ul>{FUNDING_NETWORKS.map(network => <li key={network}><NetworkMark network={network} /><span>{network}</span></li>)}</ul>
         </div>
       </div>
       <div className="dm-hero-band">
@@ -108,52 +83,35 @@ function Hero() {
 
 function HowItWorks() {
   return (
-    <section id="learn" className="dm-home-section dm-learn">
-      <div className="dm-home-section-head dm-learn-head">
-        <div>
-          <p className="dm-learn-eyebrow">How it works</p>
-          <Display as="h2" className="dm-display-section dm-learn-title">
-            Your first position, in four steps.
-          </Display>
-        </div>
+    <section id="learn" className="dm-home-chapter dm-home-automations" aria-labelledby="dm-automation-title">
+      <div className="dm-home-chapter-heading">
+        <div><Display as="h2" id="dm-automation-title" className="dm-home-chapter-title">Choose what<br /><em>happens next.</em></Display><p>Three ways to manage your position, on your terms.</p></div>
+        <LinkButton href="#/automate" variant="ghost">Explore automation <IconChevronRight size={16} /></LinkButton>
       </div>
-      <ol className="dm-learn-steps">
-        {STEPS.map((step, index) => (
-          <li key={step.n} className={cx('dm-card dm-learn-step', RISE)} style={rise(index)}>
-            <span aria-hidden="true" className="dm-learn-num">
-              {step.n}
-            </span>
-            <h3 className="dm-subtitle dm-learn-step-title">{step.title}</h3>
-            <p className="dm-learn-step-body">{step.body}</p>
-          </li>
-        ))}
-      </ol>
-      <a href="#/new" className="dm-vig-link dm-learn-start">Create your first position <IconChevronRight size={16} /></a>
+      <FeatureCards />
+      <details id="ranges" className="dm-home-range-guide">
+        <summary><span>What is a price range?</span><span aria-hidden="true">+</span></summary>
+        <RangeSimulator title="Your price range" />
+      </details>
     </section>
   )
 }
 
 function Limits() {
   return (
-    <section id="limits" className="dm-home-section">
-      <div className="dm-card dm-limits">
-        <div className="dm-home-section-head">
-          <div>
-            <p className="dm-home-eyebrow">Know before you start</p>
-            <Display as="h2" className="dm-display-card">What Domino does not do.</Display>
-          </div>
-        </div>
-        <div className="dm-limits-grid">
-          {LIMITS.map((limit) => (
-            <div key={limit.title} className="dm-limit">
+    <section id="limits" className="dm-limits dm-home-chapter dm-home-control" aria-labelledby="dm-home-risks-title">
+      <div><Display as="h2" id="dm-home-risks-title" className="dm-home-chapter-title">Stay informed.<br /><em>Stay in control.</em></Display><p className="dm-home-control-intro">Your wallet stays yours. Know how your position works before you start.</p></div>
+      <div className="dm-limits-grid">
+        {LIMITS.map((limit) => (
+          <details key={limit.title} className="dm-limit">
+            <summary>
               <IconTile icon={limit.icon} />
-              <div className="min-w-0">
-                <h3 className="dm-subtitle">{limit.title}</h3>
-                <p className="dm-limit-body">{limit.body}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+              <h3 className="dm-subtitle">{limit.title}</h3>
+              <IconChevronRight size={15} />
+            </summary>
+            <p className="dm-limit-body">{limit.body}</p>
+          </details>
+        ))}
       </div>
     </section>
   )
@@ -165,24 +123,12 @@ export function Landing() {
   return (
     <PageShell className="dm-home">
       <Hero />
-      <section className="dm-home-section dm-home-options" aria-labelledby="dm-features-title">
-        <div className="dm-home-section-head">
-          <div>
-            <p className="dm-home-eyebrow">After you open a position</p>
-            {/* Changed on purpose 2026-10-06 (the owner's point 5): Auto-exit joins the fee automations, so the heading names the position. */}
-            <Display as="h2" id="dm-features-title" className="dm-display-section">Your position. A choice of next steps.</Display>
-          </div>
-        </div>
-        <FeatureCards className="dm-home-features" delay={160} />
-      </section>
-      {/* The pools table holds an inline dialog, so it takes no entrance: nothing may leave a transform on its ancestors. */}
+      <HomeCapabilities />
+      {/* Keep the shared provider and dialog ancestry intact: presentation adds no market reads. */}
       <section id="pools" className="dm-home-pools">
-        <MarketsTable variant="featured" />
+        <MarketsTable variant="home" />
       </section>
       <HowItWorks />
-      <section id="ranges" className="dm-home-section">
-        <RangeSimulator />
-      </section>
       <Limits />
     </PageShell>
   )

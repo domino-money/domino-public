@@ -17,8 +17,8 @@ import { JOURNEY } from './copy'
 import { journeyError } from './errors'
 import { READER_POOLS_CACHE_MS, balanceTokens, balancesOfAnswer, factsOfAnswer, lookalikeOf, passingAfter, pastedOf, poolsOfAnswer, rereadOf, resolvedOf, rowsOfTokens, symbolRank } from './model/chainReads'
 import { createNetworkSearch, searchable, type SearchAnswer } from './model/networkSearch'
-import { displayOf, factsOfFound, listedPools, networkTokens, offeredNetworks, optionOf, poolsToRead, refOf } from './model/networks'
-import { chainPoolsOn, patiently, servedOn, type LiveGate, type Served } from './served'
+import { displayOf, factsOfFound, listedPools, networkTokens, readableNetworks, optionOf, poolsToRead, refOf } from './model/networks'
+import { chainPoolsOn, patiently, servedOn, type ReadGate, type Served } from './served'
 import type { JourneyGates } from './source'
 import { cleanSymbol, profileTokens } from './tokens'
 import { connectJourney, inTurn } from './wallet'
@@ -27,7 +27,7 @@ import { connectJourney, inTurn } from './wallet'
  * Base and Arbitrum One in the owner's New position (2026-10-05, the owner: "the search on the screen, across the three
  * networks; the results get the network's tag", and creating there through Domino V2): the implementation the V1 journey
  * declares (lib/create/otherChains.ts), handed to it by its wrapper (./NewPositionV2.tsx) for the networks whose S1 gate
- * is live, so a token there can only lead to a position Domino V2 can create.
+ * is readable. Public discovery is independent of creation availability; only a live S1 gate permits execution.
  *
  * Those networks have no pool list yet (spec F7 rev4 §6.2 "O que o read-v6 ainda não tem": pools per chain) and no public
  * RPC may be asked (§6.1), so, as the spec says for the meantime, everything of them is read through the wallet's own
@@ -81,7 +81,7 @@ import { connectJourney, inTurn } from './wallet'
  *     apart (`facts`). The comment above about TVL and APR is history: the owner asked for them "like Robinhood Chain".
  */
 
-type Live = LiveGate
+type Readable = ReadGate
 
 /** Per network, at most this many hits: the list stays about one screen. */
 const SEARCH_LIMIT = 8
@@ -90,13 +90,13 @@ const SEARCH_REASKS = 3
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 
-/** Base and Arbitrum One for today's journey, on the gates read: null when neither is live. */
-export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
-  const chains = offeredNetworks(gates)
+/** Public discovery also works with execution locked; only a live gate permits a wallet fallback. */
+export function otherChainsFor(gates: JourneyGates | null, { walletFallback = true }: { walletFallback?: boolean } = {}): OtherChains | null {
+  const chains = readableNetworks(gates)
   if (!gates || chains.length === 0) return null
-  const gateOf = (chainId: number): Live | null => {
+  const gateOf = (chainId: number): Readable | null => {
     const gate = chains.includes(chainId as OtherChainId) ? gates[chainId as V2ChainId] : null
-    return gate && gate.mode === 'live' ? gate : null
+    return gate && gate.mode !== 'off' ? gate : null
   }
   const nameOf = (chainId: number): string | null => (chainId === 4663 || chains.includes(chainId as OtherChainId) ? v2Chain(chainId as V2ChainId).name : null)
   /** A failure in the wallet's words; no wallet at all said for this network. */
@@ -106,6 +106,7 @@ export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
     return { code: said.code, reason: said.copy }
   }
   const unavailable = (chainId: number) => ({ code: 'network_unavailable', reason: JOURNEY.pool.networkClosed(nameOf(chainId) ?? 'this network') })
+  const unread = (chainId: number) => ({ code: 'network_search_unavailable', reason: `Pool search on ${nameOf(chainId) ?? 'this network'} is unavailable right now.` })
 
   /**
    * One of the service's chain reads while its route serves. Changed on purpose 2026-10-06: a failure says whether it may
@@ -160,7 +161,7 @@ export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
     const own = profileAt(chainId, address)
     if (own) return [{ chainId, network, token: displayOf(chainId, own), unread: false, own: true }]
     const said = search.pasted(chainId, address)
-    if (!said || said.state === 'none') return []
+    if (!said || said.state === 'none' || said.state === 'metadata_unavailable') return []
     if (said.state === 'unread') return networkTokens(address, [chainId])
     const main = lookalikeOf(chainId, said.token)
     return [{ chainId, network, token: said.token, unread: false, ...(main ? { warning: JOURNEY.pool.lookalike(main) } : {}) }]
@@ -179,6 +180,7 @@ export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
   }
 
   return {
+    creationAvailable: (chainId) => gateOf(chainId)?.mode === 'live',
     home: v2Chain(4663).name,
     name: nameOf,
     tokens,
@@ -189,6 +191,7 @@ export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
       const said = await patiently(() => chainPools(row.chainId, row.token.address), signal)
       if (signal.aborted) return { ok: false, code: 'aborted', reason: '' }
       if (said.kind === 'ok') return resolvedOf(row.chainId, row.token.address, said.body)
+      if (gate.mode !== 'live' || !walletFallback) return { ok: false, ...unread(row.chainId) }
       try {
         const [read] = await inTurn(async () => (await connectJourney(row.chainId, gate.contracts)).zap.readTokens([row.token.address as Address]))
         if (signal.aborted) return { ok: false, code: 'aborted', reason: '' }
@@ -209,6 +212,7 @@ export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
       const said = await patiently(() => chainPools(chainId, token.address), signal)
       if (signal.aborted) return { kind: 'ok', options: [] }
       if (said.kind === 'ok') return { kind: 'ok', options: poolsOfAnswer(chainId, token, said.body, said.receivedAt), facts: factsOfAnswer(said.body), subject }
+      if (gate.mode !== 'live' || !walletFallback) return { kind: 'failed', ...unread(chainId) }
       try {
         const read = await inTurn(async () => (await connectJourney(chainId, gate.contracts)).zap.readPools(poolsToRead(chainId, token.address as Address)))
         if (signal.aborted) return { kind: 'ok', options: [] }
@@ -227,6 +231,7 @@ export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
       const said = await patiently(() => chainPools(chainId, ref.currency0, ref.currency1, READER_POOLS_CACHE_MS), signal)
       if (signal.aborted) return null
       if (said.kind === 'ok') return rereadOf(option, ref, said.body, said.receivedAt)
+      if (gate.mode !== 'live' || !walletFallback) return null
       const [read] = await inTurn(async () => (await connectJourney(chainId, gate.contracts)).zap.readPools([ref]))
       if (signal.aborted || !read || !read.initialized) return null
       // Its figures are about the pool, not its price: they stay (2026-10-06).
@@ -240,6 +245,7 @@ export function otherChainsFor(gates: JourneyGates | null): OtherChains | null {
       if (signal.aborted) return null
       const pair = said.kind === 'ok' ? balancesOfAnswer(chainId, option.currencies, said.body) : null
       if (pair) return pair
+      if (gate.mode !== 'live' || !walletFallback) return null
       const tokens = option.currencies.map((currency) => ({ address: currency.address, symbol: currency.address, decimals: currency.decimals as number }))
       const report = await inTurn(async () => {
         // Balance refresh is read-only. A service outage never moves the wallet to another network.

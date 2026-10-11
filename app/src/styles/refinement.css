@@ -9,30 +9,10 @@
   .dm-nav > .dm-nav-item:is(:hover, :focus-visible) { color: var(--primary); --icon-2: var(--primary); background: color-mix(in srgb, var(--primary) 11%, var(--card)); box-shadow: inset 0 0 0 0.0625rem color-mix(in srgb, var(--primary) 15%, transparent); }
   .dm-menu-item[aria-current="page"] { color: var(--primary); --icon-2: var(--primary); background: var(--primary-wash); }
   .dm-card { transition: box-shadow var(--dur-fade) var(--ease-std); }
-  .dm-mkt-card.dm-plate { border-radius: var(--radius-hero); }
-  .dm-mkt-card::before { opacity: 0.45; }
-  .dm-mkt-card-price { padding-top: 0.25rem; }
-  .dm-mkt-card-close.dm-fig-lg { font-size: 1.8rem; line-height: 1.15; letter-spacing: -0.04em; }
-  .dm-mkt-guide { margin-top: 1.5rem; padding: 0.25rem 1rem; background: var(--card); border-radius: var(--radius); box-shadow: var(--elev-card); }
-  .dm-mkt-guide > summary { min-height: 2.75rem; color: var(--fg-muted); }
-  .dm-mkt-guide-grid { display: grid; gap: 1.5rem; padding: 0.5rem 0 1rem; }
-  .dm-mkt-guide-grid > div { display: grid; grid-template-columns: 2rem minmax(0, 1fr); column-gap: 0.875rem; align-content: start; }
-  .dm-mkt-guide-grid h2 { align-self: center; margin: 0; font-size: 0.9375rem; line-height: 1.4; font-weight: 500; }
-  .dm-mkt-guide-grid p { grid-column: 2; margin: 0.375rem 0 0; color: var(--fg-muted); font-size: 0.8125rem; line-height: 1.6; }
-  .dm-mkt-pools { margin-top: 2rem; padding: 1.25rem; border-radius: var(--radius-hero); background: var(--card); box-shadow: var(--elev-card); }
-  .dm-mkt-pools .dm-mkt-table { --dm-mkt-ring: var(--card); }
-  .dm-mkt-pools .dm-mkt-pools-head { margin-bottom: 1.25rem; }
-  .dm-mkt-pools-table { margin-top: 1.25rem; }
-  .dm-mkt-pools .dm-table tbody tr + tr { border-top: 1px solid var(--border); }
-  .dm-mkt-catalogue { padding: 0.5rem 1.25rem; border-radius: var(--radius-card); background: var(--card); box-shadow: var(--elev-card); }
   @media (min-width: 768px) {
     .dm-display-h1 { font-size: 2.7rem; line-height: 1.1; letter-spacing: -0.025em; }
-    .dm-mkt-guide-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .dm-mkt-pools { padding: 1.25rem; }
   }
   @media (max-width: 767px) {
-    .dm-mkt-pools { padding: 1rem 0.75rem; }
-    .dm-mkt-pools .dm-mkt-pools-head, .dm-mkt-pools .dm-mkt-filters { margin-inline: 0.25rem; }
     .dm-page-intro { font-size: 0.9375rem; }
   }
 }

@@ -217,10 +217,11 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   const fresh = position.freshness?.status === 'fresh' && !stale
   const pair = [position.pool.currency0, position.pool.currency1] as const
   const holdsUsd = fresh ? usdOfAmounts(book, pair, position.principal) : null
+  const holdsText = holdsUsd !== null ? formatUsdFloor(holdsUsd) : null
   const feesUsd = fresh ? usdOfAmounts(book, pair, position.feesOwed) : null
 
   return (
-    <div data-position-detail="" data-position-id={position.tokenId.toString()} data-position-v2={`${chain.slug}-v${position.dex}`} data-snapshot={position.snapshotBlock ?? undefined}>
+    <div data-position-detail="" data-position-workspace-page="" data-position-id={position.tokenId.toString()} data-position-v2={`${chain.slug}-v${position.dex}`} data-snapshot={position.snapshotBlock ?? undefined}>
       <div className="dm-pos-title">
         <div className="dm-pos-name">
           <TokenMarkPair base={base} quote={quote} size={phone ? 36 : 44} ring="var(--bg)" />
@@ -268,12 +269,13 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
       <PositionAutomation tokenId={position.tokenId.toString()} position={automationPosition} holder={position.owner}
         chainId={chainId} dex={position.dex} priceContext={{ block: position.snapshotBlock, saved: stale }}
         indexed={{ portfolio: answer, subscriber: position.custody.subscriber }} toolbar={automationToolbar} onChanged={onChanged} />
-      <StatStrip layout="tiles" className="dm-pos-stats" title={position.snapshotBlock !== null ? `Read at block ${position.snapshotBlock}` : undefined} data-position-stats="">
+      <StatStrip layout="tiles" className="dm-pos-stats" title={position.snapshotBlock !== null ? `Read at block ${position.snapshotBlock}` : undefined} data-position-stats="" data-position-overview="">
         <Stat
           label={COPY.page.holds}
           info={COPY.page.holdsInfo}
           className="dm-pos-stat"
           data-cell="principal"
+          data-value-width={holdsText && holdsText.length > 11 ? 'wide' : holdsText && holdsText.length > 8 ? 'medium' : undefined}
           sub={
             holdsUsd !== null && (
               <span className="dm-pos-amounts" data-stat="principal">
@@ -285,7 +287,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
         >
           {holdsUsd !== null ? (
             <span className="dm-arrive" title={position.snapshotBlock !== null ? `Pool price at block ${position.snapshotBlock}` : undefined} data-usd="principal">
-              <LiveFigure value={formatUsdFloor(holdsUsd)} mode="digits" dimCents className="dm-fig-lg" />
+              <LiveFigure value={holdsText!} mode="digits" dimCents className="dm-fig-lg" />
             </span>
           ) : (
             <span className="dm-pos-amounts" data-stat="principal">
@@ -324,14 +326,13 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
         </Stat>
         <Stat label={COPY.page.price} info={COPY.page.priceInfo} className="dm-pos-stat" data-cell="price" sub={<span className="dm-pos-span-state" data-in={String(card.inRange)}>{card.hasLiquidity ? (card.inRange ? COPY.page.inRangeEarning : COPY.page.outOfRangeIdle) : COPY.page.closed}</span>}>
           <span data-stat="price">
-            {/* V1's price now (components/positions/KeyFigures.tsx PriceNow): the figure large, the two sides quiet beside it. */}
+            {/* The same price presentation as KeyFigures: one figure, then its unambiguous quote unit. */}
             {price.state.phase === 'ready' && price.state.price.state === 'usable' ? (
               <span className="dm-pos-price" data-current-price="usable" title={`Pool price at block ${price.state.price.block}: ${price.state.price.text}`}>
                 {/* Changed on purpose 2026-10-03: the price is the app's one way round (lib/read/orientation.ts), so its two
                     sides are too; the pool's own order wrote "1 ETH = 0.0₆7101 MANY" for MANY's price in ETH. */}
-                <span className="dm-pos-price-side">1 {labelOf(book, priced.base)} =</span>{' '}
                 <span className="dm-fig-lg">{readablePrice(price.state.price.text)}</span>{' '}
-                <span className="dm-pos-price-side">{labelOf(book, priced.quote)}</span>
+                <span className="dm-pos-price-side dm-pos-price-unit">{labelOf(book, priced.quote)} per {labelOf(book, priced.base)}</span>
               </span>
             ) : (
               <span className="dm-fig-lg text-fg-subtle" data-current-price="unusable">—</span>

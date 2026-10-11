@@ -115,6 +115,19 @@ export function ChartFrame({
 
   const interactive = points > 0
   const clampIndex = (index: number) => Math.min(points - 1, Math.max(0, Math.round(index)))
+  // A period or refreshed history can contain fewer points. Bound the index during
+  // render, before a caller's valueText/overlay can read beyond the new series.
+  const inspectedIndex = inspected === null || !interactive ? null : clampIndex(inspected)
+  useLayoutEffect(() => {
+    cancelAnimationFrame(frame.current)
+    frame.current = 0
+    pending.current = null
+    if (current.current !== inspectedIndex) {
+      current.current = inspectedIndex
+      setInspected(inspectedIndex)
+      onInspect?.(inspectedIndex)
+    }
+  }, [points, inspectedIndex, onInspect])
   const report = (next: number | null) => {
     current.current = next
     setInspected(next)
@@ -139,19 +152,19 @@ export function ChartFrame({
   }
   const key = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!interactive) return
-    const at = inspected ?? points - 1
+    const at = inspectedIndex ?? points - 1
     const step: Record<string, number> = { ArrowLeft: at - 1, ArrowRight: at + 1, PageUp: at - 24, PageDown: at + 24, Home: 0, End: points - 1 }
     if (event.key === 'Escape') {
-      if (inspected !== null) report(null)
+      if (inspectedIndex !== null) report(null)
       return
     }
     if (!(event.key in step)) return
     event.preventDefault()
-    const next = inspected === null && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') ? points - 1 : clampIndex(step[event.key])
-    if (next !== inspected) report(next)
+    const next = inspectedIndex === null && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') ? points - 1 : clampIndex(step[event.key])
+    if (next !== inspectedIndex) report(next)
   }
 
-  const now = inspected ?? points - 1
+  const now = inspectedIndex ?? points - 1
   const layer = (content: ReactNode) =>
     plot && (
       <svg className="dm-chart-layer" width={width} height={plot.height * scale} viewBox={`0 0 ${plot.width} ${plot.height}`} aria-hidden="true" focusable="false">
@@ -190,8 +203,8 @@ export function ChartFrame({
           <div key={revealKey ?? ''} className="dm-chart-series" data-reveal={reveal ? '' : undefined} data-swap={reveal ? undefined : ''}>
             {layer(drawn)}
           </div>
-          {inspect && layer(inspect(plot, inspected))}
-          {overlay && <div className="dm-chart-overlay">{overlay(plot, inspected)}</div>}
+          {inspect && layer(inspect(plot, inspectedIndex))}
+          {overlay && <div className="dm-chart-overlay">{overlay(plot, inspectedIndex)}</div>}
         </>
       )}
     </div>

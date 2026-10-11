@@ -1,10 +1,10 @@
 import { useSyncExternalStore } from 'react'
 
 /**
- * Changed on purpose 2026-10-03 (the owner: the site looks too big at 100%; at 80% it looks right): the site is drawn
- * in design pixels, 16 to the rem, and the root's font-size scales all of it (styles/tokens.css: 80 % of the browser's
- * text size from 1024 px wide, 90 % from 768 px, the browser's own on a phone). The stylesheets are written in rem
- * (scripts/rem-codemod.mjs); a length written in script follows the same scale in one of two ways:
+ * V3 uses a 67.5% desktop scale and a full touch scale. Both follow the browser's text preference.
+ * Desktop page frames compensate for this density; chart geometry follows the root's measured scale.
+ * The stylesheets and SVGs share the measured scale, without CSS zoom or a transformed page:
+ * a length written in script follows the measured root size in one of two ways:
  *
  *   - `rem(px)` where CSS takes the length (an inline style, an outer <svg>'s width and height): the browser scales it;
  *   - `useRootScale()` where the length is drawn in CSS pixels: a chart works in design pixels, sizes its SVG layers by
@@ -14,8 +14,8 @@ import { useSyncExternalStore } from 'react'
  */
 export const DESIGN_PX_PER_REM = 16
 
-/** The widths where the root's font-size steps (styles/tokens.css): one media query each, in CSS pixels; 0.8 also asks for a fine pointer. */
-export const ROOT_SCALE_QUERIES = ['(min-width: 768px)', '(min-width: 1024px) and (pointer: fine)'] as const
+/** Recheck the measured root size at the shared responsive boundaries. */
+export const ROOT_SCALE_QUERIES = ['(min-width: 768px)', '(min-width: 768px) and (pointer: fine)'] as const
 
 /** A length in design pixels as rem, so the root's scale applies to it: `rem(24)` is `1.5rem`. */
 export function rem(px: number): string {
@@ -50,7 +50,7 @@ function watch() {
   if (document.readyState !== 'complete') window.addEventListener('load', update, { once: true })
 }
 
-/** CSS pixels per design pixel now: 0.8 on a laptop, 0.9 on a tablet, 1 on a phone (with the browser's default text size). */
+/** CSS pixels per design pixel now; 1 with the browser's default 16px text size. */
 export function rootScale(): number {
   if (current === null) current = measure()
   watch()

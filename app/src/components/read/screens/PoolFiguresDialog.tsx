@@ -60,9 +60,9 @@ export function PoolFiguresDialog({ market: opened, onClose }: { market: Market;
   return <div role="presentation" className="dm-dialog-backdrop" onMouseDown={event => event.target === event.currentTarget && onClose()}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="pool-figures-title" className="dm-dialog dm-pool-figures" data-pool-figures-dialog="">
       <header className="dm-pool-figures-head">
-        <TokenMarkPair base={pair.base} quote={pair.quote} size={28} ring="var(--surface-2)" />
+        <TokenMarkPair base={pair.base} quote={pair.quote} size={36} ring="var(--surface-2)" />
         <div className="min-w-0">
-          <h2 id="pool-figures-title" ref={heading} tabIndex={-1} className="dm-dialog-title outline-none"><TokenLabel token={pair.base} />/<TokenLabel token={pair.quote} /></h2>
+          <h2 id="pool-figures-title" ref={heading} tabIndex={-1} className="dm-dialog-title outline-none"><TokenLabel token={pair.base} /> / <TokenLabel token={pair.quote} /></h2>
           <p className="dm-pool-figures-venue">Uniswap · {feeLabel(market)}</p>
         </div>
       </header>

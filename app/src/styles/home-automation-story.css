@@ -1,0 +1,104 @@
+/* Home card layout and shared automation artwork. Home layout selectors do not
+   change the same diagrams when they appear in Automate. */
+@layer v3 {
+  .dm-home-automation-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.667rem; align-items: start; }
+  .dm-automation-story { min-width: 0; overflow: hidden; border: 1px solid var(--border-card); border-radius: 1.667rem; background: var(--surface-1); }
+  .dm-automation-story-scene { position: relative; isolation: isolate; padding: .833rem .667rem 0; background: radial-gradient(ellipse at 50% 60%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 72%); }
+  .dm-automation-story[data-feature="domino"] .dm-automation-story-scene { background: radial-gradient(ellipse at 55% 52%, color-mix(in srgb, var(--primary) 11%, transparent), transparent 76%); }
+  .dm-automation-story[data-feature="autoexit"] .dm-automation-story-scene { background: radial-gradient(ellipse at 70% 70%, color-mix(in srgb, var(--money-in) 6%, transparent), transparent 75%); }
+  .dm-automation-story-art { display: block; width: 100%; height: auto; aspect-ratio: 360 / 280; }
+  .dm-automation-story-scene > .dm-automation-story-art { max-height: 16.25rem; }
+  .dm-automation-story-scene .dm-automation-story-art .as-label { font-size: 16px; }
+  .dm-automation-story-copy { padding: .833rem 1.667rem 1.333rem; }
+  .dm-automation-story-copy h3 { margin: 0; color: var(--fg); font: 400 2.167rem/1.2 var(--font-display); letter-spacing: -.025em; }
+  .dm-automation-story-copy > p { margin: .833rem 0 1.167rem; min-height: 3.3em; max-width: 34ch; font-size: 1.167rem; line-height: 1.65; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-automation-story-actions { display: flex; flex-wrap: wrap; align-items: start; column-gap: 1.333rem; border-top: 1px solid var(--border); padding-top: .667rem; }
+  .dm-automation-story-actions > a, .dm-automation-story-actions summary { display: inline-flex; align-items: center; gap: .5rem; min-height: 3.667rem; font-size: 1.083rem; line-height: 1.5; text-decoration: none; border-radius: .333rem; }
+  .dm-automation-story-actions > a { color: var(--fg); }
+  .dm-automation-story-actions > a svg { color: var(--primary); transition: translate 160ms ease; }
+  .dm-automation-story-actions > a:hover svg { translate: .167rem 0; }
+  .dm-automation-story-actions details { margin-left: auto; max-width: 100%; color: var(--fg-muted); }
+  .dm-automation-story-actions summary { list-style: none; cursor: pointer; }
+  .dm-automation-story-actions summary::-webkit-details-marker { display: none; }
+  .dm-automation-story-actions summary::after { content: '+'; color: var(--primary); }
+  .dm-automation-story-actions details[open] { flex: 1 1 100%; margin-left: 0; }
+  .dm-automation-story-actions details[open] summary::after { content: '−'; }
+  .dm-automation-story-actions details p { margin: .25rem 0 .667rem; font-size: 1.083rem; line-height: 1.65; }
+  .dm-automation-story-actions :is(a, summary):focus-visible { outline: .167rem solid var(--ring); outline-offset: .25rem; }
+
+  .dm-automation-story-art .as-peach { stop-color: color-mix(in srgb, var(--primary) 66%, var(--fg)); }
+  .dm-automation-story-art .as-orange { stop-color: var(--primary); }
+  .dm-automation-story-art .as-copper { stop-color: color-mix(in srgb, var(--primary) 74%, var(--primary-fg)); }
+  .dm-automation-story-art .as-brown { stop-color: color-mix(in srgb, var(--primary) 22%, var(--bg)); }
+  .dm-automation-story-art .as-glass-top { stop-color: color-mix(in srgb, var(--primary) 14%, var(--surface-3)); }
+  .dm-automation-story-art .as-glass-bottom { stop-color: var(--surface-1); }
+  .dm-automation-story-art .as-floor-shadow { fill: var(--bg); opacity: .6; }
+  .dm-automation-story-art .as-plate { stroke: color-mix(in srgb, var(--primary) 40%, transparent); stroke-width: 1; }
+  .dm-automation-story-art .as-plate-lip { stroke: color-mix(in srgb, var(--primary) 66%, transparent); stroke-width: 1; }
+  .dm-automation-story-art .as-tile-rim { fill: none; stroke: var(--fg); stroke-opacity: .28; stroke-width: 1; }
+  .dm-automation-story-art .as-tile-divider { stroke: var(--primary-fg); stroke-opacity: .3; }
+  .dm-automation-story-art .as-tile-pips { fill: var(--primary-fg); }
+  .dm-automation-story-art .as-label { fill: var(--fg-muted); font-family: var(--font-sans); font-size: 14px; text-anchor: middle; }
+  .dm-automation-story-art .as-label-accent { fill: var(--primary); }
+  .dm-automation-story-art .as-flow-guide { fill: none; stroke: var(--primary); stroke-opacity: .32; stroke-width: 1.25; stroke-dasharray: 3 5; }
+  .dm-automation-story-art .as-arrow { fill: none; stroke: var(--primary); stroke-opacity: .6; stroke-width: 1.25; stroke-linecap: round; stroke-linejoin: round; }
+  .dm-automation-story-art .as-fee-dot { fill: var(--primary); stroke: color-mix(in srgb, var(--primary) 25%, transparent); stroke-width: 6; paint-order: stroke; }
+  .dm-automation-story-art .as-motion { offset-rotate: 0deg; opacity: 0; }
+  .dm-automation-story-art .as-compound-fill, .dm-automation-story-art .as-original-fill, .dm-automation-story-art .as-next-fill { fill: var(--primary); fill-opacity: .25; }
+  .dm-automation-story-art .as-compound-fill { transform-box: fill-box; transform-origin: bottom; animation: as-compound-refill 9s ease-in-out infinite; }
+  .dm-automation-story-art .as-compound-return { offset-path: path('M90 169C90 28 270 28 270 169'); animation: as-fees-return 9s ease-in-out infinite; }
+  .dm-automation-story-art .as-compound-return.as-second { animation-delay: .3s; }
+  .dm-automation-story-art .as-compound-return.as-third { animation-delay: .6s; }
+  .dm-automation-story-art .as-next-range { animation: as-higher-range 10s ease-in-out infinite; }
+  .dm-automation-story-art .as-domino-hop { offset-path: path('M144 190C154 114 179 77 235 124'); animation: as-fees-hop 10s ease-in-out infinite; }
+  .dm-automation-story-art .as-domino-hop.as-second { animation-delay: .3s; }
+  .dm-automation-story-art .as-boundary { stroke: var(--primary); stroke-width: 1.5; }
+  .dm-automation-story-art .as-exit-fill { fill: var(--primary); fill-opacity: .05; animation: as-close-range 11s ease-in-out infinite; }
+  .dm-automation-story-art .as-exit-price { fill: none; stroke: var(--fg); stroke-opacity: .7; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 100; animation: as-reach-limit 11s ease-in-out infinite; }
+  .dm-automation-story-art .as-price-end { fill: var(--primary); animation: as-hit-limit 11s ease-in-out infinite; }
+  .dm-automation-story-art .as-price-halo { fill: none; stroke: var(--primary); stroke-opacity: .35; animation: as-hit-limit 11s ease-in-out infinite; }
+  .dm-automation-story-art .as-wallet-body { stroke: color-mix(in srgb, var(--primary) 44%, transparent); stroke-width: 1; }
+  .dm-automation-story-art .as-wallet-card { fill: var(--surface-3); stroke: var(--border-strong); }
+  .dm-automation-story-art .as-wallet-pocket { fill: var(--surface-2); stroke: color-mix(in srgb, var(--primary) 32%, transparent); }
+  .dm-automation-story-art .as-wallet-token { fill: var(--primary); animation: as-wallet-arrival 11s ease-in-out infinite; }
+  .dm-automation-story-art .as-wallet-token-b, .dm-automation-story-art .as-token-two { fill: var(--fg); }
+  .dm-automation-story-art .as-exit-hop { offset-path: path('M185 134C205 73 283 71 290 137'); animation: as-tokens-exit 11s ease-in-out infinite; }
+  .dm-automation-story-art .as-exit-hop.as-second { animation-delay: .35s; }
+
+  @keyframes as-fees-return { 0%, 10% { offset-distance: 0%; opacity: 0; } 15% { opacity: 1; } 48% { offset-distance: 100%; opacity: 1; } 53%, 100% { offset-distance: 100%; opacity: 0; } }
+  @keyframes as-compound-refill { 0%, 38% { transform: scaleY(.3); fill-opacity: .15; } 58%, 85% { transform: scaleY(1); fill-opacity: .35; } 100% { transform: scaleY(.3); fill-opacity: .15; } }
+  @keyframes as-fees-hop { 0%, 14% { offset-distance: 0%; opacity: 0; } 19% { opacity: 1; } 48% { offset-distance: 100%; opacity: 1; } 53%, 100% { offset-distance: 100%; opacity: 0; } }
+  @keyframes as-higher-range { 0%, 28% { opacity: .17; } 56%, 86% { opacity: 1; } 100% { opacity: .17; } }
+  @keyframes as-reach-limit { 0%, 8% { stroke-dashoffset: 100; } 38%, 88% { stroke-dashoffset: 0; opacity: 1; } 95%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+  @keyframes as-close-range { 0%, 38% { fill-opacity: .25; } 56%, 88% { fill-opacity: .025; } 100% { fill-opacity: .25; } }
+  @keyframes as-hit-limit { 0%, 34%, 95%, 100% { opacity: 0; } 39%, 88% { opacity: 1; } }
+  @keyframes as-tokens-exit { 0%, 40% { offset-distance: 0%; opacity: 0; } 44% { opacity: 1; } 65% { offset-distance: 100%; opacity: 1; } 70%, 100% { offset-distance: 100%; opacity: 0; } }
+  @keyframes as-wallet-arrival { 0%, 62%, 97%, 100% { opacity: .15; } 70%, 89% { opacity: 1; } }
+
+  @media (max-width: 60rem) {
+    .dm-home-automation-grid { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+    .dm-automation-story { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
+    .dm-automation-story-scene { padding: 1rem; }
+    .dm-automation-story-copy { padding: 1.5rem; }
+    .dm-automation-story-copy > p { min-height: 0; }
+  }
+  @media (max-width: 37.5rem) {
+    .dm-home-automation-grid { gap: 1.5rem; }
+    .dm-automation-story { display: block; border-radius: 1.25rem; }
+    .dm-automation-story-scene { padding: .5rem .5rem 0; }
+    .dm-automation-story-art { max-height: 16rem; }
+    .dm-automation-story-scene > .dm-automation-story-art { max-height: 14rem; }
+    .dm-automation-story-copy { padding: .875rem 1.5rem 1.25rem; }
+    .dm-automation-story-copy h3 { font-size: 1.75rem; }
+    .dm-automation-story-copy > p { margin: .75rem 0 1rem; font-size: .9375rem; line-height: 1.6; }
+    .dm-automation-story-actions { padding-top: .375rem; }
+    .dm-automation-story-actions > a, .dm-automation-story-actions summary { min-height: 2.75rem; font-size: .875rem; }
+    .dm-automation-story-actions details p { font-size: .875rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dm-automation-story-art *, .dm-automation-story-actions > a svg { animation: none !important; transition: none !important; }
+    .dm-automation-story-art .as-motion { display: none; }
+  }
+  html.dm-still .dm-automation-story-art * { animation: none !important; }
+  html.dm-still .dm-automation-story-art .as-motion { display: none; }
+}

@@ -100,6 +100,13 @@ test('the networks offered are the ones whose S1 gate is live; the search names 
   assert.deepEqual(networks.networkTokens('0x1234', both), [], 'half an address names nothing');
 });
 
+test('public discovery keeps execution-locked networks readable without offering them for creation', () => {
+  const gates = { ...GATES, 8453: { mode: 'preview', chainId: 8453, locked: true }, 42161: { mode: 'off', chainId: 42161 } };
+  assert.deepEqual(networks.readableNetworks(gates), [8453]);
+  assert.deepEqual(networks.offeredNetworks(gates), [], 'read access never grants creation');
+  assert.deepEqual(networks.readableNetworks(null), []);
+});
+
 test('the pools to read for a token: each profile token at every tier of v4 and v3, hookless, each once; native ETH is v4\'s alone', () => {
   const key = (pool) => `${pool.dex}:${pool.currency0}:${pool.currency1}:${pool.fee}:${pool.tickSpacing}`;
   const usdc = networks.poolsToRead(8453, USDC_BASE);

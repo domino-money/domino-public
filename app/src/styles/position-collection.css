@@ -1,4 +1,5 @@
 /* One compact collection. Pair, money and rate keep a consistent reading order across networks. */
+@layer components {
 .dm-own-collection .dm-own-list { display: block; }
 .dm-collection-head,
 .dm-own-collection .dm-own-row { display: grid; grid-template-columns: minmax(12rem, 2.5fr) minmax(6rem, 1fr) minmax(6rem, 1fr) minmax(5rem, .8fr); gap: .875rem; }
@@ -42,4 +43,5 @@
 @container acct-nft (max-width: 32rem) {
   .dm-own-collection .dm-own-row:not([data-row-state="closed"]) { grid-template-columns: minmax(0, .9fr) minmax(0, 1.35fr); }
   .dm-own-collection .dm-own-row:not([data-row-state="closed"]) [data-cell="apr"] { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+}
 }
