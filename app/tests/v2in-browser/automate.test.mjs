@@ -2188,6 +2188,90 @@ for (const chainId of [8453, 42161]) for (const dex of [3, 4]) for (const mode o
 }
 
 
+test('multichain setup: an unreadable Base approval resumes its existing hash and finishes without reload or duplicate send', async () => {
+  const profile = require('../../.test-build/app/src/v2/chains.js').v2Chain(8453);
+  const stable = profile.chargeCurrencies.find(token => token.decimals === 6).address;
+  const currencies = [profile.wrappedNative.address, stable].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
+  const pool = { currency0: currencies[0], currency1: currencies[1], fee: 3000, tickSpacing: 60 };
+  const chain = createVaultChain({ chainId: 8453, finality: 'lagging', positions: [{ dex: 3, tokenId: ROOT, pool, liquidity: 10n ** 18n }] });
+  const request = chain.request.bind(chain); let unreadable = true, finalized = false;
+  chain.request = async (...args) => {
+    if (finalized && args[0] === 'eth_getBlockByNumber' && args[1]?.[0] === 'finalized') return request('eth_getBlockByNumber', ['latest', false]);
+    const answer = await request(...args);
+    if (args[0] === 'eth_getTransactionReceipt' && chain.sends.length === 1 && unreadable && answer.result) {
+      unreadable = false;
+      return { result: { ...answer.result, transactionHash: `0x${'ff'.repeat(32)}` } };
+    }
+    return answer;
+  };
+  const s = await openLive(chain, { hash: '/sequence/compound/base-v3-' + ROOT,
+    read6: { portfolio: multichainSetupPortfolio(chain, 3, pool), activity: read6Answer('activity', 'activity-empty', [[READ6.wallet, OWNER]]) }, v1: rootOnV1({ liquidity: 10n ** 18n }) });
+  try {
+    const { page } = s, flow = page.locator('[data-v2in-setup="live"]');
+    await flow.locator('[data-v2in-consent]').check();
+    const button = flow.locator('[data-sequence-action="run"]');
+    await page.waitForFunction(() => document.querySelector('[data-sequence-action="run"]')?.disabled === false);
+    await button.click();
+    await flow.locator('[data-wallet-step="approve-root"][data-step-phase="failed"]').waitFor({ timeout: 30_000 });
+    assert.equal(await button.innerText(), 'Check transaction');
+    assert.match(await flow.locator('[data-wallet-step="approve-root"]').innerText(), /confirmation.*continue/i);
+    assert.equal(chain.sends.length, 1);
+    await button.click();
+    await page.locator('[data-v2in-created]').waitFor({ timeout: 30_000 });
+    assert.equal(chain.sends.length, 2, 'the existing approval was read; only the previously reviewed setup was sent next');
+    assert.equal(chain.sends.filter(tx => tx.data.startsWith(SELECTOR.approve)).length, 1);
+    await page.evaluate(() => { location.hash = '#/positions'; });
+    await page.locator('[data-session-activity][data-v2-finality="included"]').waitFor({ timeout: 30_000 });
+    await page.evaluate(id => { location.hash = '#/positions/base-v3-' + id; }, String(ROOT));
+    await page.locator('[data-position-activity] [data-session-activity][data-v2-finality="included"]').waitFor({ timeout: 30_000 });
+    await page.evaluate(() => { location.hash = '#/positions/receipts'; });
+    const activity = page.locator('[data-session-activity]');
+    await activity.waitFor({ timeout: 30_000 });
+    assert.equal(await activity.getAttribute('data-v2-finality'), 'included');
+    assert.match(await activity.innerText(), /Confirming/);
+    assert.equal(await activity.locator('.dm-activity-time').innerText(), 'Base · Updating history', 'observation time is not a block timestamp');
+    await activity.locator('summary').click();
+    assert.match(await activity.innerText(), /Included, not final yet/);
+    finalized = true;
+    await page.locator('[data-session-activity][data-v2-finality="finalized"]').waitFor({ timeout: 30_000 });
+    assert.doesNotMatch(await activity.innerText(), /Confirming|Included, not final yet/);
+    assert.equal(chain.sends.length, 2, 'after leaving setup, confirmation follows the same transaction without another wallet send');
+  } finally { await s.close(); }
+});
+
+test('multichain setup: an approved step does not hide a later setup offered without a hash; checking refreshes without sending', async () => {
+  const profile = require('../../.test-build/app/src/v2/chains.js').v2Chain(8453);
+  const stable = profile.chargeCurrencies.find(token => token.decimals === 6).address;
+  const currencies = [profile.wrappedNative.address, stable].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
+  const pool = { currency0: currencies[0], currency1: currencies[1], fee: 3000, tickSpacing: 60 };
+  const chain = createVaultChain({ chainId: 8453, finality: 'lagging', positions: [{ dex: 3, tokenId: ROOT, pool, liquidity: 10n ** 18n }] });
+  const request = chain.request.bind(chain); let offered = 0;
+  chain.request = async (...args) => {
+    if (args[0] === 'eth_sendTransaction' && ++offered === 2) return { error: { code: -32000, message: 'Wallet connection lost after offering the transaction.' } };
+    return request(...args);
+  };
+  const s = await openLive(chain, { hash: '/sequence/compound/base-v3-' + ROOT,
+    read6: { portfolio: multichainSetupPortfolio(chain, 3, pool) }, v1: rootOnV1({ liquidity: 10n ** 18n }) });
+  try {
+    const { page } = s, flow = page.locator('[data-v2in-setup="live"]');
+    await flow.locator('[data-v2in-consent]').check();
+    const button = flow.locator('[data-sequence-action="run"]');
+    await flow.locator('[data-sequence-action="run"]:not([disabled])').waitFor();
+    await button.click();
+    await flow.locator('[data-wallet-step="create-vault"][data-step-phase="failed"]').waitFor({ timeout: 30_000 });
+    assert.equal(await flow.locator('[data-wallet-step="approve-root"]').getAttribute('data-step-phase'), 'included');
+    assert.equal(await button.innerText(), 'Check transaction');
+    await button.click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-wallet-step="approve-root"]').length === 0
+      && document.querySelector('[data-wallet-step="create-vault"]')?.getAttribute('data-step-phase') === 'idle');
+    assert.equal(offered, 2, 'fresh chain review never reoffers the uncertain setup');
+    assert.equal(chain.sends.length, 1, 'only the confirmed approval was included');
+    await button.click();
+    await flow.getByText(/This step was already sent from this page/).waitFor();
+    assert.equal(offered, 2, 'the unknown-hash send guard remains closed until there is real proof');
+  } finally { await s.close(); }
+});
+
 test('multichain setup: changing a repeated NFT id resets consent and review; preview never switches, signs or sends', async () => {
   const holder = ACCOUNTS[0].address.toLowerCase();
   const v1 = rootOnV1({ holder, liquidity: 10n ** 18n });

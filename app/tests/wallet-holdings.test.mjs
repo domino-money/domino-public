@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 const require = createRequire(import.meta.url);
 const { MIN_LIQUIDITY_USD, NATIVE, PRICE_GETS, PRICE_TTL_MS, USDG, WETH, createWalletPrices, quotesFromTokens } = require('../.test-build/app/src/lib/walletPrices.js');
-const { SHOWN_HOLDINGS, WHOLE_LIST, addressesToPrice, isLookAlike, listGap, symbolReading, totalWithheld, usdValue, walletHoldings } = require('../.test-build/app/src/lib/walletHoldings.js');
+const { SHOWN_HOLDINGS, WHOLE_LIST, addressesToPrice, isLookAlike, listGap, reconcileWalletRows, symbolReading, totalWithheld, usdValue, walletHoldings, walletSnapshotValid, walletTotalSnapshot } = require('../.test-build/app/src/lib/walletHoldings.js');
 const { NO_PRICES, WALLET_MEMORY_ADDRESSES, WALLET_MEMORY_KEY, WALLET_MEMORY_MAX_AGE_MS, WALLET_PRICE_MAX_AGE_MS, bookQuotes, recallWallet, rememberWallet, withAnswer } = require('../.test-build/app/src/lib/walletMemory.js');
 const copies = require('../.test-build/app/src/lib/browserCopies.js');
 const { PRICE_BATCH, createTokenArtworkResolver } = require('../.test-build/app/src/lib/tokenArtwork.js');
@@ -29,6 +29,100 @@ const UBIK = '0x812486eaea648819853f8e372dc9f1516c7868bd';
 const VIRTUAL = '0xc6911796042b15d7fa4f6cde69e245ddcd3d9c31';
 const addr = (n) => `0x${n.toString(16).padStart(40, '0')}`;
 const ONE = 10n ** 18n;
+
+test('the updating total is one complete valuation with the original price and balance deadlines', () => {
+  const now = 1_800_000_000_000;
+  const rows = [row(UFG, 'UFG', '1000'), row(NATIVE, 'ETH', '0.5'), row(USDG, 'USDG', '1', 6)];
+  const book = withAnswer(NO_PRICES, { quotes: new Map([[UFG, { usd: '0.003', liquidityUsd: 100_000 }], [WETH, { usd: '2000', liquidityUsd: 1e7 }]]), at: new Map([[UFG, now - 120_000], [WETH, now - 60_000]]) }, now);
+  const snapshot = walletTotalSnapshot(rows, book, now, now);
+  assert.equal(snapshot.total, 1004n * ONE);
+  assert.equal(snapshot.until, now - 120_000 + WALLET_PRICE_MAX_AGE_MS, 'the oldest original price sets the deadline');
+  assert.equal(walletTotalSnapshot(rows, book, now + 300_000, now + 300_000).until, snapshot.until, 'a new balance read cannot rejuvenate cached prices');
+  assert.equal(walletSnapshotValid(snapshot, [rows[0]], now + 300_000), true, 'a still incomplete page does not alter the saved valuation');
+  assert.equal(snapshot.total, 1004n * ONE, 'the snapshot never sums the partial refresh');
+  assert.equal(walletSnapshotValid(snapshot, [...rows, row(addr(99), 'NEW', '20')], now + 300_000), true, 'a new token may wait for its price while the previous total is labelled');
+  assert.equal(walletSnapshotValid(snapshot, [], snapshot.until), false, 'snapshot expires without a successful response');
+  assert.equal(walletTotalSnapshot(rows, book, now, snapshot.until), null);
+  const stableOnly = walletTotalSnapshot([rows[2]], NO_PRICES, now - WALLET_MEMORY_MAX_AGE_MS + 500, now);
+  assert.equal(stableOnly.until, now + 500, 'a fixed-dollar token still expires with its balance');
+});
+
+test('a known balance change or zero invalidates an atomic total immediately; old and incomplete valuations cannot start one', () => {
+  const now = 1_800_000_000_000;
+  const rows = [row(UFG, 'UFG', '1000'), row(USDG, 'USDG', '1', 6)];
+  const book = withAnswer(NO_PRICES, { quotes: new Map([[UFG, { usd: '0.003', liquidityUsd: 100_000 }]]), at: new Map() }, now);
+  const snapshot = walletTotalSnapshot(rows, book, now, now);
+  for (const changed of [row(UFG, 'UFG', '0', 18, 'zero'), row(UFG, 'UFG', '900'), row(UFG, 'UFG', '1100')]) {
+    assert.equal(walletSnapshotValid(snapshot, [changed], now + 1), false, 'a changed held balance cannot keep the previous headline');
+  }
+  assert.equal(walletSnapshotValid(null, rows, now), false, 'cleared receipt evidence cannot resurrect the previous total');
+  assert.equal(walletTotalSnapshot([{ ...rows[0], old: true }, rows[1]], book, now, now), null);
+  assert.equal(walletTotalSnapshot(rows, NO_PRICES, now, now), null, 'missing UFG price never produces a USDG-only snapshot');
+  const rejected = withAnswer(book, { quotes: new Map([[UFG, { usd: '1', liquidityUsd: 100 }]]), at: new Map() }, now + 1);
+  assert.equal(walletTotalSnapshot(rows, rejected, now, now + 1), null, 'rejected prices preserve their qualification guard');
+});
+
+test('partial inventory retains an omitted UFG as last known, never as current USD; confirmed zero removes it', () => {
+  const now = 1_800_000_000_000;
+  const known = [{ ...row(UFG, 'UFG', '1000000'), pageRetrievedAt: now / 1000 }, { ...row(NATIVE, 'ETH', '1'), pageRetrievedAt: now / 1000 }];
+  const fresh = [{ ...row(NATIVE, 'ETH', '0.5'), pageRetrievedAt: now / 1000 + 10 }];
+  const merged = reconcileWalletRows(known, fresh, now + 10_000);
+  const prices = new Map([[UFG, { usd: '0.003', liquidityUsd: 100_000 }], [WETH, { usd: '2000', liquidityUsd: 1e7 }]]);
+  const view = walletHoldings(merged, prices);
+  assert.deepEqual(view.all.map((h) => [h.row.token.symbol, h.row.old, h.value]), [['UFG', true, null], ['ETH', false, 1000n * ONE]]);
+  assert.equal(totalWithheld({ ...WHOLE_LIST, earlier: true }, view), 'earlier_rows', 'partial live total cannot pass for the whole wallet');
+  const spent = reconcileWalletRows(merged, [row(UFG, 'UFG', '0', 18, 'zero')], now + 20_000);
+  assert.equal(walletHoldings(spent, prices).all.some((h) => h.row.token.symbol === 'UFG'), false, 'authoritative zero wins immediately');
+  assert.equal(reconcileWalletRows(known, [], now + WALLET_MEMORY_MAX_AGE_MS + 1).length, 0, 'unknown balances eventually expire');
+  assert.equal(reconcileWalletRows([], fresh, now + WALLET_MEMORY_MAX_AGE_MS + 1, now).length, 0, 'an unchanged snapshot in an open tab expires too');
+  assert.equal(totalWithheld({ ...WHOLE_LIST, discoveryMissing: true }, walletHoldings(fresh, prices)), 'inventory_unavailable', 'HTTP 200 without discovery cannot stand for the whole wallet');
+});
+
+test('a lost qualified price keeps UFG in place but withholds its USD and the headline; recovery restores both', () => {
+  const now = 1_800_000_000_000;
+  const rows = [row(UFG, 'UFG', '1000000'), row(NATIVE, 'ETH', '0.5'), row(USDG, 'USDG', '1', 6)];
+  const original = withAnswer(NO_PRICES, { quotes: new Map([[UFG, { usd: '0.003', liquidityUsd: 100_000 }], [WETH, { usd: '2000', liquidityUsd: 1e7 }]]), at: new Map() }, now);
+  const lost = withAnswer(original, { quotes: new Map([[UFG, null]]), at: new Map() }, now + 300_000);
+  const { quotes, hints } = bookQuotes(lost, now + 300_000);
+  const shown = walletHoldings(rows, quotes, hints);
+  assert.deepEqual(shown.all.map((h) => h.row.token.symbol), ['UFG', 'ETH', 'USDG']);
+  assert.equal(shown.all[0].value, null);
+  assert.equal(shown.all[0].due, false, 'a settled missing price does not spin forever');
+  assert.equal(totalWithheld(WHOLE_LIST, shown), 'unanswered_prices');
+  const storage = memoryStorage();
+  rememberWallet(OWNER_A, { at: now + 300_000, whole: true, rows }, lost.prices, storage, now + 300_000);
+  const recalled = recallWallet(OWNER_A, now + 301_000, storage);
+  assert.equal(recalled.book.prices.get(UFG).hint.at, now, 'ranking evidence keeps its original age across navigation');
+  assert.equal(recallWallet(addr(99), now + 301_000, storage), null, 'another wallet inherits nothing');
+  assert.equal(bookQuotes(lost, now + WALLET_MEMORY_MAX_AGE_MS + 1).hints.get(UFG) ?? null, null, 'a repeated no-price answer cannot renew an old hint');
+  assert.equal(bookQuotes(original, now + WALLET_PRICE_MAX_AGE_MS + 1).quotes.size, 0, 'an open tab also ages prices without a new answer');
+  const recovered = withAnswer(lost, { quotes: new Map([[UFG, { usd: '0.002', liquidityUsd: 100_000 }]]), at: new Map() }, now + 310_000);
+  const again = bookQuotes(recovered);
+  const current = walletHoldings(rows, again.quotes, again.hints);
+  assert.equal(totalWithheld(WHOLE_LIST, current), null);
+  assert.equal(current.all[0].value, 2000n * ONE);
+  const rejected = walletHoldings(rows, new Map([[UFG, { usd: '0.003', liquidityUsd: 100 }], [WETH, { usd: '2000', liquidityUsd: 1e7 }]]), hints);
+  assert.equal(rejected.all[0].value, null, 'a quote rejected by the liquidity guard is not an available value either');
+  assert.equal(totalWithheld(WHOLE_LIST, rejected), 'unanswered_prices');
+  const rejectedBook = withAnswer(original, { quotes: new Map([[UFG, { usd: '0.003', liquidityUsd: 100 }]]), at: new Map() }, now + 300_000);
+  const rejectedPrices = bookQuotes(rejectedBook);
+  const rejectedView = walletHoldings(rows, rejectedPrices.quotes, rejectedPrices.hints);
+  assert.equal(rejectedView.all[0].row.token.symbol, 'UFG', 'a rejected replacement price also retains ordering');
+  assert.equal(totalWithheld(WHOLE_LIST, rejectedView), 'unanswered_prices');
+});
+
+test('writing a partial list cannot rejuvenate an omitted balance or silently mark it current', () => {
+  const now = 1_800_000_000_000;
+  const earlier = { ...row(UFG, 'UFG', '1000000'), pageRetrievedAt: now / 1000, old: true };
+  const storage = memoryStorage();
+  const later = now + 12 * 3_600_000;
+  rememberWallet(OWNER_A, { at: later, whole: false, rows: [earlier] }, new Map(), storage, later);
+  const recalled = recallWallet(OWNER_A, later, storage);
+  assert.equal(recalled.rows[0].old, true);
+  assert.equal(recalled.rows[0].pageRetrievedAt * 1000, now);
+  rememberWallet(OWNER_A, { ...recalled, at: now + WALLET_MEMORY_MAX_AGE_MS }, new Map(), storage, now + WALLET_MEMORY_MAX_AGE_MS);
+  assert.equal(recallWallet(OWNER_A, now + WALLET_MEMORY_MAX_AGE_MS + 1, storage).rows.length, 0);
+});
 
 /** A provider pair: `base` priced at `usd`, with `liquidity` USD. */
 const pair = (base, usd, liquidity, extra = {}) => ({ chainId: 'robinhood', baseToken: { address: base, symbol: 'X' }, quoteToken: { address: USDG }, priceUsd: usd, liquidity: { usd: liquidity }, ...extra });
@@ -357,7 +451,9 @@ test('hints: a price too old to count places its row by its last value, gives no
   ], 'by value or last value; a token that had no price keeps none');
   assert.equal(view.total, 15n * ONE, 'the total counts fresh prices only');
   assert.equal(view.unanswered, 3);
-  assert.deepEqual(walletHoldings(rows, new Map([[UFG, null]]), hints).all.find((h) => h.row.token.symbol === 'UFG').rank, null, 'a fresh answer of no price overrules an old price');
+  const withoutPrice = walletHoldings(rows, new Map([[UFG, null]]), hints).all.find((h) => h.row.token.symbol === 'UFG');
+  assert.equal(withoutPrice.value, null, 'an earlier quote never overrules the explicit no-price answer');
+  assert.notEqual(withoutPrice.rank, null, 'an earlier quote preserves ordering only');
 });
 
 test('look-alikes of the main tokens are recognised however they are spelt; the real ones never are', () => {
@@ -572,7 +668,7 @@ test('memory: a price counts for an hour after its answer; writing the list back
 
   // A new answer counts from its own time: an answer reused from the visit's memory is not made newer by arriving later.
   const again = withAnswer(later.book, { quotes: new Map([[UFG, { usd: '0.004', liquidityUsd: 165_000 }]]), at: new Map([[UFG, T + HOUR + 500]]) }, T + HOUR + 900);
-  assert.deepEqual(again.prices.get(UFG), { quote: { usd: '0.004', liquidityUsd: 165_000 }, at: T + HOUR + 500 });
+  assert.deepEqual(again.prices.get(UFG), { quote: { usd: '0.004', liquidityUsd: 165_000 }, at: T + HOUR + 500, hint: { quote: { usd: '0.003', liquidityUsd: 165_000 }, at: T } });
   assert.deepEqual(bookQuotes(again).quotes, new Map([[UFG, { usd: '0.004', liquidityUsd: 165_000 }]]), 'only the new answer counts');
   const older = withAnswer(again, { quotes: new Map([[UFG, { usd: '9', liquidityUsd: 1e6 }]]), at: new Map([[UFG, T]]) }, T + HOUR + 1000);
   assert.equal(older.prices.get(UFG).quote.usd, '0.004', 'an older answer never replaces a newer one');

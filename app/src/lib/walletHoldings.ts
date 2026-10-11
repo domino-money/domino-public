@@ -40,6 +40,7 @@ import { parseScaled } from './format/decimal'
 import { symbolReading, unsafeSymbol } from './symbolReading'
 import { PRICE_BATCH } from './tokenArtwork'
 import { NATIVE, PRICE_GETS, USDG, USDG_QUOTE, WETH, type TokenQuote } from './walletPrices'
+import { bookQuotes, WALLET_MEMORY_MAX_AGE_MS, WALLET_PRICE_MAX_AGE_MS, type PriceBook } from './walletMemory'
 
 /** Holdings on the card before "Show all" (owner, 2026-09-27: always the top 3). */
 export const SHOWN_HOLDINGS = 3
@@ -117,6 +118,13 @@ function markTwins(holdings: Holding[]): Holding[] {
 /** A row whose balance was read (in whole or raw units) and is not zero. */
 export const held = (row: WalletRow) => (row.amount.state === 'value' || row.amount.state === 'raw') && /^\d+$/.test(row.raw) && BigInt(row.raw) > 0n
 
+/** Discovery can omit a holding; only an actual balance read (including zero) supersedes it. */
+export function reconcileWalletRows(kept: readonly WalletRow[], fresh: readonly WalletRow[], now: number, freshAt = now): WalletRow[] {
+  const rows = new Map(kept.filter((row) => now - row.pageRetrievedAt * 1000 <= 86_400_000).map((row) => [row.key, { ...row, old: true }]))
+  if (now - freshAt <= 86_400_000) for (const row of fresh) rows.set(row.key, row)
+  return [...rows.values()]
+}
+
 /** The address a held row's price is asked by: WETH's for native ETH, none for USDG ($1) or a look-alike (never shown). */
 function priceSource(row: WalletRow): string | null {
   const address = row.token.address.toLowerCase()
@@ -165,9 +173,12 @@ export function walletHoldings(rows: readonly WalletRow[], quotes: ReadonlyMap<s
     const source = priceSource(row)
     const answered = source === null ? USDG_QUOTE : quotes.get(source)
     const due = answered === undefined
-    if (due) unanswered += 1
-    const value = valueAt(row, answered)
-    list.push({ row, value, quote: value === null ? null : (answered ?? null), rank: value ?? (due && source !== null ? valueAt(row, hints.get(source)) : null), due, twin: false })
+    const hint = source !== null ? valueAt(row, hints.get(source)) : null
+    // A lost qualified quote must not silently turn yesterday's largest holding into a zero-valued airdrop.
+    const quoted = valueAt(row, answered)
+    if (due || (quoted === null && hint !== null)) unanswered += 1
+    const value = row.old ? null : quoted
+    list.push({ row, value, quote: value === null ? null : (answered ?? null), rank: quoted ?? hint, due, twin: false })
   }
   const all = markTwins(list.sort(byValue))
   const valued = all.filter((h) => h.value !== null)
@@ -205,6 +216,8 @@ export interface ListWholeness {
   earlier: boolean
   /** Provider candidates the pages skipped (never listed, so never valued). */
   skipped: number
+  /** Discovery was unavailable, not configured or not requested; known addresses are only a subset. */
+  discoveryMissing?: boolean
 }
 
 /** A list with nothing missing: what a remembered whole list stands for while it is read again. */
@@ -219,6 +232,7 @@ export function listGap(list: ListWholeness): string | null {
   if (list.unread > 0) return 'unread_balances'
   if (list.earlier) return 'earlier_rows'
   if (list.skipped > 0) return 'skipped_candidates'
+  if (list.discoveryMissing) return 'inventory_unavailable'
   return null
 }
 
@@ -234,4 +248,26 @@ export function totalWithheld(list: ListWholeness, holdings: HoldingsView): stri
   // Nothing priced, or not a cent in all: no "$0.00" headline.
   if (holdings.total < ONE_DOLLAR / 100n) return 'nothing_valued'
   return null
+}
+
+/** One complete valuation, never a sum of refreshed rows and earlier prices. Only used with a visible updating label. */
+export interface WalletTotalSnapshot {
+  total: bigint
+  until: number
+  balances: ReadonlyMap<string, string>
+}
+
+export function walletTotalSnapshot(rows: readonly WalletRow[], book: PriceBook, at: number, now: number): WalletTotalSnapshot | null {
+  const { quotes, hints } = bookQuotes(book, now)
+  const holdings = walletHoldings(rows, quotes, hints)
+  if (rows.some(row => row.old) || totalWithheld(WHOLE_LIST, holdings) !== null) return null
+  // Each original price answer keeps its own expiry. Re-reading the list cannot renew it.
+  const until = Math.min(at + WALLET_MEMORY_MAX_AGE_MS, ...addressesToPrice(rows).map(source => (book.prices.get(source)?.at ?? 0) + WALLET_PRICE_MAX_AGE_MS))
+  return until > now ? { total: holdings.total, until, balances: new Map(rows.filter(held).map(row => [row.key, row.raw])) } : null
+}
+
+/** A read change, including an explicit zero, invalidates the snapshot before the rest of the pages finish. */
+export function walletSnapshotValid(snapshot: WalletTotalSnapshot | null, fresh: readonly WalletRow[], now: number): boolean {
+  return snapshot !== null && now < snapshot.until && !fresh.some(row => !row.old && snapshot.balances.has(row.key)
+    && (held(row) || row.amount.state === 'zero') && snapshot.balances.get(row.key) !== row.raw)
 }

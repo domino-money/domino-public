@@ -237,6 +237,7 @@ export const COPY = {
     holdsInfo: 'What this position holds now, at the pool’s price. Fees not included.',
     fees: 'Fees to collect',
     feesInfo: 'Fees this position earned and has not collected yet.',
+    collectableInfo: 'Tokens available to collect. This can include tokens withdrawn from liquidity outside Domino.',
     price: 'Current price',
     priceInfo: 'The position earns fees while this price is inside its range.',
     inRangeEarning: 'In range: earning fees',

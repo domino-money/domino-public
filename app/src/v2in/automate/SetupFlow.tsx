@@ -202,7 +202,7 @@ function PositionSetup({ positions, portfolio, intent, position, onSelect, gate,
     return review.steps.map((step, index) => ({
       key: step.kind,
       title: step.kind === 'approve-root' ? `Approve position #${review.init.root.tokenId} for your automation` : 'Set up your automation',
-      tx: { client: session.vault, prepare: () => session.vault.prepareStep(review, index, null) },
+      tx: { client: session.vault, prepare: () => session.vault.prepareStep(review, index, null), resume: () => session.vault.sentStep(review, index) },
     }))
   }, [session, review, path])
 
@@ -386,9 +386,17 @@ function PositionSetup({ positions, portfolio, intent, position, onSelect, gate,
               disabled={!ready || busy || (live ? steps.length === 0 || run.complete : false)}
               aria-busy={busy || undefined}
               data-sequence-action={live ? 'run' : 'review'}
-              onClick={() => { if (live) { onHold(portfolio); void run.press() } else setReviewing(true) }}
+              onClick={() => {
+                if (!live) { setReviewing(true); return }
+                onHold(portfolio)
+                // Without a returned hash only fresh on-chain approval/custody can resolve the step. This press
+                // reviews again; it never resends the uncertain approval or automatically offers the next action.
+                const known = run.phases.some(phase => phase.phase === 'failed' && (phase.hash || phase.batchId))
+                if (run.pending && !known) setRound(value => value + 1)
+                else void run.press()
+              }}
             >
-              {live ? 'Set up automation' : 'Review'}
+              {live ? busy ? 'Waiting for confirmation…' : run.pending ? 'Check transaction' : 'Set up automation' : 'Review'}
             </Button>
           )}
           <p id="v2in-setup-reason" className="dm-flow-reason" data-align="start">

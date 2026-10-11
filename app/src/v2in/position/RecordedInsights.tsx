@@ -90,6 +90,6 @@ function RecordedFees({ rows, position, book, stale }: { rows: readonly Position
       inspect={(plot, index) => index === null ? null : <Crosshair x={x(points[index].t, plot)} top={plot.top} bottom={plot.bottom} left={plot.left} right={plot.right} />}
       overlay={(plot, index) => index === null ? null : <ChartTooltip x={x(points[index].t, plot)} plot={plot} head={time(points[index].t)}><ChartTooltipRow label="Ready to collect">{exact(points[index].raw)} {label}</ChartTooltipRow></ChartTooltip>}
     /> : <PendingPlot label="Recorded fees" busy={false} note={stale ? 'Waiting for a current reading.' : 'Waiting for a timestamped reading.'} />}
-    <p className="dm-pvr-note" title={`${COVERAGE} These are uncollected balances, not total fees earned.`}>{stale ? 'Last recorded readings' : 'Recorded this session'} · {rows.length ? time(rows.at(-1)!.snapshot.timestamp) : 'Waiting'}</p>
+    <p className="dm-pvr-note" title={`${COVERAGE} These are collectable balances, not total fees earned.${position.dex === 3 ? ' They can include tokens withdrawn from liquidity outside Domino.' : ''}`}>{stale ? 'Last recorded readings' : 'Recorded this session'} · {rows.length ? time(rows.at(-1)!.snapshot.timestamp) : 'Waiting'}</p>
   </section>
 }

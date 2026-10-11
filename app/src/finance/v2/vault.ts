@@ -915,6 +915,7 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
   const reviews = new WeakMap<VaultReview, ReviewInternal>()
   const issued = new WeakMap<PreparedV2, { review: VaultReview; step: VaultStep; key: string }>()
   const sentSteps = new Map<Hex, { review: VaultReview; step: VaultStep; key: string }>()
+  const activeStepHashes = new Map<string, Hex>()
   /**
    * The steps handed to the wallet whose outcome is not known yet (post-B4 review F2), by hand-over key: a withdrawal
    * whose answer was lost must never be offered again while its reserves still read as there. Marked right before the
@@ -1336,6 +1337,7 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
       // The very step already offered is the shared sender's refusal (never sent twice); another review's is this one's.
       if (handedOver.has(origin.key)) return fail(t.wasOffered(prepared) ? 'wallet_review_required' : 'review_already_sent')
       handedOver.add(origin.key)
+      activeStepHashes.delete(origin.key)
       let hash: Hex
       try {
         hash = await nonceMoved(t.send(prepared, acknowledged, (rpc) => checkStep(rpc, origin.review, origin.step)))
@@ -1344,18 +1346,30 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
         throw error
       }
       sentSteps.set(hash, origin)
+      activeStepHashes.set(origin.key, hash)
       return hash
     },
 
     /** Whether a prepared step was handed to the wallet (its outcome is then the chain's to say; it is never offered again). */
     wasOffered: (prepared: PreparedV2): boolean => t.wasOffered(prepared),
 
+    /** A new view of the same reviewed step may resume its known transaction, never offer it again.
+     * The factory nonce/state marker and exact calldata bind it to this client's owner, chain and intended effect.
+     */
+    sentStep: (review: VaultReview, index: number): Hex | null => {
+      const internal = reviews.get(review), step = review.steps[index]
+      if (!internal || !step) return null
+      const key = handOverKey(internal.marker, step)
+      if (!handedOver.has(key)) return null
+      return activeStepHashes.get(key) ?? null
+    },
+
     /** Where a step this client sent stands, with the vault's, the factory's and the module's events decoded. */
     receipt: async (hash: Hex): Promise<VaultReceipt> => {
       const receipt = await t.receipt(hash)
       const origin = sentSteps.get(hash)
       // Final: what the step did (or that it reverted, doing nothing) is known for good, and the step may be reviewed anew.
-      if (origin && (receipt.state === 'finalized' || receipt.state === 'reverted')) handedOver.delete(origin.key)
+      if (origin && activeStepHashes.get(origin.key) === hash && (receipt.state === 'finalized' || receipt.state === 'reverted')) handedOver.delete(origin.key)
       if (receipt.state === 'pending' || receipt.state === 'reorged' || !origin) return { ...receipt, events: Object.freeze([]) }
       const vault = origin.review.vault
       // Decoded with what each contract itself declares (./implementations.ts), so every event a step emits is said.

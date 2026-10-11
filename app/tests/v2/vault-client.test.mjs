@@ -58,6 +58,44 @@ async function run(client, review, index) {
 const selectorOf = (data) => data.slice(0, 10);
 const sentMethods = (chain) => chain.log.filter((method) => method === 'eth_sendTransaction' || method === 'eth_estimateGas');
 
+test('a repeated Base v3 review resumes the exact pending approval by hash instead of bypassing its send guard', async () => {
+  const { chain, client } = setup({ chainId: 8453, finality: 'lagging' });
+  const first = await client.reviewCreate(request({ dex: 3, tokenId: ROOT_V3 }));
+  const prepared = await client.prepareStep(first, 0, GAS), hash = await client.send(prepared, true);
+  assert.equal(client.sentStep(first, 0), hash);
+  assert.equal(client.sentStep(first, 1), null, 'the setup transaction has never been sent');
+  chain.approveOther(3, ROOT_V3, ZERO); // A lagging approval read causes the same first step to appear in a new review.
+  const refreshed = await client.reviewCreate(request({ dex: 3, tokenId: ROOT_V3 }));
+  assert.equal(client.sentStep(refreshed, 0), hash);
+  await assert.rejects(client.prepareStep(refreshed, 0, GAS), /review_already_sent/);
+  assert.equal(chain.sends.length, 1, 'the guard remains closed');
+  const other = await client.reviewCreate(request({ dex: 3, tokenId: 78n }));
+  assert.equal(client.sentStep(other, 0), null, 'another NFT cannot borrow the approval');
+  chain.approveOther(3, ROOT_V3, first.vault);
+  assert.equal((await client.receipt(hash)).state, 'included');
+  await run(client, refreshed, 1);
+  assert.equal(chain.sends.length, 2, 'one approval and one setup, without waiting for hard finality');
+});
+
+test('after a reverted approval, only its latest retry is resumable and an old terminal receipt cannot release its send guard', async () => {
+  const { chain, client } = setup({ chainId: 8453, finality: 'lagging' });
+  const review = await client.reviewCreate(request({ dex: 3, tokenId: ROOT_V3 }));
+  chain.revert();
+  const old = await run(client, review, 0);
+  assert.equal(old.receipt.state, 'reverted');
+  assert.equal(client.sentStep(review, 0), null);
+  const prepared = await client.prepareStep(review, 0, GAS), next = await client.send(prepared, true);
+  assert.notEqual(next, old.hash);
+  assert.equal(client.sentStep(review, 0), next);
+  assert.equal((await client.receipt(old.hash)).state, 'reverted');
+  assert.equal(client.sentStep(review, 0), next, 'old terminal proof must not clear the active attempt');
+  chain.approveOther(3, ROOT_V3, ZERO);
+  const refreshed = await client.reviewCreate(request({ dex: 3, tokenId: ROOT_V3 }));
+  assert.equal(client.sentStep(refreshed, 0), next);
+  await assert.rejects(client.prepareStep(refreshed, 0, GAS), /review_already_sent/);
+  assert.equal(chain.sends.length, 2);
+});
+
 test('the fake chain refuses with the spec\'s own selectors (§4.9, §5.8)', () => {
   for (const [name, signature] of Object.entries(ERRORS)) assert.equal(toFunctionSelector(signature), SPEC_SELECTORS[name], name);
 });

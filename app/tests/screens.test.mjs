@@ -700,6 +700,40 @@ const CHECK = { wallet: FIXTURE_OWNER, tokens: [OTHER_ADDRESS], autoDiscover: fa
 const heldCheck = { fixture: gateway('wallet-assets.not-requested'), mutate: (b) => ((b.items[1].address = OTHER_ADDRESS), b), expectRequest: CHECK };
 const FALLBACK = { wallet: FIXTURE_OWNER, tokens: [], fallbackTokens: [FIXTURE_TOKEN, OTHER_ADDRESS] };
 
+test('a successful inventory omission rechecks remembered holdings on the existing exact-address route, including zero', async () => {
+  const source = fixtures({ 'wallet-assets': [
+    { fixture: gateway('wallet-assets.last-page'), expectRequest: WALLET },
+    { ...heldCheck, mutate: (b) => { b.items[1].address = OTHER_ADDRESS; b.items[1].amountRaw = '0'; return b; } },
+  ] });
+  const session = walletSession.createWalletSession(source, { wallet: FIXTURE_OWNER, tokens: [], rememberedTokens: [OTHER_ADDRESS] });
+  assert.equal((await session.first()).pendingCheck, true, 'HTTP 200 and skipped=0 do not prove an omitted holding was spent');
+  const after = await session.check();
+  const zero = after.view.rows.find((row) => row.key === `4663:${OTHER_ADDRESS}`);
+  assert.equal(zero?.amount.state, 'zero', 'the authoritative zero must reach reconciliation');
+  assert.equal(zero?.via, 'address');
+  assert.deepEqual(source.requests.map((item) => item.request), [WALLET, CHECK]);
+  assert.equal(after.pendingCheck, false);
+});
+
+test('remembered holdings are rechecked in bounded batches and a failed batch never becomes empty balances', async () => {
+  const addresses = Array.from({ length: 12 }, (_, n) => `0x${(n + 100).toString(16).padStart(40, '0')}`);
+  const exact = (tokens) => ({ wallet: FIXTURE_OWNER, tokens, autoDiscover: false });
+  const batch = (tokens) => ({ fixture: gateway('wallet-assets.not-requested'), expectRequest: exact(tokens), mutate: (b) => ({ ...b, items: [b.items[0], ...tokens.map((address) => ({ ...b.items[1], address }))] }) });
+  const source = fixtures({ 'wallet-assets': [{ fixture: gateway('wallet-assets.last-page'), expectRequest: WALLET }, batch(addresses.slice(0, 10)), batch(addresses.slice(10))] });
+  const session = walletSession.createWalletSession(source, { wallet: FIXTURE_OWNER, tokens: [], rememberedTokens: addresses });
+  await session.first();
+  const checked = await session.check();
+  assert.equal(checked.view.rows.filter((row) => row.via === 'address').length, 12, JSON.stringify(source.requests));
+  assert.equal(source.requests.length, 3);
+  assert.equal(checked.pendingCheck, false);
+  const failing = fixtures({ 'wallet-assets': [{ fixture: gateway('wallet-assets.last-page'), expectRequest: WALLET }, { fixture: errorFixture('wallet-assets.upstream_unavailable'), expectRequest: exact(addresses.slice(0, 10)) }] });
+  const failedSession = walletSession.createWalletSession(failing, { wallet: FIXTURE_OWNER, tokens: [], rememberedTokens: addresses });
+  const listed = await failedSession.first();
+  const failed = await failedSession.check();
+  assert.deepEqual(failed.view.rows, listed.view.rows, 'no synthesized zero, no empty replacement');
+  assert.equal(failing.requests.length, 2, 'one failure stops further work');
+});
+
 test('a partial page checks the fallback tokens once, by exact address and without discovery, and adds only held balances', async () => {
   const source = fixtures({ 'wallet-assets': [skippedPage, heldCheck, { fixture: gateway('wallet-assets.last-page'), expectRequest: WALLET_MORE }] });
   const session = walletSession.createWalletSession(source, FALLBACK);

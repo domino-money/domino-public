@@ -53,7 +53,7 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
   const rows = useMemo(() => mergePositionRows(historicalPositionRows(retained, current !== null), own.rows), [retained, current, own.rows])
   const counts = useMemo(() => positionCounts(rows), [rows])
   const [chosen, setChosen] = useState<'open' | 'closed' | null>(null)
-  const tab = chosen ?? (counts.open === 0 && counts.closed > 0 ? 'closed' : 'open')
+  const tab = chosen ?? (counts.open === 0 && counts.pending === 0 && counts.closed > 0 ? 'closed' : 'open')
   const [pages, setPages] = useState({ open: 1, closed: 1 })
   const matches = rows.filter((row) => row.tab === tab || (tab === 'open' && row.tab === 'pending'))
   const shown = matches.slice(0, pages[tab] * PAGE_SIZE)

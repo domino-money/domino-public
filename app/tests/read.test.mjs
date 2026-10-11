@@ -824,7 +824,7 @@ test('through the real bridge: the wallet cursor goes back byte for byte and nev
   const second = await pager.more();
   assert.equal(second.failure, null);
   assert.equal(bridge.upstream.at(-1).body.cursor, MUTATED_CURSOR, 'the gateway received the exact handle');
-  assert.deepEqual(Object.keys(second.view).sort(), ['freshness', 'hasMore', 'notes', 'pages', 'probed', 'restarted', 'rows', 'skipped', 'skippedReason', 'unavailable']);
+  assert.deepEqual(Object.keys(second.view).sort(), ['freshness', 'hasMore', 'inventoryAvailable', 'notes', 'pages', 'probed', 'restarted', 'rows', 'skipped', 'skippedReason', 'unavailable']);
   assert.equal(second.view.hasMore, false);
   assert.doesNotMatch(JSON.stringify(second.view), /c0ffee/);
 });

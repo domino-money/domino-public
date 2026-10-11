@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import * as runtime from 'api-contracts/execution-v1/runtime.mjs'
+import { CONTRACT_VERSION, validateRequest, validateResponse, validateError } from 'api-contracts/execution-v1/runtime.mjs'
 import { createExecutionController, EXECUTION_SETTLED, EXECUTION_STATE_NOTE, EXECUTION_STATE_TEXT, type ExecutionItem } from '../finance/execution'
 import { financialFetch } from '../finance/http'
 import { keep, keepFirst, readKept, sharedStart, useKeptWhileChecking, walletName } from '../finance/privateCards'
@@ -18,6 +18,8 @@ import { CopyButton } from '../components/read/screens/CopyButton'
 import { IconChevronDown } from '../components/icons'
 import { Button, LinkButton, Pill } from '../components/ui'
 import { shortDate, shortTime } from '../lib/format/time'
+
+const runtime = { CONTRACT_VERSION, validateRequest, validateResponse, validateError }
 
 type Receipt = NonNullable<ExecutionItem['receipt']>
 type AmountField = Exclude<keyof Receipt['sources'][number], 'sourceId' | 'currency'>

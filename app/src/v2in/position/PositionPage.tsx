@@ -292,7 +292,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
         </Stat>
         <Stat
           label={COPY.page.fees}
-          info={COPY.page.feesInfo}
+          info={position.dex === 3 ? COPY.page.collectableInfo : COPY.page.feesInfo}
           className="dm-pos-stat"
           data-cell="fees"
           sub={

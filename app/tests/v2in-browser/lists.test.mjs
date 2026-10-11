@@ -80,7 +80,7 @@ after(async () => {
  * Positions of wallet-test-v2, Test Wallet A connected on Robinhood Chain with one open V1 position. `hooks`: the page's
  * `window.__dominoV2Test`; `readV6(method, route, body)`: the site's read-v6 route ({ status, body, contract }), recorded.
  */
-async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positions', privateReceipts = null, localCloses = [], sessionDisabled = false, refresh = false, chainOptions = {}, stored = undefined, ledgerReply = null, connect = true, artwork = null } = {}) {
+async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positions', privateReceipts = null, localCloses = [], creations = [], sessionDisabled = false, refresh = false, chainOptions = {}, stored = undefined, ledgerReply = null, connect = true, artwork = null } = {}) {
   const fake = createFakeSession();
   fake.controls.disabled = sessionDisabled;
   const chain = browserChain({ positions: [onChain(V1_OPEN)], tokens: TOKENS, ...chainOptions });
@@ -130,6 +130,9 @@ async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positio
     await route.fulfill({ status: reply.status, contentType: 'application/json', body: JSON.stringify(reply.body) });
   });
   const wallet = await installWallets(context);
+  if (creations.length) await context.addInitScript(rows => {
+    for (const owner of new Set(rows.map(row => row.wallet.toLowerCase()))) sessionStorage.setItem(`domino:created-positions:v1:${owner}`, JSON.stringify(rows.filter(row => row.wallet.toLowerCase() === owner)));
+  }, creations);
   if (localCloses.length) await context.addInitScript((rows) => {
     for (const owner of new Set(rows.map(row => row.wallet.toLowerCase()))) localStorage.setItem(`domino:confirmed-closes:v1:${owner}`, JSON.stringify(rows.filter(row => row.wallet.toLowerCase() === owner)));
   }, localCloses);
@@ -311,7 +314,7 @@ test('the list and the detail display the same verified APR for a new V2 NFT', a
   } finally { await s.close(); }
 });
 
-test('fees keep one neutral total through price qualification changes, with exact tokens accessible on demand', async () => {
+test('fees remain visible as token balances when USD pricing is unavailable, across desktop and phone widths', async () => {
   const own = about('portfolio', fixture('portfolio.json'), OWNER);
   own.positions = [own.positions[0]];
   own.positions[0].vault = null;
@@ -323,7 +326,6 @@ test('fees keep one neutral total through price qualification changes, with exac
     const cell = row.locator('[data-cell="fees"]');
     await cell.locator('[data-usd="fees"]').waitFor();
     assert.equal(await cell.locator('[data-usd="fees"]').innerText(), '<$0.01');
-    const initialHeight = await row.evaluate(node => node.getBoundingClientRect().height);
     await cell.hover();
     assert.equal(await cell.locator('.dm-own-split, .dm-own-amounts').count(), 0, 'hover does not create a second visual layout');
     assert.match(await cell.getAttribute('title'), /0\.0012 USDG/);
@@ -333,12 +335,11 @@ test('fees keep one neutral total through price qualification changes, with exac
     assert.equal(runtime.validateResponse('portfolio', own), true);
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
     await s.page.waitForFunction(key => document.querySelector(`[data-v2-position-row="${key}"] [data-cell="fees"]`)?.getAttribute('title')?.includes('0.0028 USDG'), rowKey('7'));
-    assert.equal(await cell.locator('.dm-own-dash').innerText(), '—', 'no old USD total is attached to changed fees');
+    assert.equal(await cell.locator('[data-usd], .dm-own-dash').count(), 0, 'missing pricing neither hides fees nor retains the old USD total');
     assert.match(await cell.getAttribute('title'), /^USD estimate unavailable\.[\s\S]*0\.0028 USDG/);
-    assert.match(await cell.textContent(), /0\.0028 USDG/, 'exact amounts are retained for assistive readers');
-    assert.equal(await cell.locator('.dm-own-split, .dm-own-amounts').count(), 0, 'unpriced fees never become two green token lines');
-    assert.equal(await cell.locator('.dm-acct-amount').evaluateAll(nodes => nodes.every(node => node.closest('.sr-only') && node.closest('.sr-only').getBoundingClientRect().width <= 1)), true);
-    assert.equal(await row.evaluate(node => node.getBoundingClientRect().height), initialHeight, 'qualification changes do not resize the row');
+    assert.match(await cell.locator('.dm-own-amounts').innerText(), /0\.0028 USDG/, 'the same measured fees as the detail page are visible');
+    assert.equal(await cell.locator('.dm-own-amounts .dm-acct-amount').count(), 2);
+    assert.equal(await cell.locator('.dm-own-amounts').isVisible(), true);
     for (const width of [1320, 1024, 736, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
       assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `fees fit ${width}px`);
@@ -350,7 +351,61 @@ test('fees keep one neutral total through price qualification changes, with exac
         return { cell: bounds.toJSON(), visible: visible.map(child => ({ text: child.textContent, rect: child.getBoundingClientRect().toJSON() })) };
       });
       assert.ok(geometry.visible.every(({ rect }) => rect.left >= geometry.cell.left - 0.5 && rect.right <= geometry.cell.right + 0.5), `visible fees stay within their column at ${width}px: ${JSON.stringify(geometry)}`);
+      if (width === 1320 || width === 390) await s.page.screenshot({ path: join(shots(), `positions-visible-token-fees-${width}.png`), fullPage: true });
     }
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+test('Base fees without a qualified USD price stay visible beside principal without inventing USD or APR', async () => {
+  const usdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+  const basecat = '0xb2000000000000000000004c27f6523082f41d01';
+  const manager = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1';
+  const own = portfolioOf({ wallet: OWNER, tokens: [indexedToken(8453, usdc, 'USDC', 6), indexedToken(8453, basecat, 'BASECAT', 18)], positions: [
+    livePosition({ chainId: 8453, dex: 3, manager, tokenId: '6238157', owner: OWNER,
+      pool: { currency0: usdc, currency1: basecat, fee: 3000, tickSpacing: 60 }, tickLower: -60, tickUpper: 60, liquidity: '1000000000', sqrtPriceX96: String(2n ** 96n), tick: 0,
+      principal: ['412537', '22675000000000000000'], feesOwed: ['5193', '317608000000000000'] }),
+  ] });
+  const s = await scenario({ hooks: LIVE, readV6: routeOn(route => route === 'portfolio' ? own : activityOf({ wallet: OWNER })) });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="8453:${manager}:6238157"]`);
+    const fees = row.locator('[data-cell="fees"]');
+    await fees.locator('.dm-own-amounts').waitFor();
+    assert.match(await text(fees), /0\.005193 USDC\s+0\.317608 BASECAT/);
+    assert.match(await text(row.locator('[data-cell="principal"]')), /0\.412537 USDC\s+22\.675 BASECAT/);
+    assert.equal(await row.locator('[data-usd]').count(), 0);
+    assert.equal(await row.locator('[data-cell="apr"] .dm-own-dash').innerText(), '—');
+    assert.ok(s.ledgerAsked.every(request => !request.tokenIds.includes('6238157')), 'a Base NFT never goes to the Robinhood ledger');
+    for (const width of [1320, 390, 320]) {
+      await s.page.setViewportSize({ width, height: 960 });
+      assert.ok(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      assert.equal(await fees.locator('.dm-own-amounts').isVisible(), true);
+      if (width !== 320) await s.page.screenshot({ path: join(shots(), `positions-base-visible-fees-${width}.png`), fullPage: true });
+    }
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+test('a newly created Base position stays visible while indexing even when every older position is closed', async () => {
+  const manager = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1';
+  const usdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+  const basecat = '0xb2000000000000000000004c27f6523082f41d01';
+  const tokens = [indexedToken(8453, usdc, 'USDC', 6), indexedToken(8453, basecat, 'BASECAT', 18)];
+  const own = portfolioOf({ wallet: OWNER, tokens, positions: [livePosition({ chainId: 8453, dex: 3, manager, tokenId: '6238100', owner: OWNER,
+    pool: { currency0: usdc, currency1: basecat, fee: 3000, tickSpacing: 60 }, tickLower: -60, tickUpper: 60, liquidity: '0', sqrtPriceX96: String(2n ** 96n), tick: 0 })] });
+  const hint = { wallet: OWNER, chainId: 8453, positionManager: manager, dex: 3, tokenId: '6238157', hash: '0x' + 'ab'.repeat(32),
+    block: 52469635, blockHash: '0x' + 'cd'.repeat(32), observedAt: Date.now(), fee: 3000, tokens: tokens.map(({ address, symbol, decimals }) => ({ address, symbol, decimals })) };
+  const s = await scenario({ hooks: LIVE, creations: [hint], chainOptions: { positions: [] }, readV6: routeOn(route => route === 'portfolio' ? own : activityOf({ wallet: OWNER })) });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="8453:${manager}:6238157"]`);
+    await row.waitFor();
+    assert.match(await text(row), /Updating/);
+    assert.equal(await row.locator('[data-usd]').count(), 0, 'the mint hint does not invent a balance');
+    await s.page.getByRole('tab', { name: /^Closed/ }).click();
+    await s.page.locator(`[data-v2-position-row="8453:${manager}:6238100"]`).waitFor();
+    assert.equal(await row.count(), 0, 'an explicit Closed selection is respected');
+    await s.page.getByRole('tab', { name: /^Open/ }).click();
+    await row.waitFor();
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
 });

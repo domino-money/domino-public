@@ -5,7 +5,7 @@ import { test } from 'node:test';
 
 const require = createRequire(import.meta.url);
 const { createActivityHistory, compareActivity } = require('../../.test-build/app/src/v2in/lists/activityHistory.js');
-const { privateTimes, positionActivity, timelineRows } = require('../../.test-build/app/src/v2in/lists/activityModel.js');
+const { privateTimes, positionActivity, timelineRows, indexedOperationEvidence } = require('../../.test-build/app/src/v2in/lists/activityModel.js');
 const fixture = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/valid/activity.json', import.meta.url)));
 const portfolio = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/valid/portfolio.json', import.meta.url)));
 const wire = JSON.parse(readFileSync(new URL('../../../api-contracts/execution-v1/fixtures/status-wire.json', import.meta.url)));
@@ -16,6 +16,34 @@ const item = (n, extra = {}) => ({ ...structuredClone(fixture.items[0]), id: `46
 const range = (top, bottom) => Array.from({ length: top - bottom + 1 }, (_, i) => item(top - i));
 const viewsOf = items => items.map(event => ({ id: event.id, kind: event.kind, chainId: event.chainId, block: event.tx.snapshot.number, at: event.tx.snapshot.timestamp, hash: event.tx.hash }));
 const page = (items, cursor = null, extra = {}) => ({ kind: 'ok', body: { ...structuredClone(fixture), items, nextCursor: cursor, ...extra } });
+
+test('existing read-v6 receipts reconcile all supported chains after reload, once per transaction and for this wallet only', () => {
+  const items = [4663, 8453, 42161].map(chainId => {
+    const value = item(20, { chainId }); value.tx.finality = 'unfinalized'; return value;
+  });
+  const body = { wallet, items: [...items, { ...items[1], id: 'same-transaction-another-log' }] };
+  const evidence = indexedOperationEvidence(wallet.toUpperCase(), body, []);
+  assert.deepEqual(evidence.map(op => op.chainId), [4663, 8453, 42161]);
+  assert.ok(evidence.every(op => op.indexed && op.wallet === wallet && op.receipt.state === 'included' && !op.tokenIds.length));
+  assert.deepEqual(indexedOperationEvidence(`0x${'9'.repeat(40)}`, body, []), [], 'late response from a previous wallet is ignored');
+  assert.equal(indexedOperationEvidence(wallet, { wallet, items: range(80, 1) }, []).length, 0, 'already final history needs no watcher');
+  const pending = range(80, 1).map(value => ({ ...value, tx: { ...value.tx, finality: 'unfinalized' } }));
+  assert.equal(indexedOperationEvidence(wallet, { wallet, items: pending }, []).length, 32, 'reload adoption is bounded');
+});
+
+test('index reconciliation upgrades only a matching included receipt and never overrides account, canonical branch or stronger proof', () => {
+  const event = item(20, { chainId: 8453 }), body = { wallet, items: [event] };
+  const known = { chainId: 8453, wallet, hash: event.tx.hash, blockHash: event.tx.snapshot.hash, block: 20, phase: 'included' };
+  const evidence = indexedOperationEvidence(wallet, body, [known]);
+  assert.equal(evidence.length, 1); assert.equal(evidence[0].receipt.state, 'finalized');
+  for (const patch of [{ wallet: `0x${'9'.repeat(40)}` }, { block: 19 }, { blockHash: `0x${'f'.repeat(64)}` }, { phase: 'finalized' }, { phase: 'reorged' }]) {
+    assert.deepEqual(indexedOperationEvidence(wallet, body, [{ ...known, ...patch }]), []);
+  }
+  event.tx.finality = 'unfinalized';
+  assert.deepEqual(indexedOperationEvidence(wallet, body, [{ ...known, phase: 'finalized' }]), [], 'old response cannot downgrade a finalized receipt');
+  assert.deepEqual(indexedOperationEvidence(wallet, body, [known]), [], 'repeated inclusion does not refresh or read again');
+});
+
 function clock() {
   let now = 0, visible = true;
   const jobs = new Set(), wake = new Set();

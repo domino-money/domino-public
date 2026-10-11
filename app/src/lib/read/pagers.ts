@@ -89,6 +89,8 @@ export interface WalletView {
   skipped: number
   /** Last non-null skippedReason of those pages: a closed contract code, for data attributes only. */
   skippedReason: string | null
+  /** Discovery answered a page; an HTTP 200 with unavailable/not-configured inventory is not a complete wallet. */
+  inventoryAvailable: boolean
 }
 
 export interface Pager<V> {
@@ -100,11 +102,11 @@ export interface Pager<V> {
 export interface WalletPager extends Pager<WalletView> {
   /**
    * Adds the held balances a by-address check (autoDiscover: false) found for
-   * `asked`: non-zero amounts only, for addresses asked about only. Never
+   * `asked`: non-zero amounts by default; `includeZero` also reconciles remembered holdings. Never
    * touches the handle, the notes, the freshness lines, the page count or the
    * unavailable list. A later page that lists the same token replaces the row.
    */
-  adopt(outcome: Extract<ReadOutcome<'wallet-assets'>, { state: 'ok' }>, asked: readonly string[]): WalletView
+  adopt(outcome: Extract<ReadOutcome<'wallet-assets'>, { state: 'ok' }>, asked: readonly string[], includeZero?: boolean): WalletView
 }
 
 export function createWalletPager(source: ReadSource, request: WalletAssetsRequest): WalletPager {
@@ -120,12 +122,14 @@ export function createWalletPager(source: ReadSource, request: WalletAssetsReque
   let probed: number | null = null
   let skipped = 0
   let skippedReason: string | null = null
+  let inventoryAvailable = false
 
-  const view = (): WalletView => ({ rows: [...rows.values()], unavailable, notes, freshness, pages, hasMore: cursor !== null, restarted, probed, skipped, skippedReason })
+  const view = (): WalletView => ({ rows: [...rows.values()], unavailable, notes, freshness, pages, hasMore: cursor !== null, restarted, probed, skipped, skippedReason, inventoryAvailable })
 
   function absorb(outcome: Extract<ReadOutcome<'wallet-assets'>, { state: 'ok' }>, page: number): number {
     const d = outcome.data
     const inventory = d.inventory
+    inventoryAvailable = inventory.status === 'page_received'
     const retrievedAt = inventory.status === 'page_received' ? inventory.retrievedAt : d.snapshot.timestamp
     if (page === 1) {
       probed = null
@@ -158,13 +162,14 @@ export function createWalletPager(source: ReadSource, request: WalletAssetsReque
     return added
   }
 
-  function adopt(outcome: Extract<ReadOutcome<'wallet-assets'>, { state: 'ok' }>, asked: readonly string[]): WalletView {
+  function adopt(outcome: Extract<ReadOutcome<'wallet-assets'>, { state: 'ok' }>, asked: readonly string[], includeZero = false): WalletView {
     const d = outcome.data
     const wanted = new Set(asked.map((address) => identityKey(address)))
     for (const item of d.items) {
       const key = identityKey(item.address)
       // Only what was asked about, and only a balance someone holds: a zero or the native row adds nothing.
-      if (!wanted.has(key) || item.amountRaw === '0') continue
+      // A remembered holding needs the zero too: omission is unknown, but a read zero removes it.
+      if (!wanted.has(key) || (!includeZero && item.amountRaw === '0')) continue
       const existing = rows.get(key)
       if (existing && !existing.old) continue
       rows.set(key, { key, token: tokenDisplay(item), amount: amountFact(item), raw: item.amountRaw, page: Math.max(pages, 1), pageRetrievedAt: d.snapshot.timestamp, old: false, via: 'address', block: d.snapshot.number })

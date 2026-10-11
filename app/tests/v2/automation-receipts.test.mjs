@@ -1,0 +1,92 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { test } from 'node:test';
+const require = createRequire(import.meta.url);
+const { reconcileAutomationReceipt } = require('../../.test-build/app/src/v2in/automate/receipt.js');
+const HASH = `0x${'ab'.repeat(32)}`, BLOCK = `0x${'cd'.repeat(32)}`;
+const receipt = { state: 'included', transactionHash: HASH, blockHash: BLOCK, blockNumber: 20n, events: [] };
+
+// The session helpers are tested with the existing transaction client as their only dependency.
+function sessionFunctions() {
+  const ts = require('typescript'), mod = { exports: {} }, delays = [];
+  let time = 0;
+  const code = ts.transpileModule(readFileSync(new URL('../../src/v2in/automate/session.tsx', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  new Function('require', 'module', 'exports', 'setTimeout', 'Date', code)(() => ({}), mod, mod.exports,
+    (fn, ms) => { time += ms; delays.push(ms); queueMicrotask(fn); return 0; }, { now: () => time });
+  return { ...mod.exports, delays };
+}
+const session = { serial: work => work(), ensureChain: async () => {}, receiptAvailability: () => 'ready' };
+
+test('a sent approval with temporarily unreadable confirmation can be checked again without preparing or sending twice', async () => {
+  const run = sessionFunctions(), phases = [];
+  let sends = 0, prepares = 0, reads = 0;
+  const client = { send: async () => { sends++; return HASH; }, wasOffered: () => true,
+    receipt: async hash => { assert.equal(hash, HASH); reads++; if (reads === 1) throw new Error('invalid_receipt'); return receipt; } };
+  await assert.rejects(run.sendStep(session, client, async () => { prepares++; return {}; }, p => phases.push(p), () => true), run.SentStepError);
+  const result = await run.resumeStep(session, client, HASH, p => phases.push(p));
+  assert.equal(result.receipt.state, 'included');
+  assert.equal(sends, 1); assert.equal(prepares, 1); assert.equal(reads, 2);
+  assert.equal(phases.at(-1).phase, 'included');
+});
+
+test('receipt-only continuation honors Retry-After and pauses another chain without switching or sending', async () => {
+  const run = sessionFunctions(); let availability = 0, reads = 0;
+  const scoped = { ...session, ensureChain: async () => assert.fail('no wallet switch during continuation'),
+    receiptAvailability: () => ++availability === 1 ? 'paused' : 'ready' };
+  const client = { send: async () => assert.fail('never resend'), receipt: async () => {
+    if (++reads === 1) throw { retryAfterMs: 17_000 };
+    return receipt;
+  } };
+  await run.resumeStep(scoped, client, HASH, () => {});
+  assert.equal(reads, 2); assert.ok(run.delays.includes(17_000));
+  await assert.rejects(run.resumeStep({ ...scoped, receiptAvailability: () => 'gone' }, { receipt: () => assert.fail('previous account must not be read') }, HASH, () => {}), run.SentStepError);
+});
+
+test('an unresolved batch resumes only its known identifier, and reverted/reorganized receipts never authorize the next step', async () => {
+  const run = sessionFunctions(); let reads = 0;
+  const batch = { prepareBatch: () => assert.fail('no prepare'), send: () => assert.fail('no send'),
+    receipt: async id => { assert.equal(id, 'known-batch'); reads++; return receipt; } };
+  assert.equal((await run.resumeBatchStep(session, batch, 'known-batch', () => {})).receipt.state, 'included');
+  assert.equal(reads, 1);
+  for (const state of ['reverted', 'reorged']) {
+    await assert.rejects(run.resumeStep(session, { receipt: async () => ({ ...receipt, state }) }, HASH, () => {}), run.SentStepError);
+  }
+});
+
+test('Robinhood keeps confirming through its existing independent reader after the wallet disconnects or changes chain', async () => {
+  const run = sessionFunctions();
+  for (const availability of ['gone', 'paused']) {
+    const scoped = { ...session, chainId: 4663, receiptAvailability: () => availability,
+      ensureChain: () => assert.fail('no wallet request for Robinhood receipt continuation') };
+    assert.equal((await run.resumeStep(scoped, { receipt: async () => receipt }, HASH, () => {})).receipt.state, 'included');
+    assert.equal((await run.resumeBatchStep(scoped, { receipt: async () => receipt }, 'known-batch', () => {})).receipt.state, 'included');
+  }
+});
+
+test('Base and Arbitrum automation finality updates the shared exact receipt after its screen has gone', () => {
+  for (const chainId of [8453, 42161]) {
+    const operation = { chainId, wallet: `0x${'01'.repeat(20)}`, positionManager: `0x${'02'.repeat(20)}`, vault: `0x${'03'.repeat(20)}`,
+      tokenIds: ['6238157'], hash: HASH, blockHash: BLOCK, block: 20, phase: 'included', events: [{ eventName: 'VaultCreated' }] };
+    const records = [], reorgs = [];
+    const apply = next => reconcileAutomationReceipt(operation, next, value => records.push(value), value => reorgs.push(value));
+    assert.equal(apply({ state: 'pending' }), false);
+    assert.equal(apply(receipt), false); assert.equal(records.length, 0);
+    assert.equal(apply({ ...receipt, state: 'finalized' }), true);
+    assert.equal(records[0].chainId, chainId); assert.equal(records[0].receipt.state, 'finalized');
+    assert.deepEqual(records[0].tokenIds, operation.tokenIds); assert.equal(records[0].vault, operation.vault);
+    assert.deepEqual(records[0].receipt.events, operation.events); assert.equal(reorgs.length, 0);
+    for (const changed of [{ blockHash: `0x${'ef'.repeat(32)}` }, { blockNumber: 21n }, { transactionHash: `0x${'ee'.repeat(32)}` }, { state: 'reorged' }]) {
+      assert.equal(apply({ ...receipt, ...changed }), true);
+      assert.equal(records.length, 1, 'changed canonical identity cannot invent final proof');
+    }
+    assert.equal(reorgs.length, 4);
+    assert.ok(reorgs.every(value => value.chainId === chainId && value.wallet === operation.wallet && value.hash === HASH && value.blockHash === BLOCK));
+    for (const current of [null, { ...operation, phase: 'finalized' }, { ...operation, phase: 'reorged' },
+      { ...operation, wallet: `0x${'09'.repeat(20)}` }, { ...operation, blockHash: `0x${'09'.repeat(32)}` }]) {
+      assert.equal(reconcileAutomationReceipt(operation, { ...receipt, state: 'finalized' },
+        () => assert.fail('stale reads must not overwrite newer proof'), () => assert.fail('stale reads must not invalidate newer proof'), current), true);
+    }
+  }
+});

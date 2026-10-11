@@ -18,7 +18,7 @@
 
 ## Remaining data limitation
 
-Read-v6 currently returns portfolio/activity and current snapshots. The deployed read-v3 historical contract and performance-v2 accounting contract are Robinhood-specific. Neither an existing generic history route nor a multichain lifetime-fee/APR response was found in the inspected code or Cloudflare routes. The new session observations are **not** lifetime earnings, complete historical coverage or APR. Missing history remains explicitly unavailable.
+Read-v6 currently returns portfolio/activity and current snapshots. Robinhood's current Fees/Your APR path is the Pages Functions `/api/fees/v1/state` and `/api/fees/v2/ledger`, reading Rugged's Robinhood RPC; it is not `performance-v2`. That older service is intentionally disabled. Pool price history uses the Robinhood-specific read-v3 contract. Neither an existing generic history route nor a multichain lifetime-fee/APR response was found in the inspected code or Cloudflare routes. The new session observations are **not** lifetime earnings, complete historical coverage or APR. Missing history remains explicitly unavailable. Personal APR does not require USD pricing: it requires verified earned fees and time-weighted liquidity exposure, valued in the quote token.
 
 The BASECAT position is visible through the public portfolio on the live preview with current token balances and fee balances. USD estimates are qualified independently; an on-chain check of this pool's executable USDC depth was below the existing minimum. The app retains token amounts when the producer does not qualify a USD value. No pricing threshold was weakened.
 

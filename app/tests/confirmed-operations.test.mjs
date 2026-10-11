@@ -46,6 +46,51 @@ test('operations require a real hash, owner and safe block, keep immutable scope
   assert.equal(h.store.get().length, 64)
 })
 
+test('validated indexed finality completes exact multichain inclusion without losing its checked effects or opening another reader', () => {
+  for (const chainId of [8453, 42161]) {
+    const h = harness(), events = [{ address: `0x${'03'.repeat(20)}`, eventName: 'Created', args: { tokenId: 6238157n } }]
+    const local = input({ chainId, vault: `0x${'04'.repeat(20)}`, receipt: { ...input().receipt, events } })
+    const included = h.store.record(local)
+    h.store.record({ indexed: true, chainId, wallet: WALLET, tokenIds: [], receipt: { ...local.receipt, events: [], state: 'finalized' } })
+    const final = h.store.get()[0]
+    assert.deepEqual(final, { ...included, phase: 'finalized' })
+    assert.equal(final.indexed, undefined, 'index evidence cannot erase financial scope or its original provenance')
+    h.store.record({ indexed: true, chainId, wallet: WALLET, tokenIds: [], receipt: input().receipt })
+    assert.equal(h.store.get()[0], final, 'an older index response cannot downgrade finality')
+    assert.equal(h.published.length, 2, 'no repeated publication or refresh loop')
+    assert.equal(h.timers.size, 0); assert.equal(h.calls.length, 0)
+  }
+})
+
+test('indexed finality is bound to owner, chain, transaction and block, and cannot resurrect a reorg', () => {
+  const h = harness(), local = input({ chainId: 8453 })
+  const included = h.store.record(local)
+  const indexed = { ...local, indexed: true, tokenIds: [], receipt: { ...local.receipt, state: 'finalized' } }
+  h.store.record({ ...indexed, wallet: `0x${'05'.repeat(20)}` })
+  h.store.record({ ...indexed, receipt: { ...indexed.receipt, blockNumber: 17n } })
+  h.store.record({ ...indexed, receipt: { ...indexed.receipt, blockHash: OTHER } })
+  assert.equal(h.store.get()[0], included)
+  h.store.record({ ...indexed, chainId: 42161 })
+  assert.equal(h.store.finality(8453, HASH, BLOCK_HASH), 'included', 'a matching transaction on another chain is independent')
+  h.store.reorg({ chainId: 8453, wallet: WALLET, hash: HASH, blockHash: BLOCK_HASH })
+  const reorged = h.store.get().find(op => op.chainId === 8453)
+  h.store.record(indexed)
+  h.store.record({ ...indexed, receipt: { ...indexed.receipt, blockHash: OTHER } })
+  assert.equal(h.store.get().find(op => op.chainId === 8453), reorged)
+  assert.equal(reorged.phase, 'reorged', 'new effects must be checked by the financial client')
+  assert.equal(h.timers.size, 0); assert.equal(h.calls.length, 0)
+})
+
+test('reload adoption finalizes historical receipts without introducing financial scope or new read work', () => {
+  const h = harness(), historical = input({ chainId: 8453, indexed: true, positionManager: undefined, tokenIds: [] })
+  h.store.record(historical)
+  h.store.record({ ...historical, receipt: { ...historical.receipt, state: 'finalized' } })
+  assert.equal(h.store.get()[0].indexed, true)
+  assert.equal(h.store.get()[0].phase, 'finalized')
+  assert.deepEqual(h.store.get()[0].tokenIds, [])
+  assert.equal(h.timers.size, 0); assert.equal(h.calls.length, 0)
+})
+
 test('missing, lagging and unavailable data keep inclusion; finalized height alone proves nothing', async () => {
   for (const answer of [() => ({ transaction: null, receipt: null, block: null }), () => canonical({ block: null }),
     () => canonical({ block: { number: '0xf', hash: BLOCK_HASH } }), () => { throw new Error('node offline') }]) {

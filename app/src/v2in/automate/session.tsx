@@ -32,6 +32,8 @@ export interface AutomationSession {
   serial<T>(work: () => Promise<T>): Promise<T>
   /** Asks the wallet to be on this session's chain (a switch to the chain it is on asks nothing of the person). */
   ensureChain(): Promise<void>
+  /** Receipt continuation reads only while this exact connector/account is still on its transaction's chain. */
+  receiptAvailability?(): 'ready' | 'paused' | 'gone'
 }
 
 const sessions = new Map<string, { session: AutomationSession; current: () => boolean }>()
@@ -63,7 +65,8 @@ export async function openAutomation(chainId: V2ChainId, contracts: V2Contracts)
     tail = run.catch(() => undefined)
     return run
   }
-  const session: AutomationSession = Object.freeze({ chainId, owner: wallet.owner, contracts, vault, autoExit, serial, ensureChain: () => ensureChain(chainId) })
+  const session: AutomationSession = Object.freeze({ chainId, owner: wallet.owner, contracts, vault, autoExit, serial, ensureChain: () => ensureChain(chainId),
+    receiptAvailability: () => !wallet.current() ? 'gone' : wallet.chainId() === chainId ? 'ready' : 'paused' })
   sessions.set(key, { session, current: () => wallet.current() })
   return session
 }
@@ -101,6 +104,8 @@ const settled = (error: unknown) => error instanceof Error && SETTLED.has(error.
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 /** How often a sent step's receipt is read: quickly at first, then every few seconds. */
 const beat = (attempt: number) => Math.min(800 + attempt * 400, 4000)
+// Robinhood already confirms through its independent first-party reader. Other chains use the original wallet port.
+const receiptAvailability = (session: AutomationSession) => session.chainId === 4663 ? 'ready' : session.receiptAvailability?.() ?? 'ready'
 
 /** A step that was offered: from here on a failure is an outcome the page could not read, never a step known to have failed. */
 export class SentStepError extends Error {
@@ -140,19 +145,31 @@ export async function sendStep(session: AutomationSession, client: TxClient, pre
     if (client.wasOffered(prepared)) throw new OfferedStepError(error)
     throw error
   }
+  return resumeStep(session, client, hash, report)
+}
+
+/** Continue the exact transaction already sent. This path never prepares, signs or sends anything. */
+export async function resumeStep(session: AutomationSession, client: TxClient, hash: Hex, report: (phase: StepPhase) => void): Promise<{ hash: Hex; receipt: IncludedReceipt }> {
   report({ phase: 'sent', hash })
   const until = Date.now() + 600_000
   for (let attempt = 0; ; attempt++) {
     await sleep(beat(attempt))
     // Once sent, this read continues after the sheet closes. It never offers a next step.
     if (Date.now() >= until) throw new SentStepError('receipt_unknown', hash)
+    const availability = receiptAvailability(session)
+    if (availability === 'gone') throw new SentStepError('receipt_unknown', hash)
+    if (availability === 'paused') continue
     let receipt: Awaited<ReturnType<TxClient['receipt']>>
     try {
       receipt = await session.serial(() => client.receipt(hash))
     } catch (error) {
       if (settled(error)) throw new SentStepError('receipt_unknown', hash)
+      const retry = error && typeof error === 'object' && 'retryAfterMs' in error && typeof error.retryAfterMs === 'number' ? error.retryAfterMs : 0
+      if (Number.isFinite(retry) && retry > 0) await sleep(retry)
       continue
     }
+    if (receiptAvailability(session) === 'gone') throw new SentStepError('receipt_unknown', hash)
+    if (receiptAvailability(session) === 'paused') continue
     if (receipt.state === 'pending') continue
     if (receipt.state === 'reverted') throw new SentStepError('receipt_reverted', hash)
     if (receipt.state === 'reorged') throw new SentStepError('receipt_reorged', hash)
@@ -190,11 +207,19 @@ export async function sendBatchStep<B>(session: AutomationSession, batch: BatchC
   if (!alive()) return null
   report({ phase: 'working', note: 'wallet' })
   const batchId = await session.serial(() => batch.send(prepared))
+  return resumeBatchStep(session, batch, batchId, report)
+}
+
+/** Recheck a known batch without offering the batch to the wallet again. */
+export async function resumeBatchStep<B>(session: AutomationSession, batch: BatchClient<B>, batchId: string, report: (phase: StepPhase) => void): Promise<{ batchId: string; receipt: IncludedReceipt }> {
   report({ phase: 'sent', batchId })
   const until = Date.now() + 600_000
   for (let attempt = 0; ; attempt++) {
     await sleep(beat(attempt))
     if (Date.now() >= until) throw new SentBatchError('receipt_unknown', batchId)
+    const availability = receiptAvailability(session)
+    if (availability === 'gone') throw new SentBatchError('receipt_unknown', batchId)
+    if (availability === 'paused') continue
     let receipt: V2BatchReceipt
     try {
       receipt = await session.serial(() => batch.receipt(batchId))
@@ -202,6 +227,8 @@ export async function sendBatchStep<B>(session: AutomationSession, batch: BatchC
       if (settled(error) || (error instanceof Error && error.message === 'receipt_duplicate_action')) throw new SentBatchError('receipt_unknown', batchId)
       continue
     }
+    if (receiptAvailability(session) === 'gone') throw new SentBatchError('receipt_unknown', batchId)
+    if (receiptAvailability(session) === 'paused') continue
     if (receipt.state === 'pending') continue
     if (receipt.state === 'not-included') throw new Error('batch_not_included')
     if (receipt.state === 'batch-reverted' || receipt.state === 'reverted') throw new Error('batch_reverted')

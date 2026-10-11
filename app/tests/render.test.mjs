@@ -823,7 +823,20 @@ test('the compact range scene keeps the correct token mix and fixed range withou
   for (const width of [320, 390, 960, 1280, 1440]) {
     await page.setViewportSize({ width, height: 960 });
     await setRange(page, '#sim-price', 0);
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no overflow at ' + width);
+    const overflow = await page.evaluate(() => ({
+      width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
+      elements: [...document.querySelectorAll('body *')].flatMap(element => {
+        const box = element.getBoundingClientRect();
+        if (box.width === 0 || box.right <= innerWidth) return [];
+        return [{ tag: element.tagName, id: element.id, className: element.getAttribute('class'), right: box.right, width: box.width }];
+      }).slice(0, 20),
+    }));
+    if (overflow.scrollWidth > overflow.width && process.env.DOMINO_FAILURE_SHOTS) {
+      const directory = resolve(import.meta.dirname, '../.test-artifacts/failures');
+      await mkdir(directory, { recursive: true });
+      await page.screenshot({ path: join(directory, `home-overflow-${width}.png`), fullPage: true, animations: 'disabled' });
+    }
+    assert.equal(overflow.scrollWidth <= overflow.width, true, 'no overflow at ' + width + ': ' + JSON.stringify(overflow));
     if (width < 768) {
       const tileHeights = await page.locator('#pools tbody tr').evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height));
       assert.ok(tileHeights.every(height => height < 128), `Home pool tiles do not inherit table cell heights: ${tileHeights}`);

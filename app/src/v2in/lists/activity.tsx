@@ -2,7 +2,8 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { createActivityHistory } from './activityHistory'
 import { LISTS_SOURCE } from './source'
 import { subscribePositionChanges } from './positionSync'
-import { confirmedOperationState, receiptFinality, recordConfirmedOperation, subscribeConfirmedOperations } from '../../lib/confirmedOperations'
+import { confirmedOperationState, recordConfirmedOperation, subscribeConfirmedOperations } from '../../lib/confirmedOperations'
+import { indexedOperationEvidence } from './activityModel'
 
 const refresh = !(__DOMINO_TEST_HOOKS__ && typeof window !== 'undefined' && !(window as { __dominoRefresh?: boolean }).__dominoRefresh)
 export const ACTIVITY_HISTORY = createActivityHistory((wallet, page) => LISTS_SOURCE.ownActivity(wallet, page), {
@@ -22,7 +23,7 @@ subscribePositionChanges((change) => {
   ACTIVITY_HISTORY.refresh(change.wallet?.toLowerCase(), block > 0 ? { chainId: change.chainId, block } : undefined)
 }, true)
 subscribeConfirmedOperations(operation => {
-  if (operation.indexed && operation.phase === 'included') return
+  if (operation.indexed && operation.phase !== 'reorged') return
   ACTIVITY_HISTORY.refresh(operation.wallet, operation.phase === 'reorged' ? undefined : { chainId: operation.chainId, block: operation.block, finalized: operation.phase === 'finalized' })
 })
 if (refresh && typeof window !== 'undefined') {
@@ -40,16 +41,12 @@ export function useActivityHistory(wallet: string | null) {
   const history = useSyncExternalStore(subscribe, snapshot, () => EMPTY)
   const proofs = useSyncExternalStore(subscribeConfirmedOperations, confirmedOperationState, confirmedOperationState)
   const finality = useCallback((chainId: number, hash: string, blockHash: string) => {
-    const operation = proofs.find(item => item.chainId === chainId && item.hash === hash.toLowerCase())
+    const operation = proofs.find(item => item.wallet === key && item.chainId === chainId && item.hash === hash.toLowerCase())
     return operation?.blockHash === blockHash.toLowerCase() ? operation.phase : null
-  }, [proofs])
+  }, [key, proofs])
   useEffect(() => {
     if (!key || !history.answer) return
-    // A reload has no local action journal. Adopt only the index's exact transaction/block pair,
-    // without inventing NFT scope, automation effects or a new-operation balance barrier.
-    for (const item of history.answer.items.filter(item => item.chainId === 4663 && item.tx.finality === 'unfinalized' && receiptFinality(item.chainId, item.tx.hash, item.tx.snapshot.hash) === null).slice(0, 32)) {
-      recordConfirmedOperation({ indexed: true, chainId: item.chainId, wallet: key, tokenIds: [], receipt: { transactionHash: item.tx.hash, blockHash: item.tx.snapshot.hash, blockNumber: BigInt(item.tx.snapshot.number), state: 'included' } })
-    }
+    for (const evidence of indexedOperationEvidence(key, history.answer, confirmedOperationState())) recordConfirmedOperation(evidence)
   }, [key, history.answer])
   return { ...history, proofs, receiptFinality: finality, moreRows: () => { if (key) ACTIVITY_HISTORY.more(key) } }
 }

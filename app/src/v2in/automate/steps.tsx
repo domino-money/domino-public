@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import type { PreparedV2 } from '../../finance/v2/transact'
 import type { ErrorLabels } from '../../v2/errors'
 import { describeError, type ErrorView } from './copy'
-import { IDLE, OfferedStepError, SentBatchError, SentStepError, sendBatchStep, sendStep, watchFinality, type AutomationSession, type BatchClient, type IncludedReceipt, type StepPhase, type TxClient } from './session'
+import { IDLE, OfferedStepError, SentBatchError, SentStepError, resumeBatchStep, resumeStep, sendBatchStep, sendStep, type AutomationSession, type BatchClient, type IncludedReceipt, type StepPhase, type TxClient } from './session'
 import { positionChanged } from '../lists/positionSync'
-import { recordConfirmedOperation, subscribeConfirmedOperations, type OperationScope } from '../../lib/confirmedOperations'
+import { confirmedOperationState, recordConfirmedOperation, reorgConfirmedOperation, subscribeConfirmedOperations, type OperationScope } from '../../lib/confirmedOperations'
+import { RECEIPT_FOLLOW, type FollowedReceipt } from '../journey/receiptFollow'
+import { reconcileAutomationReceipt } from './receipt'
 
 /**
  * A review's wallet steps in the look and the rhythm of Set up automation's own (screens/SequenceCreate.tsx): the list of
@@ -22,7 +24,7 @@ export interface WalletStep {
   /** One plain sentence under it (what a batch holds, for instance). */
   note?: string
   /** One transaction, prepared by its client (re-derived from the chain and simulated) right when it is offered. */
-  tx?: { client: TxClient; prepare: () => Promise<PreparedV2> }
+  tx?: { client: TxClient; prepare: () => Promise<PreparedV2>; resume?: () => `0x${string}` | null }
   /** Several calls as ONE EIP-5792 batch: one confirmation in the wallet. */
   batch?: BatchClient<unknown>
   /** A signature through the client's own signer. */
@@ -46,7 +48,7 @@ const busy = (phase: StepPhase) => phase.phase === 'working' || phase.phase === 
 const handedOver = (phase: StepPhase) => phase.phase === 'failed' && (phase.hash !== undefined || phase.batchId !== undefined || phase.offered === true)
 
 const ALREADY_SENT: ErrorView = Object.freeze({
-  text: "This step was already sent from this page, and its outcome isn't known yet. Check your wallet activity before trying again.",
+  text: 'This transaction is already sent. Check its confirmation to continue.',
   code: 'review_already_sent',
 })
 
@@ -54,6 +56,8 @@ export interface StepsRun {
   phases: readonly StepPhase[]
   notice: ErrorView | null
   running: boolean
+  /** A previous send is unresolved: the next press checks that transaction, never sends it again. */
+  pending: boolean
   /** Every step is done (included, finalized or signed). */
   complete: boolean
   /** Offers the steps not done yet, in order, one confirmation each. */
@@ -103,11 +107,20 @@ export function useStepsRun({ session, steps, context, labels, affected, onStepD
   }, [steps])
   useEffect(() => () => { generation.current++; for (const stop of watches.current) stop(); watches.current.clear() }, [])
 
-  function observe(receipt: IncludedReceipt, step: WalletStep, set: (phase: StepPhase) => void, alive: () => boolean, phase: { hash?: `0x${string}`; batchId?: string }, onFinalized: () => Promise<boolean>) {
+  function observe(receipt: IncludedReceipt, step: WalletStep, set: (phase: StepPhase) => void, alive: () => boolean, phase: { hash?: `0x${string}`; batchId?: string }, read: () => Promise<FollowedReceipt>) {
     if (!session) return
     const scope = { ...affected, tokenIds: /approve/.test(step.key) ? [] : affected?.tokenIds ?? [] }
-    const operation = recordConfirmedOperation({ ...scope, chainId: session.chainId, wallet: session.owner, receipt, onFinalized })
+    const operation = recordConfirmedOperation({ ...scope, chainId: session.chainId, wallet: session.owner, receipt, onFinalized: async () => (await read()).state === 'finalized' })
     if (!operation) positionChanged({ ...scope, chainId: session.chainId, wallet: session.owner, block: receipt.blockNumber, blockHash: receipt.blockHash })
+    if (operation?.phase === 'included' && session.chainId !== 4663) {
+      // The original transaction client outlives this view. Finality updates the shared receipt, not only this step's label.
+      const active = session
+      RECEIPT_FOLLOW.follow(`${operation.chainId}:${operation.wallet}:${operation.hash}`, {
+        read: () => active.serial(read), available: () => active.receiptAvailability?.() ?? 'ready',
+        accept: next => reconcileAutomationReceipt(operation, next, recordConfirmedOperation, reorgConfirmedOperation,
+          confirmedOperationState().find(item => item.chainId === operation.chainId && item.hash === operation.hash) ?? null),
+      })
+    }
     if (!operation || operation.phase !== 'included' || !alive()) return
     const stop = subscribeConfirmedOperations(next => {
       if (next.chainId !== operation.chainId || next.hash !== operation.hash || next.blockHash !== operation.blockHash) return
@@ -122,24 +135,23 @@ export function useStepsRun({ session, steps, context, labels, affected, onStepD
     watches.current.add(stop)
   }
 
-  async function runOne(index: number, step: WalletStep, alive: () => boolean, set: (phase: StepPhase) => void): Promise<IncludedReceipt | null> {
+  async function runOne(index: number, step: WalletStep, phase: StepPhase, alive: () => boolean, set: (phase: StepPhase) => void): Promise<IncludedReceipt | null> {
     if (!session) throw new Error('connect_wallet')
     if (step.tx) {
-      const result = await sendStep(session, step.tx.client, step.tx.prepare, set, alive)
+      const known = ('hash' in phase ? phase.hash : undefined) ?? step.tx.resume?.()
+      if (known) { await session.ensureChain(); if (!alive()) return null }
+      const result = known ? await resumeStep(session, step.tx.client, known, set) : await sendStep(session, step.tx.client, step.tx.prepare, set, alive)
       if (!result) return null
-      observe(result.receipt, step, set, alive, { hash: result.hash }, async () => (await step.tx!.client.receipt(result.hash)).state === 'finalized')
-      if (session.chainId !== 4663 && result.receipt.state === 'included') {
-        const client = step.tx.client
-        void watchFinality(session, () => client.receipt(result.hash), () => set({ phase: 'finalized', hash: result.hash }), alive)
-      }
+      observe(result.receipt, step, set, alive, { hash: result.hash }, () => step.tx!.client.receipt(result.hash))
       return result.receipt
     }
     if (step.batch) {
       const batch = step.batch
-      const result = await sendBatchStep(session, batch, set, alive)
+      const known = 'batchId' in phase ? phase.batchId : undefined
+      if (known) { await session.ensureChain(); if (!alive()) return null }
+      const result = known ? await resumeBatchStep(session, batch, known, set) : await sendBatchStep(session, batch, set, alive)
       if (!result) return null
-      observe(result.receipt, step, set, alive, { batchId: result.batchId }, async () => (await batch.receipt(result.batchId)).state === 'finalized')
-      if (session.chainId !== 4663 && result.receipt.state === 'included') void watchFinality(session, () => batch.receipt(result.batchId), () => set({ phase: 'finalized', batchId: result.batchId }), alive)
+      observe(result.receipt, step, set, alive, { batchId: result.batchId }, () => batch.receipt(result.batchId))
       return result.receipt
     }
     if (step.sign) {
@@ -166,7 +178,8 @@ export function useStepsRun({ session, steps, context, labels, affected, onStepD
       for (let index = 0; index < steps.length; index++) {
         const phase = current.current[index] ?? IDLE
         if (done(phase)) continue
-        if (handedOver(phase)) {
+        const step = steps[index]
+        if (handedOver(phase) && !('hash' in phase && phase.hash) && !('batchId' in phase && phase.batchId) && !step.tx?.resume?.()) {
           if (alive()) setNotice(ALREADY_SENT)
           return
         }
@@ -175,10 +188,9 @@ export function useStepsRun({ session, steps, context, labels, affected, onStepD
           current.current = current.current.map((p, i) => (i === index ? next : p))
           setPhases(current.current)
         }
-        const step = steps[index]
         let receipt: IncludedReceipt | null
         try {
-          receipt = await runOne(index, step, alive, set)
+          receipt = await runOne(index, step, phase, alive, set)
         } catch (error) {
           if (!alive()) return
           const view = describeError(error, step.context ?? context, labels)
@@ -202,7 +214,7 @@ export function useStepsRun({ session, steps, context, labels, affected, onStepD
     }
   }
 
-  return { phases, notice, running, complete: phases.length > 0 && phases.every(done), press }
+  return { phases, notice, running, pending: phases.some(handedOver) || notice?.code === 'review_already_sent', complete: phases.length > 0 && phases.every(done), press }
 }
 
 /** A step's line under its title, in Set up automation's words. */
@@ -218,6 +230,8 @@ function caption(phase: StepPhase): string | null {
       return 'Finalized'
     case 'signed':
       return 'Signed'
+    case 'failed':
+      return handedOver(phase) ? 'Confirmation not available yet. Check the transaction to continue.' : null
     default:
       return null
   }

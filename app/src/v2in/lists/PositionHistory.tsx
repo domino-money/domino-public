@@ -12,6 +12,8 @@ import { receiptViews } from './model'
 import { ChainLines, RECEIPT_LIST, ReceiptRow } from './receiptParts'
 import { OWN_PORTFOLIO } from './source'
 import { LocalReceiptRow, useLocalReceipts } from './LocalReceiptRow'
+import { activityWindow, sessionActivity } from './sessionActivity'
+import { SessionActivityRow } from './SessionActivityRow'
 
 const NO_EVENTS: readonly FeesEvent[] = []
 
@@ -56,13 +58,14 @@ export default function PositionHistory({ wallet, position, events = NO_EVENTS, 
       ...[...loose].map(([tx, settlements]) => ({ id: `ledger:${tx}`, at: settlements[0].timestamp, operation: null, settlements })),
     ].sort(compareChronology)
   }, [events, receipts, matching, local, position])
-  const visible = rows.slice(0, shown)
+  const { immediate, visible, total, hidden } = activityWindow(live ? sessionActivity(wallet, history.proofs, answer?.items ?? [], position) : [], rows, shown)
   if (!live && events.length === 0) return null
   return <section className="dm-card dm-pos-card dm-pos-activity dm-activity-history" aria-labelledby="position-activity-title" data-position-activity="" data-position-activity-read={history.answer ? 'ok' : history.error?.kind ?? 'loading'}>
     <h2 className="dm-title" id="position-activity-title">Activity</h2>
     {live && history.answer && <ChainLines answer={history.answer} />}
     {live && history.error && <p className="dm-rcpt-note" role="status" data-position-activity-reason={history.error.kind === 'unavailable' ? history.error.reason : history.error.detail}>More activity couldn’t be loaded. We’ll try again automatically.</p>}
-    {visible.length > 0 && <ol className={`${RECEIPT_LIST} dm-activity-list`} data-position-history-rows={visible.length}>
+    {visible.length + immediate.length > 0 && <ol className={`${RECEIPT_LIST} dm-activity-list`} data-position-history-rows={visible.length + immediate.length}>
+      {immediate.map(item => <SessionActivityRow key={`${item.proof.chainId}:${item.proof.hash}`} item={item} />)}
       {visible.map((row) => row.operation?.kind === 'local' ? <LocalReceiptRow key={row.id} receipt={row.operation.item} at={row.at} tokens={portfolio?.tokens ?? history.answer?.tokens ?? []}>
         {row.settlements.length > 0 && <FeesActivity events={row.settlements} bare automatic={automatic ?? undefined} />}
       </LocalReceiptRow>
@@ -70,9 +73,9 @@ export default function PositionHistory({ wallet, position, events = NO_EVENTS, 
         {row.settlements.length > 0 && <FeesActivity events={row.settlements} bare automatic={automatic ?? undefined} />}
       </ReceiptRow> : <li key={row.id} data-position-ledger-transaction={row.settlements[0].tx}><FeesActivity events={row.settlements} bare automatic={automatic ?? undefined} /></li>)}
     </ol>}
-    {visible.length === 0 && live && !history.error && <p className="dm-rcpt-note" role="status">{!history.answer || history.loading ? 'Loading activity…' : history.more ? 'No matching activity in the loaded pages.' : 'No activity found in the available history.'}</p>}
-    {(rows.length > shown || (live && history.more)) && <div className="dm-activity-footer"><Button variant="ghost" size="sm" disabled={history.loading && rows.length <= shown}
-      onClick={() => { setPage({ scope, shown: shown + 10 }); if (rows.length <= shown + 10) history.moreRows() }}>{history.loading && rows.length <= shown ? 'Loading more…' : 'Show more'}</Button></div>}
+    {visible.length + immediate.length === 0 && live && !history.error && <p className="dm-rcpt-note" role="status">{!history.answer || history.loading ? 'Loading activity…' : history.more ? 'No matching activity in the loaded pages.' : 'No activity found in the available history.'}</p>}
+    {(hidden || (live && history.more)) && <div className="dm-activity-footer"><Button variant="ghost" size="sm" disabled={history.loading && !hidden}
+      onClick={() => { setPage({ scope, shown: shown + 10 }); if (total <= shown + 10) history.moreRows() }}>{history.loading && !hidden ? 'Loading more…' : 'Show more'}</Button></div>}
     {live && history.answer && contextLimited(portfolio) && <p className="dm-rcpt-note" data-position-history-partial="">Some automation events may not yet be linked to this position.</p>}
   </section>
 }

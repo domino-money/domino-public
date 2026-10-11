@@ -14,6 +14,7 @@ const require = createRequire(import.meta.url);
 const position = require('../../.test-build/app/src/finance/position.js');
 const ZERO = '0x0000000000000000000000000000000000000000';
 const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
+const UFG = '0xefab538cf3c29237a47c6afb145d50ddf204a0a3';
 const pool = { dex: 4, currency0: ZERO, currency1: USDG, fee: 500, tickSpacing: 10, hooks: ZERO };
 const range = { tickLower: -201060, tickUpper: -197040 };
 const tick = -199020, sqrtPriceX96 = position.sqrtPriceAtTick(tick), liquidity = 10n ** 15n;
@@ -21,6 +22,88 @@ const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../a
 let browser;
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await closeBrowser(browser); });
+
+function walletAnswer(now, ufg = null) {
+  const body = structuredClone(fixture);
+  body.snapshot.timestamp = now;
+  body.inventory.retrievedAt = now;
+  body.items[1] = { ...body.items[1], address: USDG, symbol: 'USDG', decimals: 6, amountRaw: '1000000' };
+  if (ufg !== null) body.items.push({ ...body.items[1], address: UFG, symbol: 'UFG', decimals: 18, amountRaw: String(BigInt(ufg) * 10n ** 18n) });
+  return JSON.stringify(body);
+}
+
+test('Wallet rechecks an omitted remembered UFG without discovery, retains it while unknown, and removes an exact zero', { timeout: 60_000 }, async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const chain = createDirectChain({ chainId: 4663, timestamp: now, v4: [] });
+  const read6 = { portfolio: portfolioOf({ wallet: chain.owner }), activity: activityOf({ wallet: chain.owner }) };
+  let available = false, spent = false, checks = 0;
+  const read = createReadStub({ reads: 'wallet-assets', answer: (route, body) => {
+    if (route !== 'wallet-assets') return undefined;
+    if (body.autoDiscover === false && body.tokens?.includes(UFG)) {
+      checks++;
+      if (!available) return new Response(JSON.stringify({ error: 'upstream_unavailable' }), { status: 503, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': '1.1.0-rc.3' } });
+      return walletAnswer(now, spent ? 0 : 1000000);
+    }
+    return walletAnswer(now);
+  } });
+  const s = await openPositionPage(browser, chain, { hash: '#/positions', read6, routes: [read.handle], s1: { directCode: { 4663: chain.codeHashes } } });
+  try {
+    const { page } = s;
+    await page.locator('[data-wallet-total]').waitFor();
+    await page.evaluate(({ wallet, now, UFG, USDG }) => {
+      localStorage.setItem('domino-wallet-v2:4663', JSON.stringify({ v: 1, wallets: { [wallet.toLowerCase()]: { at: now * 1000, whole: true,
+        rows: [[UFG, 'UFG', 18, '1000000000000000000000000', 700], [USDG, 'USDG', 6, '1000000', 700]], quotes: [[UFG, '0.003', 100000, now * 1000]] } } }));
+    }, { wallet: chain.owner, now, UFG, USDG });
+    await page.reload();
+    const card = page.locator('[data-portfolio-tokens]'), ufg = card.locator(`[data-wallet-row="${UFG}"]`);
+    await card.locator('[data-wallet-value-unavailable]').waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-portfolio-tokens]')?.getAttribute('data-wallet-source') === 'read');
+    assert.match(await ufg.locator('[data-wallet-balance-earlier]').innerText(), /Last known/);
+    assert.equal(await ufg.locator('[data-usd]').count(), 0);
+    assert.ok(checks > 0, 'the existing exact-address API was used for the omitted holding');
+    assert.equal(await card.locator('[data-wallet-total]').count(), 0, 'the remaining USDG is not misrepresented as the whole wallet');
+    available = true; spent = true;
+    const before = checks;
+    await page.reload();
+    await page.waitForFunction((token) => {
+      const card = document.querySelector('[data-portfolio-tokens]');
+      return card?.getAttribute('data-wallet-source') === 'read' && !card.querySelector(`[data-wallet-row="${token}"]`) && card.querySelector('[data-wallet-total]');
+    }, UFG);
+    assert.ok(checks > before);
+    assert.match(await card.locator('[data-wallet-total]').innerText(), /\$1\.00$/);
+    const remembered = await page.evaluate(wallet => JSON.parse(localStorage.getItem('domino-wallet-v2:4663')).wallets[wallet.toLowerCase()].rows, chain.owner);
+    assert.equal(remembered.some(([token]) => token === UFG), false, 'confirmed spent holdings are removed from browser memory too');
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+test('Wallet keeps a previously priced UFG in the top rows when its quote disappears, without displaying a partial total', { timeout: 60_000 }, async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const chain = createDirectChain({ chainId: 4663, timestamp: now, v4: [] });
+  const read6 = { portfolio: portfolioOf({ wallet: chain.owner }), activity: activityOf({ wallet: chain.owner }) };
+  const read = createReadStub({ reads: 'wallet-assets', answer: route => route === 'wallet-assets' ? walletAnswer(now, 1000000) : undefined });
+  const s = await openPositionPage(browser, chain, { hash: '#/positions', read6, routes: [read.handle], s1: { directCode: { 4663: chain.codeHashes } } });
+  try {
+    let priced = true;
+    await s.context.route(/^https:\/\/(api|cdn)\.dexscreener\.com\//, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(priced ? [{ chainId: 'robinhood', baseToken: { address: UFG, symbol: 'UFG' }, quoteToken: { address: USDG }, priceUsd: '0.003', liquidity: { usd: 100000 } }] : []) }));
+    await s.page.reload();
+    const card = s.page.locator('[data-portfolio-tokens]');
+    await card.locator(`[data-wallet-row="${UFG}"][data-wallet-priced]`).waitFor();
+    assert.match(await card.locator('[data-wallet-total]').innerText(), /\$3,001\.00$/);
+    priced = false;
+    await s.page.reload();
+    await card.locator('[data-wallet-value-unavailable]').waitFor();
+    await s.page.waitForFunction(() => {
+      const card = document.querySelector('[data-portfolio-tokens]');
+      return card?.getAttribute('data-wallet-source') === 'read' && card.getAttribute('data-wallet-prices') === 'failed';
+    });
+    assert.equal(await card.locator('[data-wallet-row]').first().getAttribute('data-wallet-row'), UFG);
+    assert.equal(await card.locator(`[data-wallet-row="${UFG}"] [data-usd]`).count(), 0);
+    assert.equal(await card.locator('[data-wallet-total]').count(), 0);
+    assert.equal(await card.locator(`[data-wallet-row="${UFG}"] [data-wallet-balance-earlier]`).count(), 0, 'only the price is missing; the current token balance still reads normally');
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
 
 test('Wallet refreshes after its owner confirms, rejects pre-receipt balances and updates in place at the receipt block', { timeout: 60_000 }, async () => {
   const now = Math.floor(Date.now() / 1000);
@@ -69,7 +152,7 @@ test('Wallet refreshes after its owner confirms, rejects pre-receipt balances an
       assert.ok(currentRequested, 'the confirmed action refreshes Wallet automatically, then retries a stale node');
     });
     assert.equal(await balance.innerText(), '1', 'the older 999 USDG page cannot replace the last good balance');
-    assert.match(await card.locator('[data-wallet-total]').innerText(), /\$1\.00$/);
+    assert.equal(await card.locator('[data-wallet-total]').count(), 0, 'while the post-receipt balance is pending, the old total is not presented as current');
     releaseCurrent();
     await balance.getByText('2', { exact: true }).waitFor();
     assert.match(await card.locator('[data-wallet-total]').innerText(), /\$2\.00$/);

@@ -11,8 +11,8 @@ import { useReadSource } from '../../lib/read/screens/readContext'
 import { WALLET_PAGE_CAP, createWalletSession, type WalletSession, type WalletSnapshot } from '../../lib/read/screens/walletSession'
 import type { ReadOutcome, ReadSource, TokenDisplay } from '../../lib/read/types'
 import { createWalletReadGuard, subscribePositionEvidence } from '../../lib/positionEvidence'
-import { SHOWN_HOLDINGS, WHOLE_LIST, addressesToPrice, held, listGap, totalWithheld, walletHoldings, type Holding, type ListWholeness } from '../../lib/walletHoldings'
-import { NO_PRICES, bookQuotes, recallWallet, rememberWallet, withAnswer, type PriceBook, type RememberedList } from '../../lib/walletMemory'
+import { SHOWN_HOLDINGS, WHOLE_LIST, addressesToPrice, held, listGap, reconcileWalletRows, totalWithheld, walletHoldings, walletSnapshotValid, walletTotalSnapshot, type Holding, type ListWholeness, type WalletTotalSnapshot } from '../../lib/walletHoldings'
+import { NO_PRICES, WALLET_MEMORY_MAX_AGE_MS, bookQuotes, recallWallet, rememberWallet, withAnswer, type PriceBook, type RememberedList } from '../../lib/walletMemory'
 import { walletPrices } from '../../lib/walletPrices'
 import { LiveFigure } from '../figures'
 import { exploreHref } from '../explore/routes'
@@ -22,6 +22,7 @@ import { TokenMark } from '../TokenIcon'
 import { Button, Skeleton } from '../ui'
 
 type Step = 'first' | 'more' | 'restart'
+type SettledList = { snap: WalletSnapshot; unread: number; at: number }
 
 const addressOf = (token: TokenDisplay) => (token.origin === 'read' ? token.address : '')
 
@@ -110,6 +111,7 @@ const usdText = (units: bigint) => (units < CENT ? '<$0.01' : formatUsd(scaledTe
 
 /** Where a holding's value comes from, for its title: USDG's fixed dollar, the provider's price and the pair it is from, or none. */
 function valueTitle(holding: Holding): string {
+  if (holding.row.old) return 'Last known balance. Waiting for a current balance before valuing it.'
   const quote = holding.quote
   if (!quote) return holding.due ? 'No price at the moment.' : 'No market price found for this token.'
   if (quote.liquidityUsd === null) return 'USDG counted at $1.'
@@ -135,6 +137,7 @@ function HoldingRow({ holding, due }: { holding: Holding; due: boolean }) {
           <span className="dm-acct-token-units tnum" data-balance={row.amount.state} title={balance.title}>
             {balance.text === null ? '—' : <Figure text={balance.text} />}
           </span>
+          {row.old && <span data-wallet-balance-earlier=""> · Last known</span>}
           {twin && (
             <span className="dm-acct-token-twin" translate="no" title={row.token.address}>
               {shortAddress(row.token.address)}
@@ -142,14 +145,14 @@ function HoldingRow({ holding, due }: { holding: Holding; due: boolean }) {
           )}
         </span>
       </span>
-      {value === null && due ? (
+      {value === null && due && !row.old ? (
         <span className="dm-acct-token-usd" data-price-due="">
           <Skeleton className="ml-auto h-3.5 w-16" />
         </span>
       ) : value === null ? (
         <span className="dm-acct-token-usd dm-acct-token-none" data-no-price="" title={valueTitle(holding)}>
           <span aria-hidden="true">—</span>
-          <span className="sr-only">No price</span>
+          <span className="sr-only">{row.old ? 'Balance updating' : 'No price'}</span>
         </span>
       ) : (
         <span className="dm-acct-token-usd tnum" data-usd="" title={valueTitle(holding)}>
@@ -248,14 +251,8 @@ const wholenessOf = (snap: WalletSnapshot, unread: number, reading: boolean): Li
   unread,
   earlier: snap.view.rows.some((row) => row.old),
   skipped: snap.view.skipped,
+  discoveryMissing: !snap.view.inventoryAvailable,
 })
-
-/** The remembered rows with this read's rows over them, by token: nothing the card showed goes away while the list is read again. */
-function mergeRows(kept: readonly WalletRow[], fresh: readonly WalletRow[]): WalletRow[] {
-  const byKey = new Map(kept.map((row) => [row.key, row]))
-  for (const row of fresh) byKey.set(row.key, row)
-  return [...byKey.values()]
-}
 
 /**
  * The Wallet card's tokens (owner, round 6, 2026-09-27): every token the
@@ -264,29 +261,27 @@ function mergeRows(kept: readonly WalletRow[], fresh: readonly WalletRow[]): Wal
  * price last (lib/walletHoldings.ts). The total on top when the list is whole.
  *
  * Fast, and never empty once it has shown something:
- * - The last list read for this address is kept in this browser
- *   (lib/walletMemory.ts) and drawn at once, with its prices and its total,
- *   while the list is read again. A read that fails leaves it on screen.
+ * - The last list read for this address is kept in this browser and drawn at
+ *   once as last-known balances, while the list is read again. An omitted
+ *   holding is checked by exact address; only a read zero removes it.
  * - The list's pages are read on their own, one after another (the provider
  *   lists 20 tokens a page), and each page is drawn as it lands, over the
- *   last list read to its end, never in its place. A list read to its end
- *   replaces it, and is remembered in turn. On a first visit the rows wait
+ *   last list read to its end, never in its place. A finished list reconciles
+ *   those rows without treating omissions as zero. On a first visit the rows wait
  *   for the whole list and its prices, FIRST_PAINT_MS at most, so a quick
  *   list appears once, in its final order.
  * - Prices are asked for every held token at once (lib/walletPrices.ts: 30
  *   per GET, the GETs side by side), as soon as a page names new tokens; a
  *   token already asked for is never asked again while its answer is due.
  * - The list is read again every five minutes while the page is shown, with
- *   the rows, the total (when the last list was whole), "Show all" and the
- *   form for other tokens kept as they were until the new read has landed.
+ *   the rows, "Show all" and the form for other tokens kept in place.
  * - Review of round 6 (2026-09-28): each price is kept with the time it was
  *   answered, and counts for an hour (lib/walletMemory.ts); an older one only
- *   keeps its row where it stood. A total on screen stays while the prices of
- *   tokens a read has just named are on the wire, and the rule below applies
- *   once they are answered.
+ *   keeps its row where it stood. Missing or rejected replacement prices
+ *   preserve that order, but never contribute an old USD value to the total.
  *
- * Nothing about how the reads went is printed: no status, no Retry, no
- * footnote. A read that failed only for the moment is asked again on its own,
+ * A missing value gets one quiet explanation; remembered balances say "Last
+ * known". A read that failed only for the moment is asked again on its own,
  * a few times, while the page is visible; one that stays failed leaves the
  * rows already shown, or an empty line, with its reason in a title and a data
  * attribute. No list is called complete: a provider's pages hold only what it
@@ -296,8 +291,8 @@ function mergeRows(kept: readonly WalletRow[], fresh: readonly WalletRow[]): Wal
  * list whose pages skipped candidates has the selected pools' tokens it lacks
  * checked once by address, silently. The total is shown only when the list is
  * whole (totalWithheld): pages left unread, balances that could not be read,
- * skipped candidates or unanswered prices leave the rows with no total, the
- * reason in a data attribute only.
+ * skipped candidates, incomplete discovery, earlier balances or unanswered
+ * prices leave the rows with no total.
  */
 export function PortfolioTokens({ address }: { address: string }) {
   const source = useReadSource()
@@ -305,22 +300,29 @@ export function PortfolioTokens({ address }: { address: string }) {
   // The last whole read of this address's list: remembered in this browser, then each read of it to its end.
   const [recalled] = useState(() => recallWallet(address))
   const [memory, setMemory] = useState<RememberedList | null>(recalled)
-  // What the card stands on while a list is read: the held rows of the last list read to its end (the remembered one
-  // at first), and whether that list was whole. A read that fails changes neither, so nothing on screen goes away.
+  // The last known rows survive discovery gaps; a confirmed zero supersedes them immediately.
   const [kept, setKept] = useState<readonly WalletRow[]>(() => recalled?.rows ?? [])
-  const [steady, setSteady] = useState(() => recalled?.whole === true)
+  const keptRef = useRef(kept)
+  // Age prices and remembered balances even when no request completes in an open tab.
+  const [clock, setClock] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setClock(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
   // A read of the list has ended once (read to its end or to a failure): the total's placeholder is the first read's only.
   const [settledOnce, setSettledOnce] = useState(false)
   // Every price answered for the list's tokens, by price source, with its time: the remembered ones, then each answer over them.
   const [book, setBook] = useState<PriceBook>(() => recalled?.book ?? NO_PRICES)
+  const [complete, setComplete] = useState<{ snapshot: WalletTotalSnapshot | null; list: SettledList | null; book: PriceBook }>(() => ({
+    snapshot: recalled?.whole ? walletTotalSnapshot(recalled.rows, recalled.book, recalled.at, Date.now()) : null,
+    list: null, book: recalled?.book ?? NO_PRICES,
+  }))
   // The set of addresses last answered (joined with commas), whether that answer left any of them unanswered, and "Show all".
   const [pricedKey, setPricedKey] = useState<string | null>(null)
   const [pricesFailed, setPricesFailed] = useState(false)
-  // The total on screen in the last render, kept while the prices of tokens a read has just named are on the wire.
-  const [shownTotal, setShownTotal] = useState<bigint | null>(null)
   const [expanded, setExpanded] = useState(false)
   // This read of the list as its last page left it, and how many balances its pages could not read.
-  const [list, setList] = useState<{ snap: WalletSnapshot; unread: number } | null>(null)
+  const [list, setList] = useState<SettledList | null>(null)
   // The first page is asked for as soon as the source is there, so the list starts out loading.
   const [loading, setLoading] = useState(true)
   const [lastStep, setLastStep] = useState<Step>('first')
@@ -359,6 +361,10 @@ export function PortfolioTokens({ address }: { address: string }) {
       running.current?.abort()
       checks.current?.abort()
       session.current = null
+      // A confirmed action supersedes the previous valuation, even if its replacement read is still catching up.
+      setComplete(before => ({ ...before, snapshot: null }))
+      setList(null)
+      setLoading(true)
       confirmedRetry.current = 0
       refreshConfirmed()
     })
@@ -404,16 +410,16 @@ export function PortfolioTokens({ address }: { address: string }) {
       note(after)
       while (!stale() && after.failure === null && after.canLoadMore) {
         // This page is drawn while the next one is read.
-        setList({ snap: after, unread: unreadOf(after) })
+        setList({ snap: after, unread: unreadOf(after), at: Date.now() })
         asked = 'more'
         after = await current.more(mine.signal)
         if (stopped()) return
         note(after)
       }
       if (stopped()) return
-      // Pages skipped candidates: the selected pools' tokens the list lacks are checked once by address; nothing is said on screen.
+      // Check omitted remembered holdings and selected-pool fallbacks on the existing exact-address API.
       if (after.pendingCheck) {
-        setList({ snap: after, unread: unreadOf(after) })
+        setList({ snap: after, unread: unreadOf(after), at: Date.now() })
         after = await current.check(checks.current?.signal)
         if (stopped()) return
       }
@@ -422,15 +428,15 @@ export function PortfolioTokens({ address }: { address: string }) {
       setLoading(false)
       // A failed step is asked again as the step it was: a page after the first is never read again from the top.
       setLastStep(asked)
-      setList({ snap: after, unread })
+      setList({ snap: after, unread, at: Date.now() })
       setSettledOnce(true)
       // Read to its end: what the card stands on until the next read ends, and, for the wallet's own list, the list to
       // draw first next time. An empty list about to be checked by address is neither.
-      if (after.failure === null && !after.canLoadMore && !after.emptyHint) {
-        const whole = listGap(wholenessOf(after, unread, false)) === null
-        const rows = after.view.rows.filter(held)
+      if (after.failure === null && !after.canLoadMore && (!after.emptyHint || keptRef.current.length > 0)) {
+        const rows = reconcileWalletRows(keptRef.current, after.view.rows, Date.now()).filter(held)
+        const whole = listGap(wholenessOf(after, unread, false)) === null && !rows.some((row) => row.old)
+        keptRef.current = rows
         setKept(rows)
-        setSteady(whole)
         if (keep) setMemory({ at: Date.now(), whole, rows })
       }
       settled?.(after)
@@ -475,7 +481,7 @@ export function PortfolioTokens({ address }: { address: string }) {
         return outcome
       },
     }
-    const current = createWalletSession(guarded, { wallet: address, tokens, fallbackTokens: SELECTED_TOKENS, discover: tokens !== SELECTED_TOKENS })
+    const current = createWalletSession(guarded, { wallet: address, tokens, fallbackTokens: SELECTED_TOKENS, rememberedTokens: keptRef.current.filter(held).map((row) => row.token.address), discover: tokens !== SELECTED_TOKENS })
     session.current = current
     const listChecks = new AbortController()
     checks.current = listChecks
@@ -535,7 +541,7 @@ export function PortfolioTokens({ address }: { address: string }) {
   const view = snap?.view
   const freshRows = view?.rows ?? []
   // The last list read to its end with this read's rows over it: a page read again never takes away a row shown before it.
-  const rows = mergeRows(kept, freshRows)
+  const rows = reconcileWalletRows(kept, freshRows, clock, list?.at)
   const unavailable = view?.unavailable ?? []
   const exhausted = snap?.status === 'restart_exhausted'
   const canAskMore = Boolean(snap && (snap.canLoadMore || snap.status === 'handle_expired' || exhausted))
@@ -577,24 +583,31 @@ export function PortfolioTokens({ address }: { address: string }) {
     if (memory) rememberWallet(address, memory, book.prices)
   }, [address, memory, book])
 
-  const { quotes, hints } = bookQuotes(book)
+  const { quotes, hints } = bookQuotes(book, clock)
   const holdings = walletHoldings(rows, quotes, hints)
   // Skeletons only while nothing was drawn from memory: a first read with no holding yet, or a first visit's holdings
   // until the whole list and its prices land (FIRST_PAINT_MS at most). After that, rows stay.
   const waiting = !recalled?.rows.length && (holdings.all.length === 0 ? loading && (snap === null || !settledOnce) : !painted && !(settled && ask === ''))
   const fresh: ListWholeness = snap ? wholenessOf(snap, list?.unread ?? 0, loading) : { ...WHOLE_LIST, reading: true }
-  // The last whole list (remembered, or read in this visit) stands for the wallet while it is read again, and when the
-  // new read fails: the total stays through every quiet re-read.
-  const wholeness = steady && listGap(fresh) !== null ? WHOLE_LIST : fresh
+  // Previous balances stay visible and labelled; they cannot make an incomplete read look like a current total.
+  const wholeness = { ...fresh, earlier: fresh.earlier || rows.some((row) => row.old) || (list !== null && clock - list.at > WALLET_MEMORY_MAX_AGE_MS) }
   const withheld = totalWithheld(wholeness, holdings)
   // The prices of tokens the list has just named are on the wire (and the last answer left none unanswered).
   const pending = ask !== '' && pricedKey !== ask
   const due = pending && !pricesFailed
-  // A total already on screen stays until those prices are answered; only then may unanswered prices take it away.
-  const total = waiting ? null : withheld === null ? holdings.total : pending && withheld === 'unanswered_prices' ? shownTotal : null
-  if (total !== shownTotal) setShownTotal(total)
+  const total = !waiting && withheld === null ? holdings.total : null
+  const snapshotValid = walletSnapshotValid(complete.snapshot, freshRows, clock)
+  const updating = total === null && !failure && (loading || (listGap(wholeness) === null && pending && !pricesFailed))
+  const previousTotal = updating && snapshotValid ? complete.snapshot?.total ?? null : null
+  // Capture only a changed complete read, before children paint; a timer or partial price answer never renews it.
+  if (total !== null && list && (complete.list !== list || complete.book !== book)) {
+    setComplete({ snapshot: walletTotalSnapshot(list.snap.view.rows, book, list.at, clock), list, book })
+  } else if (total === null && complete.snapshot && (!snapshotValid || !updating)) {
+    setComplete({ ...complete, snapshot: null })
+  }
+  const displayedTotal = total ?? previousTotal
   // The total's place is held while the list is first read (a first visit), and while a whole list's prices are due.
-  const holdPlace = total === null && (waiting || (!recalled && !settledOnce && withheld === 'reading' && holdings.valued > 0) || (due && withheld === 'unanswered_prices'))
+  const holdPlace = displayedTotal === null && (waiting || (!recalled && !settledOnce && withheld === 'reading' && holdings.valued > 0) || (due && withheld === 'unanswered_prices'))
   const shown = waiting ? [] : holdings.all.slice(0, SHOWN_HOLDINGS)
   const rest = waiting ? [] : holdings.all.slice(SHOWN_HOLDINGS)
   const visible = expanded ? [...shown, ...rest] : shown
@@ -666,10 +679,11 @@ export function PortfolioTokens({ address }: { address: string }) {
       </p>
 
       {/* The total of every holding on the card, the ones behind "Show all" included, when the list is whole; its skeleton holds the place while the list is first read. */}
-      {total !== null ? (
-        <p className="dm-acct-total" data-wallet-total="" title="The sum of the tokens on this card, at provider-reported prices with USDG at $1. Indicative, not a quote.">
-          <span className="sr-only">Total value </span>
-          <LiveFigure value={usdText(total)} mode="digits" dimCents className="dm-fig-xl" />
+      {displayedTotal !== null ? (
+        <p className="dm-acct-total" data-wallet-total="" data-wallet-total-snapshot={previousTotal !== null ? '' : undefined} title={previousTotal !== null ? 'Last complete valuation. Balances and prices are being checked again.' : 'The sum of the tokens on this card, at provider-reported prices with USDG at $1. Indicative, not a quote.'}>
+          <span className="sr-only">{previousTotal !== null ? 'Last known total value ' : 'Total value '}</span>
+          <LiveFigure value={usdText(displayedTotal)} mode="digits" dimCents className="dm-fig-xl" />
+          {previousTotal !== null && <span className="dm-hint block mt-1" data-wallet-total-updating="">Last known · Updating…</span>}
         </p>
       ) : (
         holdPlace && (
@@ -677,6 +691,10 @@ export function PortfolioTokens({ address }: { address: string }) {
             <Skeleton className="dm-acct-total-skel" />
           </p>
         )
+      )}
+
+      {!waiting && displayedTotal === null && holdings.all.length > 0 && !holdPlace && (
+        <p className="dm-hint" data-wallet-value-unavailable="">{loading ? 'Updating balances…' : 'Some values are unavailable.'}</p>
       )}
 
       {(visible.length > 0 || waiting) && (

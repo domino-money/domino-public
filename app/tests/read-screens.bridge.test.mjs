@@ -658,7 +658,11 @@ function walletPage(items, inventory = {}) {
   const body = JSON.parse(fixture('wallet-assets.last-page'));
   const [native, token] = body.items;
   body.items = items({ native, token });
-  body.inventory = { ...body.inventory, hasMore: false, nextCursor: null, ...inventory };
+  // These tests model a current balance read, not the contract fixture's block from Unix second 1000.
+  // Retained rows have a real 24-hour age limit, including while a later page is on the wire.
+  const now = Math.floor(Date.now() / 1000);
+  body.snapshot.timestamp = now;
+  body.inventory = { ...body.inventory, retrievedAt: now, hasMore: false, nextCursor: null, ...inventory };
   return { status: 200, text: JSON.stringify(body) };
 }
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -889,11 +893,13 @@ const watchTotals = async (context) => {
     window.__emptied = 0;
     window.__totalGone = 0;
     window.__placeholders = 0;
+    window.__walletFrames = [];
     let hadTotal = false;
     let hadPlaceholder = false;
     window.__mark = () => {
       window.__totalGone = 0;
       window.__placeholders = 0;
+      window.__walletFrames = [];
     };
     const look = () => {
       const card = document.querySelector('[data-portfolio-tokens]');
@@ -903,6 +909,8 @@ const watchTotals = async (context) => {
         window.__shown.push(rows);
       }
       const total = card?.querySelector('[data-wallet-total]');
+      const frame = { rows, total: total?.querySelector('.dm-fig-xl')?.textContent ?? null, snapshot: total?.hasAttribute('data-wallet-total-snapshot') ?? false, updating: card?.querySelector('[data-wallet-total-updating]')?.textContent ?? null, withheld: card?.getAttribute('data-wallet-total-withheld') ?? null };
+      if (JSON.stringify(window.__walletFrames.at(-1)) !== JSON.stringify(frame)) window.__walletFrames.push(frame);
       if (hadTotal && !total) window.__totalGone += 1;
       hadTotal = Boolean(total);
       const placeholder = Boolean(card?.querySelector('.dm-acct-total-skel'));
@@ -913,6 +921,16 @@ const watchTotals = async (context) => {
     };
     new MutationObserver(look).observe(document, { subtree: true, childList: true, attributes: true });
   });
+};
+
+/** A number shown over a refreshing/incomplete read must be the labelled complete snapshot, never a partial sum. */
+const honestTotals = async (page) => {
+  const frames = await page.evaluate(() => window.__walletFrames);
+  for (const frame of frames.filter(frame => frame.total !== null && frame.withheld !== null)) {
+    assert.equal(frame.snapshot, true, JSON.stringify(frame));
+    assert.equal(frame.updating, 'Last known · Updating…', JSON.stringify(frame));
+  }
+  return frames;
 };
 
 // Review of 2026-09-25: the total and the top holdings are the whole list's. A wallet whose largest holding is on page 2
@@ -1012,7 +1030,7 @@ test('a page the list could not read leaves its rows with no total; Load more ke
 // Round 6 (2026-09-27; the owner: the Wallet card's tokens took far too long to appear, and a card must never blank out
 // on a refresh). The card keeps its last whole list per address in the browser: a second visit draws it at once, with
 // its total, before the read service has answered anything; the list is read again behind it and nothing on screen
-// empties meanwhile. A read that fails leaves the remembered list, and its total, on screen.
+// empties meanwhile. The last complete total is explicitly labelled while refreshing; a failed read keeps rows, not a stale total.
 test('a second visit draws the remembered list at once, then reads it again behind it; a failed read leaves it on screen', async () => {
   let slow = false;
   let failing = false;
@@ -1047,20 +1065,23 @@ test('a second visit draws the remembered list at once, then reads it again behi
       assert.equal(await list.getAttribute('data-wallet-source'), 'memory', 'drawn from memory');
       assert.equal(await list.getAttribute('data-wallet-pages'), '0', 'before the first page of the new read has landed');
       assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50');
+      assert.equal(await list.locator('[data-wallet-total-updating]').textContent(), 'Last known · Updating…');
+      assert.equal(await list.locator('[data-wallet-row-old]').count(), 3, 'memory balances are visibly last known');
       assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]]);
       assert.equal(await list.locator('li[aria-hidden="true"]').count(), 0, 'no skeleton on a second visit');
       await page.locator('[data-portfolio-tokens][data-wallet-source="read"]').waitFor({ timeout: 30_000 });
       assert.equal(walletBodies().length - before, 2, 'the list was read again, both pages');
       assert.deepEqual(await page.evaluate(() => [...new Set(window.__shown.filter((rows) => rows !== ''))]), [[MANY, NATIVE, SELECTED_TOKENS[1]].join(',')], 'the same rows all along');
       assert.equal(await page.evaluate(() => window.__emptied), 0, 'never shrank to nothing while it was read again');
+      await honestTotals(page);
 
-      // A third visit, the read service failing: the remembered list stays, with its total.
+      // A third visit, the read service failing: the remembered list stays, but no old figure claims to be current.
       failing = true;
       await page.reload();
-      await list.locator('[data-wallet-total]').waitFor({ timeout: 5_000 });
       await page.locator('[data-portfolio-tokens][data-wallet-status="failed"]').waitFor({ timeout: 30_000 });
       assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]], 'the rows stay');
-      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50', 'and the total');
+      assert.equal(await list.locator('[data-wallet-total]').count(), 0, 'failure ends the labelled snapshot');
+      assert.equal(await list.getAttribute('data-wallet-total-withheld'), 'read_failed');
       assert.equal(await list.locator('[data-wallet-empty]').count(), 0, 'no empty line');
       assert.equal(await page.evaluate(() => window.__emptied), 0);
       assert.deepEqual(errors, []);
@@ -1099,6 +1120,9 @@ test('the quiet re-read every five minutes keeps the rows and keeps Show all ope
       assert.equal(await page.evaluate(() => window.__emptied), 0, 'never shrank to nothing');
       assert.equal(await page.evaluate(() => window.__totalGone), 0, 'the total stayed on screen through the re-read');
       assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50');
+      const frames = await honestTotals(page);
+      assert.ok(frames.some(frame => frame.snapshot), 'the updating valuation was explicitly labelled');
+      assert.deepEqual([...new Set(frames.filter(frame => frame.total !== null).map(frame => frame.total))], ['$2,028.50'], 'no partial sum flashed between pages');
       assert.deepEqual(errors, []);
     } finally {
       await context.close();
@@ -1271,7 +1295,11 @@ test('a remembered list whose prices are more than an hour old: no total at old 
         const all = JSON.parse(localStorage.getItem('domino-wallet-v2:4663'));
         for (const wallet of Object.values(all.wallets)) {
           wallet.at -= shift;
-          for (const price of wallet.quotes) price[3] -= shift;
+          for (const row of wallet.rows) if (row.length === 7) row[5] -= shift;
+          for (const price of wallet.quotes) {
+            price[3] -= shift;
+            if (price.length === 7) price[6] -= shift;
+          }
         }
         localStorage.setItem('domino-wallet-v2:4663', JSON.stringify(all));
       }, TWO_HOURS);
@@ -1360,6 +1388,9 @@ test('a new token on a quiet re-read leaves the total on screen while its price 
       assert.equal(await totalBecomes(page, '$2,038.50'), '$2,038.50', 'NEWDROP counted once its price came');
       assert.ok(asked.filter((url) => url.includes('/tokens/v1/')).slice(pricesBefore).some((url) => url.includes(NEWDROP)), 'its price was asked');
       assert.equal(await page.evaluate(() => window.__totalGone), 0, 'the total never left the screen');
+      const frames = await honestTotals(page);
+      assert.ok(frames.some(frame => frame.snapshot && frame.total === '$2,028.50'), 'the original complete total stays labelled while NEWDROP is priced');
+      assert.deepEqual([...new Set(frames.filter(frame => frame.total !== null).map(frame => frame.total))], ['$2,028.50', '$2,038.50'], 'the new token is added only with its qualified price');
       assert.equal(await page.evaluate(() => window.__placeholders), 0, 'and no placeholder came up in its place');
       assert.equal(await page.evaluate(() => window.__emptied), 0);
       assert.deepEqual(errors, []);
@@ -1369,6 +1400,53 @@ test('a new token on a quiet re-read leaves the total on screen while its price 
   } finally {
     overrideReply = null;
   }
+});
+
+test('a completed incomplete inventory ends the last-known total even while a new token price remains pending', { timeout: 60_000 }, async () => {
+  let partial = false, releasePrice;
+  const priceReady = new Promise(resolve => { releasePrice = resolve; });
+  overrideReply = (route, body) => {
+    if (route !== 'wallet-assets') return null;
+    if (body.autoDiscover === false) return walletPage(({ native }) => [native]);
+    const reply = body.cursor === undefined ? pageOneWith(partial ? [[NEWDROP, 'NEWDROP']] : []) : pageTwo();
+    if (partial && body.cursor === undefined) {
+      const data = JSON.parse(reply.text);
+      data.inventory.candidatesSkipped = 1;
+      data.inventory.skippedReason = 'request_budget_exhausted';
+      return { ...reply, text: JSON.stringify(data) };
+    }
+    return reply;
+  };
+  let requested = false;
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async ctx => {
+      await ctx.clock.install();
+      await watchTotals(ctx);
+      await ctx.route(/^https:\/\/(api|cdn)\.dexscreener\.com\//, async route => {
+        const url = route.request().url();
+        if (url.includes('/tokens/v1/') && url.includes(NEWDROP)) { requested = true; await priceReady; }
+        const reply = url.includes('/tokens/v1/') ? [...twoPagePrices(url), providerPair(NEWDROP, '0.01', 1e6)] : [];
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reply) });
+      });
+    });
+    try {
+      const list = page.locator('[data-portfolio-tokens]');
+      await list.locator('[data-wallet-total]').waitFor();
+      assert.equal(await totalBecomes(page, '$2,028.50'), '$2,028.50');
+      partial = true;
+      await page.clock.fastForward('05:01');
+      await page.locator('[data-portfolio-tokens][data-wallet-source="read"][data-wallet-partial="1"][data-wallet-prices="pending"]').waitFor();
+      assert.equal(requested, true, 'the new price is still held on the wire');
+      assert.equal(await list.locator('[data-wallet-total]').count(), 0, 'terminal incomplete inventory cannot prolong the earlier total');
+      assert.equal(await list.getAttribute('data-wallet-total-withheld'), 'skipped_candidates');
+      assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]], 'holdings remain in place');
+      releasePrice();
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"]').waitFor();
+      assert.equal(await list.locator('[data-wallet-total]').count(), 0, 'receiving every requested price does not complete discovery');
+      await honestTotals(page);
+      assert.deepEqual(errors, []);
+    } finally { releasePrice(); await context.close(); }
+  } finally { overrideReply = null; }
 });
 
 test('a later visit drawn from memory whose first page names a new token keeps its total on screen while that price is asked', { timeout: 60_000 }, async () => {
@@ -1394,6 +1472,9 @@ test('a later visit drawn from memory whose first page names a new token keeps i
       assert.equal(await totalBecomes(page, '$2,039.50'), '$2,039.50', 'NEWER counted once its price came');
       await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"][data-wallet-source="read"]').waitFor({ timeout: 30_000 });
       assert.equal(await page.evaluate(() => window.__totalGone), 0, 'the total never left the screen');
+      const frames = await honestTotals(page);
+      assert.ok(frames.some(frame => frame.snapshot && frame.total === '$2,038.50'), 'the memory total is explicitly last known until refreshed');
+      assert.deepEqual([...new Set(frames.filter(frame => frame.total !== null).map(frame => frame.total))], ['$2,038.50', '$2,039.50'], 'no partial or mixed valuation');
       assert.equal(await page.evaluate(() => window.__placeholders), 0, 'and no placeholder came up in its place');
       assert.equal(await page.evaluate(() => window.__emptied), 0);
       assert.deepEqual(errors, []);

@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import * as runtime from 'api-contracts/performance-v2/runtime.mjs'
+import { CONTRACT_VERSION, validateRequest, validateResponse, validateError } from 'api-contracts/performance-v2/runtime.mjs'
 import type { CardsResponse, EpochsResponse, Metrics } from 'api-contracts/performance-v2/types'
 import type { Address } from 'viem'
 import { sessionKey } from '../session/port'
@@ -18,6 +18,8 @@ import { readRelease } from '../finance/release'
 import { setupWallet } from '../finance/wallet'
 import { createSequenceClient, sequenceDeploymentFrom, type SequenceDeployment } from '../finance/sequence'
 import { Button, Card } from '../components/ui'
+
+const runtime = { CONTRACT_VERSION, validateRequest, validateResponse, validateError }
 
 type PerfCard = CardsResponse['cards'][number]
 type Tracked = Extract<PerfCard, { kind: 'tracked' }>

@@ -142,7 +142,15 @@ export function createConfirmedOperations(read: ConfirmationRead, clock: {
       const block = Number(input.receipt.blockNumber)
       if (!hash || !HASH.test(hash) || !ADDRESS.test(wallet) || !HASH.test(blockHash) || !Number.isSafeInteger(block) || block <= 0) return null
       const old = snapshot.find(op => keyOf(op.chainId, op.hash) === keyOf(input.chainId, hash))
-      if (input.indexed && old?.blockHash === blockHash) return old
+      if (input.indexed && old) {
+        // The validated index may complete the exact inclusion already checked by the financial client.
+        // It cannot replace its owner/scope, adopt another block, revive a reorg or downgrade final proof.
+        if (old.wallet !== wallet || old.blockHash !== blockHash || old.block !== block
+          || old.phase !== 'included' || input.receipt.state !== 'finalized') return old
+        const finalized: ConfirmedOperation = { ...old, phase: 'finalized' }
+        emit(finalized)
+        return finalized
+      }
       const phase = old?.blockHash === blockHash && old.phase === 'finalized' ? 'finalized' : input.receipt.state
       const operation: ConfirmedOperation = { chainId: input.chainId, wallet, hash, blockHash, block, phase, at: old?.at ?? clock.now(), positionManager: input.positionManager?.toLowerCase(), tokenIds: Object.freeze([...input.tokenIds]), vault: input.vault?.toLowerCase(), events: input.receipt.events ?? [], ...(input.indexed ? { indexed: true } : {}) }
       if (input.chainId === 4663 && input.onFinalized) settlements.set(keyOf(input.chainId, hash), { run: input.onFinalized, tries: 0, next: 0, until: null })

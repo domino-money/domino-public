@@ -42,6 +42,8 @@ export interface WalletContext {
    * starts after them. The selected pools' tokens, where a screen has them.
    */
   fallbackTokens?: readonly string[]
+  /** Previously held addresses omitted by discovery, checked even when no candidates were reported skipped. */
+  rememberedTokens?: readonly string[]
   /**
    * Whether the provider should list what else the wallet holds.
    *
@@ -63,6 +65,8 @@ export const WALLET_PAGE_CAP = 5
 export const HANDLE_RETRY_WINDOW_MS = 300_000 - 15_000
 /** The request schema's bound on `tokens`. */
 export const WALLET_TOKENS_MAX = 10
+/** Bounded by the Wallet card's memory; at most twenty exact-address batches, and stop on the first failure. */
+export const WALLET_RECHECK_MAX = 200
 
 export type WalletStatus = 'idle' | 'loading' | 'ready' | 'failed' | 'busy' | 'restart_exhausted' | 'handle_expired'
 
@@ -79,7 +83,7 @@ export interface WalletSnapshot {
   emptyHint: boolean
   /** The pager restarted after an expired handle, or the list was started again. */
   restarted: boolean
-  /** A page skipped candidates, fallback tokens the list lacks are unchecked, and no check is on the wire: check() would read. */
+  /** Omitted remembered holdings or skipped-candidate fallbacks remain unchecked: check() would read. */
   pendingCheck: boolean
 }
 
@@ -101,14 +105,14 @@ export function walletRequest(context: WalletContext): WalletAssetsRequest {
 }
 
 /**
- * The one by-address check for a list whose pages skipped candidates: the
+ * The next by-address check for omitted remembered holdings or skipped candidates: the
  * fallback tokens not listed, not unavailable, not already asked for and not
  * native (native ETH is on every page), in their own order, at most 10; no
- * discovery and no handle. Null when nothing was skipped or nothing is left
+ * discovery and no handle. Null when no remembered/skipped candidate is left
  * to check. Fixed key order: the scheduler coalesces by the request's JSON.
  */
 export function fallbackRequest(context: WalletContext, view: WalletView): WalletAssetsRequest | null {
-  if (view.skipped === 0) return null
+  if (view.skipped === 0 && !context.rememberedTokens?.length) return null
   const known = new Set([
     ...view.rows.filter((row) => !row.old).map((row) => row.key),
     ...view.unavailable.map((item) => item.key),
@@ -116,7 +120,7 @@ export function fallbackRequest(context: WalletContext, view: WalletView): Walle
     identityKey(NATIVE_CURRENCY),
   ])
   const tokens: string[] = []
-  for (const token of context.fallbackTokens ?? []) {
+  for (const token of [...(context.rememberedTokens ?? []).slice(0, WALLET_RECHECK_MAX), ...(view.skipped > 0 ? context.fallbackTokens ?? [] : [])]) {
     const key = identityKey(token)
     if (known.has(key)) continue
     known.add(key)
@@ -228,16 +232,28 @@ export function createWalletSession(source: ReadSource, context: WalletContext, 
   }
 
   async function answerCheck(reading: WalletPager, request: WalletAssetsRequest, signal?: AbortSignal): Promise<WalletSnapshot> {
-    let outcome: ReadOutcome<'wallet-assets'>
+    const attempted = new Set<string>()
+    let next: WalletAssetsRequest | null = request
+    let interrupted = false
     try {
-      outcome = await budgeted.read('wallet-assets', request, { signal })
+      while (next !== null) {
+        const outcome: ReadOutcome<'wallet-assets'> = await budgeted.read('wallet-assets', next, { signal })
+        // An aborted check is owed again. A new list must never receive the previous one's answer.
+        if (outcome.state === 'aborted' || reading !== pager) {
+          interrupted = true
+          break
+        }
+        for (const token of next.tokens ?? []) attempted.add(identityKey(token))
+        if (outcome.state !== 'ok') break
+        view = pager.adopt(outcome, next.tokens ?? [], Boolean(context.rememberedTokens?.length))
+        // Selected-pool fallback remains one batch. Remembered holdings can span several batches;
+        // each address is checked once even when a successful response cannot read its balance.
+        next = fallbackRequest({ ...context, fallbackTokens: [], rememberedTokens: context.rememberedTokens?.slice(0, WALLET_RECHECK_MAX).filter((token) => !attempted.has(identityKey(token))) }, view)
+      }
+      if (!interrupted) checked = true
     } finally {
       if (checking?.pager === reading) checking = null
     }
-    // Owed again: nothing was answered. A list started again meanwhile is not this one.
-    if (outcome.state === 'aborted' || reading !== pager) return snapshot()
-    checked = true
-    if (outcome.state === 'ok') view = pager.adopt(outcome, request.tokens ?? [])
     return snapshot()
   }
 

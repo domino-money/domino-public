@@ -4,6 +4,34 @@ import type { ReceiptView } from './model'
 import type { ActivityItem } from './activityHistory'
 import { compareChronology, logIndexOf, type Chronology } from './chronology'
 import { localCloseKey, publicCloseProves, type LocalCloseReceipt } from './localReceipts'
+import type { ConfirmedOperation, OperationReceipt, OperationScope } from '../../lib/confirmedOperations'
+
+/** read-v6 has already validated finality against this chain's finalized snapshot. Reuse that evidence after
+ * navigation/reload without another RPC or inventing the NFT effects of a historical transaction.
+ */
+export function indexedOperationEvidence(wallet: string, answer: Pick<ActivityResponse, 'wallet' | 'items'>, known: readonly ConfirmedOperation[]) {
+  const owner = wallet.toLowerCase()
+  const result: (OperationScope & { chainId: number; wallet: string; receipt: OperationReceipt })[] = []
+  if (answer.wallet.toLowerCase() !== owner) return result
+  const seen = new Set<string>()
+  for (const item of answer.items) {
+    const hash = item.tx.hash.toLowerCase(), blockHash = item.tx.snapshot.hash.toLowerCase()
+    const identity = `${item.chainId}:${hash}`
+    if (seen.has(identity)) continue
+    seen.add(identity)
+    const old = known.find(operation => operation.chainId === item.chainId && operation.hash === hash)
+    if (old) {
+      if (old.wallet !== owner || old.blockHash !== blockHash || old.block !== item.tx.snapshot.number
+        || old.phase !== 'included' || item.tx.finality !== 'finalized') continue
+    } else if (item.tx.finality !== 'unfinalized') continue
+    result.push({ indexed: true, chainId: item.chainId, wallet: owner, tokenIds: [], receipt: {
+      transactionHash: hash, blockHash, blockNumber: BigInt(item.tx.snapshot.number),
+      state: item.tx.finality === 'finalized' ? 'finalized' : 'included',
+    } })
+    if (result.length >= 32) break
+  }
+  return result
+}
 
 export interface ActivityPosition { chainId: number; dex: 3 | 4; tokenId: string }
 

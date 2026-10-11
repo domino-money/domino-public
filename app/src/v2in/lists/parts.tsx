@@ -122,12 +122,14 @@ function RowStatus({ row }: { row: PositionRowView }) {
  * two amounts under it.
  */
 function Amounts({ amounts, which, label, unread, usd }: { amounts: readonly [AmountShown, AmountShown] | null; which: 'principal' | 'fees'; label: string; unread: string | null; usd: string | null }) {
-  // A price that is temporarily unavailable must not replace one total with two moving token lines.
+  // Missing USD pricing is not missing fees. Keep the actual token balances visible, as on the detail page.
   if (which === 'fees') return <span className="dm-own-cell" data-cell="fees" title={amounts ? `${usd === null ? 'USD estimate unavailable. ' : ''}${amounts.map(amount => `${amount.exact ?? amount.text} ${amount.token.label}`).join(' + ')}` : unread ?? 'Not reported'}>
     <span className="dm-own-label">{label}</span>
-    <span className={usd === null ? 'dm-own-dash' : 'dm-own-fig'} data-usd={usd !== null ? 'fees' : undefined}>{usd === null ? '—' : formatUsdFloor(usd)}</span>
-    {usd === null && <span className="sr-only">USD estimate unavailable.</span>}
-    {amounts && <span className="sr-only"><AmountText amount={amounts[0]} /> + <AmountText amount={amounts[1]} /></span>}
+    {usd !== null ? <span className="dm-own-fig" data-usd="fees">{formatUsdFloor(usd)}</span>
+      : amounts ? <span className="dm-own-amounts"><AmountText amount={amounts[0]} /><AmountText amount={amounts[1]} /></span>
+      : <span className="dm-own-dash" aria-label={unread ?? 'Fees not reported'}>—</span>}
+    {usd === null && amounts && <span className="sr-only">USD estimate unavailable.</span>}
+    {usd !== null && amounts && <span className="sr-only"><AmountText amount={amounts[0]} /> + <AmountText amount={amounts[1]} /></span>}
   </span>
   return (
     <span className="dm-own-cell" data-cell={which}>

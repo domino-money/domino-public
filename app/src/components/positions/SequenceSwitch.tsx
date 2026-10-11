@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { Hex } from 'viem'
-import * as executionRuntime from 'api-contracts/execution-v1/runtime.mjs'
+import { CONTRACT_VERSION, validateResponse, validateError } from 'api-contracts/execution-v1/runtime.mjs'
 import { automationReadyUntil } from '../../finance/automationAvailability'
 import { financialFetch } from '../../finance/http'
 import { connectSequence, watchSequenceRelease, settleStep } from '../../finance/sequenceLive'
@@ -12,6 +12,8 @@ import { noteAutomation, useAutomation } from '../../lib/automationState'
 import { useWalletIdentity, walletKey } from '../../lib/walletIdentity'
 import { Button } from '../ui'
 import { outcomeUnknown, readAfterReplaced } from './walletSteps'
+
+const executionRuntime = { CONTRACT_VERSION, validateResponse, validateError }
 
 /*
  * Turn on and Pause (the owner, 2026-09-25: "vamos ligar tudo"): the one owner transaction a sequence's vault takes to

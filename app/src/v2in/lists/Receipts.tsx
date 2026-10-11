@@ -11,6 +11,8 @@ import { receiptViews } from './model'
 import { ChainLines, ReceiptRow, RECEIPT_LIST } from './receiptParts'
 import { OWN_PORTFOLIO } from './source'
 import { LocalReceiptRow, useLocalReceipts } from './LocalReceiptRow'
+import { activityWindow, sessionActivity } from './sessionActivity'
+import { SessionActivityRow } from './SessionActivityRow'
 
 const PAGE_ROWS = 10
 
@@ -29,28 +31,27 @@ export default function Receipts({ limit, onShows }: { limit?: number; onShows?:
   const shown = page.wallet === wallet ? page.shown : PAGE_ROWS
   const publicViews = useMemo(() => history.answer ? receiptViews(history.answer, chainsIn(gate, 'live'), portfolio?.kind === 'ok' ? portfolio.body : null, history.receiptFinality) : [], [history.answer, history.receiptFinality, gate, portfolio])
   const rows = useMemo(() => timelineRows(publicViews, items, privateTimes(items, history.answer?.items ?? []), history.answer?.items ?? [], local), [publicViews, items, history.answer, local])
-  const visible = rows.slice(0, limit ?? shown)
+  const { immediate, visible, total, hidden } = activityWindow(sessionActivity(wallet, history.proofs, history.answer?.items ?? []), rows, limit ?? shown)
   const tokens = useTokenDetails(visible.flatMap((row) => (row.kind === 'private' ? [row.item] : row.kind === 'public' ? row.evidence : []).flatMap((item) => item.receipt?.sources.map((source) => source.currency) ?? [])))
   const cancelled = items.filter((item) => item.state === 'cancelled')
   const privateOut = signedOutLine(session.kind, 'history')
   const loading = history.loading || view.busy || view.reading
-  const hidden = visible.length < rows.length
   const more = hidden || history.more || view.more
   const fill = useRef({ wallet, pages: 0 })
   useEffect(() => {
     if (fill.current.wallet !== wallet) fill.current = { wallet, pages: 0 }
-    if (limit !== undefined && rows.length < limit && history.more && !history.loading && !history.error && fill.current.pages < 3) {
+    if (limit !== undefined && total < limit && history.more && !history.loading && !history.error && fill.current.pages < 3) {
       fill.current.pages++
       history.moreRows()
     }
-  }, [wallet, limit, rows.length, history])
+  }, [wallet, limit, total, history])
   const showing = useMemo<CardShows | null>(() => {
-    if (rows.length || cancelled.length) return { kind: 'content' }
+    if (total || cancelled.length) return { kind: 'content' }
     if (!history.answer && !history.error) return null
     if (history.error || view.state === 'unavailable') return { kind: 'other' }
     if (history.answer) return { kind: 'none', reason: 'empty', text: NOTHING_YET_BOTH, action: null }
     return view.state === 'signed_out' ? { kind: 'none', reason: session.kind, ...signedOutLine(session.kind, 'both') } : null
-  }, [rows.length, cancelled.length, history.answer, history.error, view.state, session.kind])
+  }, [total, cancelled.length, history.answer, history.error, view.state, session.kind])
   useEffect(() => { if (live) onShows?.(showing) }, [live, onShows, showing])
 
   if (!live) return <Execution limit={limit} onShows={onShows} />
@@ -61,8 +62,9 @@ export default function Receipts({ limit, onShows }: { limit?: number; onShows?:
       {history.error && <p className="dm-rcpt-note" role="status" data-activity-error="">{history.answer ? 'Showing loaded activity. More activity will be checked again automatically.' : 'Activity is unavailable right now. We’ll try again automatically.'}</p>}
       {view.state === 'unavailable' && <p className="dm-rcpt-note" role="status" data-receipts-update={view.state}>Additional signed-in history couldn’t be updated.</p>}
       {history.catchingUp && history.loading && <p className="dm-rcpt-note" role="status">Loading new activity…</p>}
-      {visible.length > 0 && (
-        <ol className={RECEIPT_LIST + ' dm-activity-list'} data-v2-receipts="own" data-v2-receipts-rows={visible.filter((row) => row.kind === 'public').length} data-activity-rows={visible.length}>
+      {visible.length + immediate.length > 0 && (
+        <ol className={RECEIPT_LIST + ' dm-activity-list'} data-v2-receipts="own" data-v2-receipts-rows={visible.filter((row) => row.kind === 'public').length} data-activity-rows={visible.length + immediate.length}>
+          {immediate.map(item => <SessionActivityRow key={`${item.proof.chainId}:${item.proof.hash}`} item={item} />)}
           {visible.map((row, index) => <Fragment key={row.id}>
             {limit === undefined && row.at === null && (index === 0 || visible[index - 1].at !== null) && <li className="dm-activity-divider">Records without a date</li>}
             {row.kind === 'public' ? <ReceiptRow view={row.receipt} effects={row.receipts} showGas={row.showGas} positionItem={row.events.find((item) => item.id === row.receipt.id)}>
@@ -74,11 +76,11 @@ export default function Receipts({ limit, onShows }: { limit?: number; onShows?:
           </Fragment>)}
         </ol>
       )}
-      {visible.length === 0 && !history.error && <p className="dm-rcpt-note" role="status">{!history.answer ? 'Loading activity…' : history.more ? 'More history is available.' : 'No activity yet.'}</p>}
+      {visible.length + immediate.length === 0 && !history.error && <p className="dm-rcpt-note" role="status">{!history.answer ? 'Loading activity…' : history.more ? 'More history is available.' : 'No activity yet.'}</p>}
       {limit === undefined && more && <div className="dm-activity-footer"><Button variant="ghost" size="sm" disabled={loading && !hidden}
         onClick={() => {
           setPage({ wallet, shown: shown + PAGE_ROWS })
-          if (rows.length <= shown + PAGE_ROWS) { history.moreRows(); privateHistory.nextPage() }
+          if (total <= shown + PAGE_ROWS) { history.moreRows(); privateHistory.nextPage() }
         }}>{loading && !hidden ? 'Loading more…' : 'Show more'}</Button></div>}
       {limit === undefined && cancelled.length > 0 && <details className="dm-activity-internal" data-activity-internal="">
         <summary>Internal automation checks</summary>
