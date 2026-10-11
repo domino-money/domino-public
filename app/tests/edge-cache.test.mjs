@@ -19,6 +19,8 @@ const { answerFeatured, cacheKey, FEATURED_PATH, LIST_SECONDS, WAIT_AFTER_SECOND
 const { FOLLOW_WAIT_MS } = require('../.test-build/app/functions/_lib/publicEdge.js');
 const { answerOverview, overviewKey, OVERVIEW_PATH, OVERVIEW_SECONDS, OVERVIEW_STALE_SECONDS, settledOverview } = require('../.test-build/app/functions/_lib/overviewEdge.js');
 const { answerDex, dexAsk, trimPair, trimPairOn, pairsForPrice, DEX_FRESH_SECONDS, DEX_STALE_SECONDS } = require('../.test-build/app/functions/_lib/dexEdge.js');
+const { quotesFromTokens } = require('../.test-build/app/src/lib/walletPrices.js');
+const { walletHoldings } = require('../.test-build/app/src/lib/walletHoldings.js');
 
 const ORIGIN = 'https://domino.money';
 const FEATURED = { CONTRACT_VERSION: v5.CONTRACT_VERSION, CONTRACT_VERSIONS: v5.CONTRACT_VERSIONS, validateRequest: v5.validateRequest, validateResponse: v5.validateResponse };
@@ -320,7 +322,7 @@ test('I3: a batch is asked one token at a time, each token’s most liquid pairs
   const dex = upstream((url) => (url.endsWith(TOKEN) ? json(many) : json([pair(`0x${'e'.repeat(64)}`, OTHER, TOKEN, 9)])));
   const response = await answerDex(getAsk(`tokens/${TOKEN},${OTHER}`), { cache: memoryCache(), now: clock().now, fetch: dex.fetch, inflight: new Map(), refreshing: new Map() });
   assert.equal(response.status, 200);
-  assert.deepEqual(dex.calls.map((call) => call.url).sort(), [`https://api.dexscreener.com/tokens/v1/robinhood/${OTHER}`, `https://api.dexscreener.com/tokens/v1/robinhood/${TOKEN}`]);
+  assert.deepEqual(dex.calls.map((call) => call.url).sort(), [`https://api.dexscreener.com/token-pairs/v1/robinhood/${OTHER}`, `https://api.dexscreener.com/token-pairs/v1/robinhood/${TOKEN}`]);
   assert.ok((await response.json()).length <= 10);
   const refused = upstream((url) => (url.endsWith(OTHER) ? json({ error: 'rate limited' }, 429) : json(many)));
   const gap = await answerDex(getAsk(`tokens/${TOKEN},${OTHER}`), { cache: memoryCache(), now: clock().now, fetch: refused.fetch, inflight: new Map(), refreshing: new Map() });
@@ -334,6 +336,36 @@ test('I3: a batch is asked one token at a time, each token’s most liquid pairs
   const down = upstream(() => json({}, 503));
   const expired = await answerDex(getAsk(`token-pairs/${TOKEN}`), { cache, now: time.now, fetch: down.fetch, inflight: new Map(), refreshing: new Map() });
   assert.equal(expired.status, 502);
+});
+
+test('I3: Wallet prices include qualified v4 pairs omitted by the provider tokens endpoint, without another upstream read', async () => {
+  // Public UFG responses observed 2026-10-11: tokens/v1 returned only the thin v3 pool;
+  // token-pairs/v1 also returned these liquid v4 pools. Values are fixtures, never application quotes.
+  const thin = pair('0x51eb8e500cc42a630e0daaa2168ad9908f35a034', TOKEN, OTHER, 1660.31, { labels: ['v3'], priceUsd: '0.001975' });
+  const liquid = pair('0x1c508008e791483d2452111ca3cfc5ab8365f5a6e365d096cad2efb01623d7de', TOKEN, `0x${'0'.repeat(40)}`, 130994.11, { priceUsd: '0.001975', priceNative: '0.0000007795' });
+  const dollar = pair('0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03', TOKEN, OTHER, 27354.48, { priceUsd: '0.001951' });
+  assert.equal(quotesFromTokens([thin], [TOKEN]).get(TOKEN), null, 'the original response still fails the unchanged liquidity threshold');
+  const dex = upstream((url) => json(url.includes('/token-pairs/') ? [thin, dollar, liquid] : [thin]));
+  const cache = memoryCache();
+  const runtime = { cache, now: clock().now, fetch: dex.fetch, inflight: new Map(), refreshing: new Map() };
+  const response = await answerDex(getAsk(`tokens/${TOKEN}`), runtime);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  const quotes = quotesFromTokens(body, [TOKEN]);
+  assert.deepEqual(quotes.get(TOKEN), { usd: '0.001975', liquidityUsd: 130994.11 });
+  assert.equal(body[0].pairAddress, liquid.pairAddress, 'the existing most-liquid selection is preserved');
+  const held = {
+    key: `4663:${TOKEN}`, token: { chainId: 4663, address: TOKEN, symbol: 'UFG', decimals: 18 },
+    amount: { state: 'value', text: '1363607' }, raw: (1363607n * 10n ** 18n).toString(), old: false,
+  };
+  assert.equal(walletHoldings([held], quotes).all[0].value, 2693123825n * 10n ** 12n, 'the real Wallet valuation path can price the held amount');
+  assert.equal(walletHoldings([{ ...held, raw: (200000000n * 10n ** 18n).toString() }], quotes).all[0].value, null, 'a holding larger than the pool liquidity remains unqualified');
+  assert.equal(dex.calls.length, 1, 'one token still costs one upstream request');
+  assert.equal(dex.calls[0].url, `https://api.dexscreener.com/token-pairs/v1/robinhood/${TOKEN}`);
+  assert.equal(dex.calls[0].init.headers.Cookie, undefined);
+  const cached = await answerDex(getAsk(`tokens/${TOKEN}`), runtime);
+  assert.deepEqual(await cached.json(), body);
+  assert.equal(dex.calls.length, 1, 'the following price lookup reuses the existing cache');
 });
 
 test('I3 (2026-10-03): an ask answers before the page gives up on it: a token not read in time is a 502 at once, and its read goes on behind, kept for the next ask', async () => {

@@ -6,6 +6,7 @@ const FOCUSABLE = [
   'input:not([disabled]):not([type="hidden"])',
   'select:not([disabled])',
   'textarea:not([disabled])',
+  'details > summary:first-child:not([tabindex="-1"])',
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
@@ -61,9 +62,15 @@ export function useDialog(open: boolean, onClose: () => void) {
     }
 
     const focusables = () =>
-      Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-        (el) => el.offsetParent !== null || el === document.activeElement,
-      )
+      Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => {
+        // Closed details can retain layout boxes in Chromium, so offsetParent
+        // alone would keep their hidden buttons in the trap and strand focus.
+        if (typeof el.checkVisibility === 'function') return el.checkVisibility({ checkVisibilityCSS: true })
+        for (let closed = el.closest('details:not([open])'); closed; closed = closed.parentElement?.closest('details:not([open])') ?? null) {
+          if (!closed.querySelector(':scope > summary:first-child')?.contains(el)) return false
+        }
+        return el.offsetParent !== null || el === document.activeElement
+      })
 
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {

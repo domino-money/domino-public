@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { crosschainSessionAccess } from '../../finance/v2/http'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import { v2Chain } from '../../v2/chains'
@@ -6,17 +6,25 @@ import { destinationChoices } from '../../v2/crosschain/present'
 import { ZERO_ADDRESS } from '../../v2/types'
 import { inputsOf, type Amounts, type JourneyState } from '../journey/model/state'
 import { tokenBook } from '../journey/tokens'
-import { BringFunds } from './BringFunds'
+import { BringFunds, type FundingContinuation } from './BringFunds'
 import { fundsPage } from './live'
 import { lackingZapTokens } from './model'
 import { fundsServices } from './services'
 import { useS2Gate } from './useS2Gate'
+import { REVIEW_GAS_RESERVE_WEI } from '../../lib/create/reviewPlan'
 
 type Read = { key: string; balances: ReadonlyMap<string, bigint> | null }
+export const zapFundingScope = (state: JourneyState, walletKey: string | null, flowKey: string): string =>
+  JSON.stringify([flowKey, walletKey, state.chainId, state.pool?.id, state.range, state.amounts, state.slippage])
 
 /** The advanced V2 amount stage shares the guided journey's funding offer and chain-scoped balance reader.
  * Arrival refreshes actual balances without moving the wallet or replacing the amounts already entered. */
-export function ZapFunds({ state, onAmounts }: { state: JourneyState; onAmounts: (amounts: Amounts) => void }) {
+export function ZapFunds({ state, onAmounts, flowKey = '', onContinuationChange }: {
+  state: JourneyState
+  onAmounts: (amounts: Amounts) => void
+  flowKey?: string
+  onContinuationChange?: (key: string, continuation: FundingContinuation) => void
+}) {
   const identity = useWalletIdentity()
   const wallet = identity.kind === 'connected' ? identity.address.toLowerCase() : null
   const walletKey = identity.kind === 'connected' ? `${identity.connectorName}|${wallet}` : null
@@ -55,6 +63,9 @@ export function ZapFunds({ state, onAmounts }: { state: JourneyState; onAmounts:
   const current = read?.key === key ? read : null
   const balances = current?.balances ?? null
   const inputs = inputsOf(state)
+  const intentKey = zapFundingScope(state, walletKey, flowKey)
+  const currentIntent = useRef(intentKey)
+  useEffect(() => { currentIntent.current = intentKey; return () => { currentIntent.current = '' } }, [intentKey])
   const lacks = lackingZapTokens({ chainId: state.chainId, inputs, balances })
   const missing = !!inputs?.some((input) => !balances?.has(input.token))
   const targets = destinationChoices().find((d) => d.chainId === state.chainId)?.tokens.map((token) => token.address) ?? []
@@ -64,7 +75,22 @@ export function ZapFunds({ state, onAmounts }: { state: JourneyState; onAmounts:
     if (state.amounts.text[token]) onAmounts(state.amounts)
     refresh((value) => value + 1)
   }
-  const intentKey = JSON.stringify([state.pool?.id, state.range, state.amounts, state.slippage])
+  const coversInputs = (available: ReadonlyMap<string, bigint> | null) => inputs !== null && inputs.length > 0 && available !== null && inputs.every((input) =>
+    (available.get(input.token) ?? -1n) >= input.amount + (input.token === ZERO_ADDRESS ? REVIEW_GAS_RESERVE_WEI : 0n)) &&
+    (available.get(ZERO_ADDRESS) ?? -1n) >= REVIEW_GAS_RESERVE_WEI
+  const funded = coversInputs(balances)
+  const continuationChanged = (continuation: FundingContinuation) => onContinuationChange?.(intentKey, continuation.state !== 'ready' ? continuation : {
+    ...continuation,
+    run: async () => {
+      if (currentIntent.current !== intentKey || !inputs || !services?.readBalances) return false
+      const reply = await services.readBalances(state.chainId, [...new Set([ZERO_ADDRESS, ...inputs.map((input) => input.token)])]).catch(() => undefined)
+      if (currentIntent.current !== intentKey) return false
+      const available = reply?.kind === 'ok' ? new Map(reply.snapshot.balances.map(({ token, raw }) => [token, BigInt(raw)])) : null
+      setRead({ key, balances: available })
+      if (!coversInputs(available)) { refresh((value) => value + 1); return false }
+      return continuation.run()
+    },
+  })
   return (
     <div data-zap-funds="" className="dm-flow-stack">
       {missing && <p className="dm-hint" role="status" data-zap-funds-balance={current === null ? 'pending' : 'unavailable'}>
@@ -73,6 +99,12 @@ export function ZapFunds({ state, onAmounts }: { state: JourneyState; onAmounts:
       <BringFunds key={`${walletKey}|${state.chainId}`} gate={gate} services={services}
         chainId={state.chainId} wallet={wallet} access={access} walletChainId={walletChainId}
         lacks={lacks} nativeOnDestination={balances?.get(ZERO_ADDRESS)?.toString() ?? null} intentKey={intentKey}
+        onContinuationChange={onContinuationChange ? continuationChanged : undefined}
+        onUseAvailable={funded ? (token) => {
+          if (!inputs?.some((input) => input.token === token)) return false
+          refresh((value) => value + 1)
+          return true
+        } : undefined}
         poolTokens={targets} onUse={(side) => { if (targets[side]) useToken(targets[side]) }} onArrived={() => refresh((n) => n + 1)} />
     </div>
   )

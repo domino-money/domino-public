@@ -17,6 +17,8 @@ import { fundsPage } from './live'
 import { useS2Gate } from './useS2Gate'
 import { amountRawOf, keptAmount, lackingTokens, payLacks } from './model'
 import { remoteFundingChoice, remotePayment } from './fundingBudget'
+import { fundingContext } from '../../lib/create/fundingContext'
+import type { FundingContinuation } from './BringFunds'
 import { PayLine } from './PayWith'
 import { fundsServices } from './services'
 
@@ -29,6 +31,8 @@ export default function FundsAmounts({
   onArrived,
   onPayWith,
   pay,
+  flowKey = '',
+  onContinuationChange,
 }: {
   state: JourneyState
   balances: PairBalancesState
@@ -40,6 +44,8 @@ export default function FundsAmounts({
   onPayWith?: (payWith: PayWith | null) => void
   /** Added 2026-10-06: what paying with one other token would be: null where it is not offered, undefined while read. */
   pay?: PayFacts | null
+  flowKey?: string
+  onContinuationChange?: (key: string, continuation: FundingContinuation) => void
 }) {
   const pool = state.pool
   const found = pool ? pool.currencies[0].chainId : null
@@ -51,6 +57,7 @@ export default function FundsAmounts({
   const services = useMemo(() => (gate && wallet !== null ? fundsServices(gate, wallet, fundsPage) : null), [gate, wallet])
   const [tracking, setTracking] = useState<string | null>(null)
   const trackingKey = `${wallet}|${chainId}`
+  const contextKey = fundingContext(state, identity.kind === 'connected' ? `${identity.connectorName}|${wallet}` : '', flowKey)
   if (!pool || chainId === null) return null
 
   const raw = rawBalances(balances)
@@ -100,7 +107,7 @@ export default function FundsAmounts({
   const showPayment = offerPayment && !(remote?.payment && localAvailable <= 0n)
   const poolTokens = pool.currencies.map((currency) => currency.address.toLowerCase())
   const conversionAfterArrival = !paid && !!onPayWith
-  const selectionKey = JSON.stringify([chainId, pool.key, state.range?.lower, state.range?.upper, paid ? [paid.token.chainId, paid.token.address.toLowerCase()] : state.token?.key])
+  const selectionKey = JSON.stringify([flowKey, chainId, pool.key, state.range?.lower, state.range?.upper, state.slippageBps, paid ? [paid.token.chainId, paid.token.address.toLowerCase()] : state.token?.key])
 
   return (
     <>
@@ -115,9 +122,15 @@ export default function FundsAmounts({
           checking={paid ? pay === undefined || held === null : raw === null}
           services={services}
           onTrackingChange={(active) => setTracking((was) => active ? trackingKey : was === trackingKey ? null : was)}
+          onContinuationChange={onContinuationChange ? (value) => onContinuationChange(contextKey, value) : undefined}
+          onUseAvailable={usableLocal && alternative ? (token) => {
+            if (alternative.token.address.toLowerCase() !== token.toLowerCase()) return false
+            choosePayment()
+            return true
+          } : undefined}
           continuation={usableLocal && alternative ? <PayLine facts={alternative} pair={pool.currencies} onPay={choosePayment} /> : null}
           chainId={chainId}
-          intentKey={JSON.stringify([chainId, pool.key, state.range?.lower, state.range?.upper, paid ? [paid.token.chainId, paid.token.address.toLowerCase(), paid.text] : [state.token?.key, state.budget]])}
+          intentKey={JSON.stringify([flowKey, chainId, pool.key, state.range?.lower, state.range?.upper, state.slippageBps, paid ? [paid.token.chainId, paid.token.address.toLowerCase(), paid.text] : [state.token?.key, state.budget]])}
           wallet={wallet}
           access={access}
           walletChainId={identity.kind === 'connected' ? identity.chainId : null}

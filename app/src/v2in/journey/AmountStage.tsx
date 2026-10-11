@@ -12,6 +12,7 @@ import { TokenDisc, TokenName } from './parts'
 import { SlippageControl } from './SlippageControl'
 import { decimalsOf, labelOf, tokenBook } from './tokens'
 import { ZapFunds } from '../funds/ZapFunds'
+import type { FundingContinuation } from '../funds/BringFunds'
 
 /**
  * Step 3, Amount, on Domino's new contracts (spec F7 rev2 §2.6.1 "o que depositar": one or both of the pool's tokens, or
@@ -22,7 +23,13 @@ import { ZapFunds } from '../funds/ZapFunds'
  * The slippage under Advanced, closed unless it is already above 2% (decision #2). A token whose decimals were never read
  * takes raw units only (never guessed). Paying with ETH says it needs a direct transaction (§2.7).
  */
-export function AmountStage({ state, onAmounts, onSlippage }: { state: JourneyState; onAmounts: (amounts: Amounts) => void; onSlippage: (text: string) => void }) {
+export function AmountStage({ state, onAmounts, onSlippage, flowKey, onContinuationChange }: {
+  state: JourneyState
+  onAmounts: (amounts: Amounts) => void
+  onSlippage: (text: string) => void
+  flowKey?: string
+  onContinuationChange?: (key: string, continuation: FundingContinuation) => void
+}) {
   const value = slippageValue(state.slippage)
   const [opened] = useState(() => value > JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS)
   const pool = state.pool
@@ -92,7 +99,7 @@ export function AmountStage({ state, onAmounts, onSlippage }: { state: JourneySt
           <span>{JOURNEY.amount.ethDirect}</span>
         </p>
       )}
-      <ZapFunds state={state} onAmounts={onAmounts} />
+      <ZapFunds state={state} onAmounts={onAmounts} flowKey={flowKey} onContinuationChange={onContinuationChange} />
       <details className="dm-details dm-flow-advanced" data-flow-advanced="" open={opened || undefined}>
         <summary>
           <span>{CREATE.amount.advanced}</span>

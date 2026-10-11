@@ -13,6 +13,7 @@ import { PairedAmounts } from './PairedAmounts'
 import { RangeStep } from './RangeStep'
 import { SlippageSlider } from './SlippageSlider'
 import type { PairBalancesState } from './usePairBalances'
+import type { FundingContinuation } from '../../lib/create/fundingContext'
 
 // Changed on purpose 2026-10-02 (Domino V2 integration, spec F7 §3): in a build with V2 (never production or
 // development, where the define is the literal false and this folds to nothing), the amounts below carry the inline
@@ -34,6 +35,8 @@ type FundsOfferProps = {
   onArrived?: () => void
   onPayWith?: (payWith: PayWith | null) => void
   pay?: PayFacts | null
+  flowKey?: string
+  onContinuationChange?: (key: string, continuation: FundingContinuation) => void
 }
 const FundsOffer = __DOMINO_V2__ ? deferred<FundsOfferProps>(recovering(() => import('../../v2in/funds/FundsAmounts'), () => ({ default: NoOffer }))) : null
 if (__DOMINO_V2__ && FundsOffer) FundsOffer.preload()
@@ -99,6 +102,9 @@ export function StageAmount({
   onFundsArrived,
   onPayWith,
   pay,
+  flowKey,
+  onContinuationChange,
+  onFundingPayWith,
 }: {
   state: JourneyState
   balances: PairBalancesState
@@ -112,6 +118,9 @@ export function StageAmount({
   onPayWith?: (payWith: PayWith | null) => void
   /** Added 2026-10-06: what paying with one other token would be (./usePricedPool.ts usePayFacts). */
   pay?: PayFacts | null
+  flowKey?: string
+  onContinuationChange?: (key: string, continuation: FundingContinuation) => void
+  onFundingPayWith?: (payWith: PayWith | null) => void
 }) {
   const value = slippageValue(state.slippageBps)
   // Read once: a disclosure whose open state followed the value would shut under the slider being dragged.
@@ -123,7 +132,7 @@ export function StageAmount({
       {__DOMINO_V2__ && FundsOffer ? (
         <>
           <PairedAmounts state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} pay={pay} onPayWith={onPayWith} />
-          <FundsOffer state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} onArrived={onFundsArrived} onPayWith={onPayWith} pay={pay} />
+          <FundsOffer state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} onArrived={onFundsArrived} onPayWith={onFundingPayWith ?? onPayWith} pay={pay} flowKey={flowKey} onContinuationChange={onContinuationChange} />
         </>
       ) : (
         <PairedAmounts state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} />

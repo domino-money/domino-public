@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from '../support/close-browser.mjs';
-import { openFundingPage, USDG, ZERO, S2_OWNER, ARB_USDC, RECORDED_DEPOSIT, createChainReads, walletAssets, typeUsdg, signIn, homeReads, chainReads, together, offerReady } from '../support/funds-browser.mjs';
+import { openFundingPage, USDG, ZERO, S2_OWNER, ARB_USDC, RECORDED_DEPOSIT, awaitingFor, recorded, createChainReads, walletAssets, typeUsdg, signIn, homeReads, chainReads, together, offerReady } from '../support/funds-browser.mjs';
 import { createOriginChain } from '../support/s2-origin-chain.mjs';
 import { openJourney } from '../support/journey-browser.mjs';
 import { createV2Chain, contractsFor, v3PoolOf } from '../support/v2-chain.mjs';
@@ -53,7 +53,118 @@ for (const state of ['ready', 'stopped']) {
   });
 }
 
-test('a restored fill refreshes the amount balance after the cache advances, while the wallet stays on its origin', async () => {
+for (const lastState of ['filled', 'refunded']) {
+  test(`an old ${lastState} transfer is archived before a new position is funded, preserving its hash`, async () => {
+    const old = restoredIntent('sent'); old.legs[0].depositTxHash = RECORDED_DEPOSIT;
+    const s = await openFundingPage(browser, { bridge: true, served: together(homeReads(), chainReads(42161, ARB_USDC)),
+      intent: { key: fundingKey, value: JSON.stringify(old) },
+      journal: { key: journal().key, value: JSON.stringify([{ ...pendingRecord, lastState }]) },
+    });
+    try {
+      await typeUsdg(s, '20'); await signIn(s);
+      await s.page.locator('[data-funding-state="ready"] [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+      assert.equal(await s.page.evaluate(key => localStorage.getItem(key), fundingKey), null);
+      assert.equal(await s.page.locator('[data-funds-deposit], [data-funds-state-text], [data-funds-use], [data-funds-remote-use]').count(), 0);
+      const saved = JSON.parse(await s.page.evaluate(key => localStorage.getItem(key), journal().key));
+      assert.equal(saved[0].depositTxHash, RECORDED_DEPOSIT);
+      assert.equal(saved[0].lastState, lastState);
+      assert.equal(s.wallet.calls('wallet_sendCalls').length + s.wallet.calls('eth_sendTransaction').length, 0);
+    } finally { await s.close(); }
+  });
+}
+
+for (const cannotPersistFill of [false, true]) test(`adopting this visit’s verified arrival retires its intent and card, keeps the hash, and never resends${cannotPersistFill ? ' when the terminal journal write fails' : ''}`, { timeout: 60_000 }, async () => {
+  const origin = createOriginChain({ owner: S2_OWNER, chainId: 42161 });
+  origin.state.tokenBalances.set(ARB_USDC, 200_000_000n);
+  origin.state.decimals.set(ARB_USDC, 6);
+  const raw = { [ZERO]: 10n ** 16n, [USDG]: 0n };
+  const destination = createChainReads({ chainId: 4663, tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: USDG, symbol: 'USDG', decimals: 6 }], balances: raw });
+  const combined = together(destination, chainReads(42161, ARB_USDC));
+  let filled = false, fresh = false;
+  const served = { answer(route, request) {
+    const reply = combined.answer(route, request);
+    if (fresh && reply) reply.body = { ...reply.body, chains: reply.body.chains.map(chain => chain.chainId !== 4663 || !chain.snapshot ? chain : { ...chain, snapshot: { ...chain.snapshot, number: chain.snapshot.number + 1, timestamp: chain.snapshot.timestamp + 1, hash: `0x${'ea'.repeat(32)}` } }) };
+    return reply;
+  } };
+  const walletAssetsReply = () => {
+    const body = JSON.parse(walletAssets(raw[ZERO]));
+    body.items.find(item => item.address === USDG).amountRaw = raw[USDG].toString();
+    return JSON.stringify(body);
+  };
+  const s = await openFundingPage(browser, { bridge: true, served, walletAssetsReply, clock: true, switching: true, sendOn: origin,
+    balances: { native: { 42161: 10n ** 18n }, tokens: { [`42161:${ARB_USDC}`]: { balance: 200_000_000n, decimals: 6 } } },
+    statusReply: body => {
+      if (!filled) return awaitingFor(body);
+      const reply = recorded('responses/status', S2_OWNER);
+      reply.status.request = { ...body, owner: S2_OWNER };
+      return reply;
+    },
+  });
+  try {
+    await typeUsdg(s, '50'); await signIn(s);
+    await s.page.locator('button[data-funds-sources]').click();
+    await s.page.locator('[data-funding-state="ready"]').waitFor();
+    await s.page.locator('[data-funds-deposit-button]').click();
+    await s.page.locator('[data-funds-deposit]').waitFor();
+    const amountStep = s.page.locator('li[data-step="amount"][aria-current="step"]');
+    assert.equal(await amountStep.getByRole('button', { name: 'Waiting for funds…', exact: true }).isDisabled(), true, 'pending funds cannot advance to Review');
+    const accepted = JSON.parse(await s.page.evaluate(key => localStorage.getItem(key), fundingKey));
+    assert.ok(accepted.legs[0].depositTxHash);
+    const sent = origin.state.sent.length;
+    if (cannotPersistFill) await s.page.evaluate(blockedKey => {
+      const save = Storage.prototype.setItem;
+      window.__failedTerminalJournalWrites = 0;
+      Storage.prototype.setItem = function(key, value) {
+        if (key === blockedKey && JSON.parse(value).some(record => record.lastState === 'filled')) {
+          window.__failedTerminalJournalWrites++;
+          throw new DOMException('Storage is full', 'QuotaExceededError');
+        }
+        return save.call(this, key, value);
+      };
+    }, journal().key);
+    filled = true;
+    await s.page.clock.fastForward(11_100);
+    await s.page.locator('[data-funds-balance-state="updating"]').waitFor();
+    assert.match(await s.page.locator('[data-funds-state-text]').innerText(), /Funds arrived/);
+    assert.equal(await amountStep.getByRole('button', { name: 'Waiting for funds…', exact: true }).isDisabled(), true, 'a fill without verified balance cannot advance');
+    raw[USDG] = 100_000_000n; fresh = true;
+    await s.page.clock.fastForward(11_100);
+    await s.page.locator('[data-funds-balance-state="ready"]').waitFor();
+    assert.equal(await s.page.locator('[data-funds-use], [data-funds-remote-use], [data-funds-continuation]').count(), 0, 'the main Continue owns adoption');
+    assert.equal(await s.page.locator('[data-funds-deposit] [data-funds-remove]').count(), 0, 'a current arrival cannot lose its intent or transaction proof by removing only its card');
+    if (!cannotPersistFill && process.env.DOMINO_FUNDING_SCREENSHOTS) {
+      for (const width of [1280, 390]) {
+        await s.page.setViewportSize({ width, height: 1000 });
+        await s.page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+        assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${width}: arrived flow has no horizontal overflow`);
+        await s.page.screenshot({ path: join(shots(), `funding-current-arrived-${width}.png`), fullPage: true, animations: 'disabled' });
+      }
+    }
+    await pressContinue(amountStep);
+    await s.page.waitForFunction(key => localStorage.getItem(key) === null, fundingKey);
+    await s.page.locator('li[data-step="review"][aria-current="step"]').waitFor();
+    assert.equal(await amount(s.page).inputValue(), '50', 'the original amount survives the single Continue handoff');
+    assert.equal(await s.page.locator('[data-funds-deposit]').count(), 0, 'there is no empty transfer card after adoption');
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /Your transfer|Funds arrived/);
+    assert.equal(origin.state.sent.length, sent, 'adoption never sends a transaction');
+    if (!cannotPersistFill && process.env.DOMINO_FUNDING_SCREENSHOTS) {
+      for (const width of [1280, 390]) {
+        await s.page.setViewportSize({ width, height: 1000 });
+        await s.page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+        assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${width}: Review has no horizontal overflow`);
+        await s.page.screenshot({ path: join(shots(), `funding-current-review-${width}.png`), fullPage: true, animations: 'disabled' });
+      }
+    }
+    const saved = JSON.parse(await s.page.evaluate(key => localStorage.getItem(key), journal().key));
+    assert.equal(saved[0].depositTxHash, accepted.legs[0].depositTxHash);
+    if (cannotPersistFill) {
+      assert.ok(await s.page.evaluate(() => window.__failedTerminalJournalWrites > 0), 'the validated in-memory fill, not a fabricated storage update, enabled adoption');
+      assert.notEqual(saved[0].lastState, 'filled', 'the original hash remains recoverable even though its terminal update could not persist');
+    } else assert.equal(saved[0].lastState, 'filled');
+  } finally { await s.close(); }
+});
+
+test('a recovered earlier pending transfer refreshes balances without becoming this position arrival', async () => {
   const raw = { [ZERO]: 10n ** 16n, [USDG]: 0n };
   const destination = createChainReads({ chainId: 4663, tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: USDG, symbol: 'USDG', decimals: 6 }], balances: raw });
   const combined = together(destination, chainReads(42161, ARB_USDC));
@@ -74,9 +185,9 @@ test('a restored fill refreshes the amount balance after the cache advances, whi
   try {
     await typeUsdg(s, '50');
     await s.page.locator('[data-transfer-moving]').waitFor();
-    assert.equal(await s.page.locator('[data-transfer-moving] .dm-transfer-track i').evaluate((el) => getComputedStyle(el).animationName), 'dm-transfer-travel');
+    assert.equal(await s.page.locator('[data-transfer-moving] .dm-funds-route-packet').evaluate((el) => getComputedStyle(el).animationName), 'dm-funds-token-out');
     await s.page.emulateMedia({ reducedMotion: 'reduce' });
-    assert.equal(await s.page.locator('[data-transfer-moving] .dm-transfer-track i').evaluate((el) => getComputedStyle(el).animationName), 'none');
+    assert.equal(await s.page.locator('[data-transfer-moving] .dm-funds-route-packet').evaluate((el) => getComputedStyle(el).animationName), 'none');
     await s.page.locator('[data-funds-offer]').screenshot({ path: join(shots(), 'funds-transfer-in-progress.png'), animations: 'disabled' });
     await s.page.emulateMedia({ reducedMotion: 'no-preference' });
     await signIn(s);
@@ -86,21 +197,36 @@ test('a restored fill refreshes the amount balance after the cache advances, whi
     const readsBefore = destinationReads;
     raw[USDG] = 100_000_000n; fresh = true;
     await s.page.clock.fastForward(11_100);
-    await s.page.locator('[data-funds-balance-state="ready"]').waitFor({ timeout: 15_000 });
-    assert.ok(destinationReads > readsBefore, 'arrival performs another read after the backend cache window');
-    assert.match(await s.page.locator('[data-funds-state-text]').innerText(), /Funds arrived on Robinhood Chain/);
-    assert.doesNotMatch(await s.page.locator('[data-funds-offer]').innerText(), /On the way|Settled/);
-    assert.match(await s.page.locator('[data-funds-available]').innerText(), /100 USDG/);
-    await s.page.locator('[data-funds-deposit] > details > summary').click();
-    assert.match(await s.page.locator(`[data-funds-balance="${USDG}"]`).innerText(), /100/);
+    await s.page.waitForFunction(() => !document.querySelector('[data-funds-deposit]'));
+    assert.ok(destinationReads > readsBefore, 'a pending recovery is reconciled after the backend cache advances');
+    assert.equal(await s.page.locator('[data-funds-state-text], [data-funds-continuation], [data-funds-remote-use]').count(), 0, 'an earlier arrival never enables the current continuation');
     await s.page.waitForFunction(() => document.querySelector('[data-pair-side="1"]')?.textContent?.includes('100'));
     assert.equal(await amount(s.page).inputValue(), '50', 'the original token amount survives arrival');
+    assert.equal(JSON.parse(await s.page.evaluate(key => localStorage.getItem(key), journal().key))[0].lastState, 'filled', 'the terminal hash remains recoverable in the journal');
     assert.equal(s.wallet.state.chainId, 42161);
     assert.equal(s.wallet.calls('wallet_switchEthereumChain').length, 0, 'reading destination funds never switches the wallet back');
   } finally { await s.close(); }
 });
 
-test('a Base arrival keeps received status separate from spent USDC and offers only the remaining spendable ETH', async () => {
+test('a previous transfer can be removed explicitly after a terminal answer, never while pending', async () => {
+  const s = await openFundingPage(browser, { bridge: true, served: together(homeReads(), chainReads(42161, ARB_USDC)), journal: journal(), clock: true });
+  try {
+    await typeUsdg(s, '50');
+    await s.page.locator('[data-funds-deposit]').waitFor();
+    assert.equal(await s.page.locator('[data-funds-deposit] [data-funds-remove]').count(), 0);
+    await signIn(s);
+    const previous = s.page.locator('[data-funds-deposit][data-funds-state="filled"]');
+    await previous.waitFor();
+    assert.match(await previous.locator('[data-funds-state-text]').innerText(), /^Previous transfer to/);
+    await previous.locator('details > summary').click();
+    await previous.locator('[data-funds-remove]').click();
+    assert.equal(await s.page.locator('[data-funds-deposit]').count(), 0);
+    assert.deepEqual(JSON.parse(await s.page.evaluate(key => localStorage.getItem(key), journal().key)) ?? [], []);
+    assert.equal(s.wallet.calls('wallet_sendCalls').length + s.wallet.calls('eth_sendTransaction').length, 0);
+  } finally { await s.close(); }
+});
+
+test('a completed Base transfer from an earlier position stays archived, with no arrival or adoption in a new pool', async () => {
   const USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
   const CAT = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   const WETH = '0x4200000000000000000000000000000000000006';
@@ -152,37 +278,16 @@ test('a Base arrival keeps received status separate from spent USDC and offers o
     await pressContinue(current('range')); await current('amount').waitFor();
     const typed = current('amount').locator('[data-pair-side="0"] input[inputmode="decimal"]');
     await typed.fill('0.1');
-    await page.locator('[data-funds-state="filled"] [data-funds-balance-state="updating"]').waitFor();
-    assert.match(await page.locator('[data-funds-state-text]').innerText(), /Funds arrived on Base/);
-    assert.equal(await page.locator('[data-transfer-moving]').count(), 0, 'a confirmed arrival never keeps travelling');
-    const before = destinationReads;
-    raw[USDC] = 0n; fresh = true;
-    await page.clock.fastForward(11_100);
-    await page.locator('[data-funds-balance-state="ready"]').waitFor({ timeout: 15_000 });
-    assert.ok(destinationReads > before);
-    assert.equal(await typed.inputValue(), '0.1', 'arrival and a later spend do not resize the desired position');
-    assert.match(await page.locator('[data-funds-available]').innerText(), /ETH/);
-    assert.doesNotMatch(await page.locator('[data-funds-available]').innerText(), /USDC|0\.0008/);
-    assert.doesNotMatch(await page.locator('[data-funds-offer]').innerText(), /On the way|Settled|1\.003048 USDC/);
-    await page.locator('[data-funds-deposit] > details > summary').click();
-    assert.equal((await page.locator(`[data-funds-balance="${USDC}"]`).innerText()).trim(), '0 USDC');
-    assert.match(await page.locator(`[data-funds-balance="${ZERO}"]`).getAttribute('title'), /0\.000800529491659974 ETH/);
-    assert.match(await page.locator('[data-funds-deposit] > details').innerText(), /current wallet balances, not transfer receipt amounts/);
-    await page.locator('[data-funds-deposit] > details > summary').click();
-    await page.locator('[data-funds-continuation]').waitFor();
-    assert.match(await page.locator('[data-funds-continuation]').innerText(), /Use your ETH on Base/);
-    assert.equal(await page.locator('[data-funds-nothing], [data-funds-signin], [data-funds-title]').count(), 0, 'verified arrival has one clear status and conversion action');
-    await page.locator('[data-funds-offer]').screenshot({ path: join(shots(), 'funds-base-arrival-desktop.png'), animations: 'disabled' });
-    assert.equal(s.planned.length, 0, 'an arrival does not quote or initiate a position');
-    assert.deepEqual(bridgeCalls, [], 'restoring a known fill does not prepare another bridge');
+    await page.waitForFunction(() => document.querySelector('[data-pair-balance="ready"]') !== null);
+    assert.equal(await page.locator('[data-funds-deposit], [data-funds-state-text], [data-funds-continuation], [data-funds-remote-use]').count(), 0, 'old completed history is not a current funding event');
+    assert.equal(await typed.inputValue(), '0.1');
+    const history = JSON.parse(await page.evaluate(key => localStorage.getItem(key), depositJournalKey(8453, S2_OWNER)));
+    assert.equal(history[0].depositTxHash, RECORDED_DEPOSIT, 'archiving presentation preserves the transaction hash');
+    assert.equal(history[0].lastState, 'filled');
+    assert.equal(s.planned.length, 0);
+    assert.deepEqual(bridgeCalls, [], 'old terminal history never prepares another bridge');
     assert.equal(chain.chainNow(), 4663);
-    assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 0);
     assert.equal(chain.sends.length, 0, 'nothing is approved or spent automatically');
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.setViewportSize({ width: 390, height: 844 });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    assert.equal(await page.locator('.dm-transfer-track i').evaluate((el) => getComputedStyle(el).animationName), 'none');
-    await page.locator('[data-funds-offer]').screenshot({ path: join(shots(), 'funds-base-arrival-phone.png'), animations: 'disabled' });
   } finally { await s.close(); }
 });
 

@@ -57,7 +57,7 @@ test('New position\'s amount step keeps V1\'s amounts itself and opens only the 
   // also pay with one other token (`onPayWith`, offered where Domino's service says it may, `pay`); once chosen, V1's
   // amounts, still mounted by the step itself in both branches, draw that token's one panel and the way back.
   const paying = '<PairedAmounts state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} pay={pay} onPayWith={onPayWith} />';
-  assert.ok(mount.includes(`<>\n          ${paying}\n          <FundsOffer state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} onArrived={onFundsArrived} onPayWith={onPayWith} pay={pay} />\n        </>`), 'V1\'s amounts, mounted by the step itself, then the offer alone under them');
+  assert.ok(mount.includes(`<>\n          ${paying}\n          <FundsOffer state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} onArrived={onFundsArrived} onPayWith={onFundingPayWith ?? onPayWith} pay={pay} flowKey={flowKey} onContinuationChange={onContinuationChange} />\n        </>`), 'V1\'s amounts stay mounted by the step; only the lazy offer receives the visit-scoped, guarded funding continuation');
   assert.ok(mount.trimEnd().endsWith(`) : (\n        ${amounts}\n      )}`), 'the alternate is V1\'s expression exactly');
   // The chunk is the offer alone: it never mounts the amounts (so nothing remounts when it lands).
   const chunk = ALL.find(({ path }) => path === 'v2in/funds/FundsAmounts.tsx').code;

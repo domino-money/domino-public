@@ -178,7 +178,9 @@ async function upstream(rt: DexRuntime, kind: Kind, chain: DexChain, token: stri
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), UPSTREAM_MS)
   try {
-    const response = await fetchImpl(`${DEX_UPSTREAM}/${kind}/v1/${chain}/${token}`, {
+    // The provider's tokens endpoint can omit liquid v4 pairs (observed for UFG on 2026-10-11).
+    // Both routes already read one token at a time: use its pair list, then keep the same bounded price subset below.
+    const response = await fetchImpl(`${DEX_UPSTREAM}/token-pairs/v1/${chain}/${token}`, {
       method: 'GET', headers: { Accept: 'application/json' }, redirect: 'manual', signal: controller.signal,
     })
     if (response.status !== 200 || !(response.headers.get('Content-Type') ?? '').startsWith('application/json') || !response.body) return null

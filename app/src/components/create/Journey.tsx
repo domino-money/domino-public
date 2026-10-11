@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import {
   back,
@@ -57,6 +57,8 @@ import { AmountSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type 
 import { PositionPreview } from './PositionPreview'
 import { useLivePoolPrice, usePayFacts, usePricedPool } from './usePricedPool'
 import { heldAmounts, rawBalances } from './valuation'
+import { fundingContext, type FundingContinuation } from '../../lib/create/fundingContext'
+import { useWalletIdentity } from '../../lib/walletIdentity'
 
 /** The outcomes only the verification read, or the featured list before it, can produce. */
 type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'unsupported' | 'failed' | 'withdrawn' }>
@@ -140,6 +142,20 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
   const source = useReadSource()
   const now = useNow(false).wall
   const [state, setState] = useState<JourneyState>(() => initialToken ? withToken(initialState(), initialToken) : initialState())
+  const walletIdentity = useWalletIdentity()
+  const [fundingFlowKey] = useState(() => __DOMINO_V2__ ? crypto.randomUUID() : '')
+  const walletKey = walletIdentity.kind === 'connected' ? `${walletIdentity.connectorName}|${walletIdentity.address.toLowerCase()}` : ''
+  const fundingKey = __DOMINO_V2__ ? fundingContext(state, walletKey, fundingFlowKey) : ''
+  const fundingKeyRef = useRef(fundingKey)
+  useEffect(() => { fundingKeyRef.current = fundingKey }, [fundingKey])
+  const [funding, setFunding] = useState<{ key: string; value: FundingContinuation } | null>(null)
+  const fundingEpoch = useRef(0)
+  const [fundingAdvance, setFundingAdvance] = useState<{ key: string; epoch: number; phase: 'checking' | 'ready' } | null>(null)
+  const fundingBusy = useRef(false)
+  const receiveFunding = useCallback((key: string, value: FundingContinuation) => {
+    if (key !== fundingKeyRef.current) return
+    setFunding((previous) => previous?.key === key && previous.value === value ? previous : { key, value })
+  }, [])
   const [part, setPart] = useState<AmountPart>('range')
   // Create position is asking the wallet: Back waits, so leaving Review cannot drop the flow mid-way.
   const [creating, setCreating] = useState(false)
@@ -308,12 +324,18 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
 
   /** Makes `updated` the state, with `nextPart` as the open half of the amount stage, and keeps the step it opens. */
   const open = (updated: JourneyState, nextPart: AmountPart = part) => {
+    fundingEpoch.current++
+    setFundingAdvance(null)
     const step = visualOf(updated, nextPart)
     setKept((was) => ({ ...was, [step]: keyOf(step, updated) }))
     setPart(nextPart)
     setState(updated)
   }
-  const update = (updated: JourneyState) => setState(updated)
+  const update = (updated: JourneyState) => {
+    fundingEpoch.current++
+    setFundingAdvance(null)
+    setState(updated)
+  }
 
   const setToken = (candidate: TokenCandidate | null) => {
     setPreview(null)
@@ -321,7 +343,7 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
   }
   const setPool = (option: PoolOption | null) => {
     setPreview(null)
-    update(withPool(state, option, Date.now()))
+    update(withPool(state, option, now))
   }
   const setRange = (range: TickRange) => update(withRange(state, range))
   const setBudget = (text: string) => update(withBudget(state, text))
@@ -364,6 +386,10 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
         open(state, 'amount')
         return
       case 'amount': {
+        if (__DOMINO_V2__) {
+          if (activeFunding?.state === 'ready') { void continueFunding(); return }
+          if (activeFunding && activeFunding.state !== 'none') return
+        }
         if (!checkFor.amount.ok) return
         const toBalance = next(state, now)
         if (toBalance.stage !== 'balance') return
@@ -459,6 +485,53 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
 
   const checkFor: Record<VisualStep, Check> = { pool: poolCheck, range: rangeCheck, amount: amountCheck.ok ? fundingCheck : amountCheck, review: canContinue('review', state, now) }
   const check = checkFor[current]
+  const activeFunding = __DOMINO_V2__ && funding?.key === fundingKey ? funding.value : null
+  const adoptingFunds = fundingAdvance?.key === fundingKey
+  const continueFunding = async () => {
+    if (fundingBusy.current || activeFunding?.state !== 'ready' || !amountCheck.ok || !rangeCheck.ok) return
+    const request = { key: fundingKey, epoch: fundingEpoch.current }
+    fundingBusy.current = true
+    setFundingAdvance({ ...request, phase: 'checking' })
+    try {
+      const adopted = await activeFunding.run()
+      if (request.key !== fundingKeyRef.current || request.epoch !== fundingEpoch.current) return
+      setFundingAdvance(adopted ? { ...request, phase: 'ready' } : null)
+    } catch {
+      if (request.key === fundingKeyRef.current && request.epoch === fundingEpoch.current) setFundingAdvance(null)
+    } finally { fundingBusy.current = false }
+  }
+  // The one Continue click adopts the selected payment, then waits for the parent's current balance/price check.
+  // Arrival itself never advances the wizard, changes the amount or signs a transaction.
+  const canAdvanceAmount = checkFor.amount.ok
+  const amountReadSettled = pair.status === 'ready' && pay !== undefined && !priceReading
+  useEffect(() => {
+    if (!__DOMINO_V2__) return
+    if (!fundingAdvance || fundingAdvance.phase !== 'ready' || fundingAdvance.key !== fundingKey || current !== 'amount') return
+    // Let the selected payment's balance refresh commit first. Cancel if any input changes before this handoff.
+    const timer = setTimeout(() => {
+      if (fundingAdvance.epoch !== fundingEpoch.current || fundingAdvance.key !== fundingKeyRef.current) return
+      if (!canAdvanceAmount) { if (amountReadSettled) setFundingAdvance(null); return }
+      const balance = next(state, now)
+      if (balance.stage !== 'balance') return
+      const reviewed = next(balance, now)
+      if (reviewed.stage !== 'review') return
+      setFundingAdvance(null)
+      setKept((was) => ({ ...was, review: keyOf('review', reviewed) }))
+      setPart('amount')
+      setState(reviewed)
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [fundingAdvance, fundingKey, current, canAdvanceAmount, amountReadSettled, state, now])
+  // A lost response is a retryable read, never an endless wait or permission to submit a transaction.
+  useEffect(() => {
+    if (!__DOMINO_V2__ || !fundingAdvance) return
+    const timer = setTimeout(() => setFundingAdvance((current) => current === fundingAdvance ? null : current), 30_000)
+    return () => clearTimeout(timer)
+  }, [fundingAdvance])
+  const fundingWaiting = current === 'amount' && activeFunding && (activeFunding.state === 'waiting' || activeFunding.state === 'attention')
+  const continuationReady = current === 'amount' && activeFunding?.state === 'ready'
+  const canPressContinue = __DOMINO_V2__ ? !adoptingFunds && !fundingWaiting && (continuationReady ? amountCheck.ok && rangeCheck.ok : check.ok) : check.ok
+  const continueReason = __DOMINO_V2__ && adoptingFunds ? 'Checking your selected funds…' : fundingWaiting ? activeFunding.copy : check.ok ? '' : check.reason
   // Changed on purpose (owner, 2026-09-24): step 1 shows no buttons until a token is chosen, and then only
   // Continue, full width (there is nowhere to go back to from the first step). The buttons arrive gently
   // (flow.css, stilled under reduced motion). The reason paragraph stays mounted, out of sight while nothing
@@ -495,15 +568,18 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
       ) : (
         <>
           {!waiting && (
-            <Button type="button" variant="primary" size="lg" disabled={!check.ok} aria-describedby={check.ok ? undefined : 'continue-reason'} onClick={forward}>
-              {CREATE.page.next}
+            <Button type="button" variant="primary" size="lg" disabled={!canPressContinue} aria-describedby={canPressContinue ? undefined : 'continue-reason'} onClick={forward}>
+              {__DOMINO_V2__ && adoptingFunds ? 'Checking funds…' : current === 'amount' && activeFunding?.state === 'waiting' ? 'Waiting for funds…' : CREATE.page.next}
             </Button>
           )}
           {/* Always in the DOM, so the live region exists before the reason lands in it: a region
               mounted together with its text is announced by nothing. */}
           <p id="continue-reason" role="status" className={waiting ? 'dm-flow-reason sr-only' : 'dm-flow-reason'}>
-            {check.ok ? '' : check.reason}
+            {continueReason}
           </p>
+          {__DOMINO_V2__ && current === 'amount' && !adoptingFunds && !fundingWaiting && !check.ok && amountCheck.ok && amountReadSettled && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setBalanceRevision((n) => n + 1)}>Check balance again</Button>
+          )}
         </>
       )}
     </div>
@@ -531,6 +607,9 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
       case 'amount':
         return (
           <StageAmount
+            flowKey={fundingFlowKey}
+            onContinuationChange={__DOMINO_V2__ ? receiveFunding : undefined}
+            onFundingPayWith={__DOMINO_V2__ ? (payWith) => setState((was) => withPayWith(was, payWith)) : undefined}
             state={valued}
             balances={pair}
             onBudget={setBudget}

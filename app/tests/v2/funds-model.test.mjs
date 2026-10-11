@@ -434,7 +434,13 @@ test('after an arrival, continuation keeps the amount typed once the wallet cove
   assert.deepEqual(model.keptAmount(BOTH, 1, '50', 'USDG', null), { side: 1, text: '50', label: '50 USDG' });
   const status = readFileSync(new URL('../../src/v2in/funds/DepositStatus.tsx', import.meta.url), 'utf8');
   assert.match(status, /balanceState === 'ready' && keep !== null && \(/, 'continuation requires reconciled balances, independent of the active wallet network');
-  assert.match(status, /onUse\(keep\.side, keep\.text\)\s+onRemove\(\)/, 'the amount kept, the card done');
+  assert.match(status, /if \(onContinue\) onContinue\(\)\s+else \{ onUse\(keep\.side, keep\.text\); onRemove\(\) \}/, 'the current journey delegates adoption to its guarded handoff; the standalone continuation keeps the typed amount');
+  const offer = readFileSync(new URL('../../src/v2in/funds/BringFunds.tsx', import.meta.url), 'utf8');
+  const adoption = offer.slice(offer.indexOf('const useArrivedFunds'), offer.indexOf('const changed = intent'));
+  assert.match(adoption, /services\.readBalances/, 'the handoff revalidates balances before adopting');
+  assert.match(adoption, /else if \(keep\) onUse\(keep\.side, keep\.text\)/, 'adoption preserves the exact selected amount');
+  assert.match(adoption, /save\(null\)/, 'adoption retires the active intent');
+  assert.doesNotMatch(adoption, /journal\?\.drop|journal\.drop|runDeposit/, 'adoption neither erases transaction references nor sends another deposit');
   assert.doesNotMatch(status, /onUse\(side, amount\.text\)|onUseToken\(startToken|data-funds-use="balance"/, 'arrivals cannot replace the entered quantity with a wallet balance');
   assert.doesNotMatch(status, /switchToChain|own\.balance\(/, 'reading arrivals never moves the wallet');
   const amounts = readFileSync(new URL('../../src/v2in/funds/FundsAmounts.tsx', import.meta.url), 'utf8');

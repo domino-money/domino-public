@@ -14,6 +14,7 @@ import { reconcileBalances } from './reconcile'
 import type { FundsServices } from './services'
 import { ZERO_ADDRESS } from '../../v2/types'
 import { availableBalance, transferTitle, type TransferProgress } from './transferView'
+import { TransferRoute } from './TransferRoute'
 
 type Hex = `0x${string}`
 
@@ -27,6 +28,8 @@ export interface TrackedDeposit {
   /** The review the deposit was sent from, for its receipt (this page only). */
   review: OriginReview | null
   journaled: boolean
+  /** Keep an observed pending recovery mounted until its terminal balance reconciliation finishes. */
+  followedPending?: boolean
 }
 
 const RECEIPT_STOPS = new Set(['wallet_wrong_chain', 'wallet_identity_changed', 'transaction_does_not_match', 'invalid_receipt', 'receipt_not_from_this_review', 'review_required'])
@@ -169,6 +172,8 @@ export function DepositStatus({
   onRemove,
   onSettled,
   onProgress,
+  currentIntent = true,
+  onContinue,
 }: {
   deposit: TrackedDeposit
   services: FundsServices
@@ -207,6 +212,9 @@ export function DepositStatus({
   onSettled?: () => void
   /** Presentation only; never releases a transfer lock or starts another operation. */
   onProgress?: (progress: TransferProgress) => void
+  /** A recovered transfer for another position is tracked without claiming it funds this one. */
+  currentIntent?: boolean
+  onContinue?: () => void
 }) {
   const { record } = deposit
   const [poll, setPoll] = useState<PollState | null>(null)
@@ -351,11 +359,11 @@ export function DepositStatus({
   const moving = !done && (view.state === null || view.state === 'awaiting_deposit' || view.state === 'pending')
   return (
     <div className="dm-transfer" data-funds-deposit={record.depositTxHash} data-funds-state={view.state ?? 'none'} data-funds-stopped={stopped ?? undefined} data-funds-transition={poll?.report?.transition ?? undefined}>
-      <div className="dm-transfer-route" data-transfer-moving={moving && !stopped ? '' : undefined} aria-hidden="true">
-        <span className="dm-transfer-node">↗</span><span className="dm-transfer-track"><i /></span><span className="dm-transfer-node">{filled ? '✓' : '·'}</span>
-      </div>
-      <p className="dm-transfer-networks">{origin}<span aria-hidden="true">→</span>{destination}</p>
-      <p role="status" className="dm-transfer-title" data-funds-state-text="">{transferTitle(view.state, destination)}</p>
+      <TransferRoute originChainId={record.originChainId} destinationChainId={record.destinationChainId}
+        token={deposit.destinationToken ? { chainId: record.destinationChainId, address: deposit.destinationToken } : null}
+        originToken={deposit.review?.quote.request.originChainId === record.originChainId ? { chainId: record.originChainId, address: deposit.review.quote.request.originToken } : null}
+        progress={{ state: view.state, balance: balanceState }} paused={Boolean(stopped)} />
+      <p role="status" className="dm-transfer-title" data-funds-state-text="">{currentIntent ? transferTitle(view.state, destination) : `Previous transfer to ${destination}`}</p>
       {!moving && !filled && <p className="dm-hint">{view.text}</p>}
       {notice && notice.copy && (
         <p role="alert" className="dm-error mt-2" data-error-code={notice.code ?? undefined} data-funds-notice="">
@@ -399,14 +407,14 @@ export function DepositStatus({
           {balanceState === 'ready' && <p className="dm-transfer-available" data-funds-available="">
             {available.length ? `Available now: ${available.map(({ token, raw }) => shortAmountText(raw, token, name.book(record.destinationChainId, token))).join(' · ')}` : 'No spendable funds available for this position yet.'}
           </p>}
-          {balanceState === 'ready' && keep !== null && (
+          {currentIntent && balanceState === 'ready' && keep !== null && (
             // Changed on purpose 2026-10-06 (the 2026-10-06 study): the wallet now covers the amount typed in the step, so
             // the same position continues with it, unchanged; the card is done.
             <Button
               className="justify-self-start"
               onClick={() => {
-                onUse(keep.side, keep.text)
-                onRemove()
+                if (onContinue) onContinue()
+                else { onUse(keep.side, keep.text); onRemove() }
               }}
               data-funds-use="keep"
             >
@@ -439,7 +447,7 @@ export function DepositStatus({
             </KeyValue>
           )}
         </KeyValueList>
-        {done && (
+        {done && !currentIntent && (
         <Button variant="ghost" size="sm" className="mt-2" onClick={onRemove} data-funds-remove="">
           {FUNDS_TEXT.remove}
         </Button>

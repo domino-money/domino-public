@@ -106,9 +106,10 @@ test('the deployed build carries wallet sign-in and the positions collection as 
   // The read screens and the shared read source are lazy chunks of their own,
   // so a visitor who opens neither the figures nor the position lookup never
   // downloads them. What must not appear is a second entry or a second island.
-  // The V2 collection's selection/recovery styles load with OwnedRows, never on initial entry.
+  // Collection styles load with OwnedRows; transfer illustrations with the deferred funding services.
+  // Neither stylesheet is linked by the initial document (checked below).
   const css = assets(DIST).filter((file) => file.endsWith('.css'));
-  assert.deepEqual(css.map((file) => file.split('-')[0]).sort(), ['OwnedRows', 'index', 'screens'], css.join(', '));
+  assert.deepEqual(css.map((file) => file.split('-')[0]).sort(), ['OwnedRows', 'index', 'screens', 'services'], css.join(', '));
   const collection = js.find((file) => file.startsWith('OwnedRows-'));
   assert.ok(collection && !staticClosure(DIST, entry).has(collection), 'the collection stays outside the entry static closure');
   const html = readFileSync(join(DIST, 'index.html'), 'utf8');
@@ -1257,7 +1258,10 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // code. Removing unused runtime namespace exports saved 298 B; Windows gzip 9 legacy all-lazy is
     // 387,376 B against 387,000 B including its existing test allowance. Round only all-lazy up 1 kB
     // (0.26%); no extra instrumentation discount, dependency, entry, financial or V2 ceiling change.
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 385_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 657_000], ['V2 fixture data', fixtureData, 13_000]]) {
+    // 2026-10-11 (funding handoff and dialog keyboard recovery): the shared journey guards and visibility-aware
+    // focus trap measure 388,237 B gzip in legacy all-lazy, 237 B above its 388,000 B ceiling. Allow 500 B for
+    // this measured code, without enlarging instrumentation, entry, financial or V2 budgets or adding dependencies.
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 385_500], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 657_000], ['V2 fixture data', fixtureData, 13_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir !== DIST && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

@@ -282,7 +282,8 @@ test('the journey’s offer, a wallet that batches on Arbitrum One: the approval
     assert.equal(s.chain.sends.length, 0, 'nothing sent on Robinhood Chain');
     await offer.locator(`[data-funds-deposit="${HASH_OF(0)}"][data-funds-state="awaiting_deposit"]`).waitFor();
     assert.equal(await card.getByRole('status').innerText(), 'Transferring to Robinhood Chain');
-    assert.match(await card.locator('.dm-transfer-networks').innerText(), /Arbitrum One\s*→\s*Robinhood Chain/);
+    assert.deepEqual(await card.locator('.dm-funds-route-labels span').allTextContents(), ['Arbitrum One', 'Robinhood Chain']);
+    assert.equal(await s.zap.locator('[data-zap-continue="amount"]').isDisabled(), true, 'a pending current transfer cannot advance to Review');
     assert.equal(await card.locator('[data-transfer-moving][aria-hidden="true"]').count(), 1, 'one decorative progress route accompanies the accessible status');
     assert.equal(origin.state.batches.length, 1, 'tracking never requests another wallet confirmation');
     assert.equal(s.walletMethods.filter((method) => method === 'wallet_sendCalls').length, 1);

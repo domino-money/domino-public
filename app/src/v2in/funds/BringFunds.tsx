@@ -6,6 +6,7 @@ import { browserFundingStorage, withFundingLock } from '../../finance/v2/funding
 import { CANDIDATE_ORIGINS, type Holding } from '../../finance/v2/holdings'
 import { openWalletDialog } from '../../finance/signedOut'
 import { REVIEW_GAS_RESERVE_WEI } from '../../lib/create/reviewPlan'
+import type { FundingContinuation } from '../../lib/create/fundingContext'
 import { v2Chain } from '../../v2/chains'
 import { quoteDeadlineMono } from '../../v2/crosschain/client'
 import { naming, originGasDetail, presentQuote, shortAmountText } from '../../v2/crosschain/present'
@@ -26,7 +27,7 @@ import { freezeFunding, fundingBatchLeg, fundingSpendable, fundingStorageKey, ga
 import type { FundsServices } from './services'
 import { invalidateFundingBalances, readFundingBalanceGroup } from './balanceCache'
 import { fundingOrigins, fundingWait } from './originsCache'
-import { canDiscardFunding, fundingNeverSent } from './fundingLifecycle'
+import { canDiscardFunding, fundingDepositKey, fundingFinished, fundingNeverSent, fundingOwnsDeposit, fundingTerminal } from './fundingLifecycle'
 import type { TransferProgress } from './transferView'
 
 const ZERO = '0x0000000000000000000000000000000000000000'
@@ -60,6 +61,8 @@ function findHoldings(answer: ChainBalancesResponse | null, chainId: V2ChainId, 
   })
 }
 
+export type { FundingContinuation } from '../../lib/create/fundingContext'
+
 export interface BringFundsProps {
   gate: Exclude<V2Gate, { mode: 'off' }>
   services: FundsServices | null
@@ -90,6 +93,10 @@ export interface BringFundsProps {
   onRemoteUse?: (token: string, paymentRaw: string) => void
   onArrived?: () => void
   continuation?: ReactNode
+  /** Adopt a locally verified payment alternative, without signing or creating a position. */
+  onUseAvailable?: (token: string) => boolean
+  /** When supplied, the journey owns the single continuation action. Previous transfers never enable it. */
+  onContinuationChange?: (continuation: FundingContinuation) => void
   onTrackingChange?: (active: boolean) => void
 }
 
@@ -98,7 +105,7 @@ export function BringFunds(props: BringFundsProps) {
   return <FundingOffer key={`${props.wallet.toLowerCase()}:${props.chainId}`} {...props} />
 }
 
-function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, lacks, nativeOnDestination, poolTokens, intentKey, selectionKey, remoteBudget = null, discreet = false, optional = false, checking = false, keep = null, takes = null, onUse, onUseToken, onRemoteUse, onArrived, continuation, onTrackingChange }: BringFundsProps) {
+function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, lacks, nativeOnDestination, poolTokens, intentKey, selectionKey, remoteBudget = null, discreet = false, optional = false, checking = false, keep = null, takes = null, onUse, onUseToken, onRemoteUse, onArrived, continuation, onUseAvailable, onContinuationChange, onTrackingChange }: BringFundsProps) {
   const live = gate.mode === 'live' && services !== null
   const ready = access.startsWith('ready:')
   const destination = v2Chain(chainId)
@@ -114,9 +121,9 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   }, [storage, storageKey, wallet, chainId])
   const [intent, setIntent] = useState<FundingIntent | null>(() => live ? readIntent() : null)
   const intentRef = useRef(intent)
-  const [deposits, setDeposits] = useState<TrackedDeposit[]>(() => (journal?.list(chainId, wallet) ?? []).map((record) => ({
-    record, destinationToken: intent?.legs.some((leg) => leg.depositTxHash === record.depositTxHash) ? intent.destinationToken : null,
-    originLabel: null, review: null, journaled: true,
+  const [depositRecords, setDeposits] = useState<TrackedDeposit[]>(() => (journal?.list(chainId, wallet) ?? []).map((record) => ({
+    record, destinationToken: fundingOwnsDeposit(intent, record) ? intent!.destinationToken : null,
+    originLabel: null, review: null, journaled: true, followedPending: !fundingTerminal(record.lastState),
   })))
   const [settled, setSettled] = useState<Set<string>>(() => new Set())
   const [progress, setProgress] = useState<Record<string, TransferProgress>>({})
@@ -145,6 +152,11 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const [expired, setExpired] = useState(false)
   const mounted = useRef(true)
   const scope = intentKey ?? poolTokens.join(':')
+  const currentIntent = intent?.scope === scope ? intent : null
+  // Completed history stays in the journal; only this intention can present it as a current arrival.
+  // Unknown/pending transfers remain recoverable even after choosing another pool.
+  const deposits = depositRecords.filter(({ record, followedPending }) => fundingOwnsDeposit(currentIntent, record) || !fundingTerminal(record.lastState) || (followedPending && !settled.has(fundingDepositKey(record))))
+  const currentDeposits = deposits.filter(({ record }) => fundingOwnsDeposit(currentIntent, record))
   const selection = selectionKey ?? scope
   const remoteOpened = remoteSelection === selection
   const latest = useRef({ ready, walletChainId, scope })
@@ -177,14 +189,18 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const held = unsettled.list(wallet)
   const closedKey = held.map((entry) => entry.originChainId).join(',')
   const pending = batches.list(wallet).filter((entry) => entry.destinationChainId === chainId)
-  const activeDeposits = deposits.filter((deposit) => !settled.has(deposit.record.depositTxHash))
+  const activeDeposits = deposits.filter((deposit) => !fundingTerminal(deposit.record.lastState) && !settled.has(fundingDepositKey(deposit.record)))
+  const activeDepositCount = activeDeposits.length
   const hasUnknown = intent?.legs.some((leg) => leg.state === 'unknown' || leg.state === 'sending') ?? false
   const foreignPending = held.some((entry) => entry.kind === 'deposit' && entry.destinationChainId === chainId) || pending.length > 0 || activeDeposits.length > 0
   const tracking = deposits.length > 0 || foreignPending || (intent?.legs.some((leg) => leg.state === 'unknown' || leg.state === 'sending' || leg.state === 'sent') ?? false)
   const trackingChanged = useRef(onTrackingChange)
   useEffect(() => { trackingChanged.current = onTrackingChange })
-  useEffect(() => { trackingChanged.current?.(tracking); return () => trackingChanged.current?.(false) }, [tracking])
-  const allArrived = deposits.length > 0 && deposits.every(({ record }) => progress[record.depositTxHash]?.state === 'filled' && progress[record.depositTxHash]?.balance === 'ready') && !pending.length && !held.length
+  const currentTracking = currentDeposits.length > 0 || (currentIntent?.legs.some((leg) => ['sending', 'unknown', 'sent'].includes(leg.state)) ?? false)
+  useEffect(() => { trackingChanged.current?.(currentTracking); return () => trackingChanged.current?.(false) }, [currentTracking])
+  const allArrived = currentIntent !== null && currentIntent.legs.length > 0 && currentIntent.legs.every((leg) =>
+    currentDeposits.some(({ record }) => record.originChainId === leg.originChainId && record.depositTxHash === leg.depositTxHash &&
+      progress[fundingDepositKey(record)]?.state === 'filled' && progress[fundingDepositKey(record)]?.balance === 'ready')) && !pending.length && !held.length
   const name = useMemo(() => naming(listing), [listing])
   useEffect(() => { mounted.current = true; generation.current++; return () => { mounted.current = false; preparation.current?.abort() } }, [])
   useEffect(() => {
@@ -208,7 +224,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     intentRef.current = next
     if (mounted.current) setIntent(next)
   }, [storage, storageKey, readIntent])
-  const clearChangedUnsent = useCallback(async (expectedId: string, showBusy = false) => {
+  const discardPreviousUnsent = async (expectedId: string, showBusy = false) => {
     if (!live || running.current) return
     try {
       await withFundingLock(wallet, async () => {
@@ -216,7 +232,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
         const stored = readIntent(true)
         if (stored?.id !== expectedId) return
         if (!canDiscardFunding(stored, scope, { running: running.current,
-          deposits: Math.max(deposits.length, journal?.list(chainId, wallet).length ?? 0),
+          deposits: Math.max(activeDepositCount, journal?.list(chainId, wallet).filter((record) => !fundingTerminal(record.lastState)).length ?? 0),
           pending: batches.list(wallet).length, unsettled: unsettled.list(wallet).length })) return
         save(null); setProposal(null); setNotice(null); setExpired(false); setScreen('checking')
         attempted.current = ''; setPrepareRevision((value) => value + 1)
@@ -226,10 +242,26 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     } catch {
       if (mounted.current) setNotice({ copy: 'The previous transfer needs checking before new funds can be chosen.', code: 'funding_storage_unavailable' })
     }
-  }, [live, wallet, scope, readIntent, deposits.length, journal, chainId, batches, unsettled, save])
+  }
+  const discardUnsent = useRef(discardPreviousUnsent)
+  useEffect(() => { discardUnsent.current = discardPreviousUnsent })
+  const clearChangedUnsent = useCallback((expectedId: string, showBusy = false) => discardUnsent.current(expectedId, showBusy), [])
   useEffect(() => {
     if (intent && intent.scope !== scope && fundingNeverSent(intent) && !run) void clearChangedUnsent(intent.id)
   }, [intent, scope, run, clearChangedUnsent])
+  useEffect(() => {
+    if (!intent || intent.scope === scope || run || !fundingFinished(intent, depositRecords.map(({ record }) => record))) return
+    void withFundingLock(wallet, async () => {
+      if (running.current || !mounted.current || latest.current.scope !== scope) return
+      const stored = readIntent(true)
+      const records = journal?.list(chainId, wallet) ?? []
+      if (stored?.id !== intent.id || stored.scope === scope || !fundingFinished(stored, records) ||
+        unsettled.list(wallet).length || batches.list(wallet).length) return
+      save(null); setProposal(null); setNotice(null); setScreen('checking'); attempted.current = ''
+    }, () => {}).catch(() => {
+      if (mounted.current) setNotice({ copy: 'The previous transfer needs checking before new funds can be chosen.', code: 'funding_storage_unavailable' })
+    })
+  }, [intent, scope, run, depositRecords, wallet, readIntent, journal, chainId, unsettled, batches, save])
   const observe = (legId: string, state: 'sent' | 'settled' | 'stopped', hash: string | null = null, expectedQuote?: string) => {
     void withFundingLock(wallet, async () => {
       const current = readIntent(true)
@@ -300,9 +332,9 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     generation.current++
     const restored = readIntent()
     intentRef.current = restored; setIntent(restored); setProposal(null)
-    setDeposits((previous) => (journal?.list(chainId, wallet) ?? []).map((record) => previous.find((d) => d.record.depositTxHash === record.depositTxHash) ?? {
-      record, destinationToken: restored?.legs.some((leg) => leg.depositTxHash === record.depositTxHash) ? restored.destinationToken : null,
-      originLabel: null, review: null, journaled: true,
+    setDeposits((previous) => (journal?.list(chainId, wallet) ?? []).map((record) => previous.find((d) => fundingDepositKey(d.record) === fundingDepositKey(record)) ?? {
+      record, destinationToken: fundingOwnsDeposit(restored, record) ? restored!.destinationToken : null,
+      originLabel: null, review: null, journaled: true, followedPending: !fundingTerminal(record.lastState),
     }))
     setRevision((n) => n + 1)
   }), [storage, readIntent, chainId, wallet, journal])
@@ -481,7 +513,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
             (value) => { if (value.stage === 'deposit_wallet' || value.stage === 'batch_wallet') depositOffered = true; if (mounted.current) setStage({ origin: leg.originChainId, value }) })
           if (result.kind === 'sent' && result.sent.record) {
             const record = result.sent.record
-            if (mounted.current) setDeposits((previous) => [{ record, destinationToken: accepted.destinationToken, originLabel: leg.symbol, review: result.review, journaled: result.sent.journaled }, ...previous.filter((entry) => entry.record.depositTxHash !== record.depositTxHash)])
+            if (mounted.current) setDeposits((previous) => [{ record, destinationToken: accepted.destinationToken, originLabel: leg.symbol, review: result.review, journaled: result.sent.journaled, followedPending: true }, ...previous.filter((entry) => fundingDepositKey(entry.record) !== fundingDepositKey(record))])
             accepted = { ...accepted, legs: accepted.legs.map((entry) => entry.id === leg.id ? { ...entry, state: 'sent', depositTxHash: record.depositTxHash } : entry) }; save(accepted, leg.id)
           } else {
             const unknown = result.kind === 'sent' || (result.kind === 'aborted' && depositOffered) || (result.kind === 'error' && result.offered)
@@ -523,27 +555,40 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       }, () => { throw new Error('funding_other_tab') })
     } catch { setNotice({ copy: 'Could not confirm that the wallet request was cancelled. Nothing will be sent again.', code: 'funding_unknown' }) }
   }
-  const useRemotePayment = async () => {
-    if (!onRemoteUse || !services?.readBalances || running.current) return
+  const useArrivedFunds = async (): Promise<boolean> => {
+    if (!services?.readBalances || running.current || !allArrived || !currentIntent) return false
     running.current = true; setRun(true); setNotice(null)
     try {
-      await withFundingLock(wallet, async () => {
+      return await withFundingLock(wallet, async () => {
         const accepted = readIntent(true)
         const current = () => mounted.current && latest.current.scope === scope && latest.current.ready
-        if (!current() || !accepted?.paymentRaw || accepted.scope !== scope || !accepted.legs.every((leg) => leg.state === 'settled') || unsettled.list(wallet).length || batches.list(wallet).length) return
+        if (!current() || !accepted || accepted.id !== currentIntent.id || accepted.scope !== scope || !accepted.legs.every((leg) => leg.state === 'settled') || unsettled.list(wallet).length || batches.list(wallet).length) return false
+        // A successful validated poll remains evidence if the browser cannot persist its latest journal state.
+        const records = [...(journal?.list(chainId, wallet) ?? []), ...currentDeposits.filter(({ record }) => {
+          const value = progress[fundingDepositKey(record)]
+          return value?.state === 'filled' && value.balance === 'ready'
+        }).map(({ record }) => record)]
+        if (!accepted.legs.every((leg) => records.some((record) => record.originChainId === leg.originChainId && record.depositTxHash === leg.depositTxHash && record.lastState === 'filled'))) throw new FundingError('Your transfer needs checking before continuing. Your funds stay in your wallet.', 'funding_fill_unverified')
+        if (accepted.paymentRaw ? !onRemoteUse : !keep && !onUseAvailable) return false
         const answer = await services.readBalances!(chainId, [...new Set([accepted.destinationToken, ZERO])])
-        if (!current()) return
+        if (!current()) return false
         const restored = readIntent(true)
-        if (restored?.id !== accepted.id || restored.scope !== scope || !restored.legs.every((leg) => leg.state === 'settled')) return
+        if (restored?.id !== accepted.id || restored.scope !== scope || !restored.legs.every((leg) => leg.state === 'settled')) return false
         const have = answer.kind === 'ok' ? rawValue(answer.snapshot.balances.find((entry) => entry.token === accepted.destinationToken)?.raw ?? null) : null
         const gas = answer.kind === 'ok' ? rawValue(answer.snapshot.balances.find((entry) => entry.token === ZERO)?.raw ?? null) : null
-        const payment = BigInt(accepted.paymentRaw)
-        if (have === null || gas === null || gas < REVIEW_GAS_RESERVE_WEI || have < payment + (accepted.destinationToken === ZERO ? REVIEW_GAS_RESERVE_WEI : 0n)) throw new FundingError('Your funds are still being checked. Try again when your wallet balance updates.', 'funding_balance_changed')
-        onRemoteUse(accepted.destinationToken, accepted.paymentRaw)
+        const required = accepted.paymentRaw ? BigInt(accepted.paymentRaw) + (accepted.destinationToken === ZERO ? REVIEW_GAS_RESERVE_WEI : 0n) : BigInt(accepted.requiredRaw)
+        if (have === null || gas === null || gas < REVIEW_GAS_RESERVE_WEI || have < required) throw new FundingError('Your funds are still being checked. Try again when your wallet balance updates.', 'funding_balance_changed')
+        if (accepted.paymentRaw) onRemoteUse!(accepted.destinationToken, accepted.paymentRaw)
+        else if (keep) onUse(keep.side, keep.text)
+        else if (!onUseAvailable?.(accepted.destinationToken)) return false
+        // The user adopted this arrival. Retire its active intent, preserving every public transaction reference.
+        save(null); setProposal(null); setNotice(null); setRemoteSelection(null); setScreen('checking')
         onArrived?.()
+        return true
       }, () => { throw new FundingError('This transfer is being handled in another tab. Return there to continue.', 'funding_other_tab') })
     } catch (error) {
       if (mounted.current) setNotice({ copy: error instanceof FundingError ? error.copy : 'Could not check the received funds. Your transfer is still tracked.', code: error instanceof FundingError ? error.code : 'funding_balance_unread' })
+      return false
     } finally { running.current = false; if (mounted.current) setRun(false) }
   }
 
@@ -563,6 +608,22 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const gasReview = intent?.gasRecovery?.reviewNeeded === true
   const needsReview = notice?.code === 'funding_quote_changed' || notice?.code === 'funding_balance_changed' || gasReview && !proposal?.recoveryFrom
   const unknownOrigin = intent?.legs.find((leg) => leg.state === 'unknown')?.originChainId ?? held.find((entry) => entry.state === 'open')?.originChainId
+  const continueReady = allArrived && !run && ready && currentIntent?.legs.every((leg) => leg.state === 'settled') &&
+    (currentIntent.paymentRaw ? !!onRemoteUse : !!keep || !!onUseAvailable)
+  const continuationState: FundingContinuation['state'] = !currentIntent ? 'none' : continueReady ? 'ready' :
+    hasUnknown || notice !== null || currentDeposits.some(({ record }) => record.lastState === 'refunded') ? 'attention' : 'waiting'
+  const continuationCopy = continuationState === 'ready' ? `Use your funds on ${destination.name}` :
+    continuationState === 'attention' ? notice?.copy ?? 'Check your transfer before continuing.' : 'Waiting for your funds to be available…'
+  const continuationHandler = useRef(useArrivedFunds)
+  const continuationChanged = useRef(onContinuationChange)
+  useEffect(() => { continuationHandler.current = useArrivedFunds; continuationChanged.current = onContinuationChange })
+  const [continueFunding] = useState(() => () => continuationHandler.current())
+  useEffect(() => {
+    const changed = continuationChanged.current
+    changed?.(continuationState === 'none' ? { state: 'none' } : continuationState === 'ready'
+      ? { state: 'ready', copy: continuationCopy, run: continueFunding } : { state: continuationState, copy: continuationCopy })
+    return () => changed?.({ state: 'none' })
+  }, [scope, continuationState, continuationCopy, continueFunding])
   if (!lacks.length && !gasOnly && !budget && !intent && !deposits.length && !pending.length && !held.length) {
     if (!discreet || !readDone || !observedNetworks.length) return null
     return <div className="dm-funds-discovery" data-funds-line="" data-funds-sources=""><strong>Use funds from {names(observedNetworks)}</strong><span>Enter an amount to check your options.</span></div>
@@ -595,7 +656,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       {live && !run && ready && !changed && !hasUnknown && gasReview && !proposal?.recoveryFrom && screen !== 'quoting' && <Button variant="accent" data-funds-gas-review="" onClick={() => void prepareGasRecovery()}>Review transfer</Button>}
       {live && !ready && !run && !allArrived && (lacks.length > 0 || gasOnly || budget !== null) && !hasUnknown && <Button variant="accent" data-funds-signin="" onClick={openWalletDialog}>Continue with wallet</Button>}
       {optional && remoteOpened && !intent && !foreignPending && !run && <Button variant="ghost" size="sm" data-funds-close="" onClick={() => { generation.current++; preparation.current?.abort(); setRemoteSelection(null); setProposal(null); setNotice(null); setExpired(false); attempted.current = ''; setScreen('checking') }}>Back to funding options</Button>}
-      {onRemoteUse && intent?.paymentRaw && allArrived && !changed && !run && ready && !activeDeposits.length && intent.legs.every((leg) => leg.state === 'settled') && <Button variant="accent" data-funds-remote-use="" onClick={() => void useRemotePayment()}>Use these funds for this position</Button>}
+      {!onContinuationChange && onRemoteUse && intent?.paymentRaw && continueReady && <Button variant="accent" data-funds-remote-use="" onClick={() => void useArrivedFunds()}>Use these funds for this position</Button>}
       {live && !run && unknownOrigin !== undefined && <Button variant="outline" size="sm" data-funds-run-forget="" onClick={() => void resolveUnknown(unknownOrigin)}>I cancelled the request in my wallet</Button>}
       {live && !run && ready && !intent && !foreignPending && !proposal && !needsReview && readDone && (screen === 'unavailable' || screen === 'paused' || notice?.code === 'funding_insufficient' || !reading && !readSnapshot?.complete) && <Button variant="outline" size="sm" data-funds-renew="" onClick={() => { attempted.current = ''; automaticAttempts.current = 0; setNotice(null); setRevision((n) => n + 1); setPrepareRevision((n) => n + 1) }}>Check again</Button>}
       {live && !run && ready && !intent && needsReview && <Button variant="outline" size="sm" data-funding-review="" onClick={() => void prepare()}>Review transfer</Button>}
@@ -612,22 +673,28 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       </div></details>}
       {services && (deposits.length > 0 || pending.length > 0) && <div className="dm-funding-tracking" data-funds-deposits="">
         {!run && pending.map((entry) => <PendingDeposit key={entry.batchId} entry={entry} services={services} sender={sender} name={name}
-          onSent={(sent) => { if (sent.record) { const record = sent.record; const current = intentRef.current; const leg = fundingBatchLeg(current, entry); if (leg) observe(leg.id, 'sent', record.depositTxHash, entry.quote); setDeposits((previous) => [{ record, destinationToken: leg && current ? current.destinationToken : null, originLabel: null, review: null, journaled: sent.journaled }, ...previous.filter((d) => d.record.depositTxHash !== record.depositTxHash)]) }; setRevision((n) => n + 1) }}
+          onSent={(sent) => { if (sent.record) { const record = sent.record; const current = intentRef.current; const leg = fundingBatchLeg(current, entry); if (leg) observe(leg.id, 'sent', record.depositTxHash, entry.quote); setDeposits((previous) => [{ record, destinationToken: leg && current ? current.destinationToken : null, originLabel: null, review: null, journaled: sent.journaled, followedPending: true }, ...previous.filter((d) => fundingDepositKey(d.record) !== fundingDepositKey(record))]) }; setRevision((n) => n + 1) }}
           onOutcome={(state) => { if (state === 'unknown') return; const leg = fundingBatchLeg(intentRef.current, entry); if (leg) observe(leg.id, 'stopped', null, entry.quote); batches.drop(wallet, entry.batchId); setRevision((n) => n + 1) }}
           onRemove={() => { batches.drop(wallet, entry.batchId); setRevision((n) => n + 1) }} />)}
         {deposits.map((deposit, index) => <DepositStatus key={`${deposit.record.originChainId}:${deposit.record.depositTxHash}`} deposit={deposit} services={services} owner={wallet} journal={journal} name={name}
-          walletChainId={walletChainId} access={access} sender={sender} poolTokens={changed ? [] : poolTokens} keep={!changed && allArrived && !resume && index === deposits.length - 1 ? keep : null} takes={takes} onUse={changed ? () => onArrived?.() : onUse} onUseToken={changed ? undefined : onUseToken}
-          onProgress={(next) => setProgress((previous) => previous[deposit.record.depositTxHash]?.state === next.state && previous[deposit.record.depositTxHash]?.balance === next.balance ? previous : { ...previous, [deposit.record.depositTxHash]: next })}
+          currentIntent={fundingOwnsDeposit(currentIntent, deposit.record)}
+          walletChainId={walletChainId} access={access} sender={sender} poolTokens={changed ? [] : poolTokens} keep={!onContinuationChange && continueReady && !resume && index === deposits.length - 1 ? keep : null} takes={takes} onUse={changed ? () => onArrived?.() : onUse} onUseToken={changed ? undefined : onUseToken}
+          onContinue={() => void useArrivedFunds()}
+          onProgress={(next) => {
+            const key = fundingDepositKey(deposit.record)
+            setProgress((previous) => previous[key]?.state === next.state && previous[key]?.balance === next.balance ? previous : { ...previous, [key]: next })
+            setDeposits((previous) => previous.map((entry) => fundingDepositKey(entry.record) === key && entry.record.lastState !== next.state ? { ...entry, record: { ...entry.record, lastState: next.state } } : entry))
+          }}
           onArrived={() => { invalidateFundingBalances(wallet); onArrived?.(); setRevision((n) => n + 1) }}
-          onSettled={() => { setSettled((previous) => new Set(previous).add(deposit.record.depositTxHash)); const leg = intentRef.current?.legs.find((leg) => leg.depositTxHash === deposit.record.depositTxHash); if (leg) observe(leg.id, 'settled', deposit.record.depositTxHash); setRevision((n) => n + 1) }}
-          onRemove={() => { journal?.drop(wallet, deposit.record); setDeposits((previous) => previous.filter((entry) => entry.record.depositTxHash !== deposit.record.depositTxHash)) }} />)}
+          onSettled={() => { setSettled((previous) => new Set(previous).add(fundingDepositKey(deposit.record))); const leg = intentRef.current?.legs.find((leg) => leg.originChainId === deposit.record.originChainId && leg.depositTxHash === deposit.record.depositTxHash); if (leg) observe(leg.id, 'settled', deposit.record.depositTxHash); setRevision((n) => n + 1) }}
+          onRemove={() => { journal?.drop(wallet, deposit.record); setDeposits((previous) => previous.filter((entry) => fundingDepositKey(entry.record) !== fundingDepositKey(deposit.record))) }} />)}
       </div>}
-      {allArrived && !changed && !run && !resume && !keep && !intent?.paymentRaw && continuation && <div className="dm-transfer-continue" data-funds-continuation="">{continuation}</div>}
-      {intent && !run && !hasUnknown && (!gasReview || changed) && !activeDeposits.length && !pending.length && !held.length && (changed || needsReview || intent.legs.every((leg) => leg.state === 'settled') && (lacks.length > 0 || gasOnly) && !(allArrived && continuation)) && <Button variant="outline" size="sm" data-funding-review="" onClick={() => {
+      {!onContinuationChange && allArrived && !changed && !run && !resume && !keep && !intent?.paymentRaw && continuation && <div className="dm-transfer-continue" data-funds-continuation="">{continuation}</div>}
+      {intent && !run && !hasUnknown && (!gasReview || changed) && !activeDeposits.length && !pending.length && !held.length && (changed || needsReview || intent.legs.every((leg) => leg.state === 'settled') && (lacks.length > 0 || gasOnly || currentDeposits.some(({ record }) => record.lastState === 'refunded')) && !(allArrived && continuation)) && <Button variant="outline" size="sm" data-funding-review="" onClick={() => {
         if (previousUnsent) { void clearChangedUnsent(intent.id, true); return }
         void withFundingLock(wallet, async () => {
           const stored = readIntent(true)
-          if (running.current || latest.current.scope !== scope || stored?.id !== intent.id || stored.legs.some((leg) => !['ready', 'stopped', 'settled'].includes(leg.state)) || unsettled.list(wallet).length || batches.list(wallet).length || journal?.list(chainId, wallet).some((record) => !settled.has(record.depositTxHash))) return
+          if (running.current || latest.current.scope !== scope || stored?.id !== intent.id || stored.legs.some((leg) => !['ready', 'stopped', 'settled'].includes(leg.state)) || unsettled.list(wallet).length || batches.list(wallet).length || journal?.list(chainId, wallet).some((record) => !fundingTerminal(record.lastState) && !settled.has(fundingDepositKey(record)))) return
           save(null); setProposal(null); setNotice(null); attempted.current = ''; setRevision((n) => n + 1)
         }, () => { throw new Error('busy') }).catch(() => setNotice({ copy: 'This transfer is being handled in another tab. Return there to continue.', code: 'funding_other_tab' }))
       }}>{previousUnsent ? 'Check this position' : 'Review remaining amount'}</Button>}

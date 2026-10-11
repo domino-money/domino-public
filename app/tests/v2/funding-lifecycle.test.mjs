@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { fundingNeverSent, canDiscardFunding } = require('../../.test-build/app/src/v2in/funds/fundingLifecycle.js');
+const { fundingNeverSent, canDiscardFunding, fundingDepositKey, fundingTerminal, fundingOwnsDeposit, fundingFinished } = require('../../.test-build/app/src/v2in/funds/fundingLifecycle.js');
 const { parseFunding } = require('../../.test-build/app/src/v2in/funds/fundingIntent.js');
 const OWNER = `0x${'11'.repeat(20)}`;
 const HASH = `0x${'ab'.repeat(32)}`;
@@ -68,4 +68,31 @@ test('untrusted payment metadata cannot spend the gas reserve or inject non-inte
     assert.equal(parseFunding(JSON.stringify({ ...intent(), paymentRaw }), OWNER, 4663), null, JSON.stringify(paymentRaw));
   }
   assert.equal(parseFunding(JSON.stringify({ ...intent(), paymentRaw: '1000' }), OWNER, 4663).paymentRaw, '1000');
+});
+
+const record = (lastState = 'filled') => ({ provider: 'across', originChainId: 42161, destinationChainId: 4663, depositTxHash: HASH, requestId: null, lastState });
+
+test('arrival ownership requires the exact intent hash, origin and destination, never just the wallet network', () => {
+  assert.equal(fundingOwnsDeposit(null, record()), false);
+  assert.equal(fundingOwnsDeposit(intent('sent', HASH), record()), true);
+  for (const changed of [{ originChainId: 8453 }, { destinationChainId: 8453 }, { depositTxHash: `0x${'cd'.repeat(32)}` }]) {
+    assert.equal(fundingOwnsDeposit(intent('sent', HASH), { ...record(), ...changed }), false);
+    assert.notEqual(fundingDepositKey(record()), fundingDepositKey({ ...record(), ...changed }));
+  }
+});
+
+test('completed earlier funding can be retired without erasing public hashes, but pending/unknown cannot', () => {
+  for (const lastState of ['filled', 'refunded']) {
+    assert.equal(fundingTerminal(lastState), true);
+    assert.equal(fundingFinished(intent('sent', HASH), [record(lastState)]), true);
+  }
+  for (const lastState of [null, 'awaiting_deposit', 'pending', 'failed', 'refund_pending', 'refund_failed']) {
+    assert.equal(fundingTerminal(lastState), false);
+    assert.equal(fundingFinished(intent('sent', HASH), [record(lastState)]), false);
+  }
+  assert.equal(fundingFinished(intent('unknown'), [record()]), false, 'an unrelated terminal receipt never releases an unknown wallet request');
+  assert.equal(fundingFinished(intent('sent', HASH), [{ ...record(), originChainId: 8453 }]), false);
+  assert.equal(fundingFinished(intent('settled', HASH), []), true, 'already reconciled metadata can retire after the user removed its journal row');
+  assert.equal(fundingFinished(intent('settled'), []), false, 'corrupt metadata without a transaction is not a completed transfer');
+  assert.equal(fundingFinished({ ...intent('settled', HASH), legs: [] }, []), false);
 });

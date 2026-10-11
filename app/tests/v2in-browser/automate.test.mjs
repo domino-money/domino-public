@@ -1908,7 +1908,15 @@ test('one NFT with earlier setups has one overview row and one top control; prev
     assert.equal(await panel.locator('section[data-vault-card]').count(), 1);
     assert.equal(await panel.locator('section[data-vault-card]').getAttribute('data-vault-card'), vault, 'current NFT approval wins');
     assert.equal(await panel.locator('[data-exit-state="closed"]').count(), 0, 'the old Auto-exit does not replace the current mode');
-    await panel.locator('[data-automation-recovery] > summary').click();
+    const detailsSummary = panel.locator('[data-vault-details] > summary');
+    const previousSummary = panel.locator('[data-automation-recovery] > summary');
+    await detailsSummary.focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await previousSummary.evaluate(node => document.activeElement === node), true, 'closed details cannot strand focus on a hidden action or skip the next disclosure');
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await detailsSummary.evaluate(node => document.activeElement === node), true, 'native disclosures participate in both directions of the modal tab order');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
     const held = panel.locator(`[data-recovery-vault="${previous.address}"]`);
     assert.match(await held.innerText(), /5 USDG/);
     assert.equal(await held.getByRole('button', { name: 'Resume', exact: true }).count(), 0);

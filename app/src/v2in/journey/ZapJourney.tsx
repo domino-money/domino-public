@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { StepList, VISUAL_STEPS, type StepView, type VisualStep } from '../../components/create/StepList'
 import { Button, PageHeader, PageShell } from '../../components/ui'
 import { CREATE } from '../../lib/create/copy'
@@ -26,6 +26,8 @@ import { FinalControl, ReviewStage } from './ReviewStage'
 import { useJourneyRun } from './run'
 import { amountText, decimalsOf, labelOf, tokenBook } from './tokens'
 import { connectJourney, inTurn } from './wallet'
+import type { FundingContinuation } from '../funds/BringFunds'
+import { zapFundingScope } from '../funds/ZapFunds'
 
 type Gate = Extract<V2Gate, { mode: 'preview' | 'live' }>
 
@@ -52,6 +54,20 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
   const now = useNow(false).wall
   const identity = useWalletIdentity()
   const [state, setState] = useState<JourneyState>(() => initialJourney(chainId))
+  const [fundingFlowKey] = useState(() => crypto.randomUUID())
+  const walletKey = identity.kind === 'connected' ? `${identity.connectorName}|${identity.address.toLowerCase()}` : null
+  const fundingKey = zapFundingScope(state, walletKey, fundingFlowKey)
+  const [funding, setFunding] = useState<{ key: string; value: FundingContinuation } | null>(null)
+  const [fundingBusy, setFundingBusy] = useState(false)
+  const fundingCurrent = useRef({ key: fundingKey, step: state.step })
+  useEffect(() => { fundingCurrent.current = { key: fundingKey, step: state.step } }, [fundingKey, state.step])
+  useEffect(() => () => { fundingCurrent.current = { key: '', step: 'pool' } }, [])
+  const receiveFunding = useCallback((key: string, value: FundingContinuation) => {
+    setFunding((previous) => previous?.key === key && previous.value.state === value.state &&
+      (value.state === 'none' || previous.value.state !== 'none' && previous.value.copy === value.copy &&
+        (value.state !== 'ready' || previous.value.state === 'ready' && previous.value.run === value.run)) ? previous : { key, value })
+  }, [])
+  const currentFunding = funding?.key === fundingKey ? funding.value : null
   const source = useReadSource()
   const listed = chainId === 4663 && !finderOnly
   const preselect = useLinkedPool(source, listed ? poolId : '', linkToken, (option) => {
@@ -79,7 +95,7 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
   }
   const price = journeyPrice(state, now)
   const current = state.step
-  const locked = view.busy || view.receipt !== null
+  const locked = view.busy || view.receipt !== null || fundingBusy
   // Changed on purpose 2026-10-06 (the final check's F1/F6, a second look): once the position exists the flow is marked
   // made (lib/create/createProgress.ts publishFlowMade), as the owner's journey marks it, so New position's own link starts
   // a fresh flow here too (screens/NewPosition.tsx; from the pool finder, ./NewPositionV2.tsx then opens today's journey);
@@ -104,6 +120,16 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
       setConfirmed(false)
       run.start()
     }
+  }
+  const continueAmount = async () => {
+    if (fundingBusy) return
+    if (currentFunding?.state === 'waiting' || currentFunding?.state === 'attention') return
+    if (currentFunding?.state !== 'ready') { forward(); return }
+    const key = fundingKey
+    setFundingBusy(true)
+    try {
+      if (await currentFunding.run() && fundingCurrent.current.key === key && fundingCurrent.current.step === 'amount' && canContinue('amount', state).ok) forward()
+    } finally { setFundingBusy(false) }
   }
   const backward = () => {
     if (locked) return
@@ -151,6 +177,8 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
   const first = current === 'pool'
   const blockedForPrice = (view.reviewed?.review.createsPool ?? false) && !confirmed
   const connected = identity.kind === 'connected'
+  const fundingWait = current === 'amount' && (fundingBusy || currentFunding?.state === 'waiting' || currentFunding?.state === 'attention')
+  const fundingReason = currentFunding && currentFunding.state !== 'none' ? currentFunding.copy : ''
   const footer = (
     <div className="dm-flow-foot" data-journey-footer="" data-final={current === 'review' ? '' : undefined} data-first={first ? '' : undefined}>
       {!first && (
@@ -172,11 +200,11 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
         />
       ) : (
         <>
-          <Button type="button" variant="primary" size="lg" disabled={!check.ok} aria-describedby={check.ok ? undefined : 'continue-reason'} onClick={forward} data-zap-continue={current}>
+          <Button type="button" variant="primary" size="lg" disabled={!check.ok || fundingWait} aria-describedby={check.ok && !fundingWait ? undefined : 'continue-reason'} onClick={current === 'amount' ? () => void continueAmount() : forward} data-zap-continue={current}>
             {CREATE.page.next}
           </Button>
           <p id="continue-reason" role="status" className="dm-flow-reason">
-            {check.ok ? '' : check.reason}
+            {fundingWait ? fundingBusy ? 'Checking your funds…' : fundingReason : check.ok ? '' : check.reason}
           </p>
         </>
       )}
@@ -201,7 +229,7 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
       case 'range':
         return <RangeStage state={state} price={price} onRange={(range) => setState((was) => withRange(was, range))} />
       case 'amount':
-        return <AmountStage state={state} onAmounts={(amounts) => setState((was) => withAmounts(was, amounts))} onSlippage={(text) => setState((was) => withSlippage(was, text))} />
+        return <AmountStage state={state} flowKey={fundingFlowKey} onContinuationChange={receiveFunding} onAmounts={(amounts) => setState((was) => withAmounts(was, amounts))} onSlippage={(text) => setState((was) => withSlippage(was, text))} />
       case 'review':
         return (
           <ReviewStage

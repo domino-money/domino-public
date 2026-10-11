@@ -1,0 +1,38 @@
+@layer components {
+  .dm-funds-route-art { min-width: 0; width: 100%; max-width: 24rem; }
+  .dm-funds-route-scene { position: relative; height: 4.75rem; }
+  .dm-funds-route-ground { position: absolute; inset: auto 0 0.35rem; height: 0.0625rem; background: linear-gradient(90deg, transparent, var(--border-lip) 20%, var(--border-lip) 80%, transparent); }
+  .dm-funds-route-port { position: absolute; top: 0.75rem; width: 3rem; height: 3.5rem; }
+  .dm-funds-route-origin { left: 0; }
+  .dm-funds-route-destination { right: 0; }
+  .dm-funds-route-platform { position: absolute; bottom: 0; left: 0; width: 3rem; height: 1.35rem; border-radius: 50%; background: linear-gradient(var(--surface-3), var(--surface-1)); box-shadow: 0 0.3rem 0 var(--surface-1), 0 0.36rem 0 var(--border), 0 0.625rem 0.5rem color-mix(in srgb, var(--bg) 70%, transparent); border: 1px solid var(--border-lip); }
+  .dm-funds-route-network { position: absolute; left: 0.625rem; top: 0; width: 1.75rem; height: 1.75rem; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--fg-muted); box-shadow: 0 0.15rem 0.35rem color-mix(in srgb, var(--bg) 70%, transparent); }
+  .dm-funds-route-network > svg { width: 75%; height: 75%; }
+  .dm-funds-route-art .dm-network-mark { --network-color: #7183b3; display: grid; place-items: center; width: 100%; height: 100%; border-radius: 50%; color: white; background: var(--network-color); box-shadow: inset 0 1px 1px #ffffff30; }
+  .dm-funds-route-art .dm-network-mark svg { width: 80%; height: 80%; }
+  .dm-funds-route-art .dm-network-mark[data-network="Base"] { --network-color: #2856d8; }
+  .dm-funds-route-art .dm-network-mark[data-network="Arbitrum One"] { --network-color: #295c80; }
+  .dm-funds-route-art .dm-network-mark[data-network="OP Mainnet"] { --network-color: #d64c55; font-size: 0.7rem; font-weight: 750; font-style: italic; }
+  .dm-funds-route-art .dm-network-mark[data-network="Robinhood Chain"] { --network-color: #b7d571; box-shadow: inset 0 0 0 0.35rem #32472b; }
+  .dm-funds-route-rail { position: absolute; top: 2.3rem; left: 1.5rem; right: 1.5rem; height: 0.125rem; }
+  .dm-funds-route-line { position: absolute; inset: 0; background: linear-gradient(90deg, var(--border-strong), var(--primary-line), var(--border-strong)); box-shadow: 0 0.15rem 0 var(--surface-1); }
+  .dm-funds-route-packet { position: absolute; left: 50%; top: -0.3rem; z-index: 1; transform: translate(-50%, -50%); animation-play-state: paused; }
+  .dm-funds-route-coin { display: grid; place-items: center; width: 2rem; height: 2rem; border: 1px solid var(--primary-line); border-radius: 50%; background: radial-gradient(circle at 30% 20%, var(--primary-wash), var(--surface-2)); box-shadow: 0.125rem 0.125rem 0 var(--primary-line), 0.125rem 0.25rem 0.6rem color-mix(in srgb, var(--bg) 65%, transparent); }
+  .dm-funds-route-coin > svg { width: 1.5rem; height: 1.5rem; fill: none; stroke: var(--primary); stroke-width: 1.4; stroke-linecap: round; }
+  .dm-funds-route-labels { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.6875rem; line-height: 1rem; color: var(--fg-muted); }
+  .dm-funds-route-labels > span { max-width: 48%; overflow-wrap: anywhere; }
+  .dm-funds-route-labels > span:last-child { text-align: right; }
+  .dm-funds-route-art[data-transfer-route="moving"] .dm-funds-route-packet { animation: dm-funds-token-out 3.4s ease-in-out infinite; animation-play-state: paused; }
+  .dm-funds-route-art[data-transfer-route="returning"] .dm-funds-route-packet { animation: dm-funds-token-return 3.4s ease-in-out infinite; animation-play-state: paused; }
+  .dm-funds-route-art[data-route-running] .dm-funds-route-packet { animation-play-state: running; }
+  .dm-funds-route-art[data-route-paused] .dm-funds-route-packet { animation: none; }
+  .dm-funds-route-art[data-transfer-route="arrived"] .dm-funds-route-packet { left: 100%; }
+  .dm-funds-route-art[data-transfer-route="returned"] .dm-funds-route-packet { left: 0; }
+  .dm-funds-route-art[data-transfer-route="arrived"] .dm-funds-route-destination .dm-funds-route-platform { border-color: var(--money-in); box-shadow: 0 0.3rem 0 var(--surface-1), 0 0.36rem 0 color-mix(in srgb, var(--money-in) 65%, var(--border)), 0 0.625rem 1rem color-mix(in srgb, var(--money-in) 12%, transparent); }
+  .dm-funds-route-art[data-transfer-route="arrived"] .dm-funds-route-coin { border-color: var(--money-in); box-shadow: 0.125rem 0.125rem 0 color-mix(in srgb, var(--money-in) 60%, var(--border-strong)), 0 0 0.75rem color-mix(in srgb, var(--money-in) 14%, transparent); }
+  .dm-funds-route-art[data-transfer-route="attention"] .dm-funds-route-coin { border-color: var(--border-strong); }
+  @keyframes dm-funds-token-out { 0%, 12% { left: 8%; opacity: 0; } 22% { opacity: 1; } 75% { left: 88%; opacity: 1; } 88%, 100% { left: 88%; opacity: 0; } }
+  @keyframes dm-funds-token-return { 0%, 12% { left: 92%; opacity: 0; } 22% { opacity: 1; } 75% { left: 12%; opacity: 1; } 88%, 100% { left: 12%; opacity: 0; } }
+  .dm-still .dm-funds-route-art .dm-funds-route-packet { animation: none; }
+  @media (prefers-reduced-motion: reduce) { .dm-funds-route-art[data-transfer-route] .dm-funds-route-packet { animation: none; } }
+}
