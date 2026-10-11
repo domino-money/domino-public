@@ -822,6 +822,9 @@ test('the compact range scene keeps the correct token mix and fixed range withou
   assert.deepEqual(await page.evaluate(() => Object.keys(localStorage)), []);
   for (const width of [320, 390, 960, 1280, 1440]) {
     await page.setViewportSize({ width, height: 960 });
+    // Chromium can expose the new innerWidth before applying the responsive styles: at 320px the hero still
+    // measured its desktop 70.2px font and 337px scroll width until paint, then 50px and 320px. Measure after layout.
+    await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
     await setRange(page, '#sim-price', 0);
     const overflow = await page.evaluate(() => ({
       width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
