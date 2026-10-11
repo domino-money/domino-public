@@ -1,4 +1,4 @@
-import { useMemo, useSyncExternalStore } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 import { crosschainSessionAccess } from '../../finance/v2/http'
 import type { PairBalancesState } from '../../components/create/usePairBalances'
 import { rawBalances, usdOf } from '../../components/create/valuation'
@@ -15,7 +15,7 @@ import type { V2ChainId } from '../../v2/types'
 import { BringFunds } from './BringFunds'
 import { fundsPage } from './live'
 import { useS2Gate } from './useS2Gate'
-import { amountRawOf, deliverableTokens, keptAmount, lackingTokens, payLacks } from './model'
+import { amountRawOf, keptAmount, lackingTokens, payLacks } from './model'
 import { remoteFundingChoice, remotePayment } from './fundingBudget'
 import { PayLine } from './PayWith'
 import { fundsServices } from './services'
@@ -49,6 +49,8 @@ export default function FundsAmounts({
   const access = useSyncExternalStore(crosschainSessionAccess.subscribe, crosschainSessionAccess.getSnapshot, () => 'pending')
   const wallet = identity.kind === 'connected' ? identity.address.toLowerCase() : null
   const services = useMemo(() => (gate && wallet !== null ? fundsServices(gate, wallet, fundsPage) : null), [gate, wallet])
+  const [tracking, setTracking] = useState<string | null>(null)
+  const trackingKey = `${wallet}|${chainId}`
   if (!pool || chainId === null) return null
 
   const raw = rawBalances(balances)
@@ -97,12 +99,12 @@ export default function FundsAmounts({
   const remote = remoteFundingChoice({ state, planned, pay, alternative, nativeRaw: nativeOnDestination })
   const showPayment = offerPayment && !(remote?.payment && localAvailable <= 0n)
   const poolTokens = pool.currencies.map((currency) => currency.address.toLowerCase())
-  const conversionAfterArrival = !paid && deliverableTokens(chainId, poolTokens).length === 0 && !!onPayWith
+  const conversionAfterArrival = !paid && !!onPayWith
   const selectionKey = JSON.stringify([chainId, pool.key, state.range?.lower, state.range?.upper, paid ? [paid.token.chainId, paid.token.address.toLowerCase()] : state.token?.key])
 
   return (
     <>
-      {showPayment && alternative && <PayLine facts={alternative} pair={pool.currencies} onPay={choosePayment} />}
+      {tracking !== trackingKey && showPayment && alternative && <PayLine facts={alternative} pair={pool.currencies} onPay={choosePayment} />}
       {gate && gate.mode !== 'off' && wallet !== null && (
         <BringFunds
           key={`${identity.kind === 'connected' ? identity.connectorName : ''}|${wallet}`}
@@ -112,6 +114,8 @@ export default function FundsAmounts({
           selectionKey={selectionKey}
           checking={paid ? pay === undefined || held === null : raw === null}
           services={services}
+          onTrackingChange={(active) => setTracking((was) => active ? trackingKey : was === trackingKey ? null : was)}
+          continuation={usableLocal && alternative ? <PayLine facts={alternative} pair={pool.currencies} onPay={choosePayment} /> : null}
           chainId={chainId}
           intentKey={JSON.stringify([chainId, pool.key, state.range?.lower, state.range?.upper, paid ? [paid.token.chainId, paid.token.address.toLowerCase(), paid.text] : [state.token?.key, state.budget]])}
           wallet={wallet}

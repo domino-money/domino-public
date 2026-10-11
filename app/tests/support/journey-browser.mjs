@@ -33,7 +33,7 @@ export const WALLET_NAME = 'Journey Wallet';
  * (2026-10-06): Playwright's fake clock, installed before the page loads; it ticks on its own, and a suite jumps it
  * forward with `page.clock.fastForward`.
  */
-export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null, read6 = null, dex = null, clock = false } = {}) {
+export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null, read6 = null, dex = null, clock = false, refresh = false } = {}) {
   const fake = createFakeSession();
   const server = createWalletServer({ fake, dist, routes: [...routes, confirmationRoute(chain)] });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
@@ -74,7 +74,8 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
   const sets = Object.fromEntries(live.map((id) => [id, contracts[id]]));
   // `zapOnRobinhood` (2026-10-05): the zap path's screens on Robinhood Chain, which the owner's journey keeps out of every
   // deployable build (src/v2in/journey/NewPositionV2.tsx).
-  await context.addInitScript(({ sets, liveOn, originOpen, name, zapOnRobinhood, chainRoutes, planning }) => {
+  await context.addInitScript(({ sets, liveOn, originOpen, name, zapOnRobinhood, chainRoutes, planning, refresh }) => {
+    if (refresh) window.__dominoRefresh = true;
     const read6 = chainRoutes.length ? { read6: Object.fromEntries(chainRoutes.map((route) => [route, (request) => window.__dominoChainRead(route, request).then((said) => said ?? undefined)])) } : {};
     const s1 = planning ? { s1: { plan: (request) => window.__dominoJourneyPlan(request) } } : {};
     window.__dominoV2Test = { originOpen, ...(liveOn ? { contracts: sets, backendOn: true } : {}), ...s1, journey: { zapOnRobinhood }, ...read6 };
@@ -92,7 +93,7 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
     const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail }));
     window.addEventListener('eip6963:requestProvider', announce);
     announce();
-  }, { sets, liveOn: live.length > 0, originOpen, name: WALLET_NAME, zapOnRobinhood, chainRoutes, planning: planner !== null });
+  }, { sets, liveOn: live.length > 0, originOpen, name: WALLET_NAME, zapOnRobinhood, chainRoutes, planning: planner !== null, refresh });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   const s = {

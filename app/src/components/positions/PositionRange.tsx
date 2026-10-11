@@ -13,6 +13,7 @@ import {
 } from '../../lib/read/screens/positions'
 import { rangeFacts, readablePrice } from '../../lib/chart/priceFacts'
 import type { PoolPriceObservations } from '../../lib/chart/positionOpened'
+import type { PriceHistory } from '../../lib/chart/priceRange'
 import { recovering } from '../../lib/staleRelease'
 import type { LiveCard } from '../../lib/walletCards'
 import { TokenLabel } from '../read/TokenLabel'
@@ -113,7 +114,7 @@ export function rangeWords(card: LiveCard, price: CardPrice) {
  * `chart` and `missing` props it replaces had no caller since 2026-10-02. The range's ends are written as the key
  * figures write prices (readablePrice: "0.0₆7101"), the page's exact text in their title.
  */
-export function PositionRange({ card, price, variant = 'bar', history = false, openedAt = null, closedAt = null, observations = null }: { card: LiveCard; price: CardPrice; variant?: 'bar' | 'page'; history?: boolean; openedAt?: number | null; closedAt?: number | null; observations?: PoolPriceObservations | null }) {
+export function PositionRange({ card, price, variant = 'bar', history = false, openedAt = null, closedAt = null, observations = null, recorded }: { card: LiveCard; price: CardPrice; variant?: 'bar' | 'page'; history?: boolean; openedAt?: number | null; closedAt?: number | null; observations?: PoolPriceObservations | null; recorded?: PriceHistory | null }) {
   const { state, scale } = price
   // The app's one way round (2026-09-28): the priced token, the one it is priced in, and the range's lowest and highest price.
   const { base, quote, low, high } = shownCardRange(card)
@@ -179,7 +180,7 @@ export function PositionRange({ card, price, variant = 'bar', history = false, o
           <div className="dm-pos-chart">
             {/* While the chart's own code loads (a moment, the first time), its status and its box stand in its place. */}
             <Suspense fallback={<RangeChartWaiting facts={facts} />}>
-              <PriceVsRange history={history ? { poolId: card.poolId, base: base.address, quote: quote.address } : null} openedAt={openedAt} closedAt={closedAt} observations={observations} />
+              <PriceVsRange history={history ? { poolId: card.poolId, base: base.address, quote: quote.address } : null} openedAt={openedAt} closedAt={closedAt} observations={observations} recorded={recorded} />
             </Suspense>
           </div>
         )}

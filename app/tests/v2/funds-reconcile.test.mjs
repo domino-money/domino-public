@@ -5,6 +5,7 @@ import { test } from 'node:test';
 const require = createRequire(import.meta.url);
 const { balanceSnapshot, reconcileBalances, BALANCE_CACHE_WAIT_MS, BALANCE_RECONCILE_ATTEMPTS } = require('../../.test-build/app/src/v2in/funds/reconcile.js');
 const { fundsServices } = require('../../.test-build/app/src/v2in/funds/services.js');
+const { transferTitle, availableBalance } = require('../../.test-build/app/src/v2in/funds/transferView.js');
 const OWNER = `0x${'aa'.repeat(20)}`;
 const TOKEN = `0x${'11'.repeat(20)}`;
 const snapshot = (block, raw = '0') => ({ block, hash: `0x${block.toString(16).padStart(64, '0')}`, timestamp: 1_700_000_000 + block, balances: [{ token: TOKEN, raw }] });
@@ -35,6 +36,19 @@ test('post-fill cache: actual old balance then fresh balance without depending o
   assert.deepEqual(s.reads, [0, BALANCE_CACHE_WAIT_MS]);
   assert.deepEqual(s.seen.map((value) => value.balances[0].raw), ['2', '50000002']);
   assert.equal(Object.hasOwn(s.deps, 'walletChainId'), false, 'no active wallet chain is required for this read');
+});
+
+test('a delivered transfer remains arrived after its token was spent; available ETH keeps the existing gas reserve', async () => {
+  const s = lab([{ kind: 'ok', snapshot: snapshot(100, '1003048') }, { kind: 'ok', snapshot: snapshot(102, '0') }]);
+  assert.equal(await reconcileBalances(s.deps), 'ready', 'a current zero is a valid wallet balance, not an undelivered transfer');
+  for (const chain of ['Robinhood Chain', 'Base', 'Arbitrum One']) assert.equal(transferTitle('filled', chain), `Funds arrived on ${chain}`);
+  assert.equal(availableBalance(TOKEN, '0'), '0');
+  const native = `0x${'00'.repeat(20)}`;
+  assert.equal(availableBalance(native, '800529491659974'), '300529491659974');
+  assert.equal(availableBalance(native, '400000000000000'), '0', 'network fee reserve is not offered as spendable funds');
+  assert.equal(transferTitle(null, 'Base'), 'Checking your transfer');
+  assert.equal(transferTitle('refunded', 'Base'), 'Funds returned');
+  assert.equal(transferTitle('failed', 'Base'), 'Returning your funds');
 });
 
 test('unchanged snapshot and balance are bounded, never optimistic credits or a completed reconciliation', async () => {

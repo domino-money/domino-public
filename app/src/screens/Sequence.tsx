@@ -4,7 +4,7 @@ import { lazy, Suspense, useSyncExternalStore, type ComponentType } from 'react'
 import { recovering } from '../lib/staleRelease'
 import { hashParts } from '../components/explore/routes'
 import { sequenceIntent } from '../lib/create/sequenceDefaults'
-import { useWalletIdentity, walletKey } from '../lib/walletIdentity'
+import { useWalletIdentity } from '../lib/walletIdentity'
 import type { SequenceIntent } from './SequenceCreate'
 import { Frame, Loading, WalletPrompt } from './SequenceShell'
 
@@ -25,7 +25,7 @@ function V2Sequence() {
   const hash = useSyncExternalStore(subscribeRoute, () => window.location.hash, () => '')
   const protection = /^#\/sequence\/protection(?:\/|$)/.test(hash)
   // Selecting a position is a public read. Only its existing dialog requests the correct network before signing.
-  const owner = protection && identity.kind === 'connected' ? identity.address.toLowerCase() : walletKey(identity)?.split('|')[1] ?? null
+  const owner = identity.kind === 'connected' ? identity.address.toLowerCase() : null
   const intent = sequenceIntent(hashParts(hash).segments)
   return <Frame protection={protection}>
     {owner === null ? <WalletPrompt identity={identity} /> : V2Setup && <Suspense fallback={<Loading />}>

@@ -3,7 +3,8 @@
  * src/v2ui/read6.ts do for theirs. Only src/v2ui reaches this module (the S1 screens' source); the pure modules take
  * the runtime handed in, and the node tests load api-contracts/position-plan-v1/runtime.mjs themselves.
  */
-import * as runtime from 'api-contracts/position-plan-v1/runtime.mjs'
+import { CONTRACT_VERSION, ERROR_STATUS_BY_CODE, validateRequest, validateResponse, validateError } from 'api-contracts/position-plan-v1/runtime.mjs'
 import type { S1PlanValidators } from './types'
 
-export const POSITION_PLAN_RUNTIME: S1PlanValidators = runtime as unknown as S1PlanValidators
+// Pass only the validation interface: a namespace object also retains the package's public encoding/test helpers.
+export const POSITION_PLAN_RUNTIME: S1PlanValidators = Object.freeze({ CONTRACT_VERSION, ERROR_STATUS_BY_CODE, validateRequest, validateResponse, validateError })

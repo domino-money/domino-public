@@ -206,6 +206,10 @@ export const JOURNEY = {
   created: {
     line: (tokenId: string) => `Position NFT ${tokenId} is in your wallet.`,
     pending: 'Your position is being created. Waiting for the network…',
+    reverted: 'The transaction reverted. No position was created.',
+    revertedStatus: 'Transaction reverted',
+    notIncluded: 'The wallet batch did not complete. No position was created.',
+    notIncludedStatus: 'Not completed',
     receipt: 'Receipt',
     paidIn: 'Paid in',
     swapped: 'Swapped',

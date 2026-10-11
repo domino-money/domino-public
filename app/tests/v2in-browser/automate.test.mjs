@@ -102,7 +102,7 @@ async function connect(page, name) {
     if (await opener.count()) await opener.first().click();
     else await page.getByRole('button', { name: /Connect wallet/ }).first().click();
     await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: `Connect ${name}`, exact: true }).click();
-    await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await page.waitForFunction(() => ['signed_out', 'wrong_network'].includes(window.__dominoSessionProbe?.view().status));
     await page.keyboard.press('Escape');
   } catch (error) {
     // Where the page stood, with the failure.
@@ -202,7 +202,7 @@ const WALLET_NAME = 'V2 Test Wallet';
  * tests/support/v2-auto-page.mjs does), its contracts set and the backend's word in the test hooks (src/v2/gate.ts:
  * `live`), read-v6's answers scripted (`read6`, src/v2in/automate/read6.tsx), V1's own reads answered from `v1`.
  */
-async function openLive(chain, { hash, read6, v1, routes = [] }) {
+async function openLive(chain, { hash, read6, v1, routes = [], beforeOpen = async () => {} }) {
   const methods = walletFor(chain);
   const csp = [];
   const s = await serve({
@@ -245,6 +245,7 @@ async function openLive(chain, { hash, read6, v1, routes = [] }) {
     assert.ok(!chain.log.includes('personal_sign'), 'nothing is signed in');
   };
   try {
+    await beforeOpen(s);
     await s.page.goto(`${s.origin}/#${hash}`);
     await connect(s.page, WALLET_NAME);
     if (/^\/positions\/\d+$/.test(hash)) await expandAutomation(s.page);
@@ -2096,4 +2097,193 @@ test('final pass: all three automation entries have an honest empty state and co
       assert.deepEqual(s.wallet.state.log.filter(entry => SENDS_AND_SIGNATURES.includes(entry.method)), []);
     } finally { await s.close(); }
   }
+});
+
+
+/** The identical NFT id on another network must select that manager, never Robinhood's. */
+function multichainSetupPortfolio(chain, dex, pool, tokenId = ROOT) {
+  return read6Answer('portfolio', 'portfolio-custody-lost', [[READ6.wallet, OWNER]], body => {
+    const current = body.chains.find(entry => entry.chainId === 4663);
+    body.chains = body.chains.map(entry => ({ ...structuredClone(current), chainId: entry.chainId }));
+    body.coverage = 'complete';
+    const template = body.positions[0];
+    body.vaults = []; body.mandates = []; body.credits = [];
+    body.truncated = { vaults: false, positions: false, mandates: false };
+    body.positions = [{ ...template, chainId: chain.chainId, dex, tokenId: String(tokenId), vault: null,
+      positionManager: chain.profile.uniswap['v' + dex].positionManager,
+      state: { ...template.state, owner: OWNER, custody: { approved: null, subscriber: null },
+        freshness: { status: 'fresh', ageSeconds: 0 }, pool: { ...pool, dex, hooks: ZERO },
+        feesOwed: dex === 3 ? ['1200', '0'] : ['0', '0'], liquidity: String(10n ** 18n),
+        tickLower: -600, tickUpper: 600, tick: 0, sqrtPriceX96: String(2n ** 96n), inRange: true,
+      },
+    }];
+    body.tokens = [pool.currency0, pool.currency1].map(address => {
+      const token = chain.profile.chargeCurrencies.find(value => value.address === address);
+      return { chainId: chain.chainId, address, status: 'available', symbol: token?.symbol ?? (address === chain.profile.wrappedNative.address ? 'WETH' : 'ETH'), decimals: token?.decimals ?? 18, price: null, priceReason: 'no_qualified_price_source' };
+    });
+  });
+}
+
+for (const chainId of [8453, 42161]) for (const dex of [3, 4]) for (const mode of ['compound', 'domino']) {
+  test('multichain setup: ' + chainId + ' v' + dex + ' ' + mode + ' preserves consent and sends only to its own manager and factory', async () => {
+    const profile = require('../../.test-build/app/src/v2/chains.js').v2Chain(chainId);
+    const stable = profile.chargeCurrencies.find(token => token.decimals === 6).address;
+    const currencies = [dex === 3 ? profile.wrappedNative.address : ZERO, stable].sort((a,b) => BigInt(a) < BigInt(b) ? -1 : 1);
+    const pool = { currency0: currencies[0], currency1: currencies[1], fee: 3000, tickSpacing: 60 };
+    const chain = createVaultChain({ chainId, positions: [{ dex, tokenId: ROOT, pool, liquidity: 10n ** 18n, owed: dex === 3 ? [1200n,0n] : undefined }] });
+    const slug = chainId === 8453 ? 'base' : 'arbitrum';
+    const throughDetail = chainId === 8453 && dex === 3 && mode === 'compound';
+    const s = await openLive(chain, { hash: throughDetail ? '/positions/' + slug + '-v' + dex + '-' + ROOT : '/sequence/' + mode + '/' + slug + '-v' + dex + '-' + ROOT,
+      read6: { portfolio: multichainSetupPortfolio(chain, dex, pool) }, v1: rootOnV1({ liquidity: 10n ** 18n }) });
+    try {
+      const { page } = s;
+      if (throughDetail) {
+        const setup = page.locator('[data-automation-setup]');
+        await setup.waitFor();
+        assert.equal(await setup.getAttribute('href'), '#/sequence/base-v3-' + ROOT, 'the affected Base v3 detail offers all modes for that exact NFT');
+        await setup.click();
+        await page.locator('[data-sequence-mode="compound"]').click();
+      }
+      const flow = page.locator('[data-v2in-setup="live"]');
+      await flow.locator('[data-sequence-position-key="' + chainId + ':' + dex + ':' + ROOT + '"][aria-checked="true"]').waitFor();
+      assert.match(await flow.locator('[data-sequence-position]').innerText(), new RegExp(profile.name));
+      assert.equal(await flow.locator('[data-sequence-action="run"]').isDisabled(), true);
+      await flow.locator('[data-v2in-consent]').check();
+      await flow.locator('[data-sequence-action="run"]:not([disabled])').waitFor({ timeout: 30_000 });
+      assert.deepEqual(chain.sends, [], 'review is read-only');
+      if (dex === 3) {
+        assert.match(await flow.locator('[data-v3-owed-to-wallet]').innerText(), /sent to your wallet/);
+        assert.match(await flow.locator('.dm-seq-consent').innerText(), /I agree to reinvest earned fees/);
+        assert.doesNotMatch(await flow.locator('.dm-seq-consent').innerText(), /already earned and not collected will be reinvested/, 'v3 arming sends tokensOwed to the owner; consent must not claim they all get reinvested');
+      }
+      if (throughDetail) await page.screenshot({ path: join(shots(), 'base-v3-compound-ready-desktop.png'), fullPage: true, animations: 'disabled' });
+      await page.setViewportSize({ width: 390, height: 960 });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      if (throughDetail) await page.screenshot({ path: join(shots(), 'base-v3-compound-ready-mobile.png'), fullPage: true, animations: 'disabled' });
+      if (throughDetail) {
+        const lagging = multichainSetupPortfolio(chain, dex, pool); lagging.body.positions = [];
+        await page.evaluate(answer => {
+          window.__setupApprovalRefreshes = 0;
+          window.__dominoV2Test.read6.portfolio = () => { window.__setupApprovalRefreshes++; return answer; };
+        }, lagging);
+      }
+      await flow.locator('[data-sequence-action="run"]').click();
+      const done = page.locator('[data-v2in-created]');
+      await done.waitFor({ timeout: 60_000 });
+      if (throughDetail) {
+        await page.waitForFunction(() => window.__setupApprovalRefreshes > 0);
+        assert.equal(await done.isVisible(), true, 'a portfolio refresh after approval cannot discard the active review or its completed result');
+      }
+      const vault = chain.vault(await done.getAttribute('data-v2in-created'));
+      assert.equal(vault.dex, dex);
+      assert.equal(vault.policy.mode, mode === 'domino' ? 2 : 1);
+      assert.equal(vault.paused, false);
+      assert.equal(chain.sends[0].to.toLowerCase(), profile.uniswap['v' + dex].positionManager);
+      assert.equal(chain.sends[1].to.toLowerCase(), chain.contracts.addresses[dex === 3 ? 'vaultFactoryV3' : 'vaultFactoryV4']);
+      assert.equal(chain.log.includes('personal_sign'), false);
+      assert.equal(await done.getByRole('link', { name: 'View position', exact: true }).getAttribute('href'), '#/positions/' + slug + '-v' + dex + '-' + ROOT);
+      if (dex === 3) assert.ok(chain.paid.some(entry => entry.why === 'v3-owed-at-arming' && entry.to === OWNER));
+    } finally { await s.close(); }
+  });
+}
+
+
+test('multichain setup: changing a repeated NFT id resets consent and review; preview never switches, signs or sends', async () => {
+  const holder = ACCOUNTS[0].address.toLowerCase();
+  const v1 = rootOnV1({ holder, liquidity: 10n ** 18n });
+  const portfolio = plainPortfolio(v1, holder, body => {
+    const root = body.positions[0], current = body.chains[0];
+    body.chains = body.chains.map(entry => ({ ...structuredClone(current), chainId: entry.chainId }));
+    body.coverage = 'complete';
+    body.positions = [4663, 8453, 42161].flatMap(chainId => [3, 4].map(dex => {
+      const profile = require('../../.test-build/app/src/v2/chains.js').v2Chain(chainId);
+      const currencies = [dex === 3 ? profile.wrappedNative.address : ZERO, profile.chargeCurrencies.find(token => token.decimals === 6).address].sort((a,b) => BigInt(a) < BigInt(b) ? -1 : 1);
+      return { ...structuredClone(root), chainId, dex, positionManager: profile.uniswap['v' + dex].positionManager,
+        state: { ...structuredClone(root.state), pool: { ...root.state.pool, dex, currency0: currencies[0], currency1: currencies[1] } },
+      };
+    }));
+  });
+  const s = await openPreview(v1, '/sequence/compound/base-v3-' + ROOT, { portfolio, expand: false });
+  try {
+    const flow = s.page.locator('[data-v2in-setup="preview"]');
+    await flow.locator('[data-sequence-position-key="8453:3:' + ROOT + '"][aria-checked="true"]').waitFor();
+    assert.equal(await flow.locator('[data-sequence-position]').count(), 6);
+    await flow.locator('[data-v2in-consent]').check();
+    await flow.locator('[data-sequence-action="review"]').click();
+    await flow.locator('[data-v2in-review]').waitFor();
+    assert.match(await flow.locator('[data-v2in-review]').innerText(), /Base/);
+    await flow.locator('[data-sequence-position-key="42161:4:' + ROOT + '"]').click();
+    assert.equal(await flow.locator('[data-v2in-consent]').isChecked(), false);
+    assert.equal(await flow.locator('[data-v2in-review]').count(), 0);
+    assert.equal(await flow.locator('[data-sequence-action="review"]').isDisabled(), true);
+    await flow.locator('[data-v2in-consent]').check();
+    await flow.locator('[data-sequence-action="review"]').click();
+    assert.match(await flow.locator('[data-v2in-review]').innerText(), /Arbitrum One/);
+    await flow.locator('[data-sequence-position-key="42161:4:' + ROOT + '"]').focus();
+    await s.page.keyboard.press('ArrowLeft');
+    await flow.locator('[data-sequence-position-key="42161:3:' + ROOT + '"][aria-checked="true"]').waitFor();
+    await s.page.waitForFunction(() => document.activeElement?.getAttribute('data-sequence-position-key') === '42161:3:3409682');
+    assert.equal(await flow.locator('[data-v2in-consent]').isChecked(), false, 'keyboard selection also clears consent while preserving focus');
+    const forbidden = [...SENDS_AND_SIGNATURES, 'wallet_switchEthereumChain'];
+    assert.equal(s.wallet.state.log.some(entry => forbidden.includes(entry.method)), false);
+  } finally { await s.close(); }
+});
+
+test('multichain setup: a receipt-backed Base mint waits past the old retry window and requires real indexed state', async () => {
+  const chain = createVaultChain({ chainId: 8453 });
+  const pool = { currency0: ZERO, currency1: chain.profile.chargeCurrencies.find(token => token.decimals === 6).address, fee: 3000, tickSpacing: 60 };
+  const complete = multichainSetupPortfolio(chain, 4, pool);
+  const empty = structuredClone(complete); empty.body.positions = [];
+  const snapshot = complete.body.positions[0].state.snapshot;
+  const hint = { wallet: OWNER, chainId: 8453, dex: 4, positionManager: chain.profile.uniswap.v4.positionManager, tokenId: String(ROOT),
+    hash: '0x' + '87'.repeat(32), block: snapshot.number, blockHash: snapshot.hash, fee: 3000,
+    tokens: complete.body.tokens.map(({ address, symbol, decimals }) => ({ address, symbol, decimals })),
+  };
+  const s = await openLive(chain, { hash: '/sequence/compound/base-v4-' + ROOT, read6: { portfolio: empty }, v1: rootOnV1({ liquidity: 10n ** 18n }),
+    beforeOpen: async ({ page, context }) => {
+      await page.clock.install();
+      await context.addInitScript(({ hint, empty, complete }) => {
+        window.__dominoRefresh = true;
+        sessionStorage.setItem('domino:created-positions:v1:' + hint.wallet, JSON.stringify([{ ...hint, observedAt: Date.now() }]));
+        window.__setupPortfolioReads = 0;
+        window.__setupIndexed = false;
+        window.__dominoV2Test.read6.portfolio = () => { window.__setupPortfolioReads++; return window.__setupIndexed ? complete : empty; };
+      }, { hint, empty, complete });
+    },
+  });
+  try {
+    const { page } = s;
+    await page.getByText('Updating your position…', { exact: true }).waitFor();
+    for (let turn = 0; turn < 3; turn++) {
+      const before = await page.evaluate(() => window.__setupPortfolioReads);
+      await page.clock.fastForward(5_100);
+      await page.waitForFunction(previous => window.__setupPortfolioReads > previous, before);
+    }
+    assert.equal(await page.locator('[data-sequence-positions="empty"]').count(), 0, 'a delayed index does not become no eligible position after 10.5 seconds');
+    assert.equal(await page.locator('[data-v2in-consent]').count(), 0, 'receipt identity alone never makes the position eligible');
+    assert.deepEqual(chain.sends, []);
+    await page.evaluate(() => { window.__setupIndexed = true; });
+    await page.clock.fastForward(5_100);
+    await page.locator('[data-sequence-position-key="8453:4:' + ROOT + '"][aria-checked="true"]').waitFor();
+    assert.equal(await page.locator('[data-v2in-consent]').isChecked(), false, 'the real portfolio opens setup without implied consent');
+    assert.equal(await page.locator('[data-sequence-action="run"]').isDisabled(), true);
+    assert.deepEqual(chain.sends, []);
+  } finally { await s.close(); }
+});
+
+for (const stopped of ['halted', 'no-operators']) test('multichain setup: explicit ' + stopped + ' blocks new approvals without claiming a running daemon', async () => {
+  const chain = createVaultChain({ chainId: 8453 });
+  const pool = { currency0: ZERO, currency1: chain.profile.chargeCurrencies.find(token => token.decimals === 6).address, fee: 3000, tickSpacing: 60 };
+  const read = multichainSetupPortfolio(chain, 4, pool);
+  const status = read.body.chains.find(entry => entry.chainId === 8453);
+  if (stopped === 'halted') status.automationHalted = true; else status.operatorsAdmitted = 0;
+  const s = await openLive(chain, { hash: '/sequence/compound/base-v4-' + ROOT, read6: { portfolio: read }, v1: rootOnV1({ liquidity: 10n ** 18n }) });
+  try {
+    const flow = s.page.locator('[data-v2in-setup="live"]');
+    await flow.locator('[data-v2in-consent]').check();
+    assert.equal(await flow.locator('[data-sequence-action="run"]').isDisabled(), true);
+    assert.match(await flow.locator('#v2in-setup-reason').innerText(), stopped === 'halted' ? /temporarily paused/ : /not available/);
+    assert.deepEqual(chain.sends, []);
+    assert.equal(chain.calls.some(call => call.calls.some(name => name.endsWith('.predictVault'))), false);
+  } finally { await s.close(); }
 });

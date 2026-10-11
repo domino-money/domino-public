@@ -14,8 +14,12 @@ import { JOURNEY_QUIET_REQUOTES, JOURNEY_RECEIPT_POLL_MS, NEW_POOL_RACE_COPY } f
 import { JOURNEY } from './copy'
 import { journeyError, planFailure, SENT_CHECK_WALLET, SENT_UNKNOWN_COPY, STILL_PENDING, type JourneyError } from './errors'
 import { positionChanged } from '../lists/positionSync'
+import { CREATED_POSITIONS } from '../lists/createdPositions'
+import { recordConfirmedOperation, reorgConfirmedOperation } from '../../lib/confirmedOperations'
+import type { JourneyToken } from './tokens'
 import { livePlanTransport, liveContext, planRuntime } from './source'
 import { connectJourney, onChain, type JourneyConnection } from './wallet'
+import { RECEIPT_FOLLOW } from './receiptFollow'
 
 /**
  * New position's create on Domino's new contracts, from the quote to the receipt (spec F7 rev2 §2.4, §2.5, §2.6.1,
@@ -59,6 +63,7 @@ export interface RunStep {
 }
 
 export interface Reviewed {
+  tokens: readonly JourneyToken[]
   connection: JourneyConnection
   consent: ConsentChoice & { atomic: string; account: string }
   review: ZapReview
@@ -70,7 +75,7 @@ export interface Reviewed {
 }
 
 export interface ReceiptView {
-  state: 'pending' | 'included' | 'finalized' | 'reverted'
+  state: 'pending' | 'included' | 'finalized' | 'reverted' | 'not-included'
   read: ZapReceipt | null
   /** The receipt could not be read exactly: its code (nothing is guessed). */
   unreadable: string | null
@@ -110,6 +115,8 @@ export interface RunInput {
   request: (consent: S1PlanConsent) => S1PlanRequest | null
   /** The tokens the person puts in, for the consent path. */
   inputs: readonly { token: Address }[]
+  /** Metadata belongs to the pool reviewed, not the pool selected after this run. */
+  tokens?: readonly JourneyToken[]
   /** A safe label for a token address, for the error sentences. */
   label: (token: Address) => string
 }
@@ -172,7 +179,7 @@ export function useJourneyRun(input: RunInput) {
     Object.assign(live.current, { stage: 'quoting', requoting, reviewed: null, asked: null, steps: [], current: 0, error: null, prepared: null, batch: null, feePerGas: null, cancel: null, round: live.current.round + 1 })
     bump()
     if (latest.current.gate.mode === 'preview') return previewQuote(gen)
-    const { chainId, gate, inputs, request } = latest.current
+    const { chainId, gate, inputs, request, tokens = [] } = latest.current
     try {
       const transport = livePlanTransport()
       if (!transport) throw new PlanFailure({ copy: JOURNEY.review.planUnavailable, code: 'plan_route_unavailable', recovery: 'none' })
@@ -201,7 +208,7 @@ export function useJourneyRun(input: RunInput) {
       const review = await connection.zap.review({ chainId, plan: result.reply.plan, consent: consent.planConsent, quote: result.reply.quote, target, initSqrtPriceX96: asked.initialPrice?.sqrtPriceX96 })
       if (gen !== generation.current) return
       const path: RunPath = consent.path
-      const reviewed: Reviewed = { connection, consent, review, reply: result.reply, request: asked, path, at: now() }
+      const reviewed: Reviewed = { connection, consent, review, reply: result.reply, request: asked, path, at: now(), tokens: tokens.map(token => ({ ...token })) }
       Object.assign(live.current, {
         stage: 'reviewed', requoting: false, reviewed, current: 0,
         steps: path === 'batch' ? [{ kind: 'batch', index: -1, step: null, status: 'waiting', feeWei: null, hash: null }] : stepsOf(review),
@@ -352,6 +359,7 @@ export function useJourneyRun(input: RunInput) {
   async function openReceipt(gen: number, hash: Hex | null, receipt: Extract<V2Receipt, { logs: unknown }>, again: () => Promise<V2Receipt | { state: 'not-included' } | { state: 'batch-reverted' }>): Promise<void> {
     const reviewed = live.current.reviewed
     if (!reviewed) return
+    hash ??= receipt.transactionHash ?? null
     let announced = false
     const show = (current: Extract<V2Receipt, { logs: unknown }>) => {
       let read: ZapReceipt | null = null
@@ -361,17 +369,71 @@ export function useJourneyRun(input: RunInput) {
       } catch (error) {
         unreadable = error instanceof Error ? error.message : 'receipt_invalid'
       }
+      if (current.state !== 'reverted' && reviewed.review.chainId !== 4663 && read && read.summary.tokenId > 0n && hash) {
+        const chain = v2Chain(reviewed.review.chainId), pool = reviewed.review.plan.plan.intent.pool
+        const manager = chain.uniswap[pool.dex === 3 ? 'v3' : 'v4'].positionManager
+        const tokenId = read.summary.tokenId.toString()
+        CREATED_POSITIONS.record({ wallet: reviewed.review.owner, chainId: chain.chainId, positionManager: manager, dex: pool.dex,
+          tokenId, hash, block: Number(current.blockNumber), blockHash: current.blockHash, observedAt: Date.now(), fee: pool.fee,
+          tokens: [pool.currency0, pool.currency1].map(address => ({ address, symbol: reviewed.tokens.find(token => token.address.toLowerCase() === address.toLowerCase())?.symbol ?? null,
+            decimals: reviewed.tokens.find(token => token.address.toLowerCase() === address.toLowerCase())?.decimals ?? null })) })
+        // The financial client already checked this exact receipt. Share its inclusion/finality across navigation;
+        // the Robinhood-only public confirmation reader must never be used for another chain.
+        recordConfirmedOperation({ chainId: chain.chainId, wallet: reviewed.review.owner, positionManager: manager, tokenIds: [tokenId],
+          receipt: { transactionHash: hash, blockNumber: current.blockNumber, blockHash: current.blockHash, state: current.state } })
+        announced = true
+      }
       if (current.state !== 'reverted' && !announced) {
         announced = true
         const chain = v2Chain(reviewed.review.chainId)
         const dex = reviewed.review.plan.plan.intent.pool.dex
         positionChanged({ chainId: chain.chainId, positionManager: dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager, wallet: reviewed.review.owner, tokenIds: read && read.summary.tokenId > 0n ? [read.summary.tokenId.toString()] : undefined, block: current.blockNumber })
       }
-      live.current.receipt = { state: current.state === 'reverted' ? 'reverted' : current.state, read, unreadable, hash }
-      bump()
+      if (gen === generation.current) {
+        live.current.receipt = { state: current.state === 'reverted' ? 'reverted' : current.state, read, unreadable, hash }
+        bump()
+      }
     }
     show(receipt)
     let current = receipt
+    let invalidated = false
+    if (reviewed.review.chainId !== 4663) {
+      if (receipt.state !== 'included') return
+      RECEIPT_FOLLOW.follow(`${reviewed.review.chainId}:${reviewed.review.owner}:${reviewed.review.intentHash}`, {
+        read: again,
+        available: () => !reviewed.connection.wallet.current() ? 'gone' : reviewed.connection.wallet.chainId() === reviewed.review.chainId ? 'ready' : 'paused',
+        accept(next) {
+          if (invalidated && (next.state === 'not-included' || next.state === 'batch-reverted')) {
+            if (gen === generation.current) {
+              live.current.receipt = { state: 'not-included', read: null, unreadable: null, hash }
+              bump()
+            }
+            return true
+          }
+          if (next.state === 'reorged') {
+            if (!invalidated) {
+              if (hash) reorgConfirmedOperation({ chainId: reviewed.review.chainId, wallet: reviewed.review.owner, hash, blockHash: current.blockHash })
+              invalidated = true
+              announced = false
+              if (gen === generation.current) {
+                live.current.receipt = { state: 'pending', read: null, unreadable: null, hash }
+                bump()
+              }
+            }
+          } else if (next.state === 'reverted' || next.state === 'included' || next.state === 'finalized') {
+            const replaced = invalidated || next.blockHash !== current.blockHash || !!next.transactionHash && next.transactionHash !== hash
+            if ((replaced || next.state === 'reverted') && !invalidated && hash) reorgConfirmedOperation({ chainId: reviewed.review.chainId, wallet: reviewed.review.owner, hash, blockHash: current.blockHash })
+            hash = next.transactionHash ?? hash
+            if (replaced || next.state !== 'included') show(next)
+            current = next
+            invalidated = false
+            return next.state !== 'included'
+          }
+          return false
+        },
+      })
+      return
+    }
     while (current.state === 'included' && gen === generation.current) {
       await sleep(JOURNEY_RECEIPT_POLL_MS)
       let next: Awaited<ReturnType<typeof again>> | null = null

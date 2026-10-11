@@ -1,15 +1,22 @@
 /** Real amount-step recovery with closed browser, wallet and HTTP fixtures. No live transactions. */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { mkdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from '../support/close-browser.mjs';
 import { openFundingPage, USDG, ZERO, S2_OWNER, ARB_USDC, RECORDED_DEPOSIT, createChainReads, walletAssets, typeUsdg, signIn, homeReads, chainReads, together, offerReady } from '../support/funds-browser.mjs';
 import { createOriginChain } from '../support/s2-origin-chain.mjs';
+import { openJourney } from '../support/journey-browser.mjs';
+import { createV2Chain, contractsFor, v3PoolOf } from '../support/v2-chain.mjs';
+import { WALLET_V2_DIST } from '../support/wallet-dist.mjs';
+import { pressContinue } from '../support/new-position.mjs';
 
 const require = createRequire(import.meta.url);
 const { depositJournalKey } = require('../../.test-build/app/src/finance/v2/crosschain.js');
 const fundingKey = `domino.funding.v1:${S2_OWNER}:4663`;
+const shots = () => { const path = resolve(import.meta.dirname, '../../.test-artifacts'); mkdirSync(path, { recursive: true }); return path; };
 const amount = (page) => page.locator('li[data-step="amount"] [data-pair-side="1"] input[inputmode="decimal"]');
 let browser;
 before(async () => {
@@ -66,6 +73,12 @@ test('a restored fill refreshes the amount balance after the cache advances, whi
   const s = await openFundingPage(browser, { bridge: true, served, journal: journal(), walletAssetsReply, clock: true });
   try {
     await typeUsdg(s, '50');
+    await s.page.locator('[data-transfer-moving]').waitFor();
+    assert.equal(await s.page.locator('[data-transfer-moving] .dm-transfer-track i').evaluate((el) => getComputedStyle(el).animationName), 'dm-transfer-travel');
+    await s.page.emulateMedia({ reducedMotion: 'reduce' });
+    assert.equal(await s.page.locator('[data-transfer-moving] .dm-transfer-track i').evaluate((el) => getComputedStyle(el).animationName), 'none');
+    await s.page.locator('[data-funds-offer]').screenshot({ path: join(shots(), 'funds-transfer-in-progress.png'), animations: 'disabled' });
+    await s.page.emulateMedia({ reducedMotion: 'no-preference' });
     await signIn(s);
     await s.page.locator('[data-funds-state="filled"] [data-funds-balance-state="updating"]').waitFor();
     await s.wallet.switchChain(42161);
@@ -75,11 +88,101 @@ test('a restored fill refreshes the amount balance after the cache advances, whi
     await s.page.clock.fastForward(11_100);
     await s.page.locator('[data-funds-balance-state="ready"]').waitFor({ timeout: 15_000 });
     assert.ok(destinationReads > readsBefore, 'arrival performs another read after the backend cache window');
+    assert.match(await s.page.locator('[data-funds-state-text]').innerText(), /Funds arrived on Robinhood Chain/);
+    assert.doesNotMatch(await s.page.locator('[data-funds-offer]').innerText(), /On the way|Settled/);
+    assert.match(await s.page.locator('[data-funds-available]').innerText(), /100 USDG/);
+    await s.page.locator('[data-funds-deposit] > details > summary').click();
     assert.match(await s.page.locator(`[data-funds-balance="${USDG}"]`).innerText(), /100/);
     await s.page.waitForFunction(() => document.querySelector('[data-pair-side="1"]')?.textContent?.includes('100'));
     assert.equal(await amount(s.page).inputValue(), '50', 'the original token amount survives arrival');
     assert.equal(s.wallet.state.chainId, 42161);
     assert.equal(s.wallet.calls('wallet_switchEthereumChain').length, 0, 'reading destination funds never switches the wallet back');
+  } finally { await s.close(); }
+});
+
+test('a Base arrival keeps received status separate from spent USDC and offers only the remaining spendable ETH', async () => {
+  const USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+  const CAT = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const WETH = '0x4200000000000000000000000000000000000006';
+  const pool = { dex: 3, currency0: USDC, currency1: CAT, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const tick = 276320;
+  const { sqrtPriceAtTick } = require('../../.test-build/app/src/finance/position.js');
+  const pools = [{ pool, address: v3PoolOf(pool), sqrtPriceX96: sqrtPriceAtTick(tick), tick, liquidity: 10n ** 18n }];
+  const raw = { [ZERO]: 800529491659974n, [USDC]: 1003048n, [CAT]: 0n, [WETH]: 0n };
+  const tokens = [{ address: ZERO, symbol: 'ETH', name: 'Ether', decimals: 18 }, { address: USDC, symbol: 'USDC', name: 'USD Coin', decimals: 6 }, { address: CAT, symbol: 'CAT', name: 'Test Cat', decimals: 18 }, { address: WETH, symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 }];
+  const chain = createV2Chain({ chainId: 8453, pools, tokens, balances: raw });
+  chain.switchTo(4663);
+  const reads = createChainReads({ chainId: 8453, tokens, pools, balances: raw });
+  let fresh = false, destinationReads = 0;
+  const served = { answer(route, request) {
+    const reply = reads.answer(route, request);
+    if (route === 'chain-balances' && reply?.body?.chains) {
+      destinationReads++;
+      if (fresh) reply.body = { ...reply.body, chains: reply.body.chains.map((entry) => entry.chainId !== 8453 || !entry.snapshot ? entry : { ...entry, snapshot: { ...entry.snapshot, number: entry.snapshot.number + 1, timestamp: entry.snapshot.timestamp + 1, hash: `0x${'ea'.repeat(32)}` } }) };
+    }
+    return reply;
+  } };
+  const bridgeCalls = [];
+  const routes = [async (request, url) => {
+    if (url.pathname.startsWith('/api/read/v6/')) {
+      const route = url.pathname.split('/').at(-1);
+      const headers = { 'X-Domino-Read-Contract': '1.1.0-rc.1' };
+      if (route === 'capabilities') return Response.json({ contractVersion: '1.1.0-rc.1', dataMode: 'live_read_only', chainIds: [4663, 8453, 42161], enabledReads: ['chain-balances'], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false }, { headers });
+      const reply = served.answer(route, await request.json());
+      return Response.json(reply.body, { status: reply.status, headers });
+    }
+    if (url.pathname.startsWith('/api/crosschain/v1/')) {
+      const route = url.pathname.split('/').at(-1);
+      const headers = { 'X-Domino-Crosschain-Contract': '1.1.0-rc.1' };
+      if (route === 'capabilities') return Response.json({ contractVersion: '1.1.0-rc.1', dataMode: 'live', enabledRoutes: ['origins', 'quote', 'status'] }, { headers });
+      bridgeCalls.push(route);
+      return Response.json({ error: 'route_not_available' }, { status: 404, headers });
+    }
+  }];
+  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, chainReads: served, routes, clock: true, artwork: true });
+  try {
+    const { page } = s;
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, value), { key: depositJournalKey(8453, S2_OWNER), value: JSON.stringify([{ provider: 'relay', originChainId: 4663, destinationChainId: 8453, depositTxHash: RECORDED_DEPOSIT, requestId: `0x${'a1'.repeat(32)}`, lastState: 'filled' }]) });
+    await page.reload();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('coin');
+    await page.locator(`[data-token-network-option="8453:${USDC}"]`).click({ timeout: 30_000 });
+    await page.locator('[data-picker-network="8453"] input[name="pool-option"]').first().click();
+    const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+    await pressContinue(current('pool')); await current('range').waitFor();
+    await pressContinue(current('range')); await current('amount').waitFor();
+    const typed = current('amount').locator('[data-pair-side="0"] input[inputmode="decimal"]');
+    await typed.fill('0.1');
+    await page.locator('[data-funds-state="filled"] [data-funds-balance-state="updating"]').waitFor();
+    assert.match(await page.locator('[data-funds-state-text]').innerText(), /Funds arrived on Base/);
+    assert.equal(await page.locator('[data-transfer-moving]').count(), 0, 'a confirmed arrival never keeps travelling');
+    const before = destinationReads;
+    raw[USDC] = 0n; fresh = true;
+    await page.clock.fastForward(11_100);
+    await page.locator('[data-funds-balance-state="ready"]').waitFor({ timeout: 15_000 });
+    assert.ok(destinationReads > before);
+    assert.equal(await typed.inputValue(), '0.1', 'arrival and a later spend do not resize the desired position');
+    assert.match(await page.locator('[data-funds-available]').innerText(), /ETH/);
+    assert.doesNotMatch(await page.locator('[data-funds-available]').innerText(), /USDC|0\.0008/);
+    assert.doesNotMatch(await page.locator('[data-funds-offer]').innerText(), /On the way|Settled|1\.003048 USDC/);
+    await page.locator('[data-funds-deposit] > details > summary').click();
+    assert.equal((await page.locator(`[data-funds-balance="${USDC}"]`).innerText()).trim(), '0 USDC');
+    assert.match(await page.locator(`[data-funds-balance="${ZERO}"]`).getAttribute('title'), /0\.000800529491659974 ETH/);
+    assert.match(await page.locator('[data-funds-deposit] > details').innerText(), /current wallet balances, not transfer receipt amounts/);
+    await page.locator('[data-funds-deposit] > details > summary').click();
+    await page.locator('[data-funds-continuation]').waitFor();
+    assert.match(await page.locator('[data-funds-continuation]').innerText(), /Use your ETH on Base/);
+    assert.equal(await page.locator('[data-funds-nothing], [data-funds-signin], [data-funds-title]').count(), 0, 'verified arrival has one clear status and conversion action');
+    await page.locator('[data-funds-offer]').screenshot({ path: join(shots(), 'funds-base-arrival-desktop.png'), animations: 'disabled' });
+    assert.equal(s.planned.length, 0, 'an arrival does not quote or initiate a position');
+    assert.deepEqual(bridgeCalls, [], 'restoring a known fill does not prepare another bridge');
+    assert.equal(chain.chainNow(), 4663);
+    assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 0);
+    assert.equal(chain.sends.length, 0, 'nothing is approved or spent automatically');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    assert.equal(await page.locator('.dm-transfer-track i').evaluate((el) => getComputedStyle(el).animationName), 'none');
+    await page.locator('[data-funds-offer]').screenshot({ path: join(shots(), 'funds-base-arrival-phone.png'), animations: 'disabled' });
   } finally { await s.close(); }
 });
 

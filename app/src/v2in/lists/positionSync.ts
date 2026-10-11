@@ -5,6 +5,7 @@ import type { StatePositionOk, StateResponse } from '../../lib/fees/types'
 import { isV2ChainId, v2Chain } from '../../v2/chains'
 import { notePositionConfirmation, subscribePositionEvidence, type PositionChange } from '../../lib/positionEvidence'
 import { confirmedOperationState, subscribeConfirmedOperations, type ConfirmedOperation } from '../../lib/confirmedOperations'
+import { CREATED_POSITIONS } from './createdPositions'
 export type { PositionChange } from '../../lib/positionEvidence'
 
 export interface PositionIdentity { chainId: number; positionManager: string; tokenId: string }
@@ -30,6 +31,7 @@ export function createPositionSync() {
   const burns = new Map<string, { block: number; hash?: string }>()
   const portfolios = new Map<string, PortfolioResponse>()
   const listeners = new Set<(change: PositionChange) => void>()
+  const recent: PositionChange[] = []
   const trim = <T>(map: Map<string, T>, max: number) => { while (map.size > max) map.delete(map.keys().next().value as string) }
   const notify = (change: PositionChange) => { for (const listener of listeners) listener(change) }
   const minBlock = (identity: PositionIdentity) => minimums.get(positionKey(identity)) ?? 0
@@ -49,7 +51,11 @@ export function createPositionSync() {
     minBlock,
     observation,
     burn: (identity: PositionIdentity) => burns.get(positionKey(identity)) ?? null,
-    subscribe(listener: (change: PositionChange) => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
+    subscribe(listener: (change: PositionChange) => void, replay = false) {
+      listeners.add(listener)
+      if (replay) for (const change of recent) listener(change)
+      return () => { listeners.delete(listener) }
+    },
     changed(change: PositionChange) {
       const manager = change.positionManager ?? (isV2ChainId(change.chainId) ? v2Chain(change.chainId).uniswap.v4.positionManager : null)
       const block = change.block === undefined ? null : Number(change.block)
@@ -74,11 +80,15 @@ export function createPositionSync() {
         trim(walletMinimums, MAX_WALLETS * 3)
         trim(minimums, MAX_POSITIONS)
       }
-      notify({ ...change, wallet: change.wallet?.toLowerCase(), kind: 'confirmed' })
+      const saved = { ...change, wallet: change.wallet?.toLowerCase(), kind: 'confirmed' as const }
+      recent.push(saved)
+      if (recent.length > 64) recent.shift()
+      notify(saved)
     },
     /** A contradictory canonical block removes only the barriers/burns originating in that block. */
     rollback(operation: Pick<ConfirmedOperation, 'chainId' | 'wallet' | 'positionManager' | 'tokenIds' | 'block' | 'blockHash'>) {
       const source = `${operation.chainId}:${operation.blockHash.toLowerCase()}`
+      for (let index = recent.length - 1; index >= 0; index--) if (recent[index].chainId === operation.chainId && recent[index].blockHash?.toLowerCase() === operation.blockHash.toLowerCase()) recent.splice(index, 1)
       orphanedBlocks.add(source)
       while (orphanedBlocks.size > 64) orphanedBlocks.delete(orphanedBlocks.values().next().value as string)
       const affected = new Set<string>()
@@ -163,8 +173,8 @@ export function createPositionSync() {
 /** A brief, bounded catch-up after an included operation. It changes only read timing; it never supplies state,
  * balances or an automation mode. Failed reads retain their service Retry-After through the source's normal policy.
  */
-export function createPortfolioCatchup() {
-  interface Target { chainId: number; manager: string | null; ids: readonly string[] | null; block: number; left: number }
+export function createPortfolioCatchup(now = Date.now) {
+  interface Target { chainId: number; manager: string | null; ids: readonly string[] | null; block: number; left: number; until: number }
   const wallets = new Map<string, Map<string, Target>>()
   return {
     note(change: PositionChange) {
@@ -177,15 +187,15 @@ export function createPortfolioCatchup() {
       const manager = change.positionManager?.toLowerCase() ?? (isV2ChainId(change.chainId) ? v2Chain(change.chainId).uniswap.v4.positionManager : null)
       const key = `${change.chainId}:${manager ?? ''}:${ids?.join(',') ?? '*'}`
       const before = targets.get(key)
-      if (!before || block > before.block) targets.set(key, { chainId: change.chainId, manager, ids, block, left: 6 })
+      if (!before || block > before.block) targets.set(key, { chainId: change.chainId, manager, ids, block, left: change.chainId === 4663 ? 6 : 24, until: now() + 300_000 })
       while (targets.size > 32) targets.delete(targets.keys().next().value as string)
       while (wallets.size > MAX_WALLETS) wallets.delete(wallets.keys().next().value as string)
     },
     delay(body: PortfolioResponse): number | null {
       const targets = wallets.get(body.wallet.toLowerCase())
-      let soon = false
+      let soon: number | null = null
       for (const target of targets?.values() ?? []) {
-        if (target.left === 0) continue
+        if (target.left === 0 || now() >= target.until) continue
         const chain = body.chains.find((value) => value.chainId === target.chainId)
         const current = chain?.status === 'current' && chain.indexedThrough !== null && chain.indexedThrough.number >= target.block
         const reached = current && (target.ids === null || target.ids.every((id) => {
@@ -196,9 +206,12 @@ export function createPortfolioCatchup() {
           return vault?.state.status === 'read' && vault.state.snapshot.number >= target.block
         }))
         target.left = reached ? 0 : target.left - 1
-        if (target.left > 0) soon = true
+        if (target.left > 0) {
+          const delay = target.chainId === 4663 ? 2_000 : target.left > 18 ? 5_000 : 10_000
+          soon = soon === null ? delay : Math.min(soon, delay)
+        }
       }
-      return soon ? 2_000 : null
+      return soon
     },
   }
 }
@@ -208,8 +221,8 @@ subscribePositionEvidence((evidence) => {
   if (evidence.kind === 'state') shared.offerState(evidence.value)
   else shared.changed(evidence.value)
 })
-for (const operation of confirmedOperationState()) if (operation.phase === 'reorged') shared.rollback(operation)
-subscribeConfirmedOperations(operation => { if (operation.phase === 'reorged') shared.rollback(operation) })
+for (const operation of confirmedOperationState()) if (operation.phase === 'reorged') { shared.rollback(operation); CREATED_POSITIONS.rollback(operation.chainId, operation.blockHash) }
+subscribeConfirmedOperations(operation => { if (operation.phase === 'reorged') { shared.rollback(operation); CREATED_POSITIONS.rollback(operation.chainId, operation.blockHash) } })
 export const positionChanged = notePositionConfirmation
 export const subscribePositionChanges = shared.subscribe
 export const reconcilePortfolio = shared.reconcile

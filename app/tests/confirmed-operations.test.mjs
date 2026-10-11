@@ -169,6 +169,27 @@ test('other chains preserve their included evidence without starting a local fin
   assert.equal(h.timers.size, 0, 'a focus event does not add an unsupported chain reader')
 })
 
+test('a financial client can revoke only its exact recorded inclusion and adopt a checked reinclusion without public reads', () => {
+  const h = harness(), events = []
+  h.store.subscribe(operation => events.push(operation.phase))
+  const scope = { chainId: 8453, wallet: WALLET, hash: HASH, blockHash: BLOCK_HASH }
+  h.store.record(input({ chainId: 8453 }))
+  h.store.record(input({ chainId: 42161 }))
+  for (const wrong of [{ chainId: 4663 }, { wallet: `0x${'09'.repeat(20)}` }, { hash: OTHER }, { blockHash: OTHER }]) {
+    assert.equal(h.store.reorg({ ...scope, ...wrong }), false)
+  }
+  assert.equal(h.store.reorg(scope), true)
+  assert.equal(h.store.reorg(scope), false, 'the same contradiction publishes one rollback')
+  assert.equal(h.store.finality(8453, HASH, BLOCK_HASH), 'reorged')
+  assert.equal(h.store.finality(42161, HASH, BLOCK_HASH), 'included', 'the other chain is unaffected')
+  h.store.record(input({ chainId: 8453, receipt: { ...input().receipt, blockHash: OTHER, blockNumber: 17n } }))
+  assert.equal(h.store.finality(8453, HASH, OTHER), 'included')
+  assert.equal(h.store.reorg(scope), false, 'a delayed contradiction cannot revoke a later block')
+  assert.deepEqual(events, ['included', 'included', 'reorged', 'included'])
+  assert.equal(h.calls.length, 0)
+  assert.equal(h.timers.size, 0, 'no unsupported public RPC or cleanup queue is started')
+})
+
 test('final settlement waits for canonical finality and survives the screen subscription ending', async () => {
   let canonicalReady = false, finalityReady = false, settled = 0
   const h = harness({ answer: () => canonicalReady ? canonical() : canonical({ block: null }),

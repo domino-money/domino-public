@@ -1,4 +1,5 @@
 import type { Holding } from '../../finance/v2/holdings'
+import type { PendingBatch } from '../../finance/v2/crosschain'
 import { quoteDeadlineMono, type Timing } from '../../v2/crosschain/client'
 import type { CrosschainRequests, QuotePlan } from '../../v2/crosschain/types'
 import { SEND_MARGIN_MS } from '../../v2/crosschain/steps'
@@ -19,6 +20,14 @@ export interface FundingLeg {
   reserveRaw?: string
   state: 'ready' | 'sending' | 'unknown' | 'sent' | 'settled' | 'stopped'
   depositTxHash: string | null
+  /** Public quote identity for associating a recovered wallet batch with its delivered asset. */
+  quoteKey?: string
+}
+
+/** A wallet batch may resolve only the exact reviewed leg; older metadata remains unassociated. */
+export function fundingBatchLeg(intent: FundingIntent | null, batch: Pick<PendingBatch, 'quote' | 'originChainId' | 'destinationChainId'>): FundingLeg | undefined {
+  if (intent?.destinationChainId !== batch.destinationChainId) return undefined
+  return intent.legs.find((leg) => leg.quoteKey === batch.quote && leg.originChainId === batch.originChainId && (leg.state === 'unknown' || leg.state === 'sending'))
 }
 export interface FundingIntent {
   version: 1
@@ -276,6 +285,7 @@ export function parseFunding(raw: string | null, owner: string, destination: num
       !RAW.test(leg.maxInputRaw) || !RAW.test(leg.minimumOutputRaw) || !STATES.has(leg.state) || typeof leg.destinationGas !== 'boolean' ||
       (leg.depositTxHash !== null && !HASH.test(leg.depositTxHash)))) return null
     if (value.legs.some((leg) => leg.reserveRaw !== undefined && (leg.originChainId !== 1 || leg.originToken !== ZERO || leg.reserveRaw !== ETHEREUM_RETRY_RESERVE.toString()))) return null
+    if (value.legs.some((leg) => leg.quoteKey !== undefined && !/^[0-9a-f]{64}:[0-9]+$/.test(leg.quoteKey))) return null
     if (value.gasRecovery !== undefined && (!value.gasRecovery || !['native', 'token'].includes(value.gasRecovery.mode) || typeof value.gasRecovery.reviewNeeded !== 'boolean')) return null
     if (value.paymentRaw !== undefined && (typeof value.paymentRaw !== 'string' || !RAW.test(value.paymentRaw) || BigInt(value.paymentRaw) > BigInt(value.requiredRaw))) return null
     if (new Set(value.legs.map((leg) => leg.id)).size !== value.legs.length) return null
@@ -286,7 +296,7 @@ export function parseFunding(raw: string | null, owner: string, destination: num
       ...(value.gasRecovery ? { gasRecovery: { mode: value.gasRecovery.mode, reviewNeeded: value.gasRecovery.reviewNeeded } } : {}),
       legs: value.legs.map((leg) => ({ id: leg.id, originChainId: leg.originChainId, originToken: leg.originToken,
         symbol: leg.symbol, decimals: leg.decimals, maxInputRaw: leg.maxInputRaw, minimumOutputRaw: leg.minimumOutputRaw,
-        destinationGas: leg.destinationGas, ...(leg.reserveRaw ? { reserveRaw: leg.reserveRaw } : {}), state: leg.state === 'sending' ? 'unknown' : leg.state, depositTxHash: leg.depositTxHash })) }
+        destinationGas: leg.destinationGas, ...(leg.quoteKey ? { quoteKey: leg.quoteKey } : {}), ...(leg.reserveRaw ? { reserveRaw: leg.reserveRaw } : {}), state: leg.state === 'sending' ? 'unknown' : leg.state, depositTxHash: leg.depositTxHash })) }
   } catch { return null }
 }
 

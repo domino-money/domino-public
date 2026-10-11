@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
+import { parse } from '@babel/parser';
 import * as planRuntime from '../../../api-contracts/position-plan-v1/runtime.mjs';
 import * as readRuntime from '../../../api-contracts/read-v6/runtime.mjs';
 
@@ -121,8 +122,42 @@ test('a test build\'s script replaces both, in either mode; the routes and the p
 test('the wiring: transports.ts hands in the page\'s routes, the package\'s runtimes and the test build\'s script, read only where the test hooks are on', () => {
   const source = readFileSync(join(APP, 'src/v2in/transports.ts'), 'utf8');
   assert.match(source, /live: \(\) => \(\{ read: liveReadV6Transport\(\), plan: livePlanTransport\(\), probe: \(probe \?\?= v2RouteProbe\(\)\) \}\)/);
-  assert.match(source, /import \* as planRuntime from 'api-contracts\/position-plan-v1\/runtime\.mjs'/);
-  assert.match(source, /import \* as readRuntime from 'api-contracts\/read-v6\/runtime\.mjs'/);
+  // The adapters expose only the validators the clients require. Verify each member's package origin rather than
+  // requiring a namespace import, which also retains unused runtime helpers in the visitor's bundle.
+  const nodes = text => parse(text, { sourceType: 'module', plugins: ['typescript'] }).program.body;
+  const imported = (body, path) => {
+    const declaration = body.find(node => node.type === 'ImportDeclaration' && node.source.value === path);
+    assert.ok(declaration, `required runtime import: ${path}`);
+    return new Map(declaration.specifiers.filter(node => node.type === 'ImportSpecifier').map(node => [node.local.name, node.imported.name]));
+  };
+  const frozenFields = (body, name) => {
+    const declaration = body.map(node => node.type === 'ExportNamedDeclaration' ? node.declaration : node)
+      .filter(node => node?.type === 'VariableDeclaration').flatMap(node => node.declarations).find(node => node.id.name === name);
+    const init = declaration?.init;
+    assert.equal(init?.type, 'CallExpression', `${name} is an immutable interface`);
+    assert.equal(init.callee.object?.name, 'Object');
+    assert.equal(init.callee.property?.name, 'freeze');
+    assert.equal(init.arguments[0]?.type, 'ObjectExpression');
+    assert.ok(init.arguments[0].properties.every(node => node.type === 'ObjectProperty' && node.value.type === 'Identifier'), `${name} forwards real imported members`);
+    return new Map(init.arguments[0].properties.map(node => [node.key.name, node.value.name]));
+  };
+  const validators = ['CONTRACT_VERSION', 'ERROR_STATUS_BY_CODE', 'validateRequest', 'validateResponse', 'validateError'];
+  const transportBody = nodes(source);
+  const planBody = nodes(readFileSync(join(APP, 'src/v2/plan/contract.ts'), 'utf8'));
+  for (const [body, packagePath, name, members] of [
+    [transportBody, 'api-contracts/read-v6/runtime.mjs', 'readRuntime', [...validators, 'validateExchange']],
+    [planBody, 'api-contracts/position-plan-v1/runtime.mjs', 'POSITION_PLAN_RUNTIME', validators],
+  ]) {
+    const fields = frozenFields(body, name);
+    const origins = imported(body, packagePath);
+    assert.deepEqual([...fields.keys()].sort(), [...members].sort(), `${name} carries every required validator and no package helpers`);
+    for (const member of members) assert.equal(origins.get(fields.get(member)), member, `${name}.${member} is the real package export`);
+  }
+  const handedIn = frozenFields(transportBody, 'RUNTIMES');
+  assert.deepEqual([...handedIn.keys()].sort(), ['plan', 'read']);
+  assert.equal(handedIn.get('read'), 'readRuntime');
+  assert.equal(imported(transportBody, '../v2/plan/contract').get(handedIn.get('plan')), 'POSITION_PLAN_RUNTIME');
+  assert.match(source, /runtimes: RUNTIMES/, 'the validated runtime interfaces are handed to the transport factory');
   assert.match(source, /if \(!TEST_HOOKS \|\| typeof window === 'undefined'\) return null/, 'the script is read only in a test build');
   assert.match(source, /const TEST_HOOKS: boolean = typeof __DOMINO_TEST_HOOKS__ === 'boolean' && __DOMINO_TEST_HOOKS__/);
   assert.doesNotMatch(source, /\bfetch\(|\.request\(|from '\.\.\/(?:session|wallet)\//, 'no fetch, no wallet, no session of its own');

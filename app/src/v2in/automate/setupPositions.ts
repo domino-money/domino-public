@@ -5,6 +5,12 @@ import { ZERO_ADDRESS } from '../../v2/types'
 import { walletPositionOf } from '../position/card'
 import { findPosition, isLive, tokensOf } from '../position/model'
 import { tokenBook } from '../position/tokens'
+import type { V2PositionRef } from '../route'
+import { setupKey } from './intent'
+import { vaultsOfPosition } from './portfolio'
+import { exitOnPosition } from '../autoexit/card'
+
+export type SetupPosition = WalletPosition & { key: string; chainId: V2PositionRef['chainId']; dex: 3 | 4; network: string }
 
 export type SetupEligibility = 'eligible' | 'unavailable' | 'unsupported' | 'not-owned' | 'closed' | 'automated' | 'subscribed'
 
@@ -25,26 +31,36 @@ export function setupEligibility(body: PortfolioResponse, owner: string, item: P
   return 'eligible'
 }
 
-/** Sequence currently creates Robinhood v4 vaults. Other chains/managers never collapse into that NFT-id namespace. */
-export function setupPositions(body: PortfolioResponse, owner: string): { positions: readonly WalletPosition[]; incomplete: boolean } {
-  const positions: WalletPosition[] = []
+/** Each supported manager has its own NFT namespace, token metadata and financial gate. */
+export function setupPositions(body: PortfolioResponse, owner: string): { positions: readonly SetupPosition[]; incomplete: boolean } {
+  const positions: SetupPosition[] = []
   let incomplete = body.wallet.toLowerCase() !== owner.toLowerCase()
-    || body.chains.find((one) => one.chainId === 4663)?.status !== 'current' || body.truncated.positions
-  const book = tokenBook(4663, tokensOf(body, 4663))
+    || body.truncated.positions
+  if (body.truncated.vaults || body.truncated.mandates) return { positions, incomplete: true }
+  const seen = new Set<string>()
   for (const item of body.positions) {
-    if (item.chainId !== 4663 || item.dex !== 4) continue
     const eligibility = setupEligibility(body, owner, item)
     if (eligibility === 'unavailable') incomplete = true
     if (eligibility !== 'eligible') continue
-    const position = findPosition({ positions: [item] }, 4663, 4, BigInt(item.tokenId))
-    if (position && isLive(position)) positions.push(walletPositionOf(position, book))
+    if (vaultsOfPosition(body, item.chainId, item.tokenId, item.dex).length || exitOnPosition(body, item.chainId, item.tokenId, item.dex)) continue
+    const position = findPosition({ positions: [item] }, item.chainId, item.dex, BigInt(item.tokenId))
+    if (!position || !isLive(position)) continue
+    const key = setupKey(position)
+    if (seen.has(key)) continue
+    seen.add(key)
+    const book = tokenBook(item.chainId, tokensOf(body, item.chainId))
+    positions.push({ ...walletPositionOf(position, book), key, chainId: item.chainId, dex: item.dex, network: v2Chain(item.chainId).name })
   }
+  // An unavailable inventory cannot prove the wallet has no eligible NFTs. Keep known, eligible positions usable
+  // when an unrelated network is behind; only an otherwise empty picker needs the unavailable state.
+  if (positions.length === 0 && body.chains.some(chain => chain.status !== 'current')) incomplete = true
   return { positions, incomplete }
 }
 
 /** Only a successful read with a pending requested NFT is polled. Transport failures keep their own retry policy. */
-export function setupRetryDelay(body: PortfolioResponse, owner: string, tokenId: string | null, attempt: number): number | null {
-  if (tokenId === null || attempt >= 3) return null
-  const item = body.positions.find((one) => one.chainId === 4663 && one.dex === 4 && one.tokenId === tokenId)
+export function setupRetryDelay(body: PortfolioResponse, owner: string, wanted: string | V2PositionRef | null, attempt: number): number | null {
+  if (wanted === null || attempt >= 3) return null
+  const ref = typeof wanted === 'string' ? { chainId: 4663, dex: 4, tokenId: BigInt(wanted) } : wanted
+  const item = body.positions.find((one) => one.chainId === ref.chainId && one.dex === ref.dex && one.tokenId === ref.tokenId.toString())
   return !item || setupEligibility(body, owner, item) === 'unavailable' ? 1500 * 2 ** attempt : null
 }

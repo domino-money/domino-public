@@ -243,7 +243,7 @@ export const COPY = {
     outOfRangeIdle: 'Out of range: not earning fees',
     apr: 'Your APR',
     aprInfo: 'This position’s own fees, as a yearly rate on the money in it, at today’s prices. Not a promise of future earnings.',
-    aprMissing: 'Not measured on this network yet',
+    aprMissing: 'Fee history unavailable',
     custody: 'Held',
     rangeTitle: 'Price range',
     activity: 'Activity',

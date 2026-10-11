@@ -533,7 +533,7 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
   const handedOver = new Set<Hex>()
   const issuedBatches = new WeakSet<ZapBatch>()
   const batchReviews = new WeakMap<ZapBatch, ZapReview>()
-  const offeredBatches = new Map<string, { batch: ZapBatch; review: ZapReview }>()
+  const offeredBatches = new Map<string, { batch: ZapBatch; review: ZapReview; inclusion?: { hash: Hex; blockNumber: bigint; blockHash: Hex } }>()
 
   const zapOf = (dex: Dex): Address => (dex === 3 ? contracts.addresses.zapV3 : contracts.addresses.zapV4).toLowerCase() as Address
   const managerOf = (dex: Dex): Address => (dex === 3 ? chain.uniswap.v3.positionManager : chain.uniswap.v4.positionManager)
@@ -1494,6 +1494,7 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
     const blockNumber = quantity(raw.blockNumber)
     const blockHash = raw.blockHash.toLowerCase() as Hex
     const block = (await rpc('eth_getBlockByNumber', [numberToHex(blockNumber), false])) as { hash?: string } | null
+    if (chain.chainId !== 4663 && (!block || typeof block.hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(block.hash))) return { state: 'pending' }
     if (!block || String(block.hash).toLowerCase() !== blockHash) return { state: 'reorged' }
     const logs = (raw.logs as unknown[]).map((entry): V2Log => {
       const log = obj(entry)
@@ -1502,7 +1503,7 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
       return Object.freeze({ address: log.address.toLowerCase() as Address, topics: Object.freeze(topics), data: log.data as Hex, logIndex: Number(quantity(log.logIndex)) })
     })
     const costs = {
-      blockHash, blockNumber, gasUsed: quantity(raw.gasUsed), effectiveGasPrice: quantity(raw.effectiveGasPrice),
+      transactionHash: hash, blockHash, blockNumber, gasUsed: quantity(raw.gasUsed), effectiveGasPrice: quantity(raw.effectiveGasPrice),
       l1Fee: chain.l1FeeInReceipt && typeof raw.l1Fee === 'string' ? quantity(raw.l1Fee) : null, logs: Object.freeze(logs),
     }
     if (raw.status === '0x0') return { state: 'reverted', ...costs }
@@ -1527,28 +1528,40 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
     const { batch, review } = known
     return t.bounded(async (rpc) => {
       await t.identity(rpc)
-      const status = await batchCallsStatus((method, params) => rpc(method, params), id)
-      if (status !== null && status >= 100 && status < 200) return { state: 'pending' }
-      if (status === 400 || status === 500) {
-        await latchFor(review.chainId, owner).releaseBatch(batch.key, id)
-        handedOver.delete(review.intentHash)
-        letGo(review.intentHash)
-        return status === 400 ? { state: 'not-included' } : { state: 'batch-reverted' }
+      let hash: Hex | null = null
+      if (known.inclusion) {
+        // A vanished event is only a lagging read. The previously checked block must explicitly contradict it.
+        const block = await rpc('eth_getBlockByNumber', [numberToHex(known.inclusion.blockNumber), false]) as { hash?: string; number?: string } | null
+        if (!block || typeof block.hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(block.hash) || typeof block.number !== 'string' || !/^0x[0-9a-f]+$/i.test(block.number) || BigInt(block.number) !== known.inclusion.blockNumber) return { state: 'pending' }
+        if (block.hash.toLowerCase() !== known.inclusion.blockHash) { known.inclusion = undefined; return { state: 'reorged' } }
+        hash = known.inclusion.hash
+      }
+      if (hash === null) {
+        const status = await batchCallsStatus((method, params) => rpc(method, params), id)
+        if (status !== null && status >= 100 && status < 200) return { state: 'pending' }
+        if (status === 400 || status === 500) {
+          await latchFor(review.chainId, owner).releaseBatch(batch.key, id)
+          handedOver.delete(review.intentHash)
+          letGo(review.intentHash)
+          return status === 400 ? { state: 'not-included' } : { state: 'batch-reverted' }
+        }
+        const topic0 = RECEIPT_TOPICS.PositionLiquidityChanged
+        const found = await rpc('eth_getLogs', [{ address: review.zap, topics: [topic0, review.intentHash], fromBlock: numberToHex(review.block), toBlock: 'latest' }])
+        if (!Array.isArray(found)) return fail('invalid_wallet_reply')
+        const hashes = new Set<string>()
+        for (const entry of found) {
+          const log = obj(entry)
+          if (!log || log.removed === true) continue
+          if (typeof log.transactionHash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(log.transactionHash)) return fail('invalid_wallet_reply')
+          hashes.add(log.transactionHash.toLowerCase())
+        }
+        if (hashes.size === 0) return { state: 'pending' }
+        if (hashes.size > 1) return fail('receipt_duplicate_action')
+        hash = [...hashes][0] as Hex
       }
       const topic0 = RECEIPT_TOPICS.PositionLiquidityChanged
-      const found = await rpc('eth_getLogs', [{ address: review.zap, topics: [topic0, review.intentHash], fromBlock: numberToHex(review.block), toBlock: 'latest' }])
-      if (!Array.isArray(found)) return fail('invalid_wallet_reply')
-      const hashes = new Set<string>()
-      for (const entry of found) {
-        const log = obj(entry)
-        if (!log || log.removed === true) continue
-        if (typeof log.transactionHash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(log.transactionHash)) return fail('invalid_wallet_reply')
-        hashes.add(log.transactionHash.toLowerCase())
-      }
-      if (hashes.size === 0) return { state: 'pending' }
-      if (hashes.size > 1) return fail('receipt_duplicate_action')
-      const hash = [...hashes][0] as Hex
       const receipt = await receiptAt(rpc, hash, (logs) => logs.some((log) => log.address === review.zap && log.topics[0] === topic0 && log.topics[1] === review.intentHash.toLowerCase()))
+      if (chain.chainId !== 4663 && (receipt.state === 'included' || receipt.state === 'finalized')) known.inclusion = { hash, blockNumber: receipt.blockNumber, blockHash: receipt.blockHash }
       if (receipt.state === 'included' || receipt.state === 'finalized' || receipt.state === 'reverted') {
         await latchFor(review.chainId, owner).releaseBatch(batch.key, id)
         // F3: on chain, its outcome is final: the hold goes.

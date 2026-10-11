@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from 'react'
-import { PlainArt } from '../../components/automate/ModeArt'
+import { ModeArt, PlainArt } from '../../components/automate/ModeArt'
 import { ExitThumb } from '../../components/home/Vignettes'
 import { IconChevronRight } from '../../components/icons'
 import { Button, cx, FigureDash, Pill, Skeleton } from '../../components/ui'
 import { askAutoExitOnArrival, expectNewPosition } from '../../lib/automate/autoExitAsk'
-import { AUTO_EXIT_FEATURE } from '../../lib/automate/features'
+import { AUTO_EXIT_FEATURE, FEATURES } from '../../lib/automate/features'
 import { CREATE } from '../../lib/create/copy'
 import { rangePosition } from '../../lib/read/screens/poolRange'
 import type { ReceiptLine } from '../../finance/v2/receipt'
@@ -14,6 +14,7 @@ import { ethAboutText, ethText, EXACT_FRACTION, exitOffer, feesToCome, keptWhile
 import { ZERO_ADDRESS, type Address, type Dex, type V2ChainId } from '../../v2/types'
 import { exitOrderKey } from '../autoexit/entry'
 import { gateOpen, useGate } from '../automate/gate'
+import { setupHref } from '../automate/intent'
 import { v2PositionHref } from '../route'
 import { JOURNEY_HIGH_SLIPPAGE_COPY, JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS, NEW_POOL_CONFIRM_COPY, NEW_POOL_TITLE } from './constants'
 import { JOURNEY } from './copy'
@@ -608,19 +609,20 @@ function Created({ view }: { view: RunView }) {
   const intent = reviewed.review.plan.plan.intent
   const pool = intent.pool
   const facts = reviewed.reply.facts
-  const book = tokenBook(chainId)
+  const book = tokenBook(chainId, reviewed.tokens)
   const amount = (token: Address, raw: bigint, round: 'down' | 'up' = 'down'): ReactNode => <span title={amountText(book, token, raw, EXACT_FRACTION)}>{amountText(book, token, raw, SHOWN_FRACTION, round)}</span>
   const read = receipt.read
   const tokenId = read?.summary.tokenId ?? null
-  const state = receipt.state === 'finalized' ? JOURNEY.live.finalized : receipt.state === 'included' ? JOURNEY.live.included : JOURNEY.created.pending
+  const failed = receipt.state === 'reverted' || receipt.state === 'not-included'
+  const state = receipt.state === 'finalized' ? JOURNEY.live.finalized : receipt.state === 'included' ? JOURNEY.live.included : receipt.state === 'reverted' ? JOURNEY.created.revertedStatus : receipt.state === 'not-included' ? JOURNEY.created.notIncludedStatus : JOURNEY.created.pending
   return (
     <section className="dm-created" aria-labelledby="created-title" data-created-position={tokenId?.toString() ?? ''} data-zap-receipt={receipt.state}>
       <p id="created-title" className="dm-created-line" role="status">
-        {tokenId !== null ? JOURNEY.created.line(`#${tokenId.toString()}`) : JOURNEY.created.pending}
+        {receipt.state === 'reverted' ? JOURNEY.created.reverted : receipt.state === 'not-included' ? JOURNEY.created.notIncluded : tokenId !== null ? JOURNEY.created.line(`#${tokenId.toString()}`) : JOURNEY.created.pending}
       </p>
       <dl className="dm-flow-facts" data-receipt="">
         <Fact label={JOURNEY.created.state} data="receipt-state" attrs={{ 'data-receipt-state': receipt.state }}>{state}</Fact>
-        {read === null ? (
+        {read === null ? failed ? null : (
           <Fact label={JOURNEY.created.receipt} data="receipt-unreadable" attrs={{ 'data-error-code': receipt.unreadable ?? 'receipt_pending' }}>
             {receipt.unreadable ? JOURNEY.created.unreadable : JOURNEY.created.pending}
           </Fact>
@@ -649,6 +651,7 @@ function Created({ view }: { view: RunView }) {
               <IconChevronRight size={16} />
             </span>
           </a>
+          <CreatedCompound chainId={chainId} dex={pool.dex} tokenId={tokenId} />
           <CreatedExit chainId={chainId} dex={pool.dex} tokenId={tokenId} offer={exitOffer(intent.tickLower, intent.tickUpper, pool.tickSpacing, facts.pool.tick ?? facts.initialPrice?.tick ?? null)} />
         </nav>
       )}
@@ -665,6 +668,16 @@ function Created({ view }: { view: RunView }) {
  * position's page asks them). It opens the position's page with Auto-exit's dialog asked for (lib/automate/autoExitAsk.ts),
  * which the page's automation panel opens once it offers it there, by the panel's own key (../autoexit/entry.ts).
  */
+function CreatedCompound({ chainId, dex, tokenId }: { chainId: V2ChainId; dex: Dex; tokenId: bigint }) {
+  const gate = useGate('vault', chainId)
+  if (!gateOpen(gate)) return null
+  return <>{(['compound', 'domino'] as const).map((mode) => <a key={mode} className="dm-created-choice" href={setupHref({ chainId, dex, tokenId }, mode)} data-created-next={mode}>
+    <span className="dm-created-art" aria-hidden="true"><ModeArt mode={mode} size="card" play="none" /></span>
+    <span className="dm-created-text"><span className="dm-created-name">{FEATURES[mode].name}<span className="dm-created-fee"> · {FEATURES[mode].fee}</span></span><span className="dm-created-note">{FEATURES[mode].line}</span></span>
+    <span className="dm-created-go"><span className="dm-created-go-text">Set up</span><IconChevronRight size={16} /></span>
+  </a>)}</>
+}
+
 function CreatedExit({ chainId, dex, tokenId, offer }: { chainId: V2ChainId; dex: Dex; tokenId: bigint; offer: ReturnType<typeof exitOffer> }) {
   const vault = useGate('vault', chainId)
   const exit = useGate('autoExit', chainId)

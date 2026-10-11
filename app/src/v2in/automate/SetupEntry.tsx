@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import type { PortfolioResponse } from 'api-contracts/read-v6/types'
 import { IconAutomate } from '../../components/icons'
 import { Button, EmptyState, LinkButton, Skeleton } from '../../components/ui'
-import type { Address } from '../../v2/types'
+import { useCreatedPositions, useKeyedLatest } from '../lists/hooks'
+import { OWN_PORTFOLIO } from '../lists/source'
 import { gateOpen, useGate } from './gate'
-import { protectionIntent } from './intent'
-import { portfolioFor, type Read6 } from './read6'
-import { SetupFlow } from './SetupFlow'
+import { setupIntent, setupKey } from './intent'
+import { SetupFlow, type SetupGates } from './SetupFlow'
 import { setupPositions, setupRetryDelay } from './setupPositions'
 
 /** V2 setup reads the connected wallet's V2 portfolio, independently of the inactive V1 catalogue and release. */
@@ -14,37 +14,40 @@ export default function SetupEntry({ owner, intent }: {
   owner: string
   intent: { mode: 'compound' | 'domino' | null; tokenId: string | null }
 }) {
-  const gate = useGate('vault', 4663)
-  const exitGate = useGate('autoExit', 4663)
-  const [own] = useState(() => (typeof window === 'undefined' ? null : protectionIntent(window.location.hash)) ?? intent)
-  const [version, setVersion] = useState(0)
-  const [{ answer, updating }, setRead] = useState<{ answer: Read6<PortfolioResponse> | null; updating: boolean }>({ answer: null, updating: false })
-  // A just-minted NFT can precede read-v6's index. Wait a bounded amount for the requested NFT, not for a V1 mint event.
-  useEffect(() => {
-    if (!gateOpen(gate)) return
-    let alive = true
-    let stopWait: () => void = () => undefined
-    void (async () => {
-      for (let attempt = 0; alive; attempt++) {
-        const value = await portfolioFor(owner.toLowerCase() as Address, gate).catch(() => null)
-          ?? { wallet: owner.toLowerCase() as Address, reply: { kind: 'unavailable' as const, reason: 'network' as const } }
-        if (!alive) return
-        const body = value?.reply.kind === 'ok' ? value.reply.body : null
-        const delay = body ? setupRetryDelay(body, owner, own.tokenId, attempt) : null
-        setRead({ answer: value, updating: delay !== null })
-        if (delay === null) return
-        await new Promise<void>((resolve) => {
-          const timer = window.setTimeout(resolve, delay)
-          stopWait = () => { window.clearTimeout(timer); resolve() }
-        })
-      }
-    })()
-    return () => { alive = false; stopWait() }
-  }, [owner, gate, version, own.tokenId])
-  const body = answer?.reply.kind === 'ok' ? answer.reply.body : null
+  const vault4663 = useGate('vault', 4663), exit4663 = useGate('autoExit', 4663)
+  const vault8453 = useGate('vault', 8453), exit8453 = useGate('autoExit', 8453)
+  const vault42161 = useGate('vault', 42161), exit42161 = useGate('autoExit', 42161)
+  const gates: SetupGates = { 4663: vault4663, 8453: vault8453, 42161: vault42161 }
+  const exitGates: SetupGates = { 4663: exit4663, 8453: exit8453, 42161: exit42161 }
+  const gate = [vault4663, vault8453, vault42161].find(gateOpen) ?? null
+  const pending = [vault4663, vault8453, vault42161].some((value) => value === null)
+  const [own] = useState(() => setupIntent(typeof window === 'undefined' ? `#/sequence/${intent.mode ?? ''}/${intent.tokenId ?? ''}` : window.location.hash))
+  const wallet = owner.toLowerCase()
+  const answer = useKeyedLatest(OWN_PORTFOLIO, gateOpen(gate) ? wallet : null)
+  const creations = useCreatedPositions(wallet)
+  const [held, setHeld] = useState<PortfolioResponse | null>(null)
+  const body = held ?? (answer?.kind === 'ok' ? answer.body : null)
   const list = useMemo(() => body ? setupPositions(body, owner) : null, [body, owner])
-  const retry = <Button type="button" variant="outline" size="sm" onClick={() => setVersion((n) => n + 1)}>Try again</Button>
-  if (gate === null || (gateOpen(gate) && answer === null) || updating) return (
+  const [attempt, setAttempt] = useState(0)
+  const [waitExpired, setWaitExpired] = useState(false)
+  const created = creations.find(item => own.position && item.chainId === own.position.chainId && item.dex === own.position.dex && item.tokenId === own.position.tokenId.toString())
+  const waitingForIndex = held === null && created !== undefined && !waitExpired
+  const delay = held === null && body ? setupRetryDelay(body, owner, own.position, attempt) : null
+  // Shared receipt catch-up waits for the real indexed NFT. A stored creation supplies no balance or eligibility.
+  useEffect(() => {
+    if (!created) return
+    const timer = window.setTimeout(() => setWaitExpired(true), Math.max(0, created.observedAt + 300_000 - Date.now()))
+    return () => window.clearTimeout(timer)
+  }, [created])
+  // Legacy deep links without a local receipt keep their brief retry; all retries respect the shared Retry-After.
+  useEffect(() => {
+    if (delay === null || waitingForIndex) return
+    const timer = window.setTimeout(() => { setAttempt(n => n + 1); OWN_PORTFOLIO.again(wallet) }, delay)
+    return () => window.clearTimeout(timer)
+  }, [delay, waitingForIndex, wallet, attempt])
+  const updating = waitingForIndex || delay !== null
+  const retry = <Button type="button" variant="outline" size="sm" onClick={() => OWN_PORTFOLIO.again(wallet)}>Try again</Button>
+  if (pending || (gateOpen(gate) && answer === null) || updating) return (
     <div className="dm-card dm-acct-block dm-seq-loading" aria-busy="true" data-v2in-setup="reading" data-sequence-positions="loading">
       {updating ? <p role="status" className="dm-acct-note">Updating your position…</p> : [0, 1, 2].map((row) => <Skeleton key={row} className="dm-seq-loading-row" />)}
     </div>
@@ -56,8 +59,10 @@ export default function SetupEntry({ owner, intent }: {
       {retry}
     </div>
   )
-  const missing = own.tokenId !== null && !list.positions.some((position) => position.tokenId === own.tokenId)
-  if (!list.positions.length) return (
+  const positions = list.positions.filter((position) => gateOpen(gates[position.chainId]))
+  const wanted = own.position ? setupKey(own.position) : null
+  const missing = wanted !== null && !positions.some((position) => position.key === wanted)
+  if (!positions.length) return (
     <EmptyState plate icon={<IconAutomate />} className="dm-acct-block" data-sequence-positions="empty"
       title="No positions available for setup"
       body={missing ? 'This position isn’t available for a new automation. Check its status in Positions.' : 'Check your positions to see their current status and automation.'}
@@ -66,6 +71,6 @@ export default function SetupEntry({ owner, intent }: {
   return <>
     {missing && <p className="dm-acct-note" role="status" data-sequence-position-missing="">This position isn’t available for a new automation. Choose another position below. {retry}</p>}
     {list.incomplete && <p className="dm-acct-note" role="status">Some positions couldn’t be checked. {retry}</p>}
-    <SetupFlow positions={list.positions} portfolio={body} intent={own} gate={gate} exitGate={exitGate} />
+    <SetupFlow positions={positions} portfolio={body} intent={own} gates={gates} exitGates={exitGates} onHold={setHeld} />
   </>
 }

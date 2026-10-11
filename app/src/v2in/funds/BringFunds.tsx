@@ -1,7 +1,7 @@
 import type { ChainBalancesResponse } from 'api-contracts/read-v6/types'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button } from '../../components/ui'
-import { browserBatchJournal, browserDepositJournal, browserOriginWallet, browserUnsettledStore, createOriginSender, OriginStepError, type OriginSender } from '../../finance/v2/crosschain'
+import { browserBatchJournal, browserDepositJournal, browserOriginWallet, browserUnsettledStore, createOriginSender, quoteKeyOf, OriginStepError, type OriginSender } from '../../finance/v2/crosschain'
 import { browserFundingStorage, withFundingLock } from '../../finance/v2/fundingJournal'
 import { CANDIDATE_ORIGINS, type Holding } from '../../finance/v2/holdings'
 import { openWalletDialog } from '../../finance/signedOut'
@@ -22,11 +22,12 @@ import { FUNDS_TEXT, senderCopy } from './copy'
 import { DepositStatus, PendingDeposit, type TrackedDeposit } from './DepositStatus'
 import { runDeposit, type FlowStage } from './flow'
 import { balanceChainsRequest, balancesRequest, holdingsFromChainBalances, kindOf, mergeBalances, nativeOn, originCandidate, originName, originToken, requestFailure, sendable, valueUsdOf, type FundingBudget, type Lack } from './model'
-import { freezeFunding, fundingSpendable, fundingStorageKey, gasRecoveryKey, outstandingLegs, parseFunding, planFunding, planGasRecovery, requestForLeg, respectsLeg, withGasFailure, type FundingIntent, type PricedLeg } from './fundingIntent'
+import { freezeFunding, fundingBatchLeg, fundingSpendable, fundingStorageKey, gasRecoveryKey, outstandingLegs, parseFunding, planFunding, planGasRecovery, requestForLeg, respectsLeg, withGasFailure, type FundingIntent, type PricedLeg } from './fundingIntent'
 import type { FundsServices } from './services'
 import { invalidateFundingBalances, readFundingBalanceGroup } from './balanceCache'
 import { fundingOrigins, fundingWait } from './originsCache'
 import { canDiscardFunding, fundingNeverSent } from './fundingLifecycle'
+import type { TransferProgress } from './transferView'
 
 const ZERO = '0x0000000000000000000000000000000000000000'
 const rawValue = (raw: string | null) => raw !== null && /^\d+$/.test(raw) ? BigInt(raw) : null
@@ -88,6 +89,8 @@ export interface BringFundsProps {
   /** Select a received payment token after verified arrival; never creates or signs a position. */
   onRemoteUse?: (token: string, paymentRaw: string) => void
   onArrived?: () => void
+  continuation?: ReactNode
+  onTrackingChange?: (active: boolean) => void
 }
 
 /** One proposal; validated independent transfers into the same wallet. Never an atomic cross-chain promise. */
@@ -95,7 +98,7 @@ export function BringFunds(props: BringFundsProps) {
   return <FundingOffer key={`${props.wallet.toLowerCase()}:${props.chainId}`} {...props} />
 }
 
-function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, lacks, nativeOnDestination, poolTokens, intentKey, selectionKey, remoteBudget = null, discreet = false, optional = false, checking = false, keep = null, takes = null, onUse, onUseToken, onRemoteUse, onArrived }: BringFundsProps) {
+function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, lacks, nativeOnDestination, poolTokens, intentKey, selectionKey, remoteBudget = null, discreet = false, optional = false, checking = false, keep = null, takes = null, onUse, onUseToken, onRemoteUse, onArrived, continuation, onTrackingChange }: BringFundsProps) {
   const live = gate.mode === 'live' && services !== null
   const ready = access.startsWith('ready:')
   const destination = v2Chain(chainId)
@@ -116,6 +119,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     originLabel: null, review: null, journaled: true,
   })))
   const [settled, setSettled] = useState<Set<string>>(() => new Set())
+  const [progress, setProgress] = useState<Record<string, TransferProgress>>({})
   const [revision, setRevision] = useState(0)
   const [readSnapshot, setReadSnapshot] = useState<{ data: ChainBalancesResponse | null; complete: boolean } | null>(null)
   const readDone = readSnapshot !== null
@@ -176,6 +180,11 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const activeDeposits = deposits.filter((deposit) => !settled.has(deposit.record.depositTxHash))
   const hasUnknown = intent?.legs.some((leg) => leg.state === 'unknown' || leg.state === 'sending') ?? false
   const foreignPending = held.some((entry) => entry.kind === 'deposit' && entry.destinationChainId === chainId) || pending.length > 0 || activeDeposits.length > 0
+  const tracking = deposits.length > 0 || foreignPending || (intent?.legs.some((leg) => leg.state === 'unknown' || leg.state === 'sending' || leg.state === 'sent') ?? false)
+  const trackingChanged = useRef(onTrackingChange)
+  useEffect(() => { trackingChanged.current = onTrackingChange })
+  useEffect(() => { trackingChanged.current?.(tracking); return () => trackingChanged.current?.(false) }, [tracking])
+  const allArrived = deposits.length > 0 && deposits.every(({ record }) => progress[record.depositTxHash]?.state === 'filled' && progress[record.depositTxHash]?.balance === 'ready') && !pending.length && !held.length
   const name = useMemo(() => naming(listing), [listing])
   useEffect(() => { mounted.current = true; generation.current++; return () => { mounted.current = false; preparation.current?.abort() } }, [])
   useEffect(() => {
@@ -221,11 +230,11 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   useEffect(() => {
     if (intent && intent.scope !== scope && fundingNeverSent(intent) && !run) void clearChangedUnsent(intent.id)
   }, [intent, scope, run, clearChangedUnsent])
-  const observe = (legId: string, state: 'sent' | 'settled' | 'stopped', hash: string | null = null) => {
+  const observe = (legId: string, state: 'sent' | 'settled' | 'stopped', hash: string | null = null, expectedQuote?: string) => {
     void withFundingLock(wallet, async () => {
       const current = readIntent(true)
       const leg = current?.legs.find((entry) => entry.id === legId)
-      if (!current || !leg || (state === 'settled' && leg.depositTxHash !== hash) || (state === 'stopped' && leg.state !== 'unknown' && leg.state !== 'sending')) return
+      if (!current || !leg || (expectedQuote !== undefined && leg.quoteKey !== expectedQuote) || (state === 'settled' && leg.depositTxHash !== hash) || (state === 'stopped' && leg.state !== 'unknown' && leg.state !== 'sending')) return
       save({ ...current, legs: current.legs.map((entry) => entry.id === legId ? { ...entry, state, depositTxHash: hash ?? entry.depositTxHash } : entry) }, legId)
     }, () => { throw new Error('funding_storage_unavailable') }, true).catch(() => {
       if (mounted.current) setNotice({ copy: 'The transfer is still tracked, but its progress could not be saved in this browser.', code: 'funding_storage_unavailable' })
@@ -464,7 +473,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
             if (!respectsLeg(accepted, leg, checked.quote)) throw new FundingError('Transfer costs changed. Received funds stay in your wallet. Review the remaining transfer.', 'funding_quote_changed')
           }
           if (!current()) break
-          accepted = { ...accepted, legs: accepted.legs.map((entry) => entry.id === leg.id ? { ...entry, state: 'sending' } : entry) }; save(accepted, leg.id)
+          accepted = { ...accepted, legs: accepted.legs.map((entry) => entry.id === leg.id ? { ...entry, state: 'sending', quoteKey: quoteKeyOf(checked.quote) } : entry) }; save(accepted, leg.id)
           let depositOffered = false
           const result = await runDeposit({ runtime: services.runtime, owner: wallet, sender: own, switchToOrigin,
             walletChainId: () => latest.current.walletChainId, monoMs: services.clock.monoMs, wait: services.wait,
@@ -550,6 +559,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const names = (values: readonly string[]) => values.length > 1 ? `${values.slice(0, -1).join(', ')} and ${values.at(-1)}` : values[0] ?? ''
   const receiptAmount = proposed ? shortAmountText(proposed.requiredRaw, proposed.destinationToken, targetAmount ?? name.book(chainId, proposed.destinationToken), 'up') : null
   const resume = intent !== null && outstandingLegs(intent).length > 0 && !hasUnknown && !changed
+  const compactTracking = deposits.length > 0 && !run && !hasUnknown && !changed && !resume && !pending.length
   const gasReview = intent?.gasRecovery?.reviewNeeded === true
   const needsReview = notice?.code === 'funding_quote_changed' || notice?.code === 'funding_balance_changed' || gasReview && !proposal?.recoveryFrom
   const unknownOrigin = intent?.legs.find((leg) => leg.state === 'unknown')?.originChainId ?? held.find((entry) => entry.state === 'open')?.originChainId
@@ -561,21 +571,21 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     if (!observedNetworks.length) return null
     return <button type="button" className="dm-funds-line dm-funds-remote" data-funds-sources="" onClick={() => setRemoteSelection(selection)}><span className="dm-funds-remote-mark" aria-hidden="true">↗</span><span className="dm-funds-line-text">Funds available on {names(observedNetworks)}</span><span className="dm-funds-line-action">Use another network</span></button>
   }
-  return <section className="dm-funds-offer dm-funding" data-funds-offer="" data-funds-mode={gate.mode} data-funds-services={services?.source ?? 'none'} data-funds-token={target} data-funding-state={displayScreen} aria-label="Fund this position">
-    <div className="dm-funds-heading"><span className="dm-funds-icon" aria-hidden="true">↗</span><div>
-      <h4 data-funds-title="">{run ? 'Getting your funds ready' : previousUnsent ? 'Choose funds for this position' : proposal?.recoveryFrom ? 'Your updated transfer' : intent || foreignPending ? 'Your transfer' : proposal ? `Use your funds on ${names(networks)}` : observedNetworks.length ? `Funds available on ${names(observedNetworks)}` : 'Find funds for this position'}</h4>
-      <p data-funds-lack={targetLack && !budget ? 'short' : undefined} data-funds-lack-raw={!budget ? targetLack?.shortRaw?.toString() : undefined}>{!live ? null : previousUnsent ? 'Checking the previous request before choosing funds for this position.' : changed ? 'Your position changed. Transfers already sent continue to your wallet.' : hasUnknown ? 'Waiting for a clear answer from your wallet.' : intent || foreignPending ? 'Funds arrive in your wallet. Your position amount stays the same.' : proposal ? `Move ${receiptAmount ?? 'funds'} to ${destination.name} for this position.` : null}</p>
-    </div></div>
+  return <section className="dm-funds-offer dm-funding" data-funds-offer="" data-funds-tracking={compactTracking ? '' : undefined} data-funds-mode={gate.mode} data-funds-services={services?.source ?? 'none'} data-funds-token={target} data-funding-state={displayScreen} aria-label="Fund this position">
+    {!compactTracking && <div className="dm-funds-heading"><span className="dm-funds-icon" aria-hidden="true">↗</span><div>
+      <h4 data-funds-title="">{run ? 'Getting your funds ready' : previousUnsent ? 'Choose funds for this position' : proposal?.recoveryFrom ? 'Your updated transfer' : intent || tracking || foreignPending ? 'Your transfer' : proposal ? `Use your funds on ${names(networks)}` : observedNetworks.length ? `Funds available on ${names(observedNetworks)}` : 'Find funds for this position'}</h4>
+      <p data-funds-lack={targetLack && !budget ? 'short' : undefined} data-funds-lack-raw={!budget ? targetLack?.shortRaw?.toString() : undefined}>{!live ? null : previousUnsent ? 'Checking the previous request before choosing funds for this position.' : changed ? 'Your position changed. Transfers already sent continue to your wallet.' : hasUnknown ? 'Waiting for a clear answer from your wallet.' : intent || foreignPending ? null : proposal ? `Move ${receiptAmount ?? 'funds'} to ${destination.name} for this position.` : null}</p>
+    </div></div>}
     <div className="dm-funds-body" data-funds-body="">
       {!live && <p data-funds-locked="">{FUNDS_TEXT.locked}</p>}
-      {live && !readDone && <p role="status" data-funds-checking="" className="dm-funds-status">Checking your wallet…</p>}
+      {live && !tracking && !readDone && <p role="status" data-funds-checking="" className="dm-funds-status">Checking your wallet…</p>}
       {live && screen === 'quoting' && !run && <p role="status" className="dm-funds-status" data-funds-quote-loading="">Checking transfer costs…</p>}
       {notice && <p role="status" className="dm-funding-notice" data-funds-run-notice="" data-error-code={notice.code}>{notice.copy}</p>}
       {gasReview && !previousUnsent && !notice && !proposal?.recoveryFrom && screen !== 'quoting' && <p className="dm-funding-notice" data-funds-gas-recovery="">{GAS_RECOVERY_COPY}</p>}
       {proposal?.recoveryFrom && <p className="dm-hint" data-funds-gas-recovery="">{proposal.intent.legs.some((leg) => leg.reserveRaw) ? 'Keep 0.006 ETH on Ethereum for network fees. ' : 'Use another available network. '}Your position amount stays the same. Confirm the amounts below before continuing.</p>}
-      {live && readDone && !proposal && !intent && !foreignPending && screen !== 'quoting' && !notice && <p className="dm-hint" data-funds-nothing="">{holdings.length === 0 ? !readSnapshot?.complete ? 'Some wallet balances could not be checked yet. We will try again automatically.' : observedNetworks.length ? 'These networks need ETH for the transfer fee. Add a little ETH there to use these tokens.' : 'No available funds found on the supported networks. Add funds or choose a smaller amount.' : need === null ? 'Enter an amount. Domino will check how to bring your funds here.' : !ready ? 'Sign in to prepare your transfer. This does not move funds.' : 'Checking a transfer for this amount.'}</p>}
-      {proposed && <div className="dm-funding-summary" data-funds-quote="" data-funding-sources={selected.length}>
-        {selected.map((leg) => <div className="dm-funding-leg" key={leg.id} data-funds-network={leg.originChainId} data-funding-leg-state={leg.state}>
+      {live && readDone && !proposal && !intent && !tracking && !foreignPending && screen !== 'quoting' && !notice && <p className="dm-hint" data-funds-nothing="">{holdings.length === 0 ? !readSnapshot?.complete ? 'Some wallet balances could not be checked yet. We will try again automatically.' : observedNetworks.length ? 'These networks need ETH for the transfer fee. Add a little ETH there to use these tokens.' : 'No available funds found on the supported networks. Add funds or choose a smaller amount.' : need === null ? 'Enter an amount. Domino will check how to bring your funds here.' : !ready ? 'Sign in to prepare your transfer. This does not move funds.' : 'Checking a transfer for this amount.'}</p>}
+      {proposed && selected.some((leg) => !leg.depositTxHash) && <div className="dm-funding-summary" data-funds-quote="" data-funding-sources={selected.length}>
+        {selected.filter((leg) => !leg.depositTxHash).map((leg) => <div className="dm-funding-leg" key={leg.id} data-funds-network={leg.originChainId} data-funding-leg-state={leg.state}>
           <span>{originName(leg.originChainId)}</span><strong>{shortAmountText(leg.maxInputRaw, leg.originToken, leg, 'up')}</strong>
           <span className="dm-funding-leg-status">{leg.state === 'sent' ? 'On the way' : leg.state === 'settled' ? 'Settled' : leg.state === 'unknown' ? 'Check wallet' : leg.state === 'sending' ? 'Confirm in wallet' : 'Maximum to send'}</span>
         </div>)}
@@ -583,9 +593,9 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       {stage && <p role="status" className="dm-funds-status" data-funds-run-status={stage.value.stage}>{stage.value.stage === 'switching' ? `Your wallet needs ${originName(stage.origin)} for this transfer.` : stage.value.stage === 'batch_wallet' ? 'Confirm approval and transfer together in your wallet.' : stage.value.stage === 'approval_wallet' ? 'Approve the token in your wallet.' : stage.value.stage === 'deposit_wallet' ? 'Confirm the transfer in your wallet.' : `Preparing your transfer from ${originName(stage.origin)}…`}</p>}
       {live && !run && ready && !changed && !hasUnknown && !needsReview && ((!intent && proposal) || resume) && <Button variant="accent" className="dm-funds-go" data-funds-deposit-button="" onClick={() => void (expired && !intent ? prepare() : execute())}>{proposal?.recoveryFrom ? 'Use this updated transfer' : resume ? 'Continue remaining transfer' : expired ? 'Update transfer' : 'Use these funds'}</Button>}
       {live && !run && ready && !changed && !hasUnknown && gasReview && !proposal?.recoveryFrom && screen !== 'quoting' && <Button variant="accent" data-funds-gas-review="" onClick={() => void prepareGasRecovery()}>Review transfer</Button>}
-      {live && !ready && !run && (lacks.length > 0 || gasOnly || budget !== null) && !hasUnknown && <Button variant="accent" data-funds-signin="" onClick={openWalletDialog}>Continue with wallet</Button>}
+      {live && !ready && !run && !allArrived && (lacks.length > 0 || gasOnly || budget !== null) && !hasUnknown && <Button variant="accent" data-funds-signin="" onClick={openWalletDialog}>Continue with wallet</Button>}
       {optional && remoteOpened && !intent && !foreignPending && !run && <Button variant="ghost" size="sm" data-funds-close="" onClick={() => { generation.current++; preparation.current?.abort(); setRemoteSelection(null); setProposal(null); setNotice(null); setExpired(false); attempted.current = ''; setScreen('checking') }}>Back to funding options</Button>}
-      {onRemoteUse && intent?.paymentRaw && !changed && !run && ready && !activeDeposits.length && !pending.length && !held.length && intent.legs.every((leg) => leg.state === 'settled') && <Button variant="accent" data-funds-remote-use="" onClick={() => void useRemotePayment()}>Use these funds for this position</Button>}
+      {onRemoteUse && intent?.paymentRaw && allArrived && !changed && !run && ready && !activeDeposits.length && intent.legs.every((leg) => leg.state === 'settled') && <Button variant="accent" data-funds-remote-use="" onClick={() => void useRemotePayment()}>Use these funds for this position</Button>}
       {live && !run && unknownOrigin !== undefined && <Button variant="outline" size="sm" data-funds-run-forget="" onClick={() => void resolveUnknown(unknownOrigin)}>I cancelled the request in my wallet</Button>}
       {live && !run && ready && !intent && !foreignPending && !proposal && !needsReview && readDone && (screen === 'unavailable' || screen === 'paused' || notice?.code === 'funding_insufficient' || !reading && !readSnapshot?.complete) && <Button variant="outline" size="sm" data-funds-renew="" onClick={() => { attempted.current = ''; automaticAttempts.current = 0; setNotice(null); setRevision((n) => n + 1); setPrepareRevision((n) => n + 1) }}>Check again</Button>}
       {live && !run && ready && !intent && needsReview && <Button variant="outline" size="sm" data-funding-review="" onClick={() => void prepare()}>Review transfer</Button>}
@@ -602,16 +612,18 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       </div></details>}
       {services && (deposits.length > 0 || pending.length > 0) && <div className="dm-funding-tracking" data-funds-deposits="">
         {!run && pending.map((entry) => <PendingDeposit key={entry.batchId} entry={entry} services={services} sender={sender} name={name}
-          onSent={(sent) => { if (sent.record) { const record = sent.record; const current = intentRef.current; const leg = current?.legs.find((leg) => leg.originChainId === entry.originChainId && (leg.state === 'unknown' || leg.state === 'sending')); if (leg) observe(leg.id, 'sent', record.depositTxHash); setDeposits((previous) => [{ record, destinationToken: current?.destinationToken ?? null, originLabel: null, review: null, journaled: sent.journaled }, ...previous.filter((d) => d.record.depositTxHash !== record.depositTxHash)]) }; setRevision((n) => n + 1) }}
-          onOutcome={(state) => { if (state === 'unknown') return; const leg = intentRef.current?.legs.find((leg) => leg.originChainId === entry.originChainId && (leg.state === 'unknown' || leg.state === 'sending')); if (leg) observe(leg.id, 'stopped'); batches.drop(wallet, entry.batchId); setRevision((n) => n + 1) }}
+          onSent={(sent) => { if (sent.record) { const record = sent.record; const current = intentRef.current; const leg = fundingBatchLeg(current, entry); if (leg) observe(leg.id, 'sent', record.depositTxHash, entry.quote); setDeposits((previous) => [{ record, destinationToken: leg && current ? current.destinationToken : null, originLabel: null, review: null, journaled: sent.journaled }, ...previous.filter((d) => d.record.depositTxHash !== record.depositTxHash)]) }; setRevision((n) => n + 1) }}
+          onOutcome={(state) => { if (state === 'unknown') return; const leg = fundingBatchLeg(intentRef.current, entry); if (leg) observe(leg.id, 'stopped', null, entry.quote); batches.drop(wallet, entry.batchId); setRevision((n) => n + 1) }}
           onRemove={() => { batches.drop(wallet, entry.batchId); setRevision((n) => n + 1) }} />)}
-        {deposits.map((deposit) => <DepositStatus key={`${deposit.record.originChainId}:${deposit.record.depositTxHash}`} deposit={deposit} services={services} owner={wallet} journal={journal} name={name}
-          walletChainId={walletChainId} access={access} sender={sender} poolTokens={changed ? [] : poolTokens} keep={changed ? null : keep} takes={takes} onUse={changed ? () => onArrived?.() : onUse} onUseToken={changed ? undefined : onUseToken}
+        {deposits.map((deposit, index) => <DepositStatus key={`${deposit.record.originChainId}:${deposit.record.depositTxHash}`} deposit={deposit} services={services} owner={wallet} journal={journal} name={name}
+          walletChainId={walletChainId} access={access} sender={sender} poolTokens={changed ? [] : poolTokens} keep={!changed && allArrived && !resume && index === deposits.length - 1 ? keep : null} takes={takes} onUse={changed ? () => onArrived?.() : onUse} onUseToken={changed ? undefined : onUseToken}
+          onProgress={(next) => setProgress((previous) => previous[deposit.record.depositTxHash]?.state === next.state && previous[deposit.record.depositTxHash]?.balance === next.balance ? previous : { ...previous, [deposit.record.depositTxHash]: next })}
           onArrived={() => { invalidateFundingBalances(wallet); onArrived?.(); setRevision((n) => n + 1) }}
           onSettled={() => { setSettled((previous) => new Set(previous).add(deposit.record.depositTxHash)); const leg = intentRef.current?.legs.find((leg) => leg.depositTxHash === deposit.record.depositTxHash); if (leg) observe(leg.id, 'settled', deposit.record.depositTxHash); setRevision((n) => n + 1) }}
           onRemove={() => { journal?.drop(wallet, deposit.record); setDeposits((previous) => previous.filter((entry) => entry.record.depositTxHash !== deposit.record.depositTxHash)) }} />)}
       </div>}
-      {intent && !run && !hasUnknown && (!gasReview || changed) && !activeDeposits.length && !pending.length && !held.length && (changed || needsReview || intent.legs.every((leg) => leg.state === 'settled') && (lacks.length > 0 || gasOnly)) && <Button variant="outline" size="sm" data-funding-review="" onClick={() => {
+      {allArrived && !changed && !run && !resume && !keep && !intent?.paymentRaw && continuation && <div className="dm-transfer-continue" data-funds-continuation="">{continuation}</div>}
+      {intent && !run && !hasUnknown && (!gasReview || changed) && !activeDeposits.length && !pending.length && !held.length && (changed || needsReview || intent.legs.every((leg) => leg.state === 'settled') && (lacks.length > 0 || gasOnly) && !(allArrived && continuation)) && <Button variant="outline" size="sm" data-funding-review="" onClick={() => {
         if (previousUnsent) { void clearChangedUnsent(intent.id, true); return }
         void withFundingLock(wallet, async () => {
           const stored = readIntent(true)

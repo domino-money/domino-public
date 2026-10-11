@@ -104,6 +104,91 @@ const READ6 = {
 };
 const chainOf = (over = {}) => createV2Chain({ chainId: 8453, timestamp: now(), positions: CHAIN_POSITIONS, pools: [{ pool: POOL, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }], vaults: [VAULT], ...over });
 
+test('multichain sync: detail updates from the shared portfolio and charts only timestamped observed balances without extra reads', async () => {
+  const first = portfolioOf({ wallet: OWNER, tokens: TOKENS, positions: [live(5100001)] });
+  const chain = chainOf();
+  const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100001', read6: { portfolio: first, activity: activityOf({ wallet: OWNER }) } });
+  try {
+    const page = s.page, fees = page.locator('[data-recorded-fees]');
+    await page.locator('[data-recorded-fees][data-reading-count="1"]').waitFor();
+    await page.evaluate(first => {
+      window.__portfolioReads = 0; window.__portfolioAnswer = first;
+      window.__dominoV2Test.read6.portfolio = () => { window.__portfolioReads++; return window.__portfolioAnswer; };
+    }, first);
+    await fees.getByRole('button', { name: 'USDC', exact: true }).click();
+    assert.match(await text(fees.locator('.dm-recorded-fees-value')), /^2\.5 USDC$/);
+    await page.getByRole('button', { name: 'Expand chart', exact: true }).click();
+    await page.getByRole('button', { name: 'Show measured points', exact: true }).click();
+    await page.getByRole('tab', { name: 'Price range', exact: true }).click();
+    const range = page.locator('[data-pvr-history="recorded"]');
+    await range.waitFor();
+    assert.equal(await range.getAttribute('data-pvr-opened'), null, 'no invented opening point');
+    assert.equal(await range.locator('path.dm-pvr-line').count(), 0, 'isolated measurements are not drawn as a continuous history');
+    assert.equal(await page.evaluate(() => window.__portfolioReads), 0, 'chart controls never read the portfolio again');
+    const second = structuredClone(first), state = second.body.positions[0].state;
+    state.snapshot = { ...state.snapshot, number: state.snapshot.number + 1, timestamp: state.snapshot.timestamp + 60, hash: '0x' + 'ab'.repeat(32) };
+    state.feesOwed = ['0', '3750000'];
+    state.sqrtPriceX96 = position.sqrtPriceAtTick(TICK + 1).toString(); state.tick = TICK + 1;
+    await page.evaluate(answer => { window.__portfolioAnswer = answer; window.dispatchEvent(new Event('focus')); }, second);
+    await page.locator(`[data-position-detail][data-snapshot="${state.snapshot.number}"]`).waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-recorded-fees]')?.getAttribute('data-reading-count') === '2');
+    const slider = range.getByRole('slider');
+    await slider.focus(); await page.keyboard.press('End');
+    assert.match(await slider.getAttribute('aria-valuetext'), /inside your range/);
+    assert.equal(await slider.getAttribute('aria-valuemax'), '2');
+    assert.equal(await range.locator('path.dm-pvr-line').count(), 0, 'there are still no fabricated connecting segments');
+    await page.setViewportSize({ width: 320, height: 820 });
+    await page.keyboard.press('Home');
+    assert.equal(await slider.getAttribute('aria-valuenow'), '1');
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), '320px has no horizontal page overflow');
+    await page.screenshot({ path: join(shots(), 'position-v2-recorded-range-320.png'), fullPage: true });
+    await page.keyboard.press('Escape');
+    await page.getByRole('tab', { name: 'Fees', exact: true }).click();
+    assert.match(await text(fees.locator('.dm-recorded-fees-value')), /^3\.75 USDC$/);
+    assert.equal(await fees.getByRole('button', { name: 'USDC', exact: true }).getAttribute('aria-pressed'), 'true');
+    await fees.getByRole('slider').focus(); await page.keyboard.press('End');
+    assert.match(await fees.getByRole('slider').getAttribute('aria-valuetext'), /3\.75 USDC ready to collect/);
+    await page.screenshot({ path: join(shots(), 'position-v2-recorded-fees-320.png'), fullPage: true });
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Collapse chart', exact: true }).click();
+    await page.evaluate(() => { document.activeElement?.blur(); window.scrollTo(0, 0); });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: join(shots(), 'position-v2-recorded-fees-390.png'), fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 960 });
+    await page.screenshot({ path: join(shots(), 'position-v2-recorded-fees-desktop.png'), fullPage: true });
+    const stale = structuredClone(second); stale.body.positions[0].state.snapshot.number++; stale.body.positions[0].state.freshness.status = 'stale';
+    await page.evaluate(answer => { window.__portfolioAnswer = answer; window.dispatchEvent(new Event('focus')); }, stale);
+    await page.locator('[data-recorded-fees][data-stale]').waitFor();
+    assert.equal(await fees.getAttribute('data-reading-count'), '2', 'stale responses never add observations');
+    assert.equal(s.planned.length, 0);
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+test('multichain sync: a restored creation is visible before indexing and reconciles to one exact live position without reloading', async () => {
+  const hint = { wallet: OWNER, chainId: 8453, positionManager: V4_PM, dex: 4, tokenId: '5100001', hash: '0x' + 'ab'.repeat(32), block: 73399500,
+    blockHash: '0x' + 'ff'.repeat(32), observedAt: Date.now(), fee: 500, tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: USDC, symbol: 'USDC', decimals: 6 }] };
+  const s = await openPositionPage(browser, chainOf(), { hash: '#/positions/base-v4-5100001', creations: [hint], read6: { portfolio: portfolioOf({ wallet: OWNER }), activity: activityOf({ wallet: OWNER }) } });
+  try {
+    const page = s.page;
+    await page.locator('[data-position-reason="awaiting_index"]').waitFor();
+    assert.match(await text(page.locator('[data-position-reason="awaiting_index"]')), /Updating position details/);
+    await page.evaluate(() => { location.hash = '#/positions'; });
+    const link = page.locator('a[href="#/positions/base-v4-5100001"]');
+    await link.waitFor();
+    assert.match(await text(link), /ETH.*USDC/);
+    assert.match(await page.locator('[data-owned-status]').innerText(), /1 positions still being checked/);
+    const indexed = portfolioOf({ wallet: OWNER, tokens: TOKENS, positions: [live(5100001)] });
+    await page.evaluate(answer => { window.__dominoV2Test.read6.portfolio = () => answer; window.dispatchEvent(new Event('focus')); }, indexed);
+    await page.waitForFunction(() => !document.querySelector('[data-owned-status]')?.textContent?.includes('still being checked'));
+    assert.equal(await link.count(), 1, 'the pending hint becomes one live row, never a duplicate');
+    assert.deepEqual(await page.evaluate(wallet => JSON.parse(sessionStorage.getItem(`domino:created-positions:v1:${wallet}`)), OWNER), []);
+    await link.click();
+    await page.locator('[data-position-detail][data-snapshot="73399500"]').waitFor();
+    assert.equal(s.planned.length, 0);
+  } finally { await s.close(); }
+});
+
 /**
  * position-plan-v1 as it would answer (tests/support/s1-plans.mjs): an add swaps half the ETH to USDC; a converted exit sells
  * 80% of the ETH. `l1Unavailable` (2026-10-06): Base's oracle did not answer, so the plan's L1 data fee is unavailable.
@@ -699,6 +784,11 @@ test('V2 Auto-exit on Base, preview: current custody opens the range\'s exact ed
         continue;
       }
       await detail.locator('[data-automation-setup]').click();
+      const setup = page.locator('[data-v2in-setup="preview"][data-sequence-create]');
+      await setup.waitFor();
+      assert.match(page.url(), /#\/sequence\/base-v4-5100005$/);
+      await setup.locator('[data-sequence-mode="protection"]').click();
+      await setup.locator('[data-sequence-action="protection"]:not([disabled])').click();
       const dialog = page.locator('[data-v2in-dialog="mandate"]');
       await dialog.waitFor();
       // The price (tick -199,020) inside the range (-201,060 to -197,040): both edges, exactly TickMath's integers.
@@ -707,7 +797,7 @@ test('V2 Auto-exit on Base, preview: current custody opens the range\'s exact ed
       const exact = await edges.evaluateAll((items) => items.map((li) => [li.getAttribute('data-mandate-trigger'), li.getAttribute('data-exact')]).sort());
       assert.deepEqual(exact, [['above', position.sqrtPriceAtTick(RANGE.tickUpper).toString()], ['below', position.sqrtPriceAtTick(RANGE.tickLower).toString()]]);
       for (const edge of await edges.all()) assert.match(await text(edge), /^[↘↗] (falls|rises) to [\d,.]+ USDC per ETH$/);
-      assert.equal(await dialog.locator('[data-mandate-edges]').getAttribute('data-mandate-price'), stale ? 'saved' : 'page');
+      assert.equal(await dialog.locator('[data-mandate-edges]').getAttribute('data-mandate-price'), 'saved', 'setup uses the indexed snapshot in preview, without asking the wallet');
       assert.match(await text(dialog.locator('[data-mandate-now]')), /^Now [\d,.]+$/);
       assert.equal(await dialog.locator('[data-mandate-problem]').count(), 0, 'never "Reading the pool price…" with nothing being read');
       if (!stale) {

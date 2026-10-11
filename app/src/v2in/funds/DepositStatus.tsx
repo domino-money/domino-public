@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CopyButton } from '../../components/read/screens/CopyButton'
-import { Button, Card, KeyValue, KeyValueList, Pill } from '../../components/ui'
+import { Button, Card, KeyValue, KeyValueList } from '../../components/ui'
 import { OriginStepError, type DepositJournal, type OriginReview, type OriginSender, type PendingBatch, type SentStep } from '../../finance/v2/crosschain'
 import { amountText } from '../../v2/crosschain/amounts'
 import { PROVIDER_NAME } from '../../v2/crosschain/copy'
@@ -12,6 +12,8 @@ import { FUNDS_FINALITY_WATCH_MS, FUNDS_RECEIPT_POLL_MS } from './constants'
 import { FUNDS_TEXT, senderCopy } from './copy'
 import { reconcileBalances } from './reconcile'
 import type { FundsServices } from './services'
+import { ZERO_ADDRESS } from '../../v2/types'
+import { availableBalance, transferTitle, type TransferProgress } from './transferView'
 
 type Hex = `0x${string}`
 
@@ -166,6 +168,7 @@ export function DepositStatus({
   onUse,
   onRemove,
   onSettled,
+  onProgress,
 }: {
   deposit: TrackedDeposit
   services: FundsServices
@@ -202,6 +205,8 @@ export function DepositStatus({
    * missing status is not proof that the transfer failed and must not unlock a replacement transfer.
    */
   onSettled?: () => void
+  /** Presentation only; never releases a transfer lock or starts another operation. */
+  onProgress?: (progress: TransferProgress) => void
 }) {
   const { record } = deposit
   const [poll, setPoll] = useState<PollState | null>(null)
@@ -291,7 +296,7 @@ export function DepositStatus({
 
   // The destination reader is independent of the wallet's active network. The first answer may still be the backend's
   // pre-fill ten-second cache; a later, advancing snapshot refreshes every consumer without another wallet prompt.
-  const candidates = deposit.destinationToken ? [deposit.destinationToken] : [...new Set([
+  const candidates = deposit.destinationToken ? [...new Set([deposit.destinationToken, ZERO_ADDRESS])] : [...new Set([
     ...poolTokens.filter((token) => name.book(record.destinationChainId, token) !== null),
     // Older journals did not retain the delivered token. Read only the supported destination assets so changing the
     // position cannot strand a confirmed arrival; none of these balances is used to replace an entered amount.
@@ -328,6 +333,9 @@ export function DepositStatus({
   const stopped = poll?.stopped ?? null
   // A failed status read is not a failed transfer. Keep unknown deposits tracked and reserved until a terminal answer.
   const done = view.terminal
+  const progress = useRef(onProgress)
+  useEffect(() => { progress.current = onProgress })
+  useEffect(() => { progress.current?.({ state: view.state, balance: balanceState }) }, [view.state, balanceState])
   const settled = useRef(onSettled)
   useEffect(() => {
     settled.current = onSettled
@@ -339,19 +347,16 @@ export function DepositStatus({
     settled.current?.()
   }, [done, filled, balanceState])
   const fee = view.feeDetail
+  const available = balanceState === 'ready' ? balances?.map(({ token, raw }) => ({ token, raw: availableBalance(token, raw) })).filter(({ raw }) => BigInt(raw) > 0n) ?? [] : []
+  const moving = !done && (view.state === null || view.state === 'awaiting_deposit' || view.state === 'pending')
   return (
-    <Card level={2} className="p-4" data-funds-deposit={record.depositTxHash} data-funds-state={view.state ?? 'none'} data-funds-stopped={stopped ?? undefined} data-funds-transition={poll?.report?.transition ?? undefined}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="dm-subtitle">{FUNDS_TEXT.depositFrom(origin)}</span>
-        {view.terminal && (
-          <Pill tone={view.state === 'filled' ? 'in' : 'wait'} dot>
-            {view.state === 'filled' ? FUNDS_TEXT.arrived : FUNDS_TEXT.refunded}
-          </Pill>
-        )}
+    <div className="dm-transfer" data-funds-deposit={record.depositTxHash} data-funds-state={view.state ?? 'none'} data-funds-stopped={stopped ?? undefined} data-funds-transition={poll?.report?.transition ?? undefined}>
+      <div className="dm-transfer-route" data-transfer-moving={moving && !stopped ? '' : undefined} aria-hidden="true">
+        <span className="dm-transfer-node">↗</span><span className="dm-transfer-track"><i /></span><span className="dm-transfer-node">{filled ? '✓' : '·'}</span>
       </div>
-      <p role="status" className="mt-2 text-body" data-funds-state-text="">
-        {view.text}
-      </p>
+      <p className="dm-transfer-networks">{origin}<span aria-hidden="true">→</span>{destination}</p>
+      <p role="status" className="dm-transfer-title" data-funds-state-text="">{transferTitle(view.state, destination)}</p>
+      {!moving && !filled && <p className="dm-hint">{view.text}</p>}
       {notice && notice.copy && (
         <p role="alert" className="dm-error mt-2" data-error-code={notice.code ?? undefined} data-funds-notice="">
           {notice.copy}
@@ -368,13 +373,6 @@ export function DepositStatus({
         <Button variant="secondary" size="sm" className="mt-2" data-funds-status-retry="" onClick={() => setStatusRetry((n) => n + 1)}>
           Check transfer
         </Button>
-      )}
-      {view.link && explorerLink(view.link.chainId, view.link.hash) && (
-        <p className="mt-2">
-          <a href={explorerLink(view.link.chainId, view.link.hash) ?? undefined} target="_blank" rel="noreferrer noopener" className="underline" data-funds-link={view.link.kind}>
-            {FUNDS_TEXT.viewOnExplorer}
-          </a>
-        </p>
       )}
       {receipt === 'reverted' && (
         <p role="alert" className="dm-error mt-2" data-funds-deposit-reverted="">
@@ -398,18 +396,9 @@ export function DepositStatus({
               Check balance
             </Button>
           )}
-          {balanceState === 'ready' && balances !== null && balances.length > 0 && (
-              <div data-funds-balances="">
-                <p className="text-caption text-fg-muted">{FUNDS_TEXT.balanceTitle(destination)}</p>
-                  <ul className="mt-1 grid gap-1 text-body">
-                    {balances.map(({ token, raw }) => (
-                      <li key={token} data-funds-balance={token} title={amountText(raw, token, name.book(record.destinationChainId, token))}>
-                        {shortAmountText(raw, token, name.book(record.destinationChainId, token))}
-                      </li>
-                    ))}
-                  </ul>
-              </div>
-            )}
+          {balanceState === 'ready' && <p className="dm-transfer-available" data-funds-available="">
+            {available.length ? `Available now: ${available.map(({ token, raw }) => shortAmountText(raw, token, name.book(record.destinationChainId, token))).join(' · ')}` : 'No spendable funds available for this position yet.'}
+          </p>}
           {balanceState === 'ready' && keep !== null && (
             // Changed on purpose 2026-10-06 (the 2026-10-06 study): the wallet now covers the amount typed in the step, so
             // the same position continues with it, unchanged; the card is done.
@@ -421,13 +410,19 @@ export function DepositStatus({
               }}
               data-funds-use="keep"
             >
-              {FUNDS_TEXT.continueButton(keep.label)}
+              Continue with this amount
             </Button>
           )}
         </div>
       )}
       <details className="dm-details mt-3">
         <summary>{FUNDS_TEXT.details}</summary>
+        {filled && balanceState === 'ready' && balances !== null && <div data-funds-balances="" className="dm-transfer-balances">
+          <p>{FUNDS_TEXT.balanceTitle(destination)}</p>
+          <ul>{balances.map(({ token, raw }) => <li key={token} data-funds-balance={token} title={amountText(raw, token, name.book(record.destinationChainId, token))}>{shortAmountText(raw, token, name.book(record.destinationChainId, token))}</li>)}</ul>
+          <p>Available funds keep ETH aside for network fees. These are current wallet balances, not transfer receipt amounts.</p>
+        </div>}
+        {view.link && explorerLink(view.link.chainId, view.link.hash) && <a href={explorerLink(view.link.chainId, view.link.hash) ?? undefined} target="_blank" rel="noreferrer noopener" className="underline" data-funds-link={view.link.kind}>{FUNDS_TEXT.viewOnExplorer}</a>}
         <KeyValueList>
           <HashLine chainId={record.originChainId} hash={record.depositTxHash} label={FUNDS_TEXT.checkHash} />
           <KeyValue label={FUNDS_TEXT.bridge}>{PROVIDER_NAME[record.provider]}</KeyValue>
@@ -444,12 +439,12 @@ export function DepositStatus({
             </KeyValue>
           )}
         </KeyValueList>
-      </details>
-      {done && (
+        {done && (
         <Button variant="ghost" size="sm" className="mt-2" onClick={onRemove} data-funds-remove="">
           {FUNDS_TEXT.remove}
         </Button>
-      )}
-    </Card>
+        )}
+      </details>
+    </div>
   )
 }

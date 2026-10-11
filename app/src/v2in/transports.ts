@@ -23,11 +23,10 @@
  * Imported only by src/v2in modules, which V1 files open lazily behind the bare `__DOMINO_V2__` define: neither the
  * fixtures, the runtimes nor the routes' code reach a deployable build.
  */
-import * as planRuntime from 'api-contracts/position-plan-v1/runtime.mjs'
-import * as readRuntime from 'api-contracts/read-v6/runtime.mjs'
+import { CONTRACT_VERSION, ERROR_STATUS_BY_CODE, validateRequest, validateResponse, validateExchange, validateError } from 'api-contracts/read-v6/runtime.mjs'
 import { livePlanTransport, liveReadV6Transport, v2RouteProbe } from '../finance/v2/http'
 import type { GateRoutes, V2Gate } from '../v2/gate'
-import type { S1PlanValidators } from '../v2/plan/types'
+import { POSITION_PLAN_RUNTIME } from '../v2/plan/contract'
 import type { ReadV6Validators } from '../v2/read/v6'
 import type { V2RouteProbe } from '../v2/routes'
 import { createV2ReadTransports, createV2Transports, type V2DataScript, type V2Transports, type V2ReadTransports } from './dataSource'
@@ -49,7 +48,8 @@ let probe: V2RouteProbe | null = null
 /** The same probe for the gates (src/v2/gate.ts GateRoutes): a service is live only while its route serves. */
 export const v2PageProbe: GateRoutes = () => Promise.resolve((probe ??= v2RouteProbe()))
 
-const RUNTIMES = Object.freeze({ read: readRuntime as unknown as ReadV6Validators, plan: planRuntime as unknown as S1PlanValidators })
+const readRuntime: ReadV6Validators = Object.freeze({ CONTRACT_VERSION, ERROR_STATUS_BY_CODE, validateRequest, validateResponse, validateExchange, validateError })
+const RUNTIMES = Object.freeze({ read: readRuntime, plan: POSITION_PLAN_RUNTIME })
 
 /** The transports for a chain's gate; null when the gate is off. */
 export function v2Transports(gate: V2Gate): V2Transports | null {

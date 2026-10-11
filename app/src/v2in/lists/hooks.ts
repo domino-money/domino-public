@@ -2,6 +2,14 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { V2ChainId } from '../../v2/types'
 import type { KeyedReader } from './read'
 import { listsGate, type ListsGate, type ListsMode } from './source'
+import { CREATED_POSITIONS, type CreatedPosition } from './createdPositions'
+
+const NO_CREATIONS: readonly CreatedPosition[] = Object.freeze([])
+export function useCreatedPositions(wallet: string | null) {
+  const subscribe = useCallback((listener: () => void) => wallet ? CREATED_POSITIONS.subscribe(wallet, listener) : () => undefined, [wallet])
+  const snapshot = useCallback(() => wallet ? CREATED_POSITIONS.get(wallet) : NO_CREATIONS, [wallet])
+  return useSyncExternalStore(subscribe, snapshot, () => NO_CREATIONS)
+}
 
 /** The lists' gate per chain (./source.ts listsGate), or null while it is worked out. */
 export function useListsGate(): ListsGate | null {

@@ -20,7 +20,7 @@ subscribePositionChanges((change) => {
   if (change.kind === 'state') return
   const block = change.block === undefined ? 0 : Number(change.block)
   ACTIVITY_HISTORY.refresh(change.wallet?.toLowerCase(), block > 0 ? { chainId: change.chainId, block } : undefined)
-})
+}, true)
 subscribeConfirmedOperations(operation => {
   if (operation.indexed && operation.phase === 'included') return
   ACTIVITY_HISTORY.refresh(operation.wallet, operation.phase === 'reorged' ? undefined : { chainId: operation.chainId, block: operation.block, finalized: operation.phase === 'finalized' })

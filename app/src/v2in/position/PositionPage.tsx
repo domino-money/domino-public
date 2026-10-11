@@ -33,11 +33,14 @@ import { COPY } from './copy'
 import { chainStatusOf, findPosition, fromV6, hookedPool, isLive, tokensOf, vaultReservesOf, type LiveV6Position } from './model'
 import { MoreActions, positionMenuItems } from './MoreActions'
 import { PositionDialog, type PositionMode } from './PositionDialog'
-import { portfolioFor, type PortfolioRead, type V6Read } from './source'
+import type { V6Read } from './source'
 import { labelOf, tokenBook, usdOfAmounts } from './tokens'
 import { useActivityHistory } from '../lists/activity'
 import PositionHistory from '../lists/PositionHistory'
+import { useCreatedPositions, useKeyed, useKeyedLatest } from '../lists/hooks'
+import { OWN_PORTFOLIO } from '../lists/source'
 import type { OpenGate } from './wallet'
+import RecordedInsights from './RecordedInsights'
 
 // 2026-10-03 (the owner's point 10): the Price range chart's own chunk, asked for as this page's code arrives (V1's page does the same).
 preloadPriceChart()
@@ -114,39 +117,30 @@ export default function PositionPage({ param, list }: { param: string; list: Rea
 function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef; gate: OpenGate; wallet: string | null; walletOnChain: boolean }) {
   // The portfolio is the connected wallet's: none is read without one (never an empty owner to read-v6).
   const needsWallet = wallet === null
-  const [read, setRead] = useState<PortfolioRead | null>(null)
+  const reply = useKeyed(OWN_PORTFOLIO, wallet)
+  const latest = useKeyedLatest(OWN_PORTFOLIO, wallet)
+  const created = useCreatedPositions(wallet)
   const history = useActivityHistory(wallet)
   const activity = useMemo<V6Read<ActivityResponse> | null>(() => history.answer ? { kind: 'ok', body: history.answer } : history.error, [history.answer, history.error])
-  const [round, setRound] = useState(0)
   const chain = v2Chain(target.chainId)
   const id = target.tokenId.toString()
   useRouteTitle(`Position #${id}`)
 
+  // The figures, Activity and automation share one wallet-keyed snapshot. A known creation remains discoverable
+  // while the index catches up; it never supplies fabricated balances or permits actions before the live read.
+  const found = reply?.kind === 'ok' ? findPosition(reply.body, target.chainId, target.dex, target.tokenId) : null
+  const creation = created.find(item => item.chainId === target.chainId && item.dex === target.dex && item.tokenId === id)
+  const awaited = reply !== null && !(found && isLive(found)) && newPositionExpected(exitOrderKey(id, target.chainId, target.dex))
   useEffect(() => {
-    if (needsWallet) return
-    let alive = true
-    void portfolioFor(gate, wallet ?? '').then((answer) => { if (alive) setRead(answer) })
-    return () => {
-      alive = false
-    }
-  }, [needsWallet, gate, wallet, round])
-
-  // Added 2026-10-06 (the review of point 5, a second look): a position New position just made, opened from its success
-  // (its own link or Auto-exit's), reaches read-v6's list some seconds later (the index runs behind the chain; at first
-  // it may be listed as not read yet). While it is expected (two minutes, lib/automate/autoExitAsk.ts) the page reads the
-  // list again every few seconds and waits on its loading frame, then says it isn't listed only once that time is over.
-  // Auto-exit's dialog, asked for on the way here, opens as soon as the position is drawn.
-  const found = read?.reply.kind === 'ok' ? findPosition(read.reply.body, target.chainId, target.dex, target.tokenId) : null
-  const awaited = read !== null && !(found && isLive(found)) && newPositionExpected(exitOrderKey(id, target.chainId, target.dex))
-  useEffect(() => {
-    if (!awaited) return
-    const timer = setTimeout(() => setRound((n) => n + 1), NEW_POSITION_REREAD_MS)
+    // Preserve Robinhood's existing arrival cadence. Other chains use the shared bounded catch-up policy.
+    if (!awaited || target.chainId !== 4663 || !wallet) return
+    const timer = setTimeout(() => OWN_PORTFOLIO.again(wallet), NEW_POSITION_REREAD_MS)
     return () => clearTimeout(timer)
-  }, [awaited, read])
+  }, [awaited, reply, target.chainId, wallet])
 
   if (needsWallet) return <Empty title={`Position #${id}`} body={COPY.page.connect} reason="connect_wallet" />
-  if (read === null) return <Waiting id={id} />
-  const reply = read.reply
+  if (creation && !(found && isLive(found))) return <Empty title={`Position #${id}`} body="Updating position details…" reason="awaiting_index" />
+  if (reply === null) return <Waiting id={id} />
   if (reply.kind === 'unavailable') return <Empty title={`Position #${id}`} body={COPY.page.listUnavailable} reason={reply.reason} />
   if (reply.kind === 'invalid') return <Empty title={`Position #${id}`} body={COPY.page.listInvalid} reason={reply.detail} />
   const answer = reply.body
@@ -165,12 +159,12 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
         gate={gate}
         answer={answer}
         position={found}
-        stale={status.status === 'stale' || found.freshness?.status === 'stale'}
-        coverage={coverageNote(answer.chains)}
+        stale={status.status === 'stale' || found.freshness?.status === 'stale' || (latest !== null && latest.kind !== 'ok')}
+        coverage={latest !== null && latest.kind !== 'ok' ? 'Details couldn’t update. Showing the last available reading.' : coverageNote(answer.chains)}
         wallet={wallet}
         walletOnChain={walletOnChain}
         activity={activity}
-        onChanged={() => setRound((n) => n + 1)}
+        onChanged={() => OWN_PORTFOLIO.again(wallet)}
       />
     </PageShell>
   )
@@ -342,14 +336,14 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
       </StatStrip>
 
       <div className="dm-pos-grid">
-        <section className="dm-card dm-pos-card" aria-labelledby="position-range-title">
+        {chainId !== 4663 ? <RecordedInsights key={`${chainId}:${position.manager}:${position.tokenId}:${card.poolId}`} answer={answer} position={position} card={card} price={price} book={book} fresh={fresh} /> : <section className="dm-card dm-pos-card" aria-labelledby="position-range-title">
           <h2 id="position-range-title" className="dm-title">
             {COPY.page.rangeTitle}
           </h2>
           {/* The pool's stored price history (2026-10-03, the owner's point 10): kept by the read service for Robinhood
               Chain's Uniswap v4 pools only. */}
           <PositionRange card={card} price={price} variant="page" history={chainId === 4663 && position.dex === 4} openedAt={activityOpenedAt(activity?.kind === 'ok' ? activity.body : null, position)} />
-        </section>
+        </section>}
 
         <PositionHistory wallet={wallet} position={{ chainId, dex: position.dex, tokenId: position.tokenId.toString() }} />
 
@@ -360,6 +354,18 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
             <IconChevronDown size={16} />
           </summary>
           <KeyValueList className="dm-pos-facts">
+            {chainId !== 4663 && <KeyValue label="APR data"><span>Lifetime fee history isn’t available from this network’s current data source. Recorded balances do not establish APR.</span></KeyValue>}
+            {chainId !== 4663 && holdsUsd === null && <KeyValue label="USD valuation"><span>{!fresh ? 'Waiting for a current reading.' : 'Token amounts are shown because a reliable USD price isn’t available for every token held.'}</span></KeyValue>}
+            {chainId !== 4663 && pair.filter((_, index) => (position.principal?.[index] ?? 0n) > 0n || (position.feesOwed?.[index] ?? 0n) > 0n).map(address => {
+              const token = answer.tokens.find(item => item.chainId === chainId && item.address.toLowerCase() === address)
+              if (token?.price || !token?.priceReason) return null
+              const reason = token.priceReason === 'pool_depth_below_floor' ? 'The pricing pool has too little liquidity for a reliable USD estimate.'
+                : token.priceReason === 'pool_depth_unmeasurable' ? 'The pricing pool’s liquidity could not be verified.'
+                : token.priceReason === 'decimals_unknown' ? 'Token precision could not be verified.'
+                : token.priceReason === 'eth_usd_stale' || token.priceReason === 'price_read_failed' || token.priceReason === 'sequencer_down' ? 'The USD price source is temporarily unavailable.'
+                : 'A qualified USD price source isn’t available.'
+              return <KeyValue key={address} label={`${labelOf(book, address)} price`}><span>{reason}</span></KeyValue>
+            })}
             <KeyValue label={COPY.page.nftId}>
               <Address value={position.tokenId.toString()} />
             </KeyValue>

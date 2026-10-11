@@ -15,7 +15,7 @@ import { contractsFor, createV2Chain, poolIdOf } from '../support/v2-chain.mjs';
 import { footerButton, press, pressContinue } from '../support/new-position.mjs';
 import { createReadStub, FIXTURE_POOL, FIXTURE_TOKEN, gatewayError } from '../support/read-stub.mjs';
 import { createChainReads } from '../support/chain-reads.mjs';
-import { activityOf, indexedToken, livePosition, portfolioOf } from '../support/s1-read6.mjs';
+import { activityOf, indexedToken, livePosition, portfolioOf, s1Action } from '../support/s1-read6.mjs';
 
 const require = createRequire(import.meta.url);
 const position = require('../../.test-build/app/src/finance/position.js');
@@ -38,7 +38,7 @@ async function until(check, what, ms = 30_000) {
 /** From now on, records whether the position's page ever drew its empty state ("This position isn’t in your wallet’s list."…). */
 const watchEmpty = (page) => page.evaluate(() => {
   window.__positionEmpty = false;
-  new MutationObserver(() => { if (document.querySelector('[data-empty="position-v2"]')) window.__positionEmpty = true; }).observe(document.body, { childList: true, subtree: true });
+  new MutationObserver(() => { if (document.querySelector('[data-empty="position-v2"]:not([data-position-reason="awaiting_index"])')) window.__positionEmpty = true; }).observe(document.body, { childList: true, subtree: true });
 });
 /** His footer's Back, drawn first in it (components/create/Journey.tsx): shown, or resting (`hidden`). */
 const backOf = (page) => page.locator('[data-journey-footer] > button').first();
@@ -544,19 +544,44 @@ function basePlanner(answers = [], { l1Unavailable = false } = {}) {
   };
 }
 
-test('(e) his journey on Base: Base\'s USDC in his search with its tag, the wallet moved to Base once, Base\'s pools in his list, his steps, the plan and the create on Base', async () => {
-  const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
+for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigation', 'atomic-reorg', 'atomic-not-included', 'atomic-batch-reverted']) test(`(e) his journey on Base: search, create and verified ${outcome}`, async () => {
+  const atomic = outcome.startsWith('atomic');
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), ...(atomic ? { atomic: 'supported', simulateV1: true } : {}), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
   // The wallet starts on Robinhood Chain, as the site's own network.
   chain.switchTo(4663);
   const read = createReadStub({ answer: robinhoodRead });
   const answers = [];
   // read-v6 about the wallet (2026-10-06): the new position listed some seconds after it is made; each answer kept.
   let made = null;
+  let receiptStage = 'included', inclusion = null, reorganized = false;
+  const activityItems = [];
+  const replacementHash = `0x${'cd'.repeat(32)}`;
   const served = [];
   const s = await openJourney(browser, chain, {
-    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner(answers),
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner(answers), refresh: true,
+    intercept: async (method, params) => {
+      if (method === 'eth_getBlockByNumber' && params[0] === 'finalized' && receiptStage !== 'finalized') return { result: { number: '0x1', hash: replacementHash } };
+      if (atomic && receiptStage === 'reorged' && method === 'eth_getLogs') return { result: [] };
+      if (atomic && method === 'wallet_getCallsStatus' && ['not-included', 'batch-reverted'].includes(receiptStage)) {
+        const answer = await chain.request(method, params);
+        return { result: { ...answer.result, status: receiptStage === 'not-included' ? 400 : 500 } };
+      }
+      if (reorganized && inclusion && method === 'eth_getBlockByNumber' && params[0] === `0x${inclusion.block.toString(16)}` && receiptStage !== 'included') {
+        const answer = await chain.request(method, params);
+        return { result: { ...answer.result, hash: replacementHash } };
+      }
+      if (reorganized && inclusion && method === 'eth_getTransactionReceipt' && params[0] === inclusion.hash && ['reincluded', 'finalized', 'reverted'].includes(receiptStage)) {
+        const answer = await chain.request(method, params);
+        return { result: { ...answer.result, blockHash: replacementHash, ...(receiptStage === 'reverted' ? { status: '0x0', logs: [] } : {}) } };
+      }
+      return undefined;
+    },
     routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
-    read6: { portfolio: () => { served.push(made); return basePortfolio(made); }, activity: () => activityOf({ wallet: OWNER }) },
+    read6: { portfolio: () => { served.push(made); return basePortfolio(made); }, activity: () => {
+      const reply = activityOf({ wallet: OWNER }); reply.body.items = activityItems;
+      if (inclusion) reply.body.chains.find(item => item.chainId === 8453).finalizedThrough.number = inclusion.block - 1;
+      return reply;
+    } },
   });
   try {
     const page = s.page;
@@ -612,29 +637,97 @@ test('(e) his journey on Base: Base\'s USDC in his search with its tag, the wall
     assert.equal(s.planned[0].inputs[1].amountRaw, '1000000000', 'the 1,000 USDC he typed');
     // Added 2026-10-06 (the owner's point 4): on Base the one network fee line counts the plan's L1 data fee; its ceiling
     // (the oracle's upper bound) and the L1 data fee itself are under Details (spec §2.4).
-    const networkFee = review.locator('[data-review-network-fee="about"]');
+    const networkFee = review.locator(`[data-review-network-fee="${atomic ? 'upTo' : 'about'}"]`);
     await networkFee.waitFor({ timeout: 30_000 });
-    assert.match(await networkFee.innerText(), /^Network fee: about [\d.]+ ETH$/);
+    assert.match(await networkFee.innerText(), atomic ? /^Network fee: up to [\d.]+ ETH$/ : /^Network fee: about [\d.]+ ETH$/);
     assert.equal(await networkFee.getAttribute('data-review-l1-fee'), '10345963635');
     const details = review.locator('[data-review-details]');
     await details.locator('summary').click();
     // Changed on purpose 2026-10-06 (the review of point 4): the ceiling under a label of its own, never a second "Network
     // fee" beside the one in view, and with the same approval counted, so never below that line's figure.
-    const ceiling = await details.locator('[data-fact="review-network-fee"]').innerText();
-    assert.match(ceiling, /^Network fee, at most\s+[\d.]+ ETH$/);
-    assert.ok(Number(ceiling.match(/([\d.]+) ETH$/)[1]) >= Number((await networkFee.innerText()).match(/about ([\d.]+) ETH/)[1]), 'the ceiling is never below the figure in view');
+    if (!atomic) {
+      const ceiling = await details.locator('[data-fact="review-network-fee"]').innerText();
+      assert.match(ceiling, /^Network fee, at most\s+[\d.]+ ETH$/);
+      assert.ok(Number(ceiling.match(/([\d.]+) ETH$/)[1]) >= Number((await networkFee.innerText()).match(/about ([\d.]+) ETH/)[1]), 'the ceiling is never below the figure in view');
+    } else assert.equal(await details.locator('[data-fact="review-network-fee"]').count(), 0, 'the batch ceiling is already the visible fee line');
     assert.match(await details.locator('[data-fact="review-l1-fee"]').innerText(), /^L1 data fee\s+0\.00000002 ETH$/, '10,345,963,635 wei, rounded up at 8 decimals');
     assert.equal(await page.locator('[data-create-position="idle"]').count(), 0, 'not Domino V1\'s Create position');
     await page.locator('[data-create-position="live"]:not([disabled])').click({ timeout: 30_000 });
     await page.locator('[data-created-position][data-zap-receipt]').waitFor({ timeout: 60_000 });
-    const [approve, createTx] = chain.sends.map((entry) => entry.tx);
-    assert.deepEqual([approve.to, approve.chainId], [USDC_BASE, '0x2105'], 'the exact approval, on Base');
+    const [approve, createTx] = atomic ? chain.batches[0].calls : chain.sends.map((entry) => entry.tx);
+    assert.equal(approve.to, USDC_BASE, 'the exact approval, on Base');
     assert.equal(decodeFunctionData({ abi: ERC20, data: approve.data }).args[0].toLowerCase(), ZAP_V4);
-    assert.deepEqual([createTx.to, createTx.chainId], [ZAP_V4, '0x2105'], 'the create on Base\'s zap');
+    assert.equal(createTx.to, ZAP_V4, 'the create on Base\'s zap');
+    if (atomic) assert.deepEqual([chain.batches.length, chain.chainNow()], [1, 8453], 'one atomic confirmation on Base');
+    else assert.deepEqual([approve.chainId, createTx.chainId], ['0x2105', '0x2105']);
     assert.equal(createTx.data, answers.at(-1).plan.call.data, 'the call data the plan carried');
     // The created view is the zap path's (its receipt, its link on Base), never today's Robinhood Chain lists.
     assert.match(await page.locator('a[data-created-next="position"]').getAttribute('href'), /^#\/positions\/base-v4-\d+$/);
-    assert.equal(await page.locator('a[href^="#/sequence/compound/"]').count(), 0);
+    for (const mode of ['compound', 'domino']) {
+      const setup = page.locator(`a[data-created-next="${mode}"]`);
+      await setup.waitFor();
+      assert.match(await setup.getAttribute('href'), new RegExp(`^#/sequence/${mode}/base-v4-\\d+$`), 'each automation keeps the new NFT’s network and protocol');
+      assert.match(await setup.innerText(), mode === 'compound' ? /2%/ : /4%/, 'fees remain visible before choosing setup');
+    }
+    const createdId = await page.locator('[data-created-position]').getAttribute('data-created-position');
+    const hints = await page.evaluate(owner => JSON.parse(sessionStorage.getItem('domino:created-positions:v1:' + owner) ?? '[]'), OWNER);
+    const hint = hints.find(item => item.tokenId === createdId);
+    assert.ok(hint, 'the successful receipt preserves only a discovery hint before the index lists the NFT');
+    assert.deepEqual([hint.chainId, hint.dex, hint.positionManager], [8453, 4, BASE_V4_PM]);
+    assert.deepEqual(hint.tokens.map(({ address, symbol, decimals }) => [address, symbol, decimals]), [[ZERO, 'ETH', 18], [USDC_BASE, 'USDC', 6]]);
+    assert.equal('state' in hint, false, 'a receipt hint cannot provide financial eligibility or invented live state');
+    inclusion = hint;
+    const sendCount = chain.sends.length, planCount = s.planned.length;
+    if (outcome.endsWith('navigation')) {
+      const item = s1Action({ chainId: 8453, wallet: OWNER, zap: ZAP_V4, tokenId: createdId, block: hint.block, pool: POOL_BASE, finalized: false });
+      item.tx.hash = hint.hash; item.tx.snapshot.hash = hint.blockHash; item.tx.snapshot.timestamp = now();
+      activityItems.push(item);
+      made = { tokenId: createdId, tickLower: s.planned.at(-1).tickLower, tickUpper: s.planned.at(-1).tickUpper, read: true };
+      await page.locator('a[data-created-next="position"]').click();
+      await page.locator(`[data-position-detail][data-position-id="${createdId}"]`).waitFor({ timeout: 30_000 });
+      const row = page.locator(`[data-position-activity-item="${item.id}"]`);
+      await row.locator('text=Confirming').waitFor({ timeout: 30_000 });
+      assert.equal(await page.locator('[data-create-journey]').count(), 0, 'the original receipt view is unmounted');
+      receiptStage = 'finalized';
+      await page.locator(`[data-position-activity-item="${item.id}"][data-v2-finality="finalized"]`).waitFor({ timeout: 30_000 });
+      assert.equal(await row.locator('text=Confirming').count(), 0, 'the shared exact receipt proof settles Activity without returning to creation');
+      assert.equal(item.tx.finality, 'unfinalized', 'the lagging index did not supply this finality');
+      assert.equal(chain.sends.length, sendCount); assert.equal(s.planned.length, planCount);
+      assert.deepEqual(chain.offChain, []);
+      return;
+    }
+    reorganized = true;
+    receiptStage = 'reorged';
+    await page.locator('[data-zap-receipt="pending"]').waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('a[data-created-next]').count(), 0, 'orphaned effects cannot offer position or automation actions');
+    assert.deepEqual(await page.evaluate(owner => JSON.parse(sessionStorage.getItem('domino:created-positions:v1:' + owner) ?? '[]'), OWNER), [], 'explicit canonical contradiction removes the creation hint');
+    receiptStage = atomic ? outcome === 'atomic-reorg' ? 'reincluded' : outcome.slice(7) : outcome;
+    if (['not-included', 'batch-reverted'].includes(receiptStage)) {
+      const failedReceipt = page.locator('[data-zap-receipt="not-included"]');
+      await failedReceipt.waitFor({ timeout: 30_000 });
+      assert.match(await failedReceipt.innerText(), /The wallet batch did not complete\. No position was created\./);
+      assert.equal(await page.locator('a[data-created-next]').count(), 0);
+      assert.equal(chain.sends.length, sendCount); assert.equal(s.planned.length, planCount);
+      assert.deepEqual(await page.evaluate(owner => JSON.parse(sessionStorage.getItem('domino:created-positions:v1:' + owner) ?? '[]'), OWNER), []);
+      return;
+    }
+    if (outcome === 'reverted') {
+      const failedReceipt = page.locator('[data-zap-receipt="reverted"]');
+      await failedReceipt.waitFor({ timeout: 30_000 });
+      assert.match(await failedReceipt.innerText(), /The transaction reverted\. No position was created\./);
+      assert.equal(await page.locator('a[data-created-next]').count(), 0);
+      assert.equal(chain.sends.length, sendCount, 'a reverted reinclusion never resends the action');
+      assert.equal(s.planned.length, planCount, 'the sent review is never silently requoted');
+      assert.deepEqual(await page.evaluate(owner => JSON.parse(sessionStorage.getItem('domino:created-positions:v1:' + owner) ?? '[]'), OWNER), []);
+      return;
+    }
+    await page.locator('[data-zap-receipt="included"]').waitFor({ timeout: 30_000 });
+    const restored = await page.evaluate(owner => JSON.parse(sessionStorage.getItem('domino:created-positions:v1:' + owner) ?? '[]'), OWNER);
+    assert.deepEqual([restored[0].tokenId, restored[0].blockHash], [createdId, replacementHash], 'a checked reinclusion restores only the new block evidence');
+    receiptStage = 'finalized';
+    await page.locator('[data-zap-receipt="finalized"]').waitFor({ timeout: 30_000 });
+    assert.equal(chain.sends.length, sendCount, 'reorg and finality checks never resend the action');
+    assert.equal(s.planned.length, planCount, 'the sent review is never silently requoted');
     // Added 2026-10-06 (the final check's F1/F6): Back rests under it, as on Robinhood Chain (test (t) follows it further).
     assert.equal(await backOf(page).isHidden(), true, 'Back rests once the position exists');
     // Added 2026-10-06 (the review of point 5): Auto-exit offered there too, on Base (a range around the price: not
@@ -650,7 +743,7 @@ test('(e) his journey on Base: Base\'s USDC in his search with its tag, the wall
     await watchEmpty(page);
     const before = served.length;
     await page.locator('a[data-created-next="position"]').click();
-    await page.locator('[data-position-loading]').waitFor({ timeout: 30_000 });
+    await page.locator('[data-position-reason="awaiting_index"]').waitFor({ timeout: 30_000 });
     await until(() => served.length >= before + 2, 'the wallet’s list read again');
     made = { tokenId, tickLower: s.planned.at(-1).tickLower, tickUpper: s.planned.at(-1).tickUpper, read: true };
     await page.locator(`[data-position-detail][data-position-id="${tokenId}"]`).waitFor({ timeout: 30_000 });
@@ -673,7 +766,7 @@ test('(e2) his journey on Base, a range above the price: the success recommends 
   let made = null;
   const served = [];
   const s = await openJourney(browser, chain, {
-    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner([]),
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner([]), refresh: true,
     routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
     read6: { portfolio: () => { served.push(made); return basePortfolio(made); }, activity: () => activityOf({ wallet: OWNER }) },
   });
@@ -718,7 +811,7 @@ test('(e2) his journey on Base, a range above the price: the success recommends 
     await exit.click();
     // The position's own page, clicked at once: read-v6 does not list the position yet. The page waits on its loading
     // frame and reads the list again every few seconds; listed, then read, it is drawn.
-    await page.locator('[data-position-loading]').waitFor({ timeout: 30_000 });
+    await page.locator('[data-position-reason="awaiting_index"]').waitFor({ timeout: 30_000 });
     await until(() => served.length >= before + 2, 'the wallet’s list read again');
     made = { tokenId, tickLower: asked.tickLower, tickUpper: asked.tickUpper, read: false };
     await until(() => served.some((one) => one !== null && !one.read), 'the position listed as not read yet');

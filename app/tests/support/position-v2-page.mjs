@@ -28,7 +28,7 @@ export const WALLET_NAME = 'Position V2 Wallet';
 /** DEX Screener's API and images, where V1's optional token artwork is looked up (tests/support/new-position.mjs ARTWORK). */
 const ARTWORK = /^https:\/\/(api|cdn)\.dexscreener\.com\//;
 
-export async function openPositionPage(browser, chain, { dist = WALLET_V2_DIST, hash, read6 = {}, planner = () => undefined, intercept = () => undefined, live = true, open = true, script = live, contracts, connect = true, viewport = { width: 1180, height: 960 }, s1 = {}, routes = [] } = {}) {
+export async function openPositionPage(browser, chain, { dist = WALLET_V2_DIST, hash, read6 = {}, planner = () => undefined, intercept = () => undefined, live = true, open = true, script = live, contracts, connect = true, viewport = { width: 1180, height: 960 }, s1 = {}, routes = [], creations = [] } = {}) {
   const fake = createFakeSession();
   const server = createWalletServer({ fake, dist, routes: [...routes, confirmationRoute(chain)] });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
@@ -54,7 +54,11 @@ export async function openPositionPage(browser, chain, { dist = WALLET_V2_DIST, 
   });
   await context.exposeFunction('__dominoPositionV2Csp', (text) => csp.push(text));
   const sets = contracts ?? { 4663: contractsFor(4663), 8453: contractsFor(8453), 42161: contractsFor(42161) };
-  await context.addInitScript(({ sets, read6, name, extra, live, open, script }) => {
+  await context.addInitScript(({ sets, read6, name, extra, live, open, script, creations }) => {
+    for (const row of creations) {
+      const key = `domino:created-positions:v1:${row.wallet.toLowerCase()}`;
+      if (!sessionStorage.getItem(key)) sessionStorage.setItem(key, JSON.stringify(creations.filter(item => item.wallet.toLowerCase() === row.wallet.toLowerCase())));
+    }
     window.__dominoV2Test = {
       ...(open ? { originOpen: true } : {}),
       ...(live ? { contracts: sets, backendOn: true } : {}),
@@ -75,7 +79,7 @@ export async function openPositionPage(browser, chain, { dist = WALLET_V2_DIST, 
     const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail }));
     window.addEventListener('eip6963:requestProvider', announce);
     announce();
-  }, { sets, read6, name: WALLET_NAME, extra: s1, live, open, script });
+  }, { sets, read6, name: WALLET_NAME, extra: s1, live, open, script, creations });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   const s = {

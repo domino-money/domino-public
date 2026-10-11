@@ -125,6 +125,7 @@ function LiveCreate({ state, balances, pay, onBusy, onReadAgain, gate, chainId }
     chainId,
     gate,
     inputs: funding.kind === 'inputs' ? funding.inputs : [],
+    tokens: zap?.pool?.tokens,
     label: (token) => labelOf(book, token),
     request: (consent) => requestFromV1(zap, funding, consent),
   })

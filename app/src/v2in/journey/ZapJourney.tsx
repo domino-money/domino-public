@@ -66,6 +66,7 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
     chainId,
     gate,
     inputs,
+    tokens: state.pool?.tokens,
     label: (token) => labelOf(book, token),
     request: (consent) => createRequest(state, consent),
   })

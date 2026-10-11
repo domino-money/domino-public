@@ -280,7 +280,15 @@ test('the journey’s offer, a wallet that batches on Arbitrum One: the approval
     assert.equal(batch.calls[0].data, plan.steps[0].transaction.data, `approve(depository, ${sent})`);
     assert.deepEqual(origin.state.sent, [], 'no transaction of its own');
     assert.equal(s.chain.sends.length, 0, 'nothing sent on Robinhood Chain');
-    assert.equal((await card.locator('.dm-subtitle').first().innerText()).trim(), 'Coming from Arbitrum One');
+    await offer.locator(`[data-funds-deposit="${HASH_OF(0)}"][data-funds-state="awaiting_deposit"]`).waitFor();
+    assert.equal(await card.getByRole('status').innerText(), 'Transferring to Robinhood Chain');
+    assert.match(await card.locator('.dm-transfer-networks').innerText(), /Arbitrum One\s*→\s*Robinhood Chain/);
+    assert.equal(await card.locator('[data-transfer-moving][aria-hidden="true"]').count(), 1, 'one decorative progress route accompanies the accessible status');
+    assert.equal(origin.state.batches.length, 1, 'tracking never requests another wallet confirmation');
+    assert.equal(s.walletMethods.filter((method) => method === 'wallet_sendCalls').length, 1);
+    const statusReads = s.calls.filter((call) => call.route === 'status');
+    assert.ok(statusReads.length > 0, 'the confirmed deposit is followed through the status service');
+    assert.ok(statusReads.every((call) => call.body.depositTxHash === HASH_OF(0) && call.body.originChainId === 42161), 'every tracking read belongs to this exact origin deposit');
     await captureCard(s, 'batch-sent');
   } finally { await s.close(); }
 });

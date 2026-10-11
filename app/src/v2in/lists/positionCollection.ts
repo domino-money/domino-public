@@ -7,6 +7,27 @@ import { amountShown, cleanSymbol, withTerminalEvidence, type PositionRowView, t
 import { minimumPositionBlock, positionKey, positionObservation } from './positionSync'
 import { v2PositionHref } from '../route'
 import type { Address } from '../../v2/types'
+import { v2Chain } from '../../v2/chains'
+import { createdPositionKey, type CreatedPosition } from './createdPositions'
+
+/** A known mint is visible immediately, but only indexed state can supply liquidity, balances or APR. */
+export function withCreatedPositions(rows: readonly PositionRowView[], creations: readonly CreatedPosition[]): PositionRowView[] {
+  const merged = new Map(rows.map(row => [row.key, row]))
+  for (const item of creations) {
+    const key = createdPositionKey(item), old = merged.get(key)
+    if (old?.status === 'live') continue
+    const chain = v2Chain(item.chainId)
+    merged.set(key, { key, positionManager: item.positionManager, block: null, chainId: item.chainId, chain: chain.name,
+      dex: item.dex, dexName: `Uniswap v${item.dex}`, tokenId: item.tokenId,
+      href: v2PositionHref({ chainId: item.chainId, dex: item.dex, tokenId: BigInt(item.tokenId) }),
+      status: 'not_read', tab: 'pending', state: 'unread', fee: feeFromPips(item.fee),
+      tokens: item.tokens.map(token => ({ chainId: item.chainId, address: token.address.toLowerCase() as Address,
+        label: cleanSymbol(token.symbol) ?? `${token.address.slice(0, 6)}…${token.address.slice(-4)}`, symbol: cleanSymbol(token.symbol) !== null, decimals: token.decimals, usd: null })) as [TokenName, TokenName],
+      unread: 'Updating position details.', value: null, fees: null, valueUsd: null, feesUsd: null,
+      stale: 'Updating', vault: old?.vault ?? null, hooked: false, family: old?.family ?? null })
+  }
+  return [...merged.values()]
+}
 
 /** These are frontend rows, not fabricated read-v6 snapshots (the historical answer has no block hash). */
 export function historicalPositionRows(answer: WalletAnswer | null, fresh: boolean): PositionRowView[] {

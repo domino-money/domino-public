@@ -7,7 +7,7 @@ import { Pill } from '../../ui'
 import { TokenLabel } from '../../read/TokenLabel'
 import { nearestIndex } from '../../../lib/chart/inspect'
 import { linePath } from '../../../lib/chart/paths'
-import { closedPriceLine, figureWidth, historyLine, observedPriceLine, placeLabels, priceDomain, readablePrice, statusWords, type HistoryVerdict, type LabelAsk, type RangeFacts } from '../../../lib/chart/priceRange'
+import { closedPriceLine, figureWidth, historyLine, observedPriceLine, placeLabels, priceDomain, readablePrice, statusWords, type HistoryVerdict, type LabelAsk, type RangeFacts, type PriceHistory } from '../../../lib/chart/priceRange'
 import type { PoolPriceObservations } from '../../../lib/chart/positionOpened'
 import { logScale } from '../../../lib/chart/scale'
 import { shortDate, shortTime } from '../../../lib/format/time'
@@ -68,12 +68,12 @@ function historyNote(history: PoolHistory, verdict: HistoryVerdict | null, opene
  * This module is its own chunk, loaded on a position's page only (PositionRange.tsx); its status and its box are
  * RangeStatus.tsx's, which the page draws in its place for the moment it loads.
  */
-export function PriceVsRange({ history = null, openedAt = null, closedAt = null, observations = null }: { history?: PoolHistoryAsk | null; openedAt?: number | null; closedAt?: number | null; observations?: PoolPriceObservations | null }) {
+export function PriceVsRange({ history = null, openedAt = null, closedAt = null, observations = null, recorded }: { history?: PoolHistoryAsk | null; openedAt?: number | null; closedAt?: number | null; observations?: PoolPriceObservations | null; recorded?: PriceHistory | null }) {
   const facts = useContext(RangeFactsContext)
-  return facts ? <PriceChart facts={facts} ask={history} openedAt={openedAt} closedAt={closedAt} observations={observations} /> : null
+  return facts ? <PriceChart facts={facts} ask={history} openedAt={openedAt} closedAt={closedAt} observations={observations} recorded={recorded} /> : null
 }
 
-function PriceChart({ facts, ask, openedAt, closedAt, observations }: { facts: RangeFacts; ask: PoolHistoryAsk | null; openedAt: number | null; closedAt: number | null; observations: PoolPriceObservations | null }) {
+function PriceChart({ facts, ask, openedAt, closedAt, observations, recorded }: { facts: RangeFacts; ask: PoolHistoryAsk | null; openedAt: number | null; closedAt: number | null; observations: PoolPriceObservations | null; recorded?: PriceHistory | null }) {
   const { base, quote, lower, upper, lowerText, upperText, now, nowText, where } = facts
   const phone = useMediaQuery('(max-width: 767px)')
   const { expanded, showPoints } = usePositionChartOptions()
@@ -82,13 +82,14 @@ function PriceChart({ facts, ask, openedAt, closedAt, observations }: { facts: R
   const history = usePoolHistory(ask)
   const verdict = useMemo<HistoryVerdict | null>(
     () => {
+      if (recorded !== undefined) return recorded ? { kind: 'line', history: recorded } : null
       const data = history.phase === 'answered' ? history.data : null
       const stored = history.phase === 'answered' ? historyLine(history.data, { base: base.address, quote: quote.address }, { lower, upper }, history.at / 1000, knownMint) : null
       const observed = ask ? observedPriceLine(stored, data, ask, { lower, upper }, knownMint, observations) : stored
       // Without a confirmed close time no part of an empty NFT's pool history is labelled as its performance.
       return where === 'closed' ? closedAt === null ? null : closedPriceLine(observed, closedAt) : observed
     },
-    [history, ask, base.address, quote.address, lower, upper, knownMint, closedAt, where, observations],
+    [history, ask, base.address, quote.address, lower, upper, knownMint, closedAt, where, observations, recorded],
   )
   const line = verdict?.kind === 'line' ? verdict.history : null
   const points = useMemo(() => line?.points ?? [], [line])
@@ -96,7 +97,7 @@ function PriceChart({ facts, ask, openedAt, closedAt, observations }: { facts: R
   const start = line?.start ?? 0
   const end = line?.end ?? 1
   const closed = where === 'closed'
-  const last = closed ? points.at(-1) ?? null : null
+  const last = closed || recorded !== undefined ? points.at(-1) ?? null : null
   const marker = closed ? last?.price ?? null : now
   const markerText = closed ? last?.exact ?? null : nowText
   const domain = useMemo(() => priceDomain(lower, upper, [...(closed ? [] : [now]), ...(line ? line.runs.flat().map((point) => point.price) : [])]), [lower, upper, now, closed, line])
@@ -115,10 +116,10 @@ function PriceChart({ facts, ask, openedAt, closedAt, observations }: { facts: R
 
   const scales = useCallback(
     (plot: Plot) => ({
-      x: (t: number) => plot.left + ((t - start) / Math.max(1, end - start)) * Math.max(0, plot.right - NOW_INSET - plot.left),
+      x: (t: number) => recorded !== undefined && start === end ? (plot.left + plot.right - NOW_INSET) / 2 : plot.left + ((t - start) / Math.max(1, end - start)) * Math.max(0, plot.right - NOW_INSET - plot.left),
       y: logScale(domain, [plot.bottom, plot.top]),
     }),
-    [start, end, domain],
+    [start, end, domain, recorded],
   )
 
   /**
@@ -191,12 +192,12 @@ function PriceChart({ facts, ask, openedAt, closedAt, observations }: { facts: R
     (plot: Plot) => {
       if (!drawn) return null
       const { x } = scales(plot)
-      const ticks = dateTicks(start, end, Math.max(2, Math.floor((plot.right - plot.left) / 96)))
+      const ticks = recorded !== undefined ? [{ t: start, label: shortTime(start) }, ...(end > start ? [{ t: end, label: shortTime(end) }] : [])] : dateTicks(start, end, Math.max(2, Math.floor((plot.right - plot.left) / 96)))
       const opened = start === knownMint
       const candidates = [...(opened ? [{ x: plot.left, label: 'Opened' }] : []), ...ticks.map((tick) => ({ x: x(tick.t), label: tick.label }))]
       return <XAxis ticks={spacedTimeTicks(candidates, plot.left, plot.right - NOW_INSET)} anchor={plot.bottom + 22} left={plot.left} right={plot.right - NOW_INSET} />
     },
-    [scales, drawn, start, end, knownMint],
+    [scales, drawn, start, end, knownMint, recorded],
   )
 
   /** The labels at the plot's right: the range's Max and Min at its edges and the price now's chip, none over another. */
@@ -217,7 +218,7 @@ function PriceChart({ facts, ask, openedAt, closedAt, observations }: { facts: R
   const inspect = (plot: Plot, index: number | null) => {
     const { x, y } = scales(plot)
     const { asks, placed, nowY } = labels(plot)
-    const nowX = closed && last ? x(last.t) : plot.right - NOW_INSET
+    const nowX = (closed || recorded !== undefined) && last ? x(last.t) : plot.right - NOW_INSET
     const point = index === null || !drawn ? null : points[index]
     return (
       <>
@@ -282,7 +283,7 @@ function PriceChart({ facts, ask, openedAt, closedAt, observations }: { facts: R
 
   const words = `Your range ${lowerText ?? 'unknown'} to ${upperText ?? 'unknown'}; the price now ${nowText}, ${status.detail}`
   return (
-    <div className="dm-pvr-wrap" data-pvr-where={where} data-pvr-line={drawn ? '' : undefined} data-pvr-history={ask && knownMint === null ? 'unknown_mint' : verdict?.kind === 'none' ? verdict.reason : history.phase} data-pvr-stale={line?.stale ? '' : undefined} data-pvr-opened={knownMint ?? undefined} data-pvr-closed={closedAt ?? undefined} data-pvr-start={line?.start} data-pvr-end={line?.end} data-pvr-first={points[0]?.t}>
+    <div className="dm-pvr-wrap" data-pvr-where={where} data-pvr-line={drawn ? '' : undefined} data-pvr-history={recorded !== undefined ? 'recorded' : ask && knownMint === null ? 'unknown_mint' : verdict?.kind === 'none' ? verdict.reason : history.phase} data-pvr-stale={line?.stale ? '' : undefined} data-pvr-opened={knownMint ?? undefined} data-pvr-closed={closedAt ?? undefined} data-pvr-start={line?.start} data-pvr-end={line?.end} data-pvr-first={points[0]?.t}>
       <RangeHead facts={facts} />
       <ChartFrame
         className="dm-pvr"
@@ -328,7 +329,7 @@ function PriceChart({ facts, ask, openedAt, closedAt, observations }: { facts: R
             Price now
           </span>
         )}
-        <span className="dm-pvr-note" title={line?.observed ? 'Pool price at the opening block and later measurements. Lines between measurements are guides.' : knownMint ? `Opened ${shortDate(knownMint)} ${shortTime(knownMint)}` : undefined}>{closed ? closedAt === null ? 'Updating this position’s closing history…' : `Until closed · ${shortDate(closedAt)} ${shortTime(closedAt)}` : historyNote(history, verdict, knownMint, ask !== null)}</span>
+        <span className="dm-pvr-note" title={recorded !== undefined ? 'Only snapshots recorded in this browser session. Earlier price history isn’t available; gaps are not connected.' : line?.observed ? 'Pool price at the opening block and later measurements. Lines between measurements are guides.' : knownMint ? `Opened ${shortDate(knownMint)} ${shortTime(knownMint)}` : undefined}>{recorded !== undefined ? 'Recorded readings · This session' : closed ? closedAt === null ? 'Updating this position’s closing history…' : `Until closed · ${shortDate(closedAt)} ${shortTime(closedAt)}` : historyNote(history, verdict, knownMint, ask !== null)}</span>
       </div>
     </div>
   )

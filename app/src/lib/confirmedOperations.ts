@@ -127,6 +127,14 @@ export function createConfirmedOperations(read: ConfirmationRead, clock: {
   return {
     get: () => snapshot,
     subscribe(listener: (operation: ConfirmedOperation) => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
+    /** Only a financial client's explicit canonical contradiction may invalidate its already checked inclusion. */
+    reorg(input: { chainId: number; wallet: string; hash: string; blockHash: string }): boolean {
+      const operation = snapshot.find(op => op.chainId === input.chainId && op.hash === input.hash.toLowerCase()
+        && op.wallet === input.wallet.toLowerCase() && op.blockHash === input.blockHash.toLowerCase())
+      if (!operation || operation.phase === 'reorged') return false
+      emit({ ...operation, phase: 'reorged' })
+      return true
+    },
     record(input: OperationScope & { chainId: number; wallet: string; receipt: OperationReceipt; onFinalized?: () => Promise<boolean> }): ConfirmedOperation | null {
       const hash = input.receipt.transactionHash?.toLowerCase()
       const wallet = input.wallet.toLowerCase()
@@ -153,6 +161,7 @@ const operations = createConfirmedOperations(confirmationReads, {
   now: () => Date.now(), set: (run, ms) => setTimeout(run, ms), clear: timer => clearTimeout(timer as ReturnType<typeof setTimeout>), visible: () => typeof document === 'undefined' || !document.hidden,
 }, operation => { if (!operation.indexed) notePositionConfirmation({ kind: 'confirmed', chainId: operation.chainId, wallet: operation.wallet, positionManager: operation.positionManager, tokenIds: operation.tokenIds, block: operation.phase === 'reorged' ? undefined : operation.block, blockHash: operation.blockHash }) })
 export const recordConfirmedOperation = operations.record
+export const reorgConfirmedOperation = operations.reorg
 export const subscribeConfirmedOperations = operations.subscribe
 export const confirmedOperationState = operations.get
 export const receiptFinality = operations.finality

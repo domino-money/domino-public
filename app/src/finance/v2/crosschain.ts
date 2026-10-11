@@ -1207,7 +1207,10 @@ export function browserDepositJournal(): DepositJournal | null {
  * import so the node tests compile and load this module without it.
  */
 export async function browserOriginWallet(): Promise<OriginWallet> {
-  const [{ getConnection }, { walletConfig }] = await Promise.all([import('wagmi/actions'), import('../../wallet/config')])
+  // Direct destructuring keeps this lazy import limited to getConnection. Passing the module namespace through
+  // Promise.all retains every wagmi action, although the origin sender only reads the existing connection.
+  const { getConnection } = await import('wagmi/actions')
+  const { walletConfig } = await import('../../wallet/config')
   const connected = getConnection(walletConfig)
   if (connected.status !== 'connected' || !connected.connector) throw new OriginStepError('wallet_identity_changed')
   const connector = connected.connector

@@ -75,6 +75,22 @@ test('persisted hints are bounded, owner-scoped, and strip unknown signing data'
   assert.equal(JSON.stringify(restored).includes('secret'), false);
 });
 
+test('recovered batch progress and asset identity may use only its exact public quote identity', async () => {
+  const intent = freeze(await plan([holding(42161, 100)]));
+  intent.legs[0].quoteKey = `${'ab'.repeat(32)}:1791300000`;
+  assert.equal(model.parseFunding(JSON.stringify(intent), OWNER, 4663).legs[0].quoteKey, intent.legs[0].quoteKey);
+  intent.legs[0].state = 'unknown';
+  const batch = { quote: intent.legs[0].quoteKey, originChainId: 42161, destinationChainId: 4663 };
+  assert.equal(model.fundingBatchLeg(intent, batch), intent.legs[0]);
+  assert.equal(model.fundingBatchLeg(intent, { ...batch, quote: `${'cd'.repeat(32)}:1791300000` }), undefined);
+  assert.equal(model.fundingBatchLeg(intent, { ...batch, originChainId: 8453 }), undefined);
+  assert.equal(model.fundingBatchLeg(intent, { ...batch, destinationChainId: 8453 }), undefined);
+  delete intent.legs[0].quoteKey;
+  assert.equal(model.fundingBatchLeg(intent, batch), undefined, 'legacy metadata does not establish batch identity');
+  intent.legs[0].quoteKey = 'another quote or calldata';
+  assert.equal(model.parseFunding(JSON.stringify(intent), OWNER, 4663), null);
+});
+
 test('cancelled preparation cannot produce a transfer proposal', async () => {
   await assert.rejects(model.planFunding({ destinationChainId: 4663, destinationToken: USDG, required: 1n, holdings: [holding(8453, 20)], destinationGas: false, quote, cancelled: () => true }), /funding_cancelled/);
 });

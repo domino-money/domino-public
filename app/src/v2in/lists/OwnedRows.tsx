@@ -3,10 +3,10 @@ import { RowsHead } from '../../components/positions/PositionRow'
 import { Button, EmptyState, LinkButton, Tabs } from '../../components/ui'
 import { positionRows, partialSentence, type PositionRowView } from './model'
 import { V2PositionRow } from './parts'
-import { anyIn, chainsIn, useKeyed, useKeyedLatest, useListsGate } from './hooks'
+import { anyIn, chainsIn, useCreatedPositions, useKeyed, useKeyedLatest, useListsGate } from './hooks'
 import { routeQuiet } from './read'
 import { OWN_PORTFOLIO } from './source'
-import { hasPositionApr, historicalPositionRows, mergePositionRows, positionCounts } from './positionCollection'
+import { hasPositionApr, historicalPositionRows, mergePositionRows, positionCounts, withCreatedPositions } from './positionCollection'
 import { subscribePositionChanges } from './positionSync'
 import { feesStore } from '../../lib/fees/spawn'
 import type { FeeHistoryView } from '../../lib/fees/types'
@@ -115,9 +115,10 @@ function useOwnRows(owner: string, v1Ids: readonly string[]) {
   const gate = useListsGate()
   const live = anyIn(gate, 'live')
   const reply = useKeyed(OWN_PORTFOLIO, live ? owner : null)
+  const created = useCreatedPositions(live ? owner : null)
   const automation = useSyncExternalStore(subscribeAutomation, automationState, automationState)
   const ids = v1Ids.join(',')
-  const rows = useMemo(() => (reply?.kind === 'ok' ? positionRows(reply.body, chainsIn(gate, 'live'), ids === '' ? [] : ids.split(','), automation) : []), [reply, gate, ids, automation])
+  const rows = useMemo(() => withCreatedPositions(reply?.kind === 'ok' ? positionRows(reply.body, chainsIn(gate, 'live'), ids === '' ? [] : ids.split(','), automation) : [], created.filter(item => chainsIn(gate, 'live')(item.chainId))), [reply, gate, ids, automation, created])
   return { live, reply, rows }
 }
 

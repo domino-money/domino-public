@@ -76,17 +76,18 @@ test('New position\'s amount step keeps V1\'s amounts itself and opens only the 
 // its card, so a wallet locked, a gate read again or a branch of the card left the step with no amount field and no way
 // back, or remounted the field mid-typing): paid that way, the panel and the way back are V1's own amounts', drawn by the
 // step itself; the chunk only offers the line, first, outside the offer's card.
-test('paying with one other token: the panel and its way back are the step\'s own; the chunk offers the line alone, outside the offer\'s card', () => {
+test('payment remains the amount step\'s choice, offered inside the transfer continuation only after funds arrive', () => {
   const paired = ALL.find(({ path }) => path === 'components/create/PairedAmounts.tsx').code;
   assert.match(paired, /if \(paid && onPayWith\) \{/);
   assert.match(paired, /data-pay-with-amount=\{token\.address\}/);
   assert.match(paired, /data-pay-with-back=""/);
   const chunk = ALL.find(({ path }) => path === 'v2in/funds/FundsAmounts.tsx').code;
   assert.doesNotMatch(chunk, /data-pay-with-amount|data-pay-with-back|PayPanel/);
-  // The line first, then the offer's card: never inside it, so no branch of the card remounts it.
-  assert.match(chunk, /return \(\s*<>\s*\{showPayment && alternative && <PayLine /);
+  assert.match(chunk, /tracking !== trackingKey && showPayment && alternative && <PayLine /, 'no competing payment call to action during transfer tracking');
+  assert.match(chunk, /continuation=\{usableLocal && alternative \? <PayLine /, 'only an actually usable local balance offers conversion after arrival');
   const offer = ALL.find(({ path }) => path === 'v2in/funds/BringFunds.tsx').code;
   assert.doesNotMatch(offer, /PayLine|payWith|\bpaid\b/, 'the offer\'s card knows nothing of it');
+  assert.match(offer, /allArrived && !changed && !run && !resume && !keep && !intent\?\.paymentRaw && continuation/, 'transfer completion cannot itself select or spend a payment token');
 });
 
 // Changed on purpose (data) 2026-10-02 (S2 holdings; the owner, 2026-10-02 night): no fixtures and no test data anywhere,

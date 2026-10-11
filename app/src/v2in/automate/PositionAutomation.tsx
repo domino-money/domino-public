@@ -4,7 +4,7 @@ import type { PortfolioResponse } from 'api-contracts/read-v6/types'
 import { Button, LinkButton } from '../../components/ui'
 import { IconAutomate, IconShield } from '../../components/icons'
 import { ActionSheet } from '../../components/positions/ActionSheet'
-import { sequenceHref } from '../../components/explore/routes'
+import { setupHref } from './intent'
 import { askAutoExitOnArrival, takeAutoExitAsk } from '../../lib/automate/autoExitAsk'
 import type { WalletPosition } from '../../lib/walletPositions'
 import type { VaultSnapshot } from '../../finance/v2/vault'
@@ -297,13 +297,13 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   const fundsPending = views.some(({ view }) => (view.reserves.known && view.reserves.held) || view.successors.length > 0) || (showExit && credits.length > 0)
   const canShow = connected !== null && (holds || views.length > 0 || mine.length > 0 || proof !== null || reading || unread)
   if (!canShow) return null
-  const setupLink = plain && chainId === 4663 && dex === 4 && gateOpen(vaultGate)
+  const setupLink = plain && gateOpen(vaultGate)
   const setupExit = plain && !setupLink && target !== null
 
   const controlId = `automation-controls-${chainId}-${dex}-${tokenId}`
   const ControlIcon = label === 'Auto-exit' ? IconShield : IconAutomate
   const controls = <>
-      {setupLink ? <LinkButton href={sequenceHref(tokenId)} variant="primary" data-automation-control="" data-automation-setup="" data-automate-entry={tokenId}>Set up automation</LinkButton>
+      {setupLink ? <LinkButton href={setupHref({ chainId, dex, tokenId: idOf(tokenId) })} variant="primary" data-automation-control="" data-automation-setup="" data-automate-entry={tokenId}>Set up automation</LinkButton>
         : setupExit ? <Button type="button" variant="primary" onClick={() => beginAction({ kind: 'mandate', target })} data-automation-control="" data-automation-setup="" data-v2in-open="mandate">Set up automation</Button>
           : <Button type="button" variant="outline" onClick={() => setExpanded(true)} aria-haspopup="dialog" aria-expanded={expanded && !open} aria-controls={controlId} data-automation-control="">
             <ControlIcon size={18} /><span>{label} · {standing}</span>{fundsPending && <span className="dm-automation-funds-dot" aria-label="Funds available" />}
