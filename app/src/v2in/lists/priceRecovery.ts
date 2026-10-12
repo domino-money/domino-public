@@ -4,8 +4,12 @@ import type { PortfolioResponse } from 'api-contracts/read-v6/types'
 export interface PriceRecoveryTarget { wallet: string; chainId: 4663 | 8453 | 42161; address: string }
 const TRANSIENT = new Set(['price_read_failed', 'pricing_limit_reached'])
 const PER_PASS = 3
-const PER_WALLET = 6
+const PER_WINDOW = 6
+const WINDOW_MS = 5 * 60_000
+const RETRY_MS = 60_000
 const MAX_WALLETS = 8
+const MAX_TARGETS = 128
+export type PriceRecoveryResult = { kind: 'qualified' | 'unavailable' | 'cancelled' } | { kind: 'retry'; afterMs?: number }
 
 export function priceRecoveryTargets(answer: PortfolioResponse): PriceRecoveryTarget[] {
   const wanted = new Map<string, PriceRecoveryTarget>()
@@ -31,30 +35,57 @@ export function priceRecoveryTargets(answer: PortfolioResponse): PriceRecoveryTa
 }
 
 export function createPriceRecovery(deps: {
-  /** Uses the existing deduplicated chain-pools route; true only when this exact token is now qualified. */
-  warm(target: PriceRecoveryTarget, active: () => boolean): Promise<boolean>
+  /** Uses the existing deduplicated chain-pools route; only this exact token can qualify. */
+  warm(target: PriceRecoveryTarget, active: () => boolean): Promise<PriceRecoveryResult>
   refresh(wallet: string): void
+  now?(): number
 }) {
-  const tried = new Map<string, Set<string>>()
+  type Attempt = { at: number; next: number; failures: number }
+  const kept = new Map<string, { attempts: Map<string, Attempt>; starts: number[] }>()
   const running = new Set<string>()
+  const now = deps.now ?? Date.now
+  let notBefore = 0
   return {
     async run(answer: PortfolioResponse, active: () => boolean): Promise<void> {
       const wallet = answer.wallet.toLowerCase()
       if (!active() || running.has(wallet)) return
-      const attempts = tried.get(wallet) ?? new Set<string>()
-      const targets = priceRecoveryTargets(answer).filter(target => !attempts.has(`${target.chainId}:${target.address}`))
-        .slice(0, Math.min(PER_PASS, PER_WALLET - attempts.size))
+      const state = kept.get(wallet) ?? { attempts: new Map<string, Attempt>(), starts: [] }
+      const time = now()
+      state.starts = state.starts.filter(at => time - at < WINDOW_MS)
+      if (time < notBefore) return
+      const key = (target: PriceRecoveryTarget) => `${target.chainId}:${target.address}`
+      const targets = priceRecoveryTargets(answer).filter(target => (state.attempts.get(key(target))?.next ?? 0) <= time)
+        // A large portfolio's later tokens get their turn when the rolling budget opens again.
+        .sort((a, b) => (state.attempts.get(key(a))?.at ?? -Infinity) - (state.attempts.get(key(b))?.at ?? -Infinity))
+        .slice(0, Math.min(PER_PASS, PER_WINDOW - state.starts.length))
       if (!targets.length) return
-      tried.set(wallet, attempts)
-      while (tried.size > MAX_WALLETS) tried.delete(tried.keys().next().value!)
+      kept.delete(wallet)
+      kept.set(wallet, state)
+      while (kept.size > MAX_WALLETS) kept.delete(kept.keys().next().value!)
       running.add(wallet)
       let qualified = false
       try {
         for (const target of targets) {
-          if (!active()) break
-          // A failure is not a reason to start a loop. Normal portfolio polling can still recover on its own.
-          attempts.add(`${target.chainId}:${target.address}`)
-          if (await deps.warm(target, active).catch(() => false)) qualified = true
+          if (!active() || now() < notBefore) break
+          const id = key(target), at = now(), prior = state.attempts.get(id)
+          // Charge the attempt even if navigation interrupts it: the shared request may already be in flight.
+          state.starts.push(at)
+          const attempt = { at, next: at + RETRY_MS, failures: prior?.failures ?? 0 }
+          state.attempts.delete(id)
+          state.attempts.set(id, attempt)
+          while (state.attempts.size > MAX_TARGETS) state.attempts.delete(state.attempts.keys().next().value!)
+          const result = await deps.warm(target, active).catch((): PriceRecoveryResult => ({ kind: 'retry' }))
+          if (result.kind === 'qualified') { qualified = true; attempt.failures = 0; attempt.next = now() + RETRY_MS }
+          else if (result.kind !== 'cancelled') {
+            attempt.failures++
+            attempt.next = now() + (result.kind === 'unavailable' ? WINDOW_MS : Math.min(WINDOW_MS, RETRY_MS * 2 ** Math.min(attempt.failures - 1, 3)))
+          }
+          // Retry-After names the reader lane's next token, not just this currency's next attempt.
+          if (result.kind === 'retry' && Number.isFinite(result.afterMs) && result.afterMs! > 0) {
+            notBefore = Math.max(notBefore, now() + result.afterMs!)
+            attempt.next = Math.max(attempt.next, notBefore)
+            break
+          }
         }
         // The new coherent portfolio supplies every amount and price; never splice a target price into older amounts.
         if (qualified && active()) deps.refresh(wallet)

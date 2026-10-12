@@ -1548,10 +1548,33 @@ async function approvalLost({ price }) {
   return { chain, vault, s };
 }
 
-test('live: Auto-exit paused because its position lost the approval: "Approve again" beside its line, in Auto-exit\'s words, the price read first; the vault still paused after', async () => {
+test('live: Auto-exit paused because its position lost the approval: "Approve again" beside its line, in Auto-exit\'s words, the price read first; the vault still paused after', { timeout: 90_000 }, async () => {
   // The pool at about 2,500 USDG per ETH, inside the range: no end passed.
   const { chain, vault, s } = await approvalLost({ price: (2n ** 96n) / 20000n });
   const { page } = s;
+  const previewPrice = Promise.withResolvers();
+  const actionPriceStarted = Promise.withResolvers();
+  const actionPriceReply = Promise.withResolvers();
+  const request = chain.request;
+  const getSlot0 = toFunctionSelector('getSlot0(bytes32)');
+  const order = [];
+  let confirming = false;
+  chain.request = async (method, params) => {
+    const data = params?.[0]?.data ?? '';
+    if (method === 'eth_call' && data.startsWith(getSlot0)) {
+      const actionRead = confirming;
+      if (actionRead) {
+        actionPriceStarted.resolve();
+        await actionPriceReply.promise;
+      }
+      const reply = await request(method, params);
+      if (actionRead) order.push('price-read');
+      else previewPrice.resolve();
+      return reply;
+    }
+    if (method === 'eth_sendTransaction' && data.startsWith(SELECTOR.approve)) order.push('approve');
+    return request(method, params);
+  };
   try {
     const card = page.locator(`[data-automation-panel] [data-v2in-exit][data-exit-state="paused"]`);
     await card.waitFor({ timeout: 30_000 });
@@ -1581,15 +1604,23 @@ test('live: Auto-exit paused because its position lost the approval: "Approve ag
       ['approve-root', 'Approve this position for Auto-exit'],
       ['rearm', 'Reconnect it to your automation'],
     ]);
-    assert.ok(chain.callsSince(0).some((c) => c.calls.includes('stateView.getSlot0')), 'the pool\'s price, read before the approval goes back');
+    // The preview read is asynchronous and does not gate this button. The safety check is the action's fresh read,
+    // immediately before approval: hold that reply so the test proves ordering, rather than racing the preview effect.
+    await previewPrice.promise;
     assert.equal(await dialog.locator('[data-exit-past]').count(), 0, 'inside the range: nothing to warn of');
     assert.deepEqual(chain.sends, [], 'for the person to confirm');
     await dialog.screenshot({ path: join(shots(), 'v2in-autoexit-rearm.png'), animations: 'disabled' });
+    confirming = true;
     await dialog.locator('[data-v2in-send="rearm"]').click();
+    await actionPriceStarted.promise;
+    assert.deepEqual(chain.sends, [], 'no approval while the action\'s pool-price read is pending');
+    assert.deepEqual(order, [], 'the wallet has not been asked to approve before the price reply');
+    actionPriceReply.resolve();
     await dialog.locator('[data-v2in-close]').waitFor({ timeout: 60_000 });
     // On v4 a moved approval never disarmed the root (the position manager tells no one): once it is back, the rearm has
     // nothing left to do, and the action is complete.
     assert.deepEqual(chain.sends.map((tx) => [tx.to.toLowerCase(), selectorOf(tx.data)]), [[chain.positionManager[4].toLowerCase(), SELECTOR.approve]], 'the approval back to its automation');
+    assert.ok(order.indexOf('price-read') >= 0 && order.indexOf('price-read') < order.indexOf('approve'), 'the action reads the pool price before asking the wallet to approve');
     assert.equal(chain.nft(4, ROOT).approved, vault);
     assert.deepEqual(await dialog.locator('[data-error-code], .dm-error').allInnerTexts(), [], 'never "This step is already done." with no way on');
     assert.equal(chain.vault(vault).paused, true, 'still paused: Auto-exit only, nothing reinvested');
@@ -1605,6 +1636,7 @@ test('live: Auto-exit paused because its position lost the approval: "Approve ag
     assert.match(await on.locator('[data-v2in-exit-line="on"]').innerText(), /^Closes at 1,855\.72 – 2,504\.92 USDG per ETH$/);
     assert.equal(await on.locator('[data-vault-open="rearm"]').count(), 0, 'no "Approve again" once it was');
   } finally {
+    actionPriceReply.resolve();
     await s.close();
   }
 });

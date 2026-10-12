@@ -849,6 +849,47 @@ test('(b3) live on Base with qualified prices: fixed USD figures, token amounts 
   } finally { await s.close(); }
 });
 
+test('a completed unqualified USD read explains the missing price without a permanent loading skeleton', async () => {
+  const pools = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/valid/chain-pools.json', import.meta.url), 'utf8'));
+  const tokens = TOKENS.map(token => ({ ...token, price: null, priceReason: 'pool_depth_below_floor' }));
+  const portfolio = portfolioOf({ wallet: OWNER, tokens, positions: [live(5_100_001)] });
+  const chain = chainOf();
+  const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100001', read6: { ...READ6, portfolio } });
+  try {
+    const detail = s.page.locator('[data-position-detail]');
+    const figures = detail.locator('[data-usd-unavailable]');
+    await figures.first().waitFor();
+    assert.deepEqual(await figures.allInnerTexts(), ['USD unavailable', 'USD unavailable']);
+    for (const figure of await figures.all()) {
+      assert.match(await figure.getAttribute('aria-label'), /price source has not verified enough liquidity/);
+      assert.equal(await figure.evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)', 'a completed read is not styled as a loading skeleton');
+    }
+    assert.equal(await detail.locator('[data-position-loading], [data-position-overview] [aria-busy="true"]').count(), 0);
+    const details = detail.locator('[data-position-details]');
+    await details.locator('summary').click();
+    assert.match(await details.innerText(), /price source has not verified enough liquidity for a USD estimate/);
+    assert.match(await details.locator('[data-stat="principal"]').textContent(), /ETH.*USDC/);
+    assert.match(await details.locator('[data-stat="fees"]').textContent(), /0\.001\s+ETH.*2\.5\s+USDC/);
+    for (const width of [1280, 390, 320]) {
+      await s.page.setViewportSize({ width, height: 960 });
+      assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `unavailable USD fits ${width}px`);
+      assert.equal(await figures.evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth)), true, `unavailable text fits its figures at ${width}px`);
+      await s.page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await s.page.screenshot({ path: join(shots(), `position-usd-unavailable-${width}.png`), fullPage: true, animations: 'disabled' });
+    }
+    const recovered = structuredClone(portfolio);
+    recovered.body.tokens = TOKENS.map(token => ({ ...token, price: pools.tokens.find(one => one.symbol === token.symbol).price, priceReason: null }));
+    await s.page.evaluate(answer => {
+      window.__dominoV2Test.read6.portfolio = () => answer;
+      window.dispatchEvent(new Event('online'));
+    }, recovered);
+    await detail.locator('[data-cell="principal"] [data-usd="principal"]').waitFor();
+    assert.equal(await figures.count(), 0, 'a later qualified response replaces the unavailable state');
+    assert.equal(await text(detail.locator('[data-cell="fees"] [data-usd="fees"]')), '$6.50');
+    assert.equal(chain.sends.length, 0, 'reading a missing price never sends a transaction');
+  } finally { await s.close(); }
+});
+
 // ---------------------------------------------------------------------------
 // Added 2026-10-06 (the integration review's second pass, rugged-literal #1): the root of Auto-exit's own automation with
 // its Auto-exit on. Its exit needs the position's approval alone: an action that keeps it (Collect fees, Withdraw to both

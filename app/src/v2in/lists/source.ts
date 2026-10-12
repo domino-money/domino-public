@@ -48,15 +48,21 @@ export const ACTIVITY_PAGE = 20
 const catchup = createPortfolioCatchup()
 const priceRecovery = createPriceRecovery({
   async warm(target, active) {
-    if (!readsOpen() || !active()) return false
+    if (!readsOpen() || !active()) return { kind: 'cancelled' }
     const gate = await v2Gate('vault', target.chainId, undefined, v2PageProbe)
-    if (gate.mode === 'off' || !active()) return false
+    if (!active()) return { kind: 'cancelled' }
+    if (gate.mode === 'off') return { kind: 'unavailable' }
     // No pairedToken: the backend surveys the token's own qualified sources and offers the answer to its shared Pricer.
     // This shared request may finish after navigation; active() prevents another read or any stale-wallet refresh.
     const reply = await chainPoolsOn(gate, target.chainId, target.address)
-    return active() && reply.kind === 'ok' && reply.body.freshness.status === 'fresh'
-      && reply.body.chainId === target.chainId && reply.body.token.toLowerCase() === target.address
-      && reply.body.tokens.some(token => token.address.toLowerCase() === target.address && token.price !== null)
+    // A busy lane's wait still applies if the person changed wallets while its request was in flight.
+    if (reply.kind === 'failed') return reply.passing ? { kind: 'retry', afterMs: (reply.retryAfterS ?? 0) * 1000 } : { kind: 'unavailable' }
+    if (!active()) return { kind: 'cancelled' }
+    if (reply.kind !== 'ok' || reply.body.chainId !== target.chainId || reply.body.token.toLowerCase() !== target.address) return { kind: 'unavailable' }
+    if (reply.body.freshness.status !== 'fresh') return { kind: 'retry' }
+    const token = reply.body.tokens.find(token => token.address.toLowerCase() === target.address)
+    if (token?.price) return { kind: 'qualified' }
+    return token?.priceReason === 'price_read_failed' || token?.priceReason === 'pricing_limit_reached' ? { kind: 'retry' } : { kind: 'unavailable' }
   },
   refresh: wallet => OWN_PORTFOLIO.again(wallet),
 })

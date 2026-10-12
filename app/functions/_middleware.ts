@@ -240,7 +240,6 @@ const UNISWAP_V3_PATH = /^\/uniswap-v3(?:\/|$)/i
 export const PERMISSIONS_POLICY = [
   'accelerometer=()',
   'bluetooth=()',
-  'browsing-topics=()',
   'camera=()',
   'display-capture=()',
   'geolocation=()',

@@ -272,19 +272,36 @@ test('the right password opens the full app, which runs under the CSP without a 
 test('the whole workspace works behind the gate, not only the landing', async () => {
   const { context, page, log } = await visitor();
   await signIn(page);
-  // The docs too: the index and a long page of static copy, under the real CSP.
-  for (const route of ['/app', '/settings', '/docs', '/docs/non-custodial']) {
-    await page.evaluate((r) => { location.hash = `#${r}`; }, route);
-    await page.waitForTimeout(150);
-    assert.ok((await page.locator('#root').innerText()).length > 200, `${route} rendered almost nothing`);
+  // Hold the deferred Docs chunk until its loading frame appears: a hash change is not a completed render.
+  // The former 150 ms sleep read this frame on a busy CI runner, especially through the /settings alias.
+  let releaseDocs;
+  const docsChunk = new Promise(done => { releaseDocs = done; });
+  await page.route('**/assets/Docs-*.js', async route => { await docsChunk; await route.continue(); });
+  try {
+    // The docs too: the index and a long page of static copy, under the real CSP.
+    for (const [route, heading] of [['/app', 'Positions'], ['/settings', 'Docs'], ['/docs', 'Docs'], ['/docs/non-custodial', 'Non-custodial']]) {
+      const requested = route === '/settings' ? page.waitForRequest('**/assets/Docs-*.js') : null;
+      await page.evaluate((r) => { location.hash = `#${r}`; }, route);
+      if (requested) {
+        await requested;
+        await page.locator('main[aria-busy="true"]').waitFor();
+        assert.equal(await page.getByRole('heading', { level: 1, name: heading, exact: true }).count(), 0, 'the held chunk has not rendered the docs yet');
+        releaseDocs();
+      }
+      await page.getByRole('heading', { level: 1, name: heading, exact: true }).waitFor();
+      assert.equal(await page.locator('main[aria-busy="true"]').count(), 0, `${route} is no longer a loading frame`);
+      assert.ok((await page.locator('#root').innerText()).length > 200, `${route} rendered almost nothing`);
+    }
+    assert.equal(await page.locator('h1').first().innerText(), 'Non-custodial', 'the docs page rendered behind the gate');
+    const images = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('img[src*="/tokens/"]')).filter((i) => i.complete && i.naturalWidth === 0).length,
+    );
+    assert.equal(images, 0, 'token images failed to load behind the gate');
+    assert.deepEqual(log.errors.filter((e) => !/status of 401/.test(e)), []);
+  } finally {
+    releaseDocs();
+    await closeContext(context);
   }
-  assert.equal(await page.locator('h1').first().innerText(), 'Non-custodial', 'the docs page rendered behind the gate');
-  const images = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('img[src*="/tokens/"]')).filter((i) => i.complete && i.naturalWidth === 0).length,
-  );
-  assert.equal(images, 0, 'token images failed to load behind the gate');
-  assert.deepEqual(log.errors.filter((e) => !/status of 401/.test(e)), []);
-  await closeContext(context);
 });
 
 test('the app allows a response-nonced detection script and still blocks unmarked inline scripts', async () => {

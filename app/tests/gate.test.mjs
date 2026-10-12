@@ -324,6 +324,8 @@ test('the permissions policy switches off sensors, payments and the device APIs 
   for (const feature of ['camera', 'microphone', 'geolocation', 'payment', 'usb', 'hid', 'serial', 'bluetooth']) {
     assert.match(PERMISSIONS_POLICY, new RegExp(`(^|, )${feature}=\\(\\)`), `${feature} is not switched off`);
   }
+  // Chromium retired Topics, including its policy feature: https://groups.google.com/a/chromium.org/g/blink-dev/c/_R85yctz4Rs
+  assert.doesNotMatch(PERMISSIONS_POLICY, /browsing-topics|interest-cohort/, 'retired features must not produce unrecognized-policy warnings');
 });
 
 test('hashed assets stay cacheable, but only in the browser that authenticated', async () => {

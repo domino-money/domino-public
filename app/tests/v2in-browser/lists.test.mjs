@@ -110,7 +110,7 @@ async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positio
         const body = request.method === 'POST' ? JSON.parse(await request.text()) : null;
         asked.push({ method: request.method, route, body, contract: request.headers.get('x-domino-read-contract') });
         const answer = await readV6(request.method, route, body);
-        return Response.json(answer.body, { status: answer.status, headers: answer.contract ? { 'X-Domino-Read-Contract': CONTRACT } : {} });
+        return Response.json(answer.body, { status: answer.status, headers: { ...(answer.contract ? { 'X-Domino-Read-Contract': CONTRACT } : {}), ...(answer.retryAfter ? { 'Retry-After': answer.retryAfter } : {}) } });
       },
       (request, url) => read.handle(request, url),
     ],
@@ -418,9 +418,58 @@ test('a portfolio price-budget miss is recovered through the existing targeted c
     warmed = false;
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
     await s.page.waitForFunction(() => document.querySelector('[data-usd-reason="pricing_limit_reached"]'));
-    assert.equal(s.asked.filter(request => request.route === 'chain-pools').length, 1, 'the same missing source cannot trigger an automatic loop');
+    assert.equal(s.asked.filter(request => request.route === 'chain-pools').length, 1, 'the same missing source waits for its cooldown');
+    ready.positions[0].state.principalAtSpot[0] = '2000000000000000000';
+    ready.positions[0].state.feesOwed[1] = '20000';
+    await s.page.clock.fastForward(60_001);
+    await row.locator('[data-usd="principal"]').filter({ hasText: '$2,001.06' }).waitFor();
+    assert.equal(s.asked.filter(request => request.route === 'chain-pools').length, 2, 'a later transient miss can warm the expired source again');
+    assert.equal(await row.locator('[data-usd="fees"]').textContent(), '$0.12');
+    await s.page.evaluate(() => { location.hash = '#/positions/base-v3-6238188'; });
+    await s.page.locator('[data-position-detail] [data-usd="principal"]').filter({ hasText: '$2,001.06' }).waitFor();
+    assert.equal(await s.page.locator('[data-position-detail] [data-usd="fees"]').textContent(), '$0.12', 'detail and list use the newly read complete amounts and prices');
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { release(); await s.close(); }
+});
+
+test('a first targeted price read that is rate limited recovers on a later visible poll after Retry-After', async () => {
+  const pools = fixture('chain-pools.json'), token = pools.tokens.find(token => token.address === pools.token);
+  const usdc = pools.tokens.find(token => token.symbol === 'USDC'), manager = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1';
+  const ready = portfolioOf({ wallet: OWNER, tokens: [token, usdc].map(token => ({ ...token, chainId: 8453 })), positions: [
+    livePosition({ chainId: 8453, dex: 3, manager, tokenId: '6238189', owner: OWNER,
+      pool: { currency0: token.address, currency1: usdc.address, fee: 3000, tickSpacing: 60 }, tickLower: -60, tickUpper: 60, liquidity: '1000000000', sqrtPriceX96: String(2n ** 96n), tick: 0,
+      principal: ['1000000000000000000', '1000000'], feesOwed: ['100000000000000', '10000'] }),
+  ] }).body;
+  const missing = structuredClone(ready);
+  missing.tokens.find(item => item.address === token.address).price = null;
+  missing.tokens.find(item => item.address === token.address).priceReason = 'price_read_failed';
+  let attempts = 0, warmed = false, limited, releaseLimit;
+  const firstAttempt = new Promise(resolve => { limited = resolve; });
+  const limitReply = new Promise(resolve => { releaseLimit = resolve; });
+  const s = await scenario({ hooks: LIVE, refresh: true, readV6: async (method, route) => {
+    if (route === 'capabilities') return { status: 200, body: { ...CAPABILITIES, enabledReads: [...CAPABILITIES.enabledReads, 'chain-pools'] }, contract: true };
+    if (route === 'chain-pools') {
+      if (++attempts === 1) { limited(); await limitReply; return { status: 429, body: { error: 'read_capacity_busy' }, retryAfter: '120', contract: true }; }
+      warmed = true; return { status: 200, body: pools, contract: true };
+    }
+    return { status: 200, body: route === 'portfolio' ? warmed ? ready : missing : activityOf({ wallet: OWNER }).body, contract: true };
+  } });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="8453:${manager}:6238189"]`);
+    await row.locator('[data-cell="principal"] .dm-own-usd-unavailable').waitFor();
+    await firstAttempt;
+    const response = s.page.waitForResponse(response => response.url().endsWith('/api/read/v6/chain-pools') && response.status() === 429);
+    releaseLimit(); await (await response).finished();
+    await s.page.clock.fastForward(60_001);
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    assert.equal(attempts, 1, 'the one-minute token cooldown cannot override the longer reader Retry-After');
+    await s.page.clock.fastForward(60_001);
+    await row.locator('[data-usd="principal"]').waitFor();
+    assert.equal(await row.locator('[data-usd="principal"]').textContent(), '$1,001.03');
+    assert.equal(await row.locator('[data-usd="fees"]').textContent(), '$0.11');
+    assert.equal(attempts, 2, 'the failed first attempt never disables recovery for the rest of the visit');
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { releaseLimit(); await s.close(); }
 });
 
 test('Base without qualified USD keeps fixed value slots and token amounts in details, without inventing USD or APR', async () => {

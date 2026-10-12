@@ -42,6 +42,7 @@ import { OWN_PORTFOLIO } from '../lists/source'
 import { POSITION_VALUATIONS } from '../lists/valuation'
 import type { OpenGate } from './wallet'
 import RecordedInsights from './RecordedInsights'
+import { usdUnavailableReason } from './usdAvailability'
 
 // 2026-10-03 (the owner's point 10): the Price range chart's own chunk, asked for as this page's code arrives (V1's page does the same).
 preloadPriceChart()
@@ -219,6 +220,13 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   const holdsText = holdsUsd !== null ? formatUsdFloor(holdsUsd) : null
   const feesUsd = savedUsd?.fees ?? currentFeesUsd
   const usdTitle = savedUsd ? `Previous complete valuation from ${new Date(savedUsd.at).toISOString()}. Refreshing the USD source.` : position.snapshotBlock !== null ? `Qualified valuation at block ${position.snapshotBlock}` : undefined
+  const missingReasons = pair.flatMap((address, index) => {
+    if ((position.principal?.[index] ?? 0n) === 0n && (position.feesOwed?.[index] ?? 0n) === 0n) return []
+    const token = answer.tokens.find(item => item.chainId === chainId && item.address.toLowerCase() === address)
+    return token?.price ? [] : [token?.priceReason ?? 'token_price_unavailable']
+  })
+  const usdUnavailable = usdUnavailableReason(fresh ? missingReasons.join(',') : 'stale_position_or_chain')
+  const usdUnavailableTitle = `USD estimate unavailable. ${usdUnavailable} Token amounts are in Details.`
 
   return (
     <div data-position-detail="" data-position-workspace-page="" data-position-id={position.tokenId.toString()} data-position-v2={`${chain.slug}-v${position.dex}`} data-snapshot={position.snapshotBlock ?? undefined}>
@@ -282,7 +290,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
               <LiveFigure value={holdsText!} mode="digits" dimCents className="dm-fig-lg" />
             </span>
           ) : (
-            <span className="dm-pos-usd-unavailable" data-usd-unavailable="principal" title="USD estimate unavailable. Token amounts are in Details."><span className="sr-only">USD estimate unavailable. Token amounts are in Details.</span></span>
+            <span className="dm-pos-usd-unavailable" data-usd-unavailable="principal" title={usdUnavailableTitle} aria-label={usdUnavailableTitle}>USD unavailable</span>
           )}
         </Stat>
         <Stat
@@ -296,7 +304,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
               <UsdText value={feesUsd} block={savedUsd ? undefined : position.snapshotBlock ?? undefined} floor className="dm-fig-lg dm-arrive" />
             </span>
           ) : (
-            <span className="dm-pos-usd-unavailable" data-usd-unavailable="fees" title="USD estimate unavailable. Token amounts are in Details."><span className="sr-only">USD estimate unavailable. Token amounts are in Details.</span></span>
+            <span className="dm-pos-usd-unavailable" data-usd-unavailable="fees" title={usdUnavailableTitle} aria-label={usdUnavailableTitle}>USD unavailable</span>
           )}
         </Stat>
         <Stat label={COPY.page.apr} info={COPY.page.aprInfo} className="dm-pos-stat" data-cell="apr" data-apr="no_qualified_source" sub={COPY.page.aprMissing}>
@@ -342,15 +350,11 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
             <KeyValue label="Fees ready to collect"><span className="dm-pos-amounts" data-stat="fees"><CardAmount amount={card.unsettledFees[0]} /><CardAmount amount={card.unsettledFees[1]} /></span></KeyValue>
             {savedUsd && <KeyValue label="USD valuation"><span>{usdTitle}</span></KeyValue>}
             {chainId !== 4663 && <KeyValue label="APR data"><span>Lifetime fee history isn’t available from this network’s current data source. Recorded balances do not establish APR.</span></KeyValue>}
-            {chainId !== 4663 && holdsUsd === null && <KeyValue label="USD valuation"><span>{!fresh ? 'Waiting for a current reading.' : 'A reliable USD price isn’t available for every token held.'}</span></KeyValue>}
+            {(holdsUsd === null || feesUsd === null) && <KeyValue label="USD valuation"><span>{usdUnavailable}</span></KeyValue>}
             {chainId !== 4663 && pair.filter((_, index) => (position.principal?.[index] ?? 0n) > 0n || (position.feesOwed?.[index] ?? 0n) > 0n).map(address => {
               const token = answer.tokens.find(item => item.chainId === chainId && item.address.toLowerCase() === address)
               if (token?.price || !token?.priceReason) return null
-              const reason = token.priceReason === 'pool_depth_below_floor' ? 'The pricing pool has too little liquidity for a reliable USD estimate.'
-                : token.priceReason === 'pool_depth_unmeasurable' ? 'The pricing pool’s liquidity could not be verified.'
-                : token.priceReason === 'decimals_unknown' ? 'Token precision could not be verified.'
-                : token.priceReason === 'eth_usd_stale' || token.priceReason === 'price_read_failed' || token.priceReason === 'sequencer_down' ? 'The USD price source is temporarily unavailable.'
-                : 'A qualified USD price source isn’t available.'
+              const reason = usdUnavailableReason(token.priceReason)
               return <KeyValue key={address} label={`${labelOf(book, address)} price`}><span data-usd-price-reason={token.priceReason}>{reason}</span></KeyValue>
             })}
             <KeyValue label={COPY.page.nftId}>
