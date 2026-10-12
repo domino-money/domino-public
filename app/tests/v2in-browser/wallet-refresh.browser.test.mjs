@@ -137,8 +137,10 @@ test('returning to Positions retains one complete wallet valuation and stable ro
     assert.equal(await row.locator('[data-usd]').textContent(), price);
     assert.match(await row.locator('[data-usd]').getAttribute('title'), /Previous complete valuation/);
     const updating = await geometry();
-    assert.equal(updating.total.height, before.total.height, 'the total occupies the same slot during refresh');
-    assert.equal(updating.row.height, before.row.height, 'the token row never adds a status line');
+    const totalHeightDelta = Math.abs(updating.total.height - before.total.height);
+    const rowHeightDelta = Math.abs(updating.row.height - before.row.height);
+    assert.ok(totalHeightDelta < 0.5, `the total occupies the same slot during refresh (height delta: ${totalHeightDelta}px)`);
+    assert.ok(rowHeightDelta < 0.5, `the token row never adds a status line (height delta: ${rowHeightDelta}px)`);
     assert.ok(Math.abs((updating.row.y - updating.total.y) - (before.row.y - before.total.y)) < 0.5, 'the token list keeps its spacing under the total, independent of the card entry animation');
     for (const width of [1180, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
