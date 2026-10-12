@@ -849,6 +849,77 @@ test('(b3) live on Base with qualified prices: fixed USD figures, token amounts 
   } finally { await s.close(); }
 });
 
+for (const variant of [
+  { name: 'one qualified anchor values a fresh pool without extra transactions', anchor: true, stale: false, usd: true },
+  { name: 'no qualified anchor keeps principal and fees unavailable', anchor: false, stale: false, usd: false },
+  { name: 'a stale pool snapshot never supplies a USD estimate', anchor: true, stale: true, usd: false },
+]) test(`pool-price USD: ${variant.name}`, async () => {
+  const manager = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1';
+  const testToken = '0xb200000000000000000000000000000000000001';
+  const pool = { dex: 3, currency0: USDC, currency1: testToken, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const anchor = { ...indexedToken(8453, USDC, 'USDC', 6), ...(variant.anchor ? {
+    price: { source: 'chain_stable', usd: '1.000000000000000000', snapshot: null, pool: null, ethUsd: null, depthUsd: null }, priceReason: null,
+  } : { priceReason: 'pool_depth_below_floor' }) };
+  const unpriced = { ...indexedToken(8453, testToken, 'TEST', 6), priceReason: 'pool_depth_below_floor' };
+  // The raw ratio and both decimals are equal, so 1 TEST is exactly 1 USDC. Expected USD is ordinary arithmetic:
+  // 2 + 3 = $5 principal; 0.25 + 0.5 = $0.75 fees. This never calls the product's valuation helper.
+  const position = livePosition({ chainId: 8453, dex: 3, manager, tokenId: '6238157', owner: OWNER, pool,
+    tickLower: -60, tickUpper: 60, liquidity: '1000000000', sqrtPriceX96: String(2n ** 96n), tick: 0,
+    principal: ['2000000', '3000000'], feesOwed: ['250000', '500000'], stale: variant.stale });
+  if (variant.stale) {
+    position.state.snapshot.timestamp = now() - 600;
+    position.state.freshness.ageSeconds = 600;
+  }
+  const portfolio = portfolioOf({ wallet: OWNER, tokens: [anchor, unpriced], positions: [position] });
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), positions: [{ dex: 3, tokenId: 6_238_157n, pool,
+    tickLower: -60, tickUpper: 60, liquidity: 1_000_000_000n, principal: [2_000_000n, 3_000_000n], fees: [250_000n, 500_000n] }],
+    pools: [{ pool, sqrtPriceX96: 2n ** 96n, tick: 0, liquidity: 1_000_000_000n }] });
+  const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v3-6238157', read6: { portfolio, activity: activityOf({ wallet: OWNER }) } });
+  try {
+    const detail = s.page.locator('[data-position-detail][data-position-id="6238157"]');
+    try { await detail.waitFor(); }
+    catch (cause) {
+      const diagnostic = await s.page.evaluate(() => ({
+        url: location.href, visibility: document.visibilityState,
+        session: window.__dominoSessionProbe?.view().status,
+        empty: [...document.querySelectorAll('[data-position-reason]')].map(node => ({ reason: node.getAttribute('data-position-reason'), text: node.textContent })),
+        loading: document.querySelector('[data-position-loading]')?.textContent ?? null,
+        portfolio: window.__dominoV2Test?.read6?.portfolio,
+        body: document.body.innerText.slice(0, 3000),
+      }));
+      await s.page.screenshot({ path: join(shots(), `position-pool-price-${variant.stale ? 'stale' : variant.anchor ? 'anchor' : 'unqualified'}-failure.png`), fullPage: true, animations: 'disabled' });
+      throw new Error(`Position fixture did not render: ${JSON.stringify(diagnostic)}`, { cause });
+    }
+    if (variant.usd) {
+      await detail.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
+      assert.deepEqual(await detail.locator('[data-usd]').allTextContents(), ['$5.00', '$0.75']);
+      for (const name of ['principal', 'fees']) {
+        const figure = detail.locator(`[data-usd="${name}"]`);
+        assert.equal(await figure.getAttribute('data-usd-basis'), 'pool-price');
+        assert.match(await figure.getAttribute('title'), /pool price.*USDC.*qualified USD price/i, 'the estimate names both the pool mark and its qualified anchor');
+      }
+      assert.equal(await detail.locator('[data-cell="apr"] [data-figure="none"]').count(), 1, 'spot valuation does not create APR');
+      for (const width of [1280, 390, 320]) {
+        await s.page.setViewportSize({ width, height: 960 });
+        assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `pool-price USD fits ${width}px`);
+        await s.page.screenshot({ path: join(shots(), `position-pool-price-base-${width}.png`), fullPage: true, animations: 'disabled' });
+      }
+    } else {
+      await detail.locator('[data-usd-unavailable="principal"]').waitFor();
+      assert.deepEqual(await detail.locator('[data-usd-unavailable]').allInnerTexts(), ['USD unavailable', 'USD unavailable']);
+      assert.equal(await detail.locator('[data-usd], [data-usd-snapshot]').count(), 0, 'there is no unqualified estimate or remembered USD value');
+      assert.equal(await detail.locator('[data-position-loading], [data-position-overview] [aria-busy="true"]').count(), 0, 'settled unavailable data is not an infinite loader');
+    }
+    const details = detail.locator('[data-position-details]');
+    await details.locator('summary').click();
+    assert.match(await details.locator('[data-stat="principal"]').textContent(), /2\s+USDC.*3\s+TEST/);
+    assert.match(await details.locator('[data-stat="fees"]').textContent(), /0\.25\s+USDC.*0\.5\s+TEST/);
+    if (variant.usd) assert.match(await details.innerText(), /pool price/i);
+    assert.equal(chain.sends.length, 0, 'reading a pool mark never sends a transaction');
+    assert.equal(s.planned.length, 0, 'reading a pool mark never asks for a transaction plan');
+  } finally { await s.close(); }
+});
+
 test('a completed unqualified USD read explains the missing price without a permanent loading skeleton', async () => {
   const pools = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/valid/chain-pools.json', import.meta.url), 'utf8'));
   const tokens = TOKENS.map(token => ({ ...token, price: null, priceReason: 'pool_depth_below_floor' }));

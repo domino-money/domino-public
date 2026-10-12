@@ -34,7 +34,8 @@ import { chainStatusOf, findPosition, fromV6, hookedPool, isLive, tokensOf, vaul
 import { MoreActions, positionMenuItems } from './MoreActions'
 import { PositionDialog, type PositionMode } from './PositionDialog'
 import type { V6Read } from './source'
-import { labelOf, tokenBook, usdOfAmounts } from './tokens'
+import { labelOf, tokenBook } from './tokens'
+import { usdOfPoolAmounts } from '../usd'
 import { useActivityHistory } from '../lists/activity'
 import PositionHistory from '../lists/PositionHistory'
 import { useCreatedPositions, useKeyed, useKeyedLatest } from '../lists/hooks'
@@ -208,18 +209,26 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   const identity = poolIdentity(chainId, position.pool)
   const custody = successor ? COPY.custody.successor : position.vault?.role === 'root' ? COPY.custody.root : COPY.custody.walletHolds
   // Added 2026-10-06 (read-v6 1.1.0-rc.1's qualified USD): what it holds and its fees in USD, as V1's page shows them
-  // (components/positions/KeyFigures.tsx), with token amounts in Details. Only a fresh read with every nonzero amount
-  // priced provides a new USD valuation; a brief unread price can preserve the exact unchanged complete snapshot.
+  // (components/positions/KeyFigures.tsx), with token amounts in Details. As in creation, one qualified currency also
+  // values the pair at this position's own pool price. This is a pool mark, not an independently qualified token quote.
   const fresh = position.freshness?.status === 'fresh' && !stale
   const pair = [position.pool.currency0, position.pool.currency1] as const
-  const currentHoldsUsd = fresh ? usdOfAmounts(book, pair, position.principal) : null
-  const currentFeesUsd = fresh ? usdOfAmounts(book, pair, position.feesOwed) : null
+  const valueOf = (amounts: readonly [bigint, bigint] | null) => fresh && amounts ? usdOfPoolAmounts({
+    amounts, decimals: [book.get(pair[0])?.decimals ?? null, book.get(pair[1])?.decimals ?? null],
+    prices: [book.get(pair[0])?.usd ?? null, book.get(pair[1])?.usd ?? null],
+    sqrtPriceX96: position.sqrtPriceX96, allowPoolMark: !hooked,
+  }) : null
+  const holdsMark = valueOf(position.principal), feesMark = valueOf(position.feesOwed)
+  const currentHoldsUsd = holdsMark?.value ?? null, currentFeesUsd = feesMark?.value ?? null
+  const poolMark = holdsMark?.basis === 'pool-price' ? holdsMark : feesMark?.basis === 'pool-price' ? feesMark : null
   const savedUsd = fresh && (currentHoldsUsd === null || currentFeesUsd === null)
     ? POSITION_VALUATIONS.get(answer, { chainId, positionManager: position.manager, tokenId: position.tokenId.toString() }) : null
   const holdsUsd = savedUsd?.value ?? currentHoldsUsd
   const holdsText = holdsUsd !== null ? formatUsdFloor(holdsUsd) : null
   const feesUsd = savedUsd?.fees ?? currentFeesUsd
-  const usdTitle = savedUsd ? `Previous complete valuation from ${new Date(savedUsd.at).toISOString()}. Refreshing the USD source.` : position.snapshotBlock !== null ? `Qualified valuation at block ${position.snapshotBlock}` : undefined
+  const usdTitle = savedUsd ? `Previous complete valuation from ${new Date(savedUsd.at).toISOString()}. Refreshing the USD source.`
+    : poolMark ? `Estimated from the pool price at block ${position.snapshotBlock}, converted with ${labelOf(book, pair[poolMark.anchor])}’s qualified USD price. This is not a sale quote.`
+      : position.snapshotBlock !== null ? `Qualified valuation at block ${position.snapshotBlock}` : undefined
   const missingReasons = pair.flatMap((address, index) => {
     if ((position.principal?.[index] ?? 0n) === 0n && (position.feesOwed?.[index] ?? 0n) === 0n) return []
     const token = answer.tokens.find(item => item.chainId === chainId && item.address.toLowerCase() === address)
@@ -286,7 +295,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
           data-value-width={holdsText && holdsText.length > 11 ? 'wide' : holdsText && holdsText.length > 8 ? 'medium' : undefined}
         >
           {holdsUsd !== null ? (
-            <span className="dm-arrive" title={usdTitle} data-usd="principal" data-usd-snapshot={savedUsd ? '' : undefined}>
+            <span className="dm-arrive" title={usdTitle} data-usd="principal" data-usd-basis={holdsMark?.basis} data-usd-snapshot={savedUsd ? '' : undefined}>
               <LiveFigure value={holdsText!} mode="digits" dimCents className="dm-fig-lg" />
             </span>
           ) : (
@@ -300,7 +309,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
           data-cell="fees"
         >
           {feesUsd !== null ? (
-            <span data-usd="fees" title={usdTitle} data-usd-snapshot={savedUsd ? '' : undefined}>
+            <span data-usd="fees" title={usdTitle} data-usd-basis={feesMark?.basis} data-usd-snapshot={savedUsd ? '' : undefined}>
               <UsdText value={feesUsd} block={savedUsd ? undefined : position.snapshotBlock ?? undefined} floor className="dm-fig-lg dm-arrive" />
             </span>
           ) : (
@@ -348,14 +357,14 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
           <KeyValueList className="dm-pos-facts">
             <KeyValue label="Tokens in this position"><span className="dm-pos-amounts" data-stat="principal"><CardAmount amount={card.principal[0]} /><CardAmount amount={card.principal[1]} /></span></KeyValue>
             <KeyValue label="Fees ready to collect"><span className="dm-pos-amounts" data-stat="fees"><CardAmount amount={card.unsettledFees[0]} /><CardAmount amount={card.unsettledFees[1]} /></span></KeyValue>
-            {savedUsd && <KeyValue label="USD valuation"><span>{usdTitle}</span></KeyValue>}
+            {(savedUsd || poolMark) && <KeyValue label="USD valuation"><span>{usdTitle}</span></KeyValue>}
             {chainId !== 4663 && <KeyValue label="APR data"><span>Lifetime fee history isn’t available from this network’s current data source. Recorded balances do not establish APR.</span></KeyValue>}
             {(holdsUsd === null || feesUsd === null) && <KeyValue label="USD valuation"><span>{usdUnavailable}</span></KeyValue>}
             {chainId !== 4663 && pair.filter((_, index) => (position.principal?.[index] ?? 0n) > 0n || (position.feesOwed?.[index] ?? 0n) > 0n).map(address => {
               const token = answer.tokens.find(item => item.chainId === chainId && item.address.toLowerCase() === address)
               if (token?.price || !token?.priceReason) return null
               const reason = usdUnavailableReason(token.priceReason)
-              return <KeyValue key={address} label={`${labelOf(book, address)} price`}><span data-usd-price-reason={token.priceReason}>{reason}</span></KeyValue>
+              return <KeyValue key={address} label={`${labelOf(book, address)} independent price`}><span data-usd-price-reason={token.priceReason}>{poolMark ? 'No independently qualified quote. The USD estimate above uses this position’s pool price.' : reason}</span></KeyValue>
             })}
             <KeyValue label={COPY.page.nftId}>
               <Address value={position.tokenId.toString()} />

@@ -76,6 +76,8 @@ export function PriceVsRange({ history = null, openedAt = null, closedAt = null,
 function PriceChart({ facts, ask, openedAt, closedAt, observations, recorded }: { facts: RangeFacts; ask: PoolHistoryAsk | null; openedAt: number | null; closedAt: number | null; observations: PoolPriceObservations | null; recorded?: PriceHistory | null }) {
   const { base, quote, lower, upper, lowerText, upperText, now, nowText, where } = facts
   const phone = useMediaQuery('(max-width: 767px)')
+  // Match v3-position-detail.css: the desktop workspace keeps axis text readable at the denser root scale.
+  const axisFontSize = useMediaQuery('(min-width: 768px) and (pointer: fine)') ? 16 : 12
   const { expanded, showPoints } = usePositionChartOptions()
   const knownMint = openedAt !== null && Number.isSafeInteger(openedAt) && openedAt > 0 ? openedAt : null
   // Fetch independently of the mint/financial ledger. The line still requires verified lifecycle evidence below.
@@ -195,9 +197,9 @@ function PriceChart({ facts, ask, openedAt, closedAt, observations, recorded }: 
       const ticks = recorded !== undefined ? [{ t: start, label: shortTime(start) }, ...(end > start ? [{ t: end, label: shortTime(end) }] : [])] : dateTicks(start, end, Math.max(2, Math.floor((plot.right - plot.left) / 96)))
       const opened = start === knownMint
       const candidates = [...(opened ? [{ x: plot.left, label: 'Opened' }] : []), ...ticks.map((tick) => ({ x: x(tick.t), label: tick.label }))]
-      return <XAxis ticks={spacedTimeTicks(candidates, plot.left, plot.right - NOW_INSET)} anchor={plot.bottom + 22} left={plot.left} right={plot.right - NOW_INSET} />
+      return <XAxis ticks={spacedTimeTicks(candidates, plot.left, plot.right - NOW_INSET, axisFontSize)} anchor={plot.bottom + 22} left={plot.left} right={plot.right - NOW_INSET} />
     },
-    [scales, drawn, start, end, knownMint, recorded],
+    [scales, drawn, start, end, knownMint, recorded, axisFontSize],
   )
 
   /** The labels at the plot's right: the range's Max and Min at its edges and the price now's chip, none over another. */

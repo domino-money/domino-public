@@ -409,6 +409,12 @@ test('time labels keep space after the right-edge alignment: Opened and the late
   assert.deepEqual(spacedTimeTicks([], 0, 148), []);
 });
 
+test('time labels reserve the desktop 16px face before keeping a tick near Opened', () => {
+  const ticks = [{ x: 0, label: 'Opened' }, { x: 84.6, label: '17:00' }, { x: 200, label: '18:00' }, { x: 400, label: '19:00' }];
+  assert.deepEqual(spacedTimeTicks(ticks, 0, 440, 12), ticks, 'the compact face has enough room');
+  assert.deepEqual(spacedTimeTicks(ticks, 0, 440, 16), [ticks[0], ticks[2], ticks[3]], 'the larger face needs the first hourly label omitted, not squeezed against Opened');
+});
+
 test('an unknown mint, or a mint newer than stored prices, never produces a position-history line', () => {
   const item = CASES.inside;
   const { facts } = factsOf(item);

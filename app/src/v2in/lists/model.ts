@@ -11,7 +11,7 @@ import { USD_SHOWN } from '../position/constants'
 import { protectionStanding, type ProtectionStanding } from '../autoexit/standing'
 import { exitReceiptOutcome } from '../autoexit/receipt'
 import { v2PositionHref } from '../route'
-import { rawAmounts, usdOfRaw } from '../usd'
+import { rawAmounts, usdOfPoolAmounts } from '../usd'
 import { positionOfState } from '../../lib/walletCards'
 import { minimumPositionBlock, positionBurn, positionKey, positionObservation } from './positionSync'
 import { automationState, confirmedPositionAutomation } from '../automate/store'
@@ -23,8 +23,9 @@ import { POSITION_VALUATIONS } from './valuation'
  * the screens hand in a body the package's validator already accepted (src/v2/read/v6.ts), and draw what comes out.
  *
  * Nothing is made up. Amounts are raw integers in the token's own units, written with the token's decimals when read-v6
- * read them and in raw units otherwise (never guessed). There is no USD and no APR: read-v6 has no qualified price source
- * (every token `price: null`), so neither is shown. A position the index could not read is said so, never drawn as zeros.
+ * read them and in raw units otherwise (never guessed). USD uses qualified prices, or an explicitly attributed mark at
+ * the position's pool price into its one qualified currency. Neither method supplies personal APR or invents an
+ * independent token quote. A position the index could not read is said so, never drawn as zeros.
  * Each chain's status comes before its values: a stale chain's rows carry the stale badge and the age of what is shown;
  * an unavailable chain is §6.3's partial sentence, and never empties the others. A token's symbol is untrusted text
  * (control and invisible characters dropped, bounded); its identity is its chain and address.
@@ -217,10 +218,13 @@ export interface PositionRowView {
   fees: readonly [AmountShown, AmountShown] | null
   /**
    * Added 2026-10-06 (read-v6 1.1.0-rc.1's qualified USD): the value and the fees in USD (decimal strings), from a fresh
-   * read whose every token held above zero has a price; null otherwise (the amounts alone, as before; never a zero).
+   * read using qualified prices or the same one-currency pool mark as New position; null without either valid basis.
    */
   valueUsd: string | null
   feesUsd: string | null
+  valueUsdBasis?: 'qualified-prices' | 'pool-price'
+  feesUsdBasis?: 'qualified-prices' | 'pool-price'
+  usdPoolTitle?: string
   /** An unchanged complete USD snapshot while the qualified source is temporarily unread. */
   usdSavedAt?: number
   usdReason?: string
@@ -315,6 +319,7 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
     status: 'live' as const,
     pool: { ...ownRead.position.poolKey, dex: 4 as const },
     liquidity: wallet.liquidity,
+    sqrtPriceX96: ownRead.position.sqrtPriceX96,
     inRange: ownRead.position.tick >= ownRead.position.tickLower && ownRead.position.tick < ownRead.position.tickUpper,
     principalAtSpot: wallet.principal ?? [],
     feesOwed: [ownRead.position.unclaimed0, ownRead.position.unclaimed1],
@@ -342,12 +347,18 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
   const liquidity = BigInt(state.liquidity)
   const pair = (values: readonly string[]) => (values.length === 2 ? ([amountShown(values[0], tokens[0]), amountShown(values[1], tokens[1])] as const) : null)
   const pending = (base.block ?? 0) < minimumPositionBlock(position)
-  const fresh = state.freshness.status === 'fresh' && chainStale === null && !pending
-  const usdOf = (values: readonly string[]) => {
+  const fresh = state.freshness.status === 'fresh' && chain?.status === 'current' && !pending
+  const valuationOf = (values: readonly string[]) => {
     const raws = fresh && values.length === 2 ? rawAmounts(values) : null
-    return raws ? usdOfRaw(raws.map((raw, index) => ({ raw, decimals: tokens[index].decimals, usd: tokens[index].usd }))) : null
+    return raws ? usdOfPoolAmounts({
+      amounts: [raws[0], raws[1]], decimals: [tokens[0].decimals, tokens[1].decimals],
+      prices: [tokens[0].usd, tokens[1].usd], sqrtPriceX96: state.sqrtPriceX96,
+      allowPoolMark: state.pool.dex !== 4 || state.pool.hooks.toLowerCase() === ZERO_ADDRESS,
+    }) : null
   }
-  const valueUsd = usdOf(state.principalAtSpot), feesUsd = usdOf(state.feesOwed)
+  const valueMark = valuationOf(state.principalAtSpot), feesMark = valuationOf(state.feesOwed)
+  const valueUsd = valueMark?.value ?? null, feesUsd = feesMark?.value ?? null
+  const poolMark = valueMark?.basis === 'pool-price' ? valueMark : feesMark?.basis === 'pool-price' ? feesMark : null
   // A newer direct observation is a separate set of amounts; it cannot borrow the index's complete USD snapshot.
   const saved = fresh && !ownRead && (valueUsd === null || feesUsd === null) && answer.wallet
     ? POSITION_VALUATIONS.get({ ...answer, wallet: answer.wallet, positions: [position] }, position) : null
@@ -367,6 +378,9 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
     fees: pair(state.feesOwed),
     valueUsd: saved?.value ?? valueUsd,
     feesUsd: saved?.fees ?? feesUsd,
+    valueUsdBasis: valueMark?.basis,
+    feesUsdBasis: feesMark?.basis,
+    ...(poolMark ? { usdPoolTitle: `Estimated from the pool price at block ${base.block}, converted with ${tokens[poolMark.anchor].label}’s qualified USD price. This is not a sale quote.` } : {}),
     ...(saved ? { usdSavedAt: saved.at } : {}),
     ...(usdReason ? { usdReason } : {}),
     stale: pending ? 'Updating' : chainStale ?? (state.freshness.status === 'stale' ? `updated ${agoWords(state.freshness.ageSeconds)}` : null),

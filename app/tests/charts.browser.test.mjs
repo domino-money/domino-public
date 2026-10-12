@@ -96,7 +96,7 @@ const readsVault = (init) => callsOf(init).some((call) => call.method === 'eth_g
  * past block from the world (`past(block)`, a JSON text, a Response or a promise of one; `true`: world.pastAnswer), every
  * question kept in `reads`; without it the bridge is not there, as before.
  */
-async function scenario(world, hash, device = DESKTOP, init = null, { past = null, history = null, dist = WALLET_DIST } = {}) {
+async function scenario(world, hash, device = DESKTOP, init = null, { past = null, history = null, dist = WALLET_DIST, fixedTime = null } = {}) {
   const fake = createFakeSession();
   const asked = [];
   const reads = [];
@@ -130,6 +130,7 @@ async function scenario(world, hash, device = DESKTOP, init = null, { past = nul
   const rpc = await routeChain(context, world.chain);
   const wallet = await installWallets(context);
   const page = await context.newPage();
+  if (fixedTime !== null) await page.clock.setFixedTime(new Date(fixedTime * 1000));
   if (init) await page.addInitScript(init);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -451,7 +452,9 @@ test('the position’s page draws the pool’s last 7 days from the read service
 });
 
 test('R5: real mint bounds price history and 7D fees at 1440, 390 and 320; the same ledger totals survive every period', { timeout: 120_000 }, async () => {
-  const now = Math.floor(Date.now() / 1000);
+  // This minute offset puts the first hourly label just after Opened: a 12px width estimate admitted it even
+  // though the desktop workspace actually uses 16px labels. Keep both the API fixture and browser clock there.
+  const now = Date.parse('2026-10-12T22:35:15Z') / 1000;
   const minted = HEAD - 216_000; // Six hours before the fake node's current block.
   const devices = [
     [{ viewport: { width: 1440, height: 1000 } }, 'desktop'],
@@ -465,7 +468,7 @@ test('R5: real mint bounds price history and 7D fees at 1440, 390 and 320; the s
       { block: HEAD - 72_000, kind: 'collect', fees: [1_000n, 1_000_000_000_000_000_000n] },
     ], unclaimed: [500n, 2_000_000_000_000_000_000n] });
     const pool = { id: 7, now: 0.003, quote: { address: USDG }, swing: 0.02 };
-    const s = await scenario(world, HASH, device, null, { past: true, history: (body) => historyFor(pool, body, { end: now }), ...(baseline ? { dist: resolve(baseline) } : {}) });
+    const s = await scenario(world, HASH, device, null, { past: true, history: (body) => historyFor(pool, body, { end: now }), fixedTime: now, ...(baseline ? { dist: resolve(baseline) } : {}) });
     try {
       const page = s.page;
       const card = page.locator('[data-fees-card][data-fees-state="verified"]');

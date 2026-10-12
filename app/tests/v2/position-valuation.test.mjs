@@ -80,17 +80,36 @@ test('a newer direct state read cannot borrow USD from the older indexed amounts
   for (const token of body.tokens) if (token.price?.snapshot) token.price.snapshot.timestamp = body.servedAt;
   POSITION_VALUATIONS.record(body);
   body.tokens[1].price = null; body.tokens[1].priceReason = 'price_read_failed';
-  assert.equal(POSITION_VALUATIONS.get(body, position)?.saved, true, 'the old indexed state alone has a valid complete snapshot');
+  const previous = POSITION_VALUATIONS.get(body, position);
+  assert.equal(previous?.saved, true, 'the old indexed state alone has a valid complete snapshot');
   const state = position.state;
   offerPositionState({ block: state.snapshot.number + 20, timestamp: body.servedAt, positions: [{
     ok: true, tokenId: position.tokenId, owner: state.owner, poolId: '0x' + 'ab'.repeat(32), poolKey: state.pool,
     tickLower: state.tickLower, tickUpper: state.tickUpper, liquidity: String(BigInt(state.liquidity) / 2n),
-    sqrtPriceX96: state.sqrtPriceX96, tick: state.tick, unclaimed0: '0', unclaimed1: '1000000000000000000',
+    sqrtPriceX96: String(1n << 96n), tick: 0, unclaimed0: '0', unclaimed1: '1000000000000000000',
     currencies: body.tokens.map(token => ({ address: token.address, symbol: token.symbol, decimals: token.decimals })),
   }] });
   const row = positionRows(body, () => true)[0];
   assert.equal(row.block, state.snapshot.number + 20, 'the newer direct reading is the one displayed');
   assert.equal(row.usdSavedAt, undefined);
-  assert.equal(row.valueUsd, null);
-  assert.equal(row.feesUsd, null, 'old complete USD is never combined with the new raw balances');
+  assert.equal(row.valueUsdBasis, 'pool-price');
+  assert.equal(row.feesUsdBasis, 'pool-price');
+  assert.notEqual(row.valueUsd, null, 'the current pool observation can be marked using its qualified anchor');
+  assert.notEqual(row.valueUsd, previous.value, 'the previous complete valuation is not reused');
+  assert.notEqual(row.feesUsd, previous.fees, 'the new raw balances are marked at their own pool observation');
+  assert.equal(row.feesUsd, '1000000000000.000000000000000000', 'new Q96 price converts 1e18 raw units into the 6-decimal USDG anchor, not the old pool price');
+});
+
+test('a fresh position cannot supply pool USD while its chain is unavailable or missing', () => {
+  for (const absent of [false, true]) {
+    const { body } = setup();
+    body.tokens[1].price = null;
+    body.tokens[1].priceReason = 'pool_depth_below_floor';
+    if (absent) body.chains = [];
+    else body.chains[0].status = 'unavailable';
+    const row = positionRows(body, () => true)[0];
+    assert.equal(row.valueUsd, null);
+    assert.equal(row.feesUsd, null);
+    assert.equal(row.usdReason, 'stale_position_or_chain');
+  }
 });

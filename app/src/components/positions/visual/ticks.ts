@@ -42,12 +42,13 @@ export function dateTicks(start: number, end: number, max: number): { t: number;
 /**
  * XAxis aligns labels near an edge instead of centring them. Keep actual label boxes apart after that alignment,
  * prioritising the first ("Opened", when present) and last labels. SVG design units scale with the chart's rem root.
- * The conservative width includes room for the 12-unit tabular face, without a measuring/re-rendering loop.
+ * The conservative width follows the axis font size, including the desktop workspace's larger 16-unit face,
+ * without a measuring/re-rendering loop.
  */
-export function spacedTimeTicks<T extends { x: number; label: string }>(ticks: readonly T[], left: number, right: number): T[] {
+export function spacedTimeTicks<T extends { x: number; label: string }>(ticks: readonly T[], left: number, right: number, fontSize = 12): T[] {
   if (ticks.length < 2) return [...ticks]
   const boxes = ticks.map((tick) => {
-    const width = tick.label.length * 7.5 + 4
+    const width = (tick.label.length * 7.5 + 4) * fontSize / 12
     const start = tick.x - left < 32 ? tick.x : right - tick.x < 32 ? tick.x - width : tick.x - width / 2
     return { tick, start, end: start + width }
   })

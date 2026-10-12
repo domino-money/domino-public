@@ -370,7 +370,8 @@ test('an unchanged position retains a complete USD valuation during a transient 
     const row = s.page.locator(`[data-v2-position-row="${rowKey('7')}"]`);
     await row.locator('[data-usd="principal"]').waitFor();
     const before = await row.locator('[data-usd]').allTextContents();
-    own.tokens[1].price = null; own.tokens[1].priceReason = 'price_read_failed';
+    // With one anchor the fresh pool now provides its own mark. Lose both prices to exercise remembered USD.
+    for (const token of own.tokens) { token.price = null; token.priceReason = 'price_read_failed'; }
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
     await row.locator('[data-usd="principal"][data-usd-snapshot]').waitFor();
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before, 'principal and fees remain the same complete observation');
@@ -406,10 +407,11 @@ test('a portfolio price-budget miss is recovered through the existing targeted c
   } });
   try {
     const row = s.page.locator(`[data-v2-position-row="8453:${manager}:6238188"]`);
-    await row.locator('[data-cell="principal"] .dm-own-usd-unavailable').waitFor();
-    await s.page.waitForFunction(() => document.querySelector('[data-usd-reason="pricing_limit_reached"]'));
+    await row.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
+    assert.equal(await row.locator('[data-usd="fees"]').getAttribute('data-usd-basis'), 'pool-price', 'the remaining USDC anchor supplies a provisional pool mark');
+    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /pool price/i);
     release();
-    await row.locator('[data-usd="principal"]').waitFor();
+    await row.locator('[data-usd="principal"][data-usd-basis="qualified-prices"]').waitFor();
     assert.equal(await row.locator('[data-usd="principal"]').textContent(), '$1,001.03');
     assert.equal(await row.locator('[data-usd="fees"]').textContent(), '$0.11');
     const targets = s.asked.filter(request => request.route === 'chain-pools');
@@ -417,7 +419,7 @@ test('a portfolio price-budget miss is recovered through the existing targeted c
     assert.equal(s.asked.filter(request => request.route === 'portfolio').length, 2, 'one initial portfolio plus one coherent reread');
     warmed = false;
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
-    await s.page.waitForFunction(() => document.querySelector('[data-usd-reason="pricing_limit_reached"]'));
+    await row.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
     assert.equal(s.asked.filter(request => request.route === 'chain-pools').length, 1, 'the same missing source waits for its cooldown');
     ready.positions[0].state.principalAtSpot[0] = '2000000000000000000';
     ready.positions[0].state.feesOwed[1] = '20000';
@@ -456,15 +458,16 @@ test('a first targeted price read that is rate limited recovers on a later visib
   } });
   try {
     const row = s.page.locator(`[data-v2-position-row="8453:${manager}:6238189"]`);
-    await row.locator('[data-cell="principal"] .dm-own-usd-unavailable').waitFor();
+    await row.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
     await firstAttempt;
     const response = s.page.waitForResponse(response => response.url().endsWith('/api/read/v6/chain-pools') && response.status() === 429);
     releaseLimit(); await (await response).finished();
     await s.page.clock.fastForward(60_001);
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
     assert.equal(attempts, 1, 'the one-minute token cooldown cannot override the longer reader Retry-After');
+    assert.equal(await row.locator('[data-usd="principal"]').getAttribute('data-usd-basis'), 'pool-price', 'the qualified recovery cannot finish during the rate-limit window');
     await s.page.clock.fastForward(60_001);
-    await row.locator('[data-usd="principal"]').waitFor();
+    await row.locator('[data-usd="principal"][data-usd-basis="qualified-prices"]').waitFor();
     assert.equal(await row.locator('[data-usd="principal"]').textContent(), '$1,001.03');
     assert.equal(await row.locator('[data-usd="fees"]').textContent(), '$0.11');
     assert.equal(attempts, 2, 'the failed first attempt never disables recovery for the rest of the visit');
@@ -499,6 +502,49 @@ test('Base without qualified USD keeps fixed value slots and token amounts in de
       if (width !== 320) await s.page.screenshot({ path: join(shots(), `positions-base-visible-fees-${width}.png`), fullPage: true });
     }
     assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+for (const network of [
+  { name: 'Base', key: 'base', chainId: 8453, usdc: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', manager: '0x03a520b32c04bf3beef7beb72e919cf822ed34f1' },
+  { name: 'Arbitrum', key: 'arbitrum', chainId: 42161, usdc: '0xaf88d065e77c8cc2239327c5edb3a432268e5831', manager: '0xc36442b4a4522e871399cd717abdd847ab11fe88' },
+]) test(`pool-price USD: ${network.name} list and detail share one anchored valuation`, async () => {
+  const testToken = '0xb200000000000000000000000000000000000001';
+  const tokenId = '6238157';
+  const anchor = { ...indexedToken(network.chainId, network.usdc, 'USDC', 6),
+    price: { source: 'chain_stable', usd: '1.000000000000000000', snapshot: null, pool: null, ethUsd: null, depthUsd: null }, priceReason: null };
+  const unpriced = { ...indexedToken(network.chainId, testToken, 'TEST', 6), priceReason: 'pool_depth_below_floor' };
+  // Equal decimals and sqrtPriceX96 = 2^96: exactly one TEST per USDC. No valuation helper computes the expectations.
+  // Principal: 2 USDC + 3 TEST = $5.00. Fees: 0.25 USDC + 0.5 TEST = $0.75.
+  const own = portfolioOf({ wallet: OWNER, tokens: [anchor, unpriced], positions: [
+    livePosition({ chainId: network.chainId, dex: 3, manager: network.manager, tokenId, owner: OWNER,
+      pool: { currency0: network.usdc, currency1: testToken, fee: 3000, tickSpacing: 60 }, tickLower: -60, tickUpper: 60,
+      liquidity: '1000000000', sqrtPriceX96: String(2n ** 96n), tick: 0,
+      principal: ['2000000', '3000000'], feesOwed: ['250000', '500000'] }),
+  ] });
+  const s = await scenario({ hooks: LIVE, readV6: routeOn(route => route === 'portfolio' ? own : activityOf({ wallet: OWNER })) });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="${network.chainId}:${network.manager}:${tokenId}"]`);
+    await row.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
+    assert.deepEqual(await row.locator('[data-usd]').allTextContents(), ['$5.00', '$0.75']);
+    for (const name of ['principal', 'fees']) {
+      assert.match(await row.locator(`[data-cell="${name}"]`).getAttribute('title'), /pool price/i);
+      assert.equal(await row.locator(`[data-usd="${name}"]`).getAttribute('data-usd-basis'), 'pool-price');
+    }
+    assert.equal(await row.locator('[data-cell="apr"] .dm-own-dash').innerText(), '—', 'a spot mark never fabricates personal APR');
+    for (const width of [1280, 390, 320]) {
+      await s.page.setViewportSize({ width, height: 960 });
+      assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${network.name} marked USD fits ${width}px`);
+      await s.page.screenshot({ path: join(shots(), `positions-pool-price-${network.key}-${width}.png`), fullPage: true, animations: 'disabled' });
+    }
+    await row.click();
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${tokenId}"]`);
+    await detail.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
+    assert.deepEqual(await detail.locator('[data-usd]').allTextContents(), ['$5.00', '$0.75'], 'the same shared read values the list and the position page');
+    assert.match(await detail.locator('[data-position-details] [data-stat="principal"]').textContent(), /2\s+USDC.*3\s+TEST/);
+    assert.match(await detail.locator('[data-position-details] [data-stat="fees"]').textContent(), /0\.25\s+USDC.*0\.5\s+TEST/);
+    assert.equal(s.wallet.state.signed.length, 0, 'valuation needs no wallet signature');
+    assert.equal(s.planAsked.length, 0, 'valuation never prepares a transaction');
   } finally { await s.close(); }
 });
 

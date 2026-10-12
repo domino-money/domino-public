@@ -177,6 +177,7 @@ export function FeesChart({
 }) {
   const adds = automation?.adds ?? NONE
   const phone = useMediaQuery('(max-width: 767px)')
+  const axisFontSize = useMediaQuery('(min-width: 768px) and (pointer: fine)') ? 16 : 12
   const { expanded, showPoints } = usePositionChartOptions()
   const height = positionPlotHeight(phone ? HEIGHT_PHONE : HEIGHT, phone, expanded)
   const pad = phone ? PAD_PHONE : PAD
@@ -273,7 +274,7 @@ export function FeesChart({
       }
       const { x } = scales(plot)
       const dates = dateTicks(start, end, dateCount(plot)).map((tick) => ({ x: x(tick.t), label: tick.label }))
-      const xAxis = <XAxis ticks={spacedTimeTicks(dates, plot.left, plot.right)} anchor={plot.bottom + 32} left={plot.left} right={plot.right} />
+      const xAxis = <XAxis ticks={spacedTimeTicks(dates, plot.left, plot.right, axisFontSize)} anchor={plot.bottom + 32} left={plot.left} right={plot.right} />
       // A phone draws its y labels over the series (inspect layer); a desktop in the gutter.
       if (phone) return xAxis
       const { floor, levels } = yLabels(plot)
@@ -284,7 +285,7 @@ export function FeesChart({
         </>
       )
     },
-    [scales, yLabels, zero, start, end, phone, view],
+    [scales, yLabels, zero, start, end, phone, view, axisFontSize],
   )
 
   /**
