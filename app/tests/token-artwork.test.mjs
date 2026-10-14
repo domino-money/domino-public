@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
-import { artworkFromPairs, createTokenArtworkResolver, DEX_EDGE, DEX_EDGE_V2, safeTokenImage, tokenArtworkKey } from '../src/lib/tokenArtwork.ts';
+import { artworkFromPairs, createTokenArtworkResolver, DEX_EDGE, safeTokenImage, tokenArtworkKey } from '../src/lib/tokenArtwork.ts';
 import { bundledTokenArtwork } from '../src/lib/bundledTokenArtwork.ts';
 
 const address = `0x${'a'.repeat(40)}`;
@@ -359,9 +359,6 @@ test('our edge given up for one chain only: a miss on Base keeps Robinhood Chain
   const resolver = createTokenArtworkResolver({ edge: '/api/read/dex/', now: () => at, wall: () => 1, fetch: async (url) => {
     asked.push(url);
     if (url === `/api/read/dex/token-pairs/base/${address}`) return new Response('{"error":"upstream_unavailable"}', { status: 502, headers: { 'content-type': 'application/json' } });
-    // Changed on purpose 2026-10-14 (incident of 2026-10-13, package D1): the Wallet card's prices are asked on our edge's
-    // new path, whose answer says each token's own state (it was /api/read/dex/tokens/…, a plain list).
-    if (url.startsWith('/api/read/dex2/')) return json({ v: 2, now: 1, tokens: Object.fromEntries(url.split('/').at(-1).split(',').map((token) => [token, { at: 1, pairs: [pair({ baseToken: { address: token } })] }])) });
     return json([pair({ chainId: url.includes('/base/') ? 'base' : 'robinhood' })]);
   } });
   await resolver.pairs(8453, address);
@@ -373,7 +370,7 @@ test('our edge given up for one chain only: a miss on Base keeps Robinhood Chain
   await resolver.pairs(8453, other);
   assert.deepEqual(asked, [
     `/api/read/dex/token-pairs/${address}`,
-    `/api/read/dex2/tokens/${[address, other].sort().join(',')}`,
+    `/api/read/dex/tokens/${[address, other].sort().join(',')}`,
     `https://api.dexscreener.com/token-pairs/v1/base/${other}`,
   ], 'Robinhood Chain’s reads still on our edge; Base’s directly for five minutes');
   asked.length = 0;
@@ -436,130 +433,21 @@ test('429 honours Retry-After across metadata and price calls without bypassing 
   assert.ok(asked.every(url => url.startsWith(DEX_EDGE)), 'rate limiting never causes a direct-provider bypass');
 });
 
-// Rewritten on purpose 2026-10-14 (incident of 2026-10-13, package D1). It was 'prices retain answered batches and mark
-// only failed per-token fallbacks unavailable': a GET our edge did not answer sent each of its tokens to the provider
-// directly, one GET per token from the visitor's own address (51 for the owner's wallet, the nine red lines of his
-// console, and the wallet's set of tokens shown to the provider again). The edge now answers per token on a new path, so
-// a token with no answer has no price yet, and nothing is asked of the provider directly while any token was answered.
-test('D1: a partial answer from our edge prices the answered tokens, each dated by its own retrieval, and makes no direct call', async () => {
+test('prices retain answered batches and mark only failed per-token fallbacks unavailable', async () => {
   const addresses = Array.from({ length: 12 }, (_, i) => `0x${(i + 1).toString(16).padStart(40, '0')}`);
   const asked = [];
-  const priced = (address) => pair({ baseToken: { address }, liquidity: { usd: 100_000 }, priceUsd: '2' });
-  const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, wall: () => 1_000_000, fetch: async (url, init) => {
+  const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, fetch: async url => {
     asked.push(url);
-    assert.equal(init.credentials, 'same-origin');
-    // One whole GET lost on the way.
-    if (url.includes(addresses[10])) return new Response(null, { status: 502 });
+    if (url.startsWith(DEX_EDGE) && url.includes(addresses[10])) return new Response(null, { status: 502 });
+    if (url.startsWith('https:') && url.endsWith(addresses[11])) return new Response(null, { status: 503 });
     const named = url.split('/').at(-1).split(',');
-    return json({ v: 2, now: 700_000, tokens: Object.fromEntries(named.map((address) => [address,
-      address === addresses[3] ? { missing: 'status_429', retryAfterS: 20 }
-        : address === addresses[4] ? { at: 699_000, none: true }
-          : { at: 700_000 - 90_000, pairs: [priced(address)] }])) });
+    return json(named.map(address => pair({ baseToken: { address }, liquidity: { usd: 100_000 }, priceUsd: '2' })));
   } });
   const reply = await resolver.tokenPrices(addresses);
-  assert.deepEqual(asked, [`${DEX_EDGE_V2}tokens/${addresses.slice(0, 10).join(',')}`, `${DEX_EDGE_V2}tokens/${addresses.slice(10).join(',')}`], 'two GETs to the new path and nothing else: no direct call');
-  assert.equal(DEX_EDGE_V2, '/api/read/dex2/');
-  assert.deepEqual(reply.unavailable, [addresses[3], addresses[10], addresses[11]], 'a token marked missing, and the tokens of a GET that gave nothing, have no price yet');
-  assert.deepEqual(Object.keys(reply.tokens), addresses.filter((_, i) => ![3, 10, 11].includes(i)));
-  assert.deepEqual(reply.tokens[addresses[0]], { pairs: [priced(addresses[0])], retrievedAt: 1_000_000 - 90_000 }, 'dated by when our edge retrieved it, on the page’s own clock');
-  assert.deepEqual(reply.tokens[addresses[4]], { pairs: [], retrievedAt: 1_000_000 - 1_000 }, 'the provider lists no pair for it: an answer, with its time');
-  // Our edge answered: it is not given up, and the next ask goes there again.
-  asked.length = 0;
-  await resolver.tokenPrices([addresses[0]]);
-  assert.deepEqual(asked, [`${DEX_EDGE_V2}tokens/${addresses[0]}`]);
-});
-
-test('D1: only when our edge prices no token at all is the provider asked directly, as before, one token-pairs GET per token', async () => {
-  const asked = [];
-  const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, wall: () => 5_000, fetch: async (url) => {
-    asked.push(url);
-    if (url.startsWith(DEX_EDGE_V2)) return json({ v: 2, now: 1, tokens: Object.fromEntries(url.split('/').at(-1).split(',').map((token) => [token, { missing: 'timeout', retryAfterS: 30 }])) });
-    if (url.endsWith(other)) return new Response(null, { status: 503 });
-    return json([pair({ liquidity: { usd: 100_000 }, priceUsd: '2' })]);
-  } });
-  const reply = await resolver.tokenPrices([address, other]);
-  assert.deepEqual(asked, [`${DEX_EDGE_V2}tokens/${address},${other}`, `https://api.dexscreener.com/token-pairs/v1/robinhood/${address}`, `https://api.dexscreener.com/token-pairs/v1/robinhood/${other}`]);
-  assert.deepEqual(reply.unavailable, [other]);
-  assert.deepEqual(reply.pairs.map((one) => one.baseToken.address), [address]);
-  assert.ok(!asked.some((url) => url.includes('/tokens/v1/')), 'the same v4 pairs as our edge reads');
-});
-
-test('D1: our edge given up for the artwork reads does not send the Wallet card’s prices to the provider; the new path is given up on its own account', async () => {
-  const asked = [];
-  let at = 0;
-  const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, now: () => at, wall: () => 1, fetch: async (url) => {
-    asked.push(url);
-    // The old path gives no answer for this token; the new one answers, as it does whatever the provider does.
-    if (url.startsWith(DEX_EDGE)) return new Response('{"error":"upstream_unavailable"}', { status: 502, headers: { 'content-type': 'application/json' } });
-    if (url.startsWith(DEX_EDGE_V2)) return json({ v: 2, now: 1, tokens: Object.fromEntries(url.split('/').at(-1).split(',').map((token) => [token, { at: 1, pairs: [pair({ baseToken: { address: token } })] }])) });
-    return json([pair()]);
-  } });
-  await resolver.pairs(4663, address);
-  assert.deepEqual(asked, [`${DEX_EDGE}token-pairs/${address}`, `https://api.dexscreener.com/token-pairs/v1/robinhood/${address}`], 'an artwork read: the provider directly once the old path gave no answer, as before');
-  asked.length = 0;
-  at += 31_000;
-  const reply = await resolver.tokenPrices([address, other]);
-  assert.deepEqual(asked, [`${DEX_EDGE_V2}tokens/${address},${other}`], 'the prices still ask our edge, and nothing goes to the provider (they went with the artwork reads, one GET per token)');
-  assert.deepEqual(reply.unavailable, []);
-  // The new path with no answer of its own (not a 200 that says so): given up for five minutes, then asked again.
-  const gone = [];
-  let t = 0;
-  const down = createTokenArtworkResolver({ edge: DEX_EDGE, now: () => t, fetch: async (url) => (gone.push(url), url.startsWith('/api/') ? new Response(null, { status: 503 }) : json([pair({ liquidity: { usd: 100_000 }, priceUsd: '2' })])) });
-  const direct = `https://api.dexscreener.com/token-pairs/v1/robinhood/${address}`;
-  assert.equal((await down.tokenPrices([address])).length, 1);
-  assert.deepEqual(gone, [`${DEX_EDGE_V2}tokens/${address}`, direct]);
-  gone.length = 0;
-  t += 31_000;
-  await down.tokenPrices([address]);
-  assert.deepEqual(gone, [direct], 'not asked again within five minutes');
-  gone.length = 0;
-  t += 300_000;
-  await down.tokenPrices([address]);
-  assert.deepEqual(gone, [`${DEX_EDGE_V2}tokens/${address}`, direct], 'then asked again');
-});
-
-test('D1: a 429 from the new path is a request to wait: no price yet, and nothing asked around it', async () => {
-  let at = 0;
-  const asked = [];
-  const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, now: () => at, fetch: async (url) => {
-    asked.push(url);
-    return new Response('{"error":"rate_limited"}', { status: 429, headers: { 'content-type': 'application/json', 'Retry-After': '45' } });
-  } });
-  assert.equal(await resolver.tokenPrices([address, other]), null);
-  assert.deepEqual(asked, [`${DEX_EDGE_V2}tokens/${address},${other}`], 'the visitor’s own wait (functions/_lib/dexEdge.ts) is not our edge being away: the provider is not asked');
-  at = 44_999;
-  assert.equal(await resolver.tokenPrices([address]), null);
-  assert.equal(asked.length, 1, 'nothing asked while it waits, of our edge or of the provider');
-  at = 45_000;
-  await resolver.tokenPrices([address]);
-  assert.deepEqual(asked.slice(1), [`${DEX_EDGE_V2}tokens/${address}`], 'then our edge again');
-});
-
-test('D1: an answer of the new path counts only as it is written: anything else about a token is no price yet', async () => {
-  const bodies = [
-    [{ v: 2, now: 10, tokens: { [address]: { at: 11, pairs: [] } } }, 'retrieved after the answer was made'],
-    [{ v: 2, now: 10, tokens: { [address]: { at: -1, pairs: [] } } }, 'a time before time'],
-    [{ v: 2, now: 10, tokens: { [address]: { at: '5', pairs: [] } } }, 'a time that is no number'],
-    [{ v: 2, now: 10, tokens: { [address]: { at: 5 } } }, 'neither pairs nor none'],
-    [{ v: 2, now: 10, tokens: { [address]: { at: 5, none: 'yes' } } }, 'a none that is not true'],
-    [{ v: 2, now: 10, tokens: { [address]: { at: 5, pairs: Array(101).fill(pair()) } } }, 'more pairs than one token’s answer holds'],
-    [{ v: 2, now: 10, tokens: { [address]: null } }, 'no state'],
-    [{ v: 2, now: 10, tokens: {} }, 'the token not named'],
-    [{ v: 2, now: 10, tokens: [] }, 'tokens that are a list'],
-    [{ v: 1, now: 10, tokens: { [address]: { at: 5, pairs: [] } } }, 'another version'],
-    [{ v: 2, tokens: { [address]: { at: 5, pairs: [] } } }, 'an answer with no time of its own'],
-    [[pair()], 'the old path’s list'],
-    [null, 'nothing'],
-  ];
-  for (const [body, why] of bodies) {
-    const asked = [];
-    const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, wall: () => 5_000, fetch: async (url) => (asked.push(url), url.startsWith(DEX_EDGE_V2) ? json(body) : new Response(null, { status: 503 })) });
-    assert.equal(await resolver.tokenPrices([address]), null, why);
-    assert.equal(asked.length, 2, why);
-  }
-  // An age is taken as it is, however long: a day-old price is a day old on the page (the old path read a long age as none).
-  const day = createTokenArtworkResolver({ edge: DEX_EDGE, wall: () => 100_000_000, fetch: async () => json({ v: 2, now: 90_000_000, tokens: { [address]: { at: 90_000_000 - 86_399_000, pairs: [pair()] } } }) });
-  assert.equal((await day.tokenPrices([address])).tokens[address].retrievedAt, 100_000_000 - 86_399_000);
+  assert.deepEqual(reply.unavailable, [addresses[11]]);
+  assert.deepEqual(reply.pairs.map(pair => pair.baseToken.address), addresses.slice(0, 11));
+  assert.deepEqual(asked.filter(url => url.startsWith('https:')), addresses.slice(10).map(address => `https://api.dexscreener.com/token-pairs/v1/robinhood/${address}`));
+  assert.ok(!asked.some(url => url.includes('/tokens/v1/')), 'fallback covers the same v4 pairs as the edge');
 });
 
 test('a cancelled price observer leaves a shared artwork read running; sole price reads cancel promptly', async () => {

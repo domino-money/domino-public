@@ -318,57 +318,6 @@ test('a partial provider answer prices successful tokens without turning unread 
   assert.equal(second.quotes.get(MANY), null, 'an answered empty response is authoritative no qualified pair');
 });
 
-// Added 2026-10-14 (incident of 2026-10-13, package D1): our edge now answers per token, each with the time it retrieved
-// that token's pairs, and keeps an answer up to a day. A price is dated by that retrieval, never by when it reached the
-// page (it was `now`, right while the edge kept nothing past five minutes), so the card's own rule (a price counts for an
-// hour, lib/walletMemory.ts) reads its true age; and each token is priced from its own pairs alone, so an older answer
-// about another token never passes for this one's.
-test('prices from our edge’s per-token answer: each priced from its own pairs and dated by its own retrieval; a token with no answer stays unanswered', async () => {
-  let now = 10_000_000;
-  const asked = [], seeded = [];
-  const mark = 'https://cdn.dexscreener.com/cms/images/abcdefghijklmnop?width=800';
-  // An answer about UFG just over an hour old lists a UFG / WETH pool far deeper than any pair of WETH's own answer.
-  const deep = { chainId: 'robinhood', baseToken: { address: UFG }, quoteToken: { address: WETH }, priceUsd: '0.003', priceNative: '0.000003', liquidity: { usd: 9e9 }, info: { imageUrl: mark } };
-  const prices = createWalletPrices({
-    get: async (list) => {
-      asked.push([...list]);
-      return {
-        tokens: {
-          [UFG]: { pairs: [deep], retrievedAt: now - 3_600_001 },
-          [WETH]: { pairs: [pair(WETH, '2692.60', 19_361_293)], retrievedAt: now - 240_000 },
-          [MANY]: { pairs: [], retrievedAt: now + 60_000 },
-        },
-        unavailable: list.filter((address) => ![UFG, WETH, MANY].includes(address)),
-      };
-    },
-    seed: (address, image) => seeded.push([address, image]), now: () => now,
-  });
-  const first = await prices.price([UFG, NATIVE, MANY, PONS]);
-  assert.deepEqual(asked, [[UFG, WETH, MANY, PONS]]);
-  assert.equal(first.failed, false);
-  assert.deepEqual(first.quotes.get(UFG), { usd: '0.003', liquidityUsd: 9e9 });
-  assert.equal(first.at.get(UFG), now - 3_600_001, 'dated by when our edge retrieved it: over an hour ago');
-  assert.deepEqual(first.quotes.get(NATIVE), { usd: '2692.60', liquidityUsd: 19_361_293 }, 'WETH from its own pairs, never from the older answer about UFG that names it');
-  assert.equal(first.at.get(NATIVE), now - 240_000);
-  assert.equal(first.quotes.get(MANY), null, 'the provider lists no pair for it: no qualified price');
-  assert.equal(first.at.get(MANY), now, 'a time ahead of the page’s clock is now, never later');
-  assert.equal(first.quotes.has(PONS), false, 'no answer for it: no price yet, never "no qualified price"');
-  assert.deepEqual(seeded, [[UFG, 'https://cdn.dexscreener.com/cms/images/abcdefghijklmnop?width=64&height=64&quality=85&format=auto'], [WETH, null], [MANY, null]], 'artwork from each token’s own pairs; none for a token no pair names; nothing for the unanswered one');
-  // The card's own age rule reads those times: the price over an hour old no longer counts, the four-minute-old one does.
-  const book = bookQuotes(withAnswer(NO_PRICES, first, now), now);
-  assert.equal(book.quotes.has(UFG), false);
-  assert.deepEqual(book.hints.get(UFG), { usd: '0.003', liquidityUsd: 9e9 }, 'it only keeps its row in place');
-  assert.equal(book.quotes.get(NATIVE).usd, '2692.60');
-  // Kept for the visit from when the page read it, with the time it was retrieved; the unanswered one is asked again.
-  now += PRICE_TTL_MS - 1;
-  const reused = await prices.price([UFG, NATIVE, PONS]);
-  assert.deepEqual(asked.slice(1), [[PONS]], 'only the token with no answer is asked again');
-  assert.equal(reused.at.get(UFG), 10_000_000 - 3_600_001, 'an answer reused from memory keeps its retrieval time');
-  now += 1;
-  await prices.price([UFG]);
-  assert.deepEqual(asked.at(-1), [UFG], 'and five minutes after the page read it, it is asked again');
-});
-
 test('prices abort only when the last joined consumer leaves and reject late cancelled answers', async () => {
   const pending = [];
   const prices = createWalletPrices({

@@ -577,9 +577,6 @@ test('wrangler 4.130.0 routes the edge-cached reads and Domino’s own chain rou
       // 2026-10-01 (audit I3): DEX Screener through our own edge; no read family owns /api/read/dex/, and its route comes
       // before the catch-all, so it never reaches a Worker.
       ['/api/read/dex/:path*', 'api/read/dex/[[path]].ts:onRequest'],
-      // 2026-10-14 (incident of 2026-10-13, package D1): the same asks answered per token, always as a 200, on a path of
-      // their own (tabs opened before the deploy keep the one above and its shape); ahead of the catch-all the same way.
-      ['/api/read/dex2/:path*', 'api/read/dex2/[[path]].ts:onRequest'],
       ['/api/:path*', 'api/[[path]].ts:onRequest'],
       // 2026-10-01 (the chain2 workstream, part B, audit G9): rugged97's Uniswap v3 services for the second chain's
       // section, through this site's edge (functions/_lib/uniswap-v3/handler.ts); outside /api/, so no forwarder family

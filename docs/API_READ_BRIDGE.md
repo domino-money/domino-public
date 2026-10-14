@@ -250,24 +250,6 @@ longer reach the provider. When the edge cannot reach it (it may refuse
 Cloudflare's shared egress, as the chain's public RPC does), the route answers
 502 and the page asks the provider itself, as before.
 
-Since 2026-10-14 (incident of 2026-10-13, package D1) the same asks are also
-answered at `api/read/dex2/[[path]].ts`, as a 200 whatever the provider does,
-saying each token's own state: `{v: 2, now, tokens: {<address>: {at, pairs} |
-{at, none: true} | {missing: <reason>, retryAfterS}}}`. The Wallet card's prices
-ask there, and a token marked `missing` has no price yet instead of failing the
-other nine.
-`/api/read/dex/` keeps its list and its 502 for tabs opened before the deploy.
-Both paths read one kept entry per chain and token (kept a day with its
-retrieval time; read again behind up to 5 min old, in the ask's own time past
-that, the older entry leaving only on the new path when that read gives
-nothing). Upstream reads are handed to `waitUntil` as they start and are dated,
-so a visitor who leaves cannot strand one; a miss is not read again for 30 s,
-doubling to 5 min; an upstream 429 stops every read from that isolate for its
-`Retry-After`; and a visitor has an allowance of asks and of never-seen
-addresses. `Server-Timing` names, per token, why there is no fresh read
-(`miss;desc="status_429 0x…"`, `timeout`, `late`, `joined` with its age, …).
-This route never calls Domino's node.
-
 Keep PR #10's
 bounded market-observation cache: fresh for 60 seconds, stale fallback up to
 300 seconds of age since its original successful retrieval, and a 15-second
