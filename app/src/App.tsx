@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } fr
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
 import { deferred } from './components/Deferred'
+import { ScreenBoundary, ScreenFailed } from './components/ScreenBoundary'
 import { Landing } from './screens/Landing'
 import { NotFound } from './screens/NotFound'
 import { BuildBanner } from './components/read/BuildBanner'
@@ -38,15 +39,8 @@ const PositionLab = __DOMINO_TEST_HOOKS__ ? lazy(recovering(() => import('./scre
  * build writes), and each is drawn as soon as it is in (components/Deferred.tsx), on a page frame of the screen's full
  * height meanwhile, so the footer never shows mid-screen (E1).
  */
-const screenFailed = () => ({
-  default: () => (
-    <main className="dm-page">
-      <p role="alert" className="text-body text-fg-muted">
-        This page couldn’t load. Reload to try again.
-      </p>
-    </main>
-  ),
-})
+// (2026-10-14, incident X1): the same stand-in as a screen that throws as it draws (components/ScreenBoundary.tsx).
+const screenFailed = () => ({ default: ScreenFailed })
 const Explore = deferred<object>(recovering(() => import('./screens/Explore').then((module) => ({ default: module.Explore })), screenFailed))
 const PoolDetail = deferred<{ poolId: string }>(recovering(() => import('./screens/PoolDetail').then((module) => ({ default: module.PoolDetail })), screenFailed))
 const Positions = deferred<{ param?: string }>(recovering(() => import('./screens/Positions').then((module) => ({ default: module.Positions })), screenFailed))
@@ -235,7 +229,10 @@ export default function App() {
     <div className="min-h-screen">
       {__DOMINO_LOCAL_LIVE__ ? <LocalDevelopmentBanner /> : !__DOMINO_DEPLOYABLE__ && <BuildBanner mode={__DOMINO_READ_MODE__} />}
       <Header page={page} />
-      <Screen page={page} param={param} />
+      {/* 2026-10-14 (incident X1): a screen that throws as it draws no longer blanks the page; the header and the footer stay. */}
+      <ScreenBoundary route={`${page}/${param}`}>
+        <Screen page={page} param={param} />
+      </ScreenBoundary>
       {/* Changed on purpose 2026-10-03 (the owner): the footer's Pause motion control is gone; reduced motion still stills the page. */}
       <Footer />
     </div>

@@ -1912,6 +1912,60 @@ test('a route that names no page says so plainly, offers the ways on, and lights
   }
 });
 
+/**
+ * The Positions screen's own file with its component swapped for one that throws as it draws (2026-10-14, incident X1).
+ * The build names the screen either in the module namespace the entry imports it through (`{__proto__:null,Positions:x}`)
+ * or in the file's export clause (`x as Positions`); either is swapped, and a file in neither shape fails the test
+ * rather than letting it pass with nothing thrown.
+ */
+function throwingPositions(text, message) {
+  const thrower = `()=>{throw new Error(${JSON.stringify(message)})}`;
+  let swapped = 0;
+  const out = text
+    .replace(/(\{__proto__:null,Positions:)[\w$]+\}/g, (_, head) => (swapped += 1, `${head}${thrower}}`))
+    .replace(/\bexport\s*\{[^}]*\}/g, (clause) => clause.replace(/[\w$]+ as Positions\b/, () => (swapped += 1, '__x1Throws as Positions')));
+  assert.equal(swapped, 1, 'the Positions screen is named exactly once in its file');
+  return out.includes('__x1Throws') ? `const __x1Throws=${thrower};${out}` : out;
+}
+
+// 2026-10-14 (incident X1): a screen that threw as it drew took the whole page with it. React unmounted everything, and
+// the visitor was left on a blank page with no header and no way on. Each routed screen now sits in a boundary of its
+// own (components/ScreenBoundary.tsx) that keeps the header and the footer, says in the screen's place what a screen
+// whose file could not load says, and lets the next route draw as always; the error still reaches the console. It is
+// provoked from outside the app, so nothing test-only ships: the screen's own file is served with a throwing component.
+test('a screen that throws as it draws keeps the header and the footer, says so in its place, and the next route draws', async (t) => {
+  const BOOM = 'X1 probe: the Positions screen threw as it drew';
+  const files = readdirSync(join(DIST, 'assets')).filter((name) => /^Positions-[\w-]+\.js$/.test(name));
+  assert.equal(files.length, 1, `one Positions screen file in dist/assets: ${files}`);
+  const body = throwingPositions(readFileSync(join(DIST, 'assets', files[0]), 'utf8'), BOOM);
+  const context = await browser.newContext();
+  t.after(() => context.close());
+  await context.route('https://api.dexscreener.com/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await context.route(`**/assets/${files[0]}`, (route) => route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', body }));
+  const provoked = [];
+  const page = await openPage(context, { origin, route: '/positions', wait: false, ignore: (problem) => problem.includes(BOOM) && provoked.push(problem) > 0 });
+  const standIn = page.locator('#root main.dm-page > [role="alert"]');
+  const said = await standIn.waitFor({ timeout: 15_000 }).then(() => true, () => false);
+  assert.ok(said, `nothing stands in for the screen: #root shows ${JSON.stringify(await page.locator('#root').innerText())}; the page reported ${JSON.stringify(provoked)}`);
+  assert.equal(await standIn.innerText(), 'This page couldn’t load. Reload to try again.');
+  const lit = await page.locator('header nav[aria-label="Main"] a[aria-current="page"]').evaluateAll((links) => links.map((a) => a.textContent.trim()));
+  assert.deepEqual(lit, ['Positions'], 'the header stays, with Positions lit');
+  assert.equal(await page.locator('#root footer').count(), 1, 'the footer stays');
+  assert.ok(provoked.some((problem) => problem.startsWith('console.error:')), `the error is still in the console: ${JSON.stringify(provoked)}`);
+  assert.ok(!provoked.some((problem) => problem.startsWith('uncaught:')), `nothing escaped the boundary: ${JSON.stringify(provoked)}`);
+
+  // Another route draws as always, and the stand-in goes with the route that threw.
+  await go(page, '/docs');
+  assert.match(await page.locator('#root').innerText(), /Docs[\s\S]*What Domino is[\s\S]*Non-custodial/);
+  assert.equal(await page.getByText('This page couldn’t load.').count(), 0, 'the stand-in is gone');
+  // Back on the screen that throws, the boundary catches it again.
+  await go(page, '/positions', { wait: false });
+  await standIn.waitFor({ timeout: 15_000 });
+  assert.equal(await page.locator('header nav[aria-label="Main"]').count(), 1, 'the header stays the second time too');
+  clean(page, 'a screen that throws');
+  await close(page);
+});
+
 // Audit E11 (2026-10-01, the copy workstream): every route was titled "Domino", and a move between routes told a screen
 // reader nothing. Each screen names its tab, and a later move is said once in a polite live region outside the app.
 test('each route names its tab, gives Home its own name back, and a move to another route is said in a polite region', async () => {
