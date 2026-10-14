@@ -43,6 +43,19 @@
  * first as on Robinhood Chain. Identity is chain plus address everywhere here:
  * every key below names the chain, since an address can repeat across chains.
  * The `tokens` read stays Robinhood Chain's (the Wallet card's).
+ *
+ * Changed on purpose 2026-10-14 (incident of 2026-10-13, package D1: about nine
+ * 502 on /api/read/dex/ at every load of the owner's Positions, then 51 GETs to
+ * the provider from his own address): the Wallet card's prices (`tokenPrices`)
+ * are asked on our edge's new path, /api/read/dex2/ (`DEX_EDGE_V2`), whose
+ * answer is a 200 that says each token's own state: its pairs with the time the
+ * edge retrieved them, none, or missing with a reason. A token marked missing,
+ * or one of a GET that gave nothing, has no price yet: it is not asked of the
+ * provider. Only when our edge prices no token of the list at all is the
+ * provider asked directly, as before. Each price is dated by its own retrieval
+ * (`retrievedAt`, on the page's clock), however long the edge kept it. The
+ * artwork, hints and figures reads keep the old path until the page has one
+ * client for all of them (package D2).
  */
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 /** The provider's names for the chains a token here can be on (Robinhood Chain, Base, Arbitrum One). */
@@ -92,6 +105,11 @@ export function artworkFromPairs(body: unknown, address: string, chainId = 4663)
 
 /** Our own edge's route for these GETs (functions/api/read/dex/[[path]].ts, audit I3). */
 export const DEX_EDGE = '/api/read/dex/'
+/**
+ * Our edge's path that answers per token, as a 200 whatever the provider does (functions/api/read/dex2/[[path]].ts,
+ * 2026-10-14): where the Wallet card's prices are asked, wherever the deployment has our edge.
+ */
+export const DEX_EDGE_V2 = '/api/read/dex2/'
 /** After our edge gave no answer, the provider is asked directly for this long before the edge is tried again. */
 const EDGE_RETRY_MS = 300000
 /** Our edge's part of a read's time; the rest is the provider's, should the edge not answer. */
@@ -123,8 +141,40 @@ type Options = {
 }
 type Entry = { value: string | null; expires: number; failed: boolean }
 type Reading = { result: Promise<unknown>; deadline: number; users: number; controller: AbortController; settled: boolean }
-/** A partial price read names its gaps explicitly: an unfetched token is not an unpriced token. */
-export type TokenPricesAnswer = unknown[] | { pairs: unknown[]; unavailable: readonly string[] } | null
+/** One token of our edge's per-token answer: its pairs (none: an empty list) and when the edge retrieved them, wall ms on the page's clock. */
+export type EdgeTokenPairs = { pairs: unknown[]; retrievedAt: number }
+/**
+ * A partial price read names its gaps explicitly: an unfetched token is not an unpriced token. Since 2026-10-14 an
+ * answer from our edge is per token (`tokens`), each with its own retrieval time; the provider's own, read directly,
+ * is one list as before.
+ */
+export type TokenPricesAnswer =
+  | unknown[]
+  | { pairs: unknown[]; unavailable: readonly string[] }
+  | { tokens: Readonly<Record<string, EdgeTokenPairs>>; unavailable: readonly string[] }
+  | null
+
+/**
+ * Our edge's per-token answer (functions/_lib/dexEdge.ts answerDex2) as the page takes it: for each asked address it
+ * answered, the pairs and when it retrieved them, on the page's own clock (`wallNow` less the age the answer itself
+ * gives, however long: the edge keeps an answer up to a day, and the reader applies its own age rule). An address
+ * marked missing, absent, or written any other way is left out: it has no price yet. Null for a body that is no such
+ * answer at all.
+ */
+function edgeTokenPairs(body: unknown, asked: readonly string[], wallNow: number): Map<string, EdgeTokenPairs> | null {
+  // Anything but an object has none of these, and so is no such answer.
+  const { v, now, tokens } = (body ?? {}) as { v?: unknown; now?: number; tokens?: Record<string, { at?: number; pairs?: unknown; none?: unknown } | null> | null }
+  if (v !== 2 || !Number.isSafeInteger(now) || !tokens || typeof tokens !== 'object' || Array.isArray(tokens)) return null
+  const out = new Map<string, EdgeTokenPairs>()
+  for (const address of asked) {
+    const { at, pairs, none } = tokens[address] ?? {}
+    const list = Array.isArray(pairs) ? pairs : pairs === undefined && none === true ? [] : null
+    // The token's age as the edge gives it: a whole number of ms, from zero (retrieved as it answered) to the edge's own now.
+    const age = (now as number) - (at as number)
+    if (list && list.length <= 100 && Number.isSafeInteger(at) && age >= 0 && age <= (now as number)) out.set(address, { pairs: list, retrievedAt: wallNow - age })
+  }
+  return out
+}
 /**
  * A token-pairs body as it was read: who it is about, when it was retrieved (wall ms, the edge's own retrieval where it
  * answered), and on which chain (added 2026-10-06; Robinhood Chain's bodies say 4663).
@@ -136,6 +186,8 @@ export function createTokenArtworkResolver(options: Options = {}) {
   const now = options.now ?? (() => performance.now())
   const wall = options.wall ?? (() => Date.now())
   const edge = options.edge ?? null
+  /** Our edge's per-token path (2026-10-14), wherever the deployment has our edge. */
+  const edge2 = edge === null ? null : DEX_EDGE_V2
   /**
    * Until when (on `now`) the provider is asked directly for a chain's reads, by the provider's name for the chain: our
    * edge gave no answer lately for that chain. Changed on purpose 2026-10-06 (review of the same day): one state for every
@@ -144,6 +196,12 @@ export function createTokenArtworkResolver(options: Options = {}) {
    */
   const edgeDownUntil = new Map<string, number>()
   const edgeUp = (slug: string) => now() >= (edgeDownUntil.get(slug) ?? -Infinity)
+  /**
+   * Until when (on `now`) our edge's per-token path is not asked: it gave no answer of its own at all lately. A state of
+   * its own (2026-10-14): that path answers whatever the provider does, so the artwork reads' state above, which one 502
+   * of the old path sets for five minutes, must not send the Wallet card's prices to the provider with them.
+   */
+  let edge2DownUntil = -Infinity
   const pairsListeners = new Set<PairsListener>()
   const observers = new Map<string, Set<() => void>>()
   const cache = new Map<string, Entry>()
@@ -364,9 +422,19 @@ export function createTokenArtworkResolver(options: Options = {}) {
 
   /**
    * Prices for up to PRICE_BATCH Robinhood tokens, through our edge in
-   * bounded batches. Missing batches fall back to shared token-pairs reads;
-   * successful batches are retained and failed tokens are named separately.
-   * The Wallet card's prices (lib/walletPrices.ts) are its one caller.
+   * bounded batches. The Wallet card's prices (lib/walletPrices.ts) are its
+   * one caller.
+   *
+   * Changed on purpose 2026-10-14 (incident of 2026-10-13, package D1): asked
+   * on our edge's per-token path. Whatever it answers for is the answer, each
+   * token with its own retrieval time; a token it marks missing, or one of a
+   * GET that gave nothing, is named `unavailable` (no price yet) and is not
+   * asked of the provider. It was: every token of a batch with a gap went to
+   * the provider directly, one GET per token from the visitor's own address.
+   * Only when no token of the list was answered at all (our edge away, or not
+   * in this build) is the provider asked, as before: shared token-pairs reads,
+   * two at a time, the failed ones named separately. That path is given up on
+   * its own account (`edge2DownUntil`), only when it gave no answer of its own.
    */
   async function tokenPrices(addresses: readonly string[], signal?: AbortSignal): Promise<TokenPricesAnswer> {
     const list = [...new Set(addresses.map((address) => address.toLowerCase()))].filter((address) => ADDRESS.test(address)).sort().slice(0, PRICE_BATCH)
@@ -375,14 +443,26 @@ export function createTokenArtworkResolver(options: Options = {}) {
     for (let i = 0; i < list.length; i += EDGE_BATCH) parts.push(list.slice(i, i + EDGE_BATCH))
     const found: unknown[] = []
     const missing: string[] = []
-    const answers = edge !== null && edgeUp('robinhood')
-      ? await Promise.all(parts.map((part) => get(`${edge}tokens/${part.join(',')}`, EDGE_TIMEOUT, signal, true)))
+    const tokens: Record<string, EdgeTokenPairs> = {}
+    const viaEdge = edge2 !== null && now() >= edge2DownUntil
+    const answers = viaEdge
+      ? await Promise.all(parts.map((part) => get(`${edge2}tokens/${part.join(',')}`, EDGE_TIMEOUT, signal, true)))
       : parts.map(() => null)
     if (signal?.aborted) return null
+    let heard = false
     for (const [index, answer] of answers.entries()) {
-      if (answer !== null && Array.isArray(answer.body)) found.push(...answer.body)
-      else missing.push(...parts[index])
+      const answered = answer === null ? null : edgeTokenPairs(answer.body, parts[index], wall())
+      if (answered) heard = true
+      for (const address of parts[index]) {
+        const own = answered?.get(address)
+        if (own) tokens[address] = own
+        else missing.push(address)
+      }
     }
+    if (missing.length < list.length) return { tokens, unavailable: missing }
+    // No token priced by our edge. Asked and not heard from at all, its per-token path rests five minutes; either way the
+    // provider is asked directly, as before, the artwork reads with it.
+    if (viaEdge && !heard && !cooling(true)) edge2DownUntil = now() + EDGE_RETRY_MS
     if (missing.length && edge !== null && !cooling(true)) edgeDownUntil.set('robinhood', now() + EDGE_RETRY_MS)
     const unavailable: string[] = []
     // Same token-pairs coverage as our edge: the old tokens/v1 fallback omitted liquid v4 pools (including UFG).

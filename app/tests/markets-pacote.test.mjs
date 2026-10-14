@@ -501,6 +501,9 @@ test('I3: the token-pairs body is asked of our own edge first, with the beta coo
   const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, now: () => at, wall: () => 1_000_000, fetch: async (url, init) => {
     asked.push([url, init.credentials, init.referrerPolicy]);
     if (url.startsWith('/api/') && !edgeUp) return new Response('{"error":"upstream_unavailable"}', { status: 502, headers: { 'content-type': 'application/json' } });
+    // Changed on purpose 2026-10-14 (incident of 2026-10-13, package D1): the Wallet card's prices are asked on our edge's
+    // new path, whose answer says each token's own state.
+    if (url.startsWith('/api/read/dex2/')) return new Response(JSON.stringify({ v: 2, now: 9, tokens: Object.fromEntries(url.split('/').pop().split(',').map((token) => [token, { at: 9, pairs: [pair] }])) }), { headers: { 'content-type': 'application/json' } });
     return new Response(JSON.stringify([pair]), { headers: { 'content-type': 'application/json', ...(url.startsWith('/api/') ? { 'X-Domino-Edge-Age': '4000' } : {}) } });
   } });
   const heard = [];
@@ -517,7 +520,7 @@ test('I3: the token-pairs body is asked of our own edge first, with the beta coo
   at += 300_001;
   edgeUp = true;
   await resolver.tokenPrices([UFG, USDG]);
-  assert.deepEqual(asked.at(-1), [`/api/read/dex/tokens/${[UFG, USDG].sort().join(',')}`, 'same-origin', 'no-referrer'], 'then the edge again');
+  assert.deepEqual(asked.at(-1), [`/api/read/dex2/tokens/${[UFG, USDG].sort().join(',')}`, 'same-origin', 'no-referrer'], 'then the edge again, on its new path (2026-10-14, D1)');
   // Without an edge (the test builds), the provider directly, as before.
   const direct = [];
   const plain = createTokenArtworkResolver({ fetch: async (url) => (direct.push(url), new Response('[]', { headers: { 'content-type': 'application/json' } })) });
@@ -525,7 +528,11 @@ test('I3: the token-pairs body is asked of our own edge first, with the beta coo
   assert.deepEqual(direct, [`https://api.dexscreener.com/token-pairs/v1/robinhood/${UFG}`]);
 });
 
-test('I3: a wallet’s price list goes to our edge ten tokens a GET; a failed batch alone uses equivalent per-token coverage', async () => {
+// Rewritten on purpose 2026-10-14 (incident of 2026-10-13, package D1). It was '…; a failed batch alone uses equivalent
+// per-token coverage': the tokens of a GET our edge did not answer were asked of the provider directly, one GET each,
+// from the visitor's own address. The list now goes to the edge's new path, whose answer says each token's own state; a
+// GET that gives nothing leaves its tokens without a price yet, and nothing goes to the provider while any token was answered.
+test('I3: a wallet’s price list goes to our edge’s new path ten tokens a GET; a GET that fails leaves its tokens with no price yet, and no direct call', async () => {
   const tokens = Array.from({ length: 12 }, (_, i) => `0xb${String(i).padStart(39, '0')}`)
   const asked = []
   let failOne = false
@@ -533,14 +540,18 @@ test('I3: a wallet’s price list goes to our edge ten tokens a GET; a failed ba
     asked.push(url)
     if (url.startsWith('/api/') && failOne && url.includes(tokens[11])) return new Response('{"error":"upstream_unavailable"}', { status: 502, headers: { 'content-type': 'application/json' } })
     const named = url.split('/').pop().split(',')
-    return new Response(JSON.stringify(named.map((address) => ({ chainId: 'robinhood', baseToken: { address }, quoteToken: { address: USDG } }))), { headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify({ v: 2, now: 1, tokens: Object.fromEntries(named.map((address) => [address, { at: 1, pairs: [{ chainId: 'robinhood', baseToken: { address }, quoteToken: { address: USDG } }] }])) }), { headers: { 'content-type': 'application/json' } })
   } })
   const body = await resolver.tokenPrices(tokens)
-  assert.deepEqual(asked, [`/api/read/dex/tokens/${tokens.slice(0, 10).join(',')}`, `/api/read/dex/tokens/${tokens.slice(10).join(',')}`])
-  assert.deepEqual(body.map((pair) => pair.baseToken.address), tokens, 'one answer for the whole list')
+  assert.deepEqual(asked, [`/api/read/dex2/tokens/${tokens.slice(0, 10).join(',')}`, `/api/read/dex2/tokens/${tokens.slice(10).join(',')}`])
+  assert.deepEqual(Object.keys(body.tokens), tokens, 'one answer for the whole list')
+  assert.deepEqual(Object.values(body.tokens).map((token) => token.pairs[0].baseToken.address), tokens)
+  assert.deepEqual(body.unavailable, [])
   asked.length = 0
   failOne = true
-  const direct = await resolver.tokenPrices(tokens)
-  assert.deepEqual(asked.slice(2), tokens.slice(10).map(token => `https://api.dexscreener.com/token-pairs/v1/robinhood/${token}`), 'only the unanswered tokens are asked, once each')
-  assert.equal(direct.length, 12)
+  const partial = await resolver.tokenPrices(tokens)
+  assert.equal(asked.length, 2, 'the two GETs, and no direct call for the one that failed')
+  assert.ok(asked.every((url) => url.startsWith('/api/read/dex2/')))
+  assert.deepEqual(partial.unavailable, tokens.slice(10), 'its tokens have no price yet')
+  assert.deepEqual(Object.keys(partial.tokens), tokens.slice(0, 10))
 })

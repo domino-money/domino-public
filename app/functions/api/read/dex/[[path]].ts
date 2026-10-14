@@ -9,6 +9,11 @@
  * the catch-all, and no read family owns /api/read/dex/ (functions/_lib/bridge.ts). The beta gate in
  * functions/_middleware.ts runs first, as for every /api path (a public read: no cookie goes on), and the answer leaves
  * through its secured() with no-store and the API CSP.
+ *
+ * Changed on purpose 2026-10-14 (incident of 2026-10-13, package D1): this path keeps its shape, a plain list or a 502,
+ * for the tabs opened before the deploy, and its 502 now says why in Server-Timing. The page's new asks go to
+ * /api/read/dex2/ (functions/api/read/dex2/[[path]].ts), whose answer says each token's own state; both read the same
+ * kept entries (functions/_lib/dexEdge.ts).
  */
 import { answerDex } from '../../../_lib/dexEdge'
 import type { EdgeCache } from '../../../_lib/publicEdge'
