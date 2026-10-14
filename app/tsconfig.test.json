@@ -170,6 +170,7 @@
     "src/lib/fees/freshness.ts",
     "src/lib/fees/client.ts",
     "src/lib/fees/store.ts",
+    "src/lib/wake.ts",
     "src/lib/fees/historyCache.ts",
     "src/lib/fees/ledger.ts",
     "src/lib/fees/readings.ts",

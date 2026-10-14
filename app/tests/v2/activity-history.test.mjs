@@ -461,3 +461,33 @@ test('local close and indexed activity correlate only with matching PM, chain, b
     { ...local, amounts: [{ token, amount: '201' }] },
   ]) assert.equal(publicCloseProves(changed, [event]), false);
 });
+
+// Added 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): the page's wake (src/lib/wake.ts) reads a wallet's head
+// again only once its last good head answer is older than the head's own minute; it read every head at every focus, online
+// and visibility change (activity.tsx called refresh()).
+test('a wake reads the head again only past its minute, never while a failure is waited out', async () => {
+  const time = clock(), asks = [];
+  let failing = false;
+  const history = createActivityHistory(async (_, p) => { asks.push(p); return failing ? { kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 45 } : page(range(40, 21)); }, time.timers, true);
+  const stop = history.subscribe(wallet, () => {}); await flush();
+  assert.equal(asks.length, 1);
+  history.wake(); await flush();
+  assert.equal(asks.length, 1, 'a head younger than its minute: nothing');
+  await time.tick(30_000); history.wake(); await flush();
+  assert.equal(asks.length, 1, '30 s: nothing');
+  await time.tick(30_000); await flush();
+  assert.equal(asks.length, 2, 'its own minute');
+  failing = true;
+  await time.tick(60_000); await flush();
+  assert.equal(asks.length, 3, 'a head that fails');
+  await time.tick(20_000); history.wake(); await flush();
+  assert.equal(asks.length, 3, 'its 45 s wait is not cut short by a wake');
+  stop();
+  // With the refresh off (a test build's), a wake is the head's only refresh.
+  const quiet = createActivityHistory(async (_, p) => { asks.push(p); return page(range(40, 21)); }, time.timers, false);
+  const off = quiet.subscribe(wallet, () => {}); await flush();
+  const before = asks.length;
+  quiet.wake(); await flush();
+  assert.equal(asks.length, before + 1);
+  off();
+});

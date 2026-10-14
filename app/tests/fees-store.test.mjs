@@ -24,6 +24,7 @@ const { LEDGER_READING_MS, STATE_REFRESH_MS, LIST_STATE_REFRESH_MS } = require('
 const { createHistoryCache } = require('../.test-build/app/src/lib/fees/historyCache.js');
 const { createReadings } = require('../.test-build/app/src/lib/fees/readings.js');
 const routes = require('../.test-build/app/functions/_lib/chainRoutes.js');
+const { browserWakeSource, createWake, WAKE_GAP_MS } = require('../.test-build/app/src/lib/wake.js');
 
 const ID = '3325113';
 const settle = () => new Promise((done) => setTimeout(done, 0));
@@ -714,4 +715,176 @@ test('traces: each id’s ledger requests this visit and how the last ended (exa
   await until(() => hung.store.traces([ID]).get(ID).last === 'unanswered', 'unanswered');
   assert.deepEqual(hung.store.traces([ID]).get(ID), { asks: 1, last: 'unanswered' });
   shown();
+});
+
+// ---------------------------------------------------------------------------
+// The page's one wake rule (incident 2026-10-13, design 2.5, package Q1)
+// ---------------------------------------------------------------------------
+
+/**
+ * A page on a fake clock: its window and document (EventTargets), its visibility, the store's `later` as
+ * quietRead.ts whenVisibleAfter behaves (a timer that falls due while the page is hidden runs once it is shown again) and
+ * the store wired to the page's wake as spawn.ts wires it (lib/wake.ts). `requests`: every /state request, with its time.
+ */
+function pageOf({ svc = service(), ids = [ID], scope = 'page' } = {}) {
+  let now = 1_800_000_000_000;
+  let hidden = false;
+  const win = new EventTarget();
+  const doc = new EventTarget();
+  Object.defineProperty(doc, 'visibilityState', { get: () => (hidden ? 'hidden' : 'visible') });
+  const timers = [];
+  const later = (ms, run) => {
+    let cancelled = false;
+    let waiting = null;
+    const entry = { at: now + ms, done: false };
+    entry.run = () => {
+      if (cancelled) return;
+      if (!hidden) return run();
+      waiting = () => {
+        if (hidden) return;
+        doc.removeEventListener('visibilitychange', waiting);
+        if (!cancelled) run();
+      };
+      doc.addEventListener('visibilitychange', waiting);
+    };
+    timers.push(entry);
+    return () => {
+      cancelled = true;
+      entry.done = true;
+      if (waiting) doc.removeEventListener('visibilitychange', waiting);
+    };
+  };
+  const timer = (ms, run) => {
+    const entry = { at: now + ms, done: false, run };
+    timers.push(entry);
+    return () => void (entry.done = true);
+  };
+  const requests = [];
+  const postState = svc.postState;
+  svc.postState = (asked) => {
+    requests.push({ at: now, ids: [...asked] });
+    return postState(asked);
+  };
+  const store = createFeesStore({ postState: (asked) => svc.postState(asked), postLedger: (asked, fresh) => svc.postLedger(asked, fresh), later, timer, now: () => now });
+  const wake = createWake(browserWakeSource(win, doc, () => now));
+  const stopWake = wake.onWake(() => store.resume());
+  const stop = store.subscribeHistory(ids, scope, () => {});
+  return {
+    store,
+    svc,
+    requests,
+    win,
+    doc,
+    now: () => now,
+    /** Moves the clock by `ms`, running every timer that falls due on the way, in order. */
+    async advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        const due = timers.filter((entry) => !entry.done && entry.at <= end).sort((a, b) => a.at - b.at)[0];
+        if (!due) break;
+        now = Math.max(now, due.at);
+        due.done = true;
+        due.run();
+        await settle();
+      }
+      now = end;
+      await settle();
+    },
+    async show(visible) {
+      hidden = !visible;
+      doc.dispatchEvent(new Event('visibilitychange'));
+      await settle();
+    },
+    close() {
+      stop();
+      stopWake();
+    },
+  };
+}
+
+// Changed on purpose (2026-10-14, Q1 alone): at the periods before Q1, 5 s for a page and 30 s for a list (the owner's
+// decisions D8 and D4 not taken): twelve requests a minute on a page, every 5 s, and two a minute per eight rows on a list,
+// where Q1 alone counted six (every 10 s) and one (every 60 s).
+test('wake rule: a visible position page asks /state twelve times a minute; a visible list twice a minute per eight rows', async () => {
+  const page = pageOf();
+  await until(() => page.requests.length === 1, 'the first read');
+  await page.advance(60_000);
+  assert.equal(page.requests.length - 1, 12, 'twelve a minute (5 s; 10 s is the owner’s decision D8, not taken)');
+  assert.ok(page.requests.slice(1).every((request, i) => request.at - page.requests[i].at === STATE_REFRESH_MS), 'every 5 s');
+  page.close();
+  // Sixteen rows: two requests of eight, then two every 30 s.
+  const svc = service();
+  const rows = [ID, ...Array.from({ length: 15 }, (_, i) => String(500 + i))];
+  svc.state = { ...svc.state, positions: rows.map((tokenId) => ({ ...ANSWERS.state.positions[0], tokenId })) };
+  const list = pageOf({ svc, ids: rows, scope: 'list' });
+  await until(() => list.requests.length === 2, 'the first batches');
+  assert.deepEqual(list.requests.map((request) => request.ids.length), [8, 8]);
+  await list.advance(LIST_STATE_REFRESH_MS - 1);
+  assert.equal(list.requests.length, 2, 'nothing before the half minute');
+  await list.advance(1);
+  assert.equal(list.requests.length, 4, 'half a minute later, one request per eight rows');
+  await list.advance(270_000);
+  assert.equal(list.requests.length, 22, 'and so on: five minutes, twenty requests after the first two for sixteen rows');
+  list.close();
+});
+
+// Changed on purpose (2026-10-14, Q1 alone): the page's period is 5 s (was 10 s in Q1 alone), so "back while the figure is
+// young" is back after 3 s, and the page's own read follows at 5 s.
+test('wake rule: twenty focus events ask nothing; hidden 3 s then visible asks nothing; hidden 90 s then visible asks once', async () => {
+  const page = pageOf();
+  await until(() => page.requests.length === 1, 'the first read');
+  await page.advance(1_000);
+  for (let i = 0; i < 20; i++) {
+    page.win.dispatchEvent(new Event('focus'));
+    await settle();
+  }
+  assert.equal(page.requests.length, 1, 'focus is not a wake (a wallet popup closing fires it)');
+  await page.show(false);
+  await page.advance(3_000);
+  await page.show(true);
+  assert.equal(page.requests.length, 1, 'back after 3 s: the last answer is younger than the page’s 5 s');
+  await page.advance(1_000);
+  assert.equal(page.requests.length, 2, 'the page’s own 5 s read, on time');
+  await page.show(false);
+  await page.advance(90_000);
+  assert.equal(page.requests.length, 2, 'nothing while hidden');
+  await page.show(true);
+  assert.equal(page.requests.length, 3, 'back after 90 s: one read, not one per waiting timer and wake');
+  await page.advance(STATE_REFRESH_MS - 1);
+  assert.equal(page.requests.length, 3, 'and the next one a period later');
+  await page.advance(1);
+  assert.equal(page.requests.length, 4);
+  page.close();
+});
+
+// Changed on purpose (2026-10-14, Q1 alone): the page's period is 5 s (was 10 s in Q1 alone); the wake rounds stay at
+// least 10 s apart.
+test('wake rule: online with a young figure asks nothing, a hidden page has no wake, and a failure keeps its wait', async () => {
+  assert.equal(WAKE_GAP_MS, 10_000);
+  const page = pageOf();
+  await until(() => page.requests.length === 1, 'the first read');
+  page.win.dispatchEvent(new Event('online'));
+  await settle();
+  assert.equal(page.requests.length, 1, 'back online with an answer younger than 5 s: nothing');
+  await page.show(false);
+  await page.advance(40_000);
+  page.win.dispatchEvent(new Event('online'));
+  await settle();
+  assert.equal(page.requests.length, 1, 'hidden: no wake at all');
+  await page.show(true);
+  assert.equal(page.requests.length, 2, 'shown again 40 s later: one read');
+  await page.advance(STATE_REFRESH_MS);
+  assert.equal(page.requests.length, 3, 'then every 5 s');
+  page.svc.down = true;
+  await page.advance(STATE_REFRESH_MS);
+  assert.equal(page.requests.length, 4, 'a refresh that fails');
+  for (let i = 0; i < 3; i++) {
+    page.win.dispatchEvent(new Event('online'));
+    await settle();
+  }
+  assert.equal(page.requests.length, 4, 'a failure waits out its own retry: a wake never speeds it up');
+  page.svc.down = false;
+  await page.advance(RETRY_MS[0]);
+  assert.equal(page.requests.length, 5, 'its retry, on its own time');
+  page.close();
 });

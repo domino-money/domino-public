@@ -17,6 +17,7 @@ import { loadReadSource } from '../read/buildMode'
 import { createHistoryCache } from './historyCache'
 import { createPastReads, type PastOutcome } from './pastReads'
 import { createReadings } from './readings'
+import { pageWake } from '../wake'
 
 const storage = () => {
   try {
@@ -43,12 +44,10 @@ export const feesStore = createFeesStore({
   timer,
 })
 
-if (typeof window !== 'undefined') {
-  const resume = () => { if (document.visibilityState !== 'hidden') feesStore.resume() }
-  window.addEventListener('focus', resume)
-  window.addEventListener('online', resume)
-  document.addEventListener('visibilitychange', resume)
-}
+// Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): the page's one wake rule (lib/wake.ts), not
+// every focus, online and visibility change: back into view or online, at most a round each 10 s, and only the entries
+// whose last good answer is older than their own period read again (store.ts resume).
+pageWake.onWake(() => feesStore.resume())
 
 /**
  * 2026-10-02 (the chart's periods back): a position's state at a past block, from read-v1 `nft-positions` through the

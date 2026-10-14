@@ -1,6 +1,7 @@
 import type { ActivityResponse, IndexedToken } from 'api-contracts/read-v6/types'
 import { readAgainAfter, type ListsReply, type ReaderTimers } from './read'
 import { compareChronology, logIndexOf } from './chronology'
+import { wakeDue } from '../../lib/wake'
 
 export type ActivityItem = ActivityResponse['items'][number]
 type Failure = Exclude<ListsReply<ActivityResponse>, { kind: 'ok' }>
@@ -48,6 +49,8 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
     restarted: boolean; restartNeeded: boolean; recoveryJoin: Set<string> | null; failures: number; fastReads: number
     confirmations: Map<number, ActivityConfirmation>
     checkedPending: Set<string>
+    /** When the last good head answer came (2026-10-14, Q1: the wake rule); null before any. */
+    goodAt: number | null
   }
   const entries = new Map<string, Entry>()
   const now = () => timers.now?.() ?? Date.now()
@@ -56,7 +59,7 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
     if (!e) {
       e = { value: EMPTY, listeners: new Set(), timer: null, waking: null, inFlight: false, headAt: now(), workAt: null,
         notBefore: 0, retry: null, generation: 0, tail: null, gaps: [], pending: null, workCount: 0, preferPending: false,
-        restarted: false, restartNeeded: false, recoveryJoin: null, failures: 0, fastReads: 0, confirmations: new Map(), checkedPending: new Set() }
+        restarted: false, restartNeeded: false, recoveryJoin: null, failures: 0, fastReads: 0, confirmations: new Map(), checkedPending: new Set(), goodAt: null }
       entries.set(wallet, e)
     }
     return e
@@ -155,6 +158,7 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
     }
     let stalled = false
     if (job.kind === 'head') {
+      e.goodAt = now()
       if (!previous || !previous.items.length || e.restartNeeded) {
         e.tail = reply.body.nextCursor ? walk(reply.body.nextCursor, last) : null
         if (e.recoveryJoin && reply.body.nextCursor) e.gaps = [{ ...walk(reply.body.nextCursor, last), join: e.recoveryJoin }]
@@ -242,6 +246,19 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
           }
         }
         e.generation++; e.headAt = now(); schedule(key, e)
+      }
+    },
+    /**
+     * A wake round (lib/wake.ts): the head of each watched wallet whose last good head answer is older than the head's own
+     * period (HEAD_DELAY; none with the refresh off), unless a page is being read or a failure is being waited out.
+     * Added 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): every focus, online and visibility change read every
+     * head again (activity.tsx called refresh()).
+     */
+    wake() {
+      const at = now()
+      for (const [key, e] of entries) {
+        if (!e.listeners.size || e.inFlight || e.retry || e.notBefore > at || !wakeDue(e.goodAt, refresh ? HEAD_DELAY : null, at)) continue
+        e.generation++; e.headAt = at; schedule(key, e)
       }
     },
   }

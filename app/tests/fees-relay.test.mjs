@@ -13,6 +13,8 @@ import { test } from 'node:test';
 import { decodeFunctionData, encodeFunctionResult, numberToHex } from 'viem';
 import { erc20Abi, fakeChain, fees, memoryCache, multicallAbi, owned, positionManagerAbi, stateViewAbi, topicOf, word } from './support/fees/fake-chain.mjs';
 import { loadCase } from './support/fees/relay-fixture.mjs';
+import { browserChain, poolIdOf, RPC_URL } from './support/browser-chain.mjs';
+import { ETH_KEY, KEY, OWNER, TOKEN, USDG } from './owned-chain.mjs';
 
 const require = createRequire(import.meta.url);
 const { onRequest: gate, LOGIN_PATH, API_CSP } = require('../.test-build/app/functions/_middleware.js');
@@ -173,6 +175,9 @@ test('/state names what it cannot read: not found, a hooked pool, a bytes32 or u
   assert.equal(fees.decodeSymbol(encodeFunctionResult({ abi: erc20Abi, functionName: 'symbol', result: 'été' })), 'été');
 });
 
+// Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): the read keeps its NFT's facts beside it.
+// (2026-10-14, Q1 alone; review finding on the 4 s window): a kept answer is served 5 s again, 918bbd62's window; Q1's 4 s
+// missed every poll of a page polling every 5 s once a read takes any time (see 'a lone viewer at the page's period').
 test('/state is kept 5 s per id set and a failure 5 s; a rate limit is waited out, then answered 429 with Retry-After', async () => {
   const fixture = loadCase('3136705');
   const [position] = fixture.state.positions;
@@ -180,13 +185,13 @@ test('/state is kept 5 s per id set and a failure 5 s; a rate limit is waited ou
   const { cache, stored } = memoryCache();
   assert.equal((await askState(chain, { tokenIds: [position.tokenId] }, cache)).status, 200);
   const calls = chain.log.length;
-  chain.deps.time += 4_000;
+  chain.deps.time += 4_999;
   assert.equal((await askState(chain, { tokenIds: [position.tokenId] }, cache)).status, 200);
   assert.equal(chain.log.length, calls, 'kept');
-  assert.deepEqual([...stored.keys()].map((url) => url.replace(/[0-9a-f]{64}/, '<sha256>')), [`${ORIGIN}/api/fees/v1/cache/c1/state/<sha256>/0`]);
-  chain.deps.time += 2_000;
+  assert.deepEqual([...stored.keys()].map((url) => url.replace(/[0-9a-f]{64}/, '<sha256>')).sort(), [`${ORIGIN}/api/fees/v1/cache/c1/facts/${position.tokenId}/0`, `${ORIGIN}/api/fees/v1/cache/c1/state/<sha256>/0`]);
+  chain.deps.time += 1;
   assert.equal((await askState(chain, { tokenIds: [position.tokenId] }, cache)).status, 200);
-  assert.ok(chain.log.length > calls, 'read again after 5 s');
+  assert.ok(chain.log.length > calls, 'read again at 5 s');
 
   fees.resetRelayMemory();
   const limited = fakeChain({ script: { eth_call: Array.from({ length: 4 }, () => new Response('slow down', { status: 429, headers: { 'Retry-After': '1' } })) } });
@@ -206,6 +211,270 @@ test('/state is kept 5 s per id set and a failure 5 s; a rate limit is waited ou
   broken.deps.time += 5_000;
   await askState(broken, { tokenIds: ['1'] }, brokenCache.cache);
   assert.ok(broken.log.length > before, 'and forgotten after 5 s: the chain is asked again');
+});
+
+// ---------------------------------------------------------------------------
+// One POST, shared per position (incident 2026-10-13, design 2.5, package Q1)
+// ---------------------------------------------------------------------------
+
+const VAULT = `0x${'5a'.repeat(20)}`;
+const SINGLE = { tokenIds: ['11'], automation: true };
+
+/** Two positions on the browser chain (tests/support/browser-chain.mjs), #11 under an Auto-compound vault, read by the relay itself. */
+function walletChain(positions) {
+  return browserChain({
+    nodeRules: false,
+    positions: positions ?? [
+      { tokenId: 11, holder: OWNER, key: KEY, tickLower: -600, tickUpper: 600, liquidity: 10n ** 12n, unclaimed: [5n, 7n], subscriber: VAULT },
+      { tokenId: 12, holder: OWNER, key: KEY, tickLower: -600, tickUpper: 600, liquidity: 10n ** 12n, unclaimed: [0n, 0n] },
+    ],
+    tokens: { [USDG]: { symbol: 'USDG', decimals: 6 }, [TOKEN]: { symbol: 'UFG', decimals: 18 } },
+    vaults: { [VAULT]: { root: 11, feeBps: 200, paused: false } },
+  });
+}
+
+/**
+ * The relay over `chain`, as one isolate of one data centre (`cache`): every node POST it sent (`posts`), on one clock.
+ * (2026-10-14, Q1 alone): `postMs`, how long each node POST takes on that clock (0: the clock stands still during a read).
+ */
+function relayOver(chain, cache = memoryCache().cache, postMs = 0) {
+  const clock = { time: 1_000_000 };
+  const posts = [];
+  const deps = {
+    now: () => clock.time,
+    sleep: async (ms) => void (clock.time += ms),
+    fetch: async (_url, init) => {
+      posts.push(JSON.parse(init.body));
+      clock.time += postMs;
+      return chain.fetch(RPC_URL, init);
+    },
+  };
+  const rt = { deps, cache };
+  const ask = async (body) => {
+    const response = await fees.answerState(post('/api/fees/v1/state', body), rt);
+    return { status: response.status, body: await response.json() };
+  };
+  return { ask, posts, clock, cache, rt };
+}
+
+/** How many calls an aggregate3 POST carries (the word after its selector's offset, as functions/_lib/localRpc.ts reads it). */
+const callsIn = (one) => Number(BigInt(`0x${one.params[0].data.slice(74, 138)}`));
+
+test('the second read of an NFT costs one POST: one multicall at the head, with the pool id check, the same answer as two', async () => {
+  const chain = walletChain();
+  const relay = relayOver(chain);
+  const first = await relay.ask(SINGLE);
+  assert.equal(first.status, 200);
+  assert.equal(relay.posts.length, 2, 'the first read of an NFT: two POSTs, and its facts learned');
+  relay.clock.time += 10_000;
+  chain.head += 97;
+  chain.positions[0].unclaimed = [9n, 11n];
+  const second = await relay.ask(SINGLE);
+  assert.equal(second.status, 200);
+  assert.equal(relay.posts.length, 3, 'the next read: one POST');
+  const [only] = relay.posts.slice(2);
+  assert.equal(only.method, 'eth_call');
+  assert.equal(only.params[1], 'latest', 'one multicall at the head: every figure from that one block');
+  assert.equal(second.body.block, chain.head, 'the block it says it read');
+  assert.ok(callsIn(only) <= 50, 'rugged97’s rule 5');
+  // The same answer the two POSTs give at that block: a new isolate and data centre, asked cold.
+  fees.resetRelayMemory();
+  const cold = relayOver(chain);
+  assert.deepEqual(second.body, (await cold.ask(SINGLE)).body, 'figures, currencies and feature as two POSTs read them');
+  assert.equal(cold.posts.length, 2);
+  assert.notDeepEqual(second.body.positions[0].unclaimed0, first.body.positions[0].unclaimed0, 'the figures are the chain’s now, not kept');
+});
+
+test('a position that is not what its kept facts say is read in two POSTs, its figures the chain’s; facts are kept per data centre', async () => {
+  const chain = walletChain();
+  const { cache } = memoryCache();
+  const relay = relayOver(chain, cache);
+  const truth = (await relay.ask(SINGLE)).body;
+  // A new isolate in the same data centre: the facts come from the cache, and the read is one POST.
+  fees.resetRelayMemory();
+  const next = relayOver(chain, cache);
+  next.clock.time = relay.clock.time + 10_000;
+  assert.deepEqual((await next.ask(SINGLE)).body, truth);
+  assert.equal(next.posts.length, 1, 'a known NFT, a new isolate: one POST');
+  // Kept facts that name another range (and, below, another pool) are not believed: the second POST runs at the first's block.
+  const facts = await fees.kept(next.rt, fees.cacheUrl(ORIGIN, 'facts', '11', 0));
+  const OTHER = { ...KEY, fee: 10_000, tickSpacing: 200 };
+  for (const wrong of [{ ...facts.value, tickLower: -1200 }, { ...facts.value, key: OTHER, poolId: poolIdOf(OTHER) }]) {
+    fees.resetRelayMemory();
+    await fees.keep(next.rt, fees.cacheUrl(ORIGIN, 'facts', '11', 0), wrong, fees.FACTS_SECONDS);
+    const posts = next.posts.length;
+    next.clock.time += 10_000;
+    const read = await next.ask(SINGLE);
+    assert.deepEqual(read.body, truth, 'the chain’s figures, not the kept facts’');
+    assert.deepEqual(next.posts.slice(posts).map((one) => one.params[1]), ['latest', `0x${truth.block.toString(16)}`], 'the second POST at the first one’s block');
+    assert.deepEqual((await fees.kept(next.rt, fees.cacheUrl(ORIGIN, 'facts', '11', 0))).value, facts.value, 'the facts the chain gave are kept again');
+  }
+  // Facts that do not check out as stored (a pool id that is not its key's) are not taken at all.
+  assert.equal(fees.factsFrom({ ...facts.value, poolId: `0x${'00'.repeat(32)}` }), null);
+  assert.equal(fees.factsFrom({ ...facts.value, currencies: [facts.value.currencies[1], facts.value.currencies[0]] }), null);
+  assert.deepEqual(fees.factsFrom(facts.value), facts.value);
+});
+
+test('an NFT’s facts are kept a day, in the isolate as in the data centre: past it, two POSTs once, and they are learned again', async () => {
+  const chain = walletChain();
+  const relay = relayOver(chain);
+  await relay.ask(SINGLE);
+  relay.clock.time += 10_000;
+  await relay.ask(SINGLE);
+  assert.equal(relay.posts.length, 3, 'two, then one');
+  relay.clock.time += fees.FACTS_SECONDS * 1000;
+  await relay.ask(SINGLE);
+  assert.equal(relay.posts.length, 5, 'a day later: two POSTs, nothing older believed');
+  relay.clock.time += 10_000;
+  await relay.ask(SINGLE);
+  assert.equal(relay.posts.length, 6, 'then one again');
+});
+
+test('a changed subscriber costs two POSTs once, then one again; the feature is the chain’s', async () => {
+  const chain = walletChain();
+  const relay = relayOver(chain);
+  const plain = { tokenIds: ['12'], automation: true };
+  assert.deepEqual((await relay.ask(plain)).body.automation, [{ tokenId: '12', automation: 'plain' }]);
+  relay.clock.time += 10_000;
+  await relay.ask(plain);
+  assert.equal(relay.posts.length, 3, 'two, then one');
+  // Auto-compound turned on for #12: a vault of its own is its subscriber now.
+  const vault = `0x${'5b'.repeat(20)}`;
+  chain.vaults[vault] = { root: 12, feeBps: 200, paused: false };
+  chain.positions[1].subscriber = vault;
+  relay.clock.time += 10_000;
+  const turnedOn = await relay.ask(plain);
+  assert.deepEqual(turnedOn.body.automation, [{ tokenId: '12', automation: 'compound', paused: false, active: true, vault }]);
+  assert.equal(relay.posts.length, 5, 'two POSTs, once');
+  relay.clock.time += 10_000;
+  assert.deepEqual((await relay.ask(plain)).body, turnedOn.body);
+  assert.equal(relay.posts.length, 6, 'one POST again');
+  // Paused: the vault's own reads ride in the one POST, so the feature follows at once.
+  chain.vaults[vault].paused = true;
+  relay.clock.time += 10_000;
+  assert.deepEqual((await relay.ask(plain)).body.automation, [{ tokenId: '12', automation: 'compound', paused: true, active: false, vault }]);
+  assert.equal(relay.posts.length, 7);
+});
+
+// Changed on purpose (2026-10-14, Q1 alone; review finding on the 4 s window): within 5 s, 918bbd62's window, was 4 s.
+test('a single-id question is served from the entry a batch wrote within 5 s, as that id’s own answer; never for a fresh question', async () => {
+  const chain = walletChain();
+  const relay = relayOver(chain);
+  const batch = (await relay.ask({ tokenIds: ['12', '11'], automation: true })).body;
+  const posts = relay.posts.length;
+  relay.clock.time += 4_999;
+  const one = await relay.ask(SINGLE);
+  assert.equal(relay.posts.length, posts, 'the list’s read serves the page: no node POST');
+  assert.deepEqual(one.body, { v: 1, block: batch.block, timestamp: batch.timestamp, positions: [batch.positions[0]], nextTokenId: batch.nextTokenId, automation: [batch.automation[0]] });
+  fees.resetRelayMemory();
+  assert.deepEqual(one.body, (await relayOver(chain).ask(SINGLE)).body, 'what #11 asked alone at that block answers');
+  // The question without the features has its own entry, and a fresh one never takes the batch's.
+  const plainOne = await relay.ask({ tokenIds: ['11'] });
+  assert.equal(plainOne.body.automation, undefined);
+  assert.ok(relay.posts.length > posts, 'another question, another entry');
+  const before = relay.posts.length;
+  await relay.ask({ ...SINGLE, fresh: true });
+  assert.ok(relay.posts.length > before, 'a fresh question reads: the batch may have begun before the owner’s action');
+});
+
+// Changed on purpose (2026-10-14, Q1 alone; review finding on the 4 s window): the window is 918bbd62's 5 s again, so a
+// second viewer up to 4,999 ms after a read shares it. The claim this case made before, that a lone viewer polling every
+// 5 s gets a read of its own at each poll, held only on this clock, which stands still during a node POST; what a lone
+// viewer costs at the page's period is measured in the next case, with reads that take time.
+test('two viewers of one NFT within 5 s cost one read, one node POST once known', async () => {
+  const chain = walletChain();
+  const relay = relayOver(chain);
+  await relay.ask(SINGLE);
+  const warm = relay.posts.length;
+  for (let read = 1; read <= 6; read++) {
+    relay.clock.time += 10_000;
+    chain.head += 97;
+    assert.equal((await relay.ask(SINGLE)).body.block, chain.head, `read ${read}: for its question`);
+    relay.clock.time += 4_999;
+    assert.equal((await relay.ask(SINGLE)).body.block, chain.head, 'a second viewer 4,999 ms later: the same read');
+    relay.clock.time -= 4_999;
+  }
+  assert.equal(relay.posts.length, warm + 6, 'one node POST a read, none for the second viewer');
+});
+
+// Added (2026-10-14, Q1 alone; review finding on the 4 s window): a node POST takes time, and a kept answer's age counts
+// from when its read ended (keep stamps it then), while the page polls on a fixed beat (store.ts schedules the next poll
+// when its timer fires). So a lone viewer polling every STATE_REFRESH_MS finds the entry 5 s minus the read's time old,
+// plus the timer's lateness. Against 918bbd62's 5 s window every second poll is served kept: six reads a minute. Against
+// Q1's 4 s every poll missed: twelve reads, one POST each for an ordinary NFT (no saving on 918bbd62's twelve) and two for
+// one whose facts cannot be learned (a currency's symbol empty or holding a zero-width joiner: readState skips it), 24 a
+// minute, twice 918bbd62's load on the node. The fake fetch here advances the clock 30 to 400 ms a POST.
+test('a lone viewer at the page’s period, each node POST taking time: six reads a minute, never more POSTs than 918bbd62’s twelve, facts learned or not', async () => {
+  const { STATE_REFRESH_MS } = require('../.test-build/app/src/lib/fees/constants.js');
+  // The window is measured against this period; the owner's decision D8 (a page every 10 s) must revisit LIVE_STATE_MS.
+  assert.equal(STATE_REFRESH_MS, 5_000);
+  const position = { tokenId: 11, holder: OWNER, key: KEY, tickLower: -600, tickUpper: 600, liquidity: 10n ** 12n, unclaimed: [5n, 7n] };
+  const minute = async (symbol, postMs, lateMs) => {
+    fees.resetRelayMemory();
+    const chain = browserChain({ nodeRules: false, positions: [position], tokens: { [USDG]: { symbol: 'USDG', decimals: 6 }, [TOKEN]: { symbol, decimals: 18 } } });
+    const relay = relayOver(chain, memoryCache().cache, postMs);
+    const question = { tokenIds: ['11'], automation: true };
+    let beat = relay.clock.time;
+    assert.equal((await relay.ask(question)).status, 200);
+    const learned = (await fees.kept(relay.rt, fees.cacheUrl(ORIGIN, 'facts', '11', 0))) !== null;
+    const warm = relay.posts.length;
+    let reads = 0;
+    for (let poll = 1; poll <= 12; poll++) {
+      beat += STATE_REFRESH_MS + lateMs;
+      relay.clock.time = Math.max(relay.clock.time, beat);
+      chain.head += 49;
+      const before = relay.posts.length;
+      const answered = await relay.ask(question);
+      assert.equal(answered.status, 200);
+      assert.ok(chain.head - answered.body.block <= 49, `poll ${poll}: one poll old at most`);
+      if (relay.posts.length > before) reads++;
+    }
+    return { learned, reads, posts: relay.posts.length - warm };
+  };
+  for (const postMs of [30, 150, 400]) {
+    for (const lateMs of [0, 5]) {
+      const at = `${postMs} ms a POST, the timer ${lateMs} ms late`;
+      assert.deepEqual(await minute('UFG', postMs, lateMs), { learned: true, reads: 6, posts: 6 }, `${at}: an ordinary NFT, half 918bbd62's twelve`);
+      for (const symbol of ['', 'US‍DG']) {
+        assert.deepEqual(await minute(symbol, postMs, lateMs), { learned: false, reads: 6, posts: 12 }, `${at}: no facts (${JSON.stringify(symbol)}), 918bbd62's twelve`);
+      }
+    }
+  }
+});
+
+test('the one-POST read never carries more than 50 calls: eight positions in eight pools under eight vaults stay two POSTs', async () => {
+  const positions = Array.from({ length: 8 }, (_, i) => ({ tokenId: 21 + i, holder: OWNER, key: { ...KEY, fee: 100 + i }, tickLower: -600, tickUpper: 600, liquidity: 10n ** 12n, unclaimed: [1n, 2n], subscriber: `0x${(0x60 + i).toString(16).repeat(20)}` }));
+  const chain = walletChain(positions);
+  positions.forEach((p) => (chain.vaults[p.subscriber] = { root: p.tokenId, feeBps: 200, paused: false }));
+  const relay = relayOver(chain);
+  const ids = positions.map((p) => String(p.tokenId));
+  const first = await relay.ask({ tokenIds: ids, automation: true });
+  assert.equal(first.status, 200);
+  relay.clock.time += 60_000;
+  const posts = relay.posts.length;
+  const again = await relay.ask({ tokenIds: ids, automation: true });
+  assert.deepEqual(again.body, first.body);
+  assert.ok(relay.posts.slice(posts).length >= 2, 'too many calls for one multicall: read as before');
+  assert.ok(relay.posts.every((one) => callsIn(one) <= 50), 'rugged97’s rule 5, every POST');
+  // Three of them fit in one.
+  relay.clock.time += 60_000;
+  const few = { tokenIds: ids.slice(0, 3), automation: true };
+  await relay.ask(few);
+  relay.clock.time += 60_000;
+  const before = relay.posts.length;
+  await relay.ask(few);
+  assert.equal(relay.posts.length, before + 1, 'a list of three: one POST');
+});
+
+test('a native-ETH position (the owner’s case) is one POST once known, ETH named as its currency', async () => {
+  const chain = walletChain([{ tokenId: 31, holder: OWNER, key: ETH_KEY, tickLower: -600, tickUpper: 600, liquidity: 10n ** 15n, unclaimed: [5n, 7n] }]);
+  const relay = relayOver(chain);
+  const first = (await relay.ask({ tokenIds: ['31'], automation: true })).body;
+  relay.clock.time += 10_000;
+  const second = (await relay.ask({ tokenIds: ['31'], automation: true })).body;
+  assert.equal(relay.posts.length, 3);
+  assert.deepEqual(second, first);
+  assert.deepEqual(second.positions[0].currencies.map((c) => [c.symbol, c.decimals]), [['ETH', 18], ['UFG', 18]]);
 });
 
 test('SEND_GZIP stays off until the preview measurement; the answer is plain JSON either way', async () => {

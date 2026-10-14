@@ -17,6 +17,7 @@ import * as runtime from '../../../api-contracts/read-v6/runtime.mjs';
 const require = createRequire(import.meta.url);
 const read = require('../../.test-build/app/src/v2in/lists/read.js');
 const data = require('../../.test-build/app/src/v2in/dataSource.js');
+const { browserWakeSource, createWake } = require('../../.test-build/app/src/lib/wake.js');
 
 const CONTRACTS = resolve(import.meta.dirname, '../../../api-contracts');
 const fixture = (name) => JSON.parse(readFileSync(join(CONTRACTS, 'read-v6', 'fixtures', 'valid', name), 'utf8'));
@@ -182,11 +183,17 @@ test('confirmation during a read is not lost and a failed refresh keeps the last
   off();
 });
 
-test('shared wake refreshes active keys once and projects observed state without another network read', async () => {
+// Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): a wake reads a key only once its last good
+// answer is older than the key's own period; it read every watched key again at every focus, online and visibility change.
+test('shared wake refreshes an active key once, only past its period, and projects observed state without another network read', async () => {
   const clock = fakeTimers();
   let wake;
   let wakesRemoved = 0;
   let reads = 0;
+  // The reader's clock moves without its timers (a background tab's frozen timers).
+  let skew = 0;
+  const base = clock.timers.now;
+  clock.timers.now = () => base() + skew;
   clock.timers.onWake = (run) => { wake = run; return () => wakesRemoved++; };
   const reader = read.createKeyedReader(async () => ({ kind: 'ok', body: ++reads }), { next: read.readAgainAfter, failed: (reply) => reply.kind !== 'ok' }, clock.timers);
   const a = reader.subscribe('wallet', () => {});
@@ -194,12 +201,94 @@ test('shared wake refreshes active keys once and projects observed state without
   await clock.advance(0);
   wake();
   await clock.advance(0);
-  assert.equal(reads, 2, 'one request shared by both consumers on focus/online');
+  assert.equal(reads, 1, 'a wake with an answer younger than its minute reads nothing');
+  skew += 60_000;
+  wake();
+  await clock.advance(0);
+  assert.equal(reads, 2, 'a minute old: one request shared by both consumers');
+  wake();
+  await clock.advance(0);
+  assert.equal(reads, 2, 'and not again at once');
   reader.update((value) => ({ ...value, body: 99 }));
   assert.equal(reader.get('wallet').body, 99);
   assert.equal(reads, 2, 'public position evidence is projected locally');
   a(); b();
   assert.equal(wakesRemoved, 1, 'listeners leave no global wake handler behind');
+});
+
+// Added 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): the page's one wake rule (src/lib/wake.ts) on the lists'
+// reader, with a window and a document of the test's own.
+test('the keyed reader on the page’s wake: focus asks nothing; back in view or online only past its period; one read, not two; rounds 10 s apart; a failure keeps its wait', async () => {
+  const clock = fakeTimers();
+  const win = new EventTarget();
+  const doc = new EventTarget();
+  let hidden = false;
+  Object.defineProperty(doc, 'visibilityState', { get: () => (hidden ? 'hidden' : 'visible') });
+  const wake = createWake(browserWakeSource(win, doc, () => clock.timers.now()));
+  clock.timers.onWake = (run) => wake.onWake(run);
+  // As in a browser: the page's state flips first, then every listener runs in the order it was added (the wake's first,
+  // as it was added at the first subscription, then the timers' waiting for the page to be shown).
+  clock.timers.visible = () => !hidden;
+  const view = async (visible) => {
+    hidden = !visible;
+    doc.dispatchEvent(new Event('visibilitychange'));
+    await clock.show(visible);
+  };
+  const event = async (type) => {
+    win.dispatchEvent(new Event(type));
+    await clock.advance(0);
+  };
+  let reads = 0;
+  const reader = read.createKeyedReader(async () => ({ kind: 'ok', body: ++reads }), { next: read.readAgainAfter, failed: (reply) => reply.kind !== 'ok' }, clock.timers);
+  const stop = reader.subscribe('wallet', () => {});
+  await clock.advance(0);
+  assert.equal(reads, 1);
+  for (let i = 0; i < 20; i++) await event('focus');
+  assert.equal(reads, 1, 'twenty focus events: nothing (a wallet popup closing fires one)');
+  await clock.advance(1_000);
+  await view(false);
+  await clock.advance(5_000);
+  await view(true);
+  assert.equal(reads, 1, 'hidden 5 s, then visible: nothing');
+  await clock.advance(24_000);
+  await event('online');
+  assert.equal(reads, 1, 'online 30 s after a good answer: nothing');
+  await view(false);
+  await clock.advance(90_000);
+  assert.equal(reads, 1, 'nothing while hidden');
+  await view(true);
+  assert.equal(reads, 2, 'hidden 90 s, then visible: one read (its own minute ran out while hidden), not one for the wake and one for the timer');
+  assert.deepEqual(reader.get('wallet'), { kind: 'ok', body: 2 }, 'and that read’s answer is the one kept');
+  stop();
+
+  // A reader with no period of its own (a test build's): the wake alone refreshes it, at most once a round.
+  let plain = 0;
+  const once = read.createKeyedReader(async () => ({ kind: 'ok', body: ++plain }), { next: () => null, failed: () => false }, clock.timers);
+  const off = once.subscribe('w', () => {});
+  await clock.advance(0);
+  await clock.advance(10_000);
+  await event('online');
+  assert.equal(plain, 2, 'a round');
+  await clock.advance(5_000);
+  await event('online');
+  assert.equal(plain, 2, 'another wake 5 s later is the same round');
+  await clock.advance(5_000);
+  await event('online');
+  assert.equal(plain, 3, '10 s later, a new round');
+  off();
+
+  // A failure keeps its wait: a busy reader's Retry-After is not cut short by a wake.
+  const replies = [{ kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 30 }, { kind: 'ok', body: 1 }];
+  let asked = 0;
+  const busy = read.createKeyedReader(async () => (asked++, replies.shift()), { next: read.readAgainAfter, failed: (reply) => reply.kind !== 'ok' }, clock.timers);
+  const leave = busy.subscribe('w', () => {});
+  await clock.advance(0);
+  await clock.advance(10_000);
+  await event('online');
+  assert.equal(asked, 1, 'within its 30 s: nothing');
+  await clock.advance(20_000);
+  assert.equal(asked, 2, 'its own retry, on time');
+  leave();
 });
 
 test('follow-up reads remain valid only for the observed visible owner and current generation', async () => {

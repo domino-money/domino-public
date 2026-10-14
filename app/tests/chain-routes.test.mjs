@@ -339,7 +339,10 @@ test('owned: a busy node is chain_busy with its wait, which the client reads as 
 // fees/v1/state and automation/v1/state
 // ---------------------------------------------------------------------------
 
-test('state: up to eight positions at one block, with each one’s feature only when asked; kept 5 s, apart per question', async () => {
+// Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): once the edge knows an NFT, its read is one
+// node POST, through the transport's own checks. (2026-10-14, Q1 alone; review finding on the 4 s window): kept 5 s again,
+// 918bbd62's window (Q1 had 4 s, which missed every 5 s poll once a read takes any time; tests/fees-relay.test.mjs).
+test('state: up to eight positions at one block, with each one’s feature only when asked; kept 5 s, apart per question; one POST once known', async () => {
   const chain = wallet();
   const { ask, clock, asked, routeLines } = edge(deps(chain));
   const plain = await (await ask('state', { tokenIds: ['12', '11'] })).json();
@@ -355,9 +358,12 @@ test('state: up to eight positions at one block, with each one’s feature only 
   assert.equal(asked.length, posts, 'kept');
   assert.equal(routeLines().at(-1).cache, 'hit');
   clock.time += 1;
-  await ask('state', { tokenIds: ['11'], automation: true });
+  const again = await ask('state', { tokenIds: ['11'], automation: true });
   assert.ok(asked.length > posts, 'read again at 5 s');
-  // Two calls: the first at 'latest', which names its block; the second at that block.
+  assert.deepEqual(await again.json(), withFeature, 'the same answer');
+  assert.equal(routeLines().at(-1).posts, 1, 'a known NFT: one POST');
+  assert.match(again.headers.get('Server-Timing'), /^edge;desc="miss", node;dur=\d+;desc="1 posts"$/);
+  // The first read of each question was two calls: the first at 'latest', which names its block; the second at that block.
   assert.ok(chain.log.filter((call) => call.method === 'eth_call').length >= 2);
 });
 

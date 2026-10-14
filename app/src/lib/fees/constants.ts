@@ -66,7 +66,21 @@ export const SAFE_DEPTH = 18_000
 /** Most ids one `/state` request asks for, and one ledger request (functions/_lib/feesLedger.ts MAX_LEDGER_IDS). */
 export const MAX_STATE_IDS = 8
 export const MAX_LEDGER_IDS = 8
-/** How often a visible page re-reads `/state`. */
+/**
+ * How often a visible page re-reads `/state`, and a visible Positions list its rows' `/state` (eight rows a request).
+ *
+ * (2026-10-14, Q1 alone): 5 s and 30 s, as before Q1. Slowing them (a page every 10 s, a list every 60 s) is the owner's
+ * to decide, and not yet decided: D8 for the page's read, and D4 for the list's, which ../../v2in/usd.ts
+ * USD_CURRENT_SECONDS (120 s) must stay at least two periods of. A list of eight rows costs what it did per read (two or
+ * three POSTs: eight rows with their features pass the one POST's 50 calls), twice a minute, and no longer once more at
+ * every focus.
+ * (2026-10-14, Q1 alone; review finding on the 4 s window): an open position page, alone, polls every 5 s, and the edge
+ * serves every second poll the answer it kept (functions/_lib/fees.ts LIVE_STATE_MS, 5 s, as on 918bbd62). So the page
+ * costs rugged's node six reads a minute: six POSTs once the edge knows the NFT's facts (Q1's one-POST read; 918bbd62 cost
+ * twelve), twelve for an NFT whose facts cannot be learned (two POSTs a read, as on 918bbd62). This note said "12 where it
+ * cost 24" before: that held only for reads that take no time. With Q1's 4 s window every poll was a read: twelve POSTs
+ * for an ordinary NFT, 24 for the other kind. tests/fees-relay.test.mjs measures it with reads that take time.
+ */
 export const STATE_REFRESH_MS = 5_000
 export const LIST_STATE_REFRESH_MS = 30_000
 /** A ledger still being read (`reading`) is asked again this soon. */

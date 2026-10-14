@@ -4,6 +4,7 @@ import { LISTS_SOURCE } from './source'
 import { subscribePositionChanges } from './positionSync'
 import { confirmedOperationState, noteAnswerFinality, recordConfirmedOperation, subscribeConfirmedOperations } from '../../lib/confirmedOperations'
 import { indexedOperationEvidence } from './activityModel'
+import { pageWake } from '../../lib/wake'
 
 const refresh = !(__DOMINO_TEST_HOOKS__ && typeof window !== 'undefined' && !(window as { __dominoRefresh?: boolean }).__dominoRefresh)
 // Changed on purpose 2026-10-14 (incident C2): each answer's `chains[].finalizedThrough` is handed to the confirmation
@@ -29,12 +30,10 @@ subscribeConfirmedOperations(operation => {
   if (operation.indexed && operation.phase !== 'reorged') return
   ACTIVITY_HISTORY.refresh(operation.wallet, operation.phase === 'reorged' ? undefined : { chainId: operation.chainId, block: operation.block, finalized: operation.phase === 'finalized' })
 })
-if (refresh && typeof window !== 'undefined') {
-  const wake = () => { if (!document.hidden) ACTIVITY_HISTORY.refresh() }
-  window.addEventListener('focus', wake)
-  window.addEventListener('online', wake)
-  document.addEventListener('visibilitychange', wake)
-}
+// Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): the page's one wake rule (lib/wake.ts), not
+// every focus, online and visibility change: a head is read again at a wake only when its last good answer is older than
+// its own period (activityHistory.ts wake). The test builds' refresh switch stays as it was.
+if (refresh) pageWake.onWake(() => ACTIVITY_HISTORY.wake())
 const EMPTY = { answer: null, error: null, loading: false, more: false, catchingUp: false } as const
 
 export function useActivityHistory(wallet: string | null) {

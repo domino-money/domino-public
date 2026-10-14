@@ -6632,7 +6632,8 @@ test('Your positions and a position’s page read themselves again while the tab
     assert.deepEqual(await inPlace(s.page), { loading: [], same: true });
 
     // A position's page shares the state reader and refreshes after five seconds, in place.
-    const asked = chain.asked.get(OWNED_OPEN) ?? 0;
+    const stateAsks = () => chain.edgeLog.filter((path) => path === '/api/fees/v1/state').length;
+    const asked = stateAsks();
     await s.page.locator(`a[data-position-row="${OWNED_OPEN}"]`).click();
     const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
     await detail.locator('[data-stat="price"] [data-current-price="usable"]').waitFor();
@@ -6640,7 +6641,10 @@ test('Your positions and a position’s page read themselves again while the tab
     // The list's warm row paints first at its head. Wait for the page's own answer before measuring the following minute's
     // refresh. Changed on purpose 2026-10-01 (fees item A21): the page reads at the block its first call ran at, the head
     // here as the row's, where it read head − 2 before: its own read is told by its NFT asked of the chain again.
-    await until(() => (chain.asked.get(OWNED_OPEN) ?? 0) > asked, 'the page’s own read of its NFT');
+    // Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): told by its question to the state route,
+    // which the edge may answer from the list's read of a moment before (a batch's answer is kept per NFT for 5 s), so
+    // without asking the chain again.
+    await until(() => stateAsks() > asked, 'the page’s own read');
     await s.page.waitForTimeout(300);
     await s.page.waitForFunction((block) => document.querySelector('[data-position-detail]')?.getAttribute('data-snapshot') === String(block), chain.head);
     assert.equal(await fees(), '0.000001267650600228');
@@ -6730,7 +6734,8 @@ test('a position’s page keeps its header through failures and missing reads, h
   const chain = browserChain({ positions: [open], tokens: TOKENS });
   const { s } = await refreshing(chain);
   try {
-    const asked = chain.asked.get(OWNED_OPEN) ?? 0;
+    const stateAsks = () => chain.edgeLog.filter((path) => path === '/api/fees/v1/state').length;
+    const asked = stateAsks();
     await s.page.locator(`a[data-position-row="${OWNED_OPEN}"]`).click();
     const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
     await detail.locator('[data-stat="price"] [data-current-price="usable"]').waitFor();
@@ -6744,7 +6749,10 @@ test('a position’s page keeps its header through failures and missing reads, h
       const page = document.querySelector('[data-position-detail]');
       return page?.getAttribute('data-snapshot') === String(block) && page.querySelector('[data-stat="fees"] [data-amount]')?.getAttribute('title') === title;
     }, [chain.head, fees]);
-    await until(() => (chain.asked.get(OWNED_OPEN) ?? 0) > asked, 'the page’s own read of its NFT');
+    // Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): the page's own first read is told by its
+    // question to the state route, which the edge may answer from the list's read of a moment before (a batch's answer is
+    // kept per NFT for 5 s), so without asking the chain again.
+    await until(() => stateAsks() > asked, 'the page’s own read');
     await s.page.waitForTimeout(300);
     await drawn('0.000000633825300114');
     assert.deepEqual(await header(), [String(chain.head), '0.000000633825300114']);

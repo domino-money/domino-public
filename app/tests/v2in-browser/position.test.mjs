@@ -129,7 +129,10 @@ test('multichain sync: detail updates from the shared portfolio and charts only 
     state.snapshot = { ...state.snapshot, number: state.snapshot.number + 1, timestamp: state.snapshot.timestamp + 60, hash: '0x' + 'ab'.repeat(32) };
     state.feesOwed = ['0', '3750000'];
     state.sqrtPriceX96 = position.sqrtPriceAtTick(TICK + 1).toString(); state.tick = TICK + 1;
-    await page.evaluate(answer => { window.__portfolioAnswer = answer; window.dispatchEvent(new Event('focus')); }, second);
+    // Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): focus is no wake (a wallet popup closing
+    // fires it); back online is, and wake rounds are at least 10 s apart (src/lib/wake.ts), hence the wait before the next.
+    await page.evaluate(answer => { window.__portfolioAnswer = answer; window.dispatchEvent(new Event('online')); }, second);
+    const woke = Date.now();
     await page.locator(`[data-position-detail][data-snapshot="${state.snapshot.number}"]`).waitFor();
     await page.waitForFunction(() => document.querySelector('[data-recorded-fees]')?.getAttribute('data-reading-count') === '2');
     const slider = range.getByRole('slider');
@@ -157,7 +160,8 @@ test('multichain sync: detail updates from the shared portfolio and charts only 
     await page.setViewportSize({ width: 1280, height: 960 });
     await page.screenshot({ path: join(shots(), 'position-v2-recorded-fees-desktop.png'), fullPage: true });
     const stale = structuredClone(second); stale.body.positions[0].state.snapshot.number++; stale.body.positions[0].state.freshness.status = 'stale';
-    await page.evaluate(answer => { window.__portfolioAnswer = answer; window.dispatchEvent(new Event('focus')); }, stale);
+    await page.waitForTimeout(Math.max(0, woke + 10_000 - Date.now()));
+    await page.evaluate(answer => { window.__portfolioAnswer = answer; window.dispatchEvent(new Event('online')); }, stale);
     await page.locator('[data-recorded-fees][data-stale]').waitFor();
     assert.equal(await fees.getAttribute('data-reading-count'), '2', 'stale responses never add observations');
     assert.equal(s.planned.length, 0);
@@ -179,7 +183,8 @@ test('multichain sync: a restored creation is visible before indexing and reconc
     assert.match(await text(link), /ETH.*USDC/);
     assert.match(await page.locator('[data-owned-status]').innerText(), /1 positions still being checked/);
     const indexed = portfolioOf({ wallet: OWNER, tokens: TOKENS, positions: [live(5100001)] });
-    await page.evaluate(answer => { window.__dominoV2Test.read6.portfolio = () => answer; window.dispatchEvent(new Event('focus')); }, indexed);
+    // Changed on purpose 2026-10-14 (Q1): focus is no wake; back online is (src/lib/wake.ts).
+    await page.evaluate(answer => { window.__dominoV2Test.read6.portfolio = () => answer; window.dispatchEvent(new Event('online')); }, indexed);
     await page.waitForFunction(() => !document.querySelector('[data-owned-status]')?.textContent?.includes('still being checked'));
     assert.equal(await link.count(), 1, 'the pending hint becomes one live row, never a duplicate');
     assert.deepEqual(await page.evaluate(wallet => JSON.parse(sessionStorage.getItem(`domino:created-positions:v1:${wallet}`)), OWNER), []);

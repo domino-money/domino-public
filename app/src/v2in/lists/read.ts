@@ -2,6 +2,7 @@ import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/
 import { readActivity, readPortfolio, type ReadV6Reply } from '../../v2/read/v6'
 import { routeServes } from '../../v2/routes'
 import type { V2ReadTransports } from '../transports'
+import { pageWake, wakeDue } from '../../lib/wake'
 
 /**
  * Where the Positions screen's lists read read-v6 from (spec F7 rev4 §6.2), through the integrated screens' one source
@@ -86,7 +87,11 @@ export interface ReaderTimers {
   /** Calls `run` once, the next time the page becomes visible; returns the cancel. */
   onVisible(run: () => void): () => void
   now?(): number
-  /** Visibility, focus and reconnect share the reader's active-key refresh. */
+  /**
+   * Calls `run` at each of the page's wake rounds (lib/wake.ts): back into view or back online, at most one each 10 s.
+   * Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): it was every focus, online and
+   * visibility change.
+   */
   onWake?(run: () => void): () => void
 }
 
@@ -95,18 +100,7 @@ const browserTimers: ReaderTimers = {
   clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   visible: () => typeof document === 'undefined' || !document.hidden,
   now: () => Date.now(),
-  onWake(run) {
-    if (typeof window === 'undefined') return () => undefined
-    const wake = () => { if (!document.hidden) run() }
-    window.addEventListener('focus', wake)
-    window.addEventListener('online', wake)
-    document.addEventListener('visibilitychange', wake)
-    return () => {
-      window.removeEventListener('focus', wake)
-      window.removeEventListener('online', wake)
-      document.removeEventListener('visibilitychange', wake)
-    }
-  },
+  onWake: (run) => pageWake.onWake(run),
   onVisible(run) {
     if (typeof document === 'undefined') return () => undefined
     const wake = () => {
@@ -126,14 +120,15 @@ const browserTimers: ReaderTimers = {
  * Retry button: a read that failed is asked again by the page.
  */
 export function createKeyedReader<T>(read: (key: string, active: () => boolean) => Promise<T>, policy: { next: (answer: T, failures: number) => number | null; failed: (answer: T) => boolean }, timers: ReaderTimers = browserTimers): KeyedReader<T> {
-  interface Entry { value: T | null; latest: T | null; listeners: Set<() => void>; timer: unknown; reading: boolean; failures: number; due: boolean; generation: number; observing: number; notBefore: number; waking: (() => void) | null }
+  /** `goodAt` and `period` (2026-10-14, Q1): when the last good answer came, and the wait its policy set after it (null: none). */
+  interface Entry { value: T | null; latest: T | null; listeners: Set<() => void>; timer: unknown; reading: boolean; failures: number; due: boolean; generation: number; observing: number; notBefore: number; waking: (() => void) | null; goodAt: number | null; period: number | null }
   const entries = new Map<string, Entry>()
   const now = () => timers.now?.() ?? Date.now()
   let stopWake: (() => void) | null = null
   const entry = (key: string): Entry => {
     let found = entries.get(key)
     if (!found) {
-      found = { value: null, latest: null, listeners: new Set(), timer: null, reading: false, failures: 0, due: true, generation: 0, observing: 0, notBefore: 0, waking: null }
+      found = { value: null, latest: null, listeners: new Set(), timer: null, reading: false, failures: 0, due: true, generation: 0, observing: 0, notBefore: 0, waking: null, goodAt: null, period: null }
       entries.set(key, found)
     }
     return found
@@ -169,6 +164,10 @@ export function createKeyedReader<T>(read: (key: string, active: () => boolean) 
         e.failures = failed ? e.failures + 1 : 0
         const wait = policy.next(value, e.failures)
         e.notBefore = failed && wait !== null ? now() + wait : 0
+        if (!failed) {
+          e.goodAt = now()
+          e.period = wait
+        }
         // A confirmation during this request cannot be consumed by its older response.
         if (generation === e.generation) {
           e.latest = value
@@ -198,11 +197,24 @@ export function createKeyedReader<T>(read: (key: string, active: () => boolean) 
       start(name, e)
     }
   }
+  /**
+   * A wake round (lib/wake.ts): each watched key whose last good answer is older than its own period (wakeDue), unless it is
+   * being read or waits out a failure (an error slows a reader down, never speeds it up). Changed on purpose 2026-10-14
+   * (incident 2026-10-13, design 2.5, package Q1): every watched key was read again at every wake, and a read in flight was
+   * dropped for a new one.
+   */
+  const wake = () => {
+    const at = now()
+    for (const [name, e] of entries) {
+      if (e.listeners.size === 0 || e.reading || e.notBefore > at || !wakeDue(e.goodAt, e.period, at)) continue
+      again(name)
+    }
+  }
   return {
     subscribe(key, listener) {
       const e = entry(key)
       e.listeners.add(listener)
-      stopWake ??= timers.onWake?.(() => again()) ?? null
+      stopWake ??= timers.onWake?.(wake) ?? null
       if (e.due && e.timer === null) start(key, e)
       return () => {
         e.listeners.delete(listener)

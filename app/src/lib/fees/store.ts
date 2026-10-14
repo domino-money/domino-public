@@ -27,6 +27,7 @@
  * reads a clock or renders, but the readings' and the cache's own `now`.
  */
 import { LEDGER_READING_MS, LIST_STATE_REFRESH_MS, MAX_LEDGER_IDS, MAX_STATE_IDS, STATE_REFRESH_MS } from './constants'
+import { wakeDue } from '../wake'
 import { HISTORY_MAX_AGE_MS, savedHistoryMatches, type HistoryCache } from './historyCache'
 import { agreement, foldLedger, ledgerMint, type LedgerRead } from './ledger'
 import type { Reading, Readings } from './readings'
@@ -74,7 +75,12 @@ export interface FeesStore {
    * ledger again, fresh.
    */
   refresh(ids: readonly string[], minBlock?: number): void
-  /** Revalidate visible entries after focus/online without discarding their last good values. */
+  /**
+   * A wake round (lib/wake.ts): reads again the shown entries whose last good /state answer is older than their own period
+   * (STATE_REFRESH_MS for a page, LIST_STATE_REFRESH_MS for a list), without discarding their last good values; an entry
+   * waiting out a failure keeps its wait. Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): it
+   * re-read every shown entry, on every focus, online and visibility change.
+   */
   resume(): void
   /** 2026-09-28 (speed wave B, item 16): a /state read made elsewhere (a position's page's own), taken as the store's. */
   offer(answer: RelayAnswer<StateResponse>): void
@@ -147,6 +153,8 @@ interface Entry {
   stateRetry: (() => void) | null
   minBlock: number
   pollElapsed: number
+  /** When the last good /state answer for this id arrived (`now`), for the wake rule; null before any. */
+  goodAt: number | null
   view: FeeHistoryView
   /** The last ledger that answered for this id, and how the history may use it. */
   ledger: LedgerRead | null
@@ -194,6 +202,7 @@ export function growthOf(position: StatePositionOk): readonly [bigint, bigint] {
 }
 
 export function createFeesStore(deps: StoreDeps): FeesStore {
+  const clock = () => deps.now?.() ?? Date.now()
   const entries = new Map<string, Entry>()
   const viewMaps = new Map<string, { views: FeeHistoryView[]; map: ReadonlyMap<string, FeeHistoryView> }>()
   const stateMaps = new Map<string, { parts: Array<PositionState | null | undefined>; map: ReadonlyMap<string, PositionState | null> | null }>()
@@ -213,7 +222,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   const entry = (id: string): Entry => {
     let found = entries.get(id)
     if (!found) {
-      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, restored: false, state: null, read: null, stateReason: null, answered: false, stateFailures: 0, stateRetry: null, minBlock: 0, pollElapsed: 0, view: IDLE, ledger: null, asking: false, ledgerFreshPending: false, ledgerEpoch: 0, settled: null, failures: 0, retry: null, reading: 0, freshFor: 0, release: null, trace: NO_TRACE }
+      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, restored: false, state: null, read: null, stateReason: null, answered: false, stateFailures: 0, stateRetry: null, minBlock: 0, pollElapsed: 0, goodAt: null, view: IDLE, ledger: null, asking: false, ledgerFreshPending: false, ledgerEpoch: 0, settled: null, failures: 0, retry: null, reading: 0, freshFor: 0, release: null, trace: NO_TRACE }
       entries.set(id, found)
     }
     return found
@@ -454,6 +463,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     e.stateRetry?.()
     e.stateRetry = null
     e.stateFailures = 0
+    e.goodAt = clock()
     if (!position.ok) {
       deps.historyCache?.remove(e.id)
       e.state = null
@@ -529,11 +539,14 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     })
   }
 
+  /** An entry's own period: a page's (or a state subscriber's), else a list's. */
+  const periodOf = (e: Entry) => (e.pageRefs > 0 || e.stateRefs > 0 ? STATE_REFRESH_MS : LIST_STATE_REFRESH_MS)
+
   function refreshNow(elapsed: number): void {
     const ids = [...entries.values()].filter((e) => {
       if (!reads(e)) return false
       e.pollElapsed += elapsed
-      const due = e.pageRefs > 0 || e.stateRefs > 0 ? STATE_REFRESH_MS : LIST_STATE_REFRESH_MS
+      const due = periodOf(e)
       if (e.pollElapsed < due || e.stateRetry) return false
       e.pollElapsed = 0
       return true
@@ -657,7 +670,11 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       deps.timer(AFTER_ACTION_MS, () => ask(ids, true))
     },
     resume() {
-      ask([...entries.values()].filter((e) => reads(e) && !e.stateRetry).map((e) => e.id), false, true)
+      const now = clock()
+      const due = [...entries.values()].filter((e) => reads(e) && !e.stateRetry && wakeDue(e.goodAt, periodOf(e), now))
+      // Its period starts again from this read: the regular refresh does not read it again a moment later.
+      for (const e of due) e.pollElapsed = 0
+      ask(due.map((e) => e.id), false, true)
       scheduleRefresh()
     },
     offer(answer) {

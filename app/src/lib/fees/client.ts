@@ -93,8 +93,8 @@ function noted(answer: RelayAnswer<StateResponse>): RelayAnswer<StateResponse> {
 
 /**
  * The ids the owner just acted on (a Collect, a Close, a mint the page does not show yet), and until when their state is
- * asked fresh: the route keeps an answer 10 s, and the page must show the action's result at once (2026-10-01, the RPC
- * switch's integration).
+ * asked fresh: the route serves a kept answer for a few seconds (5 s, functions/_lib/fees.ts LIVE_STATE_MS),
+ * and the page must show the action's result at once (2026-10-01, the RPC switch's integration).
  */
 const freshUntil = new Map<string, number>()
 /** How long after an action its position's state is asked fresh: past the page's second read (AFTER_ACTION_MS, 11 s). */
@@ -108,7 +108,7 @@ export function freshState(tokenIds: readonly string[]): void {
 /**
  * Up to eight positions at one block, asked of the state route, each with its feature (item 17). Two askers of the same
  * ids while a read is on its way share it; a read that has answered is never reused, so a page reading again after an
- * action gets the chain as it is then: the route keeps an answer 10 s, and a read of an id the owner just acted on asks
+ * action gets the chain as it is then: the route serves a kept answer 5 s, and a read of an id the owner just acted on asks
  * it fresh (freshState). `background` (a minute's refresh) is accepted and changes nothing since the switch to
  * Domino's own node (RPC-SPEC §4.2): there is no lane on the page to wait for.
  */

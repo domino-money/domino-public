@@ -176,6 +176,14 @@ async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positio
 }
 
 const text = (locator) => locator.innerText().then((value) => value.replace(/\s+/g, ' ').trim());
+/**
+ * Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): a list reads its portfolio again on its own
+ * period (src/v2in/lists/source.ts, 30 s), and a wake (back into view, back online) reads it only once its answer is older
+ * than that; focus is no wake. Scenarios that used an `online` or a `focus` event as "read now" move the page's clock past
+ * the period instead (the refresh on), or wait for a wake round of their own (WAKE_GAP_MS, the refresh off).
+ */
+const PORTFOLIO_PERIOD_MS = 30_000;
+const WAKE_GAP_MS = 10_000;
 
 for (const connect of [false, true]) test(`Robinhood V4 prefixed links load public fees and APR with S1 unavailable, wallet ${connect ? 'connected' : 'disconnected'}`, async () => {
   const tokenId = '3659830';
@@ -279,6 +287,9 @@ test('the unified collection follows external closure on reconnect, retains it t
     assert.match(await closed.locator('[data-cell="fees"]').innerText(), /0\.0012 USDG/, 'external closure does not hide uncollected fees');
     assert.ok(await closed.locator('[data-cell="principal"]').evaluate(cell => cell.closest('.dm-own-empty-figure')?.getBoundingClientRect().height <= 1), 'known empty principal becomes a history row');
     failure = true;
+    // Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): the page's wake rounds are at least 10 s
+    // apart (src/lib/wake.ts WAKE_GAP_MS), so the second reconnect waits for a round of its own.
+    await s.page.waitForTimeout(WAKE_GAP_MS);
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
     await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor();
     assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 1'], 'failed refresh never resurrects a closed position');
@@ -346,7 +357,7 @@ test('with no USD price the two token amounts are the figure, in view, with one 
     own.positions[0].state.feesOwed = ['2800', '0'];
     own.positions[0].state.snapshot.number += 10;
     assert.equal(runtime.validateResponse('portfolio', own), true);
-    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
     await s.page.waitForFunction(key => document.querySelector(`[data-v2-position-row="${key}"] [data-cell="fees"]`)?.getAttribute('title')?.includes('0.0028 USDG'), rowKey('7'));
     assert.equal(await cell.locator('[data-usd], .dm-own-dash').count(), 0, 'missing pricing neither hides fees nor retains the old USD total');
     assert.match(await cell.getAttribute('title'), /^A reliable USD price isn’t available for every token held\. [\s\S]*0\.0028 USDG/, 'the reason in full, then every digit');
@@ -394,7 +405,7 @@ test('a failed price read keeps the last complete valuation, said with its time,
     const before = await row.locator('[data-usd]').allTextContents();
     // With one anchor the fresh pool now provides its own mark. Lose both prices to exercise remembered USD.
     for (const token of own.tokens) { token.price = null; token.priceReason = 'price_read_failed'; }
-    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
     await row.locator('[data-usd="principal"][data-usd-snapshot]').waitFor();
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before, 'principal and fees remain the same complete observation');
     assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. /);
@@ -407,14 +418,14 @@ test('a failed price read keeps the last complete valuation, said with its time,
     // complete valuation stays, with its time, and the title has the new token amounts.
     own.positions[0].state.feesOwed[0] = '8800';
     own.positions[0].state.snapshot.number += 10;
-    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
     await s.page.waitForFunction(key => document.querySelector(`[data-v2-position-row="${key}"] [data-cell="fees"]`)?.getAttribute('title')?.includes('0.0088 USDG'), rowKey('7'));
     assert.deepEqual(await row.locator('[data-usd][data-usd-snapshot]').allTextContents(), before, 'still the last complete valuation, dated');
     assert.equal(await row.locator('[data-usd-as-of]').count(), 2);
     // A withdrawal changed its size: the figure from before would be of another position. Its tokens are the figure now.
     own.positions[0].state.liquidity = String(BigInt(own.positions[0].state.liquidity) / 2n);
     own.positions[0].state.snapshot.number += 10;
-    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
     await row.locator('[data-cell="principal"] .dm-own-amounts').waitFor();
     assert.equal(await row.locator('[data-usd], [data-usd-snapshot], [data-usd-as-of]').count(), 0, 'a valuation of another size of position is never shown');
     assert.deepEqual(await row.locator('[data-usd-why]').allInnerTexts(), ['USD price is updating']);
@@ -512,7 +523,9 @@ test('one failed portfolio read changes nothing; with every read failing the fig
     await row.locator('[data-usd="principal"]').waitFor();
     const before = await row.locator('[data-usd]').allTextContents();
     failing = true;
-    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    // Changed on purpose (2026-10-14, Q1 alone): Q1's wake rule reads a portfolio at `online` only once its answer is older
+    // than its period, so the read that fails is the reader's own, a period later (as in the five cases Q1 rewrote above).
+    await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
     await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor();
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before);
     assert.equal(await row.locator('[data-usd-as-of], [data-usd-snapshot]').count(), 0, 'a figure is current for about two minutes, whatever the newest attempt did');
@@ -731,6 +744,7 @@ test('an ETH / token position shows the same dollars on its own page as in its r
     const priced = own.tokens[0].price;
     own.tokens[0] = { ...own.tokens[0], price: null, priceReason: 'eth_usd_stale' };
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    const woke = Date.now();
     await row.locator('[data-usd="principal"][data-usd-snapshot]').waitFor();
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), inRow, 'the same dollars');
     assert.equal(await row.getAttribute('data-usd-reason'), 'eth_usd_stale,pool_depth_below_floor');
@@ -741,6 +755,9 @@ test('an ETH / token position shows the same dollars on its own page as in its r
     assert.match(await row.locator('[data-cell="fees"]').getAttribute('title'), /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. 0\.001 ETH/, 'the fees were at ETH’s own price: no estimate to say');
     assert.doesNotMatch(await row.innerText(), /USD price is updating|USD unavailable/i);
     own.tokens[0] = { ...own.tokens[0], price: priced, priceReason: null };
+    // Changed on purpose (2026-10-14, Q1 alone): Q1's wake rounds are at least 10 s apart (src/lib/wake.ts WAKE_GAP_MS), so
+    // the second reconnect waits for a round of its own (the refresh off, as in the cases Q1 rewrote above).
+    await s.page.waitForTimeout(Math.max(0, woke + WAKE_GAP_MS - Date.now()));
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
     await row.locator('[data-usd="principal"]:not([data-usd-snapshot])').waitFor();
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), inRow);
@@ -803,7 +820,7 @@ test('a portfolio price-budget miss is recovered through the existing targeted c
     assert.deepEqual(targets.map(request => request.body), [{ chainId: 8453, token: token.address }], 'the target uses its full address and chain, never a paired pool or another provider');
     assert.equal(s.asked.filter(request => request.route === 'portfolio').length, 2, 'one initial portfolio plus one coherent reread');
     warmed = false;
-    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
     await row.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
     assert.equal(s.asked.filter(request => request.route === 'chain-pools').length, 1, 'the same missing source waits for its cooldown');
     ready.positions[0].state.principalAtSpot[0] = '2000000000000000000';
@@ -960,7 +977,9 @@ test('a Base estimate nothing newer has arrived for says its time and its basis,
     assert.equal(await row.locator('[data-usd-as-of]').count(), 0);
     // read-v6 goes away: every read fails from here on.
     failing = true;
-    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    // Changed on purpose (2026-10-14, Q1 alone): Q1's wake rule reads a portfolio at `online` only once its answer is older
+    // than its period, so the read that fails is the reader's own, a period later (as in the five cases Q1 rewrote above).
+    await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
     await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor();
     await s.page.clock.fastForward(121_000);
     await row.locator('[data-usd-as-of="principal"]').waitFor();
@@ -1460,7 +1479,8 @@ test('setup is one human receipt with all effects, one gas cost and open details
     assert.equal(await row.locator('[data-receipt-field="gas-used"]').count(), 1);
     const extra = structuredClone(fixture('activity.json').items[0]);
     head = { ...body, items: [extra, ...body.items] };
-    await s.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    // Changed on purpose 2026-10-14 (Q1): focus is no wake (a wallet popup closing fires it); the head's own minute reads it.
+    await s.page.clock.fastForward(60_001);
     await s.page.waitForFunction(() => document.querySelectorAll('[data-v2-receipt]').length === 2);
     assert.equal(await row.locator('details').getAttribute('open'), '', 'stable operation identity preserves the disclosure');
     assert.equal(s.wallet.state.signed.length, 0, 'reading is independent from write gates and wallet signatures');
