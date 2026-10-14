@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
+import { confirmationQueue } from './support/queue.mjs';
 const require = createRequire(import.meta.url);
 const store = require('../../.test-build/app/src/v2in/automate/store.js');
 const { positionRows, receiptViews } = require('../../.test-build/app/src/v2in/lists/model.js');
@@ -106,6 +107,44 @@ test('mandate registration, revocation and approvals retain signed details but r
   const kept = store.sessionMandatesFor(store.automationState(), root.chainId, owner, entry.tokenId, root.dex)[0];
   assert.equal(kept.registered, false);
   assert.deepEqual(kept.triggers, entry.triggers, 'signed data remains, but is never called an active on-chain order');
+  store.forgetAutomationSession();
+});
+
+// Added 2026-10-14 (incident C3: screens finish at inclusion). An automation step is projected from its block at once (the
+// step says "Confirmed"); what it holds until finality (the vault's hand-over latch, the signature journal) is released by
+// the settlement the step registers with the confirmation queue (v2in/automate/steps.tsx), once, only after the queue's
+// own read bound to that block proves it final. A different block at that read is a reorg: no release, and the proof goes.
+test('C3: an automation step is projected from its block at once; its release waits for the queue’s own final proof, runs once, and a proven reorg cancels it', async () => {
+  for (const reorg of [false, true]) {
+    store.forgetAutomationSession();
+    const started = proof(1, [event('Initialized', { owner, dex: root.dex, rootTokenId: BigInt(root.tokenId), mode: 1 }), event('RootRearmed', { stateNonce: 1n })]);
+    const number = `0x${started.block.toString(16)}`;
+    const finality = { final: false };
+    const reader = { read: async () => ({ transaction: {}, receipt: { transactionHash: started.hash, from: owner, blockNumber: number, blockHash: started.blockHash, status: '0x1' },
+      block: { number, hash: reorg ? hash(555) : started.blockHash } }), finalized: async () => ({ number: finality.final ? `0x${(started.block + 10).toString(16)}` : '0x1' }) };
+    const queue = confirmationQueue(reader);
+    queue.store.subscribe(apply);
+    let released = 0;
+    const operation = queue.store.record({ chainId: started.chainId, wallet: owner, positionManager: nft.positionManager, tokenIds: [root.tokenId], vault,
+      receipt: { transactionHash: started.hash, blockHash: started.blockHash, blockNumber: BigInt(started.block), state: 'included', events: started.events },
+      onFinalized: async () => { released++; return true; } });
+    apply(operation);
+    assert.equal(standing()?.name, 'Auto-compound', 'projected from its block at once');
+    await queue.run(30 * 60_000);
+    assert.deepEqual([queue.calls.length, released], [0, 0], 'nothing read, nothing released before the mark');
+    queue.mark(started.chainId, started.block);
+    finality.final = true;
+    await queue.run(5 * 60_000);
+    if (reorg) {
+      assert.equal(queue.store.get()[0].phase, 'reorged');
+      assert.equal(released, 0, 'a proven reorg releases nothing');
+      assert.equal(standing(), null, 'and the proof of that block goes');
+    } else {
+      assert.equal(queue.store.get()[0].phase, 'finalized');
+      assert.equal(released, 1, 'released once, after the proof');
+      assert.equal(standing().name, 'Auto-compound');
+    }
+  }
   store.forgetAutomationSession();
 });
 

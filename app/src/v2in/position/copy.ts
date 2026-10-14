@@ -134,6 +134,14 @@ export const COPY = {
     waiting: 'Waiting',
     inWallet: 'Confirm in your wallet…',
     pendingNetwork: 'Waiting for the network',
+    // Added 2026-10-14 (incident C3: waiting never locks): a step sent 20 s ago whose block is not seen yet, read again
+    // by itself (../receiptWait.ts), with its explorer link. It never says the step failed.
+    stillWaiting: 'Sent. Still waiting to see it on the network.',
+    explorer: 'View on the explorer',
+    // Added 2026-10-14 (C3 review): a sent step whose reads fail because the wallet is now on another network or account.
+    // The page reads it again by itself once the wallet is back; nothing is sent again.
+    walletAway: (chain: string) => `Sent. Switch your wallet back to ${chain} to see it.`,
+    accountAway: 'Sent. Switch your wallet back to the account that sent it.',
     // Changed on purpose 2026-10-14 (incident C1; the owner's decision D0): "Confirmed" means in a block with success, and
     // it is said at once. It was "Included", then "Finalized" once the chain's finalized block passed it (about 16 minutes
     // on Robinhood Chain), which read as a transaction still under way. Both states say the one word, under a step

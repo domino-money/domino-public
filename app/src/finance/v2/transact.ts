@@ -12,7 +12,9 @@ import type { ConfirmationRead } from '../../lib/edge/confirmation'
  *
  *   - reviews and sends use the connected wallet; Robinhood receipt reads use the site's fixed route to its existing node;
  *   - every operation is bounded in time and in calls, one at a time, and stops when the wallet, its account or its
- *     chain changes (`current()`, and `eth_accounts` / `eth_chainId` read at the start of every operation);
+ *     chain changes (`current()`, and `eth_accounts` / `eth_chainId` read at the start of every operation); a receipt's
+ *     reads, only those methods, have the same bounds and checks outside the one-at-a-time lock (2026-10-14, review of
+ *     C3 on main: `reads`);
  *   - a step is simulated from the owner (`eth_call`) and estimated (`eth_estimateGas` × 1.2) before it is offered,
  *     and its exact transaction simulated again right before the wallet sees it;
  *   - a nonce is offered once: the pending nonce must equal the latest (nothing in flight), it is claimed in the
@@ -206,15 +208,50 @@ export const refused = (error: unknown): boolean => definiteRefusal(error)
  */
 export type Rpc = (method: string, params: unknown[], onUserRejection?: () => Promise<void>, answerKept?: boolean) => Promise<unknown>
 
-/** Receipt data uses the site's fixed reader on Robinhood; transaction review and effect checks remain in the client. */
-export async function receiptRpc(wallet: V2Wallet, chain: V2Chain, hash: Hex, fallback: Rpc): Promise<Rpc> {
+/**
+ * The owner's decision D2 (incident 2026-10-13, design §7): the person's own wallet is the second source of a Robinhood
+ * receipt this page sent, after the site's fixed reader. False: the fixed reader alone, as before 2026-10-14. Its window:
+ * three reads through the wallet's provider, or the wallet's failure, which the caller meets as "ask again".
+ */
+export const WALLET_SECOND_SOURCE = true
+const WALLET_SECOND_S = 5
+/**
+ * The only wallet methods the second source may call (C3 review): identity's two and the three it reads. Changed on
+ * purpose 2026-10-14 (review of C3 on main): and every receipt read through the wallet (`reads` in createTransactor).
+ */
+const WALLET_SECOND_READS: ReadonlySet<string> = new Set(['eth_accounts', 'eth_chainId', 'eth_getTransactionByHash', 'eth_getTransactionReceipt', 'eth_getBlockByNumber'])
+
+/** The fixed reader's three fields, read through the wallet's own provider (the second source): reads only. */
+async function walletAnswer(rpc: Rpc, hash: Hex): Promise<{ transaction: unknown; receipt: unknown; block: unknown }> {
+  const transaction = await rpc('eth_getTransactionByHash', [hash])
+  if (transaction === null) return { transaction: null, receipt: null, block: null }
+  const receipt = await rpc('eth_getTransactionReceipt', [hash])
+  const number = receipt && typeof receipt === 'object' ? (receipt as { blockNumber?: unknown }).blockNumber : null
+  const block = typeof number === 'string' ? await rpc('eth_getBlockByNumber', [number, false]) : null
+  return { transaction, receipt, block }
+}
+
+/**
+ * Receipt data uses the site's fixed reader on Robinhood; transaction review and effect checks remain in the client.
+ *
+ * Changed on purpose 2026-10-14 (incident C3, the owner's decision D2): `second` is the person's own wallet, read-only,
+ * which the fixed reader asks after two missed reads of this hash (lib/edge/confirmation.ts). Its three fields are
+ * answered here exactly as the reader's, so every check below holds for either source.
+ *
+ * Changed on purpose 2026-10-14 (C3 review): every read here is the money client's own, so it asks in the foreground lane
+ * whether or not a second source is given (the D2 switch turns off the wallet, not the lane; the vault's batch receipt
+ * passes none). An answer of the second source is at most "included": the finalized block is the site's node's, and it is
+ * never joined to a block hash another node gave, so a release that waits for finality rests on one node's own read.
+ */
+export async function receiptRpc(wallet: V2Wallet, chain: V2Chain, hash: Hex, fallback: Rpc, second?: () => Promise<{ transaction: unknown; receipt: unknown; block: unknown }>): Promise<Rpc> {
   if (!wallet.confirmation || chain.chainId !== 4663) return fallback
-  const answer = await wallet.confirmation.read(hash)
+  let fromSecond = false
+  const answer = await wallet.confirmation.read(hash, { foreground: true, second: second && (async () => { const value = await second(); fromSecond = true; return value }) })
   return async (method, params) => {
     if (method === 'eth_getTransactionByHash' && params[0] === hash) return answer.transaction
     if (method === 'eth_getTransactionReceipt' && params[0] === hash) return answer.receipt
     if (method === 'eth_getBlockByNumber' && params[1] === false) {
-      if (params[0] === 'finalized') return wallet.confirmation!.finalized()
+      if (params[0] === 'finalized') return fromSecond ? fail('finality_not_from_second_source') : wallet.confirmation!.finalized()
       const raw = answer.receipt as { blockNumber?: unknown } | null
       if (raw && params[0] === raw.blockNumber) return answer.block
     }
@@ -299,9 +336,20 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
   const key = (nonce: bigint) => `${chain.chainId}|${nonce}`
 
   /** One operation at a time, inside `seconds`, at most 48 wallet calls, stopping the moment the wallet changes. */
-  async function bounded<T>(work: (rpc: Rpc) => Promise<T>, seconds = REVIEW_S): Promise<T> {
-    if (busy) return fail('wallet_action_busy')
-    busy = true
+  function bounded<T>(work: (rpc: Rpc) => Promise<T>, seconds = REVIEW_S): Promise<T> {
+    return port(work, seconds, true)
+  }
+
+  /**
+   * `bounded`'s port. `exclusive` false (C3 review: the receipt's second source, below, and nothing else): the same window,
+   * call bound and wallet checks, outside the one-operation lock, so a background read never meets the person's press
+   * with "wallet_action_busy", nor waits for it.
+   * Changed on purpose 2026-10-14 (review of C3 on main): `reads` below, for the second source and for every receipt read
+   * through the wallet, and nothing else.
+   */
+  async function port<T>(work: (rpc: Rpc) => Promise<T>, seconds: number, exclusive: boolean): Promise<T> {
+    if (exclusive && busy) return fail('wallet_action_busy')
+    if (exclusive) busy = true
     const end = now() + seconds
     let calls = 0
     const rpc: Rpc = async (method, params, onUserRejection, answerKept) => {
@@ -328,8 +376,20 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
     try {
       return await work(rpc)
     } finally {
-      busy = false
+      if (exclusive) busy = false
     }
+  }
+
+  /**
+   * Added 2026-10-14 (review of C3 on main): `port` outside the one-operation lock, the receipt's methods only
+   * (WALLET_SECOND_READS). The second source's (C3 review), and now every read of what this client sent, or of a hash the
+   * person names, through the wallet (`receipt` and `replacement` below). On Base and Arbitrum One those reads took the
+   * lock: since C3 a close in a block is followed until final, and a direct exit until its block, in the background,
+   * through the same kept client the person's next review and send use, and "Close 2 positions" or "Continue to next
+   * group" pressed while such a read was out failed with "wallet_action_busy", nothing open in the wallet.
+   */
+  function reads<T>(work: (rpc: Rpc) => Promise<T>, seconds: number): Promise<T> {
+    return port((rpc) => work((method, params) => (WALLET_SECOND_READS.has(method) ? rpc(method, params) : fail('receipt_read_not_allowed'))), seconds, false)
   }
 
   /** The wallet's account must be the owner and its chain this client's. Another chain is `wallet_wrong_chain`: switch first. */
@@ -511,12 +571,22 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
 
   /** Where a step this transactor sent stands, with its logs and costs once included. */
   function receipt(hash: Hex, recovered?: Pick<V2Transaction, 'from' | 'to' | 'data' | 'value' | 'nonce' | 'chainId'>): Promise<V2Receipt> {
+    // Changed on purpose 2026-10-14 (incident C3, the owner's decision D2): on Robinhood the fixed reader asks this
+    // owner's own wallet, read-only and bounded, after two missed reads of this hash. A wallet gone or on another chain
+    // fails that read (`identity`); the caller asks again, and the fixed reader is asked first again next time.
+    // Changed on purpose 2026-10-14 (C3 review): through its own port, outside the one-operation lock (a settlement's read
+    // in the background held it up to 5 s, and the person's next press met "wallet_action_busy"), and reads only
+    // (`reads`, since the review of C3 on main).
+    const second = WALLET_SECOND_SOURCE ? () => reads(async (rpc) => {
+      await identity(rpc)
+      return walletAnswer(rpc, hash)
+    }, WALLET_SECOND_S) : undefined
     const readReceipt = async (rpc: Rpc): Promise<V2Receipt> => {
       const known = sent.get(hash)
       const reviewed = known?.transaction ?? recovered
       // A recovered identity authorizes reads only: it is never added to issued/offered and cannot be sent.
       if (!HASH.test(hash) || !reviewed || reviewed.from !== owner || quantity(reviewed.chainId) !== BigInt(chain.chainId)) return fail('receipt_not_from_this_review')
-      const read = await receiptRpc(wallet, chain, hash, rpc)
+      const read = await receiptRpc(wallet, chain, hash, rpc, second)
       const tx = (await read('eth_getTransactionByHash', [hash])) as Record<string, unknown> | null
       if (tx === null) return { state: 'pending' }
       if (!tx || String(tx.hash).toLowerCase() !== hash || String(tx.from).toLowerCase() !== owner || String(tx.to).toLowerCase() !== reviewed.to
@@ -560,12 +630,17 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
     // This hash/review already authorizes public confirmation. Changing or disconnecting the wallet cannot
     // cancel it. The fixed reader is bounded separately and cannot simulate, sign, send, or offer a nonce.
     if (chain.chainId === 4663 && wallet.confirmation) return readReceipt(async () => fail('receipt_read_not_allowed'))
-    return bounded(async rpc => { await identity(rpc); return readReceipt(rpc) })
+    // Changed on purpose 2026-10-14 (review of C3 on main): reads only, outside the one-operation lock (`reads`, above).
+    return reads(async rpc => { await identity(rpc); return readReceipt(rpc) }, REVIEW_S)
   }
 
-  /** A user-supplied replacement is read only. A different effect can release tracking only after canonical finality. */
+  /**
+   * A user-supplied replacement is read only. A different effect can release tracking only after canonical finality.
+   * Changed on purpose 2026-10-14 (review of C3 on main): its reads too are outside the one-operation lock (`reads`): a
+   * close the person found by its replacement's hash is followed until final in the background like any other.
+   */
   async function replacement(originalHash: Hex | null, candidateHash: Hex, reviewed: Pick<V2Transaction, 'from' | 'to' | 'data' | 'value' | 'nonce' | 'chainId'>) {
-    const candidate = await bounded(async (rpc) => {
+    const candidate = await reads(async (rpc) => {
       await identity(rpc)
       if (originalHash !== null && !HASH.test(originalHash) || !HASH.test(candidateHash) || reviewed.from !== owner || quantity(reviewed.chainId) !== BigInt(chain.chainId)) return fail('receipt_not_from_this_review')
       const original = originalHash ? await rpc('eth_getTransactionByHash', [originalHash]) as Record<string, unknown> | null : null
@@ -576,17 +651,17 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
       if (!tx || String(tx.hash).toLowerCase() !== candidateHash || String(tx.from).toLowerCase() !== owner || quantity(tx.nonce) !== BigInt(reviewed.nonce)
         || typeof tx.to !== 'string' || !ADDRESS.test(tx.to.toLowerCase())) return fail('transaction_does_not_match_review')
       return { ...reviewed, to: tx.to.toLowerCase() as Address, data: asHex(tx.input), value: numberToHex(quantity(tx.value)) }
-    })
+    }, REVIEW_S)
     if (!candidate) return { receipt: { state: 'pending' } as V2Receipt, replaced: false, final: false }
     const same = candidate.to === reviewed.to && candidate.data.toLowerCase() === reviewed.data.toLowerCase() && BigInt(candidate.value) === BigInt(reviewed.value)
     const found = await receipt(candidateHash, candidate)
     let final = found.state === 'finalized'
-    if (found.state === 'reverted') final = await bounded(async (rpc) => {
+    if (found.state === 'reverted') final = await reads(async (rpc) => {
       const block = await rpc('eth_getBlockByNumber', ['finalized', false]) as { number?: string } | null
       if (!block?.number || quantity(block.number) < found.blockNumber) return false
       const canonical = await rpc('eth_getBlockByNumber', [numberToHex(found.blockNumber), false]) as { hash?: string } | null
       return canonical?.hash?.toLowerCase() === found.blockHash
-    })
+    }, REVIEW_S)
     return { receipt: found, replaced: !same, final }
   }
 

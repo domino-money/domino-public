@@ -27,7 +27,7 @@ const walletPositions = require('../.test-build/app/functions/_lib/walletPositio
 const ownedMints = require('../.test-build/app/functions/_lib/ownedMints.js');
 const vaultRecord = require('../.test-build/app/functions/_lib/vaultRecord.js');
 const automation = require('../.test-build/app/functions/_lib/automation.js');
-const { LOCAL_RPC_LOG_BLOCKS, LOCAL_RPC_POSTS_PER_INVOCATION } = require('../.test-build/app/functions/_lib/localRpc.js');
+const { LOCAL_RPC_LOG_BLOCKS, LOCAL_RPC_POSTS_PER_INVOCATION, LOCAL_RPC_RATE, LOCAL_RPC_REST, LOCAL_RPC_TRUST_MS } = require('../.test-build/app/functions/_lib/localRpc.js');
 const { REPLY_BYTES } = require('../.test-build/app/src/lib/edge/chainRoutes.js');
 const { parseWalletAnswer } = require('../.test-build/app/src/lib/walletPositions.js');
 const { parseAutomationAnswer } = require('../.test-build/app/src/lib/automationState.js');
@@ -43,6 +43,9 @@ const PLAIN = new Set(['owned', 'automation']);
 const VAULT = `0x${'5a'.repeat(20)}`;
 const ZERO = '0x0000000000000000000000000000000000000000';
 const LOG_KEYS = ['cache', 'items', 'ms', 'nodeMs', 'outcome', 'posts', 'route', 'service', 'status'];
+/** The limit a refusal names (chainRoutes.ts Limiter, 2026-10-14): in its log line, and as `limit;desc` in Server-Timing. */
+const LIMITER = /^(?:class|bill|rest|pace|wide|node|kept)$/;
+const limitOf = (response) => /, limit;desc="([a-z]+)"$/.exec(response.headers.get('Server-Timing') ?? '')?.[1] ?? null;
 /** A ledger line's verdicts (chainRoutes.ts ledgerVerdicts): fixed codes and counts only. */
 const VERDICTS_LINE = /^(?:(?:exact|inexact|other|reading|before_floor|manual|shared|native|liquidity|unseen|too_many|not_found|rpc_unavailable|hooked_pool):\d+(?:,|$))+$|^(?:large|unparsed|none)$/;
 const BODIES = {
@@ -187,7 +190,9 @@ test('each visitor’s rate per class: a burst, then a refill a minute; every re
   };
   // Changed on purpose 2026-10-02 (rugged97's answer to Q3: the site's token allows 1,000 requests a second): each class
   // five times what it was, or more, so a visitor is held by its node bill (VISITOR_NODE), not by counting questions.
-  assert.deepEqual(routes.VISITOR_CLASSES, { owned: { burst: 30, perMinute: 60 }, state: { burst: 60, perMinute: 240 }, history: { burst: 240, perMinute: 1200 }, simulate: { burst: 6, perMinute: 12 } });
+  // Changed on purpose 2026-10-14 (incident C4): one class more, `confirm`, for the confirmation route's second shape; the
+  // four that were there are what they were, and the route's first shape (tabs opened before the deploy) stays in `state`.
+  assert.deepEqual(routes.VISITOR_CLASSES, { owned: { burst: 30, perMinute: 60 }, state: { burst: 60, perMinute: 240 }, history: { burst: 240, perMinute: 1200 }, simulate: { burst: 6, perMinute: 12 }, confirm: { burst: 30, perMinute: 90 } });
   assert.deepEqual(routes.CLASS_OF, { owned: 'owned', state: 'state', automation: 'state', ledger: 'history', record: 'history', simulate: 'simulate', confirmation: 'state' });
   // owned: 30 at once, then one a second (60 a minute).
   assert.deepEqual(await statuses('owned', 32), [...Array(30).fill('503'), '429:1', '429:1']);
@@ -203,12 +208,27 @@ test('each visitor’s rate per class: a burst, then a refill a minute; every re
   assert.equal((await statuses('record', 1))[0], '429:1');
   // The simulation: 6, then one every five seconds.
   assert.deepEqual(await statuses('simulate', 7, '203.0.113.7', { LOCAL_RPC_SIMULATE: 'true' }), [...Array(6).fill('503'), '429:5']);
+  // The confirmation route (2026-10-14, incident C4): its first shape draws from `state`, spent above; its second shape
+  // from `confirm`: 30 at once, then three every two seconds (90 a minute).
+  assert.deepEqual(await statuses('confirmation', 1), ['429:1']);
+  const second = { v: 2, chainId: 4663, hash: BODIES.confirmation.hash };
+  const secondStatuses = async (count) => {
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const response = await ask('confirmation', i % 2 ? second : { v: 2, chainId: 4663, finality: true }, visitor('203.0.113.7'));
+      out.push(response.status === 429 ? `429:${response.headers.get('Retry-After')}` : String(response.status));
+    }
+    return out;
+  };
+  assert.deepEqual(await secondStatuses(32), [...Array(30).fill('503'), '429:1', '429:1']);
+  clock.time += 2_100;
+  assert.deepEqual(await secondStatuses(4), ['503', '503', '503', '429:1']);
   // No address (a test, a local server): never limited.
   for (let i = 0; i < 20; i++) assert.equal((await ask('owned')).status, 503);
   assert.ok(routeLines().some((line) => line.outcome === 'limited'));
   assert.ok(routeLines().every((line) => !JSON.stringify(line).includes('203.0.113')), 'the address is never logged');
   // The isolate remembers at most MAX_VISITORS, by a salted digest, never the address.
-  for (const key of runtime.memory.visitors.keys()) assert.match(key, /^(?:owned|state|history|simulate)\|[0-9a-f]{16}$/);
+  for (const key of runtime.memory.visitors.keys()) assert.match(key, /^(?:owned|state|history|simulate|confirm)\|[0-9a-f]{16}$/);
   for (let i = 0; i < routes.MAX_VISITORS + 10; i++) await ask('state', BODIES.state, visitor(`10.0.${i >> 8}.${i & 255}`));
   assert.equal(runtime.memory.visitors.size, routes.MAX_VISITORS);
 });
@@ -646,17 +666,150 @@ test('one log line per invocation, of fixed keys and codes; the token, the addre
   }
   for (const line of lines.filter((one) => one.route)) {
     // 2026-10-02 (review of the chart's tabs, finding 1): a ledger answer's line also counts its verdicts, codes only.
-    assert.deepEqual(Object.keys(line).filter((key) => key !== 'verdicts').sort(), LOG_KEYS);
+    // 2026-10-14 (incident C4): and a refusal's line names its limit, a fixed code, and no other line does.
+    assert.deepEqual(Object.keys(line).filter((key) => key !== 'verdicts' && key !== 'limiter').sort(), LOG_KEYS);
     if ('verdicts' in line) {
       assert.equal(line.route, 'ledger');
       assert.match(line.verdicts, VERDICTS_LINE);
     }
     assert.match(line.outcome, /^(?:answer|busy|unavailable|source_off|bad_request|limited)$/);
+    assert.equal('limiter' in line, line.outcome === 'busy' || line.outcome === 'limited');
+    if ('limiter' in line) assert.match(line.limiter, LIMITER);
     assert.match(line.cache, /^(?:hit|miss|coalesced|none)$/);
   }
   const logged = JSON.stringify(lines);
   for (const secret of [TOKEN_PATH, 'rpc.domino.money', OWNER.slice(2), VAULT.slice(2)]) assert.equal(logged.includes(secret), false, `${secret} logged`);
   assert.equal(texts.some((text) => text.includes(TOKEN_PATH)), false, 'the token in an answer');
+});
+
+// Added 2026-10-14 (incident C4, the 429 on /api/chain/v1/confirmation of 2026-10-13). That 429 could have been any of
+// four refusals, and nothing kept said which: Pages Functions logs are read by a live tail only, and the answer named no
+// limit. Now every refusal of every chain route names the limit that made it, in the answer itself.
+test('every refusal names what made it, in Server-Timing and in its log line: the visitor’s class or bill, the isolate’s rest or pace, a wide scan’s turn, the node’s own word, or a refusal kept; an answer names none', async () => {
+  const visitor = { headers: { 'CF-Connecting-IP': '203.0.113.60' } };
+  const named = async (e, response, limiter, outcome) => {
+    const line = e.routeLines().at(-1);
+    assert.equal(limitOf(response), limiter, `${line.route}: ${response.headers.get('Server-Timing')}`);
+    assert.deepEqual([line.limiter, line.outcome], [limiter, outcome], line.route);
+    assert.match(response.headers.get('Server-Timing'), new RegExp(`^edge;desc="${line.cache}", node;dur=\\d+;desc="${line.posts} posts", limit;desc="${limiter}"$`));
+    await response.body?.cancel();
+  };
+  // class: every route, once its class is spent (no node secret here: nothing is read).
+  for (const name of Object.keys(PATHS)) {
+    const e = edge(deps(wallet()), { env: name === 'simulate' ? { LOCAL_RPC_SIMULATE: 'true' } : {} });
+    for (let i = 0; i < routes.VISITOR_CLASSES[routes.CLASS_OF[name]].burst; i++) {
+      const served = await e.ask(name, BODIES[name], visitor);
+      assert.equal(served.status, 503, name);
+      assert.equal(limitOf(served), null, 'a source that is off is not a limit');
+      assert.equal('limiter' in e.routeLines().at(-1), false);
+    }
+    const refused = await e.ask(name, BODIES[name], visitor);
+    assert.equal(refused.status, 429, name);
+    await named(e, refused, 'class', 'limited');
+  }
+  // rest: the isolate resting after the node's refusal or a time-out, whichever route asks, whoever asks.
+  // pace: the isolate's own pace of POSTs a second behind.
+  for (const [limiter, rest] of [['rest', (memory, now) => (memory.restUntil = now + 3_600_000)], ['pace', (memory, now) => (memory.tat = now + 3_600_000)]]) {
+    for (const name of Object.keys(PATHS)) {
+      const e = edge(deps(wallet()), { env: SIMULATING });
+      e.runtime.memory.node.trustedUntil = e.clock.time + LOCAL_RPC_TRUST_MS;
+      rest(e.runtime.memory.node, e.clock.time);
+      const refused = await e.ask(name);
+      assert.deepEqual([refused.status, e.asked.length], [PLAIN.has(name) ? 502 : 429, 0], `${name}: ${limiter}, nothing sent`);
+      await named(e, refused, limiter, 'busy');
+    }
+  }
+  // The node's own 429 on this very call: the isolate rests from it.
+  const busy = edge({ fetch: async () => new Response('', { status: 429, headers: { 'Retry-After': '30' } }) });
+  await named(busy, await busy.ask('state'), 'rest', 'busy');
+  assert.ok(busy.asked.length > 0);
+  // kept: the refusal that question met is kept five seconds, and the next question is answered from it, asking the node
+  // nothing, even once the isolate rests no more. It says so.
+  busy.runtime.memory.node.restUntil = 0;
+  const posts = busy.asked.length;
+  const kept = await busy.ask('state');
+  assert.deepEqual([kept.status, busy.asked.length], [429, posts]);
+  await named(busy, kept, 'kept', 'busy');
+  // node: the node's own JSON-RPC error in a 200 reply, which the chain code reads as "busy" by its words. No limit of
+  // ours refused, the isolate does not rest, and the answer says so rather than naming a limit that did not act.
+  const worded = edge({ fetch: async (_url, init) => new Response(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(init.body).id, error: { code: -32005, message: 'rate limit reached' } }), { headers: { 'Content-Type': 'application/json' } }) });
+  const told = await worded.ask('state');
+  assert.equal(told.status, 429);
+  await named(worded, told, 'node', 'busy');
+  assert.equal(worded.runtime.memory.node.restUntil, 0, 'the isolate does not rest for it');
+  // wide: a wide log scan's turn (rugged97's rule 1), refused before anything is sent.
+  const chain = historyChain();
+  const wide = edge(chain.deps);
+  assert.equal((await wide.ask('record', { ...BODIES.record, from: MINT, to: MINT + 200_000 })).status, 200);
+  wide.runtime.memory.node.wideTat = wide.clock.time + 3_600_000;
+  const before = chain.log.length;
+  const scan = await wide.ask('record', { ...BODIES.record, vault: vaultOf(7), from: 69_500_000, to: HEAD - 100_000 });
+  assert.equal(scan.status, 429);
+  await named(wide, scan, 'wide', 'busy');
+  const widths = chain.log.slice(before).filter((call) => call.method === 'eth_getLogs').map((call) => Number(call.params[0].toBlock) - Number(call.params[0].fromBlock) + 1);
+  assert.ok(widths.every((blocks) => blocks <= 1_000_000), `no wide log read was sent: ${widths}`);
+  // bill: the visitor's share of the node spent.
+  const billed = edge(historyChain().deps);
+  assert.equal((await billed.ask('record', { ...BODIES.record, from: MINT, to: MINT + 200_000 }, visitor)).status, 200);
+  billOf(billed, -50);
+  const spent = await billed.ask('record', { ...BODIES.record, vault: `0x${'77'.repeat(20)}` }, visitor);
+  assert.equal(spent.status, 429);
+  await named(billed, spent, 'bill', 'limited');
+  // An answer, a bad request and a source that is away name no limit.
+  const calm = edge(deps(wallet()));
+  for (const [name, body] of [['state', BODIES.state], ['owned', BODIES.owned], ['state', { tokenIds: [] }]]) {
+    const response = await calm.ask(name, body);
+    assert.equal(limitOf(response), null);
+    assert.equal('limiter' in calm.routeLines().at(-1), false);
+  }
+});
+
+// Added 2026-10-14 (incident C4). Before: the confirmation route shared the class `state` with the page's own figures
+// (/api/fees/v1/state, /api/automation/v1/state), so its polling and theirs spent one allowance.
+test('confirmation: the second shape has a class of its own, so tabs opened before the deploy cannot starve it, nor it the page’s figures; what a visitor may cost the node is what it was', async () => {
+  // The limits that protect the node are exactly what they were.
+  assert.deepEqual(routes.VISITOR_NODE, { burst: 240, perMinute: 480, reserve: 8 });
+  assert.deepEqual(LOCAL_RPC_RATE, { perSecond: 50, burst: 20, waitMs: 1_000 });
+  assert.deepEqual(LOCAL_RPC_REST, { firstMs: 2_000, maxMs: 30_000 });
+  assert.equal(LOCAL_RPC_POSTS_PER_INVOCATION, 40);
+  assert.deepEqual(routes.VISITOR_CLASSES.confirm, { burst: 30, perMinute: 90 });
+  const visitor = { headers: { 'CF-Connecting-IP': '203.0.113.61' } };
+  const first = BODIES.confirmation;
+  const second = { v: 2, chainId: 4663, hash: first.hash };
+  const finality = { v: 2, chainId: 4663, finality: true };
+  const classes = (e) => [...new Set([...e.runtime.memory.visitors.keys()].map((key) => key.split('|')[0]))].sort();
+  // A tab opened before the deploy spends the whole of `state`, and the page's own figures with it, as before...
+  const old = edge(deps(wallet()), { env: {} });
+  for (let i = 0; i < routes.VISITOR_CLASSES.state.burst; i++) assert.equal((await old.ask('confirmation', i % 2 ? first : { finality: true }, visitor)).status, 503);
+  assert.equal((await old.ask('confirmation', first, visitor)).status, 429);
+  assert.equal((await old.ask('state', BODIES.state, visitor)).status, 429);
+  // ...and the second shape is still served its own thirty.
+  for (let i = 0; i < 30; i++) assert.equal((await old.ask('confirmation', i % 2 ? second : finality, visitor)).status, 503);
+  const refused = await old.ask('confirmation', second, visitor);
+  assert.deepEqual([refused.status, refused.headers.get('Retry-After'), await refused.json(), limitOf(refused)], [429, '1', { v: 1, error: 'rate_limited' }, 'class']);
+  assert.deepEqual(classes(old), ['confirm', 'state']);
+  // The other way round: the second shape spent, the page's figures and the first shape untouched.
+  const fresh = edge(deps(wallet()), { env: {} });
+  for (let i = 0; i < 31; i++) await fresh.ask('confirmation', second, visitor);
+  assert.equal((await fresh.ask('confirmation', finality, visitor)).status, 429);
+  assert.equal((await fresh.ask('state', BODIES.state, visitor)).status, 503);
+  assert.equal((await fresh.ask('automation', BODIES.automation, visitor)).status, 503);
+  assert.equal((await fresh.ask('confirmation', first, visitor)).status, 503);
+  // One node bill for both shapes, each POST billed as any route's: a visitor whose share is spent is refused the node in
+  // either shape, with a 429 (never the calm "busy", which is the isolate's rest alone), and nothing is sent.
+  const pending = { fetch: async (_url, init) => new Response(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(init.body).id, result: null }), { headers: { 'Content-Type': 'application/json' } }) };
+  const e = edge(pending);
+  const answered = await e.ask('confirmation', second, visitor);
+  assert.deepEqual([answered.status, await answered.json()], [200, { v: 2, state: 'pending', transaction: null, receipt: null, block: null }]);
+  assert.equal(e.asked.length, 2, 'the isolate’s chain id check and the one POST of both reads');
+  assert.equal(leftOf(e), routes.VISITOR_NODE.burst - 2, 'each POST billed once, the unused reserve given back');
+  billOf(e, routes.VISITOR_NODE.reserve - 1);
+  for (const body of [second, first, finality, { finality: true }]) {
+    const spent = await e.ask('confirmation', body, visitor);
+    assert.deepEqual([spent.status, await spent.json(), limitOf(spent), e.routeLines().at(-1).outcome], [429, { v: 1, error: 'rate_limited' }, 'bill', 'limited']);
+  }
+  assert.equal(e.asked.length, 2, 'nothing sent for a spent visitor');
+  assert.equal((await e.ask('confirmation', second, { headers: { 'CF-Connecting-IP': '203.0.113.62' } })).status, 200, 'another visitor is not held');
 });
 
 // ---------------------------------------------------------------------------

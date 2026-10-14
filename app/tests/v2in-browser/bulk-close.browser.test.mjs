@@ -24,8 +24,8 @@ let browser;
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await closeBrowser(browser); });
 
-async function scenario(viewport = { width: 1320, height: 960 }, hash = '#/positions', intercept = () => undefined) {
-  const v4 = [501001n, 501002n].map((tokenId) => ({ tokenId, pool, ...RANGE, liquidity: LIQUIDITY, sqrtPriceX96: SQRT, tick: TICK, growthLast: [0n, 0n], growthNow: [0n, 0n] }));
+async function scenario(viewport = { width: 1320, height: 960 }, hash = '#/positions', intercept = () => undefined, ids = [501001n, 501002n]) {
+  const v4 = ids.map((tokenId) => ({ tokenId, pool, ...RANGE, liquidity: LIQUIDITY, sqrtPriceX96: SQRT, tick: TICK, growthLast: [0n, 0n], growthNow: [0n, 0n] }));
   const chain = createDirectChain({ chainId: 8453, timestamp: Math.floor(Date.now() / 1000), v4 });
   const read6 = { portfolio: portfolioOf({ wallet: chain.owner,
     positions: v4.map((one) => livePosition({ chainId: 8453, manager: chain.at.v4PositionManager, tokenId: one.tokenId, owner: chain.owner, pool, ...RANGE, liquidity: LIQUIDITY, sqrtPriceX96: SQRT, tick: TICK })),
@@ -130,7 +130,11 @@ test('reload with no hash never reoffers: a wrong hash stays blocked, a matching
     assert.deepEqual(await s.page.evaluate(() => JSON.parse(localStorage.getItem('domino.pending-close.v1'))), []);
   } finally { await s.close(); }
 });
-test('a manually recovered unknown hash follows included through finalized without entering the sender or sending twice', async () => {
+// Rewritten on purpose 2026-10-14 (incident C3: screens finish at inclusion): it required the dialog to say "done" only
+// once the block was final (about 16 minutes per group on Robinhood Chain), which is the defect. A recovered close is done
+// at its block now; its intent is held among the included closes until the money client's own read says it is final, and
+// is settled then (here, by the shared receipt follow through the wallet), when its local receipt says "Final." too.
+test('a manually recovered unknown hash is done at its block without entering the sender or sending twice; its intent is held until final, then settled', async () => {
   let txHash, final = false;
   const s = await scenario(undefined, undefined, async (method, params, chain) => {
     if (method === 'eth_getBlockByNumber' && params[0] === 'finalized' && !final) return { result: { number: '0x0' } };
@@ -143,11 +147,76 @@ test('a manually recovered unknown hash follows included through finalized witho
     await s.page.getByText('Find your transaction', { exact: true }).click();
     await s.page.getByLabel('Transaction hash from your wallet').fill(txHash);
     await s.page.getByRole('button', { name: 'Check status', exact: true }).click();
-    await s.page.waitForFunction((owner) => JSON.parse(localStorage.getItem(`domino:confirmed-closes:v1:${owner}`))?.[0]?.state === 'included', s.chain.owner);
-    final = true;
     await s.page.locator('[data-bulk-close="done"]').waitFor();
-    assert.equal(s.chain.sends.length, 1);
+    assert.equal(await s.page.evaluate((owner) => JSON.parse(localStorage.getItem(`domino:confirmed-closes:v1:${owner}`))?.[0]?.state, s.chain.owner), 'included', 'done at its block, not final yet');
     assert.deepEqual(await s.page.evaluate(() => JSON.parse(localStorage.getItem('domino.pending-close.v1'))), []);
+    assert.deepEqual(await s.page.evaluate(() => JSON.parse(localStorage.getItem('domino.included-close.v1')).map((row) => [row.hash, row.tokenIds])), [[txHash, ['501001', '501002']]], 'held until final');
+    final = true;
+    await s.page.waitForFunction(() => JSON.parse(localStorage.getItem('domino.included-close.v1'))?.length === 0, null, { timeout: 30_000 });
+    assert.equal(await s.page.evaluate((owner) => JSON.parse(localStorage.getItem(`domino:confirmed-closes:v1:${owner}`))?.[0]?.state, s.chain.owner), 'finalized');
+    assert.equal(s.chain.sends.length, 1);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-14 (incident C3: screens finish at inclusion). "Continue to next group" was offered only once a group's
+// block was final; on Robinhood Chain every group of a close cost about 16 minutes and presses of "Check status". A group
+// is done at its block now, the next one may start at once, and each intent is held among the included closes (its
+// positions safe from any other direct exit) until its own final read settles it.
+test('Close positions: each group is done at its block and the next starts at once; both intents held until final, then settled', async () => {
+  let final = false;
+  const s = await scenario(undefined, undefined, (method, params) => (method === 'eth_getBlockByNumber' && params[0] === 'finalized' && !final ? { result: { number: '0x0' } } : undefined), [501001n, 501002n, 501003n]);
+  try {
+    const page = s.page;
+    await page.locator('[data-bulk-close-open]').click();
+    const dialog = page.locator('[data-bulk-close]');
+    assert.equal(await dialog.getByRole('checkbox').count(), 3);
+    for (const choice of await dialog.getByRole('checkbox').all()) await choice.check();
+    await dialog.getByRole('button', { name: 'Review 3 positions', exact: true }).click();
+    await page.locator('[data-bulk-close="review"]').waitFor();
+    await dialog.getByRole('button', { name: 'Close 2 positions', exact: true }).click();
+    await page.locator('[data-bulk-close="done"]').waitFor();
+    assert.equal(await dialog.getByText('Withdrawal confirmed.').count(), 1);
+    const held = () => page.evaluate(() => JSON.parse(localStorage.getItem('domino.included-close.v1') ?? '[]').map((row) => row.tokenIds));
+    assert.deepEqual(await held(), [['501001', '501002']], 'the first group held until final');
+    await dialog.getByRole('button', { name: 'Continue to next group', exact: true }).click();
+    await page.locator('[data-bulk-close="review"]').waitFor();
+    await dialog.getByRole('button', { name: 'Close 1 position', exact: true }).click();
+    await page.locator('[data-bulk-close="done"]').waitFor();
+    assert.deepEqual(await held(), [['501001', '501002'], ['501003']], 'both held, the second done at its block as well');
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('domino.pending-close.v1'))), []);
+    assert.equal(s.chain.sends.length, 2, 'each group sent once');
+    for (const id of [501001n, 501002n, 501003n]) assert.equal(s.chain.v4Position(id).liquidity, 0n);
+    final = true;
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem('domino.included-close.v1'))?.length === 0, null, { timeout: 45_000 });
+    const receipts = await page.evaluate((owner) => JSON.parse(localStorage.getItem(`domino:confirmed-closes:v1:${owner}`)), s.chain.owner);
+    assert.deepEqual(receipts.map((row) => row.state), ['finalized', 'finalized'], 'each settled by its own final read');
+    assert.equal(s.chain.sends.length, 2);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-14 (C3 review). On Base the close's receipt is read through the wallet: a wallet moved to another network
+// after the send failed every read, and the dialog sat on "Confirming on Base…" with its button disabled for about an hour.
+// It now offers "Check status" at once, saying why, and the group is done once the wallet is back. Nothing is sent again.
+test('the wallet moved to another network while a group is confirming: Check status at once, and the group is done once the wallet is back', async () => {
+  let moved = false;
+  const s = await scenario(undefined, undefined, async (method, params, chain) => {
+    if (method !== 'eth_sendTransaction' || moved) return undefined;
+    const reply = await chain.request(method, params);
+    moved = true;
+    chain.switchTo(4663);
+    return reply;
+  });
+  try {
+    await offerGroup(s.page);
+    const waiting = s.page.locator('[data-bulk-close="waiting"]');
+    await waiting.waitFor({ timeout: 30_000 });
+    await waiting.getByText('Your wallet is on another network. Switch it to Base, then try again.', { exact: true }).waitFor();
+    assert.equal(await waiting.getByRole('button', { name: 'Close 2 positions', exact: true }).count(), 0, 'never offered again');
+    s.chain.switchTo(8453);
+    await waiting.getByRole('button', { name: 'Check status', exact: true }).click();
+    await s.page.locator('[data-bulk-close="done"]').waitFor({ timeout: 30_000 });
+    assert.equal(s.chain.sends.length, 1, 'sent once');
+    for (const id of [501001n, 501002n]) assert.equal(s.chain.v4Position(id).liquidity, 0n);
   } finally { await s.close(); }
 });
 

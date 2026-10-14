@@ -13,6 +13,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { OWNER, ZERO, createVaultChain, vaultContracts, walletOf } from '../support/v2-vault-chain.mjs';
 import { USDG } from './support/plans.mjs';
+import { confirmationQueue, edgeReaderOf } from './support/queue.mjs';
 
 const require = createRequire(import.meta.url);
 const { createVaultClient, offerV2Batch } = require('../../.test-build/app/src/finance/v2/vault.js');
@@ -70,6 +71,34 @@ test('F2: a definite refusal lets the step be offered again; a final receipt doe
   const hash2 = await client.send(await client.prepareStep(next, 0, null), true);
   assert.equal((await client.receipt(hash2)).state, 'finalized');
   assert.equal(chain.paid.filter((p) => p.why === 'withdrawReserves').length, 2);
+});
+
+// Added 2026-10-14 (incident C3: screens finish at inclusion). The hand-over latch (vault.ts receipt) is let go only by a
+// final receipt. No screen waits for it any more: the automation step registers that read with the page's confirmation
+// queue (v2in/automate/steps.tsx), which runs it once the block is final. Until then the step stays held.
+test('C3: a sent vault step stays held while it is only in a block; the confirmation queue lets it go once its block is final', async () => {
+  const { chain, wallet, client, vault } = await vaultSetup();
+  const finality = { final: false };
+  wallet.confirmation = edgeReaderOf(chain, finality);
+  const review = await client.reviewAction(vault, withdraw);
+  const hash = await client.send(await client.prepareStep(review, 0, null), true);
+  const included = await client.receipt(hash);
+  assert.equal(included.state, 'included');
+  assert.equal(client.sentStep(review, 0), hash, 'held: never offered again while it is not final');
+  await assert.rejects(client.prepareStep(review, 0, null), /review_already_sent/);
+  const queue = confirmationQueue(edgeReaderOf(chain, finality));
+  const operation = queue.store.record({ chainId: 4663, wallet: OWNER, tokenIds: [], vault, receipt: included, onFinalized: async () => (await client.receipt(hash)).state === 'finalized' });
+  assert.equal(operation.phase, 'included');
+  await queue.run(30 * 60_000);
+  assert.deepEqual([queue.calls.length, client.sentStep(review, 0)], [0, hash], 'no mark, no read: still held');
+  queue.mark(4663, Number(included.blockNumber));
+  await queue.run(77_000);
+  assert.deepEqual([queue.calls.length, client.sentStep(review, 0)], [1, hash], 'its block not final yet: still held');
+  finality.final = true;
+  await queue.run(60_000);
+  assert.equal(queue.store.get()[0].phase, 'finalized');
+  assert.equal(client.sentStep(review, 0), null, 'final: let go by the queue’s settlement');
+  assert.equal(sends(chain), 1, 'nothing was sent again');
 });
 
 test('F2: recoverToken and the auto-exit actions (register, revoke, cancel a nonce, claim) hold the same latch', async () => {

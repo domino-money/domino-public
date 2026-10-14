@@ -2,8 +2,9 @@ import { useMemo, useState, useSyncExternalStore } from 'react'
 import { Button } from '../../components/ui'
 import { SheetCard, SheetFact, SheetFacts, SheetStatus } from '../../components/positions/ActionSheet'
 import { readDirectCloseManyReceipt, type DirectCloseDescription, type DirectCloseMany } from '../../finance/v2/direct'
-import { beginClose, pendingClose, rememberCloseHash, settleClose, type PendingClose } from '../../finance/v2/closeJournal'
-import { refused } from '../../finance/v2/transact'
+import { beginClose, includedClose, includedCloses, pendingClose, rememberCloseHash, settleClose, type IncludedClose, type PendingClose } from '../../finance/v2/closeJournal'
+import { refused, type V2Receipt } from '../../finance/v2/transact'
+import { receiptPause, receiptSettled, receiptWalletAway } from '../receiptWait'
 import { refreshFeeStates } from '../../lib/fees/useFeeHistory'
 import { v2Gate } from '../../v2/gate'
 import type { Hex } from '../../v2/types'
@@ -16,6 +17,7 @@ import { canCloseTogether, closeGroups } from './closeGroups'
 import { amountWords, tokenNamer, weiWords, type PositionRowView, type TokenName } from './model'
 import { positionChanged } from './positionSync'
 import { forgetLocalClose, recordLocalClose } from './localReceipts'
+import { closeProof, createCloseHold, type CloseProof } from './closeHold'
 import '../../styles/bulk-close.css'
 
 type Stage = 'selection' | 'reading' | 'review' | 'wallet' | 'sent' | 'waiting' | 'unknown' | 'done' | 'failed'
@@ -51,6 +53,22 @@ function createRun(owner: string) {
   const listeners = new Set<() => void>()
   const update = (change: Partial<RunState>) => { state = { ...state, ...change }; listeners.forEach((listener) => listener()) }
   const current = () => state.groups[state.index]
+  /**
+   * The money client's own read of a close: the sender's for the hash it sent (`direct`), the recovery's for any other,
+   * without its description. Moved on purpose 2026-10-14 (second review of C3 on main) to ./closeHold.ts `closeProof`,
+   * unchanged, so a test runs it.
+   */
+  const proofOf = closeProof
+  /** Added 2026-10-14 (incident C3): a close in a block held until final (./closeHold.ts, moved there by the C3 review). */
+  const holdUntilFinal = createCloseHold(owner)
+  /** The run's own close proved in a block: among the included closes, and held until final. False: it stays where it is. */
+  const included = async (intent: PendingClose, hash: Hex, receipt: Extract<V2Receipt, { blockHash: Hex }>, read: CloseProof): Promise<boolean> => {
+    let row: IncludedClose
+    try { row = await includedClose(intent, hash, Number(receipt.blockNumber), receipt.blockHash) } catch { return false }
+    const wallet = (connection ?? recovery)?.wallet ?? null
+    holdUntilFinal(row, read, () => !wallet || !wallet.current() ? 'gone' : wallet.chainId() === row.chainId ? 'ready' : 'paused')
+    return true
+  }
   const prepare = async (groups: readonly PositionRowView[][], index: number) => {
     if (['reading', 'wallet', 'sent', 'waiting', 'unknown'].includes(state.stage)) return
     update({ stage: 'reading', groups, index, prepared: null, error: null, hash: null })
@@ -62,6 +80,10 @@ function createRun(owner: string) {
       if (gate.mode !== 'live') throw new Error('route_unavailable')
       connection = await connectPosition(gate)
       if (connection.wallet.owner.toLowerCase() !== owner.toLowerCase()) throw new Error('wallet_identity_changed')
+      // Added 2026-10-14 (incident C3): an included close of this network left by an earlier page (a reload) is held
+      // again until final, through this connection; one this run holds already is not asked again.
+      const wallet = connection.wallet
+      for (const row of includedCloses(owner)) if (row.chainId === group[0].chainId) holdUntilFinal(row, proofOf(row, row.hash, row.hash, null, connection.direct.recoverCloseMany), () => !wallet.current() ? 'gone' : wallet.chainId() === row.chainId ? 'ready' : 'paused')
       const prepared = await inTurn(() => connection!.direct.prepareCloseMany(group[0].dex, group.map((row) => BigInt(row.tokenId)), 50))
       update({ stage: 'review', prepared })
     } catch (error) { update({ stage: 'failed', error: actionError(error, groups[index][0].chainId) }) }
@@ -74,13 +96,35 @@ function createRun(owner: string) {
     const intent = pending
     let announced: string | null = null
     update({ stage: 'sent' })
+    const sender = prepared && knownSenderHash === hash ? connection!.direct : null
+    const recover = recovery?.recoverCloseMany ?? connection!.direct.recoverCloseMany
+    const hidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
+    let failures = 0
     try {
       for (let attempt = 0; attempt < 60; attempt++) {
-        const { receipt, description, replacement } = await (async (): Promise<{ receipt: Awaited<ReturnType<PositionConnection['direct']['receipt']>>; description: DirectCloseDescription | null; replacement: { replaced: boolean; final: boolean } | null }> => {
-          if (prepared && knownSenderHash === hash) return { receipt: await connection!.direct.receipt(hash), description: prepared, replacement: null }
-          const result = await (recovery?.recoverCloseMany ?? connection!.direct.recoverCloseMany)({ ...intent, hash, originalHash: intent.hash ?? undefined, tokenIds: intent.tokenIds.map(BigInt) })
-          return { receipt: result.receipt, description: result.description, replacement: { replaced: result.replaced, final: result.replacementFinal } }
-        })()
+        let read: { receipt: Awaited<ReturnType<PositionConnection['direct']['receipt']>>; description: DirectCloseDescription | null; replacement: { replaced: boolean; final: boolean } | null }
+        try {
+          read = await (async () => {
+            if (sender) return { receipt: await sender.receipt(hash), description: prepared, replacement: null }
+            const result = await recover({ ...intent, hash, originalHash: intent.hash ?? undefined, tokenIds: intent.tokenIds.map(BigInt) })
+            return { receipt: result.receipt, description: result.description, replacement: { replaced: result.replaced, final: result.replacementFinal } }
+          })()
+          failures = 0
+        } catch (error) {
+          // Changed on purpose 2026-10-14 (incident C3: waiting never locks): a read that failed is asked again, slower each
+          // time (../receiptWait.ts). It ended the wait, and the dialog asked for "Check status". Only the money client's
+          // word that this is not the transaction reviewed ends it, as before.
+          if (receiptSettled(error)) throw error
+          // Changed on purpose 2026-10-14 (C3 review): the wallet now on another network or account ends the wait too,
+          // where the read goes through it (Base and Arbitrum One, and a recovered close's description): "Check status"
+          // switches it back and reads again. It waited about an hour on "Confirming…" with the button disabled. A close
+          // on Robinhood Chain read by its sender comes from the site's own reader, so it is asked again there.
+          if (receiptWalletAway(error) && !(sender && intent.chainId === 4663)) throw error
+          failures++
+          await new Promise((resolve) => setTimeout(resolve, Math.max(hidden() ? 15_000 : 5_000, receiptPause(attempt, failures))))
+          continue
+        }
+        const { receipt, description, replacement } = read
         if (intent.hash && intent.hash !== hash && ['included', 'finalized', 'reverted'].includes(receipt.state)) forgetLocalClose(owner, intent.chainId, intent.positionManager, intent.hash)
         if (replacement?.replaced) {
           if (replacement.final) {
@@ -127,8 +171,13 @@ function createRun(owner: string) {
               at: null, state: receipt.state, gas: { gasUsed: receipt.gasUsed.toString(), effectiveGasPrice: receipt.effectiveGasPrice.toString(), l1Fee: receipt.l1Fee?.toString() ?? null } })
           } catch { /* A confirmed close is never repeated because its detailed receipt could not be decoded. */ }
           if (receipt.state === 'finalized') { await settleClose(intent); pending = null; update({ stage: 'done', completed: state.completed + current().length }); return }
+          // Changed on purpose 2026-10-14 (incident C3: screens finish at inclusion): in a block is done, and the next group
+          // may start; the intent is held until final among the included closes (`included` above). It was done only at
+          // finality, about 16 minutes per group on Robinhood Chain. An intent that cannot move there (8 already wait)
+          // stays where it is, and this group waits for its finality as before.
+          if (await included(intent, hash, receipt, proofOf(intent, hash, intent.hash, sender, recover))) { pending = null; update({ stage: 'done', completed: state.completed + current().length }); return }
         }
-        await new Promise((resolve) => setTimeout(resolve, typeof document !== 'undefined' && document.visibilityState === 'hidden' ? 15_000 : 5_000))
+        await new Promise((resolve) => setTimeout(resolve, hidden() ? 15_000 : 5_000))
       }
       update({ stage: 'waiting' })
     } catch (error) { update({ stage: state.hash ? 'waiting' : 'unknown', error: actionError(error, intent.chainId) }) }

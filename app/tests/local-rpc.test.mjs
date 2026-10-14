@@ -1116,3 +1116,107 @@ test('a wide call ends within its turn’s life: all its POSTs within one time-o
   assert.deepEqual(log.map((line) => JSON.parse(line).event), ['local_rpc_rest'], 'a POST it cut is our time-out: the isolate rests');
   wideGate.resetSiteGate();
 });
+
+// ---------------------------------------------------------------------------
+// 2026-10-14: incident C4 (the 429 on /api/chain/v1/confirmation of 2026-10-13)
+// ---------------------------------------------------------------------------
+
+// The confirmation route asks a transaction and its receipt in ONE POST (rugged97's rule 5 counts a batch as one request;
+// it was two POSTs). The pair is the confirmation purpose's alone, as each of the two reads always was.
+test('a transaction and its receipt go to the node as one POST, for the confirmation purpose only', async () => {
+  const HASH = `0x${'ab'.repeat(32)}`;
+  const pair = [envelope('eth_getTransactionByHash', [HASH], 0), envelope('eth_getTransactionReceipt', [HASH], 1)];
+  const fake = node({ answer: (call) => ({ result: call.method === 'eth_getTransactionByHash' ? { hash: HASH } : null }) });
+  const { rpc } = setup(fake, { purpose: 'confirmation' });
+  const response = await rpc.fetch(RPC, body(pair));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), [{ jsonrpc: '2.0', id: 0, result: { hash: HASH } }, { jsonrpc: '2.0', id: 1, result: null }]);
+  assert.deepEqual(fake.calls().map((post) => post.calls.map((call) => call.method)), [['eth_getTransactionByHash', 'eth_getTransactionReceipt']], 'one POST for both');
+  assert.deepEqual(rpc.spent(), { posts: 2, items: 2, ms: 0 }, 'the isolate’s chain id check, and the pair');
+  for (const purpose of ['owned', 'state', 'ledger', 'automation', 'record', 'simulate']) {
+    const other = node();
+    await refused(setup(other, { purpose }).rpc.fetch(RPC, body(pair)));
+    assert.equal(other.posts.length, 0, `${purpose}: nothing sent`);
+  }
+  // Neither read in another shape rides along, and nothing else rides with them.
+  for (const bad of [
+    [pair[0], envelope('eth_getTransactionReceipt', [HASH, true], 1)],
+    [pair[0], envelope('eth_getTransactionReceipt', [HASH.slice(0, 42)], 1)],
+    [...pair, envelope('eth_call', [{ to: MULTICALL, data: AGGREGATE }, 'latest'], 2)],
+    [...pair, envelope('eth_getLogs', [logsFilter(70_000_000, 70_000_001)], 2)],
+    [pair[0], envelope('eth_sendRawTransaction', ['0x00'], 1)],
+  ]) {
+    const other = node();
+    await refused(setup(other, { purpose: 'confirmation' }).rpc.fetch(RPC, body(bad)));
+    assert.equal(other.posts.length, 0);
+  }
+});
+
+// Which of the transport's own limits answered a call with a 429, so the route can name it in its answer and its log line
+// (chainRoutes.ts Limiter). It only reports: no limit, wait or count is changed by it.
+test('the transport says which of its limits refused a call: the isolate’s rest, its pace, or a wide scan’s turn; none when nothing did', async () => {
+  assert.deepEqual(local.LOCAL_RPC_RATE, { perSecond: 50, burst: 20, waitMs: 1_000 });
+  assert.deepEqual(local.LOCAL_RPC_REST, { firstMs: 2_000, maxMs: 30_000 });
+  const status = async (rpc, value = envelope('eth_blockNumber', [])) => (await rpc.fetch(RPC, body(value))).status;
+  // rest: the node's own 429, and every call while the isolate rests after it.
+  let refuse = true;
+  const fake = node({ answer: () => ({ result: '0x1' }), reply: (posted) => (refuse && posted.calls[0].method !== 'eth_chainId' ? json({}, 429) : null) });
+  const { make, clock, memory } = setup(fake);
+  const first = make();
+  assert.equal(first.limited(), null, 'nothing asked yet');
+  assert.equal(await status(first), 429);
+  assert.equal(first.limited(), 'rest');
+  const resting = make();
+  const posts = fake.posts.length;
+  assert.equal(await status(resting), 429);
+  assert.deepEqual([resting.limited(), fake.posts.length], ['rest', posts], 'while the isolate rests, nothing sent');
+  refuse = false;
+  clock.time += 2_000;
+  const answered = make();
+  assert.equal(await status(answered), 200);
+  assert.equal(answered.limited(), null, 'an answer: no limit');
+  // The node's own time-out (-32002) rests the isolate too.
+  const slow = setup(node({ answer: () => ({ error: { code: local.NODE_TIMEOUT, message: 'request timed out' } }) }));
+  assert.equal(await status(slow.rpc), 429);
+  assert.equal(slow.rpc.limited(), 'rest');
+  // pace: the isolate's own bucket more than a second behind.
+  memory.tat = clock.time + 60_000;
+  const paced = make();
+  const sent = fake.posts.length;
+  assert.equal(await status(paced), 429);
+  assert.deepEqual([paced.limited(), fake.posts.length], ['pace', sent]);
+  // wide: a wide log scan's turn, the isolate's own and the site's.
+  const logs = setup(node({ answer: () => ({ result: [] }) }));
+  logs.memory.trustedUntil = logs.clock.time + local.LOCAL_RPC_TRUST_MS;
+  const scan = envelope('eth_getLogs', [logsFilter(70_000_000, 79_999_999)]);
+  const turn = logs.make();
+  assert.equal(await status(turn, scan), 200);
+  assert.equal(turn.limited(), null);
+  logs.memory.wideTat = logs.clock.time + 600_000;
+  const late = logs.make();
+  assert.equal(await status(late, scan), 429);
+  assert.equal(late.limited(), 'wide');
+  logs.memory.wideTat = 0;
+  const gated = logs.make({ siteGate: { take: async () => ({ retryAfterMs: 2_000 }) } });
+  assert.equal(await status(gated, scan), 429);
+  assert.equal(gated.limited(), 'wide', 'the site’s gate is the same limit');
+  // A call that joined another invocation's chain id check learns the limit that check met.
+  let release = null;
+  const checking = node({ reply: (posted) => (posted.calls[0].method === 'eth_chainId' ? new Promise((done) => (release = () => done(json({}, 429)))) : null) });
+  const shared = setup(checking);
+  const a = shared.make();
+  const b = shared.make();
+  const both = [status(a), status(b)];
+  for (let i = 0; i < 200 && !release; i++) await new Promise((done) => setTimeout(done, 2));
+  release();
+  assert.deepEqual(await Promise.all(both), [429, 429]);
+  assert.equal(checking.posts.length, 1, 'one check for the two');
+  assert.deepEqual([a.limited(), b.limited()], ['rest', 'rest']);
+  // The node's own JSON-RPC error in a 200 reply is no limit of the transport's: it says so apart (erred), and rests nothing.
+  const wordy = setup(node({ answer: () => ({ error: { code: -32005, message: 'rate limit reached' } }) }));
+  assert.equal(wordy.rpc.erred(), false);
+  assert.equal(await status(wordy.rpc), 200);
+  assert.deepEqual([wordy.rpc.limited(), wordy.rpc.erred(), wordy.memory.restUntil], [null, true, 0]);
+  assert.equal(answered.erred(), false, 'an answer: no error');
+  assert.equal(first.erred(), false, 'a 429 of the transport’s own is not the node’s JSON-RPC error');
+});

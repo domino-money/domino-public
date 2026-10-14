@@ -19,20 +19,20 @@
  * shape: a calm 503 at once, nothing read); the edge cache and the questions in flight; and only then the node, through
  * a transport made for this one invocation. A source that is away (the wrong chain, a refused token, the node out of
  * reach) is the same calm 503. One log line per invocation names the route, the outcome and what the node cost (and,
- * since 2026-10-02, a ledger answer's verdicts as fixed codes and counts); never the visitor, the address, the ids, the
- * body or the node.
+ * since 2026-10-02, a ledger answer's verdicts as fixed codes and counts; since 2026-10-14, a refusal's limit, which the
+ * answer's Server-Timing names too: Limiter); never the visitor, the address, the ids, the body or the node.
  */
 import { answerOwnerAsked, bodyWithin, ownerFrom, refuse, type AnswerCache, type EdgeDeps, type OwnedDeps, type OwnerScan } from './owned'
 import { scanWallet } from './walletPositions'
 import { idsFrom, scanAutomation } from './automation'
 import { STATE_BODY_BYTES, bodyOf, resetRelayMemory, stateAnswer, stateRequestOf, type FeesRuntime } from './fees'
 import { LEDGER_BODY_BYTES, ledgerAnswer, ledgerHintKey, ledgerRequestOf } from './feesLedger'
-import { EDGE_LOG_LIMITS, createLocalRpc, localRpcEndpoint, localRpcMemory, resetLocalRpcMemory, type LocalRpc, type LocalRpcMemory } from './localRpc'
+import { EDGE_LOG_LIMITS, createLocalRpc, localRpcEndpoint, localRpcMemory, resetLocalRpcMemory, type LocalRpc, type LocalRpcMemory, type TransportLimit } from './localRpc'
 import { resetMintWalks, walkMints } from './ownedMints'
 import { SHARED_STALE_MS, outlast } from './sharedWork'
 import { RECORD_BODY_BYTES, recordAnswer, recordRequestOf } from './vaultRecord'
 import { SIMULATE_BODY_BYTES, simulateEnabled, simulateOnNode, simulateRequestOf } from './simulate'
-import { confirmationOnNode, confirmationRequestOf } from './confirmation'
+import { CONFIRMATION_CHAINS, confirmationMemory, confirmationOnNode, confirmationRequestOf, notServed, secondShape, type ConfirmationMemory } from './confirmation'
 import { resetSiteGate, siteGateOf } from './wideGate'
 import type { AutomationAnswer } from '../../src/lib/automationState'
 import type { LedgerWhy } from '../../src/lib/fees/types'
@@ -72,14 +72,39 @@ export interface ChainRouteRuntime {
  * answer to Q3: the site's own token allows 1,000 requests a second for the whole site, and a visitor is a network, so
  * several people behind one carrier's address, common on Brazilian mobile networks, share one): about five times what
  * they were. A cache hit counts here too and costs the node nothing; what a visitor may cost the node is VISITOR_NODE.
+ *
+ * Changed on purpose 2026-10-14 (incident C4, the 429 on the confirmation route of 2026-10-13): one class more, `confirm`,
+ * for that route's second shape (a burst of 30, 90 a minute). Its first shape, which tabs opened before the deploy still
+ * send every few seconds, stays in `state` (CLASS_OF), so those tabs cannot starve the new client, and neither shares the
+ * new client's turns with the page's own figures (/api/fees/v1/state, /api/automation/v1/state). The four classes that
+ * were here are what they were, and so is VISITOR_NODE: what a visitor may cost the node did not grow.
+ * Release order (C4 review, 2026-10-14): `confirm` is sized for the page after incident package C3, whose screens stop
+ * asking at inclusion and whose wait for inclusion never locks on a refused read. Before C3 a done screen asks every
+ * 1.5 s until the block is final (about 16 minutes on Robinhood Chain), two or three of them behind one address spend
+ * this class, and a refused read locks the step. So this ships with C3 or after it, never alone; it is not enlarged.
  */
 export const VISITOR_CLASSES = Object.freeze({
   owned: { burst: 30, perMinute: 60 },
   state: { burst: 60, perMinute: 240 },
   history: { burst: 240, perMinute: 1200 },
   simulate: { burst: 6, perMinute: 12 },
+  confirm: { burst: 30, perMinute: 90 },
 } as const)
 export const CLASS_OF: Readonly<Record<ChainRouteName, keyof typeof VISITOR_CLASSES>> = Object.freeze({ owned: 'owned', state: 'state', automation: 'state', ledger: 'history', record: 'history', simulate: 'simulate', confirmation: 'state' })
+/**
+ * What refused a question (2026-10-14, incident C4). Pages Functions logs are read by a live tail only, so the evidence
+ * travels in the answer itself, as `limit;desc="…"` in Server-Timing, and in the log line's `limiter`. The four limits
+ * that can refuse any route:
+ *   class  the visitor's questions of this class (VISITOR_CLASSES)
+ *   bill   the visitor's share of the node (VISITOR_NODE)
+ *   rest   the isolate resting after the node's 429/503 or a time-out (localRpc.ts LOCAL_RPC_REST)
+ *   pace   the isolate's own pace of POSTs (localRpc.ts LOCAL_RPC_RATE)
+ * and, so that no refusal is left unnamed or given a name that is not its own:
+ *   wide   a wide log scan's turn, the isolate's or the site's (localRpc.ts LOCAL_RPC_WIDE)
+ *   node   no limit of ours: the node's own JSON-RPC error in a 200 reply, which the chain code read as "busy"
+ *   kept   no limit met by this question: a refusal another question met moments ago, kept at the edge or shared in flight
+ */
+export type Limiter = 'class' | 'bill' | TransportLimit | 'node' | 'kept'
 /**
  * What a visitor's questions may cost the node, across every route (2026-10-02, review finding 5: the classes count
  * questions, and one question may cost the node up to LOCAL_RPC_POSTS_PER_INVOCATION POSTs, so one visitor could keep
@@ -145,20 +170,24 @@ export interface ChainRouteMemory {
   inflight: Map<string, Inflight>
   told: Set<string>
   node: LocalRpcMemory
+  /** The confirmation route's own (confirmation.ts): the refresh of the finalized block on its way. */
+  confirmation: ConfirmationMemory
 }
 
 /**
  * A read the questions of one key share: its answer, the questions' own signals, when it began (sharedWork.ts), and
- * whether its own question was refused the node for its visitor's bill (then no joiner takes its answer).
+ * whether its own question was refused the node for its visitor's bill (then no joiner takes its answer). `limited`
+ * (2026-10-14): the limit its own question's transport met, so a joiner's refusal names it too.
  */
 interface Inflight {
   done: Promise<Done>
   signals: AbortSignal[]
   started: number
   refused: () => boolean
+  limited: () => TransportLimit | null
 }
 
-export const chainRouteMemory = (): ChainRouteMemory => ({ salt: null, visitors: new Map(), nodes: new Map(), inflight: new Map(), told: new Set(), node: localRpcMemory() })
+export const chainRouteMemory = (): ChainRouteMemory => ({ salt: null, visitors: new Map(), nodes: new Map(), inflight: new Map(), told: new Set(), node: localRpcMemory(), confirmation: confirmationMemory() })
 
 let isolate: ChainRouteMemory | null = null
 
@@ -325,14 +354,14 @@ function nodeBill(memory: ChainRouteMemory, visitor: string, now: () => number):
  * reading at once. The first to find it empty reads, and the others join that read: joiners whose waits end together make
  * one read, not one each, and a visitor whose bill is spent never hands its refusal to anyone (it replaces `solo`).
  */
-async function shared(memory: ChainRouteMemory, key: string, signal: AbortSignal | null, work: (cancelled: () => boolean) => Promise<Response>, now: () => number, keepAlive: ((work: Promise<unknown>) => void) | undefined, refused: () => boolean): Promise<{ done: Done; joined: boolean }> {
+async function shared(memory: ChainRouteMemory, key: string, signal: AbortSignal | null, work: (cancelled: () => boolean) => Promise<Response>, now: () => number, keepAlive: ((work: Promise<unknown>) => void) | undefined, refused: () => boolean, limited: () => TransportLimit | null): Promise<{ done: Done; joined: boolean; limited: TransportLimit | null }> {
   for (let running = memory.inflight.get(key); running && now() - running.started <= SHARED_STALE_MS; running = memory.inflight.get(key)) {
     if (signal) running.signals.push(signal)
     const joined = await outlast(running.done, running.started + SHARED_STALE_MS - now())
-    if (joined && !running.refused()) return { done: joined.value, joined: true }
+    if (joined && !running.refused()) return { done: joined.value, joined: true, limited: running.limited() }
     if (memory.inflight.get(key) === running) memory.inflight.delete(key)
   }
-  const entry: Inflight = { done: Promise.resolve({ status: 0, headers: [], text: '' }), signals: signal ? [signal] : [], started: now(), refused }
+  const entry: Inflight = { done: Promise.resolve({ status: 0, headers: [], text: '' }), signals: signal ? [signal] : [], started: now(), refused, limited }
   const cancelled = () => entry.signals.length > 0 && entry.signals.every((one) => one.aborted)
   entry.done = work(cancelled).then(doneOf)
   memory.inflight.set(key, entry)
@@ -341,7 +370,7 @@ async function shared(memory: ChainRouteMemory, key: string, signal: AbortSignal
   }
   void entry.done.then(clear, clear)
   keepAlive?.(entry.done.catch(() => undefined))
-  return { done: await entry.done, joined: false }
+  return { done: await entry.done, joined: false, limited: limited() }
 }
 
 /** A plain route's body ({"tokenIds": …}), checked as automation.ts always checked it, or the refusal. */
@@ -424,6 +453,16 @@ async function automationAnswer(url: URL, ids: readonly bigint[], deps: OwnedDep
 interface Asked {
   key: string
   read: (rpc: LocalRpc, cancelled: () => boolean) => Promise<Response>
+  /**
+   * 2026-10-14 (incident C4), the confirmation route's second shape only. `cls`: the visitor class the question draws
+   * from when it is not its route's (CLASS_OF). `direct`: an answer that needs no node (a chain this edge does not read),
+   * given after the visitor's turn and before the source is looked at. `own`: the question's own answer drawn from the
+   * read it shares with the route's first shape (one key, one read of the node for both), and whether that answer is
+   * the calm "busy"; null: the read's answer stands as it is.
+   */
+  cls?: keyof typeof VISITOR_CLASSES
+  direct?: () => Response
+  own?: (done: Done) => { response: Response; busy: boolean } | null
 }
 
 /** One invocation, before its log line and headers: the answer, and what it was. */
@@ -434,6 +473,8 @@ interface Handled {
   rpc: LocalRpc | null
   /** A ledger answer's verdicts, for its log line (ledgerVerdicts). */
   verdicts?: string
+  /** The limit that refused the question, when it is one of ours (Limiter); a refusal that names none is `node` or `kept`. */
+  limiter?: Limiter | null
 }
 
 /** The codes a ledger answer's verdicts may log (a `why` or a position's reason): nothing else from the answer is. */
@@ -466,7 +507,7 @@ export function ledgerVerdicts(text: string): string {
 }
 
 /** The route's checks of method, origin, type, size and shape (in that order): the question, or the refusal. */
-async function askedOf(name: ChainRouteName, request: Request, url: URL, waitUntil: ((work: Promise<unknown>) => void) | undefined, runtime: Required<Pick<ChainRouteRuntime, 'now' | 'sleep'>> & { cache: AnswerCache | null; mintWaitMs?: number; log?: ChainRouteRuntime['log'] }): Promise<Asked | Response> {
+async function askedOf(name: ChainRouteName, request: Request, url: URL, waitUntil: ((work: Promise<unknown>) => void) | undefined, runtime: Required<Pick<ChainRouteRuntime, 'now' | 'sleep'>> & { cache: AnswerCache | null; mintWaitMs?: number; log?: ChainRouteRuntime['log']; confirmation: ConfirmationMemory }): Promise<Asked | Response> {
   const { now, sleep, cache } = runtime
   const fees = (rpc: LocalRpc): FeesRuntime => ({ deps: { fetch: rpc.fetch, sleep, now, logLimits: EDGE_LOG_LIMITS }, cache, waitUntil, refused: rpc.refused, onDiagnostic: (fields) => logLine(runtime, fields) })
   switch (name) {
@@ -475,7 +516,13 @@ async function askedOf(name: ChainRouteName, request: Request, url: URL, waitUnt
       if (body instanceof Response) return body
       const asked = confirmationRequestOf(body)
       if (!asked) return failed(name, 'bad_request', 400)
-      return { key: 'hash' in asked ? asked.hash : 'finality', read: rpc => confirmationOnNode(rpc.fetch, asked) }
+      // Changed on purpose 2026-10-14 (incident C4): the read keeps what is final and the finalized block at the edge
+      // (confirmation.ts), and both shapes of the question share it under one key, each with its own answer of it.
+      // A chain this edge has no node for: said at once; this node is never asked about another chain's transaction.
+      if ('v' in asked && !CONFIRMATION_CHAINS.includes(asked.chainId)) return { key: '', cls: 'confirm', direct: notServed, read: async () => notServed() }
+      const read: Asked['read'] = (rpc, cancelled) => confirmationOnNode(rpc.fetch, asked, { origin: url.origin, cache, now, sleep, waitUntil, memory: runtime.confirmation, cancelled })
+      const key = 'hash' in asked ? asked.hash : 'finality'
+      return 'v' in asked ? { key, cls: 'confirm', own: (done) => secondShape(asked, done), read } : { key, read }
     }
     case 'owned': {
       const asked = await ownerFrom(request, url)
@@ -584,11 +631,12 @@ async function handle(name: ChainRouteName, context: ChainRouteContext, runtime:
   // kept for anyone else).
   let rpc: LocalRpc | null = null
   const routeCache: AnswerCache | null = cache && { match: (key) => cache.match(key), put: (key, value) => (rpc?.refused() ? Promise.resolve() : cache.put(key, value)) }
-  const asked = await askedOf(name, request, url, keepAlive, { now, sleep, cache: routeCache, mintWaitMs: runtime.mintWaitMs, log: runtime.log })
+  const asked = await askedOf(name, request, url, keepAlive, { now, sleep, cache: routeCache, mintWaitMs: runtime.mintWaitMs, log: runtime.log, confirmation: memory.confirmation })
   if (asked instanceof Response) return { response: asked, outcome: 'bad_request', cache: 'none', rpc: null }
   const visitor = await visitorOf(memory, request)
-  const wait = admitted(memory, visitor, CLASS_OF[name], now())
-  if (wait > 0) return { response: failed(name, 'rate_limited', 429, wait / 1000), outcome: 'limited', cache: 'none', rpc: null }
+  const wait = admitted(memory, visitor, asked.cls ?? CLASS_OF[name], now())
+  if (wait > 0) return { response: failed(name, 'rate_limited', 429, wait / 1000), outcome: 'limited', limiter: 'class', cache: 'none', rpc: null }
+  if (asked.direct) return { response: asked.direct(), outcome: 'answer', cache: 'none', rpc: null }
   const endpoint = localRpcEndpoint(env)
   if (endpoint === null) {
     if (!memory.told.has('not_configured')) {
@@ -621,17 +669,20 @@ async function handle(name: ChainRouteName, context: ChainRouteContext, runtime:
     const simulated = async () => {
       const work = read(() => false)
       keepAlive?.(work)
-      return { done: await doneOf(await work), joined: false }
+      return { done: await doneOf(await work), joined: false, limited: transport.limited() }
     }
-    const { done, joined } = name === 'simulate' ? await simulated() : await shared(memory, `${name}#${asked.key}`, request.signal ?? null, read, now, keepAlive, transport.refused)
+    const { done, joined, limited } = name === 'simulate' ? await simulated() : await shared(memory, `${name}#${asked.key}`, request.signal ?? null, read, now, keepAlive, transport.refused, transport.limited)
     // Refused the node for its visitor's bill, and the cache did not hold it: the wait until the bill holds a reserve again.
     if (!joined && done.status !== 200 && transport.refused() && visitor !== null) {
       const short = VISITOR_NODE.reserve - nodeLeft(memory, visitor, now())
-      return { response: failed(name, 'rate_limited', 429, Math.max(1, short / NODE_RATE / 1000)), outcome: 'limited', cache: 'none', rpc: transport }
+      return { response: failed(name, 'rate_limited', 429, Math.max(1, short / NODE_RATE / 1000)), outcome: 'limited', limiter: 'bill', cache: 'none', rpc: transport }
     }
-    const response = new Response(done.text, { status: done.status, headers: done.headers })
+    // The question's own answer of the read (the confirmation route's second shape), after the visitor's own refusals
+    // above, which stay a 429 in every shape; its calm "busy" is a 200 whose log line still says `busy`.
+    const own = asked.own?.(done) ?? null
+    const response = own ? own.response : new Response(done.text, { status: done.status, headers: done.headers })
     const verdicts = name === 'ledger' && done.status === 200 ? ledgerVerdicts(done.text) : undefined
-    return { response, cache: joined ? 'coalesced' : name === 'simulate' ? 'none' : transport.spent().posts > 0 ? 'miss' : 'hit', rpc: transport, ...(verdicts ? { verdicts } : {}) }
+    return { response, ...(own?.busy ? { outcome: 'busy' as const } : {}), limiter: limited, cache: joined ? 'coalesced' : name === 'simulate' ? 'none' : transport.spent().posts > 0 ? 'miss' : 'hit', rpc: transport, ...(verdicts ? { verdicts } : {}) }
   } finally {
     settleIfIdle()
   }
@@ -663,11 +714,14 @@ export async function answerChainRoute(name: ChainRouteName, context: ChainRoute
   }
   const { response, cache, rpc } = handled
   const outcome = handled.outcome ?? (await outcomeOf(response))
+  // 2026-10-14 (incident C4): every refusal names what made it, in the answer and in its log line (Limiter). One that met
+  // no limit of ours is the node's own word when its replies to this question held one, and a kept refusal otherwise.
+  const limiter: Limiter | null = outcome === 'limited' || outcome === 'busy' ? (handled.limiter ?? (rpc?.erred() ? 'node' : 'kept')) : null
   const spent = rpc?.spent() ?? { posts: 0, items: 0, ms: 0 }
   const out = new Response(response.body, { status: response.status, headers: response.headers })
   out.headers.set('Content-Type', JSON_TYPE)
   out.headers.set('Cache-Control', 'no-store')
-  out.headers.set('Server-Timing', `edge;desc="${cache}", node;dur=${Math.round(spent.ms)};desc="${spent.posts} posts"`)
-  logLine(runtime, { route: name, status: out.status, outcome, cache, posts: spent.posts, items: spent.items, nodeMs: Math.round(spent.ms), ms: Math.max(0, Math.round(now() - started)), ...(handled.verdicts ? { verdicts: handled.verdicts } : {}) })
+  out.headers.set('Server-Timing', `edge;desc="${cache}", node;dur=${Math.round(spent.ms)};desc="${spent.posts} posts"${limiter ? `, limit;desc="${limiter}"` : ''}`)
+  logLine(runtime, { route: name, status: out.status, outcome, cache, posts: spent.posts, items: spent.items, nodeMs: Math.round(spent.ms), ms: Math.max(0, Math.round(now() - started)), ...(limiter ? { limiter } : {}), ...(handled.verdicts ? { verdicts: handled.verdicts } : {}) })
   return out
 }

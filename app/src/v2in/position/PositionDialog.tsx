@@ -5,6 +5,7 @@ import { Button, FigureDash, LinkButton, Skeleton } from '../../components/ui'
 import { slippageBpsFrom } from '../../lib/create/slippage'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import { v2Chain } from '../../v2/chains'
+import { v2TxUrl } from '../../v2/explorers'
 import { ethText, keptWhileRequoting, priceText, rangeBothWays } from '../../v2/plan/present'
 import type { S1PlanRequest } from '../../v2/plan/types'
 import type { ActionName, Address } from '../../v2/types'
@@ -364,7 +365,10 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
           )}
           <ErrorLine error={direct.error} />
           {switching ? <Progress data-position-progress="switching">Switch to {v2Chain(chainId).name} in your wallet…</Progress> : direct.stage === 'wallet' && <Progress data-position-progress="wallet">{COPY.wallet.inWallet}</Progress>}
-          {direct.stage === 'sent' && !direct.receipt && <Progress data-position-progress="chain">{COPY.wallet.pendingNetwork}</Progress>}
+          {/* Changed on purpose 2026-10-14 (C3 review): reads failing on the wallet's network or account say to switch back. */}
+          {direct.stage === 'sent' && !direct.receipt && <Progress data-position-progress="chain">{direct.away === 'chain' ? COPY.wallet.walletAway(v2Chain(chainId).name) : direct.away === 'account' ? COPY.wallet.accountAway : direct.slow ? COPY.wallet.stillWaiting : COPY.wallet.pendingNetwork}</Progress>}
+          {/* Added 2026-10-14 (incident C3): the exit sent 20 s ago whose block is not seen yet, read again by itself (./directRun.ts). */}
+          {direct.stage === 'sent' && direct.slow && direct.hash && v2TxUrl(chainId, direct.hash) && <a className="underline" href={v2TxUrl(chainId, direct.hash) ?? undefined} target="_blank" rel="noreferrer noopener" data-step-explorer="">{COPY.wallet.explorer}</a>}
           {direct.stage === 'unknown' && <Note data-position-direct-unknown="">{COPY.wallet.sentUnknown}</Note>}
           {direct.receipt && <DirectReceiptView chainId={chainId} receipt={direct.receipt} book={book} />}
         </div>

@@ -71,4 +71,86 @@ export function rememberCloseHash(value: PendingClose, txHash: Hex, provedReplac
 /** Call only on definite wallet refusal before acceptance or a canonical reverted/finalized receipt. */
 export function settleClose(value: PendingClose): Promise<void> { return locked(() => {
   write(read().filter((row) => !same(row, value)))
+  // Changed on purpose 2026-10-14 (incident C3): a close may wait for its proof among the included ones (below). That list
+  // unreadable, this settles what it did before; the list then holds every direct exit (`unavailable`), as this one does.
+  try {
+    const included = readIncluded()
+    if (included.some((row) => same(row, value))) writeIncluded(included.filter((row) => !same(row, value)))
+  } catch { /* said by every later read of the list */ }
+}) }
+
+/**
+ * Added 2026-10-14 (incident C3: screens finish at inclusion). "Close positions" was done only once its block was final,
+ * about 16 minutes per group on Robinhood Chain, and its next group waited that long. Now a group is done once its close
+ * is in a block with success, and its intent moves here, under its own key, until the chain's finalized block passes it
+ * (today's protection kept, the owner's design §2.1): its positions stay held from any other direct exit
+ * (finance/v2/direct.ts heldByJournal), and the next group's intent may take the one unresolved place a wallet has
+ * above. A page from before this change reads only that place, so it never meets two rows of one wallet.
+ * A row here is settled by the money client's own final read (settleClose), registered with the confirmation queue
+ * on Robinhood Chain and with the shared receipt follow elsewhere (v2in/lists/BulkClosePositions.tsx). At most 8.
+ *
+ * Changed on purpose 2026-10-14 (C3 review): at most 8 per wallet, 64 in all (8 wallets, as the unresolved places
+ * above). The 8 were the whole browser's, so closes another wallet of the same browser left waiting (a reload before
+ * finality, then another account) took the room, and every later group waited for finality again.
+ */
+export interface IncludedClose extends PendingClose {
+  hash: Hex
+  block: number
+  blockHash: Hex
+}
+export const CLOSE_INCLUDED_KEY = 'domino.included-close.v1'
+/** How many included closes wait at once: per wallet, and in all. */
+const INCLUDED_PER_WALLET = 8
+const INCLUDED_IN_ALL = 64
+function validIncluded(value: unknown): value is IncludedClose {
+  if (!valid(value)) return false
+  const row = value as IncludedClose
+  return row.hash !== null && Number.isSafeInteger(row.block) && row.block > 0 && typeof row.blockHash === 'string' && hash.test(row.blockHash)
+}
+function readIncluded(): IncludedClose[] {
+  try {
+    const raw = localStorage.getItem(CLOSE_INCLUDED_KEY)
+    if (raw === null) return []
+    if (raw.length > 600_000) return unavailable()
+    const rows: unknown = JSON.parse(raw)
+    if (!Array.isArray(rows) || rows.length > INCLUDED_IN_ALL || !rows.every(validIncluded)) return unavailable()
+    return rows
+  } catch { return unavailable() }
+}
+function writeIncluded(rows: IncludedClose[]): void {
+  try {
+    const value = JSON.stringify(rows)
+    localStorage.setItem(CLOSE_INCLUDED_KEY, value)
+    if (localStorage.getItem(CLOSE_INCLUDED_KEY) !== value) unavailable()
+  } catch { unavailable() }
+}
+/** The closes of this wallet in a block and not final yet: their positions stay held. */
+export const includedCloses = (wallet: string): IncludedClose[] => readIncluded().filter((row) => row.wallet === wallet.toLowerCase())
+/**
+ * The unresolved intent `value`, proved in a block, moves among the included ones. Refused (`signature_journal_full`)
+ * when 8 of this wallet (or 64 in all) wait there already: the intent then stays where it is, and the next group waits
+ * for it as before.
+ */
+export function includedClose(value: PendingClose, txHash: Hex, block: number, blockHash: Hex): Promise<IncludedClose> { return locked(() => {
+  const row: IncludedClose = { ...value, hash: txHash, block, blockHash }
+  if (!validIncluded(row)) return unavailable()
+  const included = readIncluded().filter((one) => !same(one, value))
+  if (included.filter((one) => one.wallet === value.wallet).length >= INCLUDED_PER_WALLET || included.length >= INCLUDED_IN_ALL) throw new Error('signature_journal_full')
+  // Written among the included first: a failure between the two writes leaves the intent held in both, never in neither.
+  writeIncluded([...included, row])
+  write(read().filter((one) => !same(one, value)))
+  return row
+}) }
+/**
+ * A close whose block left the chain: back to the unresolved place, with its hash, so the dialog checks it again ("Check
+ * status"; nothing is offered again). When that place is taken by a newer intent, it stays held here. True when it moved.
+ */
+export function reopenClose(value: IncludedClose): Promise<boolean> { return locked(() => {
+  const rows = read()
+  const included = readIncluded()
+  if (!included.some((row) => same(row, value)) || rows.some((row) => row.wallet === value.wallet) || rows.length >= 8) return false
+  const { wallet, chainId, positionManager, dex, tokenIds, data, nonce, hash: txHash } = value
+  write([...rows, { wallet, chainId, positionManager, dex, tokenIds, data, nonce, hash: txHash }])
+  writeIncluded(included.filter((row) => !same(row, value)))
+  return true
 }) }

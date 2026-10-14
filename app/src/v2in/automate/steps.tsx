@@ -10,8 +10,8 @@ import { reconcileAutomationReceipt } from './receipt'
 
 /**
  * A review's wallet steps in the look and the rhythm of Set up automation's own (screens/SequenceCreate.tsx): the list of
- * steps, each marked as it goes ("Confirm in your wallet.", "Waiting for the network.", "Included", then "Finalized";
- * a delay is never a failure), and ONE press that offers them in order, each confirmed (its receipt in a block, or its
+ * steps, each marked as it goes ("Confirm in your wallet.", "Waiting for the network.", then "Confirmed" since
+ * 2026-10-14; a delay is never a failure), and ONE press that offers them in order, each confirmed (its receipt in a block, or its
  * signature) before the next is offered. A step that failed before the wallet saw it is offered again by the next press;
  * a step the wallet saw (a hash, a batch id, or the client's word that it was handed over) is never offered again from
  * here: its outcome is the chain's to say, and the press says so instead.
@@ -223,11 +223,15 @@ function caption(phase: StepPhase): string | null {
     case 'working':
       return phase.note === 'wallet' ? 'Confirm in your wallet.' : phase.note === 'signing' ? 'Sign in your wallet.' : 'Checking…'
     case 'sent':
-      return 'Waiting for the network.'
+      // Added 2026-10-14 (incident C3): sent 20 s ago and not seen in a block yet, read again by itself (./session.tsx).
+      return phase.slow ? 'Sent. Still waiting to see it on the network.' : 'Waiting for the network.'
+    // Changed on purpose 2026-10-14 (incident C3, with C1's word; the owner's decision D0): a step in a block with success
+    // is "Confirmed", and keeps the word when its block is final. It said "Included", then "Finalized" about 16 minutes
+    // later on Robinhood Chain; finality is a line in a receipt's Details (../lists/words.ts). The release a step holds
+    // until finality still waits for it (`observe` above registers it with the confirmation queue).
     case 'included':
-      return 'Included'
     case 'finalized':
-      return 'Finalized'
+      return 'Confirmed'
     case 'signed':
       return 'Signed'
     case 'failed':
@@ -253,6 +257,7 @@ export function WalletSteps({ steps, phases, name }: { steps: readonly WalletSte
             <span className="dm-flow-wstep-body">
               <span className="dm-flow-wstep-title">{step.title}</span>
               {line && <span className="dm-flow-wstep-note">{line}</span>}
+              {phase.phase === 'sent' && phase.slow && phase.href && <a className="dm-flow-wstep-note underline" href={phase.href} target="_blank" rel="noreferrer noopener" data-step-explorer="">View on the explorer</a>}
             </span>
           </li>
         )

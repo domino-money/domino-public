@@ -73,6 +73,23 @@ export interface SimulateRequest {
   calls: readonly SimulateCall[]
 }
 export type SimulateAnswer = { ok: true; result: unknown } | { ok: false; reason: 'not_enabled' | 'unsupported' | 'failed' | 'unavailable' | 'rate_limited' | 'bad_request' }
+/**
+ * POST /api/chain/v1/confirmation, the question's second shape (2026-10-14, incident C4; functions/_lib/confirmation.ts).
+ * It names its chain, and its expected states come in a 200, never as an error status:
+ *   pending     in no block yet (or its block's header is not there yet), with what the node holds of it
+ *   included    in a block, with the transaction, its receipt and that block's header
+ *   busy        the site's node is resting: ask again after `retryAfterMs`
+ *   not_served  the site has no node for this chain: read through the person's wallet
+ * and the chain's finalized block is {v: 2, finalized}. A refusal of the visitor's own allowance is still a 429, and a
+ * failure a 502 or 503, as on every route. The first shape ({hash} or {finality: true}, answered {v: 1, …}, a resting
+ * node a 429) is what tabs opened before that day still send; the route answers both.
+ */
+export type ConfirmationQuestion = { v: 2; chainId: number; hash: string } | { v: 2; chainId: number; finality: true }
+export type ConfirmationAnswer =
+  | { v: 2; state: 'pending' | 'included'; transaction: unknown; receipt: unknown; block: unknown }
+  | { v: 2; state: 'busy'; retryAfterMs: number }
+  | { v: 2; state: 'not_served' }
+  | { v: 2; finalized: unknown }
 
 export interface RouteOptions {
   signal?: AbortSignal

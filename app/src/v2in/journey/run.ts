@@ -10,7 +10,7 @@ import { readFeesToCome } from '../../v2/plan/present'
 import { planTargetOf } from '../../v2/plan/route'
 import type { S1PlanConsent, S1PlanReply, S1PlanRequest } from '../../v2/plan/types'
 import type { Address, Hex, V2ChainId } from '../../v2/types'
-import { JOURNEY_QUIET_REQUOTES, JOURNEY_RECEIPT_POLL_MS, NEW_POOL_RACE_COPY } from './constants'
+import { JOURNEY_QUIET_REQUOTES, NEW_POOL_RACE_COPY } from './constants'
 import { JOURNEY } from './copy'
 import { journeyError, planFailure, SENT_CHECK_WALLET, SENT_UNKNOWN_COPY, STILL_PENDING, type JourneyError } from './errors'
 import { mintedPositionIds, positionChanged } from '../lists/positionSync'
@@ -20,6 +20,7 @@ import type { JourneyToken } from './tokens'
 import { livePlanTransport, liveContext, planRuntime } from './source'
 import { connectJourney, onChain, type JourneyConnection } from './wallet'
 import { RECEIPT_FOLLOW } from './receiptFollow'
+import { RECEIPT_STILL_WAITING_MS, receiptPause, receiptSettled, receiptWalletAway } from '../receiptWait'
 
 /**
  * New position's create on Domino's new contracts, from the quote to the receipt (spec F7 rev2 §2.4, §2.5, §2.6.1,
@@ -43,7 +44,8 @@ import { RECEIPT_FOLLOW } from './receiptFollow'
  *            ("Included") before the next; a Permit2 signature is a step of its own. The approvals after the first are
  *            also read at the review, for their fee only (Review's one network fee line counts them);
  *   receipt: read from the zap's events, matched to the plan by its intentHash, followed from "Included" to "Finalized"
- *            (a delay is never a failure).
+ *            (a delay is never a failure). Changed on purpose 2026-10-14 (incident C3): on Robinhood Chain the view ends
+ *            at inclusion ("Confirmed"); Base and Arbitrum One keep their wallet follow, which also catches a reorg.
  * A plan that fails on price (or expires) goes back to a fresh quote by itself, at most twice in a row, and the person
  * presses again on the new review; a step the wallet may have sent is never offered again (rev2 review F2), and nothing
  * else is until the chain settles it (F3: "I rejected it in my wallet").
@@ -60,6 +62,10 @@ export interface RunStep {
   status: StepStatus
   feeWei: bigint | null
   hash: Hex | null
+  /** Sent, and its block not seen 20 s later: the step says it is still waiting (C3, ../receiptWait.ts). */
+  slow?: boolean
+  /** Sent, and its last read failed on the wallet's network (`chain`) or account (`account`): the step says to switch back (C3 review). */
+  away?: 'chain' | 'account'
 }
 
 export interface Reviewed {
@@ -333,25 +339,67 @@ export function useJourneyRun(input: RunInput) {
     const state = live.current
     const step = state.steps[state.current]
     if (step && step.status !== 'included' && step.status !== 'finalized') step.status = sent ? 'sent' : 'unknown'
+    // Changed on purpose 2026-10-14 (C3 review): the wait has ended, so the step no longer says it is still waiting (it
+    // said so beside "nothing more is sent from here").
+    if (step) { step.slow = false; step.away = undefined }
     state.prepared = null
     state.batch = null
     state.error = { copy: sent ? SENT_CHECK_WALLET : SENT_UNKNOWN_COPY, code: errorOf(error).code, recovery: 'none' }
     bump()
   }
 
-  /** Asked again and again until the step is on the chain (included) or known reverted; a delay is never a failure. */
-  async function untilIncluded(gen: number, read: () => Promise<V2Receipt | { state: 'not-included' } | { state: 'batch-reverted' }>): Promise<V2Receipt | { state: 'not-included' } | { state: 'batch-reverted' } | null> {
-    for (;;) {
-      if (gen !== generation.current) return null
-      let receipt: Awaited<ReturnType<typeof read>> | null = null
-      try {
-        receipt = await read()
-      } catch (error) {
-        // The wallet busy with another request, or a node that did not answer: ask again shortly.
-        if (!(error instanceof Error) || !/wallet_action_busy|wallet_timeout|wallet_action_expired/.test(error.message)) throw error
+  /**
+   * Asked again and again until the step is on the chain (included) or known reverted; a delay is never a failure.
+   *
+   * Changed on purpose 2026-10-14 (incident C3: waiting never locks): a failed read is "ask again". It rethrew every
+   * failure but three wallet codes, so a refused or lost confirmation read in the second Robinhood Chain takes to include
+   * a transaction locked the step with "Sent to your wallet…" although it succeeded, and a review of two steps could not
+   * go on. Only the money clients' codes that say the transaction read back is not the one reviewed end the wait (then
+   * the step locks, as before: it is never offered again). The pause grows, slows after a failure (../receiptWait.ts),
+   * and after 20 s `slow` lets the step say it is sent and still waiting to be seen, with its explorer link.
+   */
+  async function untilIncluded(gen: number, read: () => Promise<V2Receipt | { state: 'not-included' } | { state: 'batch-reverted' }>, slow?: () => void, away?: (where: 'chain' | 'account' | null) => void): Promise<V2Receipt | { state: 'not-included' } | { state: 'batch-reverted' } | null> {
+    // Said at 20 s whatever the pause under way (a read after a failure may be a minute away).
+    const late = slow ? setTimeout(slow, RECEIPT_STILL_WAITING_MS) : null
+    let failures = 0
+    try {
+      for (let attempt = 0; ; attempt++) {
+        await sleep(receiptPause(attempt, failures))
+        if (gen !== generation.current) return null
+        let receipt: Awaited<ReturnType<typeof read>> | null = null
+        try {
+          receipt = await read()
+          failures = 0
+          away?.(null)
+        } catch (error) {
+          if (receiptSettled(error)) throw error
+          failures++
+          // Changed on purpose 2026-10-14 (C3 review): the wallet on another network or account is still "ask again",
+          // and the step says to switch back (it waited on "still waiting" with nothing to say why).
+          away?.(receiptWalletAway(error))
+        }
+        if (receipt && receipt.state !== 'pending' && receipt.state !== 'reorged') return receipt
       }
-      if (receipt && receipt.state !== 'pending' && receipt.state !== 'reorged') return receipt
-      await sleep(JOURNEY_RECEIPT_POLL_MS)
+    } finally {
+      if (late !== null) clearTimeout(late)
+    }
+  }
+
+  /** The current step's "still waiting" line, once its wait has passed 20 s (C3). */
+  function slowly(gen: number, step: RunStep): () => void {
+    return () => {
+      if (gen !== generation.current || step.status !== 'sent') return
+      step.slow = true
+      bump()
+    }
+  }
+
+  /** The current step's "switch your wallet back" line while its reads fail on the wallet's network or account (C3 review). */
+  function awayOf(gen: number, step: RunStep): (where: 'chain' | 'account' | null) => void {
+    return (where) => {
+      if (gen !== generation.current || step.status !== 'sent' || (step.away ?? null) === where) return
+      step.away = where ?? undefined
+      bump()
     }
   }
 
@@ -439,19 +487,11 @@ export function useJourneyRun(input: RunInput) {
       })
       return
     }
-    while (current.state === 'included' && gen === generation.current) {
-      await sleep(JOURNEY_RECEIPT_POLL_MS)
-      let next: Awaited<ReturnType<typeof again>> | null = null
-      try {
-        next = await again()
-      } catch {
-        next = null
-      }
-      if (next && (next.state === 'finalized' || next.state === 'included')) {
-        current = next
-        if (next.state === 'finalized') show(next)
-      }
-    }
+    // Changed on purpose 2026-10-14 (incident C3: screens finish at inclusion): on Robinhood Chain the created view asked
+    // the receipt again every 1.5 s until its block was final, about 16 minutes (some 50 questions a minute to the site's
+    // node while the view stayed open), only to say "Finalized" where it now says "Confirmed" from inclusion. Nothing is
+    // released at finality on this path (the zap's hold goes at inclusion, finance/v2/zap.ts stepReceipt), so the view
+    // ends here: finality is a line of the opened receipt (../lists/words.ts).
   }
 
   /** Whether the pool a new-pool plan was to create has a price now (rev2 §2.6.5's race), read through the wallet. */
@@ -511,7 +551,7 @@ export function useJourneyRun(input: RunInput) {
         handed = 'sent'
         step.status = 'sent'
         bump()
-        const receipt = await untilIncluded(gen, () => zap.batchReceipt(id))
+        const receipt = await untilIncluded(gen, () => zap.batchReceipt(id), slowly(gen, step), awayOf(gen, step))
         if (!receipt) return 'stop'
         if (receipt.state === 'not-included' || receipt.state === 'batch-reverted' || receipt.state === 'reverted') {
           handed = 'no'
@@ -538,7 +578,7 @@ export function useJourneyRun(input: RunInput) {
       step.hash = hash
       step.status = 'sent'
       bump()
-      const receipt = await untilIncluded(gen, () => zap.receipt(hash))
+      const receipt = await untilIncluded(gen, () => zap.receipt(hash), slowly(gen, step), awayOf(gen, step))
       if (!receipt) return 'stop'
       if (receipt.state === 'reverted' && step.kind === 'action' && reviewed.review.consent === 'permit2') {
         // Review F3: the permit is public and its nonce unused. Cancelling it comes first; no new quote until then.

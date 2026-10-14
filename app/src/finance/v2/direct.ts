@@ -10,7 +10,7 @@ import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS } from '../slippage'
 import { STEP_DEADLINE_S } from '../setup'
 import { V3_POSITION_MANAGER_ABI, V4_POSITION_MANAGER_ABI } from './abi'
 import { gasCost, type GasCost } from './receipt'
-import { pendingClose } from './closeJournal'
+import { includedCloses, pendingClose } from './closeJournal'
 import { refuseUnlessLive } from './liveLock'
 import { WalletNotAsked, createTransactor, refused, revertIn, type PreparedV2, type Rpc, type V2GasBudget, type V2Receipt, type V2Wallet } from './transact'
 
@@ -199,7 +199,8 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
   const heldByJournal = (dex: Dex, ids: readonly bigint[]): boolean => {
     if (typeof localStorage === 'undefined') return false
     const pending = pendingClose(owner)
-    return !!pending && pending.chainId === chain.chainId && pending.dex === dex && ids.some((id) => pending.tokenIds.includes(String(id)))
+    // Changed on purpose 2026-10-14 (incident C3): a close in a block and not final yet holds its positions too (./closeJournal.ts).
+    return [...(pending ? [pending] : []), ...includedCloses(owner)].some((row) => row.chainId === chain.chainId && row.dex === dex && ids.some((id) => row.tokenIds.includes(String(id))))
   }
   async function read<T>(rpc: Rpc, to: Address, abi: Abi, functionName: string, args: readonly unknown[], block: Hex | 'latest', from?: Address): Promise<T> {
     const data = encodeFunctionData({ abi, functionName, args })
@@ -439,8 +440,11 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
     prepareClose: (dex: Dex, tokenId: bigint, slippageBps: number, gas: V2GasBudget | null = null, liquidity?: bigint) => prepare('close', dex, tokenId, slippageBps, gas, liquidity),
     prepareCloseMany,
     /** A persisted request is a hint, never permission to send. Decode our exact recipes,
-     * and match the transaction/receipt on chain through the existing bounded wallet transport. */
-    recoverCloseMany: async (hint: DirectCloseRecovery): Promise<{ receipt: V2Receipt; description: DirectCloseDescription | null; replaced: boolean; replacementFinal: boolean }> => {
+     * and match the transaction/receipt on chain through the existing bounded wallet transport.
+     * Changed on purpose 2026-10-14 (review of C3 on main): `describe` false, the positions are not read for a description
+     * (null): a close's settlement proof (v2in/lists/BulkClosePositions.tsx proofOf) never uses one, and that read took the
+     * one-operation lock in the background, so the person's next review or send met "wallet_action_busy". */
+    recoverCloseMany: async (hint: DirectCloseRecovery, describe = true): Promise<{ receipt: V2Receipt; description: DirectCloseDescription | null; replaced: boolean; replacementFinal: boolean }> => {
       if (!/^0x[0-9a-f]{64}$/.test(hint.hash) || !/^0x[0-9a-f]+$/.test(hint.nonce) || hint.data.length > 65_536 || hint.tokenIds.length < 1 || hint.tokenIds.length > MAX_CLOSE_POSITIONS || new Set(hint.tokenIds.map(String)).size !== hint.tokenIds.length) fail('invalid_position_id')
       const outer = decodeFunctionData({ abi: V3_MULTICALL_ABI, data: hint.data })
       if (outer.functionName !== 'multicall' || outer.args[0].length !== hint.tokenIds.length) fail('transaction_does_not_match_review')
@@ -478,7 +482,7 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
       // A later transfer or burn cannot erase proof of a confirmed withdrawal. Current position metadata is optional;
       // without it the UI records only the proven transaction and NFT IDs, never inferred token quantities.
       let description: DirectCloseDescription | null = null
-      if (!recovered.replaced && (receipt.state === 'included' || receipt.state === 'finalized')) {
+      if (describe && !recovered.replaced && (receipt.state === 'included' || receipt.state === 'finalized')) {
         const positions = await t.bounded(async (rpc) => {
           const block = await t.latestBlock(rpc)
           return Promise.all(hint.tokenIds.map((id) => readPosition(rpc, hint.dex, id, block)))

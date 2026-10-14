@@ -8,12 +8,16 @@ const HASH = `0x${'ab'.repeat(32)}`, BLOCK = `0x${'cd'.repeat(32)}`;
 const receipt = { state: 'included', transactionHash: HASH, blockHash: BLOCK, blockNumber: 20n, events: [] };
 
 // The session helpers are tested with the existing transaction client as their only dependency.
+// Changed 2026-10-14 (incident C3): two pure modules the helpers now read are the real ones (the codes that end a wait
+// and its 20 s, ../../src/v2in/receiptWait.ts; a transaction's explorer page, ../../src/v2/explorers.ts); every other
+// import stays empty, as before. No assertion of the cases below changed.
+const PURE = { '../receiptWait': '../../.test-build/app/src/v2in/receiptWait.js', '../../v2/explorers': '../../.test-build/app/src/v2/explorers.js' };
 function sessionFunctions() {
   const ts = require('typescript'), mod = { exports: {} }, delays = [];
   let time = 0;
   const code = ts.transpileModule(readFileSync(new URL('../../src/v2in/automate/session.tsx', import.meta.url), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  new Function('require', 'module', 'exports', 'setTimeout', 'Date', code)(() => ({}), mod, mod.exports,
+  new Function('require', 'module', 'exports', 'setTimeout', 'Date', code)((name) => PURE[name] ? require(PURE[name]) : ({}), mod, mod.exports,
     (fn, ms) => { time += ms; delays.push(ms); queueMicrotask(fn); return 0; }, { now: () => time });
   return { ...mod.exports, delays };
 }
@@ -42,6 +46,24 @@ test('receipt-only continuation honors Retry-After and pauses another chain with
   await run.resumeStep(scoped, client, HASH, () => {});
   assert.equal(reads, 2); assert.ok(run.delays.includes(17_000));
   await assert.rejects(run.resumeStep({ ...scoped, receiptAvailability: () => 'gone' }, { receipt: () => assert.fail('previous account must not be read') }, HASH, () => {}), run.SentStepError);
+});
+
+// Added 2026-10-14 (incident C3: waiting never locks): sent 20 s ago and not in a block yet, the step says so once, with
+// its explorer page, and is read on; the codes that end a wait are the ones New position and the position page use.
+test('a sent step still waiting after 20 s says so once, with its explorer page, and is read on until its block', async () => {
+  const run = sessionFunctions(), phases = [];
+  const { v2TxUrl } = require('../../.test-build/app/src/v2/explorers.js');
+  let reads = 0;
+  const result = await run.resumeStep({ ...session, chainId: 4663 }, { receipt: async () => (++reads < 12 ? { state: 'pending' } : receipt) }, HASH, p => phases.push(p));
+  assert.equal(result.receipt.state, 'included');
+  assert.deepEqual(phases.filter(p => p.slow), [{ phase: 'sent', hash: HASH, slow: true, href: v2TxUrl(4663, HASH) }]);
+  assert.equal(phases.at(-1).phase, 'included');
+  const batches = [];
+  await run.resumeBatchStep(session, { receipt: async () => (batches.length < 12 ? (batches.push(1), { state: 'pending' }) : receipt) }, 'known-batch', p => batches.push(p));
+  assert.deepEqual(batches.filter(p => p.slow), [{ phase: 'sent', batchId: 'known-batch', slow: true }], 'a batch has no hash to link');
+  for (const code of ['receipt_not_from_this_review', 'transaction_does_not_match_review', 'invalid_receipt', 'receipt_duplicate_action']) {
+    await assert.rejects(run.resumeStep(session, { receipt: async () => { throw new Error(code); } }, HASH, () => {}), run.SentStepError, code);
+  }
 });
 
 test('an unresolved batch resumes only its known identifier, and reverted/reorganized receipts never authorize the next step', async () => {

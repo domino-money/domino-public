@@ -9,6 +9,7 @@ import { CREATE } from '../../lib/create/copy'
 import { rangePosition } from '../../lib/read/screens/poolRange'
 import type { ReceiptLine } from '../../finance/v2/receipt'
 import { v2Chain } from '../../v2/chains'
+import { v2TxUrl } from '../../v2/explorers'
 import type { V2Gate } from '../../v2/gate'
 import { ethAboutText, ethText, EXACT_FRACTION, exitOffer, feesToCome, keptWhileRequoting, networkFeeLine, planNetworkCost, priceText, rangeBothWays, SHOWN_FRACTION, smallerUpToPercent, spanText } from '../../v2/plan/present'
 import { ZERO_ADDRESS, type Address, type Dex, type V2ChainId } from '../../v2/types'
@@ -58,9 +59,13 @@ function markerOf(step: RunStep, stale: boolean): 'done' | 'current' | undefined
  * sentence explaining each step, no fee on each). "Next" under the first step still waiting while Create position runs,
  * as today's Review says it; nothing before the press, nor on a review kept from the last quote.
  */
-function captionOf(step: RunStep, index: number, next: number, busy: boolean, stale: boolean): string {
+function captionOf(step: RunStep, index: number, next: number, busy: boolean, stale: boolean, chain: string): string {
   if (stale) return ''
   if (step.status === 'waiting') return busy && index === next ? LIVE.waiting : ''
+  // Added 2026-10-14 (C3 review): a sent step whose reads fail on the wallet's network or account (./run.ts).
+  if (step.status === 'sent' && step.away) return step.away === 'chain' ? JOURNEY.live.walletAway(chain) : JOURNEY.live.accountAway
+  // Added 2026-10-14 (incident C3: waiting never locks): a step sent 20 s ago whose block is not seen yet (./run.ts).
+  if (step.status === 'sent' && step.slow) return JOURNEY.live.stillWaiting
   return LIVE[step.status]
 }
 
@@ -356,7 +361,7 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
               aria-busy={stale || undefined}
             >
               {kept.steps.map((step, index) => {
-                const caption = captionOf(step, index, next, view.busy, stale)
+                const caption = captionOf(step, index, next, view.busy, stale, chain.name)
                 const marker = markerOf(step, stale)
                 const row = marker === 'done' ? 'done' : stale ? undefined : step.status === 'wallet' ? 'wallet' : step.status === 'sent' ? 'chain' : step.status === 'preparing' ? 'reading' : undefined
                 const label = (token: Address) => labelOf(book, token)
@@ -373,6 +378,9 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
                         <span title={whole}>{title}</span>
                       </span>
                       {caption && <span className="dm-flow-wstep-note">{caption}</span>}
+                      {!stale && step.status === 'sent' && step.slow && step.hash && v2TxUrl(state.chainId, step.hash) && (
+                        <a className="dm-flow-wstep-note underline" href={v2TxUrl(state.chainId, step.hash) ?? undefined} target="_blank" rel="noreferrer noopener" data-step-explorer="">{JOURNEY.live.explorer}</a>
+                      )}
                     </span>
                   </li>
                 )

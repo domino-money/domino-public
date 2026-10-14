@@ -362,3 +362,46 @@ test('a send the port refuses before the wallet is asked lets its nonce go: noth
   assert.equal(journal.size, 0);
   assert.equal(t.wasOffered(p), false);
 });
+
+// Added 2026-10-14 (review of C3 on main). On Base and Arbitrum One a receipt is read through the wallet, and that read
+// took the client's one-operation lock. Since C3 a close in a block is followed in the background until final (and a
+// direct exit until its block), through the same kept client the person's next review and send use: "Close 2 positions"
+// or "Continue to next group" pressed while a follow read was out failed with "wallet_action_busy" ("Another request to
+// your wallet is still open"), with nothing open in the wallet. A read of what this client sent, or of a replacement the
+// person names, now has the second source's port: the same window, call bound and wallet checks, reads only, outside
+// the lock.
+test('Base: a receipt read, and a replacement’s, neither takes nor meets the one-operation lock, and asks the wallet only reads', async () => {
+  const base = fakeWallet({ chainId: 8453 });
+  let hold = null, held = false;
+  const wallet = { ...base.wallet, request: async (method, params) => {
+    if (hold && method === 'eth_getTransactionByHash') { held = true; await hold; }
+    return base.wallet.request(method, params);
+  } };
+  const t = createTransactor(wallet, chains.v2Chain(8453), () => 1_000);
+  const p = await prepared(t);
+  const hash = await t.send(p, true);
+  const { from, to, data, value, nonce, chainId } = p.transaction;
+  // The person's press holds the lock (a review, or a send open in the wallet) while a follow reads in the background.
+  let release;
+  const pressed = t.bounded(() => new Promise((resolve) => { release = resolve; }));
+  base.state.asked.length = 0;
+  assert.equal((await t.receipt(hash)).state, 'finalized', 'the follow’s read goes through while the press is open');
+  assert.deepEqual(base.state.asked, ['eth_accounts', 'eth_chainId', 'eth_getTransactionByHash', 'eth_getTransactionReceipt', 'eth_getBlockByNumber', 'eth_getBlockByNumber'], 'reads only, this owner on this chain');
+  const named = await t.replacement(hash, hash, { from, to, data, value, nonce, chainId });
+  assert.deepEqual([named.receipt.state, named.replaced, named.final], ['finalized', false, true], 'a hash the person named is read the same way');
+  release('sent'); assert.equal(await pressed, 'sent');
+  // And the other way: a follow's read out in the wallet, the person's press goes through.
+  let answer;
+  hold = new Promise((resolve) => { answer = resolve; });
+  const background = t.receipt(hash);
+  for (let i = 0; i < 50 && !held; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(held, true, 'the wallet is reading for the follow');
+  assert.equal(await t.bounded(async () => 'pressed'), 'pressed');
+  answer();
+  assert.equal((await background).state, 'finalized');
+  // The wallet's checks still hold for it: another account is no read at all.
+  hold = null;
+  base.state.current = false; base.state.asked.length = 0;
+  await assert.rejects(t.receipt(hash), /wallet_action_expired/);
+  assert.deepEqual(base.state.asked, []);
+});

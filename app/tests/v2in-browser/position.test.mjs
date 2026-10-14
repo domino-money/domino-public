@@ -609,6 +609,94 @@ test('(d) Withdraw in one token: the converted line and its offers; sent, its re
   } finally { await s.close(); }
 });
 
+// Added 2026-10-14 (incident C3: waiting never locks; screens finish at inclusion). A failed receipt read while a step
+// waited for its block locked it with "Sent to your wallet…" although it succeeded, and an Add's second step could not
+// follow; once done, the sheet read the receipt again every 1.5 s until the block was final (15 to 20 minutes on Base).
+// Now a failed read is asked again, the next step follows, and the done sheet asks nothing more. Change range runs the same
+// steps and the same wait (src/v2in/position/run.ts confirm); this suite has no Change range review to drive.
+for (const action of ['increase', 'exit']) test(`(c7) ${action === 'increase' ? 'Add liquidity' : 'Withdraw in one token'}: failed receipt reads while its steps wait never lock them, and the done sheet asks nothing more`, async () => {
+  // Blocks are never final here, as for the first 15 to 20 minutes on Base.
+  const chain = chainOf({ finality: 'lagging' });
+  const reads = [], failed = new Map();
+  // The first two receipt reads of each transaction fail (a node that did not answer, then one that refused).
+  const intercept = (method, params) => {
+    if (method !== 'eth_getTransactionReceipt') return undefined;
+    reads.push(params[0]);
+    const count = (failed.get(params[0]) ?? 0) + 1;
+    failed.set(params[0], count);
+    return count <= 2 ? { error: { code: count === 1 ? -32603 : 429, message: count === 1 ? 'Internal JSON-RPC error.' : 'Too many requests' } } : undefined;
+  };
+  const tokenId = action === 'increase' ? '5100005' : '5100001';
+  const s = await openPositionPage(browser, chain, { hash: `#/positions/base-v4-${tokenId}`, read6: READ6, planner: plannerFor(), intercept });
+  try {
+    const page = s.page;
+    const detail = page.locator(`[data-position-detail][data-position-id="${tokenId}"]`);
+    await detail.waitFor({ timeout: 30_000 });
+    await pick(detail, action);
+    const dialog = page.locator(`[role="dialog"][data-position-dialog="v2-${action}"]`);
+    await dialog.waitFor();
+    if (action === 'increase') {
+      await dialog.getByRole('combobox', { name: 'Pay with' }).click();
+      await page.getByRole('option', { name: 'ETH', exact: true }).click();
+      await dialog.locator(`[data-position-amount="${ZERO}"] input`).fill('0.05');
+    } else await dialog.getByRole('radiogroup', { name: 'You receive' }).getByRole('radio', { name: 'USDC', exact: true }).click();
+    await dialog.locator(`[data-position-continue="${action}"]`).click();
+    await dialog.locator(`[data-position-review="${action}"]`).waitFor({ timeout: 30_000 });
+    await page.evaluate(() => {
+      window.__dominoLocked = false;
+      new MutationObserver(() => { if (document.body.innerText.includes('Sent to your wallet')) window.__dominoLocked = true; }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
+    const steps = action === 'increase' ? ['approve-nft', 'action'] : ['action'];
+    for (const step of steps) await dialog.locator(`[data-position-confirm="${step}"]:not([disabled])`).click({ timeout: 30_000 });
+    const receipt = dialog.locator('[data-position-receipt]');
+    await receipt.waitFor({ timeout: 30_000 });
+    assert.equal(await page.evaluate(() => window.__dominoLocked), false, 'never "Sent to your wallet…": no step locked');
+    assert.equal(chain.sends.length, steps.length, 'each step sent once');
+    assert.ok([...failed.values()].every((count) => count >= 3), 'each step met two failed reads, and was read again');
+    const done = reads.length;
+    await page.waitForTimeout(30_000);
+    assert.equal(reads.length, done, 'the done sheet asks nothing more in 30 s (it read every 1.5 s until the block was final)');
+    assert.equal(await receipt.locator(':is([data-position-receipt-state="included"], [data-position-receipt-state="finalized"])[data-state="done"]').innerText(), 'Confirmed');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-14 (C3 review). On Base the receipt is read through the wallet: a wallet moved to another network after
+// the send failed every read. Before C3 that locked the step; after C3 it waited with nothing to say why. The step now says
+// to switch back, and is confirmed once the wallet is back.
+test('(c8) Withdraw in one token: the wallet moved to another network while the step waits says to switch back, and the step is confirmed once it is back', async () => {
+  const chain = chainOf({ finality: 'lagging' });
+  let moved = false;
+  // The person switches the wallet to Robinhood Chain the moment the wallet has sent the withdrawal.
+  const intercept = async (method, params) => {
+    if (method !== 'eth_sendTransaction' || moved) return undefined;
+    const reply = await chain.request(method, params);
+    moved = true;
+    chain.switchTo(4663);
+    return reply;
+  };
+  const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100001', read6: READ6, planner: plannerFor(), intercept });
+  try {
+    const page = s.page;
+    const detail = page.locator('[data-position-detail][data-position-id="5100001"]');
+    await detail.waitFor({ timeout: 30_000 });
+    await pick(detail, 'exit');
+    const dialog = page.locator('[role="dialog"][data-position-dialog="v2-exit"]');
+    await dialog.waitFor();
+    await dialog.getByRole('radiogroup', { name: 'You receive' }).getByRole('radio', { name: 'USDC', exact: true }).click();
+    await dialog.locator('[data-position-continue="exit"]').click();
+    await dialog.locator('[data-position-review="exit"]').waitFor({ timeout: 30_000 });
+    await dialog.locator('[data-position-confirm="action"]:not([disabled])').click({ timeout: 30_000 });
+    const step = dialog.locator('[data-position-step="action"][data-status="sent"]');
+    await step.getByText('Sent. Switch your wallet back to Base to see it.', { exact: true }).waitFor({ timeout: 30_000 });
+    assert.equal(await dialog.getByText(/Sent to your wallet/).count(), 0, 'never locked');
+    chain.switchTo(8453);
+    const receipt = dialog.locator('[data-position-receipt]');
+    await receipt.waitFor({ timeout: 60_000 });
+    assert.equal(chain.sends.length, 1, 'sent once');
+    assert.equal(await receipt.locator(':is([data-position-receipt-state="included"], [data-position-receipt-state="finalized"])[data-state="done"]').innerText(), 'Confirmed');
+  } finally { await s.close(); }
+});
+
 test('(e) under automation: the armed root blocks Change range (the menu says why) and its exit names the reserves that stay, waiting for the pause warning; a successor is the vault\'s; a hooked pool is not supported', async () => {
   const chain = chainOf();
   const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100002', read6: READ6, planner: plannerFor() });

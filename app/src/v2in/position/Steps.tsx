@@ -1,5 +1,6 @@
 import { Button, StepMarker } from '../../components/ui'
 import { v2Chain } from '../../v2/chains'
+import { v2TxUrl } from '../../v2/explorers'
 import { EXACT_FRACTION, SHOWN_FRACTION } from '../../v2/plan/present'
 import type { ActionName, Address, V2ChainId } from '../../v2/types'
 import { COPY } from './copy'
@@ -55,13 +56,18 @@ export function StepsList({ chainId, view, action, book, onCancelSignature, onKe
           const state = i < view.current || step.status === 'included' || step.status === 'finalized' ? 'done' : i === view.current ? 'current' : 'upcoming'
           const label = stepLabel(step, action, (token, raw) => amountText(book, token, raw, SHOWN_FRACTION, 'up'), (token) => labelOf(book, token), permit2)
           const whole = stepLabel(step, action, (token, raw) => amountText(book, token, raw, EXACT_FRACTION), (token) => labelOf(book, token), permit2)
-          const status = STATUS[step.status]
+          // Added 2026-10-14 (incident C3: waiting never locks): a step sent 20 s ago whose block is not seen yet (./run.ts);
+          // before it (C3 review), a sent step whose reads fail on the wallet's network or account says to switch back.
+          const status = step.status === 'sent' && step.away ? (step.away === 'chain' ? COPY.wallet.walletAway(v2Chain(chainId).name) : COPY.wallet.accountAway)
+            : step.status === 'sent' && step.slow ? COPY.wallet.stillWaiting : STATUS[step.status]
+          const explorer = step.status === 'sent' && step.slow && step.hash ? v2TxUrl(chainId, step.hash) : null
           return (
             <li key={`${step.kind}-${i}`} data-position-step={step.kind} data-status={step.status} data-step-state={state === 'done' ? 'done' : state === 'current' ? ROW[step.status] : undefined}>
               <StepMarker index={i + 1} state={state} label={`${label}, ${state}`} />
               <div className="dm-flow-wstep-body">
                 <span className="dm-flow-wstep-title" title={whole}>{label}</span>
                 {status && <span className="dm-flow-wstep-note">{status}</span>}
+                {explorer && <a className="dm-flow-wstep-note underline" href={explorer} target="_blank" rel="noreferrer noopener" data-step-explorer="">{COPY.wallet.explorer}</a>}
               </div>
             </li>
           )

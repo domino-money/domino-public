@@ -110,6 +110,12 @@ export const EDGE_LOG_LIMITS = { one: 5_000_000, many: 5_000_000 } as const
 
 export type Purpose = 'owned' | 'state' | 'ledger' | 'automation' | 'record' | 'simulate' | 'confirmation'
 export type SourceHealth = 'ok' | 'wrong_chain' | 'refused' | 'down'
+/**
+ * Which of the transport's own limits answered a call with a 429 (2026-10-14, incident C4: the route names it in its
+ * answer, chainRoutes.ts Limiter): the isolate resting after the node's 429/503 or a time-out (LOCAL_RPC_REST), its own
+ * pace of POSTs (LOCAL_RPC_RATE), or a wide log scan's turn, the isolate's or the site's (LOCAL_RPC_WIDE).
+ */
+export type TransportLimit = 'rest' | 'pace' | 'wide'
 export interface LocalRpc {
   /** OwnedDeps/FeesDeps.fetch: `input` must be functions/_lib/owned.ts RPC_URL (the chain code's fixed name). */
   fetch(input: string, init: RequestInit): Promise<Response>
@@ -119,6 +125,14 @@ export interface LocalRpc {
   health(): SourceHealth
   /** Whether a call of this invocation was refused for its visitor's spent share of the node (LocalRpcOptions.reserve). */
   refused(): boolean
+  /** The limit that last answered a call of this invocation with a 429; null when none did. It only reports. */
+  limited(): TransportLimit | null
+  /**
+   * Whether the node answered a call of this invocation with a JSON-RPC error of its own, in a 200 reply. The chain code
+   * reads some of them as "busy" by their words (owned.ts classifyRpcError); none is a limit of the transport's, and the
+   * isolate does not rest for one. It only reports.
+   */
+  erred(): boolean
 }
 
 /**
@@ -191,7 +205,8 @@ export function localRpcEndpoint(env: { LOCAL_RPC_URL?: string }): string | null
 // The isolate's memory of the node
 // ---------------------------------------------------------------------------
 
-type Verdict = { kind: 'trusted' } | { kind: 'wrong' } | { kind: 'reply'; status: number; retryAfter: string | null } | { kind: 'throw'; error: unknown }
+/** `limit` (2026-10-14): the limit the check's own POST met, for every invocation that shares the check to report. */
+type Verdict = { kind: 'trusted' } | { kind: 'wrong' } | { kind: 'reply'; status: number; retryAfter: string | null; limit: TransportLimit | null } | { kind: 'throw'; error: unknown }
 
 /**
  * The chain id check on its way, and when it began (2026-10-02, review finding 3): shared by every invocation that needs
@@ -458,6 +473,17 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
   const event = (name: string, extra: Record<string, number> = {}) => log(eventLine(name, extra))
   const spent = { posts: 0, items: 0, ms: 0 }
   let refusals = 0
+  /**
+   * 2026-10-14 (incident C4): the limit that last answered a call of this invocation with a 429 (limited()), noted where
+   * each such 429 is made. It only reports: no wait, count or constant reads it.
+   */
+  let limit: TransportLimit | null = null
+  const limitedBy = (by: TransportLimit, response: Response): Response => {
+    limit = by
+    return response
+  }
+  /** Whether the node answered one of this invocation's calls with a JSON-RPC error of its own (erred()). */
+  let nodeErred = false
   /** The log windows this invocation's node answered, by their exact call: never asked again (finding 3). */
   const answered = new Map<string, Reply>()
   const windowKey = (item: Item) => `${item.method}|${JSON.stringify(item.params)}`
@@ -483,7 +509,7 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
     const ms = Math.min(LOCAL_RPC_REST.maxMs, Math.max(staged, asked ?? 0))
     memory.restUntil = now() + ms
     event('local_rpc_rest', { ms })
-    return reply429(ms / 1000)
+    return limitedBy('rest', reply429(ms / 1000))
   }
 
   /**
@@ -497,13 +523,13 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
     if (memory.wrongUntil > at) throw new TypeError('local_rpc_wrong_chain')
     if (memory.refusedUntil > at) return { kind: 'response', response: reply502() }
     if (memory.downUntil > at) throw new TypeError('local_rpc_down')
-    if (memory.restUntil > at) return { kind: 'response', response: reply429((memory.restUntil - at) / 1000) }
+    if (memory.restUntil > at) return { kind: 'response', response: limitedBy('rest', reply429((memory.restUntil - at) / 1000)) }
     // The bucket (GCRA): a POST may go once the burst's tolerance allows; one that would wait longer than waitMs is a 429.
     const interval = 1000 / LOCAL_RPC_RATE.perSecond
     const tolerance = (LOCAL_RPC_RATE.burst - 1) * interval
     const tat = Math.max(memory.tat, at)
     const wait = Math.max(0, tat - tolerance - at)
-    if (wait > LOCAL_RPC_RATE.waitMs) return { kind: 'response', response: reply429(2) }
+    if (wait > LOCAL_RPC_RATE.waitMs) return { kind: 'response', response: limitedBy('pace', reply429(2)) }
     memory.tat = tat + interval
     if (wait > 0) await sleep(wait)
     if (signal?.aborted) throw signal.reason ?? new DOMException('The read was dropped', 'AbortError')
@@ -588,15 +614,16 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
     } catch (error) {
       return { kind: 'throw', error }
     }
-    if (posted.kind === 'response') return { kind: 'reply', status: posted.response.status, retryAfter: posted.response.headers.get('Retry-After') }
-    if (posted.kind === 'oversize') return { kind: 'reply', status: 502, retryAfter: null }
+    // A 429 of the check's POST is always one of the transport's own limits, which post() has just noted.
+    if (posted.kind === 'response') return { kind: 'reply', status: posted.response.status, retryAfter: posted.response.headers.get('Retry-After'), limit: posted.response.status === 429 ? limit : null }
+    if (posted.kind === 'oversize') return { kind: 'reply', status: 502, retryAfter: null, limit: null }
     let value: unknown
     try {
       value = JSON.parse(posted.text)
     } catch {
-      return { kind: 'reply', status: 502, retryAfter: null }
+      return { kind: 'reply', status: 502, retryAfter: null, limit: null }
     }
-    if (!isObject(value) || typeof value.result !== 'string') return { kind: 'reply', status: 502, retryAfter: null }
+    if (!isObject(value) || typeof value.result !== 'string') return { kind: 'reply', status: 502, retryAfter: null, limit: null }
     if (value.result.toLowerCase() === CHAIN_ID_HEX) {
       memory.trustedUntil = now() + LOCAL_RPC_TRUST_MS
       return { kind: 'trusted' }
@@ -651,6 +678,8 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
     if (verdict.kind === 'trusted') return null
     if (verdict.kind === 'wrong') throw new TypeError('local_rpc_wrong_chain')
     if (verdict.kind === 'throw') throw verdict.error
+    // The check may be another invocation's: the limit it met is this call's too.
+    if (verdict.limit) limit = verdict.limit
     return new Response(null, { status: verdict.status, headers: verdict.retryAfter ? { 'Retry-After': verdict.retryAfter } : {} })
   }
 
@@ -678,7 +707,7 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
     if (running && !(await outlast(before.done, LOCAL_RPC_WIDE.waitMs))) {
       // Refused while the call before it still runs: the one after it waits for that call, not for this refusal.
       void outlast(before.done, Math.max(0, before.started + wideLife - now())).then(release, release)
-      return reply429(LOCAL_RPC_WIDE.waitMs / 1000)
+      return limitedBy('wide', reply429(LOCAL_RPC_WIDE.waitMs / 1000))
     }
     // The bucket (GCRA, in blocks): a call may go once the burst holds its blocks, or, wider than the burst, once it is
     // full; it then owes the rest.
@@ -688,7 +717,7 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
     const wait = Math.max(0, tat - at - Math.max(0, LOCAL_RPC_WIDE.burstBlocks - blocks) / perMs)
     if (wait > LOCAL_RPC_WIDE.waitMs - (at - started)) {
       release()
-      return reply429(wait / 1000)
+      return limitedBy('wide', reply429(wait / 1000))
     }
     memory.wideTat = tat + blocks / perMs
     if (wait > 0) await sleep(wait)
@@ -793,7 +822,7 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
       // (wideGate.ts), within what is left of the wait; refused, nothing is sent.
       if (turn && options.siteGate) {
         const granted = await options.siteGate.take(blocks, LOCAL_RPC_WIDE.waitMs - (now() - waitedFrom))
-        if ('retryAfterMs' in granted) return reply429(granted.retryAfterMs / 1000)
+        if ('retryAfterMs' in granted) return limitedBy('wide', reply429(granted.retryAfterMs / 1000))
         site = granted.release
         if (granted.waitMs > 0) await sleep(granted.waitMs)
         if (signal?.aborted) throw signal.reason ?? new DOMException('The read was dropped', 'AbortError')
@@ -843,8 +872,10 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
         for (const id of sent) {
           const reply = got.get(id) as Reply
           replies[id] = reply
-          if ('error' in reply) failedLogical.add(items[id].logical)
-          else if (items[id].logs) answered.set(windowKey(items[id]), reply)
+          if ('error' in reply) {
+            failedLogical.add(items[id].logical)
+            nodeErred = true
+          } else if (items[id].logs) answered.set(windowKey(items[id]), reply)
         }
       }
     } finally {
@@ -880,5 +911,7 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
     spent: () => ({ ...spent }),
     health,
     refused: () => refusals > 0,
+    limited: () => limit,
+    erred: () => nodeErred,
   }
 }

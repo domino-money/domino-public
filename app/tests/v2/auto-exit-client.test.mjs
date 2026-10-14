@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import { decodeFunctionData, hashTypedData } from 'viem';
 import { ABI, MANDATE_TYPES, OTHER, OWNER, ZERO, createVaultChain, mandateHash, vaultContracts, walletOf } from '../support/v2-vault-chain.mjs';
 import { FAKE, MANY, TSLA, USDG, WETH } from './support/plans.mjs';
+import { confirmationQueue, edgeReaderOf } from './support/queue.mjs';
 
 const require = createRequire(import.meta.url);
 const AUTO_EXIT_JS = require.resolve('../../.test-build/app/src/finance/v2/autoExit.js');
@@ -291,6 +292,32 @@ test('a registration used at the finalized block lets the journal go when the st
   await step(context.client, review, 1);
   await assert.rejects(context.client.prepareStep(review, 1, GAS), /mandate_nonce_used/);
   assert.deepEqual(context.client.heldNonces(), []);
+});
+
+// Added 2026-10-14 (incident C3: screens finish at inclusion). The signature journal lets a registered order's nonce go
+// only at a final receipt (autoExit.ts receipt). No screen waits for that any more: the automation step registers that
+// read with the page's confirmation queue (v2in/automate/steps.tsx), which runs it once the block is final.
+test('C3: a registration only in a block keeps its nonce held; the confirmation queue lets it go once its block is final', async () => {
+  const context = await setup({ module: FAKE.autoExit });
+  const finality = { final: false };
+  context.wallet.confirmation = edgeReaderOf(context.chain, finality);
+  const review = await context.client.reviewMandate(golden(context.vault));
+  await context.client.signMandate(review);
+  const { hash, receipt } = await step(context.client, review, 1);
+  assert.equal(receipt.state, 'included');
+  assert.deepEqual(context.client.heldNonces().map((entry) => entry.nonce), [review.mandate.nonce]);
+  const queue = confirmationQueue(edgeReaderOf(context.chain, finality));
+  queue.store.record({ chainId: 4663, wallet: OWNER, tokenIds: [], vault: context.vault, receipt, onFinalized: async () => (await context.client.receipt(hash)).state === 'finalized' });
+  await queue.run(30 * 60_000);
+  assert.equal(queue.calls.length, 0, 'nothing is read before the chain’s finalized mark reaches the block');
+  queue.mark(4663, Number(receipt.blockNumber));
+  await queue.run(77_000);
+  assert.equal(queue.calls.length, 1, 'one read, after the index had its turn');
+  assert.deepEqual(context.client.heldNonces().map((entry) => entry.nonce), [review.mandate.nonce], 'not final: still held');
+  finality.final = true;
+  await queue.run(60_000);
+  assert.equal(queue.store.get()[0].phase, 'finalized');
+  assert.deepEqual(context.client.heldNonces(), [], 'final: let go by the queue’s settlement');
 });
 
 test('a refusal at signing (4001) forgets the nonce; any other failure keeps it held', async () => {

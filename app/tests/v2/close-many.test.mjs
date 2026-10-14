@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { decodeFunctionData, encodeFunctionData, parseAbi } from 'viem';
@@ -121,6 +122,62 @@ test('reload recovery proves exact calldata, owner, nonce and canonical receipt 
   const waiting = direct.createDirectClient({ ...walletOf(chain), request: async (method, params) => method === 'eth_getTransactionReceipt' ? null : walletOf(chain).request(method, params) }, v2Chain(chain.chainId), () => NOW, chain.codeHashes);
   assert.equal((await waiting.recoverCloseMany(hint)).receipt.state, 'pending');
   assert.equal(chain.sends.length, 1, 'recovery has no sending authority');
+});
+
+// Added 2026-10-14 (review of C3 on main). A close left in a block by an earlier page is held again until final through
+// the kept client of that network, the one the person's next review and send use (v2in/lists/BulkClosePositions.tsx
+// proofOf). Each of its background reads also read the positions again for a description that the hold throws away,
+// inside the client's one-operation lock: the person's "Continue to next group" or "Close 2 positions" pressed then
+// failed with "wallet_action_busy". The settlement's proof now asks for no description, and its receipt read is outside
+// the lock (finance/v2/transact.ts).
+test('Base: a close’s settlement proof reads its receipt only, and the person’s review goes through while it is out', async () => {
+  const { chain, client } = setup({ chainId: 8453 });
+  const prepared = await client.prepareCloseMany(4, [101n, 102n], 50, GAS);
+  const hash = await client.sendCloseMany(prepared, true);
+  const hint = { dex: 4, tokenIds: [101n, 102n], data: prepared.step.transaction.data, nonce: prepared.step.transaction.nonce, hash };
+  const inner = walletOf(chain), asked = [];
+  let hold = null, held = false;
+  const wallet = { ...inner, request: async (method, params) => {
+    asked.push(method);
+    if (hold && method === 'eth_getTransactionReceipt') { held = true; await hold; }
+    return inner.request(method, params);
+  } };
+  const kept = direct.createDirectClient(wallet, v2Chain(8453), () => NOW, chain.codeHashes);
+  const proof = await kept.recoverCloseMany(hint, false);
+  assert.deepEqual([proof.receipt.state, proof.description], ['finalized', null]);
+  assert.equal(asked.includes('eth_call'), false, 'no description read: the hold never uses one');
+  assert.ok((await kept.recoverCloseMany(hint)).description, 'the dialog’s own read still describes the close');
+  let answer;
+  hold = new Promise((resolve) => { answer = resolve; });
+  const background = kept.recoverCloseMany(hint, false);
+  for (let i = 0; i < 50 && !held; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(held, true, 'the proof is reading in the background');
+  assert.equal((await kept.inspect(4, 101n)).tokenId, 101n, 'the person’s read goes through while it is out');
+  answer();
+  assert.equal((await background).receipt.state, 'finalized');
+});
+
+// Added 2026-10-14 (second review of C3 on main): the same proof as the page builds it (src/v2in/lists/closeHold.ts
+// closeProof, which BulkClosePositions.tsx hands the close hold), over the real kept client. The `false` lived in the
+// page's .tsx, which no test ran: dropping it passed every test and brought the description read back under the lock.
+test('Base: the close hold’s proof as the page builds it reads the receipt only, over the real client', async () => {
+  const ts = require('typescript'), mod = { exports: {} };
+  new Function('require', 'module', 'exports', ts.transpileModule(readFileSync(new URL('../../src/v2in/lists/closeHold.ts', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(() => ({}), mod, mod.exports);
+  const { chain, client } = setup({ chainId: 8453 });
+  const prepared = await client.prepareCloseMany(4, [101n, 102n], 50, GAS);
+  const hash = await client.sendCloseMany(prepared, true);
+  const row = { wallet: chain.owner, chainId: 8453, positionManager: prepared.step.transaction.to, dex: 4, tokenIds: ['101', '102'],
+    data: prepared.step.transaction.data, nonce: prepared.step.transaction.nonce, hash };
+  const inner = walletOf(chain), asked = [];
+  const wallet = { ...inner, request: async (method, params) => { asked.push(method); return inner.request(method, params); } };
+  const kept = direct.createDirectClient(wallet, v2Chain(8453), () => NOW, chain.codeHashes);
+  // A reload's re-hold (BulkClosePositions.tsx prepare): the recovery's read of the close's own hash.
+  const proof = await mod.exports.closeProof(row, hash, hash, null, kept.recoverCloseMany)();
+  assert.deepEqual([proof.receipt.state, proof.replaced, proof.final], ['finalized', false, false]);
+  assert.ok(asked.includes('eth_getTransactionReceipt'));
+  assert.equal(asked.includes('eth_call'), false, 'no description read: the positions are not read under the lock');
+  assert.equal(chain.sends.length, 1, 'nothing sent');
 });
 
 test('maximum two cold Base NFTs with foreign approvals, vault subscribers, native delegate and automatic gas fit the unchanged 48-call operation budget', async () => {

@@ -48,6 +48,9 @@ test('each route posts JSON to its own fixed path, with this site’s cookies, n
     [(o) => routes.postSimulate({ owner: OWNER, calls: [{ to: `0x${'01'.repeat(20)}`, data: '0x', value: '0x0', extra: 1 }] }, o), '/api/chain/v1/simulate', { owner: OWNER, calls: [{ to: `0x${'01'.repeat(20)}`, data: '0x', value: '0x0' }] }],
     [(o) => routes.postRoute('confirmation', { hash: `0x${'ab'.repeat(32)}` }, o), '/api/chain/v1/confirmation', { hash: `0x${'ab'.repeat(32)}` }],
     [(o) => routes.postRoute('confirmation', { finality: true }, o), '/api/chain/v1/confirmation', { finality: true }],
+    // 2026-10-14 (incident C4): the question's second shape, which names its chain, to the same fixed path.
+    [(o) => routes.postRoute('confirmation', { v: 2, chainId: 4663, hash: `0x${'ab'.repeat(32)}` }, o), '/api/chain/v1/confirmation', { v: 2, chainId: 4663, hash: `0x${'ab'.repeat(32)}` }],
+    [(o) => routes.postRoute('confirmation', { v: 2, chainId: 4663, finality: true }, o), '/api/chain/v1/confirmation', { v: 2, chainId: 4663, finality: true }],
   ];
   for (const [ask, path, body] of cases) {
     const { calls, fetch } = recorder(() => json({ v: 1, result: [] }));

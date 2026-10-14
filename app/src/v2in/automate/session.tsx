@@ -6,6 +6,8 @@ import { v2Chain } from '../../v2/chains'
 import type { Address, Hex, V2ChainId, V2Contracts } from '../../v2/types'
 import { switchToChain, v2SwitchNotice } from '../../wallet/port'
 import { simulateOnChain } from '../../lib/walletReads'
+import { v2TxUrl } from '../../v2/explorers'
+import { RECEIPT_STILL_WAITING_MS, receiptSettled } from '../receiptWait'
 
 /**
  * The integrated automation screens' one way to the wallet, used only where a service's gate is `live` (src/v2/gate.ts:
@@ -79,7 +81,8 @@ export async function openAutomation(chainId: V2ChainId, contracts: V2Contracts)
 export type StepPhase =
   | { phase: 'idle' }
   | { phase: 'working'; note: 'checking' | 'wallet' | 'signing' }
-  | { phase: 'sent'; hash?: Hex; batchId?: string }
+  /** `slow`: its block not seen 20 s after it was sent (C3), with its explorer page when it has a hash. */
+  | { phase: 'sent'; hash?: Hex; batchId?: string; slow?: true; href?: string }
   | { phase: 'included'; hash?: Hex; batchId?: string }
   | { phase: 'finalized'; hash?: Hex; batchId?: string }
   | { phase: 'signed' }
@@ -98,9 +101,13 @@ export interface TxClient {
 
 export type IncludedReceipt = Extract<V2Receipt, { blockHash: Hex }> & { state: 'included' | 'finalized'; events: readonly V2Event[] }
 
-/** The clients' codes that say the transaction read back is not the one reviewed: waiting changes nothing. */
-const SETTLED = new Set(['receipt_not_from_this_review', 'transaction_does_not_match_review', 'invalid_receipt'])
-const settled = (error: unknown) => error instanceof Error && SETTLED.has(error.message)
+/**
+ * The clients' codes that say the transaction read back is not the one reviewed: waiting changes nothing. Changed on
+ * purpose 2026-10-14 (incident C3): the list lives in ../receiptWait.ts, where New position's and the position page's
+ * waits read it too (they ended on any other failure as well, and locked the step); `receipt_duplicate_action` joins
+ * it, which the batch wait below already ended on.
+ */
+const settled = receiptSettled
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 /** How often a sent step's receipt is read: quickly at first, then every few seconds. */
 const beat = (attempt: number) => Math.min(800 + attempt * 400, 4000)
@@ -152,8 +159,12 @@ export async function sendStep(session: AutomationSession, client: TxClient, pre
 export async function resumeStep(session: AutomationSession, client: TxClient, hash: Hex, report: (phase: StepPhase) => void): Promise<{ hash: Hex; receipt: IncludedReceipt }> {
   report({ phase: 'sent', hash })
   const until = Date.now() + 600_000
+  const since = Date.now()
+  let slow = false
   for (let attempt = 0; ; attempt++) {
     await sleep(beat(attempt))
+    // Added 2026-10-14 (incident C3): sent 20 s ago and not seen in a block yet: the step says so, with its explorer page.
+    if (!slow && Date.now() - since >= RECEIPT_STILL_WAITING_MS) { slow = true; report({ phase: 'sent', hash, slow: true, href: v2TxUrl(session.chainId, hash) ?? undefined }) }
     // Once sent, this read continues after the sheet closes. It never offers a next step.
     if (Date.now() >= until) throw new SentStepError('receipt_unknown', hash)
     const availability = receiptAvailability(session)
@@ -214,8 +225,12 @@ export async function sendBatchStep<B>(session: AutomationSession, batch: BatchC
 export async function resumeBatchStep<B>(session: AutomationSession, batch: BatchClient<B>, batchId: string, report: (phase: StepPhase) => void): Promise<{ batchId: string; receipt: IncludedReceipt }> {
   report({ phase: 'sent', batchId })
   const until = Date.now() + 600_000
+  const since = Date.now()
+  let slow = false
   for (let attempt = 0; ; attempt++) {
     await sleep(beat(attempt))
+    // Added 2026-10-14 (incident C3): sent 20 s ago and not seen in a block yet: the step says so (a batch has no hash to link).
+    if (!slow && Date.now() - since >= RECEIPT_STILL_WAITING_MS) { slow = true; report({ phase: 'sent', batchId, slow: true }) }
     if (Date.now() >= until) throw new SentBatchError('receipt_unknown', batchId)
     const availability = receiptAvailability(session)
     if (availability === 'gone') throw new SentBatchError('receipt_unknown', batchId)

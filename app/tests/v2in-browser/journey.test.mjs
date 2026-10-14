@@ -1769,6 +1769,84 @@ test('(w2) a step sent whose receipt can’t be read: Create position stays lock
   } finally { await s.close(); }
 });
 
+/**
+ * Added 2026-10-14 (incident C3: waiting never locks). The confirmation route as a test makes it refuse: by the order each
+ * transaction is first asked about (0 the approval, 1 the create), a list of answers taken one per question, or a
+ * function of the question (its asks so far and when it was first asked); `hang` answers nothing for 12 s (the page gives
+ * up at 10 s). Past the list, or when the function says nothing, the real route answers.
+ */
+function refusingConfirmation(plan, seen) {
+  return async (request, url) => {
+    if (url.pathname !== '/api/chain/v1/confirmation') return undefined;
+    const body = await request.clone().json().catch(() => null);
+    if (!body?.hash) return undefined;
+    if (!seen.has(body.hash)) seen.set(body.hash, { index: seen.size, asked: 0, refused: 0, since: Date.now() });
+    const entry = seen.get(body.hash);
+    entry.asked += 1;
+    const step = plan[entry.index];
+    const answer = typeof step === 'function' ? step(entry) : step?.[entry.asked - 1];
+    if (!answer) return undefined;
+    entry.refused += 1;
+    if (answer === 'hang') return new Promise((done) => setTimeout(() => done(Response.json({ v: 1, error: 'rpc_unavailable' }, { status: 502 })), 12_000));
+    return Response.json({ v: 1, error: answer.error }, { status: answer.status, headers: answer.retryAfter ? { 'Retry-After': String(answer.retryAfter) } : {} });
+  };
+}
+
+// Added 2026-10-14 (incident C3: waiting never locks; the owner's design §2.1, decision D2). A refused, lost or unanswered
+// confirmation read while his approval and his create wait for their blocks locked the step with "Sent to your wallet…",
+// although both succeeded, and the second step could not follow. Now a failed read is asked again; after two missed reads
+// his own wallet is asked too; after 20 s the step says it is sent and still waiting, with its explorer link; and the step
+// goes on by itself when any source answers. Nothing is sent twice.
+for (const run of ['refused, lost and unanswered', 'a resting node, then a route that refuses while the wallet cannot read']) test(`(c3) his journey on Robinhood Chain with the confirmation route ${run}: never "Sent to your wallet…", both steps confirmed, his created view`, async () => {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const seen = new Map();
+  const second = run.startsWith('refused');
+  const plan = second
+    // The approval: a visitor refusal (429, 1 s), then a failure that names no wait (502). The create: nothing for 12 s.
+    ? [[{ status: 429, error: 'rate_limited', retryAfter: 1 }, { status: 502, error: 'rpc_unavailable' }], ['hang']]
+    // The approval: the node away (503, 60 s). The create: refused (429, 2 s) for its first 24 s.
+    : [[{ status: 503, error: 'source_unavailable', retryAfter: 60 }], (entry) => (Date.now() - entry.since < 24_000 ? { status: 429, error: 'rate_limited', retryAfter: 2 } : undefined)];
+  // In the second run the wallet cannot read the create's receipt while the route refuses it: only the route ends that wait.
+  const blocked = (hash) => !second && seen.get(hash)?.index === 1 && Date.now() - seen.get(hash).since < 24_000;
+  const walletReads = [];
+  const intercept = (method, params) => {
+    if (method === 'eth_getTransactionReceipt') walletReads.push(params[0]);
+    return method === 'eth_getTransactionReceipt' && blocked(params[0]) ? { error: { code: -32603, message: 'Internal JSON-RPC error.' } } : undefined;
+  };
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]), intercept,
+    routes: [refusingConfirmation(plan, seen), (request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await toReview(page);
+    const reviewed = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]');
+    await reviewed.locator('[data-wallet-step="approve"][data-step-status="ready"]').waitFor({ timeout: 30_000 });
+    await page.evaluate(() => {
+      window.__dominoLocked = false;
+      new MutationObserver(() => { if (document.body.innerText.includes('Sent to your wallet')) window.__dominoLocked = true; }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
+    await page.locator('[data-create-position="live"]:not([disabled])').click();
+    if (!second) {
+      // The create still not seen after 20 s: said so, with its explorer page, and read on.
+      const note = reviewed.locator('[data-wallet-step="action"][data-step-status="sent"] .dm-flow-wstep-note', { hasText: 'Sent. Still waiting to see it on the network.' });
+      await note.waitFor({ timeout: 40_000 });
+      const link = reviewed.locator('[data-wallet-step="action"] a[data-step-explorer]');
+      assert.match(await link.getAttribute('href'), /\/tx\/0x[0-9a-f]{64}$/);
+      assert.equal(await link.innerText(), 'View on the explorer');
+    }
+    await page.locator('[data-created-position]').waitFor({ timeout: 90_000 });
+    assert.equal(await page.evaluate(() => window.__dominoLocked), false, 'never "Sent to your wallet…": no step locked');
+    assert.equal(chain.sends.length, 2, 'the approval and the create, each once');
+    const [approval, create] = [...seen.values()].sort((a, b) => a.index - b.index);
+    assert.ok(approval.refused >= 1 && create.refused >= 1, 'each wait met the refusals');
+    if (second) assert.ok(walletReads.length >= 1, 'two missed reads asked the wallet, read-only');
+    else assert.ok(create.asked > create.refused, 'the create came through the route once it answered');
+  } finally { await s.close(); }
+});
+
 // Added 2026-10-06 (the owner's point 3: Base and Arbitrum One came "dry", "like Robinhood Chain"). VIRTUAL on Base, as DEX
 // Screener answered for it that day: Uniswap v4 pools by their id, a v3 pool by its address, another exchange beside them,
 // and the token's image. chain-pools lists four pools; a v3 and a v4 pool share a pair and a fee.
