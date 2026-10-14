@@ -199,3 +199,14 @@ test('the owner\'s decisions, one named constant each', () => {
   assert.deepEqual(Object.keys(copy.COPY.page).filter((key) => /test|example/i.test(key)), []);
   assert.equal('PREVIEW_EXAMPLE_PLANS' in constants, false);
 });
+
+// Added 2026-10-14 (incident C1; the owner's decision D0): in a block with success is "Confirmed", said at once, in the
+// action's dialog (./Steps.tsx, ./Receipt.tsx) and on New position's Review and created view (../journey/ReviewStage.tsx),
+// which say one word for one state. It was "Included", then "Finalized" some 16 minutes later; finality is a line in a
+// receipt's Details now (../lists/words.ts), so the word never changes after the check.
+test('a step or a receipt that is in a block says "Confirmed", and keeps that word when its block is final', () => {
+  const { JOURNEY } = build('v2in/journey/copy');
+  for (const words of [copy.COPY.wallet, JOURNEY.live]) assert.deepEqual([words.included, words.finalized], ['Confirmed', 'Confirmed']);
+  assert.equal(copy.COPY.wallet.pendingNetwork, 'Waiting for the network', 'sent, not in a block yet: unchanged');
+  assert.equal(JOURNEY.live.sent, 'Waiting for the network');
+});

@@ -40,6 +40,8 @@ export function stepsDone(view: RunView): boolean {
  * whose done steps turn green with a check and whose step under way turns its arc. Changed on purpose 2026-10-06 (the
  * owner's point 4: little text): no network fee on each step, the review above says it once (./Review.tsx); no line
  * under a step until it is under way; an amount to allow rounded up (as the wallet asks for it), every digit in its title.
+ * Changed on purpose 2026-10-14 (incident C1; the owner's decision D0): a step that is in a block says "Confirmed", and
+ * keeps that word when its block is final (./copy.ts wallet.included and wallet.finalized, the receipt's own words).
  */
 export function StepsList({ chainId, view, action, book, onCancelSignature, onKeepSignature, onRejected }: { chainId: V2ChainId; view: RunView; action: ActionName; book: TokenBook; onCancelSignature: () => void; onKeepSignature: () => void; onRejected: () => void }) {
   const reviewed = view.reviewed

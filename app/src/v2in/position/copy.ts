@@ -134,8 +134,13 @@ export const COPY = {
     waiting: 'Waiting',
     inWallet: 'Confirm in your wallet…',
     pendingNetwork: 'Waiting for the network',
-    included: 'Included',
-    finalized: 'Finalized',
+    // Changed on purpose 2026-10-14 (incident C1; the owner's decision D0): "Confirmed" means in a block with success, and
+    // it is said at once. It was "Included", then "Finalized" once the chain's finalized block passed it (about 16 minutes
+    // on Robinhood Chain), which read as a transaction still under way. Both states say the one word, under a step
+    // (./Steps.tsx) and at the head of the receipt (./Receipt.tsx); finality is a line in a receipt's Details
+    // (../lists/words.ts).
+    included: 'Confirmed',
+    finalized: 'Confirmed',
     done: 'Done',
     oneSignatureAll: 'One confirmation for every step: they run together or not at all.',
     permitReverted: 'The transaction failed on the network, so nothing moved. The signature you gave for it can still be used until it expires: cancel it before a new quote.',

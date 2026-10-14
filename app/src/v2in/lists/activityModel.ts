@@ -6,8 +6,15 @@ import { compareChronology, logIndexOf, type Chronology } from './chronology'
 import { localCloseKey, publicCloseProves, type LocalCloseReceipt } from './localReceipts'
 import type { ConfirmedOperation, OperationReceipt, OperationScope } from '../../lib/confirmedOperations'
 
-/** read-v6 has already validated finality against this chain's finalized snapshot. Reuse that evidence after
- * navigation/reload without another RPC or inventing the NFT effects of a historical transaction.
+/** read-v6 has already validated finality against this chain's finalized snapshot. Reuse that evidence for an operation
+ * this browser sent, without another RPC or inventing the NFT effects of a historical transaction.
+ *
+ * Changed on purpose 2026-10-14 (incident C2: the 429 on /api/chain/v1/confirmation). An unfinalized receipt the queue
+ * did not know was handed to it as a new operation, up to 32 per answer, and on Robinhood Chain the queue then read each
+ * from the node until its block was final: opening Receipts or a position was enough to start it, with nothing sent from
+ * this browser. A receipt the index lists is confirmed because the index holds it and final when its own `tx.finality`
+ * says so (model.ts receiptOf); it needs nothing from the queue. Only the exact inclusion the financial client already
+ * checked is completed here: the same wallet, transaction, block number and block hash, once the index calls it final.
  */
 export function indexedOperationEvidence(wallet: string, answer: Pick<ActivityResponse, 'wallet' | 'items'>, known: readonly ConfirmedOperation[]) {
   const owner = wallet.toLowerCase()
@@ -20,13 +27,10 @@ export function indexedOperationEvidence(wallet: string, answer: Pick<ActivityRe
     if (seen.has(identity)) continue
     seen.add(identity)
     const old = known.find(operation => operation.chainId === item.chainId && operation.hash === hash)
-    if (old) {
-      if (old.wallet !== owner || old.blockHash !== blockHash || old.block !== item.tx.snapshot.number
-        || old.phase !== 'included' || item.tx.finality !== 'finalized') continue
-    } else if (item.tx.finality !== 'unfinalized') continue
+    if (!old || old.wallet !== owner || old.blockHash !== blockHash || old.block !== item.tx.snapshot.number
+      || old.phase !== 'included' || item.tx.finality !== 'finalized') continue
     result.push({ indexed: true, chainId: item.chainId, wallet: owner, tokenIds: [], receipt: {
-      transactionHash: hash, blockHash, blockNumber: BigInt(item.tx.snapshot.number),
-      state: item.tx.finality === 'finalized' ? 'finalized' : 'included',
+      transactionHash: hash, blockHash, blockNumber: BigInt(item.tx.snapshot.number), state: 'finalized',
     } })
     if (result.length >= 32) break
   }

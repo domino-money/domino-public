@@ -1097,6 +1097,59 @@ test('compact Open and Closed rows resolve real token artwork by identity and re
   } finally { await s.close(); }
 });
 
+// Added 2026-10-14 (incident C1; the owner's decision D0): "Confirmed" is in a block of the chain with success, and the
+// row carries its check from that moment, on every network. It waited for the chain's finalized block before, under a
+// pill "Confirming": about 16 minutes on Robinhood Chain (measured 2026-10-13), 15 to 20 on Base and Arbitrum One, with
+// nothing wrong. Finality is one line of the opened receipt; a deferred delivery keeps its own pill.
+test('a receipt above the finalized block carries the check on every network and never says "Confirming"; a deferred delivery keeps its pill', async () => {
+  const whole = fixture('activity.json');
+  const created = whole.items.find(item => item.kind === 's1_action' && item.action === 'create');
+  const exited = whole.items.find(item => item.kind === 'auto_exit');
+  assert.deepEqual([created.tx.finality, exited.tx.finality, exited.deferred.length > 0], ['finalized', 'unfinalized', true], 'the fixture: one final receipt, one deferred delivery');
+  // One receipt per network above its finalized block (Base and Arbitrum One report none in the fixture), newest first,
+  // each its own transaction.
+  const fresh = [42161, 8453, 4663].map((chainId, index) => {
+    const item = structuredClone(created);
+    const block = chainId === 4663 ? 73_399_500 : 52_000_000;
+    Object.assign(item, { chainId, id: `${chainId}:${block}:6`, intentHash: `0x${String(index + 1).repeat(64)}` });
+    Object.assign(item.tx, { finality: 'unfinalized', hash: `0x${String(index + 4).repeat(64)}` });
+    Object.assign(item.tx.snapshot, { number: block, timestamp: exited.tx.snapshot.timestamp + 30 - index * 10, hash: `0x${String(index + 7).repeat(64)}` });
+    return item;
+  });
+  const activity = { ...whole, items: [...fresh, exited, created], nextCursor: null };
+  const s = await scenario({ hooks: LIVE, hash: '#/positions/receipts', readV6: routeOn(route => ({ status: 200, body: about(route, route === 'activity' ? activity : fixture('portfolio.json'), OWNER) })) });
+  try {
+    await s.page.locator('[data-activity-rows="5"]').waitFor();
+    for (const item of fresh) {
+      const row = s.page.locator(`[data-v2-receipt="${item.id}"]`);
+      await row.waitFor();
+      assert.equal(await row.getAttribute('data-v2-finality'), 'included', `${item.chainId}: the fact is unchanged, not final yet`);
+      assert.equal(await row.locator('summary .dm-receipt-check[aria-label="Confirmed"]').count(), 1, `${item.chainId}: the check at once`);
+      assert.equal(await row.locator('summary .dm-receipt-exception').count(), 0, `${item.chainId}: no pill`);
+      await row.locator('summary').click();
+      assert.equal(await text(row.locator('[data-receipt-field="state"]')), 'Status Confirmed. Not final on Ethereum yet.', `${item.chainId}: finality is one line of the opened receipt`);
+    }
+    const final = s.page.locator(`[data-v2-receipt="${created.id}"]`);
+    assert.equal(await final.getAttribute('data-v2-finality'), 'finalized');
+    assert.equal(await final.locator('summary .dm-receipt-check[aria-label="Confirmed"]').count(), 1, 'the same check once final');
+    await final.locator('summary').click();
+    assert.equal(await text(final.locator('[data-receipt-field="state"]')), 'Status Final.');
+    const claim = s.page.locator(`[data-v2-receipt="${exited.id}"]`);
+    assert.equal(await text(claim.locator('summary .dm-receipt-exception')), 'Delivery deferred', 'a delivery still to claim keeps its pill');
+    assert.equal(await claim.locator('summary .dm-receipt-check').count(), 0, 'and no check until it is claimed, as before');
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /Confirming|Finalized|Included, not final/, 'no receipt waits on a word for its finalized block');
+    assert.equal(s.wallet.state.signed.length, 0);
+    if (process.env.DOMINO_RECEIPT_SHOTS) {
+      mkdirSync(process.env.DOMINO_RECEIPT_SHOTS, { recursive: true });
+      for (const width of [1320, 390]) {
+        await s.page.setViewportSize({ width, height: 960 });
+        assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        await s.page.locator('main').screenshot({ path: join(process.env.DOMINO_RECEIPT_SHOTS, `receipts-confirmed-${width}.png`), animations: 'disabled' });
+      }
+    }
+  } finally { await s.close(); }
+});
+
 test('a local bulk-close confirmation is one receipt with aggregate amounts and no invented native payout or timestamp', async () => {
   const owned = fixture('portfolio.json');
   const position = owned.positions.find(item => item.chainId === 4663 && item.dex === 4);
@@ -1113,7 +1166,12 @@ test('a local bulk-close confirmation is one receipt with aggregate amounts and 
     assert.match(await row.innerText(), /2 positions closed/);
     assert.match(await row.innerText(), /Date unavailable/);
     assert.equal(await row.locator('time').count(), 0);
+    // Added 2026-10-14 (incident C1; the owner's decision D0): a close this browser checked in a block is confirmed at
+    // once; it said "Confirming" until the finalized block passed it.
+    assert.equal(await row.locator('summary .dm-receipt-check[aria-label="Confirmed"]').count(), 1);
+    assert.doesNotMatch(await row.innerText(), /Confirming/);
     await row.locator('summary').click();
+    assert.match(await row.innerText(), /Status\s+Confirmed\. Not final on Ethereum yet\./);
     assert.match(await row.innerText(), /ETH: amount not reported/);
     assert.match(await row.innerText(), /saved on this device/);
     assert.equal(await row.locator('[data-receipt-field="gas-used"]').count(), 1);

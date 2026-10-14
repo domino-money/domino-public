@@ -461,6 +461,12 @@ export interface ReceiptView {
   block: number
   /** The block's time (Unix seconds). */
   at: number
+  /**
+   * Display only. Added 2026-10-14 (incident C1; the owner's decision D0): in a block of the chain with success, which
+   * is when the row carries its check (./receiptParts.tsx). `finalized` beside it keeps its meaning, at or below the
+   * chain's finalized block: it is one line of the opened receipt now, no longer what the check waits for.
+   */
+  confirmed: boolean
   finalized: boolean
 }
 
@@ -551,6 +557,9 @@ function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer
     hash: item.tx.hash,
     block: item.tx.snapshot.number,
     at: item.tx.snapshot.timestamp,
+    // Added 2026-10-14 (incident C1; the owner's decision D0): read-v6 lists only what a block's logs prove, so an item
+    // it serves is in a block with success, whatever its finality; a reorganised one was withdrawn above.
+    confirmed: true,
     finalized: proved === 'finalized' || item.tx.finality === 'finalized',
     gas: gas ? { sender: gas.sender.toLowerCase(), gasUsed: groupDigits(gas.gasUsed), gasPrice: gweiWords(gas.effectiveGasPriceWei), l1Fee: gas.l1FeeWei === null ? null : weiWords(gas.l1FeeWei) } : null,
   }

@@ -5,7 +5,9 @@
  * token amounts with no USD and no APR, a dash and the reason for one the index could not read, the stale badge's age),
  * a Robinhood Chain v4 NFT V1 already lists shown once, the gate's chains only; §6.3's partial sentence; and the receipts
  * (what moved, the fee's kind, rate, token, amount and its deferred part, the gas fields as stated with the L1 data fee,
- * Included or Finalized, and rev4's "Returned to your wallet" for a reserves return the person did not send).
+ * confirmed and final or not, and rev4's "Returned to your wallet" for a reserves return the person did not send).
+ * Changed on purpose 2026-10-14 (incident C1; the owner's decision D0): a receipt is "Confirmed" once it is in a block
+ * with success; it was "Included or Finalized", and the row waited for the second.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -167,7 +169,7 @@ test('amounts: units to six significant digits with every digit kept, a measured
   assert.equal(named(42161, '0x8888888888888888888888888888888888888888').label, '0x8888…8888', 'unknown: the short address, decimals unknown');
 });
 
-test('receipts: what moved, the fee with its kind, rate, token, amount and deferred part, the gas as stated, Included or Finalized', () => {
+test('receipts: what moved, the fee with its kind, rate, token, amount and deferred part, the gas as stated, confirmed and final or not', () => {
   const activity = valid('activity', fixture('activity.json'));
   const portfolio = valid('portfolio', fixture('portfolio.json'));
   const views = model.receiptViews(activity, ALL, portfolio);
@@ -222,7 +224,10 @@ test('receipts: what moved, the fee with its kind, rate, token, amount and defer
   const autoExit = byId['4663:73398000:6'];
   assert.deepEqual(autoExit.fees.map((fee) => [fee.label, fee.value]), [['Auto-exit fee (0.2%)', '0.000059 USDG']]);
   assert.ok(autoExit.lines.some((line) => line.data === 'reserves-returned' && line.value === '0.000002 USDG'));
-  assert.equal(autoExit.finalized, false, 'above the chain’s finalized block: Included, not final yet');
+  // Changed on purpose 2026-10-14 (incident C1; the owner's decision D0): above the chain's finalized block is "Confirmed",
+  // not final yet; it was "Included, not final yet" under a pill "Confirming".
+  assert.equal(autoExit.finalized, false, 'above the chain’s finalized block: not final yet');
+  assert.equal(autoExit.confirmed, true, 'and confirmed all the same: the index lists it');
   // The L1 data fee exactly as the receipt states it (OP Stack); never added into a claimed total.
   assert.deepEqual(byId['4663:73401000:0'].gas, { sender: WALLET, gasUsed: '412,345', gasPrice: '0.02 gwei', l1Fee: '0.00000000015 ETH' });
   assert.equal(byId['4663:73399000:0'].amount, '0.029641 USDG');
@@ -231,6 +236,53 @@ test('receipts: what moved, the fee with its kind, rate, token, amount and defer
   const policy = byId['4663:73395000:2'];
   assert.deepEqual(policy.lines.map((line) => line.value), ['Paused by you', 'Auto-exit turned on']);
   assert.deepEqual(model.receiptViews(activity, () => false, portfolio), [], 'a chain the gate keeps off lists nothing');
+});
+
+// Added 2026-10-14 (incident C1; the owner's decision D0): "Confirmed" is in a block of the chain with success. read-v6
+// lists only what a block's logs prove, so a receipt it serves is confirmed at once, on every chain; finality stays its
+// own fact beside it (measured 2026-10-13: Robinhood Chain's finalized block trails its head by about 16 minutes, and a
+// row that waited for it said "Confirming" all that time with nothing wrong).
+test('a receipt read-v6 lists is confirmed at once on every chain; finality stays its own fact beside it', () => {
+  const whole = fixture('activity.json');
+  const created = whole.items.find((item) => item.kind === 's1_action' && item.action === 'create');
+  // The fixture's chains as they are: Robinhood Chain finalized through 73,395,500; Base and Arbitrum One report no
+  // finalized block, so everything on them is unfinalized (the package's validator holds each item to its chain's).
+  const final = whole.chains.find((chain) => chain.chainId === 4663).finalizedThrough.number;
+  const at = created.tx.snapshot.timestamp;
+  const one = (chainId, block, finality, timestamp) => {
+    const item = structuredClone(created);
+    Object.assign(item, { chainId, id: `${chainId}:${block}:6` });
+    Object.assign(item.tx, { finality });
+    Object.assign(item.tx.snapshot, { number: block, timestamp });
+    return item;
+  };
+  const items = [one(42161, 52_000_000, 'unfinalized', at + 3), one(8453, 52_000_000, 'unfinalized', at + 2), one(4663, final + 1, 'unfinalized', at + 1), one(4663, final, 'finalized', at)];
+  const activity = valid('activity', { ...whole, items, nextCursor: null });
+  const flags = (views) => views.map((view) => [view.chainId, view.confirmed, view.finalized]);
+  assert.deepEqual(flags(model.receiptViews(activity, ALL)), [
+    [42161, true, false],
+    [8453, true, false],
+    [4663, true, false],
+    [4663, true, true],
+  ], 'unfinalized: confirmed and not final; the index’s own finality is kept as it is');
+  // This browser's own proof of the same transaction and block: inclusion adds nothing to "confirmed", finality still
+  // upgrades `finalized`, and a reorganised receipt is withdrawn, never shown as confirmed.
+  const proved = (phase) => model.receiptViews(activity, ALL, null, () => phase);
+  assert.deepEqual(flags(proved('included')), flags(model.receiptViews(activity, ALL)));
+  assert.ok(proved('finalized').every((view) => view.confirmed && view.finalized));
+  assert.deepEqual(proved('reorged'), []);
+});
+
+// Added 2026-10-14 (incident C1; the owner's decision D0): the opened receipt's one Status line, the same words on the
+// three kinds of row (src/v2in/lists/words.ts). No number of minutes: none is computed from the answer.
+test('the opened receipt says "Confirmed. Not final on Ethereum yet." and then "Final."; "Confirming" is only for not in a block', () => {
+  const { RECEIPT_WORDS, receiptStatus } = require('../../.test-build/app/src/v2in/lists/words.js');
+  assert.equal(receiptStatus({ confirmed: true, finalized: false }), 'Confirmed. Not final on Ethereum yet.');
+  assert.equal(receiptStatus({ confirmed: true, finalized: true }), 'Final.');
+  assert.equal(receiptStatus({ confirmed: false, finalized: false }), 'Waiting for the network', 'sent, not in a block yet');
+  assert.equal(RECEIPT_WORDS.confirmed, 'Confirmed', 'the check’s name');
+  assert.equal(RECEIPT_WORDS.confirming, 'Confirming', 'the pill of a transaction not in a block yet');
+  for (const text of Object.values(RECEIPT_WORDS)) assert.doesNotMatch(text, /\d|minute|Included|Finalized/, `${text}: no invented wait, no pre-fix word`);
 });
 
 test('rev4 §2.13: a reserves return the automation sent is "Returned to your wallet", never the person’s own withdrawal', () => {

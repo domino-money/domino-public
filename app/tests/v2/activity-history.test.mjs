@@ -17,18 +17,52 @@ const range = (top, bottom) => Array.from({ length: top - bottom + 1 }, (_, i) =
 const viewsOf = items => items.map(event => ({ id: event.id, kind: event.kind, chainId: event.chainId, block: event.tx.snapshot.number, at: event.tx.snapshot.timestamp, hash: event.tx.hash }));
 const page = (items, cursor = null, extra = {}) => ({ kind: 'ok', body: { ...structuredClone(fixture), items, nextCursor: cursor, ...extra } });
 
-test('existing read-v6 receipts reconcile all supported chains after reload, once per transaction and for this wallet only', () => {
+// Rewritten on purpose 2026-10-14 (incident C2: the 429 on /api/chain/v1/confirmation). This case held the defect: every
+// unfinalized receipt read-v6 listed, up to 32 per answer, was handed to the confirmation queue as a new operation, and on
+// Robinhood Chain the queue then read each of them from the node until its block was final (about 470 POSTs a receipt, in
+// every tab that opened Receipts or a position). A receipt this browser did not send is confirmed because the index holds
+// it and final when its own `tx.finality` says so; the queue hears of the index only for an operation this browser sent.
+test('read-v6 receipts this browser did not send are never handed to the confirmation queue, on any chain', () => {
   const items = [4663, 8453, 42161].map(chainId => {
     const value = item(20, { chainId }); value.tx.finality = 'unfinalized'; return value;
   });
   const body = { wallet, items: [...items, { ...items[1], id: 'same-transaction-another-log' }] };
-  const evidence = indexedOperationEvidence(wallet.toUpperCase(), body, []);
-  assert.deepEqual(evidence.map(op => op.chainId), [4663, 8453, 42161]);
-  assert.ok(evidence.every(op => op.indexed && op.wallet === wallet && op.receipt.state === 'included' && !op.tokenIds.length));
+  assert.deepEqual(indexedOperationEvidence(wallet.toUpperCase(), body, []), [], 'an unknown unfinalized receipt starts nothing');
   assert.deepEqual(indexedOperationEvidence(`0x${'9'.repeat(40)}`, body, []), [], 'late response from a previous wallet is ignored');
   assert.equal(indexedOperationEvidence(wallet, { wallet, items: range(80, 1) }, []).length, 0, 'already final history needs no watcher');
   const pending = range(80, 1).map(value => ({ ...value, tx: { ...value.tx, finality: 'unfinalized' } }));
-  assert.equal(indexedOperationEvidence(wallet, { wallet, items: pending }, []).length, 32, 'reload adoption is bounded');
+  assert.deepEqual(indexedOperationEvidence(wallet, { wallet, items: pending }, []), [], 'eighty of them start nothing either');
+  // What this browser sent is the one thing the index may complete: once per transaction, bounded, for this wallet only.
+  const own = range(80, 1).map(value => ({ chainId: 4663, wallet, hash: value.tx.hash, blockHash: value.tx.snapshot.hash, block: value.tx.snapshot.number, phase: 'included' }));
+  assert.deepEqual(indexedOperationEvidence(wallet, { wallet, items: pending }, own), [], 'its own receipt, listed and not final yet, changes nothing');
+  const upgrades = indexedOperationEvidence(wallet.toUpperCase(), { wallet, items: [...range(80, 1), { ...item(80), id: 'same-transaction-another-log' }] }, own);
+  assert.equal(upgrades.length, 32, 'the index\'s finality is taken in bounded turns');
+  assert.equal(new Set(upgrades.map(op => op.receipt.transactionHash)).size, 32, 'once per transaction');
+  assert.ok(upgrades.every(op => op.indexed && op.chainId === 4663 && op.wallet === wallet && op.receipt.state === 'finalized' && !op.tokenIds.length));
+  assert.deepEqual(indexedOperationEvidence(`0x${'9'.repeat(40)}`, { wallet, items: range(80, 1) }, own), []);
+});
+
+// Added 2026-10-14 (incident C2): the chain's finalized mark rides in every activity answer the page already reads; the
+// history hands each good answer on, so the confirmation queue learns finality without a request of its own.
+test('every good activity answer is handed on with its chains; a failed read hands nothing', async () => {
+  const time = clock(), heard = [];
+  const chains = structuredClone(fixture.chains);
+  chains[0].finalizedThrough = { ...chains[0].indexedThrough, number: 4242 };
+  let asks = 0;
+  const history = createActivityHistory(async (_, request) => {
+    asks++;
+    if (asks === 2) return { kind: 'unavailable', reason: 'upstream_unavailable' };
+    return request.cursor ? page(range(20, 1), null, { chains }) : page(range(40, 21), 'older', { chains: fixture.chains });
+  }, time.timers, false, answer => heard.push(answer.chains));
+  const stop = history.subscribe(wallet, () => {}); await flush();
+  assert.equal(heard.length, 1, 'the head');
+  assert.deepEqual(heard[0], fixture.chains);
+  history.more(wallet); await flush();
+  assert.equal(asks, 2); assert.equal(heard.length, 1, 'a failed page hands nothing');
+  await time.tick(5_000);
+  assert.equal(asks, 3); assert.equal(heard.length, 2, 'an older page is an answer too');
+  assert.equal(heard[1][0].finalizedThrough.number, 4242);
+  stop();
 });
 
 test('index reconciliation upgrades only a matching included receipt and never overrides account, canonical branch or stronger proof', () => {

@@ -6,6 +6,7 @@ import { IconCheck, IconChevronDown } from '../../components/icons'
 import { Pill } from '../../components/ui'
 import { shortDate, shortTime } from '../../lib/format/time'
 import { chainNotes, partialSentence, type ReceiptView } from './model'
+import { RECEIPT_WORDS, receiptStatus } from './words'
 
 export const RECEIPT_LIST =
   'm-0 grid min-w-0 list-none overflow-hidden rounded-[var(--radius-lg)] bg-[var(--surface-1)] p-0 shadow-[inset_0_0_0_1px_var(--border)] @container/dm-rcpt [&>li]:min-w-0 [&>li+li]:border-t [&>li+li]:border-[var(--border)]'
@@ -33,23 +34,31 @@ function Effect({ view, many }: { view: ReceiptView; many: boolean }) {
   </div>
 }
 
-/** One human operation, potentially several proven effects, with one transaction-cost section. */
+/**
+ * One human operation, potentially several proven effects, with one transaction-cost section. Changed on purpose
+ * 2026-10-14 (incident C1; the owner's decision D0): the check is drawn once the operation is confirmed, in a block with
+ * success, on every network; it waited for the chain's finalized block before, under a pill "Confirming" (about 16
+ * minutes on Robinhood Chain, with nothing wrong). That pill is only for a transaction not in a block yet; "Delivery
+ * deferred" is unchanged; finality is the Status line of the opened receipt (./words.ts). data-v2-finality keeps saying
+ * the fact itself.
+ */
 export function ReceiptRow({ view, effects = [view], showGas = true, children, positionItem }: { view: ReceiptView; effects?: readonly ReceiptView[]; showGas?: boolean; children?: ReactNode; positionItem?: ActivityResponse['items'][number] }) {
   const href = v2TxUrl(view.chainId, view.hash)
   const finalized = effects.every((effect) => effect.finalized)
+  const confirmed = effects.every((effect) => effect.confirmed)
   const claim = effects.some((effect) => effect.lines.some((line) => line.data === 'deferred'))
   const gas = effects.find((effect) => effect.gas !== null)?.gas ?? null
   const what = positionItem?.kind === 'vault_execution'
     ? positionItem.successor ? `Position #${positionItem.successor.tokenId} opened automatically` : `Fees added back · #${positionItem.compounded.tokenId}`
     : view.what.includes('raw units') ? view.what.split(':')[0] : view.what
   const raw = view.amount?.includes('raw units') === true
-  return <li data-v2-receipt={view.id} data-v2-receipt-kind={view.kind} data-v2-receipt-chain={view.chainId} data-v2-finality={finalized ? 'finalized' : 'included'}
+  return <li data-v2-receipt={view.id} data-v2-receipt-kind={view.kind} data-v2-receipt-chain={view.chainId} data-v2-finality={finalized ? 'finalized' : confirmed ? 'included' : 'sent'}
     data-position-activity-item={positionItem?.id} data-position-activity-action={positionItem?.kind === 's1_action' ? positionItem.action : undefined} data-receipt-effects={effects.length}>
     <details className="dm-rcpt-row dm-rcpt-operation">
       <summary>
         <span className="dm-rcpt-what">
-          <span className="dm-receipt-title">{finalized && !claim && <span className="dm-receipt-check" role="img" aria-label="Confirmed"><IconCheck size={14} /></span>}<span>{what}</span></span>
-          {(!finalized || claim) && <Pill tone={claim ? 'wait' : 'neutral'} dot className="dm-receipt-exception">{claim ? 'Delivery deferred' : 'Confirming'}</Pill>}
+          <span className="dm-receipt-title">{confirmed && !claim && <span className="dm-receipt-check" role="img" aria-label={RECEIPT_WORDS.confirmed}><IconCheck size={14} /></span>}<span>{what}</span></span>
+          {(!confirmed || claim) && <Pill tone={claim ? 'wait' : 'neutral'} dot className="dm-receipt-exception">{claim ? 'Delivery deferred' : RECEIPT_WORDS.confirming}</Pill>}
           <span className="dm-activity-time"><time dateTime={new Date(view.at * 1000).toISOString()}>{timeWords(view.at)}</time>{view.chainId !== 4663 && <> · {view.chain}</>}</span>
         </span>
         <span className="dm-rcpt-amount tnum" data-v2-receipt-amount="" title={raw ? 'Token details are unavailable. Exact raw amounts are in the receipt.' : undefined}>{raw ? '—' : view.amount ?? ''}</span>
@@ -61,7 +70,7 @@ export function ReceiptRow({ view, effects = [view], showGas = true, children, p
         <dl className="dm-rcpt-tech">
           <div data-receipt-field="time"><dt>Time</dt><dd>{timeWords(view.at)}</dd></div>
           <div data-receipt-field="network"><dt>Network</dt><dd>{view.chain}</dd></div>
-          <div data-receipt-field="state"><dt>Status</dt><dd>{finalized ? 'Finalized' : 'Included, not final yet'}</dd></div>
+          <div data-receipt-field="state"><dt>Status</dt><dd>{receiptStatus({ confirmed, finalized })}</dd></div>
           {!showGas ? <div data-receipt-field="gas-shared"><dt>Transaction cost</dt><dd>Shared with the other actions in this transaction.</dd></div> : gas ? <>
             <div data-receipt-field="gas-used"><dt>Transaction gas used</dt><dd>{gas.gasUsed}</dd></div>
             <div data-receipt-field="gas-price"><dt>Gas price</dt><dd>{gas.gasPrice}</dd></div>

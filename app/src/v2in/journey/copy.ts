@@ -164,8 +164,12 @@ export const JOURNEY = {
     preparing: 'Checking…',
     wallet: 'Confirm in your wallet',
     sent: 'Waiting for the network',
-    included: 'Included',
-    finalized: 'Finalized',
+    // Changed on purpose 2026-10-14 (incident C1; the owner's decision D0): "Confirmed" means in a block with success, and
+    // it is said at once. It was "Included", then "Finalized" once the chain's finalized block passed it (about 16 minutes
+    // on Robinhood Chain), which read as a transaction still under way. Both states say the one word, under a step and
+    // as the created view's Status (./ReviewStage.tsx); finality is a line in a receipt's Details (../lists/words.ts).
+    included: 'Confirmed',
+    finalized: 'Confirmed',
     failed: 'Stopped',
   },
   final: {

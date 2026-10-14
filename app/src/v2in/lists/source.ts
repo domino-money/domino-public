@@ -9,6 +9,7 @@ import { createPortfolioCatchup, reconcilePortfolio, subscribePositionChanges } 
 import { CREATED_POSITIONS } from './createdPositions'
 import { POSITION_VALUATIONS } from './valuation'
 import { createPriceRecovery } from './priceRecovery'
+import { noteAnswerFinality } from '../../lib/confirmedOperations'
 
 /**
  * The lists' one read-v6 source in the page (Domino V2 builds only: the lists' chunks are opened behind `__DOMINO_V2__`).
@@ -70,6 +71,10 @@ export const OWN_PORTFOLIO = createKeyedReader<ListsReply<PortfolioResponse>>(as
   // A reloaded page may know only the receipt's NFT identity. It speeds discovery, never supplies chain state.
   for (const created of CREATED_POSITIONS.get(wallet)) catchup.note({ ...created, tokenIds: [created.tokenId] })
   const answer = await LISTS_SOURCE.ownPortfolio(wallet)
+  // Added 2026-10-14 (incident C2): each chain's finalized block as this answer names it goes to the confirmation queue.
+  // It is the queue's hint for when an operation this browser sent may be final; it asks the node nothing until then.
+  // The activity history hands its answers on the same way (activity.tsx).
+  if (answer.kind === 'ok') noteAnswerFinality(answer.body.chains)
   if (answer.kind === 'ok') CREATED_POSITIONS.reconcile(answer.body)
   if (answer.kind === 'ok') POSITION_VALUATIONS.record(answer.body)
   if (answer.kind === 'ok' && active()) void priceRecovery.run(answer.body, active)

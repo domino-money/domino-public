@@ -2268,13 +2268,21 @@ test('multichain setup: an unreadable Base approval resumes its existing hash an
     const activity = page.locator('[data-session-activity]');
     await activity.waitFor({ timeout: 30_000 });
     assert.equal(await activity.getAttribute('data-v2-finality'), 'included');
-    assert.match(await activity.innerText(), /Confirming/);
+    // Rewritten on purpose 2026-10-14 (incident C1; the owner's decision D0): this case held the defect. A setup whose
+    // receipt was checked in a block is "Confirmed" at once, with the check; it said "Confirming" until Base's finalized
+    // block passed it (15 to 20 minutes). Finality is one line of the opened receipt: "Confirmed. Not final on Ethereum
+    // yet.", then "Final.". It was "Included, not final yet", then "Finalized".
+    assert.equal(await activity.locator('summary .dm-receipt-check[aria-label="Confirmed"]').count(), 1, 'the check at inclusion');
+    assert.equal(await activity.locator('.dm-receipt-exception').count(), 0, 'no pill');
+    assert.doesNotMatch(await page.locator('main').innerText(), /Confirming/, '"Confirming" is nowhere on Receipts');
     assert.equal(await activity.locator('.dm-activity-time').innerText(), 'Base · Updating history', 'observation time is not a block timestamp');
     await activity.locator('summary').click();
-    assert.match(await activity.innerText(), /Included, not final yet/);
+    assert.match(await activity.innerText(), /Status\s+Confirmed\. Not final on Ethereum yet\./);
     finalized = true;
     await page.locator('[data-session-activity][data-v2-finality="finalized"]').waitFor({ timeout: 30_000 });
-    assert.doesNotMatch(await activity.innerText(), /Confirming|Included, not final yet/);
+    assert.match(await activity.innerText(), /Status\s+Final\./);
+    assert.doesNotMatch(await activity.innerText(), /Confirming|Not final on Ethereum yet|Included, not final yet|Finalized/);
+    assert.equal(await activity.locator('summary .dm-receipt-check[aria-label="Confirmed"]').count(), 1, 'the same check once final');
     assert.equal(chain.sends.length, 2, 'after leaving setup, confirmation follows the same transaction without another wallet send');
   } finally { await s.close(); }
 });

@@ -20,7 +20,11 @@ import { labelOf, type TokenBook } from './tokens'
  * amounts are token rows with their marks. Changed on purpose 2026-10-06 (the owner's point 4: no 18-digit amounts):
  * each amount at most 6 decimals, every digit in its row's title (FeeCharged's exact amount included, spec L1024); the
  * fee rounded up, never shown lower than it is, and what was paid in rounded up as the review's "You put in" (the review
- * of point 4, money #3: one figure for one amount in the same dialog).
+ * of point 4, money #3: one figure for one amount in the same dialog). Changed on purpose 2026-10-14 (incident C1; the
+ * owner's decision D0): the state that leads is "Confirmed" once the transaction is in a block with success, and it stays
+ * that word when the block is final (./copy.ts wallet.included and wallet.finalized); it was "Included", then "Finalized"
+ * some 16 minutes later. Finality is a line in Receipts' Details (../lists/words.ts); data-position-receipt-state keeps
+ * saying the state itself.
  */
 export function ZapReceiptView({ chainId, view, book }: { chainId: V2ChainId; view: ReceiptView; book: TokenBook }) {
   const read = view.read
@@ -95,7 +99,10 @@ function Gas({ gas }: { gas: GasCost }) {
   )
 }
 
-/** A direct (Uniswap) exit's receipt: what Uniswap paid, from the receipt's own logs (native ETH on v4 leaves none). */
+/**
+ * A direct (Uniswap) exit's receipt: what Uniswap paid, from the receipt's own logs (native ETH on v4 leaves none). It
+ * leads with "Confirmed" as the zap's receipt does (2026-10-14, incident C1).
+ */
 export function DirectReceiptView({ chainId, receipt, book }: { chainId: V2ChainId; receipt: DirectReceipt; book: TokenBook }) {
   return (
     <div className="dm-pa-field" data-position-receipt={receipt.state}>

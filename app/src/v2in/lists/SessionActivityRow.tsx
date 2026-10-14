@@ -1,8 +1,14 @@
 import { IconCheck, IconChevronDown } from '../../components/icons'
-import { Pill } from '../../components/ui'
 import { v2TxUrl } from '../../v2/explorers'
 import type { SessionActivity } from './sessionActivity'
+import { RECEIPT_WORDS, receiptStatus } from './words'
 
+/**
+ * Changed on purpose 2026-10-14 (incident C1; the owner's decision D0): a session row exists only for a setup whose
+ * receipt was already checked in a block with success (./sessionActivity.ts), so it carries the check from the start. It
+ * said "Confirming" until the chain's finalized block passed it (about 16 minutes on Robinhood Chain, 15 to 20 on Base
+ * and Arbitrum One). Finality is the Status line below; data-v2-finality keeps saying the fact itself.
+ */
 export function SessionActivityRow({ item }: { item: SessionActivity }) {
   const { proof, tokenId, chain } = item
   const finalized = proof.phase === 'finalized'
@@ -11,16 +17,15 @@ export function SessionActivityRow({ item }: { item: SessionActivity }) {
     <details className="dm-rcpt-row dm-rcpt-operation">
       <summary>
         <span className="dm-rcpt-what">
-          <span className="dm-receipt-title">{finalized && <span className="dm-receipt-check" role="img" aria-label="Confirmed"><IconCheck size={14} /></span>}<span>Automation set up for position #{tokenId}</span></span>
-          {!finalized && <Pill tone="neutral" dot className="dm-receipt-exception">Confirming</Pill>}
+          <span className="dm-receipt-title"><span className="dm-receipt-check" role="img" aria-label={RECEIPT_WORDS.confirmed}><IconCheck size={14} /></span><span>Automation set up for position #{tokenId}</span></span>
           <span className="dm-activity-time">{chain} · Updating history</span>
         </span>
         <IconChevronDown size={16} className="dm-rcpt-chevron" />
       </summary>
       <div className="dm-rcpt-detail">
-        <p className="dm-rcpt-note">Your setup transaction is included. The activity details will update automatically.</p>
+        <p className="dm-rcpt-note">Your setup transaction is confirmed. The activity details will update automatically.</p>
         <dl className="dm-rcpt-tech">
-          <div><dt>Status</dt><dd>{finalized ? 'Finalized' : 'Included, not final yet'}</dd></div>
+          <div><dt>Status</dt><dd>{receiptStatus({ confirmed: true, finalized })}</dd></div>
           <div><dt>Network</dt><dd>{chain}</dd></div>
           <div><dt>Block</dt><dd className="tnum">{proof.block}</dd></div>
           <div><dt>Transaction</dt><dd>{href && <a href={href} target="_blank" rel="noreferrer noopener" className="dm-mono underline" title={proof.hash}>{proof.hash.slice(0, 6)}…{proof.hash.slice(-4)}</a>}</dd></div>

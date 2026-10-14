@@ -251,6 +251,8 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
     const created = zap.locator('[data-created-position][data-zap-receipt]');
     await created.waitFor({ timeout: 60_000 });
     assert.match(await created.locator('#created-title').innerText(), /^Position NFT #\d+ is in your wallet\.$/);
+    // Added 2026-10-14 (incident C1; the owner's decision D0): its status is "Confirmed" from the block it is in, final or not.
+    assert.equal(await created.locator('[data-fact="receipt-state"]:is([data-receipt-state="included"], [data-receipt-state="finalized"]) dd').innerText(), 'Confirmed');
     assert.equal(await created.locator('[data-fact="receipt-fee"]').getAttribute('data-receipt-fee'), '3250000', 'the exact fee, as FeeCharged says it');
     // Changed on purpose 2026-10-06 (the owner's point 4): amounts at most 6 decimals, every digit in the title (spec L1024).
     assert.equal(await created.locator('[data-fact="receipt-fee"] dd span').getAttribute('title'), '3.25 USDG');
@@ -686,11 +688,17 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
       await page.locator('a[data-created-next="position"]').click();
       await page.locator(`[data-position-detail][data-position-id="${createdId}"]`).waitFor({ timeout: 30_000 });
       const row = page.locator(`[data-position-activity-item="${item.id}"]`);
-      await row.locator('text=Confirming').waitFor({ timeout: 30_000 });
+      // Rewritten on purpose 2026-10-14 (incident C1; the owner's decision D0): this case held the defect, it waited for
+      // the pill "Confirming" on a receipt already in a block. Such a receipt carries the check at once and is "not final
+      // yet" only as a fact (data-v2-finality); the proof below still settles that fact without returning to creation.
+      await row.locator('summary .dm-receipt-check[aria-label="Confirmed"]').waitFor({ timeout: 30_000 });
+      assert.equal(await row.getAttribute('data-v2-finality'), 'included', 'confirmed at inclusion, not final yet');
+      assert.equal(await row.locator('text=Confirming').count(), 0, 'no pill for a receipt that is in a block');
       assert.equal(await page.locator('[data-create-journey]').count(), 0, 'the original receipt view is unmounted');
       receiptStage = 'finalized';
       await page.locator(`[data-position-activity-item="${item.id}"][data-v2-finality="finalized"]`).waitFor({ timeout: 30_000 });
-      assert.equal(await row.locator('text=Confirming').count(), 0, 'the shared exact receipt proof settles Activity without returning to creation');
+      assert.equal(await row.locator('summary .dm-receipt-check[aria-label="Confirmed"]').count(), 1, 'the shared exact receipt proof settles Activity without returning to creation');
+      assert.equal(await row.locator('text=Confirming').count(), 0);
       assert.equal(item.tx.finality, 'unfinalized', 'the lagging index did not supply this finality');
       assert.equal(chain.sends.length, sendCount); assert.equal(s.planned.length, planCount);
       assert.deepEqual(chain.offChain, []);
@@ -722,10 +730,14 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
       return;
     }
     await page.locator('[data-zap-receipt="included"]').waitFor({ timeout: 30_000 });
+    // Added 2026-10-14 (incident C1; the owner's decision D0): in a block with success is "Confirmed" (it was "Included"),
+    // and the word stays when the block is final (it turned "Finalized"): finality is a line in Receipts' details.
+    assert.equal(await page.locator('[data-fact="receipt-state"][data-receipt-state="included"] dd').innerText(), 'Confirmed');
     const restored = await page.evaluate(owner => JSON.parse(sessionStorage.getItem('domino:created-positions:v1:' + owner) ?? '[]'), OWNER);
     assert.deepEqual([restored[0].tokenId, restored[0].blockHash], [createdId, replacementHash], 'a checked reinclusion restores only the new block evidence');
     receiptStage = 'finalized';
     await page.locator('[data-zap-receipt="finalized"]').waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('[data-fact="receipt-state"][data-receipt-state="finalized"] dd').innerText(), 'Confirmed');
     assert.equal(chain.sends.length, sendCount, 'reorg and finality checks never resend the action');
     assert.equal(s.planned.length, planCount, 'the sent review is never silently requoted');
     // Added 2026-10-06 (the final check's F1/F6): Back rests under it, as on Robinhood Chain (test (t) follows it further).

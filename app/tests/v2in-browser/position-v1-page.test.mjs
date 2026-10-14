@@ -36,6 +36,7 @@ const { createFakeSession } = await import('../support/fake-session.mjs');
 const { createWalletServer } = await import('../support/wallet-server.mjs');
 const { launchBrowser } = await import('../support/s1-browser.mjs');
 const { plainPortfolio } = await import('../support/v2-plain-portfolio.mjs');
+const { activityOf, s1Action } = await import('../support/s1-read6.mjs');
 
 const require = createRequire(import.meta.url);
 const position = require('../../.test-build/app/src/finance/position.js');
@@ -60,8 +61,11 @@ let browser;
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await closeBrowser(browser); });
 
-/** V1's position page for NFT 3135288 on the V2 build, the gate open (`preview`), the wallet connected and not signed in. */
-async function atPage(initialChain = 4663) {
+/**
+ * V1's position page for NFT 3135288 on the V2 build, the gate open (`preview`), the wallet connected and not signed in.
+ * `activity` (added 2026-10-14, incident C2): the wallet's read-v6 receipts, scripted like its portfolio.
+ */
+async function atPage(initialChain = 4663, { activity } = {}) {
   const chain = createPositionChain(OWNER, { timestamp: TIMESTAMP, positions: [NFT] });
   const rpc = browserChain({
     positions: [{ tokenId: '3135288', holder: OWNER, key: NFT.key, tickLower: NFT.tickLower, tickUpper: NFT.tickUpper, liquidity: NFT.liquidity, unclaimed: FEES }],
@@ -102,8 +106,8 @@ async function atPage(initialChain = 4663) {
     return chain.request(method, params);
   });
   await context.exposeFunction('__dominoV1PageCsp', (line) => csp.push(line));
-  await context.addInitScript((portfolio) => {
-    window.__dominoV2Test = { originOpen: true, read6: { portfolio } };
+  await context.addInitScript(({ portfolio, activity }) => {
+    window.__dominoV2Test = { originOpen: true, read6: { portfolio, ...(activity ? { activity } : {}) } };
     document.addEventListener('securitypolicyviolation', (event) => window.__dominoV1PageCsp(`${event.violatedDirective} ${event.blockedURI}`));
     const provider = {
       async request({ method, params }) {
@@ -118,11 +122,13 @@ async function atPage(initialChain = 4663) {
     const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail }));
     window.addEventListener('eip6963:requestProvider', announce);
     announce();
-  }, plainPortfolio(rpc, OWNER));
+  }, { portfolio: plainPortfolio(rpc, OWNER), activity });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   const s = {
     page, chain, added,
+    /** The site's chain routes this page asked, by path, from its first request (tests/support/browser-chain.mjs routeChain). */
+    edgeLog: routed.edgeLog,
     async close() {
       await context.close();
       await server.closeAll();
@@ -149,6 +155,39 @@ async function atPage(initialChain = 4663) {
     throw error;
   }
 }
+
+// Added 2026-10-14 (incident C2: the 429 on /api/chain/v1/confirmation, the owner's console of 2026-10-13). Opening a
+// Robinhood position was enough to start it: every receipt read-v6 listed above the chain's finalized block (about 16
+// minutes of them) was handed to the confirmation queue, which read each from the node every 2 s, then 5 s, then 30 s,
+// in every tab, with no transaction sent from this browser. A receipt the index lists needs nothing from the node.
+test('opening a Robinhood position whose three newest receipts are not final yet asks the confirmation route nothing for a minute', async () => {
+  const receipts = [3, 2, 1].map((n) => {
+    const item = s1Action({ chainId: 4663, block: 73_399_100 + n, wallet: OWNER, zap: '0x00000000000000000000000000000000d0d00004', action: n === 1 ? 'create' : 'increase', tokenId: 3135288, pool: { dex: 4, ...NFT.key }, finalized: false });
+    item.tx.hash = `0x${String(n).repeat(64)}`;
+    item.tx.snapshot.hash = `0x${String(n + 3).repeat(64)}`;
+    return item;
+  });
+  const s = await atPage(4663, { activity: activityOf({ wallet: OWNER, items: receipts }) });
+  try {
+    const detail = s.page.locator('[data-position-detail][data-position-id="3135288"]');
+    await detail.waitFor({ timeout: 30_000 });
+    for (const item of receipts) {
+      const row = s.page.locator(`[data-position-activity-item="${item.id}"]`);
+      await row.waitFor({ timeout: 30_000 });
+      assert.equal(await row.getAttribute('data-v2-finality'), 'included', 'listed by the index, above its finalized block');
+    }
+    const asked = () => s.edgeLog.filter((path) => path === '/api/chain/v1/confirmation').length;
+    for (const until = Date.now() + 60_000; Date.now() < until;) {
+      assert.equal(asked(), 0, 'no receipt the index listed is read from the node');
+      // A wallet popup closing fires `focus`; it must not start a read either.
+      await s.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await s.page.waitForTimeout(1_000);
+    }
+    assert.equal(asked(), 0, 'not once in a minute');
+    assert.ok(s.edgeLog.includes('/api/fees/v1/state'), 'while the page went on reading its own figures');
+    for (const item of receipts) assert.equal(await s.page.locator(`[data-position-activity-item="${item.id}"] summary .dm-receipt-check[aria-label="Confirmed"]`).count(), 1, 'and each receipt keeps its check');
+  } finally { await s.close(); }
+});
 
 test('Robinhood keeps its complete action row when the wallet is on Base or Arbitrum without switching on page load', async () => {
   for (const chainId of [8453, 42161]) {

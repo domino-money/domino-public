@@ -1,12 +1,12 @@
 import { useCallback, useSyncExternalStore, type ReactNode } from 'react'
 import type { IndexedToken } from 'api-contracts/read-v6/types'
 import { IconCheck, IconChevronDown } from '../../components/icons'
-import { Pill } from '../../components/ui'
 import { shortDate, shortTime } from '../../lib/format/time'
 import { v2TxUrl } from '../../v2/explorers'
 import { v2PositionHref } from '../route'
 import { amountWords, chainName, gweiWords, tokenNamer, weiWords } from './model'
 import { LOCAL_RECEIPTS, type LocalCloseReceipt } from './localReceipts'
+import { RECEIPT_WORDS, receiptStatus } from './words'
 
 const EMPTY: readonly LocalCloseReceipt[] = Object.freeze([])
 export function useLocalReceipts(wallet: string | null) {
@@ -15,14 +15,19 @@ export function useLocalReceipts(wallet: string | null) {
   return useSyncExternalStore(subscribe, snapshot, () => EMPTY)
 }
 
+/**
+ * Changed on purpose 2026-10-14 (incident C1; the owner's decision D0): a close kept on this device was checked in a
+ * block with success before it was kept (./localReceipts.ts: `included` or `finalized`, nothing else), so the row
+ * carries the check from the start. It said "Confirming" until the chain's finalized block passed it. Finality is the
+ * Status line below.
+ */
 export function LocalReceiptRow({ receipt, at, tokens, children }: { receipt: LocalCloseReceipt; at: number | null; tokens: readonly IndexedToken[]; children?: ReactNode }) {
   const name = tokenNamer(tokens), count = receipt.tokenIds.length
   const href = v2TxUrl(receipt.chainId, receipt.hash)
   return <li data-local-close-receipt={receipt.hash} data-local-close-count={count}>
     <details className="dm-rcpt-row dm-rcpt-operation">
       <summary>
-        <span className="dm-rcpt-what"><span className="dm-receipt-title">{receipt.state === 'finalized' && <span className="dm-receipt-check" role="img" aria-label="Confirmed"><IconCheck size={14} /></span>}<span>{count === 1 ? 'Position closed' : `${count} positions closed`}</span></span>
-          {receipt.state === 'included' && <Pill tone="neutral" className="dm-receipt-exception">Confirming</Pill>}
+        <span className="dm-rcpt-what"><span className="dm-receipt-title"><span className="dm-receipt-check" role="img" aria-label={RECEIPT_WORDS.confirmed}><IconCheck size={14} /></span><span>{count === 1 ? 'Position closed' : `${count} positions closed`}</span></span>
           <span className="dm-activity-time">{at === null ? 'Date unavailable' : <time dateTime={new Date(at * 1000).toISOString()}>{shortDate(at)} {shortTime(at)}</time>}</span>
         </span><span className="dm-rcpt-amount" /><IconChevronDown size={16} className="dm-rcpt-chevron" />
       </summary>
@@ -36,7 +41,7 @@ export function LocalReceiptRow({ receipt, at, tokens, children }: { receipt: Lo
         <p className="dm-rcpt-note">Transaction checked in this browser. This receipt is saved on this device. Token amounts cover the whole transaction.</p>
         <dl className="dm-rcpt-tech">
           <div><dt>Network</dt><dd>{chainName(receipt.chainId)}</dd></div>
-          <div><dt>Status</dt><dd>{receipt.state === 'finalized' ? 'Finalized' : 'Included, not final yet'}</dd></div>
+          <div><dt>Status</dt><dd>{receiptStatus({ confirmed: true, finalized: receipt.state === 'finalized' })}</dd></div>
           {receipt.gas && <>
             <div data-receipt-field="gas-used"><dt>Transaction gas used</dt><dd>{receipt.gas.gasUsed}</dd></div>
             <div><dt>Gas price</dt><dd>{gweiWords(receipt.gas.effectiveGasPrice)}</dd></div>

@@ -363,10 +363,14 @@ test('(c) Add liquidity with a swap: the review shows the route, the fee and its
     const steps = dialog.locator('[data-position-steps="direct"]');
     assert.deepEqual(await steps.locator('[data-position-step]').evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-position-step'))), ['approve-nft', 'action']);
     await dialog.locator('[data-position-confirm="approve-nft"]:not([disabled])').click({ timeout: 30_000 });
+    // Added 2026-10-14 (incident C1; the owner's decision D0): a step that is in a block says "Confirmed" under its title
+    // (it was "Included", then "Finalized"), and the receipt leads with the same word, final or not.
+    assert.equal(await steps.locator('[data-position-step="approve-nft"][data-step-state="done"] .dm-flow-wstep-note').innerText(), 'Confirmed');
     await dialog.locator('[data-position-confirm="action"]:not([disabled])').click({ timeout: 30_000 });
     const receipt = dialog.locator('[data-position-receipt]');
     await receipt.waitFor({ timeout: 30_000 });
     assert.deepEqual(await receipt.locator('[data-position-receipt-line]').evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-position-receipt-line'))).then((lines) => lines.filter((line, i, all) => all.indexOf(line) === i)).then((lines) => lines.filter((line) => ['paid-in', 'swapped', 'fee', 'position-added'].includes(line))), ['paid-in', 'swapped', 'fee', 'position-added']);
+    assert.equal(await receipt.locator(':is([data-position-receipt-state="included"], [data-position-receipt-state="finalized"])[data-state="done"]').innerText(), 'Confirmed');
     const [approve, add] = chain.sends.map((entry) => entry.tx);
     assert.deepEqual(decodeFunctionData({ abi: NFT, data: approve.data }).args, [ZAP_V4, 5_100_005n], 'the zap approved on this NFT only');
     assert.deepEqual([add.to, add.data.slice(0, 10), BigInt(add.value)], [ZAP_V4, '0x2e563c43', 50_000_000_000_000_000n], 'increase, with the ETH it pays');
@@ -702,6 +706,8 @@ test('(f) Withdraw to both tokens goes straight to Uniswap: no Domino fee, one t
     await dialog.locator('[data-position-send="close"]:not([disabled])').click();
     await dialog.locator('[data-position-direct="done"]').waitFor({ timeout: 30_000 });
     assert.match(await text(dialog.locator('[data-position-receipt]')), /Paid by Uniswap .*Domino fee No Domino fee/);
+    // Added 2026-10-14 (incident C1; the owner's decision D0): a direct exit's receipt leads with "Confirmed" too.
+    assert.equal(await dialog.locator('[data-position-receipt] [data-position-receipt-state][data-state="done"]').innerText(), 'Confirmed');
     assert.equal(chain.sends.length, 1);
     assert.equal(chain.sends[0].tx.to, V4_PM);
   } finally { await s.close(); }

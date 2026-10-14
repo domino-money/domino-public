@@ -162,6 +162,16 @@ test('the reading finds each kind of text the rules are for, so a rule cannot pa
   assert.ok(read('lib/create/copy.ts').some(([text]) => text === 'Swap through Uniswap'), 'the routed swap’s words in the copy module');
   assert.ok(read('lib/create/copy.ts').length > 100, 'a copy module, every string');
   assert.ok(!FILES.some(rel => rel.startsWith('lab/')), 'the read lab is a development page, not a screen');
+  // Added 2026-10-14 (incident C1; the owner's decision D0): a receipt is "Confirmed" once it is in a block with success;
+  // finality is the opened receipt's one line. The three receipt rows read those words from their own module, read here
+  // whole; none of them writes a finality word of its own any more ("Confirming" for a block that is not final yet,
+  // "Finalized", "Included, not final yet").
+  const receiptWords = read('v2in/lists/words.ts').map(([text]) => text);
+  for (const text of ['Confirmed', 'Confirming', 'Waiting for the network', 'Confirmed. Not final on Ethereum yet.', 'Final.']) assert.ok(receiptWords.includes(text), `the receipts’ words: ${text}`);
+  for (const rel of ['v2in/lists/receiptParts.tsx', 'v2in/lists/SessionActivityRow.tsx', 'v2in/lists/LocalReceiptRow.tsx']) {
+    assert.ok(!read(rel).some(([text]) => /Confirming|Finali[sz]ed|\bincluded\b|not final/i.test(text)), `${rel}: the state’s words come from the receipts’ words`);
+  }
+  assert.ok(read('v2in/lists/receiptParts.tsx').some(([text, onScreen]) => text === 'Delivery deferred' && onScreen), 'a deferred delivery keeps its own pill');
   // Each rule catches what it is for.
   const catches = (rules, text) => rules.some(([, rule]) => rule.test(text));
   for (const text of ['Fees are guaranteed.', 'This position will earn 4%.', 'Improves your APR.', 'improving your fees APR', 'Prices from GeckoTerminal', 'Your Domino token', 'See https://example.com']) assert.ok(catches(EVERYWHERE, text), text);

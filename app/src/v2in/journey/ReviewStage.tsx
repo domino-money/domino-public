@@ -27,7 +27,10 @@ import { amountText, decimalsOf, labelOf, tokenBook, type TokenBook } from './to
 
 type Gate = Extract<V2Gate, { mode: 'preview' | 'live' }>
 
-/** What each step says under its title once Create position runs (today's Review's own captions, plus "Included" and "Finalized"). */
+/**
+ * What each step says under its title once Create position runs (today's Review's own captions, plus the word for a step
+ * that is in a block: "Confirmed" since 2026-10-14, incident C1, for both `included` and `finalized`; ./copy.ts live).
+ */
 const LIVE: Record<RunStep['status'], string> = {
   waiting: JOURNEY.live.next,
   preparing: JOURNEY.live.preparing,
@@ -599,7 +602,10 @@ export function FinalControl({ gate, view, blockedForPrice, connected, onRun, on
  * decimals, every digit in its title; FeeCharged's exact amount stays in the fee's title and its data-receipt-fee
  * (spec L1024), the fee itself rounded up as Review's fee line is (never shown lower than it is), and what was paid in as
  * Review's "You put in" (the same figure above it). Changed on purpose 2026-10-06 (the review of the owner's point 5):
- * Auto-exit offered beside the position's link (CreatedExit).
+ * Auto-exit offered beside the position's link (CreatedExit). Changed on purpose 2026-10-14 (incident C1; the owner's
+ * decision D0): Status says "Confirmed" once the transaction is in a block with success and keeps that word when the block
+ * is final (./copy.ts live.included and live.finalized); it was "Included", then "Finalized" some 16 minutes later on
+ * Robinhood Chain. Finality is a line in Receipts' Details (../lists/words.ts); data-receipt-state keeps the state itself.
  */
 function Created({ view }: { view: RunView }) {
   const receipt = view.receipt

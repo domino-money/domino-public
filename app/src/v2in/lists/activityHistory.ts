@@ -36,8 +36,11 @@ const sameBlock = (a: ActivityItem, b: ActivityItem) => a.chainId === b.chainId 
 /** One wallet-keyed public history. The recent head, missing intervals and old pending receipts have independent
  * progress, but share one bounded request at a time and the service's Retry-After. A head overlapping its recent
  * segment cannot erase an older gap. Pending receipts are reread through the existing activity API, never a new RPC.
+ *
+ * `heard` (added 2026-10-14, incident C2): every good answer, as it arrived, before any of it is merged. Each names its
+ * chains' finalized block, which is how the confirmation queue learns finality with no request of its own (activity.tsx).
  */
-export function createActivityHistory(read: Read, timers: ReaderTimers, refresh = true) {
+export function createActivityHistory(read: Read, timers: ReaderTimers, refresh = true, heard: (answer: ActivityResponse) => void = () => undefined) {
   interface Entry {
     value: ActivityHistory; listeners: Set<() => void>; timer: unknown; waking: (() => void) | null; inFlight: boolean
     headAt: number | null; workAt: number | null; notBefore: number; retry: { job: Job; at: number } | null
@@ -124,6 +127,7 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
       }
       publish(e, { error: reply, loading: false }); schedule(wallet, e); return
     }
+    heard(reply.body)
     // A confirmation during a head request must be consumed by a newer read, not this older response.
     if (job.kind === 'head' && job.generation !== e.generation) {
       e.headAt = now(); publish(e, { loading: false }); schedule(wallet, e); return
