@@ -28,6 +28,27 @@
  *   never this module.
  * - The same reply names each token's artwork, which is handed to the
  *   artwork resolver, so the card's rows ask no token-pairs GET of their own.
+ * - Changed on purpose 2026-10-14 (incident of 2026-10-13, package D1): where
+ *   the answer is our edge's per-token one (tokenArtwork.tokenPrices), each
+ *   token is priced from its own pairs and dated by when the edge retrieved
+ *   them, never by when the answer reached the page. The edge may now keep an
+ *   answer for a day, and the card counts a price for an hour after its time
+ *   (lib/walletMemory.ts): dated on arrival, a kept price would have looked
+ *   new. A token the answer leaves out has no price yet and is asked again by
+ *   the next ask, as a failed GET's are. An answered price is still reused for
+ *   PRICE_TTL_MS from when the page read it.
+ * - Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): a
+ *   token is asked once per PRICE_TTL_MS, whatever its GET gave. A token the
+ *   answer left out, or one of a GET that failed, was asked again by every
+ *   later ask (each wallet-assets page, the list settling, a remount), so one
+ *   load could send the same batch again and again; it now has no price until
+ *   PRICE_TTL_MS after it was asked, and the card shows its total without it
+ *   (lib/walletHoldings.ts totalWithheld). And a GET once sent is never
+ *   cancelled because its consumers left: its answer is kept for the next one.
+ *   It was aborted when the last consumer left (leaving Positions, the card
+ *   mounted again), its answer thrown away, and the batch asked again by the
+ *   next mount. Which tokens the card asks, and how many, is the card's
+ *   (lib/walletHoldings.ts addressesToPrice, nextAsk).
  *
  * These prices are indicative, shown in that card only: never an amount, a
  * quote, a position figure, or anything sent anywhere.
@@ -145,17 +166,51 @@ export interface WalletPriceDeps {
   now: () => number
 }
 
+/**
+ * Our edge's per-token answer as tokenArtwork.tokenPrices hands it on (2026-10-14): each answered address with its own
+ * pairs and the wall time the edge retrieved them. Null for any other body (the provider's one list, read directly).
+ */
+function perToken(body: unknown): Record<string, { pairs?: unknown; retrievedAt?: unknown } | null | undefined> | null {
+  if (body === null || typeof body !== 'object' || Array.isArray(body) || !('tokens' in body)) return null
+  const tokens = (body as { tokens: unknown }).tokens
+  return tokens !== null && typeof tokens === 'object' && !Array.isArray(tokens) ? (tokens as Record<string, { pairs?: unknown; retrievedAt?: unknown } | null | undefined>) : null
+}
+
 export function createWalletPrices(deps: WalletPriceDeps) {
-  const kept = new Map<string, { quote: TokenQuote | null; at: number }>()
+  // `at`: when the price was retrieved, which is what the card is told (2026-10-14: our edge's own time for it, where the
+  // answer gives one); `read`: when this page read it, which is what PRICE_TTL_MS counts from.
+  const kept = new Map<string, { quote: TokenQuote | null; at: number; read: number }>()
   // The GET each address is on the wire in: a later ask naming it waits for that GET instead of sending it again (round
   // 6: the card asks as each page names new tokens, and a page can land before the prices of the one before it do).
-  type Wire = { result: Promise<boolean>; controller: AbortController; users: number; settled: boolean }
+  type Wire = { result: Promise<boolean> }
   const onWire = new Map<string, Wire>()
+  // When each address was last sent (2026-10-14, D2): none is sent again before PRICE_TTL_MS, answered or not.
+  const sent = new Map<string, number>()
 
   /** Reads one batch and keeps what it answered (and hands on its artwork); false when the provider gave no usable answer. */
-  async function read(batch: readonly string[], signal: AbortSignal): Promise<boolean> {
-    const body = await deps.get(batch, signal).catch(() => null)
-    if (signal.aborted || body === null) return false
+  async function read(batch: readonly string[]): Promise<boolean> {
+    const body = await deps.get(batch).catch(() => null)
+    if (body === null) return false
+    /** The reply names the token's artwork when the token is a base there: its one image, or none. A token no pair names at all is one the provider does not know. */
+    const seed = (pairs: PairShape[], source: unknown, address: string) => {
+      if (pairs.some((pair) => baseOf(pair, address))) deps.seed(address, artworkFromPairs(source, address))
+      else if (!pairs.some((pair) => quoteOf(pair, address))) deps.seed(address, null)
+    }
+    // Our edge's per-token answer (2026-10-14): each token from its own pairs, at its own retrieval time, never later
+    // than now. A token it leaves out, or writes any other way, was not answered: no price yet, asked again next time.
+    const tokens = perToken(body)
+    if (tokens) {
+      const now = deps.now()
+      let answered = 0
+      for (const address of batch) {
+        const own = tokens[address]
+        if (!own || !Array.isArray(own.pairs) || typeof own.retrievedAt !== 'number' || !Number.isFinite(own.retrievedAt)) continue
+        answered += 1
+        kept.set(address, { quote: quotesFromTokens(own.pairs, [address]).get(address) ?? null, at: Math.min(now, own.retrievedAt), read: now })
+        seed(pairsOf(own.pairs), own.pairs, address)
+      }
+      return answered > 0
+    }
     const partial = !Array.isArray(body) && typeof body === 'object' && 'pairs' in body && 'unavailable' in body
       ? body as { pairs: unknown; unavailable: unknown } : null
     const source = partial?.pairs ?? body
@@ -167,22 +222,26 @@ export function createWalletPrices(deps: WalletPriceDeps) {
     const at = deps.now()
     const pairs = pairsOf(source)
     for (const [address, quote] of quotesFromTokens(source, answered)) {
-      kept.set(address, { quote, at })
+      kept.set(address, { quote, at, read: at })
       // The reply names the token's artwork when the token is a base there: its one image, or none. A token no pair names
       // at all is one the provider does not know (round 6: the card lists those too): no artwork, and no GET per row.
-      if (pairs.some((pair) => baseOf(pair, address))) deps.seed(address, artworkFromPairs(source, address))
-      else if (!pairs.some((pair) => quoteOf(pair, address))) deps.seed(address, null)
+      seed(pairs, source, address)
     }
     return true
   }
 
-  /** One GET for `ask`, each of its addresses marked on the wire until it is answered. */
+  /**
+   * One GET for `ask`, each of its addresses marked on the wire until it is answered and marked sent. It runs to its end
+   * whoever is still waiting for it (2026-10-14, D2): what it brings is kept for the next ask.
+   */
   function send(ask: readonly string[]): Wire {
-    const controller = new AbortController()
-    const wire: Wire = { result: read(ask, controller.signal), controller, users: 0, settled: false }
-    for (const address of ask) onWire.set(address, wire)
+    const wire: Wire = { result: read(ask) }
+    const at = deps.now()
+    for (const address of ask) {
+      onWire.set(address, wire)
+      sent.set(address, at)
+    }
     void wire.result.finally(() => {
-      wire.settled = true
       for (const address of ask) if (onWire.get(address) === wire) onWire.delete(address)
     })
     return wire
@@ -193,15 +252,17 @@ export function createWalletPrices(deps: WalletPriceDeps) {
    * native ETH at WETH's price, the rest from this visit's memory, an address
    * already on the wire from its GET (a second view, StrictMode's second
    * mount, the next page's ask all join it), and what is left in GETs of
-   * PRICE_BATCH addresses (PRICE_GETS at most), all at once. `failed` when
-   * every GET waited for gave no usable answer. Never throws.
+   * PRICE_BATCH addresses (PRICE_GETS at most), all at once. An address sent
+   * less than PRICE_TTL_MS ago that brought nothing is not sent again: it has
+   * no price yet (2026-10-14, D2). `failed` when every GET waited for gave no
+   * usable answer. Never throws.
    */
   async function price(addresses: readonly string[], options: { signal?: AbortSignal; onProgress?: (answer: PriceAnswer) => void } = {}): Promise<PriceAnswer> {
     const want = [...new Set(addresses.map((address) => address.toLowerCase()).filter((address) => ADDRESS.test(address)))]
     const sourceOf = (address: string) => (address === NATIVE ? WETH : address)
     const fresh = (address: string) => {
       const entry = kept.get(address)
-      return entry !== undefined && deps.now() - entry.at < PRICE_TTL_MS ? entry : null
+      return entry !== undefined && deps.now() - entry.read < PRICE_TTL_MS ? entry : null
     }
     const snapshot = (failed = false): PriceAnswer => {
       const quotes = new Map<string, TokenQuote | null>()
@@ -219,9 +280,9 @@ export function createWalletPrices(deps: WalletPriceDeps) {
     if (options.signal?.aborted) return snapshot()
     const needed = [...new Set(want.map(sourceOf))].filter((source) => source !== USDG && fresh(source) === null)
     const wires = new Set(needed.flatMap((source) => onWire.get(source) ?? []))
-    const ask = needed.filter((source) => !onWire.has(source)).slice(0, PRICE_BATCH * PRICE_GETS)
+    const due = (source: string) => !onWire.has(source) && deps.now() - (sent.get(source) ?? -Infinity) >= PRICE_TTL_MS
+    const ask = needed.filter(due).slice(0, PRICE_BATCH * PRICE_GETS)
     for (let i = 0; i < ask.length; i += PRICE_BATCH) wires.add(send(ask.slice(i, i + PRICE_BATCH)))
-    for (const wire of wires) wire.users++
     let active = true
     const publish = () => {
       if (active && !options.signal?.aborted) options.onProgress?.(snapshot())
@@ -237,15 +298,6 @@ export function createWalletPrices(deps: WalletPriceDeps) {
     } finally {
       active = false
       options.signal?.removeEventListener('abort', cancel)
-      for (const wire of wires) {
-        wire.users--
-        // A remount/new page may join in this turn. Cancel only after the last consumer really left.
-        queueMicrotask(() => {
-          if (wire.users > 0 || wire.settled) return
-          wire.controller.abort()
-          for (const [address, current] of onWire) if (current === wire) onWire.delete(address)
-        })
-      }
     }
   }
 

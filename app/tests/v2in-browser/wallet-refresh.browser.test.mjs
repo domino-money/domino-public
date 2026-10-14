@@ -77,7 +77,11 @@ test('Wallet rechecks an omitted remembered UFG without discovery, retains it wh
   } finally { await s.close(); }
 });
 
-test('Wallet keeps a previously priced UFG in the top rows when its quote disappears, without displaying a partial total', { timeout: 60_000 }, async () => {
+// Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): this was the rule that left production with "Wallet
+// value unavailable." for the owner's 63 tokens (one held token's pool stopped qualifying, and the card withheld its whole
+// total for a day). UFG still keeps its place with no USD, and is counted for nothing; the total is now the priced
+// tokens' (USDG's $1.00) and says, under the figure, that one held token is not priced. It was no total at all.
+test('Wallet keeps a previously priced UFG in the top rows when its quote disappears, and totals the priced tokens saying UFG is left out', { timeout: 60_000 }, async () => {
   const now = Math.floor(Date.now() / 1000);
   const chain = createDirectChain({ chainId: 4663, timestamp: now, v4: [] });
   const read6 = { portfolio: portfolioOf({ wallet: chain.owner }), activity: activityOf({ wallet: chain.owner }) };
@@ -90,16 +94,19 @@ test('Wallet keeps a previously priced UFG in the top rows when its quote disapp
     const card = s.page.locator('[data-portfolio-tokens]');
     await card.locator(`[data-wallet-row="${UFG}"][data-wallet-priced]`).waitFor();
     assert.equal(await card.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$3,001.00');
+    assert.equal(await card.locator('[data-wallet-total-note]').count(), 0, 'every held token priced: no note');
     priced = false;
     await s.page.reload();
-    await card.locator('[data-wallet-value-unavailable]').waitFor();
     await s.page.waitForFunction(() => {
       const card = document.querySelector('[data-portfolio-tokens]');
-      return card?.getAttribute('data-wallet-source') === 'read' && card.getAttribute('data-wallet-prices') === 'failed';
+      return card?.getAttribute('data-wallet-source') === 'read' && card.getAttribute('data-wallet-prices') === 'ok' && card.querySelector('[data-wallet-total-note]');
     });
     assert.equal(await card.locator('[data-wallet-row]').first().getAttribute('data-wallet-row'), UFG);
     assert.equal(await card.locator(`[data-wallet-row="${UFG}"] [data-usd]`).count(), 0);
-    assert.equal(await card.locator('[data-wallet-total]').count(), 0);
+    assert.match(await card.locator(`[data-wallet-row="${UFG}"] [data-no-price]`).getAttribute('title'), /Not counted in the total/);
+    assert.equal(await card.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$1.00', 'USDG alone; UFG is not counted as anything');
+    assert.equal(await card.locator('[data-wallet-total-note]').textContent(), 'Total of priced tokens · 1 not priced');
+    assert.equal(await card.locator('[data-wallet-value-unavailable]').count(), 0);
     assert.equal(await card.locator(`[data-wallet-row="${UFG}"] [data-wallet-balance-earlier]`).count(), 0, 'only the price is missing; the current token balance still reads normally');
     assert.equal(chain.sends.length, 0);
   } finally { await s.close(); }

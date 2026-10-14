@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 const require = createRequire(import.meta.url);
 const { MIN_LIQUIDITY_USD, NATIVE, PRICE_GETS, PRICE_TTL_MS, USDG, WETH, createWalletPrices, quotesFromTokens } = require('../.test-build/app/src/lib/walletPrices.js');
-const { SHOWN_HOLDINGS, WHOLE_LIST, addressesToPrice, isLookAlike, listGap, reconcileWalletRows, symbolReading, totalWithheld, usdValue, walletHoldings, walletSnapshotValid, walletTotalSnapshot } = require('../.test-build/app/src/lib/walletHoldings.js');
+const { PRICED_AT_MOST, PRICED_PER_LOAD, SHOWN_HOLDINGS, WHOLE_LIST, addressesToPrice, isLookAlike, knownHeld, listGap, nextAsk, reconcileWalletRows, symbolReading, totalLeavesOut, totalWithheld, usdValue, walletHoldings, walletSnapshotValid, walletTotalSnapshot } = require('../.test-build/app/src/lib/walletHoldings.js');
 const { NO_PRICES, WALLET_MEMORY_ADDRESSES, WALLET_MEMORY_KEY, WALLET_MEMORY_MAX_AGE_MS, WALLET_PRICE_MAX_AGE_MS, bookQuotes, recallWallet, rememberWallet, withAnswer } = require('../.test-build/app/src/lib/walletMemory.js');
 const copies = require('../.test-build/app/src/lib/browserCopies.js');
 const { PRICE_BATCH, createTokenArtworkResolver } = require('../.test-build/app/src/lib/tokenArtwork.js');
@@ -58,9 +58,14 @@ test('a known balance change or zero invalidates an atomic total immediately; ol
   }
   assert.equal(walletSnapshotValid(null, rows, now), false, 'cleared receipt evidence cannot resurrect the previous total');
   assert.equal(walletTotalSnapshot([{ ...rows[0], old: true }, rows[1]], book, now, now), null);
-  assert.equal(walletTotalSnapshot(rows, NO_PRICES, now, now), null, 'missing UFG price never produces a USDG-only snapshot');
+  // Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): a total without UFG's price is shown as the priced
+  // tokens' total, saying it leaves one out, so its snapshot is that total and that count. It was no snapshot at all.
+  const usdgOnly = walletTotalSnapshot(rows, NO_PRICES, now, now);
+  assert.deepEqual([usdgOnly.total, usdgOnly.unpriced], [ONE, 1], 'missing UFG price: the USDG total, with UFG counted as not priced, never as zero');
   const rejected = withAnswer(book, { quotes: new Map([[UFG, { usd: '1', liquidityUsd: 100 }]]), at: new Map() }, now + 1);
-  assert.equal(walletTotalSnapshot(rows, rejected, now, now + 1), null, 'rejected prices preserve their qualification guard');
+  const guarded = walletTotalSnapshot(rows, rejected, now, now + 1);
+  assert.deepEqual([guarded.total, guarded.unpriced], [ONE, 1], 'rejected prices preserve their qualification guard: UFG is not valued at them');
+  assert.equal(snapshot.unpriced, 0, 'every held token priced: nothing left out');
 });
 
 test('partial inventory retains an omitted UFG as last known, never as current USD; confirmed zero removes it', () => {
@@ -79,7 +84,11 @@ test('partial inventory retains an omitted UFG as last known, never as current U
   assert.equal(totalWithheld({ ...WHOLE_LIST, discoveryMissing: true }, walletHoldings(fresh, prices)), 'inventory_unavailable', 'HTTP 200 without discovery cannot stand for the whole wallet');
 });
 
-test('a lost qualified price keeps UFG in place but withholds its USD and the headline; recovery restores both', () => {
+// Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): this case is the incident's cause. A token that lost
+// its qualified pool (a price of the last day kept as a hint, none now) counted as unanswered, and one unanswered token
+// withheld the whole headline, for a day: production said "Wallet value unavailable." for the owner's 63 tokens. Now the
+// headline is the priced tokens' total and says how many held tokens it leaves out; UFG keeps its place and has no USD.
+test('a lost qualified price keeps UFG in place with no USD; the headline is the priced tokens’ total and says it leaves UFG out; recovery restores both', () => {
   const now = 1_800_000_000_000;
   const rows = [row(UFG, 'UFG', '1000000'), row(NATIVE, 'ETH', '0.5'), row(USDG, 'USDG', '1', 6)];
   const original = withAnswer(NO_PRICES, { quotes: new Map([[UFG, { usd: '0.003', liquidityUsd: 100_000 }], [WETH, { usd: '2000', liquidityUsd: 1e7 }]]), at: new Map() }, now);
@@ -89,7 +98,10 @@ test('a lost qualified price keeps UFG in place but withholds its USD and the he
   assert.deepEqual(shown.all.map((h) => h.row.token.symbol), ['UFG', 'ETH', 'USDG']);
   assert.equal(shown.all[0].value, null);
   assert.equal(shown.all[0].due, false, 'a settled missing price does not spin forever');
-  assert.equal(totalWithheld(WHOLE_LIST, shown), 'unanswered_prices');
+  assert.equal(shown.unanswered, 1, 'still known as a lost price');
+  assert.equal(totalWithheld(WHOLE_LIST, shown), null, 'the headline is shown');
+  assert.equal(shown.total, 1001n * ONE, 'ETH and USDG; UFG is not counted at all, at any price');
+  assert.deepEqual(totalLeavesOut(WHOLE_LIST, shown), { unpriced: 1, cut: false }, 'and the card says one held token is not priced');
   const storage = memoryStorage();
   rememberWallet(OWNER_A, { at: now + 300_000, whole: true, rows }, lost.prices, storage, now + 300_000);
   const recalled = recallWallet(OWNER_A, now + 301_000, storage);
@@ -101,15 +113,18 @@ test('a lost qualified price keeps UFG in place but withholds its USD and the he
   const again = bookQuotes(recovered);
   const current = walletHoldings(rows, again.quotes, again.hints);
   assert.equal(totalWithheld(WHOLE_LIST, current), null);
+  assert.deepEqual(totalLeavesOut(WHOLE_LIST, current), { unpriced: 0, cut: false });
   assert.equal(current.all[0].value, 2000n * ONE);
   const rejected = walletHoldings(rows, new Map([[UFG, { usd: '0.003', liquidityUsd: 100 }], [WETH, { usd: '2000', liquidityUsd: 1e7 }]]), hints);
   assert.equal(rejected.all[0].value, null, 'a quote rejected by the liquidity guard is not an available value either');
-  assert.equal(totalWithheld(WHOLE_LIST, rejected), 'unanswered_prices');
+  assert.equal(totalWithheld(WHOLE_LIST, rejected), null);
+  assert.equal(totalLeavesOut(WHOLE_LIST, rejected).unpriced, 1);
   const rejectedBook = withAnswer(original, { quotes: new Map([[UFG, { usd: '0.003', liquidityUsd: 100 }]]), at: new Map() }, now + 300_000);
   const rejectedPrices = bookQuotes(rejectedBook);
   const rejectedView = walletHoldings(rows, rejectedPrices.quotes, rejectedPrices.hints);
   assert.equal(rejectedView.all[0].row.token.symbol, 'UFG', 'a rejected replacement price also retains ordering');
-  assert.equal(totalWithheld(WHOLE_LIST, rejectedView), 'unanswered_prices');
+  assert.equal(totalWithheld(WHOLE_LIST, rejectedView), null);
+  assert.equal(totalLeavesOut(WHOLE_LIST, rejectedView).unpriced, 1);
 });
 
 test('writing a partial list cannot rejuvenate an omitted balance or silently mark it current', () => {
@@ -208,8 +223,15 @@ test('prices: USDG is $1 unasked, native ETH is WETH, one GET per set, joined wh
   assert.equal(failed.failed, true);
   assert.equal(failed.quotes.size, 0, 'nothing stale is served after the memory lapses');
   answer = () => [pair(MANY, '0.0022', 50_000)];
+  // Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): a failed GET is not kept, and its tokens are not
+  // sent again before PRICE_TTL_MS: every later ask of the same load (each page of the list, the list settling, a
+  // remount) sent the same batch again.
+  const soon = await prices.price([UFG, MANY]);
+  assert.equal(asked.length, 2, 'a failed GET is not sent again by the next view of the same load');
+  assert.equal(soon.quotes.size, 0, 'and its tokens have no price yet');
+  now += PRICE_TTL_MS;
   const again = await prices.price([UFG, MANY]);
-  assert.equal(asked.length, 3, 'a failed GET is not kept: the next view asks again');
+  assert.equal(asked.length, 3, 'a failed GET is not kept: the next view after PRICE_TTL_MS asks again');
   assert.equal(again.quotes.get(MANY).usd, '0.0022');
   assert.equal(again.quotes.get(UFG), null, 'answered, with no qualified pair');
   // Round 6: a token no pair of the reply names is one the provider does not know: none, so its row asks no GET of its own.
@@ -245,10 +267,14 @@ test('prices: USDG is $1 unasked, native ETH is WETH, one GET per set, joined wh
   const count = asked.length;
   await wide.price(huge);
   assert.equal(asked.length - count, PRICE_GETS, `at most ${PRICE_GETS} GETs for one ask`);
-  const halfFailed = createWalletPrices({ get: async (list) => (list.includes(many[0]) ? null : list.map((a) => pair(a, '1', 1e6))), seed: () => {}, now: () => 0 });
+  let halfAsked = 0;
+  const halfFailed = createWalletPrices({ get: async (list) => (halfAsked++, list.includes(many[0]) ? null : list.map((a) => pair(a, '1', 1e6))), seed: () => {}, now: () => 0 });
   const partial = await halfFailed.price(many);
   assert.equal(partial.failed, false, 'one GET answered: not a failure');
-  assert.equal(partial.quotes.size, 15, 'the failed GET’s 30 stay unanswered, to be asked again');
+  assert.equal(partial.quotes.size, 15, 'the failed GET’s 30 stay unanswered');
+  // Changed on purpose 2026-10-14 (D2): not asked again in the same load (it was "to be asked again" by the next ask).
+  assert.equal((await halfFailed.price(many)).quotes.size, 15);
+  assert.equal(halfAsked, 2, 'the failed batch is not sent again before PRICE_TTL_MS');
 });
 
 // Round 6 (2026-09-27): the card asks again as each page names new tokens, and a page can land before the prices of the
@@ -301,24 +327,90 @@ test('prices publish each completed batch without waiting for the slow batch or 
 
 test('a partial provider answer prices successful tokens without turning unread tokens into authoritative no-price', async () => {
   const asked = [], seeded = [];
+  let now = 1000;
   const prices = createWalletPrices({
     get: async list => {
       asked.push(list);
       return asked.length === 1 ? { pairs: [pair(UFG, '0.003', 100000)], unavailable: [MANY] } : [];
     },
-    seed: (address, mark) => seeded.push([address, mark]), now: () => 1000,
+    seed: (address, mark) => seeded.push([address, mark]), now: () => now,
   });
   const first = await prices.price([UFG, MANY]);
   assert.equal(first.quotes.get(UFG).usd, '0.003');
   assert.equal(first.quotes.has(MANY), false, 'a failed token read remains unanswered');
   assert.equal(seeded.some(([address]) => address === MANY), false, 'failure cannot poison the artwork cache either');
+  // Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): the unread token is retried by an ask after
+  // PRICE_TTL_MS, not by the next ask of the same load (each page of the list asked it again).
+  assert.equal((await prices.price([UFG, MANY])).quotes.has(MANY), false);
+  assert.deepEqual(asked, [[UFG, MANY]], 'not retried within the load');
+  now += PRICE_TTL_MS - 1;
+  assert.equal((await prices.price([UFG, MANY])).quotes.get(UFG).usd, '0.003', 'the answered one is still kept');
+  assert.deepEqual(asked, [[UFG, MANY]], 'and the unread one is not retried yet');
+  now += 1;
   const second = await prices.price([UFG, MANY]);
-  assert.deepEqual(asked, [[UFG, MANY], [MANY]], 'only the unread token is retried');
-  assert.equal(second.quotes.get(UFG).usd, '0.003');
+  assert.deepEqual(asked, [[UFG, MANY], [UFG, MANY]], 'after PRICE_TTL_MS the unread token is retried, with the answer that lapsed');
   assert.equal(second.quotes.get(MANY), null, 'an answered empty response is authoritative no qualified pair');
 });
 
-test('prices abort only when the last joined consumer leaves and reject late cancelled answers', async () => {
+// Added 2026-10-14 (incident of 2026-10-13, package D1): our edge now answers per token, each with the time it retrieved
+// that token's pairs, and keeps an answer up to a day. A price is dated by that retrieval, never by when it reached the
+// page (it was `now`, right while the edge kept nothing past five minutes), so the card's own rule (a price counts for an
+// hour, lib/walletMemory.ts) reads its true age; and each token is priced from its own pairs alone, so an older answer
+// about another token never passes for this one's.
+test('prices from our edge’s per-token answer: each priced from its own pairs and dated by its own retrieval; a token with no answer stays unanswered', async () => {
+  let now = 10_000_000;
+  const asked = [], seeded = [];
+  const mark = 'https://cdn.dexscreener.com/cms/images/abcdefghijklmnop?width=800';
+  // An answer about UFG just over an hour old lists a UFG / WETH pool far deeper than any pair of WETH's own answer.
+  const deep = { chainId: 'robinhood', baseToken: { address: UFG }, quoteToken: { address: WETH }, priceUsd: '0.003', priceNative: '0.000003', liquidity: { usd: 9e9 }, info: { imageUrl: mark } };
+  const prices = createWalletPrices({
+    get: async (list) => {
+      asked.push([...list]);
+      return {
+        tokens: {
+          [UFG]: { pairs: [deep], retrievedAt: now - 3_600_001 },
+          [WETH]: { pairs: [pair(WETH, '2692.60', 19_361_293)], retrievedAt: now - 240_000 },
+          [MANY]: { pairs: [], retrievedAt: now + 60_000 },
+        },
+        unavailable: list.filter((address) => ![UFG, WETH, MANY].includes(address)),
+      };
+    },
+    seed: (address, image) => seeded.push([address, image]), now: () => now,
+  });
+  const first = await prices.price([UFG, NATIVE, MANY, PONS]);
+  assert.deepEqual(asked, [[UFG, WETH, MANY, PONS]]);
+  assert.equal(first.failed, false);
+  assert.deepEqual(first.quotes.get(UFG), { usd: '0.003', liquidityUsd: 9e9 });
+  assert.equal(first.at.get(UFG), now - 3_600_001, 'dated by when our edge retrieved it: over an hour ago');
+  assert.deepEqual(first.quotes.get(NATIVE), { usd: '2692.60', liquidityUsd: 19_361_293 }, 'WETH from its own pairs, never from the older answer about UFG that names it');
+  assert.equal(first.at.get(NATIVE), now - 240_000);
+  assert.equal(first.quotes.get(MANY), null, 'the provider lists no pair for it: no qualified price');
+  assert.equal(first.at.get(MANY), now, 'a time ahead of the page’s clock is now, never later');
+  assert.equal(first.quotes.has(PONS), false, 'no answer for it: no price yet, never "no qualified price"');
+  assert.deepEqual(seeded, [[UFG, 'https://cdn.dexscreener.com/cms/images/abcdefghijklmnop?width=64&height=64&quality=85&format=auto'], [WETH, null], [MANY, null]], 'artwork from each token’s own pairs; none for a token no pair names; nothing for the unanswered one');
+  // The card's own age rule reads those times: the price over an hour old no longer counts, the four-minute-old one does.
+  const book = bookQuotes(withAnswer(NO_PRICES, first, now), now);
+  assert.equal(book.quotes.has(UFG), false);
+  assert.deepEqual(book.hints.get(UFG), { usd: '0.003', liquidityUsd: 9e9 }, 'it only keeps its row in place');
+  assert.equal(book.quotes.get(NATIVE).usd, '2692.60');
+  // Kept for the visit from when the page read it, with the time it was retrieved. Changed on purpose 2026-10-14 (D2): the
+  // unanswered one is not asked again before PRICE_TTL_MS from when it was sent (it was, by the next ask).
+  now += PRICE_TTL_MS - 1;
+  const reused = await prices.price([UFG, NATIVE, PONS]);
+  assert.deepEqual(asked.slice(1), [], 'nothing is asked again within PRICE_TTL_MS, the token with no answer included');
+  assert.equal(reused.quotes.has(PONS), false, 'it has no price yet');
+  assert.equal(reused.at.get(UFG), 10_000_000 - 3_600_001, 'an answer reused from memory keeps its retrieval time');
+  now += 1;
+  await prices.price([UFG]);
+  assert.deepEqual(asked.at(-1), [UFG], 'and five minutes after the page read it, it is asked again');
+});
+
+// Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): a GET was aborted when its last consumer left (the
+// card left with the page, or mounted again), its answer thrown away, and the next mount sent the same batch again: in
+// the browser case of tests/v2in-browser/wallet-scale.browser.test.mjs, leaving Positions twice while the prices were on
+// their way sent 18 price GETs, 11 of them a batch already sent. Now a GET once sent runs to its end, whoever still
+// waits, and its answer serves the next ask; a consumer that left hears nothing.
+test('D2: a GET runs to its end when every consumer leaves; its answer serves the next ask, which sends nothing; no one who left is told', async () => {
   const pending = [];
   const prices = createWalletPrices({
     get: (list, signal) => new Promise((resolve) => pending.push({ list, signal, resolve })),
@@ -331,21 +423,18 @@ test('prices abort only when the last joined consumer leaves and reject late can
   const second = prices.price([UFG], { signal: b.signal });
   assert.equal(pending.length, 1);
   a.abort();
-  await first;
-  await new Promise(setImmediate);
-  assert.equal(pending[0].signal.aborted, false, 'the second consumer still needs the request');
   b.abort();
+  assert.equal((await first).quotes.size, 0, 'a consumer that left gets what was known when it left');
   await second;
   await new Promise(setImmediate);
-  assert.equal(pending[0].signal.aborted, true);
+  assert.equal(pending[0].signal?.aborted ?? false, false, 'never cancelled because its consumers left');
   const third = prices.price([UFG]);
-  assert.equal(pending.length, 2, 'cancelled read is not joined again');
-  pending[0].resolve([pair(UFG, '99', 1e6)]);
-  await new Promise(setImmediate);
-  assert.deepEqual(progress, [0], 'no notification after leaving');
-  pending[1].resolve([pair(UFG, '2', 1e6)]);
+  assert.equal(pending.length, 1, 'the GET on its way is joined, never sent again');
+  pending[0].resolve([pair(UFG, '2', 1e6)]);
   assert.equal((await third).quotes.get(UFG).usd, '2');
-  assert.equal((await prices.price([UFG])).quotes.get(UFG).usd, '2', 'late cancelled data did not populate cache');
+  assert.deepEqual(progress, [0], 'no notification after leaving');
+  assert.equal((await prices.price([UFG])).quotes.get(UFG).usd, '2', 'kept for the visit');
+  assert.equal(pending.length, 1, 'one GET in all');
 });
 
 test('provider price transport receives cancellation and does not fetch for an already cancelled consumer', async () => {
@@ -448,12 +537,16 @@ test('the owner’s wallet: UFG, MANY and ETH are the top 3, the total counts th
 
 // Changed on purpose (round 6): with no prices at all the card showed native ETH, WETH and USDG only. Now it lists
 // every held token; USDG is still valued ($1 needs no provider), and the rest follow with no price, in a fixed order.
+// Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): the total is then USDG's, and says it leaves five
+// held tokens out; it was no total ("no total claims to be the wallet's value"), which a provider away kept for good.
 test('without any price: USDG is still $1, and every other held token follows with no price, the main tokens first', () => {
   const rows = [row(UFG, 'UFG', '1000'), row(addr(1), 'AAA', '5'), row(USDG, 'USDG', '5', 6), row(FAKE_USDG, 'USDG', '50'), row(WETH, 'WETH', '0.5'), row(NATIVE, 'ETH', '0.01'), row(PONS, 'PONS', '3'), row(MANY, 'MANY', '0', 18, 'zero')];
   const view = walletHoldings(rows, new Map());
   assert.deepEqual(view.all.map((h) => [h.row.token.symbol, h.value]), [['USDG', 5n * ONE], ['ETH', null], ['WETH', null], ['PONS', null], ['AAA', null], ['UFG', null]]);
   assert.equal(view.unanswered, 5, 'nothing but USDG answered');
-  assert.equal(totalWithheld(WHOLE_LIST, view), 'unanswered_prices', 'no total claims to be the wallet’s value');
+  assert.equal(totalWithheld(WHOLE_LIST, view), null, 'the priced tokens’ total is shown');
+  assert.equal(view.total, 5n * ONE, 'USDG alone; no token without a price counted as anything');
+  assert.deepEqual(totalLeavesOut(WHOLE_LIST, view), { unpriced: 5, cut: false }, 'and it says five held tokens are not priced');
 });
 
 // Review of round 6 (2026-09-28): prices too old to count (hints) give no value and no total, but place the rows by the
@@ -505,33 +598,49 @@ test('what is priced: only what the wallet holds, WETH and the held selected-poo
   assert.deepEqual(addressesToPrice([row(WETH, 'WETH', '1'), row(NATIVE, 'ETH', '0', 18, 'zero')]), [WETH], 'WETH held alone is asked once');
   const many = Array.from({ length: 45 }, (_, i) => row(addr(i + 100), `T${i}`, '1'));
   // Changed on purpose 2026-10-04 (the owner's new embedded list): ORBIO, a selected-pool token, last in the list, as MARLIN was.
-  const all = addressesToPrice([row(NATIVE, 'ETH', '1'), ...many, row(ORBIO, 'ORBIO', '2')]);
-  assert.equal(all.length, 47, 'every held token: WETH, ORBIO and the 45 others');
+  // Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): a load prices PRICED_PER_LOAD (30) tokens, not
+  // every held one up to 120; the rest when "Show all" opens, up to PRICED_AT_MOST.
+  const all = addressesToPrice([row(NATIVE, 'ETH', '1'), ...many, row(ORBIO, 'ORBIO', '2')], { limit: PRICED_AT_MOST });
+  assert.equal(all.length, 47, 'every held token, when asked for all: WETH, ORBIO and the 45 others');
   assert.deepEqual(all.slice(0, 3), [WETH, ORBIO, addr(100)], 'the main tokens the wallet holds come first, wherever the list has them');
+  assert.deepEqual(addressesToPrice([row(NATIVE, 'ETH', '1'), ...many, row(ORBIO, 'ORBIO', '2')]), all.slice(0, PRICED_PER_LOAD), 'a load: the first PRICED_PER_LOAD of the same order');
+  assert.equal(PRICED_PER_LOAD, PRICE_BATCH);
+  assert.equal(PRICED_AT_MOST, PRICE_BATCH * PRICE_GETS);
   const huge = Array.from({ length: PRICE_BATCH * PRICE_GETS + 10 }, (_, i) => row(addr(i + 1000), `H${i}`, '1'));
-  assert.equal(addressesToPrice(huge).length, PRICE_BATCH * PRICE_GETS, `${PRICE_GETS} GETs’ worth at most`);
+  assert.equal(addressesToPrice(huge).length, PRICED_PER_LOAD, 'a load: 30 tokens, whatever the wallet holds');
+  assert.equal(addressesToPrice(huge, { limit: PRICED_AT_MOST }).length, PRICE_BATCH * PRICE_GETS, `${PRICE_GETS} GETs’ worth at most`);
 });
 
-test('the total stands for the wallet only when the list is whole: every page, every balance, every held token answered', () => {
+// Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): a list cut at the card's page cap, candidates the
+// read skipped and held tokens with no price no longer withhold the total; it is then the priced tokens' total and says
+// what it leaves out (totalLeavesOut). What puts the balances themselves in doubt still withholds it.
+test('the total is withheld only while the balances are in doubt; otherwise it is the priced tokens’ and says what it leaves out', () => {
   const quotes = new Map([[WETH, { usd: '2000', liquidityUsd: 1e7 }], [UFG, { usd: '0.003', liquidityUsd: 165_000 }]]);
   const rows = [row(NATIVE, 'ETH', '0.01'), row(USDG, 'USDG', '5.5', 6), row(UFG, 'UFG', '1000000')];
   const values = walletHoldings(rows, quotes);
   assert.equal(totalWithheld(WHOLE_LIST, values), null, 'whole: the total is shown');
   const cases = [
-    [{ reading: true }, 'reading'],
-    [{ failed: true }, 'read_failed'],
-    [{ morePages: true }, 'more_pages'],
-    [{ capped: true }, 'capped'],
-    [{ unread: 1 }, 'unread_balances'],
-    [{ earlier: true }, 'earlier_rows'],
-    [{ skipped: 7 }, 'skipped_candidates'],
+    [{ reading: true }, 'reading', 'reading'],
+    [{ failed: true }, 'read_failed', 'read_failed'],
+    [{ morePages: true }, 'more_pages', 'more_pages'],
+    [{ capped: true }, 'capped', null],
+    [{ unread: 1 }, 'unread_balances', 'unread_balances'],
+    [{ earlier: true }, 'earlier_rows', 'earlier_rows'],
+    [{ skipped: 7 }, 'skipped_candidates', null],
+    [{ discoveryMissing: true }, 'inventory_unavailable', 'inventory_unavailable'],
+    [{ capped: true, earlier: true }, 'capped', 'earlier_rows'],
   ];
-  for (const [change, reason] of cases) {
-    assert.equal(listGap({ ...WHOLE_LIST, ...change }), reason, reason);
-    assert.equal(totalWithheld({ ...WHOLE_LIST, ...change }, values), reason, reason);
+  for (const [change, gap, withheld] of cases) {
+    assert.equal(listGap({ ...WHOLE_LIST, ...change }), gap, gap);
+    assert.equal(totalWithheld({ ...WHOLE_LIST, ...change }, values), withheld, `${gap}: ${withheld}`);
   }
+  assert.deepEqual(totalLeavesOut({ ...WHOLE_LIST, capped: true }, values), { unpriced: 0, cut: true }, 'a list longer than the card reads: said under the total');
+  assert.deepEqual(totalLeavesOut({ ...WHOLE_LIST, skipped: 7 }, values), { unpriced: 0, cut: true });
   assert.equal(listGap(WHOLE_LIST), null);
-  assert.equal(totalWithheld(WHOLE_LIST, walletHoldings(rows, new Map([[WETH, quotes.get(WETH)]]))), 'unanswered_prices', 'UFG never answered: the total would leave it out');
+  const noUfg = walletHoldings(rows, new Map([[WETH, quotes.get(WETH)]]));
+  assert.equal(totalWithheld(WHOLE_LIST, noUfg), null, 'UFG never answered: the total of the others is shown');
+  assert.equal(noUfg.total, 25n * ONE + ONE / 2n, 'ETH and USDG; UFG counted as nothing, not as zero');
+  assert.deepEqual(totalLeavesOut(WHOLE_LIST, noUfg), { unpriced: 1, cut: false }, 'and the card says one held token is not priced');
   // Changed on purpose (round 6): dust is valued now, so a list worth less than a cent in all has no "$0.00" headline.
   assert.equal(totalWithheld(WHOLE_LIST, walletHoldings([row(UFG, 'UFG', '1')], new Map([[UFG, quotes.get(UFG)]]))), 'nothing_valued', 'not a cent: no headline');
   assert.equal(totalWithheld(WHOLE_LIST, walletHoldings([row(UFG, 'UFG', '1')], new Map([[UFG, null]]))), 'nothing_valued', 'nothing priced: no headline');
@@ -670,7 +779,10 @@ test('memory: a price counts for an hour after its answer; writing the list back
   assert.deepEqual(view.all.map((h) => [h.row.token.symbol, h.value === null, h.due]), [['UFG', true, true], ['MANY', true, true], ['ETH', true, true], ['USDG', false, false], ['AAA', true, true], ['NOPE', true, true]]);
   assert.equal(view.valued, 1, 'USDG alone is valued ($1 needs no provider)');
   assert.equal(view.total, ONE / 2n);
-  assert.equal(totalWithheld(WHOLE_LIST, view), 'unanswered_prices', 'no total at old prices');
+  // Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): no total at old prices, still; the priced tokens'
+  // total (USDG's) is shown, and says the five others are not priced. It was no total at all.
+  assert.equal(totalWithheld(WHOLE_LIST, view), null, 'no total at old prices: the old prices count for nothing');
+  assert.deepEqual(totalLeavesOut(WHOLE_LIST, view), { unpriced: 5, cut: false });
   assert.deepEqual(walletHoldings(later.rows, quotes).all.slice(0, SHOWN_HOLDINGS).map((h) => h.row.token.symbol), ['USDG', 'ETH', 'AAA'], 'what the hints prevent: the airdrop among the top 3');
 
   // A list read again twelve hours on, while every price GET fails: it is written back under its new time, and each
@@ -744,4 +856,151 @@ test('memory: four addresses at most, the most recently read kept', () => {
   assert.deepEqual(kept.sort(), [addr(503), addr(504), addr(505), addr(506)].sort(), 'the two oldest let go');
   assert.equal(recallWallet(addr(506), 6000, storage).rows[0].raw, String(6n * ONE));
   assert.equal(recallWallet(addr(506), 6000, storage).whole, false);
+});
+
+// Added 2026-10-14 (incident of 2026-10-13, package D2). Production showed "Wallet value unavailable." for the owner's 63
+// held tokens with data-wallet-total-withheld="unanswered_prices": one held token that had a qualified pool at an
+// earlier visit of the day and has none now, its old price kept as a hint for a day, counted as unanswered, and one
+// unanswered token withheld the whole total. These cases state the cause and the new rules.
+test('D2, the cause: one held token that lost its qualified pool no longer withholds the total of 62 others; the card says it is not priced', () => {
+  const T = 1_800_000_000_000;
+  const rows = [row(NATIVE, 'ETH', '0.002'), row(USDG, 'USDG', '0.5', 6), row(UFG, 'UFG', '1000000'), row(addr(10), 'THIN', '2')];
+  for (let i = 0; i < 59; i++) rows.push(row(addr(200 + i), `N${i}`, '2'));
+  // Remembered from a visit 6.5 hours ago: UFG, WETH and THIN priced (THIN in a $12,000 pool), the others with none.
+  const others = rows.slice(4).map((r) => [r.token.address, null]);
+  const earlier = withAnswer(NO_PRICES, { quotes: new Map([[UFG, { usd: '0.00260994', liquidityUsd: 150_000 }], [WETH, { usd: '4000', liquidityUsd: 5e6 }], [addr(10), { usd: '5', liquidityUsd: 12_000 }], ...others]), at: new Map() }, T - 6.5 * 3_600_000);
+  // Now: THIN's pool holds $500, which does not qualify; every other answer as before.
+  const now = withAnswer(earlier, { quotes: new Map([[UFG, { usd: '0.00260994', liquidityUsd: 150_000 }], [WETH, { usd: '4000', liquidityUsd: 5e6 }], [addr(10), null], ...others]), at: new Map() }, T);
+  const { quotes, hints } = bookQuotes(now, T);
+  const view = walletHoldings(rows, quotes, hints);
+  assert.equal(view.all.length, 63);
+  assert.equal(view.unanswered, 1, 'THIN: a lost price, as on production');
+  assert.equal(totalWithheld(WHOLE_LIST, view), null, 'was "unanswered_prices": "Wallet value unavailable."');
+  assert.equal(view.total, 261_844n * 10n ** 16n, 'UFG $2,609.94, ETH $8.00 and USDG $0.50: $2,618.44; THIN and the others count for nothing');
+  assert.deepEqual(totalLeavesOut(WHOLE_LIST, view), { unpriced: 60, cut: false });
+  assert.deepEqual(view.all.slice(0, 4).map((h) => [h.row.token.symbol, h.value === null]), [['UFG', false], ['THIN', true], ['ETH', false], ['USDG', false]], 'THIN keeps its place by its last value ($10), with no USD');
+});
+
+test('D2, what a load prices: Domino’s tokens, then the largest remembered holdings, then the list, the remembered no-market ones last; 30 at most', () => {
+  const T = 1_800_000_000_000;
+  const rows = [row(addr(1), 'AAA', '1'), row(addr(2), 'NOPE', '1'), row(UFG, 'UFG', '1000000'), row(addr(3), 'BBB', '1'), row(PONS, 'PONS', '3'), row(MANY, 'MANY', '1000'), row(NATIVE, 'ETH', '0.01'), row(USDG, 'USDG', '1', 6)];
+  assert.deepEqual(addressesToPrice(rows), [WETH, PONS, addr(1), addr(2), UFG, addr(3), MANY], 'nothing remembered: Domino’s tokens, then list order');
+  // Remembered: UFG worth $3,000, MANY $2 (two hours ago, so only a hint), NOPE with no qualified price.
+  const book = withAnswer(withAnswer(NO_PRICES, { quotes: new Map([[MANY, { usd: '0.002', liquidityUsd: 50_000 }]]), at: new Map() }, T - 2 * 3_600_000),
+    { quotes: new Map([[UFG, { usd: '0.003', liquidityUsd: 165_000 }], [addr(2), null]]), at: new Map() }, T - 60_000);
+  assert.deepEqual(addressesToPrice(rows, { book, now: T }), [WETH, PONS, UFG, MANY, addr(1), addr(3), addr(2)], 'the largest remembered holdings next, by value; the no-market one last');
+  assert.deepEqual(addressesToPrice(rows, { book, now: T, limit: 3 }), [WETH, PONS, UFG]);
+  // 5, 51, 63 and 700 held tokens: a load prices min(held, 30).
+  for (const held of [5, 51, 63, 700]) {
+    const wallet = Array.from({ length: held }, (_, i) => row(addr(5000 + i), `W${i}`, '1'));
+    assert.equal(addressesToPrice(wallet).length, Math.min(held, PRICED_PER_LOAD), `${held} held`);
+  }
+});
+
+test('D2, one load’s asks: chosen once the list names 30 or is read, never taken back, 30 more per "Show all" step; 5, 51, 63 and 700 tokens', () => {
+  assert.deepEqual(nextAsk([], [addr(1), addr(2), addr(3)], 2), [addr(1), addr(2)]);
+  assert.deepEqual(nextAsk([addr(9)], [addr(1), addr(9), addr(2)], 3), [addr(9), addr(1), addr(2)], 'what was asked stays first, in its order');
+  assert.deepEqual(nextAsk([addr(9), addr(8)], [addr(1)], 2), [addr(9), addr(8)], 'full: nothing more, nothing taken back');
+  // The card's load, page by page (20 tokens a page, as the read service lists them, 5 pages at most), for every size.
+  for (const held of [5, 51, 63, 700]) {
+    const tokens = Array.from({ length: held }, (_, i) => row(addr(7000 + i), `P${i}`, '1'));
+    const pages = Math.min(5, Math.ceil(held / 20));
+    let asked = [];
+    let sends = 0;
+    for (let page = 1; page <= pages; page++) {
+      const order = addressesToPrice(tokens.slice(0, page * 20), { limit: PRICED_AT_MOST });
+      const settled = page === pages;
+      const next = settled || order.length >= PRICED_PER_LOAD ? nextAsk(asked, order, PRICED_PER_LOAD) : asked;
+      if (next.length > asked.length) sends += 1;
+      asked = next;
+    }
+    assert.equal(asked.length, Math.min(held, PRICED_PER_LOAD), `${held} held: ${asked.length} priced in the load`);
+    assert.equal(sends, 1, `${held} held: one ask of the prices in the whole load, so ${Math.ceil(asked.length / 10)} GETs of ten at our edge`);
+    // "Show all": 30 more each time the page before is answered, up to PRICED_AT_MOST.
+    const all = addressesToPrice(tokens.slice(0, pages * 20), { limit: PRICED_AT_MOST });
+    let bound = PRICED_PER_LOAD;
+    while (all.length > asked.length && bound < PRICED_AT_MOST) {
+      bound += PRICED_PER_LOAD;
+      asked = nextAsk(asked, all, bound);
+    }
+    assert.equal(asked.length, Math.min(held, 100), `${held} held, Show all opened: every listed token priced (the list reads 100 at most)`);
+  }
+});
+
+// Review of D2 (2026-10-14), its blocking finding: a full ask took no token in, so a token of Domino's own that the wallet
+// started holding after the load's ask filled (on a page the remembered list did not have, or brought by a collect or a
+// withdraw into the card on screen) was never priced in the load. Domino's own held tokens are now asked past the bound.
+test('D2 review: Domino’s own held tokens are asked past a full ask, each once; a token Domino does not know still waits for "Show all"', () => {
+  assert.deepEqual(knownHeld([]), []);
+  assert.deepEqual(knownHeld([row(USDG, 'USDG', '5', 6), row(UFG, 'UFG', '1'), row(PONS, 'PONS', '0', 18, 'zero'), row(FAKE_PONS, 'P0NS', '5')]), [],
+    'USDG is $1, a zero balance and a look-alike need no price, and UFG is not one of Domino’s');
+  assert.deepEqual(knownHeld([row(VIRTUAL, 'VIRTUAL', '1'), row(UFG, 'UFG', '1'), row(PONS, 'PONS', '3'), row(NATIVE, 'ETH', '1'), row(WETH, 'WETH', '2')]), [WETH, PONS, VIRTUAL],
+    'WETH once (for native ETH too), then the selected pools’ tokens, in that order');
+  assert.deepEqual(knownHeld([row(NATIVE, 'ETH', '1'), row(PONS, 'PONS', '3')]), addressesToPrice([row(NATIVE, 'ETH', '1'), row(PONS, 'PONS', '3')]), 'the same tokens a load asks first');
+  // A remembered list of 40 fills the load's 30 at once; the list's last page then names a token Domino does not know
+  // and 1,000 PONS.
+  const remembered = Array.from({ length: 40 }, (_, i) => row(addr(8000 + i), `R${i}`, '1'));
+  const ask = (asked, rows, bound = PRICED_PER_LOAD) => nextAsk(asked, addressesToPrice(rows, { limit: PRICED_AT_MOST }), bound, knownHeld(rows));
+  const first = ask([], remembered);
+  assert.deepEqual(first, remembered.slice(0, PRICED_PER_LOAD).map((r) => r.token.address));
+  const now = [...remembered, row(addr(9000), 'LATE', '1'), row(PONS, 'PONS', '1000')];
+  assert.deepEqual(nextAsk(first, addressesToPrice(now, { limit: PRICED_AT_MOST }), PRICED_PER_LOAD), first, 'without `always`, as on 6156544a: PONS was never asked in the load');
+  const later = ask(first, now);
+  assert.deepEqual(later, [...first, PONS], 'what was asked, in its order, then PONS past the bound');
+  assert.deepEqual(ask(later, now), later, 'asked once: the next render adds nothing');
+  // Native ETH arrives too (a withdraw from an ETH pool): WETH, once, after PONS.
+  const withEth = [...now, row(NATIVE, 'ETH', '0.5')];
+  assert.deepEqual(ask(later, withEth), [...later, WETH]);
+  assert.deepEqual(ask(ask(later, withEth), [...withEth, row(WETH, 'WETH', '1')]), [...later, WETH], 'WETH held as well as native ETH: still once');
+  // "Show all": the next page of PRICED_PER_LOAD reaches LATE; nothing asked is taken back.
+  const opened = ask(ask(later, withEth), withEth, PRICED_PER_LOAD * 2);
+  assert.deepEqual(opened.slice(0, PRICED_PER_LOAD + 2), [...later, WETH]);
+  assert.ok(opened.includes(addr(9000)), 'Show all prices LATE');
+  assert.equal(opened.length, 43, 'every held token, priced once: 40 remembered, LATE, PONS and WETH');
+});
+
+test('D2, prices: a load of 30 is one wire; after a refusal nothing is asked again within PRICE_TTL_MS; a slow GET is joined, never sent twice', async () => {
+  let now = 0;
+  const sent = [];
+  let reply = (list) => list.map((a) => pair(a, '1', 1e6));
+  const prices = createWalletPrices({ get: async (list) => (sent.push([...list]), reply(list)), seed: () => {}, now: () => now });
+  const thirty = Array.from({ length: 30 }, (_, i) => addr(8000 + i));
+  assert.equal((await prices.price(thirty)).quotes.size, 30);
+  assert.equal(sent.length, 1, 'one wire for the load’s 30 tokens (our edge is asked ten to a GET: three)');
+  // The provider refuses (our edge answers nothing, or every token missing): nothing kept, nothing asked again soon.
+  now += PRICE_TTL_MS;
+  reply = () => null;
+  const refused = await prices.price(thirty);
+  assert.equal(refused.failed, true);
+  for (let i = 0; i < 5; i++) await prices.price(thirty);
+  assert.equal(sent.length, 2, 'every later ask of the load sends nothing');
+  // A slow provider: the GET is on its way when the next asks come and when its consumer leaves; all join it.
+  now += PRICE_TTL_MS;
+  let release;
+  reply = (list) => new Promise((done) => { release = () => done(list.map((a) => pair(a, '2', 1e6))); });
+  const leaving = new AbortController();
+  const first = prices.price(thirty, { signal: leaving.signal });
+  leaving.abort();
+  await first;
+  const second = prices.price(thirty);
+  const third = prices.price(thirty.slice(0, 10));
+  assert.equal(sent.length, 3, 'one GET, joined by every later ask');
+  release();
+  assert.equal((await second).quotes.size, 30);
+  assert.equal((await third).quotes.get(thirty[0]).usd, '2');
+});
+
+test('D2, the valuation kept for a refresh: the priced tokens’ total with its count, but none while a price too old to count waits for its answer', () => {
+  const T = 1_800_000_000_000;
+  const rows = [row(UFG, 'UFG', '1000000'), row(USDG, 'USDG', '1', 6), row(addr(3), 'NONE', '5')];
+  const fresh = withAnswer(NO_PRICES, { quotes: new Map([[UFG, { usd: '0.003', liquidityUsd: 165_000 }], [addr(3), null]]), at: new Map() }, T);
+  const kept = walletTotalSnapshot(rows, fresh, T, T);
+  assert.deepEqual([kept.total, kept.unpriced], [3001n * ONE, 1], 'NONE has no market: left out, and counted as left out');
+  // Two hours on, nothing answered since: UFG's price only places its row. A kept valuation of USDG alone would show $1
+  // while the next answer brings UFG back: none is kept, and the card holds the total's place until the answer.
+  assert.equal(walletTotalSnapshot(rows, fresh, T + 2 * 3_600_000, T + 2 * 3_600_000), null);
+  // UFG lost its pool (answered, no qualified price): the priced tokens' total is the one shown, and the one kept.
+  const lost = withAnswer(fresh, { quotes: new Map([[UFG, null]]), at: new Map() }, T + 60_000);
+  const after = walletTotalSnapshot(rows, lost, T + 60_000, T + 60_000);
+  assert.deepEqual([after.total, after.unpriced], [ONE, 2]);
 });

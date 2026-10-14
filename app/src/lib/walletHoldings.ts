@@ -32,6 +32,33 @@
  * withheld. Two holdings that still read alike are marked `twin`, so the card
  * can name each by its address, quietly. Exact bigint arithmetic; pure and
  * Node-safe.
+ *
+ * Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2; the
+ * owner: "people will have 500, 600, 700 tokens"). Production showed "Wallet
+ * value unavailable." for the owner's 63 tokens. The cause was the total rule
+ * above: one held token whose provider pool no longer qualified (a price it
+ * had earlier in the day, kept as a hint, and none now) counted as
+ * "unanswered", and one unanswered token withheld the whole total, for up to
+ * a day; so did any token beyond the 120 asked, or one whose GET failed. A
+ * wallet of hundreds of tokens, most with no market, could never show one.
+ * Now:
+ * - The total is the sum of the tokens with a price, shown whenever the
+ *   balances are whole (`totalWithheld`: still none while the list is read,
+ *   after a failed or unfinished read, with balances unread or from an
+ *   earlier list, without discovery, or with not a cent priced). A token with
+ *   no price (no market, a pool too thin, a lost price, not asked or not
+ *   answered yet) is never counted as zero in silence: `totalLeavesOut` says
+ *   how many held tokens the total leaves out, and whether the list itself was
+ *   cut (`capped`, or candidates the read skipped), and the card says so under
+ *   the figure.
+ * - The card prices a bounded set per load (`addressesToPrice`, `nextAsk`):
+ *   PRICED_PER_LOAD tokens, the ones Domino knows first, then the largest
+ *   holdings by the value this browser remembers, then the rest in list order,
+ *   the ones remembered with no market last. Opening "Show all" prices the
+ *   rest, PRICED_PER_LOAD at a time, up to PRICE_BATCH × PRICE_GETS. A wallet
+ *   of 700 tokens costs the requests of a wallet of 30. Domino's own held
+ *   tokens (`knownHeld`, six today at most) are asked past that bound whenever
+ *   they appear (review of D2, 2026-10-14).
  */
 import { MAIN_TOKENS } from '../config/mainTokens'
 import { catalogueTokens } from '../config/selectedPoolCatalogue'
@@ -40,7 +67,7 @@ import { parseScaled } from './format/decimal'
 import { symbolReading, unsafeSymbol } from './symbolReading'
 import { PRICE_BATCH } from './tokenArtwork'
 import { NATIVE, PRICE_GETS, USDG, USDG_QUOTE, WETH, type TokenQuote } from './walletPrices'
-import { bookQuotes, WALLET_MEMORY_MAX_AGE_MS, WALLET_PRICE_MAX_AGE_MS, type PriceBook } from './walletMemory'
+import { bookQuotes, NO_PRICES, WALLET_MEMORY_MAX_AGE_MS, WALLET_PRICE_MAX_AGE_MS, type PriceBook } from './walletMemory'
 
 /** Holdings on the card before "Show all" (owner, 2026-09-27: always the top 3). */
 export const SHOWN_HOLDINGS = 3
@@ -68,7 +95,11 @@ export interface HoldingsView {
   total: bigint
   /** How many of `all` carry a value. */
   valued: number
-  /** Held tokens whose price was never answered (not asked yet, or the GET failed): the total would leave them out. */
+  /**
+   * Held tokens whose price was never answered (not asked yet, or the GET failed), or answered with none where a price
+   * of the last day valued them (a lost price). The total leaves them out; since 2026-10-14 (D2) it is shown all the
+   * same, saying so (totalLeavesOut).
+   */
   unanswered: number
 }
 
@@ -126,7 +157,7 @@ export function reconcileWalletRows(kept: readonly WalletRow[], fresh: readonly 
 }
 
 /** The address a held row's price is asked by: WETH's for native ETH, none for USDG ($1) or a look-alike (never shown). */
-function priceSource(row: WalletRow): string | null {
+export function priceSource(row: WalletRow): string | null {
   const address = row.token.address.toLowerCase()
   if (address === USDG || isLookAlike(row)) return null
   return address === NATIVE ? WETH : address
@@ -186,19 +217,71 @@ export function walletHoldings(rows: readonly WalletRow[], quotes: ReadonlyMap<s
 }
 
 /**
- * The addresses to price for `rows`, most important first: WETH when native
- * ETH or WETH is held, then the selected pools' tokens the list holds, then
- * every other token it holds, in list order; at most PRICE_GETS GETs' worth.
+ * How many tokens the card prices per page load (2026-10-14, package D2): one PRICE_BATCH, three asks of our edge,
+ * whatever the wallet holds. "Show all" prices the rest, this many at a time, up to PRICE_BATCH × PRICE_GETS.
+ */
+export const PRICED_PER_LOAD = PRICE_BATCH
+/** The most tokens the card prices in one visit, "Show all" opened included. */
+export const PRICED_AT_MOST = PRICE_BATCH * PRICE_GETS
+
+/** The tokens Domino knows, by price source: WETH (for native ETH too), then the embedded selected pools' tokens. */
+const KNOWN_SOURCES = [WETH, ...catalogueTokens().map((token) => token.address)]
+
+/**
+ * The tokens Domino knows that `rows` holds, by price source, in KNOWN_SOURCES order: WETH when native ETH or WETH is
+ * held, then the held selected pools' tokens (five today; USDG is $1, never asked). Review of D2 (2026-10-14): they are
+ * priced whatever the load's bound (`nextAsk`'s `always`), so one the wallet starts holding after the load's ask filled
+ * (on a page the remembered list did not have, or brought by a collect or a withdraw) is never left out.
+ */
+export function knownHeld(rows: readonly WalletRow[]): string[] {
+  const holds = new Set(rows.flatMap((row) => (held(row) ? (priceSource(row) ?? []) : [])))
+  return KNOWN_SOURCES.filter((address) => holds.has(address))
+}
+
+/**
+ * The addresses to price for `rows`, most important first, at most `limit`
+ * (PRICED_PER_LOAD unless given):
+ * 1. the tokens Domino knows (knownHeld): WETH when native ETH or WETH is
+ *    held, then the selected pools' tokens the list holds;
+ * 2. the holdings `book` (this browser's prices, lib/walletMemory.ts) gives a
+ *    value at the balance held now, largest first, a price too old to count
+ *    included (2026-10-14, D2: the largest holdings first, before any is asked);
+ * 3. every other held token, in list order;
+ * 4. the ones `book` last saw with no qualified price, in list order.
  * Only what the wallet holds: a zero balance, USDG ($1, never asked for), a
  * look-alike (never shown) and a token the list does not hold are left out,
  * so the provider hears about no more than the card can show. None when
  * nothing needs a price.
  */
-export function addressesToPrice(rows: readonly WalletRow[]): string[] {
-  const holds = new Set(rows.filter(held).map(priceSource).filter((address): address is string => address !== null))
-  const main = [WETH, ...catalogueTokens().map((token) => token.address)].filter((address) => holds.has(address))
-  return [...new Set([...main, ...holds])].slice(0, PRICE_BATCH * PRICE_GETS)
+export function addressesToPrice(rows: readonly WalletRow[], { book = NO_PRICES, now, limit = PRICED_PER_LOAD }: { book?: PriceBook; now?: number; limit?: number } = {}): string[] {
+  const { quotes, hints } = bookQuotes(book, now)
+  const holds = new Set<string>()
+  const remembered = new Map<string, bigint>()
+  for (const row of rows) {
+    const source = held(row) ? priceSource(row) : null
+    if (source === null) continue
+    holds.add(source)
+    const value = valueAt(row, quotes.get(source)) ?? valueAt(row, hints.get(source))
+    if (value !== null && value > (remembered.get(source) ?? -1n)) remembered.set(source, value)
+  }
+  const known = KNOWN_SOURCES.filter((address) => holds.has(address))
+  const largest = [...remembered].sort(([, a], [, b]) => (a === b ? 0 : a > b ? -1 : 1)).map(([source]) => source)
+  // Then the list's order, the ones last seen with no qualified price (and no value remembered) after the rest.
+  const rest = [...holds].filter((source) => book.prices.get(source)?.quote !== null)
+  return [...new Set([...known, ...largest, ...rest, ...holds])].slice(0, limit)
 }
+
+/**
+ * What the card asks in this load (2026-10-14, D2): what it asked already, in the same order, then the next of `order`
+ * (addressesToPrice's, unbounded) it has not asked, until `bound` in all. Never takes one back, so a later page of the
+ * list, or a price that lands, never sends a token the load had no room for. Pure.
+ *
+ * Review of D2 (2026-10-14): then every one of `always` (knownHeld: Domino's own tokens the list holds, six today at most)
+ * not asked yet, past the bound. A full ask took no token in, so a selected pool's token on a page the remembered list
+ * did not have, or one a collect or a withdraw brought into a card already on screen, was never priced in the load.
+ */
+export const nextAsk = (asked: readonly string[], order: readonly string[], bound: number, always: readonly string[] = []): string[] =>
+  [...new Set([...[...new Set([...asked, ...order])].slice(0, Math.max(bound, asked.length)), ...always])]
 
 /** What the card knows about how whole its list is, besides the holdings themselves. */
 export interface ListWholeness {
@@ -237,23 +320,45 @@ export function listGap(list: ListWholeness): string | null {
 }
 
 /**
- * Why the card may not show a total as the wallet's value, as a closed code
- * for a data attribute (never printed), or null when it may: the list is
- * whole and every holding it lists was valued or answered as unpriced.
+ * Why the card may not show a total, as a closed code for a data attribute
+ * (never printed), or null when it may.
+ *
+ * Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): only
+ * what puts the balances themselves in doubt withholds it: the list still
+ * read, a read that failed or did not reach its end, balances that could not
+ * be read, balances from an earlier list, no discovery (in listGap's order);
+ * and not a cent priced (no "$0.00" headline). A held token with no price, a
+ * list cut at WALLET_PAGE_CAP pages and candidates the read skipped no longer
+ * do: the total is then the priced tokens', and `totalLeavesOut` says what it
+ * leaves out. It was any held token not answered (`unanswered_prices`), which a
+ * single token that lost its pool kept up for a day, and any list too long to
+ * read whole (`capped`).
  */
 export function totalWithheld(list: ListWholeness, holdings: HoldingsView): string | null {
-  const gap = listGap(list)
+  const gap = listGap({ ...list, capped: false, skipped: 0 })
   if (gap !== null) return gap
-  if (holdings.unanswered > 0) return 'unanswered_prices'
   // Nothing priced, or not a cent in all: no "$0.00" headline.
   if (holdings.total < ONE_DOLLAR / 100n) return 'nothing_valued'
   return null
 }
 
-/** One complete valuation, never a sum of refreshed rows and earlier prices. Its original provenance stays accessible. */
+/**
+ * What a shown total leaves out (2026-10-14, D2): how many held tokens it has no price for (no market, a pool too thin
+ * to count, a price lost or too old, not asked in this load or not answered yet), and whether the list itself was cut
+ * (more pages than the card reads, or candidates the read skipped). Nothing left out: the total is the whole list's.
+ */
+export function totalLeavesOut(list: ListWholeness, holdings: HoldingsView): { unpriced: number; cut: boolean } {
+  return { unpriced: holdings.all.length - holdings.valued, cut: list.capped || list.skipped > 0 }
+}
+
+/**
+ * One valuation as it was shown, never a sum of refreshed rows and earlier prices. Its original provenance stays
+ * accessible. Since 2026-10-14 (D2) it may be the priced tokens' total: `unpriced` says how many held tokens it left out.
+ */
 export interface WalletTotalSnapshot {
   total: bigint
   until: number
+  unpriced: number
   balances: ReadonlyMap<string, string>
   holdings: ReadonlyMap<string, Holding>
 }
@@ -262,9 +367,14 @@ export function walletTotalSnapshot(rows: readonly WalletRow[], book: PriceBook,
   const { quotes, hints } = bookQuotes(book, now)
   const holdings = walletHoldings(rows, quotes, hints)
   if (rows.some(row => row.old) || totalWithheld(WHOLE_LIST, holdings) !== null) return null
-  // Each original price answer keeps its own expiry. Re-reading the list cannot renew it.
-  const until = Math.min(at + WALLET_MEMORY_MAX_AGE_MS, ...addressesToPrice(rows).map(source => (book.prices.get(source)?.at ?? 0) + WALLET_PRICE_MAX_AGE_MS))
-  return until > now ? { total: holdings.total, until, balances: new Map(rows.filter(held).map(row => [row.key, row.raw])), holdings: new Map(holdings.all.map(holding => [holding.row.key, holding])) } : null
+  // A holding placed by a price too old to count and not answered since would make the total look smaller than the
+  // next answer will (2026-10-14, D2): no valuation to keep from it.
+  if (holdings.all.some((holding) => holding.due && holding.rank !== null)) return null
+  // Each original price answer keeps its own expiry. Re-reading the list cannot renew it. Only the prices the total
+  // counts set it (2026-10-14, D2): a token with none, never asked, is not in it.
+  const counted = holdings.all.flatMap((holding) => (holding.value === null ? [] : [priceSource(holding.row)])).filter((source): source is string => source !== null)
+  const until = Math.min(at + WALLET_MEMORY_MAX_AGE_MS, ...counted.map(source => (book.prices.get(source)?.at ?? 0) + WALLET_PRICE_MAX_AGE_MS))
+  return until > now ? { total: holdings.total, until, unpriced: holdings.all.length - holdings.valued, balances: new Map(rows.filter(held).map(row => [row.key, row.raw])), holdings: new Map(holdings.all.map(holding => [holding.row.key, holding])) } : null
 }
 
 /** A read change, including an explicit zero, invalidates the snapshot before the rest of the pages finish. */

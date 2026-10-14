@@ -11,7 +11,7 @@ import { useReadSource } from '../../lib/read/screens/readContext'
 import { WALLET_PAGE_CAP, createWalletSession, type WalletSession, type WalletSnapshot } from '../../lib/read/screens/walletSession'
 import type { ReadOutcome, ReadSource, TokenDisplay } from '../../lib/read/types'
 import { createWalletReadGuard, subscribePositionEvidence } from '../../lib/positionEvidence'
-import { SHOWN_HOLDINGS, WHOLE_LIST, addressesToPrice, held, listGap, reconcileWalletRows, totalWithheld, walletHoldings, walletSnapshotValid, walletTotalSnapshot, type Holding, type ListWholeness, type WalletTotalSnapshot } from '../../lib/walletHoldings'
+import { PRICED_AT_MOST, PRICED_PER_LOAD, SHOWN_HOLDINGS, WHOLE_LIST, addressesToPrice, held, knownHeld, listGap, nextAsk, priceSource, reconcileWalletRows, totalLeavesOut, totalWithheld, walletHoldings, walletSnapshotValid, walletTotalSnapshot, type Holding, type ListWholeness, type WalletTotalSnapshot } from '../../lib/walletHoldings'
 import { NO_PRICES, WALLET_MEMORY_MAX_AGE_MS, bookQuotes, recallWallet, rememberWallet, withAnswer, type PriceBook, type RememberedList } from '../../lib/walletMemory'
 import { walletPrices } from '../../lib/walletPrices'
 import { LiveFigure } from '../figures'
@@ -109,10 +109,10 @@ const CENT = 10n ** 16n
 const usdText = (units: bigint) => (units < CENT ? '<$0.01' : formatUsd(scaledText((units + CENT / 2n) / CENT, 2)))
 
 /** Where a holding's value comes from, for its title: USDG's fixed dollar, the provider's price and the pair it is from, or none. */
-function valueTitle(holding: Holding): string {
+function valueTitle(holding: Holding, unasked = false): string {
   if (holding.row.old) return 'Last known balance. Waiting for a current balance before valuing it.'
   const quote = holding.quote
-  if (!quote) return holding.due ? 'No price at the moment.' : 'No market price found for this token.'
+  if (!quote) return `${unasked ? 'Not priced in this view: Show all prices it.' : holding.due ? 'No price at the moment.' : 'No market price found for this token.'} Not counted in the total.`
   if (quote.liquidityUsd === null) return 'USDG counted at $1.'
   return `At $${quote.usd} per token, reported by DEX Screener for a pair holding ${formatUsd(String(Math.floor(quote.liquidityUsd)))}. Indicative, not a quote.`
 }
@@ -124,7 +124,7 @@ function valueTitle(holding: Holding): string {
  * while its price is `due` on the wire). A symbol another listed holding
  * shares is followed by its short address.
  */
-function HoldingRow({ holding, due, cached }: { holding: Holding; due: boolean; cached?: Holding }) {
+function HoldingRow({ holding, due, unasked, cached }: { holding: Holding; due: boolean; unasked: boolean; cached?: Holding }) {
   const { row, twin } = holding
   // Use the earlier complete observation as a whole; never reprice an old balance with a newer quote.
   const previous = row.old && cached?.row.raw === row.raw && cached.value !== null ? cached : undefined
@@ -152,7 +152,7 @@ function HoldingRow({ holding, due, cached }: { holding: Holding; due: boolean; 
           <Skeleton className="ml-auto h-3.5 w-16" />
         </span>
       ) : value === null ? (
-        <span className="dm-acct-token-usd dm-acct-token-none" data-no-price="" title={valueTitle(holding)}>
+        <span className="dm-acct-token-usd dm-acct-token-none" data-no-price="" title={valueTitle(holding, unasked)}>
           <span className="sr-only">{row.old ? 'Balance updating' : 'No price'}</span>
         </span>
       ) : (
@@ -294,6 +294,28 @@ const wholenessOf = (snap: WalletSnapshot, unread: number, reading: boolean): Li
  * whole (totalWithheld): pages left unread, balances that could not be read,
  * skipped candidates, incomplete discovery, earlier balances or unanswered
  * prices leave the rows with no total.
+ *
+ * Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2; the
+ * owner: "focus on the positions, not on the money in the wallet", "people
+ * will have 500, 600, 700 tokens"):
+ * - Prices: one bounded set per load (lib/walletHoldings.ts addressesToPrice,
+ *   nextAsk): PRICED_PER_LOAD tokens, the ones Domino knows, then the largest
+ *   holdings this browser remembers, then the list's order, chosen once the
+ *   list names that many, is read to its end, is remembered or is drawn; never taken
+ *   back, so no page of the list and no answer sends more. "Show all" prices
+ *   the rest, a page of PRICED_PER_LOAD after the one before is answered, up to
+ *   PRICED_AT_MOST. It was every held token as each page named it, up to 120.
+ *   Domino's own tokens the list holds (knownHeld: WETH and the selected
+ *   pools' tokens) are asked past the bound whenever they appear (review of
+ *   D2): a full ask had left out one on a page the remembered list did not
+ *   have, or one a collect or a withdraw brought into the card on screen.
+ * - The total: the priced tokens' sum whenever the balances are whole, with
+ *   one quiet line under it when it leaves held tokens out ("Total of priced
+ *   tokens · 47 not priced"), or the list was cut ("· more not listed"). A
+ *   token with no market, a pool too thin, a lost price or no answer yet no
+ *   longer withholds it, nor does a list longer than the card reads. While the
+ *   load's prices are on their way, the figure holds its place (or the last
+ *   one shown stays), as before.
  */
 export function PortfolioTokens({ address }: { address: string }) {
   const source = useReadSource()
@@ -322,6 +344,11 @@ export function PortfolioTokens({ address }: { address: string }) {
   const [pricedKey, setPricedKey] = useState<string | null>(null)
   const [pricesFailed, setPricesFailed] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  // How many pages of PRICED_PER_LOAD this load prices (2026-10-14, D2): one, and one more each time "Show all" is open
+  // and the page before it is answered.
+  const [pricedPages, setPricedPages] = useState(1)
+  // What this load asked prices for, in order, for the token list it was asked for: only ever grows (nextAsk).
+  const [asking, setAsking] = useState<{ tokens: string[]; list: readonly string[] }>(() => ({ tokens, list: [] }))
   // This read of the list as its last page left it, and how many balances its pages could not read.
   const [list, setList] = useState<SettledList | null>(null)
   // The first page is asked for as soon as the source is there, so the list starts out loading.
@@ -551,11 +578,22 @@ export function PortfolioTokens({ address }: { address: string }) {
   // The selected pools' tokens asked for because the list showed none held; tokens someone typed are theirs, not this.
   const checkedByAddress = Boolean(snap && tokens === SELECTED_TOKENS)
 
-  // Every held token's price, asked as soon as the list names it; USDG alone asks nothing ($1 without asking). Once the
-  // list is read to its end (or to a failure) and its tokens are answered, the card is drawn. An address already
-  // answered is taken from walletPrices' memory, so asking again when the read settles sends nothing.
-  const ask = addressesToPrice(rows).join(',')
+  // The held tokens' prices, a bounded set per load (2026-10-14, D2): the first PRICED_PER_LOAD by addressesToPrice's
+  // order (the remembered prices rank the largest holdings first), chosen once the list names that many, is read to its
+  // end, is remembered, or has been drawn (FIRST_PAINT_MS: a slow list's first pages are priced while the rest is read,
+  // as before), and never taken back; "Show all" adds a page at a time. USDG alone asks nothing ($1 without
+  // asking). Once the list is read to its end (or to a failure) and its tokens are answered, the card is drawn. An
+  // address already answered is taken from walletPrices' memory, so asking again when the read settles sends nothing.
   const settled = !loading && snap !== null
+  const order = addressesToPrice(rows, { book: recalled?.book, now: clock, limit: PRICED_AT_MOST })
+  const bound = Math.min(PRICED_AT_MOST, PRICED_PER_LOAD * pricedPages)
+  const askedBefore = asking.tokens === tokens ? asking.list : []
+  // Domino's own held tokens are asked past the bound (review of D2): one a later page, a quiet re-read or the read after a
+  // confirmed collect or withdraw brings in is priced in this load, even once its ask is full.
+  const askedList = settled || painted || order.length >= bound || Boolean(recalled?.rows.length) ? nextAsk(askedBefore, order, bound, knownHeld(rows)) : askedBefore
+  // Kept before children paint, as the valuation below is: a render never asks for less than the one before it.
+  if (asking.tokens !== tokens || askedList.length !== asking.list.length) setAsking({ tokens, list: askedList })
+  const ask = askedList.join(',')
   useEffect(() => {
     if (ask === '') return
     const controller = new AbortController()
@@ -593,12 +631,15 @@ export function PortfolioTokens({ address }: { address: string }) {
   // Previous balances stay visible and labelled; they cannot make an incomplete read look like a current total.
   const wholeness = { ...fresh, earlier: fresh.earlier || rows.some((row) => row.old) || (list !== null && clock - list.at > WALLET_MEMORY_MAX_AGE_MS) }
   const withheld = totalWithheld(wholeness, holdings)
-  // The prices of tokens the list has just named are on the wire (and the last answer left none unanswered).
+  // What the total leaves out (2026-10-14, D2): held tokens with no price, and a list cut short. Said under the figure.
+  const leaves = totalLeavesOut(wholeness, holdings)
+  // This load's prices are on the wire; the last answer may have left some unanswered (they are not asked again soon).
   const pending = ask !== '' && pricedKey !== ask
   const due = pending && !pricesFailed
-  const total = !waiting && withheld === null ? holdings.total : null
+  // While they are on the wire the figure waits for them (2026-10-14, D2: it no longer waits for every held token).
+  const total = !waiting && withheld === null && !pending ? holdings.total : null
   const snapshotValid = walletSnapshotValid(complete.snapshot, freshRows, clock)
-  const updating = total === null && !failure && (loading || (listGap(wholeness) === null && pending && !pricesFailed))
+  const updating = total === null && !failure && (loading || (withheld === null && pending))
   const previousTotal = updating && snapshotValid ? complete.snapshot?.total ?? null : null
   // Capture only a changed complete read, before children paint; a timer or partial price answer never renews it.
   if (total !== null && list && (complete.list !== list || complete.book !== book)) {
@@ -608,12 +649,20 @@ export function PortfolioTokens({ address }: { address: string }) {
   }
   const displayedTotal = total ?? previousTotal
   // The total's place is held while the list is first read (a first visit), and while a whole list's prices are due.
-  const holdPlace = displayedTotal === null && (waiting || (!recalled && !settledOnce && withheld === 'reading' && holdings.valued > 0) || (due && withheld === 'unanswered_prices'))
+  const holdPlace = displayedTotal === null && (waiting || (!recalled && !settledOnce && withheld === 'reading' && holdings.valued > 0) || (pending && withheld === null))
+  // The one line under the figure when it leaves held tokens out, or the list was cut (2026-10-14, D2); the figure shown
+  // from the last valuation keeps that valuation's own count.
+  const unpriced = previousTotal !== null ? (complete.snapshot?.unpriced ?? 0) : leaves.unpriced
+  const totalNote = unpriced > 0 || leaves.cut ? `Total of priced tokens${unpriced > 0 ? ` · ${unpriced} not priced` : ''}${leaves.cut ? ' · more not listed' : ''}` : null
+  // "Show all" prices the rest of the list, a page of PRICED_PER_LOAD once the page before it is answered (2026-10-14, D2).
+  if (expanded && !pending && order.length > askedList.length && askedList.length >= bound && bound < PRICED_AT_MOST) setPricedPages(pricedPages + 1)
+  const askedSet = new Set(askedList)
   const shown = waiting ? [] : holdings.all.slice(0, SHOWN_HOLDINGS)
   const rest = waiting ? [] : holdings.all.slice(SHOWN_HOLDINGS)
   const visible = expanded ? [...shown, ...rest] : shown
   const firstUnpriced = visible.findIndex((holding) => holding.rank === null)
-  const pricesState = ask === '' ? 'none' : pending ? 'pending' : holdings.unanswered > 0 ? 'failed' : 'ok'
+  // `failed`: the last answer left a token it asked for without one (2026-10-14, D2: no longer every held token unpriced).
+  const pricesState = ask === '' ? 'none' : pending ? 'pending' : pricesFailed ? 'failed' : 'ok'
   const showLoadMore = Boolean(view && view.pages > 0 && (canAskMore || loading) && failure !== null)
 
   const run = (step: Step) => {
@@ -655,6 +704,8 @@ export function PortfolioTokens({ address }: { address: string }) {
       data-wallet-source={kept.length > 0 && loading ? 'memory' : 'read'}
       data-wallet-held={waiting ? undefined : holdings.all.length}
       data-wallet-shown={waiting ? undefined : visible.length}
+      data-wallet-priced={waiting ? undefined : holdings.valued}
+      data-wallet-asked={askedList.length}
       data-wallet-total-withheld={waiting || total !== null ? undefined : (withheld ?? undefined)}
     >
       <p className="dm-acct-tokens-count" title={snap && view && view.pages > 0 ? listTitle(snap, view, block, checkedByAddress) : undefined}>
@@ -679,16 +730,17 @@ export function PortfolioTokens({ address }: { address: string }) {
         {waiting ? 'Reading the token list…' : failure && holdings.all.length === 0 ? failureText(failure, 'wallet').title : ''}
       </p>
 
-      {/* The total of every holding on the card, the ones behind "Show all" included, when the list is whole; its skeleton holds the place while the list is first read. */}
+      {/* The total of the priced holdings on the card, the ones behind "Show all" included, when the balances are whole, with one line under it when it leaves held tokens out; its skeleton holds the place while the list is first read. */}
       {displayedTotal !== null ? (
-        <p className="dm-acct-total" data-wallet-total="" data-wallet-total-snapshot={previousTotal !== null ? '' : undefined} title={previousTotal !== null ? 'Last complete valuation. Balances and prices are being checked again.' : 'The sum of the tokens on this card, at provider-reported prices with USDG at $1. Indicative, not a quote.'}>
+        <p className="dm-acct-total" data-wallet-total="" data-wallet-total-snapshot={previousTotal !== null ? '' : undefined} title={previousTotal !== null ? 'Last complete valuation. Balances and prices are being checked again.' : `The sum of the tokens on this card${totalNote ? ' that have a price' : ''}, at provider-reported prices with USDG at $1. Indicative, not a quote.`}>
           <span className="sr-only">{previousTotal !== null ? 'Last known total value ' : 'Total value '}</span>
           <LiveFigure value={usdText(displayedTotal)} mode="digits" dimCents className="dm-fig-xl" />
           {previousTotal !== null && <span className="sr-only" data-wallet-total-updating="">Previous complete valuation. Refreshing balances and prices.</span>}
+          {totalNote && <span className="dm-hint block" data-wallet-total-note="">{totalNote}</span>}
         </p>
       ) : (
-        <p className="dm-acct-total" data-wallet-value-unavailable={!holdPlace ? '' : undefined} title={!holdPlace ? 'The wallet total is unavailable until all balances and prices can be verified.' : undefined}>
-          {holdPlace ? <Skeleton className="dm-acct-total-skel" /> : <span className="sr-only">Wallet value unavailable.</span>}
+        <p className="dm-acct-total" data-wallet-value-unavailable={!holdPlace ? '' : undefined} title={!holdPlace ? 'The wallet total is unavailable until the balances can be verified.' : undefined}>
+          {holdPlace ? <Skeleton className="dm-acct-total-skel" /> : <span className="sr-only">{withheld === 'nothing_valued' ? 'No priced tokens.' : 'Wallet value unavailable.'}</span>}
         </p>
       )}
 
@@ -702,7 +754,7 @@ export function PortfolioTokens({ address }: { address: string }) {
                   No price found
                 </li>
               )}
-              <HoldingRow holding={holding} due={due && holding.due} cached={previousTotal !== null ? complete.snapshot?.holdings.get(holding.row.key) : undefined} />
+              <HoldingRow holding={holding} due={due && holding.due && askedSet.has(priceSource(holding.row) ?? '')} unasked={holding.due && !askedSet.has(priceSource(holding.row) ?? '')} cached={previousTotal !== null ? complete.snapshot?.holdings.get(holding.row.key) : undefined} />
             </Fragment>
           ))}
           {waiting &&
