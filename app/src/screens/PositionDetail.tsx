@@ -3,7 +3,7 @@ import { newPositionHref, poolHref, positionsHref } from '../components/explore/
 import { IconChevronDown, IconChevronLeft, IconMarkets, IconPlus, IconSearch } from '../components/icons'
 import { PairName, PositionStatus } from '../components/positions/PositionFigures'
 import { AutomateEntry, AutomationChip, useListedPosition } from '../components/positions/AutomateEntry'
-import { KeyFigures } from '../components/positions/KeyFigures'
+import { KeyFigures, type KeyUsd } from '../components/positions/KeyFigures'
 import { PositionInsights } from '../components/positions/PositionInsights'
 import { PositionActivity, useAutomaticAdds } from '../components/positions/PositionActivity'
 import { PositionRange, chainCardPrice, preloadPriceChart } from '../components/positions/PositionRange'
@@ -105,7 +105,27 @@ const FeeReserves = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<ReservesProps
 // Domino V2 (integration, 2026-10-02): the position's automation (its vault's reserves, Leave automation, the rearm) and
 // its Auto-exit (the owner's point 5, 2026-10-06), under the page's cards in every phase, only in a build that carries V2
 // (production and development do since 2026-10-05; a build without it has this null, and nothing of it is bundled).
-const V2Position = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/automate/PositionAutomation'), () => ({ default: () => null }))) : null
+const V2Position = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/automate/PositionAutomation'), () => ({ default: () => null, PageUsd: () => null }))) : null
+/**
+ * Added 2026-10-14 (the incident of 2026-10-13, package V1; the owner's decision D3): the page's dollars from the one
+ * valuation its list row uses (src/v2in/position/PageUsd.tsx): read-v6's qualified prices, or the pool's own price where
+ * one token has one, so ETH / IMD shows the same dollars here as in Your positions (it showed token amounts here: this
+ * page valued a pair with USDG only). It draws nothing and hands the figures up; until it does, and where it has none,
+ * the page's own rule stands. It travels in the automation's chunk above (which this page always opens, and whose
+ * portfolio read it shares), so no chunk and no request is added. Its props, written here as the other chunks' are.
+ * `owner` (2026-10-14, review): the NFT's owner, whose portfolio answer the part values a visitor's page with. It is
+ * the read this page's Activity already makes (PositionActivity below: the same reader and key), so none is added.
+ */
+interface V2UsdProps {
+  tokenId: string
+  position: WalletPosition
+  block: number
+  owner: string
+  brief: boolean
+  saved: boolean
+  onUsd: (usd: KeyUsd | null) => void
+}
+const V2Usd = __DOMINO_V2__ ? lazy<ComponentType<V2UsdProps>>(recovering(() => import('../v2in/automate/PositionAutomation').then((m) => ({ default: m.PageUsd })), () => ({ default: () => null }))) : null
 
 /**
  * The page's own chain read: the fees relay's /state read of this NFT, from the chain, at one block. 2026-09-28 (speed
@@ -315,6 +335,8 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
   const listed = useLegacyListing(card.tokenId, mine ? card.owner.address : null, changes)
   const automatable = listed === true && card.hasLiquidity
   const usdgIndex = state ? usdgSide(state.currencies) : null
+  // The one valuation's figures for the two money tiles (V2Usd above), in a build with V2; null: the page's own rule.
+  const [pageUsd, setPageUsd] = useState<KeyUsd | null>(null)
   const phone = useMediaQuery('(max-width: 767px)')
   const automation = useAutomation(card.tokenId)
   // What the automation put back, from its vault's own record: the only rows of Activity that name it (2026-09-27).
@@ -414,7 +436,10 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
       </div>
 
       {V2Position && <Suspense fallback={null}><V2Position tokenId={card.tokenId} position={wallet} holder={owner} priceContext={{ block, saved: cached || copy !== undefined || gateway }} toolbar={automationToolbar} onChanged={() => onChanged()} /></Suspense>}
-      <KeyFigures card={card} state={state && usdgIndex !== null ? state : null} price={price} block={block} cached={cached || copy !== undefined || gateway} workspace />
+      {V2Usd && <Suspense fallback={null}><V2Usd tokenId={card.tokenId} position={wallet} block={block} owner={owner} brief={cached && copy === undefined && !gateway} saved={cached || copy !== undefined || gateway} onUsd={setPageUsd} /></Suspense>}
+      {/* Changed on purpose 2026-10-14 (package V1, decision D3): any pair may be valued now (by the one valuation), so
+          the state goes down whenever there is a figure to split, not for a pair with USDG only. */}
+      <KeyFigures card={card} state={state && (usdgIndex !== null || pageUsd !== null) ? state : null} price={price} block={block} cached={cached || copy !== undefined || gateway} workspace usd={pageUsd} />
 
       {/* The fees its vault collected and has not reinvested, while any is above zero (2026-10-02): the owner's, from its own
           read through the wallet, so never on a copy or the gateway's row. */}
@@ -476,6 +501,12 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
             <KeyValue label="Position manager">
               <Address value={card.positionManager} />
             </KeyValue>
+            {/* The basis of a dollar figure that is an estimate or is not current (2026-10-14, decision D3: disclosed). */}
+            {pageUsd?.detail && (
+              <KeyValue label="USD valuation">
+                <span data-usd-detail="">{pageUsd.detail}</span>
+              </KeyValue>
+            )}
             <HistorySource tokenId={card.tokenId} />
           </KeyValueList>
           <div className="dm-pos-links">

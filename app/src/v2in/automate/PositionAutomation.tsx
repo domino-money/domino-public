@@ -32,6 +32,11 @@ import { VaultDialog, type VaultDialogKind, type VaultDialogSubject } from './Va
 import { automationMode, automationStanding, currentVaultFirst, protectionVault, reservesOffer, shownVaultView, vaultActions, type VaultView } from './vaultView'
 import { Details } from './ui'
 
+// Added 2026-10-14 (the incident of 2026-10-13, package V1): the page's dollars (../position/PageUsd.tsx, a few lines
+// that draw nothing) travel in this chunk, which Robinhood Chain's own position page opens whenever V2 is in the build
+// and which reads the same portfolio; they are no lazy root of their own, so the bundles' families stay as they are.
+export { default as PageUsd } from '../position/PageUsd'
+
 /**
  * A position's automation on its own page (Domino V2 integration; spec F7 rev3/rev4 §2.13, §4, §5): mounted once from
  * screens/PositionDetail.tsx, at the top of the page, in every phase (a burned root's page included,

@@ -13,7 +13,7 @@ import type { Address, Hex, V2ChainId } from '../../v2/types'
 import { JOURNEY_QUIET_REQUOTES, JOURNEY_RECEIPT_POLL_MS, NEW_POOL_RACE_COPY } from './constants'
 import { JOURNEY } from './copy'
 import { journeyError, planFailure, SENT_CHECK_WALLET, SENT_UNKNOWN_COPY, STILL_PENDING, type JourneyError } from './errors'
-import { positionChanged } from '../lists/positionSync'
+import { mintedPositionIds, positionChanged } from '../lists/positionSync'
 import { CREATED_POSITIONS } from '../lists/createdPositions'
 import { recordConfirmedOperation, reorgConfirmedOperation } from '../../lib/confirmedOperations'
 import type { JourneyToken } from './tokens'
@@ -387,7 +387,12 @@ export function useJourneyRun(input: RunInput) {
         announced = true
         const chain = v2Chain(reviewed.review.chainId)
         const dex = reviewed.review.plan.plan.intent.pool.dex
-        positionChanged({ chainId: chain.chainId, positionManager: dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager, wallet: reviewed.review.owner, tokenIds: read && read.summary.tokenId > 0n ? [read.summary.tokenId.toString()] : undefined, block: current.blockNumber })
+        const positionManager = dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager
+        // Changed on purpose 2026-10-14 (the incident of 2026-10-13, package V1): the NFT is named whenever the receipt
+        // has it, from its summary or else from the position manager's own mint log, so the hold that follows covers
+        // that NFT alone. Naming none held every position of the wallet on the chain ("Updating", no dollars).
+        const minted = read && read.summary.tokenId > 0n ? [read.summary.tokenId.toString()] : mintedPositionIds(current.logs, positionManager)
+        positionChanged({ chainId: chain.chainId, positionManager, wallet: reviewed.review.owner, tokenIds: minted.length ? minted : undefined, block: current.blockNumber })
       }
       if (gen === generation.current) {
         live.current.receipt = { state: current.state === 'reverted' ? 'reverted' : current.state, read, unreadable, hash }

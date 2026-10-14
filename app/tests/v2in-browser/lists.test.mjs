@@ -27,7 +27,7 @@ import { ARTWORK } from '../support/new-position.mjs';
 import { historyFor } from '../support/price-range-cases.mjs';
 import { FIXTURE_TOKEN, createReadStub } from '../support/read-stub.mjs';
 import { launchBrowser } from '../support/s1-browser.mjs';
-import { activityOf, indexedToken, livePosition, portfolioOf } from '../support/s1-read6.mjs';
+import { activityOf, ethUsdPrice, indexedToken, livePosition, portfolioOf } from '../support/s1-read6.mjs';
 import { contractsFor } from '../support/v2-chain.mjs';
 import { WALLET_V2_DIST } from '../support/wallet-dist.mjs';
 import { createWalletServer } from '../support/wallet-server.mjs';
@@ -55,6 +55,13 @@ const LIVE = { originOpen: true, backendOn: true, contracts: { 4663: contractsFo
 const CONTRACT = '1.1.0-rc.1';
 /** The read Worker's capabilities while its reads are on (bridge/src/worker.mjs; src/v2/routes.ts reads it). */
 const CAPABILITIES = { contractVersion: CONTRACT, dataMode: 'live_read_only', chainIds: [4663, 8453, 42161], enabledReads: ['portfolio', 'activity'], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false };
+
+/**
+ * The time under a dollar figure that is not current. Changed on purpose 2026-10-14 (package V1, review): the words
+ * carry the day when the moment is not today by the page's clock ("as of 10-13 22:40 UTC"), so the cases that push the
+ * page's clock forward by minutes accept it (a run across midnight UTC).
+ */
+const AS_OF = /^as of (\d\d-\d\d )?\d\d:\d\d UTC$/;
 
 /** A package fixture as the site's route would answer it about the person's own wallet: only the wallet swapped, then validated. */
 function about(route, body, wallet) {
@@ -156,6 +163,8 @@ async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positio
     ledgerAsked,
     planAsked,
     wallet,
+    // The fake chain itself, for a test that moves its head and its time (2026-10-14, package V1).
+    chain,
     async close() {
       await context.close();
       await server.closeAll();
@@ -314,7 +323,11 @@ test('the list and the detail display the same verified APR for a new V2 NFT', a
   } finally { await s.close(); }
 });
 
-test('USD columns keep their layout when pricing is unavailable, with token amounts available in their titles', async () => {
+// Rewritten on purpose 2026-10-14 (the incident of 2026-10-13, package V1; the owner: "USD unavailable" must not appear
+// on a position). This case held the defect: with no price the cell said "USD unavailable" and kept the two token amounts
+// for screen readers and a hover title only. Now the two amounts are the cell's figure, in view, with one short reason
+// per row; the columns keep their layout as before.
+test('with no USD price the two token amounts are the figure, in view, with one short reason; the columns keep their layout', async () => {
   const own = about('portfolio', fixture('portfolio.json'), OWNER);
   own.positions = [own.positions[0]];
   own.positions[0].vault = null;
@@ -336,10 +349,14 @@ test('USD columns keep their layout when pricing is unavailable, with token amou
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
     await s.page.waitForFunction(key => document.querySelector(`[data-v2-position-row="${key}"] [data-cell="fees"]`)?.getAttribute('title')?.includes('0.0028 USDG'), rowKey('7'));
     assert.equal(await cell.locator('[data-usd], .dm-own-dash').count(), 0, 'missing pricing neither hides fees nor retains the old USD total');
-    assert.match(await cell.getAttribute('title'), /^USD estimate unavailable\.[\s\S]*0\.0028 USDG/);
-    assert.match(await cell.locator('[data-token-amounts]').textContent(), /0\.0028 USDG/, 'the measured fees remain available to assistive readers');
-    assert.equal(await cell.locator('[data-token-amounts] .dm-acct-amount').count(), 2);
-    assert.equal(await cell.locator('.dm-own-usd-unavailable').isVisible(), true);
+    assert.match(await cell.getAttribute('title'), /^A reliable USD price isn’t available for every token held\. [\s\S]*0\.0028 USDG/, 'the reason in full, then every digit');
+    const amounts = cell.locator('.dm-own-amounts[data-token-amounts]');
+    assert.equal(await amounts.isVisible(), true, 'the measured fees are the figure, in view');
+    assert.match(await amounts.innerText(), /0\.0028\s+USDG/);
+    assert.equal(await amounts.locator('.dm-acct-amount').count(), 2);
+    assert.doesNotMatch(await row.innerText(), /USD unavailable/i, 'the bare words are gone');
+    assert.deepEqual(await row.locator('[data-usd-why]').allInnerTexts(), ['No reliable USD price'], 'one short reason for the row');
+    assert.equal(await row.locator('[data-cell="principal"] [data-usd-why]').count(), 1, 'under the first figure that has none');
     assert.match(await row.getAttribute('data-usd-reason'), /no_qualified_price_source/);
     for (const width of [1320, 1024, 736, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
@@ -358,7 +375,12 @@ test('USD columns keep their layout when pricing is unavailable, with token amou
   } finally { await s.close(); }
 });
 
-test('an unchanged position retains a complete USD valuation during a transient price read and invalidates it on new amounts', async () => {
+// Rewritten on purpose 2026-10-14 (the incident of 2026-10-13, package V1; the owner's decision D4: "the last complete
+// figure with 'as of HH:MM' in place of 'USD unavailable'"). This case held the rule of #414: the kept valuation went as
+// soon as any amount changed ("new balances cannot borrow earlier USD values"), which wrote "USD unavailable". Now the
+// last complete valuation stays, said with its time, while the position is the same size; it goes only when the
+// position's liquidity changes, and then the row shows its token amounts and a short reason, never the bare words.
+test('a failed price read keeps the last complete valuation, said with its time, until the position changes size', async () => {
   const own = about('portfolio', fixture('portfolio.json'), OWNER);
   own.positions = [own.positions[0]];
   own.positions[0].vault = null; own.vaults = []; own.mandates = [];
@@ -375,15 +397,378 @@ test('an unchanged position retains a complete USD valuation during a transient 
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
     await row.locator('[data-usd="principal"][data-usd-snapshot]').waitFor();
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before, 'principal and fees remain the same complete observation');
-    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /Previous complete valuation from/);
+    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. /);
+    const asOf = await row.locator('[data-usd-as-of]').allInnerTexts();
+    assert.equal(asOf.length, 2, 'each of the two figures says its time');
+    for (const words of asOf) assert.match(words, AS_OF);
+    assert.equal(await row.locator('[data-usd-as-of="principal"]').isVisible(), true, 'in view, not only for a screen reader');
     assert.equal(await row.getAttribute('data-usd-reason'), 'price_read_failed');
+    // The fees grew and the index read the position again; the prices still cannot be read. The same position: its last
+    // complete valuation stays, with its time, and the title has the new token amounts.
     own.positions[0].state.feesOwed[0] = '8800';
     own.positions[0].state.snapshot.number += 10;
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
-    await row.locator('[data-cell="principal"] .dm-own-usd-unavailable').waitFor();
-    assert.equal(await row.locator('[data-usd-snapshot]').count(), 0, 'new balances cannot borrow earlier USD values');
-    assert.match(await row.locator('[data-cell="fees"]').getAttribute('title'), /0\.0088 USDG/);
+    await s.page.waitForFunction(key => document.querySelector(`[data-v2-position-row="${key}"] [data-cell="fees"]`)?.getAttribute('title')?.includes('0.0088 USDG'), rowKey('7'));
+    assert.deepEqual(await row.locator('[data-usd][data-usd-snapshot]').allTextContents(), before, 'still the last complete valuation, dated');
+    assert.equal(await row.locator('[data-usd-as-of]').count(), 2);
+    // A withdrawal changed its size: the figure from before would be of another position. Its tokens are the figure now.
+    own.positions[0].state.liquidity = String(BigInt(own.positions[0].state.liquidity) / 2n);
+    own.positions[0].state.snapshot.number += 10;
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await row.locator('[data-cell="principal"] .dm-own-amounts').waitFor();
+    assert.equal(await row.locator('[data-usd], [data-usd-snapshot], [data-usd-as-of]').count(), 0, 'a valuation of another size of position is never shown');
+    assert.deepEqual(await row.locator('[data-usd-why]').allInnerTexts(), ['USD price is updating']);
+    assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /USD unavailable/i);
     assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-14 (the incident of 2026-10-13, package V1). The owner's row said "USD unavailable" while the Wallet card
+// priced tokens: a Robinhood position that is in both inventories lost its dollars 60 s after its last state reading, and
+// the state route was being refused (429). Now the row is current for about two minutes, then keeps its last complete
+// valuation and says its time, for as long as the route is refused; it is current again at the next reading.
+test('the state route answering 429 never writes "USD unavailable": the row keeps its last valuation and says its time', async () => {
+  const manager = fixture('portfolio.json').positions[0].positionManager.toLowerCase();
+  const key = { currency0: USDG, currency1: UFG, fee: 3000, tickSpacing: 60, hooks: zeroAddress };
+  const start = Math.floor(Date.now() / 1000);
+  let ahead = 0;
+  const position = livePosition({ chainId: 4663, dex: 4, manager, tokenId: V1_OPEN, owner: OWNER, pool: key, tickLower: -60, tickUpper: 60,
+    liquidity: '10000000000', sqrtPriceX96: String(2n ** 96n), tick: 0, principal: ['29000000', '29000000'], feesOwed: ['2000000', '0'] });
+  // The index read it before the chain's head: the state route's own reading is the newest the browser holds.
+  position.state.snapshot.number = 71_600_000;
+  const stable = { ...indexedToken(4663, USDG, 'USDG', 6), price: { source: 'chain_stable', usd: '1.000000000000000000', snapshot: null, pool: null, ethUsd: null, depthUsd: null }, priceReason: null };
+  const own = portfolioOf({ wallet: OWNER, tokens: [stable, { ...indexedToken(4663, UFG, 'UFG', 18), priceReason: 'pool_depth_below_floor' }], positions: [position] }).body;
+  const s = await scenario({ hooks: LIVE, refresh: true,
+    chainOptions: { timestamp: start, positions: [{ tokenId: V1_OPEN, holder: OWNER, key, tickLower: -60, tickUpper: 60, liquidity: 10_000_000_000n, unclaimed: [2_000_000n, 0n] }], tokens: { [USDG]: { symbol: 'USDG', decimals: 6 }, [UFG]: { symbol: 'UFG', decimals: 18 } } },
+    readV6: routeOn(route => ({ status: 200, body: route === 'portfolio' ? { ...own, servedAt: start + ahead } : activityOf({ wallet: OWNER }).body })) });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="${rowKey(V1_OPEN)}"]`);
+    const owned = s.page.locator('[data-owned]');
+    await row.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
+    await row.locator('[data-usd="fees"]').waitFor();
+    assert.equal(await row.locator('[data-usd-snapshot], [data-usd-as-of]').count(), 0, 'a current figure says no time');
+    const before = await row.locator('[data-usd]').allTextContents();
+    assert.equal(before[1], '$2.00', '2 USDG of fees at the chain’s own reading');
+    // Half a minute at a time: the portfolio is read on (new prices each time), the state route refuses every ask.
+    let refused = 0;
+    await s.page.route('**/api/fees/v1/state', (route) => { refused += 1; return route.fulfill({ status: 429, headers: { 'Retry-After': '5' }, contentType: 'application/json', body: JSON.stringify({ error: 'rate_limited' }) }); });
+    const step = async () => {
+      const asked = s.asked.filter(entry => entry.route === 'portfolio').length;
+      ahead += 31;
+      await s.page.clock.fastForward(31_000);
+      await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+      await s.page.waitForFunction(() => true);
+      for (let tries = 0; tries < 50 && s.asked.filter(entry => entry.route === 'portfolio').length === asked; tries++) await new Promise(done => setTimeout(done, 100));
+      assert.ok(s.asked.filter(entry => entry.route === 'portfolio').length > asked, 'the portfolio was read again');
+      await s.page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
+    };
+    for (let minute = 0; minute < 10; minute++) {
+      await step();
+      assert.doesNotMatch(await owned.innerText(), /USD unavailable/i, `no bare words ${ahead} s after the last reading`);
+      assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before, `its dollars are still there ${ahead} s after the last reading`);
+    }
+    assert.ok(refused > 0, 'the state route was asked, and refused');
+    // Five minutes on: the last complete valuation, with its time, and why it is not current.
+    await row.locator('[data-usd="principal"][data-usd-snapshot]').waitFor();
+    const said = await row.locator('[data-usd-as-of]').allInnerTexts();
+    assert.equal(said.length, 2);
+    for (const words of said) assert.match(words, AS_OF);
+    assert.equal(await row.getAttribute('data-usd-reason'), 'stale_position_or_chain');
+    // Rewritten on purpose 2026-10-14 (package V1, review): the title said only "Last complete valuation, from …", so
+    // the estimate lost its basis line exactly while it was also old. It says both, and so does the screen reader's line.
+    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. Estimated from the pool price at block \d+, converted with USDG’s qualified USD price\. This is not a sale quote\. \d[\d.]* USDG \+ /);
+    assert.match(await row.locator('[data-cell="principal"] [data-usd-estimate]').textContent(), /^Estimated from the pool price at block \d+, converted with USDG’s qualified USD price\. This is not a sale quote\.$/);
+    assert.equal(await row.locator('[data-cell="principal"] [data-usd="principal"]').getAttribute('data-usd-basis'), 'pool-price');
+    // The route answers again, at a later block: the row is current, and says no time.
+    await s.page.unroute('**/api/fees/v1/state');
+    s.chain.head += 3_000;
+    // The route's own handler keeps an answer five real seconds (functions/_lib/fees.ts LIVE_STATE_MS), and this suite's
+    // minutes are the page's clock's, not the handler's: wait them out, so the next ask reads the chain's new head.
+    await new Promise(done => setTimeout(done, 5_200));
+    for (let tries = 0; tries < 8 && await row.locator('[data-usd-snapshot]').count() > 0; tries++) {
+      s.chain.timestamp = start + ahead + 31;
+      await step();
+    }
+    assert.equal(await row.locator('[data-usd-snapshot], [data-usd-as-of]').count(), 0, 'current again at the next reading');
+    assert.equal(await row.getAttribute('data-usd-reason'), null);
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-14 (package V1, decision D4): "current" is about two minutes. One failed read changes nothing on the
+// row; with every read failing, the figures stay and say their time once no newer answer has arrived for two minutes
+// (by the page's own clock), and are current again with the next answer.
+test('one failed portfolio read changes nothing; with every read failing the figures stay and say their time after two minutes', async () => {
+  const own = about('portfolio', fixture('portfolio.json'), OWNER);
+  own.positions = [own.positions[0]];
+  own.positions[0].vault = null; own.vaults = []; own.mandates = [];
+  own.tokens[1].decimals = 18; own.tokens[1].status = 'available';
+  own.servedAt = Math.floor(Date.now() / 1000);
+  for (const token of own.tokens) if (token.price?.snapshot) token.price.snapshot.timestamp = own.servedAt;
+  let failing = false;
+  const s = await scenario({ hooks: LIVE, refresh: true, readV6: routeOn(route => route === 'portfolio' && failing ? { status: 503, body: { error: 'upstream_unavailable' } } : { status: 200, body: route === 'portfolio' ? own : activityOf({ wallet: OWNER }).body }) });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="${rowKey('7')}"]`);
+    await row.locator('[data-usd="principal"]').waitFor();
+    const before = await row.locator('[data-usd]').allTextContents();
+    failing = true;
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor();
+    assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before);
+    assert.equal(await row.locator('[data-usd-as-of], [data-usd-snapshot]').count(), 0, 'a figure is current for about two minutes, whatever the newest attempt did');
+    await s.page.clock.fastForward(121_000);
+    await row.locator('[data-usd-as-of="principal"]').waitFor();
+    assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before, 'the last figures stay');
+    for (const words of await row.locator('[data-usd-as-of]').allInnerTexts()) assert.match(words, AS_OF);
+    assert.equal(await row.locator('[data-usd-as-of]').count(), 2);
+    assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /USD unavailable/i);
+    // Added 2026-10-14 (package V1, review). The two minutes were counted from the mount of whichever screen drew the
+    // answer, and the reader keeps the last good answer across screens: on every way back the list showed its old
+    // figures with no time for two more minutes (and so did a position opened from it). An old answer is old at once.
+    const said = await row.locator('[data-usd-as-of]').allInnerTexts();
+    await s.page.evaluate(() => { location.hash = '#/docs'; });
+    await row.waitFor({ state: 'detached' });
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await row.locator('[data-usd="principal"]').waitFor();
+    assert.deepEqual(await row.locator('[data-usd-as-of]').allInnerTexts(), said, 'the list on the way back says the time at once, with no two minutes to wait again');
+    assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before);
+    // The next answer: current again, no time under the figures.
+    failing = false;
+    own.servedAt += 200;
+    // Past the wait a failed read named for the next one (./read.ts readAgainAfter: a minute at most).
+    await s.page.clock.fastForward(61_000);
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await row.locator('[data-usd-as-of]').first().waitFor({ state: 'detached' });
+    assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before);
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-14 (package V1, review). A USDG pair that read-v6 does not join (here it does not list the NFT) has its
+// dollars from the site's own inventory alone, with USDG at $1: a constant, so the figure was "current" whatever the age
+// of its reading, and such a row was exempt from the list's "as of". Nothing polls the inventory: with the state route
+// refused, half-hour-old dollars were drawn as current, with no time and no badge. The row is dated by its own reading.
+test('a dollar row only the site’s inventory lists says its time once its own reading is two minutes old', async () => {
+  const key = { currency0: USDG, currency1: UFG, fee: 3000, tickSpacing: 60, hooks: zeroAddress };
+  const start = Math.floor(Date.now() / 1000);
+  let ahead = 0;
+  // read-v6 answers, and says nothing of this NFT nor of its tokens.
+  const none = portfolioOf({ wallet: OWNER, tokens: [], positions: [] }).body;
+  const s = await scenario({ hooks: LIVE, refresh: true,
+    chainOptions: { timestamp: start, positions: [{ tokenId: V1_OPEN, holder: OWNER, key, tickLower: -60, tickUpper: 60, liquidity: 10_000_000_000n, unclaimed: [2_000_000n, 0n] }], tokens: { [USDG]: { symbol: 'USDG', decimals: 6 }, [UFG]: { symbol: 'UFG', decimals: 18 } } },
+    readV6: routeOn(route => ({ status: 200, body: route === 'portfolio' ? { ...none, servedAt: start + ahead } : activityOf({ wallet: OWNER }).body })) });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="${rowKey(V1_OPEN)}"]`);
+    const cell = row.locator('[data-cell="principal"]');
+    await row.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
+    await row.locator('[data-usd="fees"]').waitFor();
+    const before = await row.locator('[data-usd]').allTextContents();
+    assert.equal(before[1], '$2.00', '2 USDG of fees, with USDG at $1');
+    assert.match(await cell.getAttribute('title'), /^Estimated from the pool price at block \d+, with USDG at \$1\. This is not a sale quote\. /);
+    assert.equal(await row.locator('[data-usd-as-of], [data-usd-snapshot]').count(), 0, 'a current figure says no time');
+    // The state route refuses every ask from here on; the portfolio is read on, and still says nothing of this NFT.
+    let refused = 0;
+    await s.page.route('**/api/fees/v1/state', (route) => { refused += 1; return route.fulfill({ status: 429, headers: { 'Retry-After': '5' }, contentType: 'application/json', body: JSON.stringify({ error: 'rate_limited' }) }); });
+    // What the page draws after its timers ran (real time: the page's clock is this suite's, its drawing is not).
+    const settle = () => new Promise(done => setTimeout(done, 250));
+    for (const seconds of [31, 31, 31]) {
+      ahead += seconds;
+      await s.page.clock.fastForward(seconds * 1000);
+      await settle();
+      assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before);
+      assert.equal(await row.locator('[data-usd-as-of]').count(), 0, `current ${ahead} s after its reading: about two minutes, whatever the newest attempt did`);
+    }
+    for (const seconds of [31, 31, 31, 31, 31, 31]) {
+      ahead += seconds;
+      await s.page.clock.fastForward(seconds * 1000);
+      await settle();
+    }
+    // Five minutes with nothing newer: the same dollars, each with the time of the reading they are of, and the basis.
+    await row.locator('[data-usd-as-of="principal"]').waitFor();
+    assert.ok(refused > 0, 'the state route was asked, and refused');
+    assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before, 'the last figures stay');
+    const said = await row.locator('[data-usd-as-of]').allInnerTexts();
+    assert.equal(said.length, 2, 'each of the two figures says its time (neither did until 2026-10-14)');
+    for (const words of said) assert.match(words, AS_OF);
+    assert.equal(await row.locator('[data-usd-as-of="principal"]').isVisible(), true);
+    assert.match(await cell.getAttribute('title'), /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. Estimated from the pool price at block \d+, with USDG at \$1\. This is not a sale quote\. /);
+    assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /USD unavailable/i);
+    // The route answers again, at a later block: the row is current, and says no time.
+    await s.page.unroute('**/api/fees/v1/state');
+    s.chain.head += 3_000;
+    // The route's own handler keeps an answer five real seconds (functions/_lib/fees.ts LIVE_STATE_MS).
+    await new Promise(done => setTimeout(done, 5_200));
+    for (let tries = 0; tries < 8 && await row.locator('[data-usd-as-of]').count() > 0; tries++) {
+      ahead += 31;
+      s.chain.timestamp = start + ahead;
+      await s.page.clock.fastForward(31_000);
+      await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+      await settle();
+    }
+    assert.equal(await row.locator('[data-usd-as-of], [data-usd-snapshot]').count(), 0, 'current again at the next reading');
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-14 (package V1, review), the other side of the case above: a healthy list never says "as of". The rows
+// were worked out again only when the portfolio reader drew something (./source.ts reprojects a good answer; a failed
+// one is a new reply): with no good answer held and none coming (here read-v6 answers what its contract refuses, which is
+// asked again only after five minutes), a row of the site's own inventory stayed on an older reading than the list's
+// state read kept bringing. Dated by that reading, it would say "as of" on a page whose state route answers.
+test('with no portfolio answer coming, an inventory row follows the state route’s readings and never says "as of" while it answers', async () => {
+  const key = { currency0: USDG, currency1: UFG, fee: 3000, tickSpacing: 60, hooks: zeroAddress };
+  const start = Math.floor(Date.now() / 1000);
+  const s = await scenario({ hooks: LIVE, refresh: true, readV6: routeOn(() => ({ status: 200, body: { not: 'a portfolio' } })),
+    chainOptions: { timestamp: start, positions: [{ tokenId: V1_OPEN, holder: OWNER, key, tickLower: -60, tickUpper: 60, liquidity: 10_000_000_000n, unclaimed: [2_000_000n, 0n] }], tokens: { [USDG]: { symbol: 'USDG', decimals: 6 }, [UFG]: { symbol: 'UFG', decimals: 18 } } } });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="${rowKey(V1_OPEN)}"]`);
+    await row.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
+    const before = await row.locator('[data-usd]').allTextContents();
+    const first = Number(await row.getAttribute('data-position-block'));
+    assert.ok(first > 0);
+    // Five reads of the list, half a minute apart, the chain 300 blocks further each time.
+    for (let read = 1; read <= 5; read++) {
+      s.chain.head += 300;
+      s.chain.timestamp = start + read * 31;
+      // The route's own handler keeps an answer five real seconds (functions/_lib/fees.ts LIVE_STATE_MS).
+      await new Promise(done => setTimeout(done, 5_200));
+      await s.page.clock.fastForward(31_000);
+      await s.page.waitForFunction(([selector, block]) => Number(document.querySelector(selector)?.getAttribute('data-position-block')) >= block, [`[data-v2-position-row="${rowKey(V1_OPEN)}"]`, first + read * 300]);
+      assert.equal(await row.locator('[data-usd-as-of], [data-usd-snapshot]').count(), 0, `${read * 31} s on, with a reading of this half minute: current, no time`);
+      assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before);
+    }
+    assert.equal(s.asked.filter(entry => entry.route === 'portfolio').length, 1, 'read-v6’s refused answer was not asked again in these minutes');
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-14 (package V1, review). Robinhood Chain's own position page took its prices from the CONNECTED wallet's
+// portfolio only, so "the page shows its row's dollars" held for an owner on his own position. A visitor who opened one
+// (no wallet, or one that holds neither token) saw the page's own USDG rule, a different figure, and token amounts for
+// ETH / token. The page now also takes the OWNER's answer, the one the owner's row is valued with. No request is added:
+// the page's Activity already reads the owner's portfolio through the same reader and key, once per half minute.
+test('a visitor’s position page shows the dollars of the owner’s row, from the owner’s portfolio its Activity already reads, and adds no request', async () => {
+  const manager = fixture('portfolio.json').positions[0].positionManager.toLowerCase();
+  const key = { currency0: zeroAddress, currency1: USDG, fee: 3000, tickSpacing: 60, hooks: zeroAddress };
+  const at = Math.floor(Date.now() / 1000);
+  const position = livePosition({ chainId: 4663, dex: 4, manager, tokenId: V1_OPEN, owner: OWNER, pool: key, tickLower: -60, tickUpper: 60,
+    liquidity: '1000000000', sqrtPriceX96: String(2n ** 96n), tick: 0, principal: ['1', '1'], feesOwed: [String(10n ** 15n), '0'] });
+  position.state.snapshot.number = 71_600_000;
+  const eth = { ...indexedToken(4663, zeroAddress, 'ETH', 18), price: ethUsdPrice(4663, '4000.000000000000000000', at), priceReason: null };
+  const stable = { ...indexedToken(4663, USDG, 'USDG', 6), price: { source: 'chain_stable', usd: '1.000000000000000000', snapshot: null, pool: null, ethUsd: null, depthUsd: null }, priceReason: null };
+  const own = portfolioOf({ wallet: OWNER, tokens: [eth, stable], positions: [position] }).body;
+  let failing = false, ahead = 0;
+  // Opened by its link, with no wallet and no list before it: the hardest case (nothing in this tab's memory).
+  const s = await scenario({ hooks: LIVE, connect: false, refresh: true, hash: `#/positions/robinhood-v4-${V1_OPEN}`,
+    chainOptions: { timestamp: at, positions: [{ tokenId: V1_OPEN, holder: OWNER, key, tickLower: -60, tickUpper: 60, liquidity: 1_000_000_000n, unclaimed: [10n ** 15n, 0n] }], tokens: { [USDG]: { symbol: 'USDG', decimals: 6 } } },
+    readV6: routeOn(route => (route === 'portfolio' && failing ? { status: 503, body: { error: 'upstream_unavailable' } } : { status: 200, body: route === 'portfolio' ? { ...own, servedAt: at + ahead } : activityOf({ wallet: OWNER }).body })) });
+  const portfolios = () => s.asked.filter(entry => entry.route === 'portfolio');
+  const until = async (count) => { for (let tries = 0; tries < 60 && portfolios().length < count; tries++) await new Promise(done => setTimeout(done, 100)); };
+  try {
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${V1_OPEN}"]`);
+    const value = detail.locator('[data-cell="principal"] [data-usd="principal"]'), fees = detail.locator('[data-cell="fees"] [data-usd="fees"]');
+    // Both tokens at read-v6's qualified prices, as the owner's row has them: 0.001 ETH of fees at $4,000 a coin. The
+    // page's own rule (USDG at $1 and this pool's price, where one wei of ETH is one unit of USDG) says $1,000,000,000.
+    await value.waitFor();
+    await fees.waitFor();
+    assert.equal(await s.page.locator('[data-position-v2]').count(), 0, 'Robinhood Chain’s own position page');
+    assert.equal(await fees.textContent(), '$4.00', 'the owner’s row’s dollars (the page’s own USDG rule until 2026-10-14)');
+    assert.deepEqual([await value.getAttribute('data-usd-basis'), await fees.getAttribute('data-usd-basis')], ['qualified-prices', 'qualified-prices']);
+    assert.match(await value.getAttribute('title'), /^Qualified valuation at block \d+$/);
+    assert.equal(await detail.locator('[data-usd-as-of], [data-usd-why]').count(), 0, 'a current figure says no time');
+    const shown = [await value.textContent(), await fees.textContent()];
+    // One read of the owner's portfolio, the page's Activity's own; then one per half minute, never two.
+    assert.equal(portfolios().length, 1);
+    assert.ok(JSON.stringify(portfolios()[0].body).toLowerCase().includes(OWNER), 'about the position’s owner');
+    for (let read = 2; read <= 4; read++) {
+      ahead += 31;
+      await s.page.clock.fastForward(31_000);
+      await until(read);
+      await new Promise(done => setTimeout(done, 300));
+      assert.equal(portfolios().length, read, `${(read - 1) * 31} s on the page: ${read} reads of the owner’s portfolio, one per half minute, as before this part read it too`);
+    }
+    assert.deepEqual([await value.textContent(), await fees.textContent()], shown);
+    assert.equal(await detail.locator('[data-usd-as-of]').count(), 0, 'a healthy page says no time');
+    // read-v6 goes away: the same figures stay, and say their time once nothing newer has arrived for two minutes.
+    failing = true;
+    await s.page.clock.fastForward(125_000);
+    await detail.locator('[data-usd-as-of="principal"]').waitFor();
+    assert.deepEqual([await value.textContent(), await fees.textContent()], shown, 'the last figures stay');
+    for (const words of await detail.locator('[data-position-stats] [data-usd-as-of]').allInnerTexts()) assert.match(words, AS_OF);
+    assert.doesNotMatch(await detail.locator('[data-position-stats]').innerText(), /USD unavailable/i);
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-14 (package V1; the owner's decision D3). The owner's ETH / IMD position showed dollars in its row and
+// token amounts on its own page: Robinhood Chain's page valued a pair with USDG only. One valuation now: the same
+// dollars in both, at the pool's own price with ETH's qualified price, and the basis said on the page.
+test('an ETH / token position shows the same dollars on its own page as in its row, with the basis said', async () => {
+  const manager = fixture('portfolio.json').positions[0].positionManager.toLowerCase();
+  const key = { currency0: zeroAddress, currency1: UFG, fee: 3000, tickSpacing: 60, hooks: zeroAddress };
+  const at = Math.floor(Date.now() / 1000);
+  const position = livePosition({ chainId: 4663, dex: 4, manager, tokenId: V1_OPEN, owner: OWNER, pool: key, tickLower: -60, tickUpper: 60,
+    liquidity: String(10n ** 18n), sqrtPriceX96: String(2n ** 96n), tick: 0, principal: ['1', '1'], feesOwed: [String(10n ** 15n), '0'] });
+  position.state.snapshot.number = 71_600_000;
+  const eth = { ...indexedToken(4663, zeroAddress, 'ETH', 18), price: ethUsdPrice(4663, '4000.000000000000000000', at), priceReason: null };
+  const own = portfolioOf({ wallet: OWNER, tokens: [eth, { ...indexedToken(4663, UFG, 'UFG', 18), priceReason: 'pool_depth_below_floor' }], positions: [position] }).body;
+  const s = await scenario({ hooks: LIVE,
+    chainOptions: { timestamp: at, positions: [{ tokenId: V1_OPEN, holder: OWNER, key, tickLower: -60, tickUpper: 60, liquidity: 10n ** 18n, unclaimed: [10n ** 15n, 0n] }], tokens: { [UFG]: { symbol: 'UFG', decimals: 18 } } },
+    readV6: routeOn(route => ({ status: 200, body: route === 'portfolio' ? own : activityOf({ wallet: OWNER }).body })) });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="${rowKey(V1_OPEN)}"]`);
+    await row.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
+    // The fees are in ETH alone: at ETH's own qualified price, with no pool mark to say.
+    await row.locator('[data-usd="fees"][data-usd-basis="qualified-prices"]').waitFor();
+    const inRow = await row.locator('[data-usd]').allTextContents();
+    // 0.001 ETH of fees at $4,000 a coin: ordinary arithmetic, no valuation helper.
+    assert.equal(inRow[1], '$4.00');
+    assert.match(inRow[0], /^\$\d+\.\d\d$/);
+    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /pool price.*ETH.*qualified USD price/i);
+    // Added 2026-10-14 (package V1, review). read-v6 cannot read ETH's price for the moment ("eth_usd_stale"; UFG's
+    // standing reason beside it): the estimate stays, with its time and its basis. That standing reason cleared the kept
+    // valuation, so the owner's own kind of row fell back to token amounts and "USD price is updating".
+    const priced = own.tokens[0].price;
+    own.tokens[0] = { ...own.tokens[0], price: null, priceReason: 'eth_usd_stale' };
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await row.locator('[data-usd="principal"][data-usd-snapshot]').waitFor();
+    assert.deepEqual(await row.locator('[data-usd]').allTextContents(), inRow, 'the same dollars');
+    assert.equal(await row.getAttribute('data-usd-reason'), 'eth_usd_stale,pool_depth_below_floor');
+    const dated = await row.locator('[data-usd-as-of]').allInnerTexts();
+    assert.equal(dated.length, 2, 'each figure says its time');
+    for (const words of dated) assert.match(words, AS_OF);
+    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. Estimated from the pool price at block \d+, converted with ETH’s qualified USD price\. This is not a sale quote\. /, 'the time and the basis, both');
+    assert.match(await row.locator('[data-cell="fees"]').getAttribute('title'), /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. 0\.001 ETH/, 'the fees were at ETH’s own price: no estimate to say');
+    assert.doesNotMatch(await row.innerText(), /USD price is updating|USD unavailable/i);
+    own.tokens[0] = { ...own.tokens[0], price: priced, priceReason: null };
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await row.locator('[data-usd="principal"]:not([data-usd-snapshot])').waitFor();
+    assert.deepEqual(await row.locator('[data-usd]').allTextContents(), inRow);
+    assert.equal(await row.locator('[data-usd-as-of]').count(), 0, 'current again with the next priced answer');
+    await row.click();
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${V1_OPEN}"]`);
+    const value = detail.locator('[data-cell="principal"] [data-usd="principal"]'), fees = detail.locator('[data-cell="fees"] [data-usd="fees"]');
+    await value.waitFor();
+    await fees.waitFor();
+    assert.equal(await s.page.locator('[data-position-v2]').count(), 0, 'Robinhood Chain’s own position page');
+    assert.deepEqual([await value.textContent(), await fees.textContent()], inRow, 'one valuation: the page and the row show the same dollars (token amounts on the page until 2026-10-14)');
+    assert.equal(await value.getAttribute('data-usd-basis'), 'pool-price');
+    assert.match(await value.getAttribute('title'), /^Estimated from the pool price at block \d+, converted with ETH’s qualified USD price\. This is not a sale quote\.$/, 'the estimate names the pool mark and its qualified anchor');
+    assert.equal(await fees.getAttribute('data-usd-basis'), 'qualified-prices');
+    assert.match(await fees.getAttribute('title'), /^Qualified valuation at block \d+$/);
+    assert.equal(await detail.locator('[data-usd-as-of], [data-usd-why]').count(), 0, 'a current figure says no time and needs no reason');
+    assert.doesNotMatch(await detail.innerText(), /USD unavailable/i);
+    const details = detail.locator('[data-position-details]');
+    await details.locator('summary').click();
+    assert.match(await details.locator('[data-usd-detail]').innerText(), /^Estimated from the pool price at block \d+, converted with ETH’s qualified USD price\./, 'and Details says it in words anyone can read on a phone');
+    // The token amounts are one step away, as on every valued position.
+    await detail.locator('[data-cell="principal"] details summary').click();
+    assert.match(await detail.locator('[data-cell="principal"] [data-stat="principal"]').innerText(), /ETH[\s\S]*UFG/);
+    for (const width of [1280, 390, 320]) {
+      await s.page.setViewportSize({ width, height: 960 });
+      assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `the valued page fits ${width}px`);
+    }
+    assert.equal(s.wallet.state.signed.length, 0, 'valuation needs no wallet signature');
   } finally { await s.close(); }
 });
 
@@ -475,7 +860,9 @@ test('a first targeted price read that is rate limited recovers on a later visib
   } finally { releaseLimit(); await s.close(); }
 });
 
-test('Base without qualified USD keeps fixed value slots and token amounts in details, without inventing USD or APR', async () => {
+// Rewritten on purpose 2026-10-14 (package V1): the cells said "USD unavailable" over amounts kept for a title; the
+// two token amounts are now the cells' figures, in view, with one short reason for the row. Still no invented USD or APR.
+test('Base without qualified USD shows its token amounts as the figures, with a short reason, without inventing USD or APR', async () => {
   const usdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
   const basecat = '0xb2000000000000000000004c27f6523082f41d01';
   const manager = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1';
@@ -488,16 +875,21 @@ test('Base without qualified USD keeps fixed value slots and token amounts in de
   try {
     const row = s.page.locator(`[data-v2-position-row="8453:${manager}:6238157"]`);
     const fees = row.locator('[data-cell="fees"]');
-    await fees.locator('.dm-own-usd-unavailable').waitFor();
+    await fees.locator('.dm-own-amounts').waitFor();
+    assert.match(await fees.locator('.dm-own-amounts').innerText(), /0\.005193\s+USDC\s+0\.317608\s+BASECAT/, 'the fees, in tokens, in view');
+    assert.match(await row.locator('[data-cell="principal"] .dm-own-amounts').innerText(), /0\.412537\s+USDC\s+22\.675\s+BASECAT/);
     assert.match(await fees.getAttribute('title'), /0\.005193 USDC \+ 0\.317608 BASECAT/);
     assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /0\.412537 USDC \+ 22\.675 BASECAT/);
     assert.equal(await row.locator('[data-usd]').count(), 0);
+    assert.deepEqual(await row.locator('[data-usd-why]').allInnerTexts(), ['No reliable USD price']);
+    assert.doesNotMatch(await row.innerText(), /USD unavailable/i);
     assert.equal(await row.locator('[data-cell="apr"] .dm-own-dash').innerText(), '—');
     assert.ok(s.ledgerAsked.every(request => !request.tokenIds.includes('6238157')), 'a Base NFT never goes to the Robinhood ledger');
     for (const width of [1320, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
       assert.ok(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      assert.equal(await fees.locator('.dm-own-usd-unavailable').isVisible(), true);
+      assert.equal(await fees.locator('.dm-own-amounts').isVisible(), true);
+      assert.equal(await row.locator('.dm-own-amounts, [data-usd-why]').evaluateAll((nodes) => nodes.every((node) => { const cell = node.closest('.dm-own-cell').getBoundingClientRect(), box = node.getBoundingClientRect(); return box.left >= cell.left - 0.5 && box.right <= cell.right + 0.5; })), true, `the amounts and the reason stay inside their cells at ${width}px`);
       assert.equal(await s.page.locator('.dm-acct-token-units').evaluateAll(nodes => nodes.every(node => node.getBoundingClientRect().height <= parseFloat(getComputedStyle(node).lineHeight) + 0.5)), true, 'even an extreme balance remains one line');
       if (width !== 320) await s.page.screenshot({ path: join(shots(), `positions-base-visible-fees-${width}.png`), fullPage: true });
     }
@@ -545,6 +937,54 @@ for (const network of [
     assert.match(await detail.locator('[data-position-details] [data-stat="fees"]').textContent(), /0\.25\s+USDC.*0\.5\s+TEST/);
     assert.equal(s.wallet.state.signed.length, 0, 'valuation needs no wallet signature');
     assert.equal(s.planAsked.length, 0, 'valuation never prepares a transaction');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-14 (package V1, review). Two things an estimate lost once nothing newer had arrived for two minutes: its
+// basis (the title and Details said only "Last complete valuation, from …", in the row and on the page), and, on the
+// page opened from the list, its time (the two minutes were counted again from the page's mount).
+test('a Base estimate nothing newer has arrived for says its time and its basis, in its row and at once on its own page', async () => {
+  const usdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', manager = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1';
+  const testToken = '0xb200000000000000000000000000000000000001', tokenId = '6238157';
+  const anchor = { ...indexedToken(8453, usdc, 'USDC', 6), price: { source: 'chain_stable', usd: '1.000000000000000000', snapshot: null, pool: null, ethUsd: null, depthUsd: null }, priceReason: null };
+  const own = portfolioOf({ wallet: OWNER, tokens: [anchor, { ...indexedToken(8453, testToken, 'TEST', 6), priceReason: 'pool_depth_below_floor' }], positions: [
+    livePosition({ chainId: 8453, dex: 3, manager, tokenId, owner: OWNER, pool: { currency0: usdc, currency1: testToken, fee: 3000, tickSpacing: 60 }, tickLower: -60, tickUpper: 60,
+      liquidity: '1000000000', sqrtPriceX96: String(2n ** 96n), tick: 0, principal: ['2000000', '3000000'], feesOwed: ['250000', '500000'] }),
+  ] });
+  let failing = false;
+  const s = await scenario({ hooks: LIVE, refresh: true, readV6: routeOn(route => route === 'portfolio' ? (failing ? { status: 503, body: { error: 'upstream_unavailable' } } : own) : activityOf({ wallet: OWNER })) });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="8453:${manager}:${tokenId}"]`);
+    await row.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
+    assert.deepEqual(await row.locator('[data-usd]').allTextContents(), ['$5.00', '$0.75']);
+    assert.equal(await row.locator('[data-usd-as-of]').count(), 0);
+    // read-v6 goes away: every read fails from here on.
+    failing = true;
+    await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor();
+    await s.page.clock.fastForward(121_000);
+    await row.locator('[data-usd-as-of="principal"]').waitFor();
+    const said = await row.locator('[data-usd-as-of]').allInnerTexts();
+    assert.equal(said.length, 2);
+    for (const words of said) assert.match(words, AS_OF);
+    const both = /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. Estimated from the pool price at block \d+, converted with USDC’s qualified USD price\. This is not a sale quote\./;
+    for (const name of ['principal', 'fees']) {
+      assert.match(await row.locator(`[data-cell="${name}"]`).getAttribute('title'), both, `${name}: the time and the basis, both`);
+      assert.match(await row.locator(`[data-cell="${name}"] [data-usd-estimate]`).textContent(), /^Estimated from the pool price at block \d+, converted with USDC’s qualified USD price\. This is not a sale quote\.$/, 'and for a screen reader');
+    }
+    // Its own page, opened now: the same figures, saying the same time at once, and still what they are an estimate of.
+    await row.click();
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${tokenId}"]`);
+    await detail.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
+    assert.equal(await s.page.locator('[data-position-v2]').count(), 1, 'the position page of a chain read-v6 alone reads');
+    assert.deepEqual(await detail.locator('[data-position-stats] [data-usd]').allTextContents(), ['$5.00', '$0.75']);
+    assert.deepEqual(await detail.locator('[data-position-stats] [data-usd-as-of]').allInnerTexts(), said, 'no two minutes to wait again: an old answer is old at once');
+    for (const name of ['principal', 'fees']) assert.match(await detail.locator(`[data-usd="${name}"]`).getAttribute('title'), new RegExp(`${both.source}$`));
+    const details = detail.locator('[data-position-details]');
+    await details.locator('summary').click();
+    assert.match(await details.locator('[data-usd-detail]').innerText(), new RegExp(`${both.source}$`), 'Details says both');
+    assert.doesNotMatch(await detail.innerText(), /USD unavailable/i);
+    assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
 });
 

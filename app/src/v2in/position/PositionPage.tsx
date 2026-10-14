@@ -35,15 +35,14 @@ import { MoreActions, positionMenuItems } from './MoreActions'
 import { PositionDialog, type PositionMode } from './PositionDialog'
 import type { V6Read } from './source'
 import { labelOf, tokenBook } from './tokens'
-import { usdOfPoolAmounts } from '../usd'
 import { useActivityHistory } from '../lists/activity'
 import PositionHistory from '../lists/PositionHistory'
-import { useCreatedPositions, useKeyed, useKeyedLatest } from '../lists/hooks'
+import { useCreatedPositions, useKeyed, useKeyedLatest, useUsdAged } from '../lists/hooks'
 import { OWN_PORTFOLIO } from '../lists/source'
-import { POSITION_VALUATIONS } from '../lists/valuation'
+import { positionRows, usdAsOf } from '../lists/model'
 import type { OpenGate } from './wallet'
 import RecordedInsights from './RecordedInsights'
-import { usdUnavailableReason } from './usdAvailability'
+import { asOfWords, usdMissingShort, usdTitleWords, usdUnavailableReason } from './usdAvailability'
 
 // 2026-10-03 (the owner's point 10): the Price range chart's own chunk, asked for as this page's code arrives (V1's page does the same).
 preloadPriceChart()
@@ -211,31 +210,36 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   // Added 2026-10-06 (read-v6 1.1.0-rc.1's qualified USD): what it holds and its fees in USD, as V1's page shows them
   // (components/positions/KeyFigures.tsx), with token amounts in Details. As in creation, one qualified currency also
   // values the pair at this position's own pool price. This is a pool mark, not an independently qualified token quote.
+  // Changed on purpose 2026-10-14 (the incident of 2026-10-13, package V1; decision D4): the dollars are its list row's
+  // own (../lists/model.ts withUsd), worked out by the one valuation from this same answer, so the page and the row can
+  // never differ; and a tile never says "USD unavailable": a figure that is not current says "as of HH:MM UTC" (the last
+  // complete valuation, or any figure once no newer answer has arrived for two minutes: `late`), and with no figure the
+  // two token amounts are the tile's figure, with one short reason under them.
+  // Changed on purpose 2026-10-14 (package V1, review). `late` is the row's own, counted from when this page took the
+  // answer (../lists/hooks.ts useUsdAged), not from this page's mount: opened from a list that already said "as of
+  // 13:05 UTC", the tiles showed the same 13:05 figures with no time for two more minutes. Each tile says its own time
+  // (one figure may be of now beside a kept one). And the time no longer takes the place of the basis: an estimate at
+  // the pool's price that is not current says both, in its title and in Details (decision D3: "basis disclosed").
   const fresh = position.freshness?.status === 'fresh' && !stale
   const pair = [position.pool.currency0, position.pool.currency1] as const
-  const valueOf = (amounts: readonly [bigint, bigint] | null) => fresh && amounts ? usdOfPoolAmounts({
-    amounts, decimals: [book.get(pair[0])?.decimals ?? null, book.get(pair[1])?.decimals ?? null],
-    prices: [book.get(pair[0])?.usd ?? null, book.get(pair[1])?.usd ?? null],
-    sqrtPriceX96: position.sqrtPriceX96, allowPoolMark: !hooked,
-  }) : null
-  const holdsMark = valueOf(position.principal), feesMark = valueOf(position.feesOwed)
-  const currentHoldsUsd = holdsMark?.value ?? null, currentFeesUsd = feesMark?.value ?? null
-  const poolMark = holdsMark?.basis === 'pool-price' ? holdsMark : feesMark?.basis === 'pool-price' ? feesMark : null
-  const savedUsd = fresh && (currentHoldsUsd === null || currentFeesUsd === null)
-    ? POSITION_VALUATIONS.get(answer, { chainId, positionManager: position.manager, tokenId: position.tokenId.toString() }) : null
-  const holdsUsd = savedUsd?.value ?? currentHoldsUsd
+  const row = useMemo(() => {
+    const listed = answer.positions.find((one) => one.chainId === chainId && one.dex === position.dex && one.positionManager.toLowerCase() === position.manager && one.tokenId === position.tokenId.toString())
+    return listed ? positionRows({ ...answer, positions: [listed] }, () => true)[0] ?? null : null
+  }, [answer, chainId, position.dex, position.manager, position.tokenId])
+  const [late] = useUsdAged([row?.usdSeenAt])
+  const holdsUsd = row?.valueUsd ?? null
   const holdsText = holdsUsd !== null ? formatUsdFloor(holdsUsd) : null
-  const feesUsd = savedUsd?.fees ?? currentFeesUsd
-  const usdTitle = savedUsd ? `Previous complete valuation from ${new Date(savedUsd.at).toISOString()}. Refreshing the USD source.`
-    : poolMark ? `Estimated from the pool price at block ${position.snapshotBlock}, converted with ${labelOf(book, pair[poolMark.anchor])}’s qualified USD price. This is not a sale quote.`
-      : position.snapshotBlock !== null ? `Qualified valuation at block ${position.snapshotBlock}` : undefined
-  const missingReasons = pair.flatMap((address, index) => {
-    if ((position.principal?.[index] ?? 0n) === 0n && (position.feesOwed?.[index] ?? 0n) === 0n) return []
-    const token = answer.tokens.find(item => item.chainId === chainId && item.address.toLowerCase() === address)
-    return token?.price ? [] : [token?.priceReason ?? 'token_price_unavailable']
-  })
-  const usdUnavailable = usdUnavailableReason(fresh ? missingReasons.join(',') : 'stale_position_or_chain')
-  const usdUnavailableTitle = `USD estimate unavailable. ${usdUnavailable} Token amounts are in Details.`
+  const feesUsd = row?.feesUsd ?? null
+  const holdsAsOf = row ? usdAsOf(row, 'value', late) : undefined
+  const feesAsOf = row ? usdAsOf(row, 'fees', late) : undefined
+  const poolTitle = row?.usdPoolTitle
+  const holdsTitle = usdTitleWords({ asOf: holdsAsOf, estimate: row?.valueUsdBasis === 'pool-price' ? poolTitle : undefined, block: position.snapshotBlock })
+  const feesTitle = usdTitleWords({ asOf: feesAsOf, estimate: row?.feesUsdBasis === 'pool-price' ? poolTitle : undefined, block: position.snapshotBlock })
+  // Details: the time of a figure that is not current (the kept one's first), then what an estimate is an estimate of.
+  const datedAt = (holdsUsd !== null ? holdsAsOf : undefined) ?? (feesUsd !== null ? feesAsOf : undefined)
+  const usdDetail = datedAt !== undefined || poolTitle ? usdTitleWords({ asOf: datedAt, estimate: poolTitle, block: null }) : undefined
+  const usdUnavailable = usdUnavailableReason(row?.usdReason)
+  const usdWhy = usdMissingShort(row?.usdReason)
 
   return (
     <div data-position-detail="" data-position-workspace-page="" data-position-id={position.tokenId.toString()} data-position-v2={`${chain.slug}-v${position.dex}`} data-snapshot={position.snapshotBlock ?? undefined}>
@@ -293,13 +297,14 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
           className="dm-pos-stat"
           data-cell="principal"
           data-value-width={holdsText && holdsText.length > 11 ? 'wide' : holdsText && holdsText.length > 8 ? 'medium' : undefined}
+          sub={holdsUsd !== null ? holdsAsOf !== undefined && <span data-usd-as-of="principal">{asOfWords(holdsAsOf)}</span> : <span data-usd-why="principal" title={usdUnavailable}>{usdWhy}</span>}
         >
           {holdsUsd !== null ? (
-            <span className="dm-arrive" title={usdTitle} data-usd="principal" data-usd-basis={holdsMark?.basis} data-usd-snapshot={savedUsd ? '' : undefined}>
+            <span className="dm-arrive" title={holdsTitle} data-usd="principal" data-usd-basis={row?.valueUsdBasis} data-usd-snapshot={row?.usdSavedAt !== undefined && row.usdNow?.figure !== 'value' ? '' : undefined}>
               <LiveFigure value={holdsText!} mode="digits" dimCents className="dm-fig-lg" />
             </span>
           ) : (
-            <span className="dm-pos-usd-unavailable" data-usd-unavailable="principal" title={usdUnavailableTitle} aria-label={usdUnavailableTitle}>USD unavailable</span>
+            <span className="dm-pos-amounts" data-usd-amounts="principal" title={usdUnavailable}><CardAmount amount={card.principal[0]} /><CardAmount amount={card.principal[1]} /></span>
           )}
         </Stat>
         <Stat
@@ -307,13 +312,14 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
           info={position.dex === 3 ? COPY.page.collectableInfo : COPY.page.feesInfo}
           className="dm-pos-stat"
           data-cell="fees"
+          sub={feesUsd !== null ? feesAsOf !== undefined && <span data-usd-as-of="fees">{asOfWords(feesAsOf)}</span> : holdsUsd !== null && <span data-usd-why="fees" title={usdUnavailable}>{usdWhy}</span>}
         >
           {feesUsd !== null ? (
-            <span data-usd="fees" title={usdTitle} data-usd-basis={feesMark?.basis} data-usd-snapshot={savedUsd ? '' : undefined}>
-              <UsdText value={feesUsd} block={savedUsd ? undefined : position.snapshotBlock ?? undefined} floor className="dm-fig-lg dm-arrive" />
+            <span data-usd="fees" title={feesTitle} data-usd-basis={row?.feesUsdBasis} data-usd-snapshot={row?.usdSavedAt !== undefined && row.usdNow?.figure !== 'fees' ? '' : undefined}>
+              <UsdText value={feesUsd} block={feesAsOf !== undefined ? undefined : position.snapshotBlock ?? undefined} floor className="dm-fig-lg dm-arrive" />
             </span>
           ) : (
-            <span className="dm-pos-usd-unavailable" data-usd-unavailable="fees" title={usdUnavailableTitle} aria-label={usdUnavailableTitle}>USD unavailable</span>
+            <span className="dm-pos-amounts" data-usd-amounts="fees" title={usdUnavailable}><CardAmount amount={card.unsettledFees[0]} /><CardAmount amount={card.unsettledFees[1]} /></span>
           )}
         </Stat>
         <Stat label={COPY.page.apr} info={COPY.page.aprInfo} className="dm-pos-stat" data-cell="apr" data-apr="no_qualified_source" sub={COPY.page.aprMissing}>
@@ -357,14 +363,14 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
           <KeyValueList className="dm-pos-facts">
             <KeyValue label="Tokens in this position"><span className="dm-pos-amounts" data-stat="principal"><CardAmount amount={card.principal[0]} /><CardAmount amount={card.principal[1]} /></span></KeyValue>
             <KeyValue label="Fees ready to collect"><span className="dm-pos-amounts" data-stat="fees"><CardAmount amount={card.unsettledFees[0]} /><CardAmount amount={card.unsettledFees[1]} /></span></KeyValue>
-            {(savedUsd || poolMark) && <KeyValue label="USD valuation"><span>{usdTitle}</span></KeyValue>}
+            {usdDetail && <KeyValue label="USD valuation"><span data-usd-detail="">{usdDetail}</span></KeyValue>}
             {chainId !== 4663 && <KeyValue label="APR data"><span>Lifetime fee history isn’t available from this network’s current data source. Recorded balances do not establish APR.</span></KeyValue>}
             {(holdsUsd === null || feesUsd === null) && <KeyValue label="USD valuation"><span>{usdUnavailable}</span></KeyValue>}
             {chainId !== 4663 && pair.filter((_, index) => (position.principal?.[index] ?? 0n) > 0n || (position.feesOwed?.[index] ?? 0n) > 0n).map(address => {
               const token = answer.tokens.find(item => item.chainId === chainId && item.address.toLowerCase() === address)
               if (token?.price || !token?.priceReason) return null
               const reason = usdUnavailableReason(token.priceReason)
-              return <KeyValue key={address} label={`${labelOf(book, address)} independent price`}><span data-usd-price-reason={token.priceReason}>{poolMark ? 'No independently qualified quote. The USD estimate above uses this position’s pool price.' : reason}</span></KeyValue>
+              return <KeyValue key={address} label={`${labelOf(book, address)} independent price`}><span data-usd-price-reason={token.priceReason}>{poolTitle ? 'No independently qualified quote. The USD estimate above uses this position’s pool price.' : reason}</span></KeyValue>
             })}
             <KeyValue label={COPY.page.nftId}>
               <Address value={position.tokenId.toString()} />

@@ -33,6 +33,8 @@ import { basisOf, positive, rawPair, unitsText, usdgSide, valueShares } from './
  * screens write it ("0.0₆7101", "2.5B"), the same way the Price range chart writes it (lib/chart/priceRange.ts).
  */
 const plain = (text: string) => readablePrice(text.startsWith('≈') ? text.slice(1) : text)
+/** Whether a decimal string is above zero (the fees figure's ink). */
+const aboveZero = (value: string) => /[1-9]/.test(value)
 const endText = (end: RangeEnd, tick: number) => (end.kind === 'tick' ? `Tick ${tick}` : plain(end.text))
 
 /** Both amounts of the principal or the fees, one line each. */
@@ -168,17 +170,57 @@ function RangeLine({ price, card, cached = false }: { price: CardPrice; card: Li
   )
 }
 
-/** `state`: the page's read as a valued state (a pair with USDG), null otherwise. */
-export function KeyFigures({ card, state, price, block, cached = false, workspace = false }: { card: LiveCard; state: PositionState | null; price: CardPrice; block: number; cached?: boolean; workspace?: boolean }) {
-  const principal = cardUsd(card, state, 'principal')
-  const fees = cardUsd(card, state, 'unsettledFees')
-  const principalText = principal ? formatUsdFloor(unitsText(principal.units)) : null
+/**
+ * Added 2026-10-14 (the incident of 2026-10-13, package V1; the owner's decision D3): the page's two dollar figures as
+ * the one valuation gives them (src/v2in/position/pageValuation.ts PageUsd, the same shape: this file imports no V2 module),
+ * in a build with V2. A figure of null is none from there; the page's own rule below then stands for it.
+ */
+export interface KeyUsd {
+  /** Decimal strings at 18 places. */
+  principal: string | null
+  fees: string | null
+  principalBasis?: 'qualified-prices' | 'pool-price'
+  feesBasis?: 'qualified-prices' | 'pool-price'
+  /** What each figure is worked out from, for its title. */
+  principalTitle: string | null
+  feesTitle: string | null
+  /** The time and the basis in words for Details, when a figure is an estimate or is not current. */
+  detail: string | null
+  /** "as of 13:05 UTC" when the figures are not current. */
+  asOf: string | null
+  saved: boolean
+  /**
+   * Added 2026-10-14 (package V1, review): this one figure is of what is read now beside a kept one (a measured zero
+   * needs no price): it says its own time (null while it is current), never the kept one's.
+   */
+  now?: { figure: 'principal' | 'fees'; asOf: string | null }
+  /** One short reason for a figure that is missing. */
+  why: string | null
+}
+
+/**
+ * `state`: the page's read as a valued state (a pair with USDG), null otherwise. `usd` (2026-10-14): the one valuation's
+ * figures, which come first; without one, the page's own rule (a pair with USDG at the pool's price), and with neither
+ * the two token amounts, as before.
+ */
+export function KeyFigures({ card, state, price, block, cached = false, workspace = false, usd = null }: { card: LiveCard; state: PositionState | null; price: CardPrice; block: number; cached?: boolean; workspace?: boolean; usd?: KeyUsd | null }) {
+  const ownPrincipal = cardUsd(card, state, 'principal')
+  const ownFees = cardUsd(card, state, 'unsettledFees')
+  // Each figure with what its title and its data attributes say of it: the one valuation's, else the page's own.
+  // The time of each is its own (2026-10-14, review): the one figure of now beside a kept one says its own, or none.
+  const datedOf = (figure: 'principal' | 'fees') => (usd?.now?.figure === figure ? usd.now.asOf : usd?.asOf ?? null)
+  const savedOf = (figure: 'principal' | 'fees') => usd?.saved === true && usd.now?.figure !== figure
+  const principal = usd?.principal != null ? { text: usd.principal, title: usd.principalTitle ?? undefined, basis: usd.principalBasis, dated: datedOf('principal'), saved: savedOf('principal'), one: true } : ownPrincipal ? { text: unitsText(ownPrincipal.units), title: `Pool price at block ${ownPrincipal.block}`, basis: undefined, dated: null, saved: false, one: false } : null
+  const fees = usd?.fees != null ? { text: usd.fees, title: usd.feesTitle ?? undefined, basis: usd.feesBasis, dated: datedOf('fees'), saved: savedOf('fees'), one: true } : ownFees ? { text: unitsText(ownFees.units), title: undefined, basis: undefined, dated: null, saved: false, one: false } : null
+  const principalText = principal ? formatUsdFloor(principal.text) : null
   const longPrincipal = !!principalText && principalText.length > 13
   const basis = state && principal ? basisOf(state) : null
   const raw = rawPair([card.principal[0].raw, card.principal[1].raw])
   const shares = basis && raw ? valueShares(basis, raw) : null
   const valueQuality = principal ? 'current' : visibleAmountQuality(card.principal)
   useLoadMilestone('position', 'value', valueQuality && cached ? 'cached' : valueQuality)
+  // One short reason, under the first of the two figures that has none.
+  const why = usd?.why ?? null
   return (
     <StatStrip layout="tiles" className="dm-pos-stats" title={blockTitle(block)} data-position-stats="" data-position-overview={workspace ? '' : undefined} data-valued={principal ? '' : undefined}>
       <Stat
@@ -189,18 +231,22 @@ export function KeyFigures({ card, state, price, block, cached = false, workspac
         data-long-value={longPrincipal ? '' : undefined}
         data-value-width={principalText && principalText.length > 11 ? 'wide' : principalText && principalText.length > 8 ? 'medium' : undefined}
         sub={
-          principal && (
-            <FigureDetail active={workspace} label="Token amounts">
-              {/* Neutral inks: on this page Tangerine means the fees series, so the tokens' split never borrows it. A
-                  position all in one token has nothing to split: no bar. */}
-              {shares && shares[0] > 0 && shares[1] > 0 && <StackedBar className="dm-pos-split" height={4} parts={[{ share: shares[0], tone: 'neutral' }, { share: shares[1], tone: 'muted' }]} />}
-              <Amounts card={card} which="principal" />
-            </FigureDetail>
-          )
+          principal ? (
+            <>
+              {/* Changed on purpose 2026-10-14 (package V1, decision D4): a figure that is not current says its time. */}
+              {principal.dated && <span className="dm-pos-usd-note" data-usd-as-of="principal">{principal.dated}</span>}
+              <FigureDetail active={workspace} label="Token amounts">
+                {/* Neutral inks: on this page Tangerine means the fees series, so the tokens' split never borrows it. A
+                    position all in one token has nothing to split: no bar. */}
+                {shares && shares[0] > 0 && shares[1] > 0 && <StackedBar className="dm-pos-split" height={4} parts={[{ share: shares[0], tone: 'neutral' }, { share: shares[1], tone: 'muted' }]} />}
+                <Amounts card={card} which="principal" />
+              </FigureDetail>
+            </>
+          ) : why && <span className="dm-pos-usd-note" data-usd-why="principal">{why}</span>
         }
       >
         {principal ? (
-          <span className="dm-arrive" title={`Pool price at block ${principal.block}`}>
+          <span className="dm-arrive" title={principal.title} data-usd={principal.one ? 'principal' : undefined} data-usd-basis={principal.basis} data-usd-snapshot={principal.saved ? '' : undefined}>
             <LiveFigure value={principalText!} mode={longPrincipal ? 'whole' : 'digits'} dimCents className={cx('dm-fig-lg', longPrincipal && 'dm-position-long-figure')}>
               {longPrincipal && principalText!.split(/(?<=,)/).map((part, index) => <span className="dm-position-amount-group" key={index}>{part}</span>)}
             </LiveFigure>
@@ -214,9 +260,22 @@ export function KeyFigures({ card, state, price, block, cached = false, workspac
         info="Fees this position earned and has not collected yet."
         className="dm-pos-stat"
         data-cell="fees"
-        sub={fees && (workspace ? <details className="dm-position-figure-detail"><summary>Token amounts</summary><Amounts card={card} which="unsettledFees" /></details> : <Amounts card={card} which="unsettledFees" />)}
+        sub={fees ? (
+          <>
+            {fees.dated && <span className="dm-pos-usd-note" data-usd-as-of="fees">{fees.dated}</span>}
+            {workspace ? <details className="dm-position-figure-detail"><summary>Token amounts</summary><Amounts card={card} which="unsettledFees" /></details> : <Amounts card={card} which="unsettledFees" />}
+          </>
+        ) : principal && why && <span className="dm-pos-usd-note" data-usd-why="fees">{why}</span>}
       >
-        {fees ? <UsdText value={unitsText(fees.units)} block={fees.block} floor className={cx('dm-fig-lg dm-arrive', positive(fees.units) && 'dm-fees-in')} /> : <Amounts card={card} which="unsettledFees" />}
+        {fees ? (
+          fees.one ? (
+            <span title={fees.title} data-usd="fees" data-usd-basis={fees.basis} data-usd-snapshot={fees.saved ? '' : undefined}>
+              <UsdText value={fees.text} floor className={cx('dm-fig-lg dm-arrive', aboveZero(fees.text) && 'dm-fees-in')} />
+            </span>
+          ) : (
+            <UsdText value={fees.text} block={ownFees!.block} floor className={cx('dm-fig-lg dm-arrive', positive(ownFees!.units) && 'dm-fees-in')} />
+          )
+        ) : <Amounts card={card} which="unsettledFees" />}
       </Stat>
       <YourApr tokenId={card.tokenId} compact={workspace} />
       <Stat

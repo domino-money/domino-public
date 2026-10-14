@@ -11,7 +11,13 @@ export interface PositionChange {
   blockHash?: string
   burnedTokenIds?: readonly string[]
 }
-type Evidence = { kind: 'state'; value: StateResponse } | { kind: 'confirmed'; value: PositionChange }
+/**
+ * Changed on purpose 2026-10-14 (the incident of 2026-10-13, package V1, review): a state reading is handed on with the
+ * moment it arrived here, by this page's own clock (`at`, ms), which a late subscriber gets too (the retained readings
+ * are replayed with the moment they came, not the moment of the replay). A figure worked out from a reading says its
+ * time once nothing newer has arrived for two minutes (v2in/lists/valuation.ts usdAged), and that is counted from here.
+ */
+type Evidence = { kind: 'state'; value: StateResponse; at: number } | { kind: 'confirmed'; value: PositionChange }
 
 /** Public wallet balances may lag an included action. This is a read barrier, never an optimistic balance. */
 export function createWalletReadGuard(wallet: string, chainId = 4663) {
@@ -38,19 +44,24 @@ export function createWalletReadGuard(wallet: string, chainId = 4663) {
   }
 }
 
-export function createPositionEvidence() {
+export function createPositionEvidence(now: () => number = () => Date.now()) {
   const states = new Map<string, StateResponse>()
+  // When each retained reading arrived (see Evidence above); gone with the reading itself.
+  const arrived = new WeakMap<StateResponse, number>()
   const confirmations: PositionChange[] = []
   const listeners = new Set<(event: Evidence) => void>()
   return {
     state(value: StateResponse) {
+      const at = now()
       for (const position of value.positions) {
         if (!position.ok || value.block <= (states.get(position.tokenId)?.block ?? 0)) continue
+        const kept: StateResponse = { v: value.v, block: value.block, timestamp: value.timestamp, positions: [position] }
         states.delete(position.tokenId)
-        states.set(position.tokenId, { v: value.v, block: value.block, timestamp: value.timestamp, positions: [position] })
+        states.set(position.tokenId, kept)
+        arrived.set(kept, at)
       }
       while (states.size > 512) states.delete(states.keys().next().value as string)
-      for (const listener of listeners) listener({ kind: 'state', value })
+      for (const listener of listeners) listener({ kind: 'state', value, at })
     },
     confirmed(value: PositionChange) {
       confirmations.push(value)
@@ -62,7 +73,7 @@ export function createPositionEvidence() {
       // A screen can finish a read before the V2 collection's chunk loads. Apply confirmation
       // minimums first, so an older retained state cannot reopen a position during that handoff.
       for (const value of confirmations) listener({ kind: 'confirmed', value })
-      for (const value of states.values()) listener({ kind: 'state', value })
+      for (const value of states.values()) listener({ kind: 'state', value, at: arrived.get(value) ?? now() })
       return () => { listeners.delete(listener) }
     },
   }

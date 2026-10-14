@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import * as runtime from '../../../api-contracts/read-v6/runtime.mjs';
+import { CONSTANTS } from '../../../api-contracts/read-v6/schema-data.mjs';
 
 const require = createRequire(import.meta.url);
 const PORTFOLIO = require('../../../api-contracts/read-v6/fixtures/valid/portfolio.json');
@@ -19,6 +20,19 @@ const lower = (value) => String(value).toLowerCase();
 function chains() {
   const current = PORTFOLIO.chains.find((c) => c.status === 'current');
   return [4663, 8453, 42161].map((chainId) => ({ ...clone(current), chainId, deployment: { ...current.deployment, manifestSha256: chainId.toString(16).padStart(64, '0') } }));
+}
+
+/**
+ * Added 2026-10-14 (package V1's suites): a Chainlink ETH/USD price for a Domino chain's native ETH, read `at` (Unix
+ * seconds), in the shape the contract's own rules accept (runtime.mjs tokenPrice and priced: its chain's feed, a round
+ * inside the heartbeat, no pool).
+ */
+export function ethUsdPrice(chainId, usd, at = Math.floor(Date.now() / 1000)) {
+  return {
+    source: 'chainlink_eth_usd', usd, pool: null, depthUsd: null,
+    snapshot: { number: 73_399_900, hash: '0x' + 'de'.repeat(32), timestamp: at },
+    ethUsd: { feed: CONSTANTS.priceProfiles[chainId].feed, roundId: '110680464442257320001', updatedAt: at - 60, usd },
+  };
 }
 
 /** A token as read-v6 names it (symbol untrusted, decimals as read). */

@@ -11,11 +11,12 @@ import { USD_SHOWN } from '../position/constants'
 import { protectionStanding, type ProtectionStanding } from '../autoexit/standing'
 import { exitReceiptOutcome } from '../autoexit/receipt'
 import { v2PositionHref } from '../route'
-import { rawAmounts, usdOfPoolAmounts } from '../usd'
+import { rawAmounts, USD_CURRENT_SECONDS } from '../usd'
 import { positionOfState } from '../../lib/walletCards'
-import { minimumPositionBlock, positionBurn, positionKey, positionObservation } from './positionSync'
+import { minimumPositionBlock, portfolioSeenAt, positionBurn, positionKey, positionObservation } from './positionSync'
 import { automationState, confirmedPositionAutomation } from '../automate/store'
-import { POSITION_VALUATIONS } from './valuation'
+import { POSITION_VALUATIONS, type PositionValuations } from './valuation'
+import { poolEstimateWords } from '../position/usdAvailability'
 
 /**
  * What the Positions screen's two lists take from read-v6 (spec F7 rev4 §6.2, §6.3, §2.11; the integration brief's data
@@ -26,6 +27,10 @@ import { POSITION_VALUATIONS } from './valuation'
  * read them and in raw units otherwise (never guessed). USD uses qualified prices, or an explicitly attributed mark at
  * the position's pool price into its one qualified currency. Neither method supplies personal APR or invents an
  * independent token quote. A position the index could not read is said so, never drawn as zeros.
+ * Changed on purpose 2026-10-14 (the incident of 2026-10-13, package V1): a row's dollars come from the one valuation
+ * (withUsd below: ../usd.ts currentUsd through ./valuation.ts), current while its amounts and prices are within about
+ * two minutes of each other, else the last complete one with its time, else none with a reason: never from a rule of
+ * this file's own (the 60 s gate on a state reading, and "a newer reading cannot borrow the saved one", are gone).
  * Each chain's status comes before its values: a stale chain's rows carry the stale badge and the age of what is shown;
  * an unavailable chain is §6.3's partial sentence, and never empties the others. A token's symbol is untrusted text
  * (control and invisible characters dropped, bounded); its identity is its chain and address.
@@ -185,6 +190,38 @@ export const partialSentence = (chains: readonly ChainStatus[]): string | null =
 
 export type RowState = 'in-range' | 'out-of-range' | 'closed' | 'unread'
 
+/**
+ * Added 2026-10-14 (the incident of 2026-10-13, package V1): what a row's dollars are worked out from, beside its two
+ * amounts and its tokens' prices, so that a row joined from Robinhood Chain's two inventories (./positionCollection.ts)
+ * is valued by the same rule as any other, once, as the row that is shown.
+ */
+export interface RowReading {
+  /** The pool's square-root price of the same read as the amounts (the pool mark); null when not read. */
+  sqrt: string | null
+  /** When the amounts were read (Unix seconds); null: not known, or a reading its own source calls stale. */
+  at: number | null
+  /** When the tokens' USD prices were served (Unix seconds); null: none, or their chain is not current. */
+  quotedAt: number | null
+  /**
+   * Added 2026-10-14 (package V1, review): when this page took the amounts, and the prices, by its own clock (Unix ms);
+   * null: not known. `at` and `quotedAt` are their sources' clocks (the chain's, rugged's server's); these two only
+   * tell how long ago, here, nothing newer arrived, so that an old figure always says its time (./valuation.ts usdAged).
+   */
+  seen: number | null
+  quotedSeen: number | null
+  /**
+   * `at` is this page's clock too: the site's own inventory names its block and no time. Its prices are then dated by
+   * the same clock (./positionCollection.ts joined), never by rugged's server's.
+   */
+  local?: true
+  /** Raw liquidity of the reading: a kept valuation is of one size of position (./valuation.ts). */
+  liquidity: string
+  /** read-v6's reason for each token it gives no price (pool order); null: it said nothing. */
+  missing?: readonly (string | null)[]
+  /** The prices are the chain's own dollar, not read-v6's (../usd.ts chainDollar): said so in the estimate's title. */
+  dollar?: true
+}
+
 export interface VaultBadge {
   role: 'root' | 'successor'
   /** The automation's name, when the vault's state was read: "Auto-compound" or "Domino-compound". */
@@ -225,9 +262,29 @@ export interface PositionRowView {
   valueUsdBasis?: 'qualified-prices' | 'pool-price'
   feesUsdBasis?: 'qualified-prices' | 'pool-price'
   usdPoolTitle?: string
-  /** An unchanged complete USD snapshot while the qualified source is temporarily unread. */
+  /** Added 2026-10-14 (package V1, decision D4): what the dollar figures are as of (Unix ms), whenever there is one. */
+  usdAt?: number
+  /**
+   * The figures are the last complete valuation, kept (./valuation.ts), not one of what is read now: its time (Unix ms),
+   * to be shown with them. Changed on purpose 2026-10-14: for any row a current valuation cannot be worked out for (a
+   * stale reading or chain, a hold after an action, a failed price read), not only an unchanged one within 90 s.
+   */
   usdSavedAt?: number
+  /**
+   * Added 2026-10-14 (package V1, review): with `usdSavedAt`, the one figure that is of what is read now all the same
+   * (a measured zero needs no price) and what it is as of (Unix ms). Only the other figure is the kept one.
+   */
+  usdNow?: { figure: 'value' | 'fees'; at: number }
+  /**
+   * Added 2026-10-14 (package V1, review): when this page took the older of the amounts and the prices a figure of now
+   * is worked out from, by its own clock (Unix ms). Older than a figure is current for, the figure says its time
+   * (usdAsOf below). Absent with no figure of now.
+   */
+  usdSeenAt?: number
+  /** Why there is no current complete valuation, also while the last one is shown (a data attribute). */
   usdReason?: string
+  /** Added 2026-10-14 (package V1): what the one valuation reads beside the row's amounts and tokens (withUsd). Never drawn. */
+  reading?: RowReading
   /** The stale badge's age ("updated 6 min ago"): the chain's when it is behind, else the position's own read's. */
   stale: string | null
   vault: VaultBadge | null
@@ -236,10 +293,81 @@ export interface PositionRowView {
   family: { successors: number; reserves: 'available' | 'unknown' | null } | null
 }
 
+/** A row without the dollars a valuation gave it: what withUsd starts from, and what a burned NFT is left with. */
+function withoutUsd(row: PositionRowView): PositionRowView {
+  const { valueUsdBasis: _value, feesUsdBasis: _fees, usdPoolTitle: _title, usdAt: _at, usdSavedAt: _saved, usdNow: _now, usdSeenAt: _seen, usdReason: _reason, ...bare } = row
+  return { ...bare, valueUsd: null, feesUsd: null }
+}
+
+/** A row's two raw amounts as the valuation takes them; null when either was not read. */
+function rawPairOf(shown: readonly [AmountShown, AmountShown] | null): readonly [bigint, bigint] | null {
+  const raws = shown ? rawAmounts([shown[0].raw || null, shown[1].raw || null]) : null
+  return raws ? [raws[0], raws[1]] : null
+}
+
+/**
+ * Added 2026-10-14 (the incident of 2026-10-13, package V1; decisions D3 and D4): the one valuation applied to a row,
+ * whichever inventory its amounts came from. Current dollars while its amounts and its prices are within about two
+ * minutes of each other (../usd.ts); otherwise the last complete valuation with its time (`usdSavedAt`), also while a
+ * hold after the person's own action lasts; with neither, no figure and `usdReason`, the row's two token amounts being
+ * what is drawn. A row with no amounts (unread, or a burned NFT) is asked nothing and draws nothing kept.
+ *
+ * Changed on purpose 2026-10-14 (package V1, review). An estimate keeps its basis line (`usdPoolTitle`) when it is the
+ * kept one too, of the block it was worked out at: it was dropped then, so a figure that was both an estimate and old
+ * said only its time. One of the two figures may be of now beside a kept one (`usdNow`). And the row carries when this
+ * page took what a figure of now is worked out from (`usdSeenAt`), so that one nothing newer has arrived for says its
+ * time whichever source it came from (a row whose dollar is a constant could never say it).
+ */
+export function withUsd(row: PositionRowView, valuations: PositionValuations = POSITION_VALUATIONS): PositionRowView {
+  const { reading, tokens } = row
+  if (!reading || !tokens || row.status !== 'live' || (row.value === null && row.fees === null)) return row
+  const usd = valuations.value({
+    key: row.key,
+    liquidity: reading.liquidity,
+    held: (row.block ?? 0) < minimumPositionBlock(row),
+    principal: rawPairOf(row.value),
+    fees: rawPairOf(row.fees),
+    decimals: [tokens[0].decimals, tokens[1].decimals],
+    prices: [tokens[0].usd, tokens[1].usd],
+    sqrtPriceX96: reading.sqrt,
+    allowPoolMark: !row.hooked,
+    readAt: reading.at,
+    quotedAt: reading.quotedAt,
+    missing: reading.missing,
+    block: row.block,
+    dollar: reading.dollar === true,
+  })
+  // A figure of what is read now: every figure of a current valuation, or the one beside a kept one.
+  const ofNow = usd.at !== null && (!usd.saved || usd.now !== undefined)
+  return {
+    ...withoutUsd(row),
+    valueUsd: usd.value,
+    feesUsd: usd.fees,
+    ...(usd.valueBasis ? { valueUsdBasis: usd.valueBasis } : {}),
+    ...(usd.feesBasis ? { feesUsdBasis: usd.feesBasis } : {}),
+    ...(usd.anchor !== undefined ? { usdPoolTitle: poolEstimateWords(tokens[usd.anchor].label, usd.dollar === true, usd.block ?? null) } : {}),
+    ...(usd.at !== null ? { usdAt: usd.at } : {}),
+    ...(usd.saved && usd.at !== null ? { usdSavedAt: usd.at } : {}),
+    ...(usd.now ? { usdNow: usd.now } : {}),
+    ...(ofNow && reading.seen !== null && reading.quotedSeen !== null ? { usdSeenAt: Math.min(reading.seen, reading.quotedSeen) } : {}),
+    ...(usd.reason ? { usdReason: usd.reason } : {}),
+  }
+}
+
+/**
+ * Added 2026-10-14 (package V1, review): the time one of a row's two figures says under it (Unix ms), or undefined
+ * while it is current. The kept figure says the kept valuation's time; a figure of now says its own only once it is
+ * `aged`: nothing newer has arrived, here, for as long as a figure is current (./valuation.ts usdAged of `usdSeenAt`).
+ */
+export function usdAsOf(row: Pick<PositionRowView, 'usdAt' | 'usdSavedAt' | 'usdNow'>, figure: 'value' | 'fees', aged: boolean): number | undefined {
+  if (row.usdNow?.figure === figure) return aged ? row.usdNow.at : undefined
+  return row.usdSavedAt ?? (aged ? row.usdAt : undefined)
+}
+
 /** A proved burn ends the NFT; its old token amounts are not presented as the wallet's present balance. */
 export function withTerminalEvidence(row: PositionRowView): PositionRowView {
   const burn = positionBurn(row)
-  if (burn && burn.block >= (row.block ?? 0)) return { ...row, block: burn.block, status: 'live', tab: 'closed', state: 'closed', value: null, fees: null, valueUsd: null, feesUsd: null, stale: null, unread: 'This position was closed and its NFT was burned.' }
+  if (burn && burn.block >= (row.block ?? 0)) return { ...withoutUsd(row), block: burn.block, status: 'live', tab: 'closed', state: 'closed', value: null, fees: null, stale: null, unread: 'This position was closed and its NFT was burned.' }
   // Retain known amounts while the index catches up, but never classify a pre-confirmation
   // snapshot as a currently open NFT (including an older inventory merged into read-v6).
   if ((row.block ?? 0) < minimumPositionBlock(row)) return { ...row, tab: 'pending', state: 'unread', stale: 'Updating', unread: 'Updating after your transaction.' }
@@ -288,7 +416,7 @@ function vaultBadge(position: V6Position, vaults: readonly Vault[], mandates: re
   return { role, name, word: null, running: name !== null }
 }
 
-function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'servedAt'> & Partial<Pick<PortfolioResponse, 'mandates' | 'wallet'>>, name: ReturnType<typeof tokenNamer>, automation: ReturnType<typeof automationState>): PositionRowView | null {
+function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'servedAt'> & Partial<Pick<PortfolioResponse, 'mandates' | 'wallet'>>, name: ReturnType<typeof tokenNamer>, automation: ReturnType<typeof automationState>, valuations: PositionValuations | null): PositionRowView | null {
   if (!isV2ChainId(position.chainId)) return null
   const chainId = position.chainId
   const chain = answer.chains.find((c) => c.chainId === chainId)
@@ -323,7 +451,8 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
     inRange: ownRead.position.tick >= ownRead.position.tickLower && ownRead.position.tick < ownRead.position.tickUpper,
     principalAtSpot: wallet.principal ?? [],
     feesOwed: [ownRead.position.unclaimed0, ownRead.position.unclaimed1],
-    freshness: { status: answer.servedAt - ownRead.timestamp > 60 ? 'stale' as const : 'fresh' as const, ageSeconds: Math.max(0, answer.servedAt - ownRead.timestamp) },
+    // Changed on purpose 2026-10-14 (package V1, decision D4): the same two minutes its dollars are current for (60 s before).
+    freshness: { status: answer.servedAt - ownRead.timestamp > USD_CURRENT_SECONDS ? 'stale' as const : 'fresh' as const, ageSeconds: Math.max(0, answer.servedAt - ownRead.timestamp) },
   } : position.state
   if (state.status !== 'live') {
     const own = state.status === 'unavailable' && state.freshness.status === 'stale' ? `updated ${agoWords(state.freshness.ageSeconds)}` : null
@@ -347,26 +476,22 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
   const liquidity = BigInt(state.liquidity)
   const pair = (values: readonly string[]) => (values.length === 2 ? ([amountShown(values[0], tokens[0]), amountShown(values[1], tokens[1])] as const) : null)
   const pending = (base.block ?? 0) < minimumPositionBlock(position)
-  const fresh = state.freshness.status === 'fresh' && chain?.status === 'current' && !pending
-  const valuationOf = (values: readonly string[]) => {
-    const raws = fresh && values.length === 2 ? rawAmounts(values) : null
-    return raws ? usdOfPoolAmounts({
-      amounts: [raws[0], raws[1]], decimals: [tokens[0].decimals, tokens[1].decimals],
-      prices: [tokens[0].usd, tokens[1].usd], sqrtPriceX96: state.sqrtPriceX96,
-      allowPoolMark: state.pool.dex !== 4 || state.pool.hooks.toLowerCase() === ZERO_ADDRESS,
-    }) : null
+  // Changed on purpose 2026-10-14 (the incident of 2026-10-13, package V1): what the one valuation reads (withUsd). The
+  // state route's own reading carries its block's time; read-v6's is current by read-v6's own word, as of its answer. The
+  // prices are read-v6's, as of the answer, while their chain is current. No dollar rule of this function's own is left.
+  // Changed on purpose 2026-10-14 (package V1, review): and when this page took each, by its own clock: the state
+  // reading as it arrived, the answer as it arrived (./positionSync.ts portfolioSeenAt).
+  const arrived = portfolioSeenAt(answer.servedAt)
+  const reading: RowReading = {
+    sqrt: state.sqrtPriceX96,
+    at: ownRead ? ownRead.timestamp : state.freshness.status === 'fresh' ? answer.servedAt : null,
+    quotedAt: chain?.status === 'current' ? answer.servedAt : null,
+    seen: ownRead ? ownRead.seen : arrived,
+    quotedSeen: arrived,
+    liquidity: state.liquidity,
+    missing: tokens.map((token) => (token.usd !== null ? null : answer.tokens.find((item) => item.chainId === chainId && item.address === token.address)?.priceReason ?? null)),
   }
-  const valueMark = valuationOf(state.principalAtSpot), feesMark = valuationOf(state.feesOwed)
-  const valueUsd = valueMark?.value ?? null, feesUsd = feesMark?.value ?? null
-  const poolMark = valueMark?.basis === 'pool-price' ? valueMark : feesMark?.basis === 'pool-price' ? feesMark : null
-  // A newer direct observation is a separate set of amounts; it cannot borrow the index's complete USD snapshot.
-  const saved = fresh && !ownRead && (valueUsd === null || feesUsd === null) && answer.wallet
-    ? POSITION_VALUATIONS.get({ ...answer, wallet: answer.wallet, positions: [position] }, position) : null
-  const usdReason = valueUsd === null || feesUsd === null
-    ? !fresh ? pending ? 'awaiting_receipt_block' : 'stale_position_or_chain'
-      : [...new Set(tokens.flatMap(token => token.usd !== null ? [] : answer.tokens.find(item => item.chainId === chainId && item.address === token.address)?.priceReason ?? 'token_price_unavailable'))].join(',') || 'amount_unavailable'
-    : undefined
-  return {
+  const row: PositionRowView = {
     ...base,
     status: 'live',
     tab: liquidity > 0n ? 'open' : 'closed',
@@ -376,16 +501,13 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
     unread: null,
     value: pair(state.principalAtSpot),
     fees: pair(state.feesOwed),
-    valueUsd: saved?.value ?? valueUsd,
-    feesUsd: saved?.fees ?? feesUsd,
-    valueUsdBasis: valueMark?.basis,
-    feesUsdBasis: feesMark?.basis,
-    ...(poolMark ? { usdPoolTitle: `Estimated from the pool price at block ${base.block}, converted with ${tokens[poolMark.anchor].label}’s qualified USD price. This is not a sale quote.` } : {}),
-    ...(saved ? { usdSavedAt: saved.at } : {}),
-    ...(usdReason ? { usdReason } : {}),
+    valueUsd: null,
+    feesUsd: null,
+    reading,
     stale: pending ? 'Updating' : chainStale ?? (state.freshness.status === 'stale' ? `updated ${agoWords(state.freshness.ageSeconds)}` : null),
     hooked: state.pool.dex === 4 && state.pool.hooks.toLowerCase() !== ZERO_ADDRESS,
   }
+  return valuations ? withUsd(row, valuations) : row
 }
 
 /** The Robinhood Chain Uniswap v4 position manager: V1's positions are its NFTs. */
@@ -394,8 +516,10 @@ const ROBINHOOD_V4_MANAGER = (): string => v2Chain(4663).uniswap.v4.positionMana
 /**
  * The rows of an answer's positions, in the order listed, on the chains `open` admits (the gate). `v1Ids`: the NFT ids
  * V1's own list shows; a read-v6 Robinhood Chain v4 position with one of them is the same NFT, shown once, as V1's row.
+ * `valuations` (2026-10-14, package V1): where each row's dollars are asked (withUsd); null: rows not valued yet, for the
+ * collection that joins them with the site's own inventory first and values the row that is shown (./positionCollection.ts).
  */
-export function positionRows(answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'positions' | 'servedAt'> & Partial<Pick<PortfolioResponse, 'mandates' | 'wallet'>>, open: (chainId: V2ChainId) => boolean, v1Ids: readonly string[] = [], automation: ReturnType<typeof automationState> = automationState()): PositionRowView[] {
+export function positionRows(answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'positions' | 'servedAt'> & Partial<Pick<PortfolioResponse, 'mandates' | 'wallet'>>, open: (chainId: V2ChainId) => boolean, v1Ids: readonly string[] = [], automation: ReturnType<typeof automationState> = automationState(), valuations: PositionValuations | null = POSITION_VALUATIONS): PositionRowView[] {
   const name = tokenNamer(answer.tokens)
   const v1 = new Set(v1Ids)
   const manager = ROBINHOOD_V4_MANAGER()
@@ -404,7 +528,7 @@ export function positionRows(answer: Pick<PortfolioResponse, 'chains' | 'tokens'
   for (const position of answer.positions) {
     if (!isV2ChainId(position.chainId) || !open(position.chainId)) continue
     if (position.chainId === 4663 && position.dex === 4 && position.positionManager.toLowerCase() === manager && v1.has(position.tokenId)) continue
-    const row = rowOf(position, answer, name, automation)
+    const row = rowOf(position, answer, name, automation, valuations)
     if (!row || seen.has(row.key)) continue
     seen.add(row.key)
     out.push(withTerminalEvidence(row))

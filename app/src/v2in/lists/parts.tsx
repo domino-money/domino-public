@@ -5,10 +5,10 @@ import { TokenMarkPair } from '../../components/TokenIcon'
 import { IconChevronRight } from '../../components/icons'
 import { Badge, Pill, Skeleton } from '../../components/ui'
 import type { RowApr } from '../../components/positions/listApr'
-import type { AmountShown, PositionRowView, TokenName } from './model'
+import { usdAsOf, type AmountShown, type PositionRowView, type TokenName } from './model'
 import { markOf } from '../position/marks'
 import { positionBurn } from './positionSync'
-import { usdUnavailableReason } from '../position/usdAvailability'
+import { asOfWords, usdMissingShort, usdTitleWords, usdUnavailableReason } from '../position/usdAvailability'
 
 /*
  * The pieces the lists draw for read-v6's positions, in V1's own row markup and classes (components/positions/PositionRow.tsx,
@@ -118,20 +118,38 @@ function RowStatus({ row }: { row: PositionRowView }) {
 }
 
 /**
- * Value and fees keep one USD slot. Exact token amounts and unavailable/saved provenance remain accessible in the
- * title and to screen readers; opening the position exposes its token breakdown in Details.
+ * Value and fees keep one slot. With a dollar figure: the figure, its two token amounts in the title and for screen
+ * readers, and its time under it when it is not current.
+ *
+ * Changed on purpose 2026-10-14 (the incident of 2026-10-13, package V1; the owner: "USD unavailable" must not appear on
+ * a position; decision D4). The slot never says "USD unavailable" any more:
+ *   - a figure that is not current (the last complete valuation, or one worked out from prices whose newest read
+ *     failed) says "as of HH:MM UTC" under it (`asOf`, Unix ms);
+ *   - with no figure, the position's two token amounts are the figure, in view (as V1's rows always wrote a pair with
+ *     no USD, components/positions/PositionRow.tsx), with one short reason under them (`why`, said once per row);
+ *   - with no amounts either (a position not read yet), a dash whose reason is the cell's title and the row's status.
+ *
+ * Changed on purpose 2026-10-14 (package V1, review; decision D3: "basis disclosed"): the time no longer takes the place
+ * of the basis. An estimate at the pool's price that is not current says both, in its title and to a screen reader:
+ * "Last complete valuation, from …. Estimated from the pool price …. This is not a sale quote." It said only the first,
+ * exactly while the figure was also old.
  */
-function Amounts({ amounts, which, label, unread, usd, savedAt, reason, basis, poolTitle }: { amounts: readonly [AmountShown, AmountShown] | null; which: 'principal' | 'fees'; label: string; unread: string | null; usd: string | null; savedAt?: number; reason?: string; basis?: 'qualified-prices' | 'pool-price'; poolTitle?: string }) {
+function Amounts({ amounts, which, label, unread, usd, asOf, why, reason, basis, poolTitle }: { amounts: readonly [AmountShown, AmountShown] | null; which: 'principal' | 'fees'; label: string; unread: string | null; usd: string | null; asOf?: number; why?: string | null; reason?: string; basis?: 'qualified-prices' | 'pool-price'; poolTitle?: string }) {
   const detail = amounts?.map(amount => `${amount.exact ?? amount.text} ${amount.token.label}`).join(' + ')
-  const missing = `USD estimate unavailable. ${usdUnavailableReason(reason)}`
-  const status = savedAt !== undefined ? `Previous complete valuation from ${new Date(savedAt).toISOString()}. Refreshing the USD source. ` : usd === null ? `${missing} ` : basis === 'pool-price' ? `${poolTitle} ` : ''
-  return <span className="dm-own-cell dm-own-usd-cell" data-cell={which} title={`${status}${detail ?? unread ?? 'Not reported'}`}>
+  const estimate = basis === 'pool-price' ? poolTitle : undefined
+  // A current figure at qualified prices needs no line of its own here (no block is named in a row).
+  const said = usd === null ? (amounts ? usdUnavailableReason(reason) : undefined) : usdTitleWords({ asOf, estimate, block: null })
+  return <span className="dm-own-cell dm-own-usd-cell" data-cell={which} title={`${said ? `${said} ` : ''}${detail ?? unread ?? 'Not reported'}`}>
     <span className="dm-own-label">{label}</span>
-    {usd !== null ? <span className="dm-own-fig" data-usd={which} data-usd-basis={basis} data-usd-snapshot={savedAt !== undefined ? '' : undefined}>{formatUsdFloor(usd)}</span>
-      : <span className="dm-own-usd-unavailable" data-figure="none" aria-label={`${missing} Open the position for token amounts.`}>USD unavailable</span>}
-    {savedAt !== undefined && <span className="sr-only">Previous complete valuation; refreshing.</span>}
-    {basis === 'pool-price' && <span className="sr-only">{poolTitle}</span>}
-    {amounts && <span className="sr-only" data-token-amounts=""><AmountText amount={amounts[0]} /> + <AmountText amount={amounts[1]} /></span>}
+    {usd !== null ? <>
+      <span className="dm-own-fig" data-usd={which} data-usd-basis={basis} data-usd-snapshot={asOf !== undefined ? '' : undefined}>{formatUsdFloor(usd)}</span>
+      {asOf !== undefined && <span className="dm-own-est" data-usd-as-of={which}>{asOfWords(asOf)}</span>}
+      {estimate && <span className="sr-only" data-usd-estimate={which}>{estimate}</span>}
+      {amounts && <span className="sr-only" data-token-amounts=""><AmountText amount={amounts[0]} /> + <AmountText amount={amounts[1]} /></span>}
+    </> : amounts ? <>
+      <span className="dm-own-amounts" data-token-amounts="" data-figure="amounts"><AmountText amount={amounts[0]} /><AmountText amount={amounts[1]} /></span>
+      {why && <span className="dm-own-est" data-usd-why={which}>{why}</span>}
+    </> : <span className="dm-own-dash" data-figure="none">—</span>}
   </span>
 }
 
@@ -161,9 +179,22 @@ function VaultColumn({ row }: { row: PositionRowView }) {
   )
 }
 
-/** One of the person's own positions read from read-v6, as a row of Your positions. */
-export function V2PositionRow({ row, apr = null }: { row: PositionRowView; apr?: RowApr | null }) {
+/**
+ * One of the person's own positions read from read-v6, as a row of Your positions. `late` (2026-10-14, package V1):
+ * nothing newer has arrived for this row for as long as a figure is current, so a figure of what is read now says the
+ * time it is as of.
+ *
+ * Changed on purpose 2026-10-14 (package V1, review): `late` is the row's own (./hooks.ts useUsdAged of its
+ * `usdSeenAt`: the older of its amounts and its prices, by when this page took them), where it was the portfolio's
+ * alone and exempted every row whose dollar is the chain's own. Such a row (a USDG pair only the site's inventory
+ * lists) could never say its time: half-hour-old dollars were drawn as current while the state route was refused.
+ * Each of the two figures says its own time (model.ts usdAsOf): one may be of now beside a kept one.
+ */
+export function V2PositionRow({ row, apr = null, late = false }: { row: PositionRowView; apr?: RowApr | null; late?: boolean }) {
   const closed = row.state === 'closed'
+  const valueAsOf = usdAsOf(row, 'value', late), feesAsOf = usdAsOf(row, 'fees', late)
+  // One short reason per row, under the first of its two figures that has none.
+  const why = row.usdReason ? usdMissingShort(row.usdReason) : null
   const emptyValue = closed && row.value?.every(amount => amount.kind === 'zero')
   const emptyFees = closed && row.fees?.every(amount => amount.kind === 'zero')
   const terminal = positionBurn(row)
@@ -208,8 +239,8 @@ export function V2PositionRow({ row, apr = null }: { row: PositionRowView; apr?:
           </span>
         </span>
         <span className={closed && ((emptyValue && emptyFees) || burned) ? 'dm-own-figs dm-own-empty-figure' : 'dm-own-figs'}>
-          <span className={emptyValue || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.value} which="principal" label="Value" unread={row.unread} usd={row.valueUsd} savedAt={row.usdSavedAt} reason={row.usdReason} basis={row.valueUsdBasis} poolTitle={row.usdPoolTitle} /></span>
-          <span className={emptyFees || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.fees} which="fees" label="Fees to collect" unread={row.unread} usd={row.feesUsd} savedAt={row.usdSavedAt} reason={row.usdReason} basis={row.feesUsdBasis} poolTitle={row.usdPoolTitle} /></span>
+          <span className={emptyValue || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.value} which="principal" label="Value" unread={row.unread} usd={row.valueUsd} asOf={valueAsOf} why={row.valueUsd === null ? why : null} reason={row.usdReason} basis={row.valueUsdBasis} poolTitle={row.usdPoolTitle} /></span>
+          <span className={emptyFees || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.fees} which="fees" label="Fees to collect" unread={row.unread} usd={row.feesUsd} asOf={feesAsOf} why={row.valueUsd !== null && row.feesUsd === null ? why : null} reason={row.usdReason} basis={row.feesUsdBasis} poolTitle={row.usdPoolTitle} /></span>
           {!closed && <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : apr?.kind ?? 'none'}>
             <span className="dm-own-label">Your APR</span>
             {apr?.kind === 'loading' ? <Skeleton className="dm-collection-apr-loading" /> : apr?.kind === 'rate' ? <span className="dm-own-fig" title={apr.saved ? 'Last verified position history. Updating automatically.' : 'Annualized fees earned by this position since it opened.'}>{apr.text}</span> : <span className="dm-own-dash" title={apr?.kind === 'missing' ? apr.words : 'The position’s verified fee history is not available yet.'}>—</span>}

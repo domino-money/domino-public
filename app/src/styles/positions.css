@@ -130,8 +130,10 @@
      screen, so the rail stays short; a phone scrolls the page. */
   .dm-acct-token-none { color: var(--fg-subtle); font-weight: 400; }
   .dm-own-usd-cell { min-height: 1.5rem; }
-  .dm-own-usd-unavailable { display: inline-block; min-width: 4.5rem; min-height: 1rem; color: var(--fg-subtle); font-size: .75rem; font-weight: 400; white-space: nowrap; }
-  .dm-pos-usd-unavailable { display: inline-flex; align-items: center; min-height: 1.75rem; color: var(--fg-subtle); font-size: .875rem; font-weight: 400; }
+  /* Changed on purpose 2026-10-14 (the incident of 2026-10-13, package V1): no slot says "USD unavailable" any more, so
+     its two styles went. What is left to style is the one quiet line under a position tile's figure: the time of a
+     figure that is not current ("as of 13:05 UTC"), or the short reason there is none. A list row's is .dm-own-est. */
+  .dm-pos-usd-note { display: block; color: var(--fg-subtle); font-size: .875rem; line-height: 1.25rem; font-weight: 400; white-space: normal; }
   .dm-acct-token-group { padding: 0.75rem 1rem 0.25rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.1px; color: var(--fg-subtle); }
   @media (min-width: 768px) {
     .dm-acct-token-list[data-expanded] { max-height: 29rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--surface-4) transparent; }

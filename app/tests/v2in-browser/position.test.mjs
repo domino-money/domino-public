@@ -857,7 +857,7 @@ test('(b3) live on Base with qualified prices: fixed USD figures, token amounts 
 
 for (const variant of [
   { name: 'one qualified anchor values a fresh pool without extra transactions', anchor: true, stale: false, usd: true },
-  { name: 'no qualified anchor keeps principal and fees unavailable', anchor: false, stale: false, usd: false },
+  { name: 'no qualified anchor keeps principal and fees in tokens, with a reason', anchor: false, stale: false, usd: false },
   { name: 'a stale pool snapshot never supplies a USD estimate', anchor: true, stale: true, usd: false },
 ]) test(`pool-price USD: ${variant.name}`, async () => {
   const manager = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1';
@@ -911,10 +911,21 @@ for (const variant of [
         await s.page.screenshot({ path: join(shots(), `position-pool-price-base-${width}.png`), fullPage: true, animations: 'disabled' });
       }
     } else {
-      await detail.locator('[data-usd-unavailable="principal"]').waitFor();
-      assert.deepEqual(await detail.locator('[data-usd-unavailable]').allInnerTexts(), ['USD unavailable', 'USD unavailable']);
+      // Rewritten on purpose 2026-10-14 (the incident of 2026-10-13, package V1; the owner: "USD unavailable" must not
+      // appear on a position). Both tiles said those words, the amounts closed inside Details. Still no estimate without
+      // a basis, and none from a stale reading with nothing kept; the two token amounts are the tiles' figures now, in
+      // view, with one short reason.
+      await detail.locator('[data-usd-amounts="principal"]').waitFor();
+      assert.match(await detail.locator('[data-usd-amounts="principal"]').innerText(), /2\s+USDC\s+3\s+TEST/, 'what it holds, in tokens, in view');
+      assert.match(await detail.locator('[data-usd-amounts="fees"]').innerText(), /0\.25\s+USDC\s+0\.5\s+TEST/);
+      assert.deepEqual(await detail.locator('[data-usd-why]').allInnerTexts(), [variant.stale ? 'Waiting for a fresh reading' : 'No reliable USD price'], 'one short reason, under the first figure');
+      assert.doesNotMatch(await detail.locator('[data-position-stats]').innerText(), /USD unavailable/i, 'the bare words are gone');
       assert.equal(await detail.locator('[data-usd], [data-usd-snapshot]').count(), 0, 'there is no unqualified estimate or remembered USD value');
       assert.equal(await detail.locator('[data-position-loading], [data-position-overview] [aria-busy="true"]').count(), 0, 'settled unavailable data is not an infinite loader');
+      for (const width of [1280, 390, 320]) {
+        await s.page.setViewportSize({ width, height: 960 });
+        assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `token amounts fit ${width}px`);
+      }
     }
     const details = detail.locator('[data-position-details]');
     await details.locator('summary').click();
@@ -926,7 +937,9 @@ for (const variant of [
   } finally { await s.close(); }
 });
 
-test('a completed unqualified USD read explains the missing price without a permanent loading skeleton', async () => {
+// Rewritten on purpose 2026-10-14 (package V1): the two tiles said "USD unavailable"; they show the position's token
+// amounts now, with one short reason, and the full sentence in their title and in Details.
+test('a completed unqualified USD read shows the token amounts and explains the missing price without a permanent loading skeleton', async () => {
   const pools = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/valid/chain-pools.json', import.meta.url), 'utf8'));
   const tokens = TOKENS.map(token => ({ ...token, price: null, priceReason: 'pool_depth_below_floor' }));
   const portfolio = portfolioOf({ wallet: OWNER, tokens, positions: [live(5_100_001)] });
@@ -934,11 +947,15 @@ test('a completed unqualified USD read explains the missing price without a perm
   const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100001', read6: { ...READ6, portfolio } });
   try {
     const detail = s.page.locator('[data-position-detail]');
-    const figures = detail.locator('[data-usd-unavailable]');
+    const figures = detail.locator('[data-usd-amounts]');
     await figures.first().waitFor();
-    assert.deepEqual(await figures.allInnerTexts(), ['USD unavailable', 'USD unavailable']);
+    assert.equal(await figures.count(), 2);
+    assert.match(await detail.locator('[data-usd-amounts="principal"]').innerText(), /ETH[\s\S]*USDC/);
+    assert.match(await detail.locator('[data-usd-amounts="fees"]').innerText(), /0\.001\s+ETH\s+2\.5\s+USDC/);
+    assert.deepEqual(await detail.locator('[data-usd-why]').allInnerTexts(), ['No reliable USD price']);
+    assert.doesNotMatch(await detail.locator('[data-position-stats]').innerText(), /USD unavailable/i);
     for (const figure of await figures.all()) {
-      assert.match(await figure.getAttribute('aria-label'), /price source has not verified enough liquidity/);
+      assert.match(await figure.getAttribute('title'), /price source has not verified enough liquidity/);
       assert.equal(await figure.evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)', 'a completed read is not styled as a loading skeleton');
     }
     assert.equal(await detail.locator('[data-position-loading], [data-position-overview] [aria-busy="true"]').count(), 0);
@@ -949,8 +966,8 @@ test('a completed unqualified USD read explains the missing price without a perm
     assert.match(await details.locator('[data-stat="fees"]').textContent(), /0\.001\s+ETH.*2\.5\s+USDC/);
     for (const width of [1280, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
-      assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `unavailable USD fits ${width}px`);
-      assert.equal(await figures.evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth)), true, `unavailable text fits its figures at ${width}px`);
+      assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `token amounts fit ${width}px`);
+      assert.equal(await figures.evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth + 1)), true, `the amounts fit their tiles at ${width}px`);
       await s.page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
       await s.page.screenshot({ path: join(shots(), `position-usd-unavailable-${width}.png`), fullPage: true, animations: 'disabled' });
     }

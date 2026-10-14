@@ -7,7 +7,6 @@ import { chainPoolsOn } from '../journey/served'
 import { createKeyedReader, createListsReads, readAgainAfter, type ListsReply, type ListsTransports } from './read'
 import { createPortfolioCatchup, reconcilePortfolio, subscribePositionChanges } from './positionSync'
 import { CREATED_POSITIONS } from './createdPositions'
-import { POSITION_VALUATIONS } from './valuation'
 import { createPriceRecovery } from './priceRecovery'
 import { noteAnswerFinality } from '../../lib/confirmedOperations'
 
@@ -76,7 +75,8 @@ export const OWN_PORTFOLIO = createKeyedReader<ListsReply<PortfolioResponse>>(as
   // The activity history hands its answers on the same way (activity.tsx).
   if (answer.kind === 'ok') noteAnswerFinality(answer.body.chains)
   if (answer.kind === 'ok') CREATED_POSITIONS.reconcile(answer.body)
-  if (answer.kind === 'ok') POSITION_VALUATIONS.record(answer.body)
+  // Changed on purpose 2026-10-14 (package V1): no valuation is recorded here any more. The last complete valuation is
+  // kept where a row or a page works one out (./valuation.ts), of the reading it shows, which may be newer than this answer's.
   if (answer.kind === 'ok' && active()) void priceRecovery.run(answer.body, active)
   return answer.kind === 'ok' ? { ...answer, body: reconcilePortfolio(answer.body) } : answer
 }, { next: (reply, failures) => reply.kind === 'ok' && REFRESH ? catchup.delay(reply.body) ?? 30_000 : again(reply, failures), failed })

@@ -18,6 +18,8 @@ import * as runtime from '../../../api-contracts/read-v6/runtime.mjs';
 
 const require = createRequire(import.meta.url);
 const model = require('../../.test-build/app/src/v2in/lists/model.js');
+const { createPositionValuations } = require('../../.test-build/app/src/v2in/lists/valuation.js');
+const { portfolioSeenAt } = require('../../.test-build/app/src/v2in/lists/positionSync.js');
 const { exitReceiptOutcome } = require('../../.test-build/app/src/v2in/autoexit/receipt.js');
 const { historyWords } = require('../../.test-build/app/src/v2in/automate/portfolio.js');
 const { v2Chain } = require('../../.test-build/app/src/v2/chains.js');
@@ -111,6 +113,34 @@ test('each read-v6 position is a row: chain and DEX named, its own page, open or
   assert.equal(unread.unread, 'This position hasn’t been read yet.');
   assert.equal(unread.tab, 'pending');
   assert.equal(unavailable.tab, 'pending');
+});
+
+// Added 2026-10-14 (incident of 2026-10-13, package V1): a row's dollars are worked out by the one valuation
+// (src/v2in/usd.ts currentUsd, lists/valuation.ts), from what the row itself carries, so a row joined from two
+// inventories (lists/positionCollection.ts) is valued once, as the row that is shown.
+test('a row says when its dollars are as of and carries what the one valuation reads; asked unvalued it has no dollars yet', () => {
+  const body = valid('portfolio', fixture('portfolio.json'));
+  const rows = model.positionRows(body, ALL);
+  const root = rows[0], state = body.positions[0].state;
+  assert.equal(root.feesUsd, '0.001200000000000000');
+  assert.equal(root.usdAt, body.servedAt * 1000, 'as of the answer: read-v6 calls this reading fresh and its chain current');
+  // Rewritten on purpose 2026-10-14 (package V1, review): the reading also says when this page took the amounts and
+  // the prices, by its own clock (ms): here both with the answer, whose arrival is stamped once (positionSync.ts).
+  const arrived = portfolioSeenAt(body.servedAt);
+  assert.ok(Math.abs(arrived - Date.now()) < 60_000, 'the page’s clock, not the answer’s `servedAt`');
+  assert.deepEqual(root.reading, { sqrt: state.sqrtPriceX96, at: body.servedAt, quotedAt: body.servedAt, seen: arrived, quotedSeen: arrived, liquidity: state.liquidity, missing: [null, null] });
+  assert.equal(root.usdSeenAt, arrived, 'so a figure nothing newer has arrived for can say its time (it could not, for a row whose dollar is a constant)');
+  assert.equal(root.usdReason, 'amount_unavailable', 'MANY is priced, with decimals nobody read: the value has no figure, and says why');
+  const stale = rows.find((row) => row.tokenId === '8');
+  assert.deepEqual([stale.valueUsd, stale.feesUsd, stale.usdAt, stale.usdReason, stale.reading.at], [null, null, undefined, 'stale_position_or_chain', null], 'a reading read-v6 itself calls stale is never priced as current');
+  assert.ok(stale.value && stale.fees, 'and its token amounts are still on the row');
+  const unvalued = model.positionRows(body, ALL, [], undefined, null)[0];
+  assert.deepEqual([unvalued.valueUsd, unvalued.feesUsd, unvalued.usdAt, unvalued.usdReason], [null, null, undefined, undefined]);
+  assert.deepEqual(unvalued.reading, root.reading);
+  assert.deepEqual(model.withUsd(unvalued, createPositionValuations()), root, 'the same row once the one valuation is applied');
+  // A burned or unread row has no amounts to value: nothing is asked of the valuation, and nothing kept is drawn on it.
+  const unread = rows.find((row) => row.status === 'not_read');
+  assert.deepEqual([unread.reading, unread.valueUsd, model.withUsd(unread).valueUsd], [undefined, null, null]);
 });
 
 test('a stale read carries the stale badge with its age; a chain behind gives its own age to every row of it', () => {

@@ -3,16 +3,17 @@ import { RowsHead } from '../../components/positions/PositionRow'
 import { Button, EmptyState, LinkButton, Tabs } from '../../components/ui'
 import { positionRows, partialSentence, type PositionRowView } from './model'
 import { V2PositionRow } from './parts'
-import { anyIn, chainsIn, useCreatedPositions, useKeyed, useKeyedLatest, useListsGate } from './hooks'
+import { anyIn, chainsIn, useCreatedPositions, useKeyed, useKeyedLatest, useListsGate, useUsdAged } from './hooks'
 import { routeQuiet } from './read'
 import { OWN_PORTFOLIO } from './source'
 import { hasPositionApr, historicalPositionRows, mergePositionRows, positionCounts, withCreatedPositions } from './positionCollection'
-import { subscribePositionChanges } from './positionSync'
+import { positionObservation, subscribePositionChanges, type PositionIdentity } from './positionSync'
 import { feesStore } from '../../lib/fees/spawn'
 import type { FeeHistoryView } from '../../lib/fees/types'
 import { rowAprs } from '../../components/positions/listApr'
 import { PendingRows } from '../../components/positions/PositionRow'
-import { useWalletAnswer, walletChanged, type WalletAnswer } from '../../lib/walletPositions'
+import { useWalletAnswer, walletAnswerAt, walletChanged, type WalletAnswer } from '../../lib/walletPositions'
+import { POSITION_VALUATIONS, type PositionValuations } from './valuation'
 import type { DepositsSlot } from '../../components/positions/OwnedPositions'
 import { shortAddress } from '../../lib/read/screens/identity'
 import { newPositionHref } from '../../components/explore/routes'
@@ -35,7 +36,9 @@ function useCollectionAprs(ids: string, active: boolean) {
 
 /** One collection and one count for each NFT, independent of which inventory discovered it first. */
 export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyAction }: OwnedCollectionProps) {
-  const own = useOwnRows(owner, [])
+  // Changed on purpose 2026-10-14 (the incident of 2026-10-13, package V1): read-v6's rows are not valued on their own
+  // here; each NFT's row is joined with the site's inventory first, and the row that is shown is valued once (below).
+  const own = useOwnRows(owner, [], null)
   const latest = useKeyedLatest(OWN_PORTFOLIO, own.live ? owner : null)
   // Historical inventory discovers older valid NFTs. It does not poll or drive the newer inventory's loading state.
   const [version, setVersion] = useState(0)
@@ -47,16 +50,31 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
   const current = historical.phase === 'ready' ? historical.answer : null
   if (current !== null && current !== kept) setKept(current)
   const retained = current ?? kept
+  // Changed on purpose 2026-10-14 (package V1, review): a state reading (and the end of a wallet-wide hold, which is
+  // told the same way) works the rows out again, with no read. The rows were worked out again only when the portfolio
+  // reader drew something (./source.ts reprojects a good answer; a failed one is a new reply), so with no good answer
+  // held and none coming (an answer read-v6's contract refuses is asked again after five minutes) a row of the site's
+  // own inventory stayed on an older state reading than the browser held, and did not leave "Updating" when its hold
+  // ended. Dated by that older reading, it would say "as of" on a page whose state route answers.
+  // `observation`: where the rows look a state reading up, a new function with each such word (it is what changes).
+  const [observation, setObservation] = useState(() => positionObservation)
   useEffect(() => subscribePositionChanges((change) => {
-    if (change.kind !== 'state' && (!change.wallet || change.wallet === owner)) setVersion((value) => value + 1)
+    if (change.kind === 'state') setObservation(() => (identity: PositionIdentity) => positionObservation(identity))
+    else if (!change.wallet || change.wallet === owner) setVersion((value) => value + 1)
   }), [owner])
-  const rows = useMemo(() => mergePositionRows(historicalPositionRows(retained, current !== null), own.rows), [retained, current, own.rows])
+  const rows = useMemo(() => mergePositionRows(historicalPositionRows(retained, current !== null, retained ? walletAnswerAt(retained) : null, observation), own.rows), [retained, current, own.rows, observation])
   const counts = useMemo(() => positionCounts(rows), [rows])
   const [chosen, setChosen] = useState<'open' | 'closed' | null>(null)
   const tab = chosen ?? (counts.open === 0 && counts.pending === 0 && counts.closed > 0 ? 'closed' : 'open')
   const [pages, setPages] = useState({ open: 1, closed: 1 })
   const matches = rows.filter((row) => row.tab === tab || (tab === 'open' && row.tab === 'pending'))
   const shown = matches.slice(0, pages[tab] * PAGE_SIZE)
+  // Added 2026-10-14 (package V1, decision D4): nothing newer has arrived for a row for as long as a figure is current
+  // (about two minutes; one failed read changes nothing), so what it shows is an old reading's or an old answer's: its
+  // figures say their time ("as of HH:MM UTC"), never "USD unavailable". Changed on purpose 2026-10-14 (review): each
+  // row by when this page took its own amounts and prices (./hooks.ts useUsdAged). It was one flag for the whole list,
+  // of the portfolio answer alone, and counted from the mount of this list.
+  const late = useUsdAged(shown.map((row) => row.usdSeenAt))
   const ids = shown.filter(hasPositionApr).map((row) => row.tokenId).join(',')
   // One batched subscription for visible NFTs. No scan is launched from a row component.
   const aprs = useCollectionAprs(ids, tab === 'open')
@@ -85,7 +103,7 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
       {!note && (partial || failed) && <p className="dm-own-note">Some positions are still being checked. Available positions are shown below.</p>}
       {shown.length ? <div className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
         <div className="dm-collection-head" data-collection-tab={tab} aria-hidden="true"><span>Pool</span>{tab === 'closed' ? <span>Position history</span> : <><span>Value</span><span>Fees to collect</span><span>Your APR</span></>}</div>
-        {shown.map((row) => <V2PositionRow key={row.key} row={row} apr={hasPositionApr(row) ? aprs.get(row.tokenId) ?? null : null} />)}
+        {shown.map((row, index) => <V2PositionRow key={row.key} row={row} late={late[index]} apr={hasPositionApr(row) ? aprs.get(row.tokenId) ?? null : null} />)}
       </div> : empty ? <EmptyState title={readOnly ? 'No positions at this address' : 'No positions yet'} action={!readOnly ? <LinkButton href={newPositionHref()}>New position</LinkButton> : undefined} className="dm-own-none" data-empty="owned-none" />
         : rows.length ? <EmptyState title={tab === 'open' ? 'No open positions' : 'No closed positions'} data-empty={`owned-${tab}`} />
           : !settled && !failed && !note ? <PendingRows loading /> : <p className="dm-own-note">Your positions couldn’t be read right now. We’ll keep checking.</p>}
@@ -110,15 +128,18 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
  * A Robinhood Chain v4 NFT V1 already lists is shown once, as V1's row. Nothing is drawn as zeros for a read that failed.
  */
 
-/** The person's own rows from the site's read-v6 route on the `live` chains, and the reply they come from. */
-function useOwnRows(owner: string, v1Ids: readonly string[]) {
+/**
+ * The person's own rows from the site's read-v6 route on the `live` chains, and the reply they come from. `valuations`
+ * (2026-10-14, package V1): where each row's dollars are asked; null for the collection, which values the joined rows.
+ */
+function useOwnRows(owner: string, v1Ids: readonly string[], valuations: PositionValuations | null = POSITION_VALUATIONS) {
   const gate = useListsGate()
   const live = anyIn(gate, 'live')
   const reply = useKeyed(OWN_PORTFOLIO, live ? owner : null)
   const created = useCreatedPositions(live ? owner : null)
   const automation = useSyncExternalStore(subscribeAutomation, automationState, automationState)
   const ids = v1Ids.join(',')
-  const rows = useMemo(() => withCreatedPositions(reply?.kind === 'ok' ? positionRows(reply.body, chainsIn(gate, 'live'), ids === '' ? [] : ids.split(','), automation) : [], created.filter(item => chainsIn(gate, 'live')(item.chainId))), [reply, gate, ids, automation, created])
+  const rows = useMemo(() => withCreatedPositions(reply?.kind === 'ok' ? positionRows(reply.body, chainsIn(gate, 'live'), ids === '' ? [] : ids.split(','), automation, valuations) : [], created.filter(item => chainsIn(gate, 'live')(item.chainId))), [reply, gate, ids, automation, created, valuations])
   return { live, reply, rows }
 }
 

@@ -36,7 +36,7 @@ const { createFakeSession } = await import('../support/fake-session.mjs');
 const { createWalletServer } = await import('../support/wallet-server.mjs');
 const { launchBrowser } = await import('../support/s1-browser.mjs');
 const { plainPortfolio } = await import('../support/v2-plain-portfolio.mjs');
-const { activityOf, s1Action } = await import('../support/s1-read6.mjs');
+const { activityOf, ethUsdPrice, s1Action } = await import('../support/s1-read6.mjs');
 
 const require = createRequire(import.meta.url);
 const position = require('../../.test-build/app/src/finance/position.js');
@@ -63,13 +63,16 @@ after(async () => { await closeBrowser(browser); });
 
 /**
  * V1's position page for NFT 3135288 on the V2 build, the gate open (`preview`), the wallet connected and not signed in.
+ * `nft`, `fees`, `timestamp` and `edit` (2026-10-14, package V1): another position under the same id, the chain's time,
+ * and what read-v6's answer says of it (plainPortfolio's own edit), for the page's dollars.
  * `activity` (added 2026-10-14, incident C2): the wallet's read-v6 receipts, scripted like its portfolio.
  */
-async function atPage(initialChain = 4663, { activity } = {}) {
-  const chain = createPositionChain(OWNER, { timestamp: TIMESTAMP, positions: [NFT] });
+async function atPage(initialChain = 4663, { nft = NFT, fees = FEES, timestamp = TIMESTAMP, edit = () => {}, activity } = {}) {
+  const chain = createPositionChain(OWNER, { timestamp, positions: [nft] });
   const rpc = browserChain({
-    positions: [{ tokenId: '3135288', holder: OWNER, key: NFT.key, tickLower: NFT.tickLower, tickUpper: NFT.tickUpper, liquidity: NFT.liquidity, unclaimed: FEES }],
-    pools: { [poolIdOf(NFT.key)]: { sqrtPriceX96: NFT.sqrtPriceX96, tick: NFT.tick } },
+    timestamp,
+    positions: [{ tokenId: '3135288', holder: OWNER, key: nft.key, tickLower: nft.tickLower, tickUpper: nft.tickUpper, liquidity: nft.liquidity, unclaimed: fees }],
+    pools: { [poolIdOf(nft.key)]: { sqrtPriceX96: nft.sqrtPriceX96, tick: nft.tick } },
     tokens: { [USDG]: { symbol: 'USDG', decimals: 6 }, [UFG]: { symbol: 'UFG', decimals: 18 } },
   });
   const fake = createFakeSession();
@@ -122,7 +125,7 @@ async function atPage(initialChain = 4663, { activity } = {}) {
     const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail }));
     window.addEventListener('eip6963:requestProvider', announce);
     announce();
-  }, { portfolio: plainPortfolio(rpc, OWNER), activity });
+  }, { portfolio: plainPortfolio(rpc, OWNER, edit), activity });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   const s = {
@@ -355,5 +358,53 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     assert.ok(!s.chain.log.includes('eth_sendTransaction'));
     assert.ok(!s.chain.log.includes('wallet_switchEthereumChain'), 'the wallet was never asked to switch chain');
     assert.deepEqual([...new Set(s.added)].sort(), ['0x081812fc', '0x16a24131'], 'the direct client read who may move the NFT and what subscribes to it');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-14 (the incident of 2026-10-13, package V1; the owner's decision D3: the pool-price dollar estimate on
+// Robinhood Chain's own position page, as the list already shows it, basis disclosed). This page valued a pair with USDG
+// only, so the owner's ETH / IMD showed dollars in its list row and token amounts here. (The same dollars in the row and
+// on the page, side by side: tests/v2in-browser/lists.test.mjs.)
+test('an ETH / token position shows dollars on Robinhood Chain’s own page: the pool’s price with ETH’s qualified price, the basis said, nothing sent', async () => {
+  const at = Math.floor(Date.now() / 1000);
+  const ETH = '0x0000000000000000000000000000000000000000';
+  // 2^96 with equal decimals: one UFG for one ETH. Fees of 0.001 ETH, at $4,000 a coin: $4.00, by ordinary arithmetic.
+  const nft = { tokenId: 3135288n, key: { currency0: ETH, currency1: UFG, fee: 3000, tickSpacing: 60, hooks: ETH },
+    tickLower: -60, tickUpper: 60, liquidity: 10n ** 18n, sqrtPriceX96: 2n ** 96n, tick: 0, growthLast: [0n, 0n], growthNow: [0n, 0n] };
+  const s = await atPage(4663, { nft, fees: [10n ** 15n, 0n], timestamp: at, edit: (body) => {
+    body.servedAt = at;
+    // The index read the position before the chain's head: the page's own reading is the newest the browser holds.
+    for (const listed of body.positions) Object.assign(listed.state.snapshot, { number: 71_600_000, timestamp: at - 60 });
+    Object.assign(body.tokens.find((token) => token.address === ETH), { price: ethUsdPrice(4663, '4000.000000000000000000', at), priceReason: null });
+    Object.assign(body.tokens.find((token) => token.address === UFG), { priceReason: 'pool_depth_below_floor' });
+  } });
+  try {
+    const page = s.page;
+    const detail = page.locator('[data-position-detail][data-position-id="3135288"]');
+    const value = detail.locator('[data-cell="principal"] [data-usd="principal"]'), fees = detail.locator('[data-cell="fees"] [data-usd="fees"]');
+    await value.waitFor({ timeout: 30_000 });
+    await fees.waitFor();
+    assert.equal(await page.locator('[data-position-v2]').count(), 0, 'Robinhood Chain’s own position page');
+    assert.equal(await fees.textContent(), '$4.00');
+    // 1e18 of liquidity over ±60 ticks at 1 : 1 holds about 0.003 of each, 0.006 ETH in all: $23.96 at $4,000 a coin.
+    assert.equal(await value.textContent(), '$23.96');
+    assert.equal(await detail.locator('[data-position-stats]').getAttribute('data-valued'), '', 'a valued position, as a pair with USDG is');
+    assert.equal(await value.getAttribute('data-usd-basis'), 'pool-price');
+    assert.match(await value.getAttribute('title'), /^Estimated from the pool price at block \d+, converted with ETH’s qualified USD price\. This is not a sale quote\.$/);
+    // The fees are in ETH alone: at ETH's own qualified price, no pool mark to say.
+    assert.equal(await fees.getAttribute('data-usd-basis'), 'qualified-prices');
+    assert.match(await fees.getAttribute('title'), /^Qualified valuation at block \d+$/);
+    assert.equal(await detail.locator('[data-usd-as-of], [data-usd-why], [data-usd-snapshot]').count(), 0, 'a current figure says no time and needs no reason');
+    assert.doesNotMatch(await detail.innerText(), /USD unavailable/i);
+    const details = detail.locator('[data-position-details]');
+    await details.locator('summary').click();
+    assert.match(await details.locator('[data-usd-detail]').innerText(), /^Estimated from the pool price at block \d+, converted with ETH’s qualified USD price\./, 'Details says the basis in words');
+    for (const width of [1280, 390, 320]) {
+      await page.setViewportSize({ width, height: 960 });
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `the valued page fits at ${width}`);
+    }
+    assert.deepEqual(s.chain.sends, [], 'nothing was sent');
+    assert.ok(!s.chain.log.includes('wallet_switchEthereumChain'), 'the wallet was never asked to switch chain');
   } finally { await s.close(); }
 });

@@ -243,6 +243,13 @@ function keptWallet(owner: string): { answer: WalletAnswer; at: number } | null 
   const kept = answers.get(owner)
   return kept && Date.now() - kept.at < KEPT_MS && kept.made === madeCount() ? kept : null
 }
+/**
+ * Added 2026-10-14 (the incident of 2026-10-13, package V1): when this page read an answer from the site's route (ms),
+ * for as long as the answer itself is held; null for one it did not read (a copy). The answer names its block and no
+ * time, and Your positions values its amounts as current only while it knows how old they are (v2in/lists).
+ */
+const readAt = new WeakMap<WalletAnswer, number>()
+export const walletAnswerAt = (answer: WalletAnswer): number | null => readAt.get(answer) ?? null
 /** Forgets the answers kept, and a first read shared since (it may be from before an action). */
 export function forgetWallet(): void {
   answers.clear()
@@ -417,7 +424,9 @@ export async function readWalletPositions(
   if (envelope.automation) noteAnswered(envelope.automation.positions, envelope.automation.block)
   // 2026-10-01 (fees item A1): each NFT's mint block, from its own SetupMinted log, a hint for its history.
   if (envelope.mints.length > 0) mintHints.note(envelope.mints)
-  answers.set(lower, { answer, at: Date.now(), made: madeCount() })
+  const at = Date.now()
+  answers.set(lower, { answer, at, made: madeCount() })
+  readAt.set(answer, at)
   noteTokens(rows(answer).flatMap((row) => row.currencies))
   return { ok: true, answer }
 }
