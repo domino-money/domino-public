@@ -58,9 +58,9 @@ import { amountText, outcomeUnknown, readAfterReplaced, RECEIPT_EVERY_MS, RECEIP
  *   unknown. So does a batch the wallet no longer answers for;
  * - finding 4: the receipt lists the transactions that paid: a batch's (from the wallet's receipt or the vault's record),
  *   and for a step the wallet sped up, the one that took its place, never the hash the chain never included;
- * - findings 2, 6 and 8: every vault the wallet created is looked in, a page at a time, with a quiet line while some are
- *   still being checked; a vault whose read fails keeps its last good read on screen and is asked again on its own for as
- *   long as the page is open;
+ * - findings 2, 6 and 8: every vault the wallet created is looked in, a page at a time; a vault whose read fails keeps
+ *   its last good read on screen and is asked again on its own for as long as the page is open (changed on purpose
+ *   2026-10-15, pack 7, the owner: no status notices: no line says some are still being checked any more);
  * - finding 7: a token whose name could not be read is shown in its smallest units, every digit, and the review cannot
  *   be sent while any amount in it is still unnamed.
  *
@@ -81,8 +81,6 @@ const RESERVES_LEDE = 'Fees the automation collected and had not reinvested yet.
 const TITLE = 'Fees waiting in your automation'
 const ACTION = 'Withdraw to wallet'
 const NATIVE = '0x0000000000000000000000000000000000000000'
-/** After this many reads in a row that failed, the card says so quietly when it has nothing else to show. */
-const TROUBLE_AFTER = 2
 
 type Stage = 'reading' | 'ready' | 'wallet' | 'chain' | 'done' | 'failed'
 interface Notice {
@@ -306,32 +304,89 @@ function Amounts({ totals, names }: { totals: readonly ReserveTotal[]; names: Re
 type ReservesView = { kind: 'none'; reason: string } | { kind: 'failed'; reason: string; misses: number } | { kind: 'ready'; held: ReserveHold<VaultReserves>; misses: number }
 
 /**
+ * (2026-10-15, pack 7: the owner saw "Fees waiting in your automation" come and go on Positions, saying "Your automation
+ * couldn't be checked for fees just now"): what this visit last read of an owner's vaults, per owner and card filter,
+ * kept outside the card. The card lost everything it held whenever it left the screen (another page, the wallet
+ * reconnecting), and on its way back it showed nothing until the wallet's reads went through, which they often do not at
+ * once (a node of the wallet's RPC that has not seen the read's block yet answers "header not found"). It paints from
+ * here at once now, and goes on reading in the background. A withdrawal drops it with the reads kept for that owner.
+ */
+const lastHeld = new Map<string, ReserveHold<VaultReserves>>()
+const heldKey = (owner: string, vault: string | undefined) => `${owner}|${vault?.toLowerCase() ?? '*'}`
+watchReservesChanged((who) => {
+  for (const key of lastHeld.keys()) if (key.startsWith(`${who}|`)) lastHeld.delete(key)
+})
+/** The view a card for `owner` starts from: what this visit last read for it, or nothing yet. */
+function startView(owner: string | null, vault: string | undefined): ReservesView | null {
+  const held = owner === null ? undefined : lastHeld.get(heldKey(owner, vault))
+  return held ? { kind: 'ready', held, misses: 0 } : null
+}
+/**
+ * (2026-10-15, pack 7): answers of "nothing to read with" that only say the wallet was not ready for this read (between
+ * networks, or reconnecting), while the screen still shows it connected on Robinhood Chain (this card is not drawn
+ * otherwise): a read that did not go through, asked again later, never a reason to drop what is on screen.
+ */
+const WALLET_PASSING = new Set(['connect_robinhood_wallet'])
+
+/**
  * The owner's reserves for this card: the first page of its vaults read when it mounts (a read under a minute old is
  * shared), then each later page at once, one after the other, and again whenever a withdrawal changed them. A vault
  * whose read failed keeps its last good read (lib/automate/reserves.ts holdMore) and is asked again on its own, while the
- * page is visible, after reserveReaskMs, for as long as the page is open; so is a read that failed whole.
+ * page is visible, after reserveReaskMs, for as long as the page is open; so is a read that failed whole. Changed on
+ * purpose 2026-10-15 (pack 7): it starts from what this visit last read for the same owner (lastHeld), and a read that
+ * fails never takes away what is on screen.
  */
 function useReserves(owner: string | null, vault: string | undefined): ReservesView | null {
-  const [view, setView] = useState<ReservesView | null>(null)
+  const [view, setView] = useState<ReservesView | null>(() => startView(owner, vault))
   const [seen, setSeen] = useState(`${owner ?? ''}|${vault ?? ''}`)
   if (seen !== `${owner ?? ''}|${vault ?? ''}`) {
     setSeen(`${owner ?? ''}|${vault ?? ''}`)
-    setView(null)
+    setView(startView(owner, vault))
   }
   useEffect(() => {
     if (owner === null) return
     let live = true
-    let held: ReserveHold<VaultReserves> | null = null
+    let held: ReserveHold<VaultReserves> | null = lastHeld.get(heldKey(owner, vault)) ?? null
     let misses = 0
     let cancel: (() => void) | null = null
     // Each read started counts; an answer to one that a newer read replaced is dropped.
     let asked = 0
+    // (2026-10-15, pack 7 review): the vaults whose figures held here were read before the last withdrawal (the
+    // reservesChanged that dropped lastHeld). Until each is read again, what is held may stand on screen (as main) but is
+    // never written back into lastHeld, so a later visit never paints fees already withdrawn.
+    let carried = new Set<string>()
+    const reread = (found: readonly VaultReserves[]) => { for (const view of found) carried.delete(view.vault.toLowerCase()) }
     const later = (ms: number, run: () => void) => {
       cancel?.()
       cancel = whenVisibleAfter(ms, run)
     }
-    const show = () => {
+    /** What is held, on screen; nothing kept for a later visit (2026-10-15, pack 7 review: paint apart from persist). */
+    const paint = () => {
       if (held) setView({ kind: 'ready', held, misses })
+    }
+    /** After a read that answered: on screen, and kept for a later visit unless some of it predates the last withdrawal. */
+    const show = () => {
+      if (!held) return
+      if (carried.size === 0) lastHeld.set(heldKey(owner, vault), held)
+      paint()
+    }
+    /**
+     * A read that did not go through: what is held stays on screen as it is, and it is asked again after reserveReaskMs.
+     * Changed 2026-10-15 (pack 7 review): it paints only; it never writes lastHeld, which a withdrawal may have just dropped.
+     */
+    const missed = (reason: string, again: () => void) => {
+      const wait = reserveReaskMs(misses)
+      misses += 1
+      if (held) paint()
+      else setView({ kind: 'failed', reason, misses })
+      later(wait, again)
+    }
+    /** Nothing to read with (no deployment, no vault of this wallet's): nothing held is kept, for this card or a later one. */
+    const nothing = (reason: string) => {
+      held = null
+      carried = new Set()
+      lastHeld.delete(heldKey(owner, vault))
+      setView({ kind: 'none', reason })
     }
     /** What comes after a read: the next page after a short gap, or the vaults whose read failed after a longer wait. */
     const onward = () => {
@@ -357,20 +412,18 @@ function useReserves(owner: string | null, vault: string | undefined): ReservesV
         if (!live || mine !== asked) return
         if (answer.kind === 'ready') {
           held = holdReserves(held, answer)
+          reread(answer.vaults)
+          const listed = new Set(held.order)
+          carried = new Set([...carried].filter((at) => listed.has(at)))
           show()
           onward()
           return
         }
-        if (answer.kind === 'none') {
-          held = null
-          setView(answer)
+        if (answer.kind === 'none' && !WALLET_PASSING.has(answer.reason)) {
+          nothing(answer.reason)
           return
         }
-        const wait = reserveReaskMs(misses)
-        misses += 1
-        if (held) show()
-        else setView({ kind: 'failed', reason: answer.reason, misses })
-        later(wait, () => first(true))
+        missed(answer.reason, () => first(true))
       })
     }
     const more = (vaults: readonly string[]) => {
@@ -378,11 +431,12 @@ function useReserves(owner: string | null, vault: string | undefined): ReservesV
       void readMoreReserves(owner, vaults as Address[]).then((answer) => {
         if (!live || mine !== asked || !held) return
         if (answer.kind === 'none') {
-          held = null
-          setView({ kind: 'none', reason: answer.reason })
+          if (WALLET_PASSING.has(answer.reason)) missed(answer.reason, () => more(vaults))
+          else nothing(answer.reason)
           return
         }
         held = holdMore(held, vaults, answer.kind === 'ready' ? answer : { vaults: [], failed: vaults })
+        if (answer.kind === 'ready') reread(answer.vaults)
         show()
         onward()
       })
@@ -391,6 +445,7 @@ function useReserves(owner: string | null, vault: string | undefined): ReservesV
     const stop = watchReservesChanged((who) => {
       if (who !== owner) return
       misses = 0
+      carried = new Set(held?.views.keys() ?? [])
       first(false)
     })
     return () => {
@@ -583,7 +638,6 @@ export default function FeeReserves({ owner, placement, vault, root }: FeeReserv
   if (!mine) return null
   const pressing = run !== null && (run.stage === 'wallet' || run.stage === 'chain')
   // Vaults still being looked in: a page not read yet, or a vault every read of which failed so far.
-  const unread = read?.kind === 'ready' ? read.held.unread.length : 0
   const checking = read?.kind === 'ready' ? stillChecking(read.held) : 0
   const misses = read?.kind === 'ready' || read?.kind === 'failed' ? read.misses : 0
   const beyond = read?.kind === 'ready' && read.held.beyond
@@ -760,10 +814,6 @@ export default function FeeReserves({ owner, placement, vault, root }: FeeReserv
   const dialog = run && dialogOpen && <WithdrawDialog run={run} names={names} onClose={close} onConfirm={() => void confirm()} />
   // Where the read stands, for the tests: reading, ready (every vault looked in), checking (some still to be), none, failed.
   const state = read === null ? 'reading' : read.kind === 'ready' && checking > 0 ? 'checking' : read.kind
-  // Reads of a vault known to exist that kept failing, with nothing else to show for it: said once, quietly, and asked again
-  // on their own. A list of vaults that could not be read says nothing: most wallets have no vault at all.
-  const trouble =
-    misses >= TROUBLE_AFTER && ((read?.kind === 'failed' && vault !== undefined) || (read?.kind === 'ready' && read.held.failed.some((at) => !read.held.views.has(at))))
   const head = (
     <div className="dm-acct-card-head">
       <h2 id={`reserves-title-${placement}`} className="dm-title">
@@ -772,19 +822,14 @@ export default function FeeReserves({ owner, placement, vault, root }: FeeReserv
     </div>
   )
   // Nothing to withdraw (or not read yet): nothing on screen, and where the read stands is a hidden marker's data.
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): reads that kept failing with nothing to show
+  // put up this card with "Your automation couldn't be checked for fees just now. This page asks again on its own." and
+  // took it down once a read went through, so it came and went. Nothing is shown now until there are fees to withdraw;
+  // the reads go on quietly, and how many failed in a row is the marker's data.
   if (shown.length === 0)
     return (
       <>
-        {trouble ? (
-          <section className="dm-card dm-acct-card dm-reserves" aria-labelledby={`reserves-title-${placement}`} data-fee-reserves-trouble={placement} data-fee-reserves-read={placement} data-fee-reserves-state={state}>
-            {head}
-            <p role="status" className="dm-reserves-lede">
-              Your automation couldn’t be checked for fees just now. This page asks again on its own.
-            </p>
-          </section>
-        ) : (
-          <span hidden data-fee-reserves-read={placement} data-fee-reserves-state={state} data-fee-reserves-reason={read && read.kind !== 'ready' ? read.reason : undefined} />
-        )}
+        <span hidden data-fee-reserves-read={placement} data-fee-reserves-state={state} data-fee-reserves-reason={read && read.kind !== 'ready' ? read.reason : undefined} data-fee-reserves-misses={misses || undefined} />
         {dialog}
       </>
     )
@@ -844,12 +889,10 @@ export default function FeeReserves({ owner, placement, vault, root }: FeeReserv
         {head}
         <p className="dm-reserves-lede">{RESERVES_LEDE}</p>
         <ul className="dm-held-list">{rows}</ul>
-        {/* Some vaults still to be looked in (findings 2, 6 and 8): one quiet line, never a button. */}
-        {checking > 0 && (
-          <p role="status" className="dm-reserves-more" data-reserves-checking={checking}>
-            {unread > 0 ? 'Your older automations are still being checked…' : 'Some of your automations couldn’t be checked just now. This page asks again on its own.'}
-          </p>
-        )}
+        {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the line under the rows while some vaults
+            were still to be looked in ("Your older automations are still being checked…", "Some of your automations
+            couldn't be checked just now. This page asks again on its own.") is gone; their rows join the card as their
+            reads go through, and the section's data-fee-reserves-state says "checking" meanwhile. */}
         {beyond && checking === 0 && (
           <p className="dm-reserves-more" data-reserves-beyond="">
             Only your {RESERVE_VAULT_CAP.toLocaleString('en-US')} newest automations are checked here.

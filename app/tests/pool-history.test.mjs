@@ -56,7 +56,9 @@ test('a missing or failed chart chunk keeps the pool card visible and only sched
     const screen = lazyHistory(error), loaded = await screen.load()
     const markup = screen.render(loaded.default({ compact: true }))
     assert.equal(screen.recoveries, error.missingChunk ? 1 : 0, 'a stale chunk requests safe recovery rather than reloading under a modal')
-    assert.match(markup, /Price history is temporarily unavailable/)
+    // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the dash, no longer "Price history is temporarily unavailable."
+    assert.doesNotMatch(markup, /temporarily unavailable/)
+    assert.match(markup, /<div class="dm-pool-plot dm-pool-plot-empty"><span class="text-fg-subtle">—<\/span><\/div>/)
     assert.match(markup, /dm-pool-chart--compact/)
     assert.doesNotMatch(markup, /data-skeleton|data-pool-history-loading|Loading price history|Reload/)
   }
@@ -257,7 +259,9 @@ test('the price switch shows only while the chart is read, once a line is drawn,
   const keyOf = (side) => `${poolId}:${side === 'zero' ? currency : quote}:day`
   const failed = (side) => ({ key: keyOf(side), state: 'answer', data: null, failed: true })
   const empty = draw('zero', failed('zero'))
-  assert.match(empty, /Price history is temporarily unavailable\./)
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the dash, no longer "Price history is temporarily unavailable."
+  assert.doesNotMatch(empty, /temporarily unavailable/)
+  assert.match(empty, /<div class="dm-pool-plot dm-pool-plot-empty"><span class="text-fg-subtle">—<\/span><\/div>/)
   assert.doesNotMatch(empty, /data-switch="Price of"/, 'no switch under an empty chart')
   assert.match(empty, /data-switch="History window"/, 'the window switch stays: another window may have prices')
   assert.match(draw('one', failed('one')), /data-switch="Price of"/, 'flipped, the way back stays')
@@ -330,8 +334,11 @@ test('the popup keeps missing, pending and observed zero figures distinct', () =
   const missing = figuresMarket({ tvlUsd: { state: 'unavailable', value: '99', reason: 'not_observed' },
     volume24hUsd: { state: 'absent', value: null }, feeAprPercent: { state: 'unavailable', value: null } })
   const unavailable = screen.render(missing).markup
-  assert.match(unavailable, /Unavailable/)
-  assert.match(unavailable, /Not reported/)
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): missing figures are dashes, their state as data,
+  // never "Unavailable" or "Not reported".
+  assert.match(unavailable, /data-metric="unavailable">—</)
+  assert.match(unavailable, /data-metric="absent">—</)
+  assert.doesNotMatch(unavailable, /Unavailable|Not reported/)
   assert.doesNotMatch(unavailable, /\$99|\$0\.00|158%/)
   const pending = screen.render({ ...missing, figuresPending: true }).markup
   assert.match(pending, /TVL loading/)

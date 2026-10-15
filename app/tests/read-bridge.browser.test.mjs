@@ -249,9 +249,13 @@ test('the bridge build reads through the same-origin bridge, adds no credential 
   assert.equal(await row.locator('td').nth(1).locator('[data-pool-price]').count(), 1);
   assert.equal(await row.locator('td').nth(1).locator('[data-metric]').count(), 0);
   assert.match(await row.locator('[data-provenance]').getAttribute('data-provenance'), /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/);
-  assert.match(await row.locator('[data-metric]').first().getAttribute('title'), /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the figure's title names its source only, the name's
+  // title the basis only; `data-provenance` keeps the whole line, as data.
+  assert.equal(await row.locator('[data-metric]').first().getAttribute('title'), 'Reported by a market data provider. Not reconciled by Domino.');
+  assert.equal(await row.locator('[data-provenance]').getAttribute('title'), 'Pool verified on-chain at block 700 · Reported by a market data provider');
   const apr = row.locator('td').nth(4);
-  assert.equal(await apr.innerText(), '—', 'no estimate: the catalogue dash, reason in its title');
+  assert.equal(await apr.innerText(), '—', 'no estimate: the catalogue dash, with no reason in a title');
+  assert.equal(await apr.locator('[title]').count(), 0);
   assert.equal(await apr.locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable', 'no APR is provided, so none is shown');
 
   const reads = seen.map((r) => `${r.method} ${r.path}`);

@@ -491,7 +491,9 @@ test('preview: Auto-exit on a plain position the wallet holds: the range\'s two 
 
     // Public activity is independent of signing in. An absent route is shown as unavailable, never as no history.
     await page.evaluate(() => { location.hash = '#/positions'; });
-    await page.locator('[data-automation-cards="integrated"] [data-activity-error]').waitFor({ timeout: 30_000 });
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the failed read is the hidden marker's, with no line.
+    await page.locator('[data-automation-cards="integrated"] [data-activity-error]').waitFor({ state: 'attached', timeout: 30_000 });
+    assert.doesNotMatch(await page.locator('[data-automation-cards="integrated"]').innerText(), /unavailable right now|try again automatically|checked again automatically/);
     assert.equal(await page.locator('[data-v2in-vaults], [data-vault-card], section[aria-labelledby="managed-title"]').count(), 0, 'no example rows or duplicate Managed wall');
     // Added 2026-10-06 (the integration review, ux #9): Automate's Auto-exit sends the person here: Auto-exit is named.
     const automation = page.locator('section[aria-labelledby="automation-title"]');
@@ -557,14 +559,15 @@ test('preview: integrated history never asks performance-v2 (V1\'s "Start tracki
   const performance = () => s.requests.filter((url) => new URL(url).pathname.startsWith('/api/performance/'));
   try {
     const history = page.locator('[data-automation-cards="integrated"]');
-    await history.locator('[data-activity-error]').waitFor({ timeout: 30_000 });
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the hidden marker (no line).
+    await history.locator('[data-activity-error]').waitFor({ state: 'attached', timeout: 30_000 });
     assert.equal(await history.locator('section[aria-labelledby="receipts-title"]').count(), 1);
     // Signed in from the header's wallet dialog.
     await page.locator('header [aria-haspopup="dialog"]').click();
     await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Sign in', exact: true }).click();
     await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in', null, { timeout: 30_000 });
     await page.keyboard.press('Escape');
-    await history.locator('[data-activity-error]').waitFor({ timeout: 30_000 });
+    await history.locator('[data-activity-error]').waitFor({ state: 'attached', timeout: 30_000 });
     assert.equal(await page.locator('section[aria-labelledby="managed-title"], [data-v2in-vaults-empty], [data-automation-empty]').count(), 0, 'no duplicate empty or sign-in mural');
     await page.waitForTimeout(1_500);
     assert.equal(await page.locator('section[aria-label="Private performance"], [data-track-sequences], [data-performance]').count(), 0, 'no V1 history, no Start tracking');
@@ -1334,8 +1337,13 @@ test('V2 detail: unread, stale, missing and failed custody never show Off or off
       await s.page.waitForFunction(() => !document.querySelector('[data-automation-control]')?.textContent.includes('Loading'));
       assert.equal(await s.page.locator('[data-automation-setup]').count(), 0, name);
       assert.doesNotMatch(await control.innerText(), /\bOff\b/, name);
+      // (2026-10-15, pack 7 review): a state not read leaves no empty paragraph behind: neither the Auto-exit card's line nor
+      // the automation's status note is drawn without words.
+      const empty = await s.page.locator('.dm-exit-card-line, [data-automation-eligibility]').evaluateAll((items) => items.filter((item) => !item.textContent.trim()).length);
+      assert.equal(empty, 0, `${name}: no empty line`);
       if (name === 'custody failed') {
-        assert.match(await control.innerText(), /State unavailable/);
+        // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the control names the automation alone; it said "· State unavailable".
+        assert.doesNotMatch(await control.innerText(), /State unavailable|Updating|Loading/);
         await s.page.evaluate((portfolio) => { window.__dominoV2Test.read6.portfolio = portfolio; }, plainPortfolio(v1, holder));
         await s.page.locator('[data-automation-refresh]').click();
         await s.page.locator('[data-automation-setup]').waitFor();
@@ -2275,7 +2283,8 @@ test('multichain setup: an unreadable Base approval resumes its existing hash an
     assert.equal(await activity.locator('summary .dm-receipt-check[aria-label="Confirmed"]').count(), 1, 'the check at inclusion');
     assert.equal(await activity.locator('.dm-receipt-exception').count(), 0, 'no pill');
     assert.doesNotMatch(await page.locator('main').innerText(), /Confirming/, '"Confirming" is nowhere on Receipts');
-    assert.equal(await activity.locator('.dm-activity-time').innerText(), 'Base · Updating history', 'observation time is not a block timestamp');
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the network alone; it said 'Base · Updating history'.
+    assert.equal(await activity.locator('.dm-activity-time').innerText(), 'Base', 'observation time is not a block timestamp');
     await activity.locator('summary').click();
     assert.match(await activity.innerText(), /Status\s+Confirmed\. Not final on Ethereum yet\./);
     finalized = true;
@@ -2385,7 +2394,9 @@ test('multichain setup: a receipt-backed Base mint waits past the old retry wind
   });
   try {
     const { page } = s;
-    await page.getByText('Updating your position…', { exact: true }).waitFor();
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the loading rows and a hidden marker; it said 'Updating your position…'.
+    await page.locator('[data-v2in-setup-updating]').waitFor({ state: 'attached' });
+    assert.equal(await page.getByText('Updating your position…', { exact: true }).count(), 0);
     for (let turn = 0; turn < 3; turn++) {
       const before = await page.evaluate(() => window.__setupPortfolioReads);
       await page.clock.fastForward(5_100);

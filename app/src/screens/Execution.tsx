@@ -190,7 +190,7 @@ function Summary({ state, what, at, children }: { state: ExecutionItem['state'];
   const [label, tone] = chip(state)
   return <summary>
     <Pill tone={tone} dot className="dm-rcpt-chip" title={EXECUTION_STATE_TEXT[state]}>{label}</Pill>
-    <span className="dm-rcpt-what">{what}{at !== undefined && <span className="dm-activity-time">{at === null ? 'Date unavailable' : <time dateTime={new Date(at * 1000).toISOString()}>{`${shortDate(at)} ${shortTime(at)}`}</time>}</span>}</span>
+    <span className="dm-rcpt-what">{what}{at !== undefined && <span className="dm-activity-time">{at === null ? null : <time dateTime={new Date(at * 1000).toISOString()}>{`${shortDate(at)} ${shortTime(at)}`}</time>}</span>}</span>
     {children}
     <IconChevronDown size={16} className="dm-rcpt-chevron" />
   </summary>
@@ -200,7 +200,7 @@ function Summary({ state, what, at, children }: { state: ExecutionItem['state'];
 // (it was "Fees re-added" here and "Re-added" on Managed positions).
 export function ExecutionReceiptRow({ item, refreshFailed, tokens, at }: { item: ExecutionItem; refreshFailed: string | undefined; tokens: ReadonlyMap<string, TokenDetail>; at?: number | null }) {
   const receipt = item.receipt
-  const title = [item.reason ? words(item.reason) : null, refreshFailed ? `Last refresh failed: ${words(refreshFailed)}` : null].filter(Boolean).join('. ')
+  const title = item.reason ? words(item.reason) : ''
   const transaction = receipt?.transactionHash ?? item.attempts.at(-1)?.transactionHash
   return <li title={title || undefined} data-execution-intent={item.intentId} data-execution-state={item.state}
     data-execution-reason={item.reason || undefined} data-execution-can-cancel={item.canCancel ? 'true' : 'false'} data-execution-refresh-reason={refreshFailed}>
@@ -329,10 +329,12 @@ export default function Execution({ limit, onShows }: { limit?: number; onShows?
   const hidden = all.length > rows.length
   const tokens = useTokenDetails(rows.flatMap(row => row[0].receipt?.sources.map(source => source.currency) ?? []))
   const updating = view.state === 'checking' || view.state === 'loading'
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): saved receipts are shown as they are, with no line
+  // ("Showing saved receipts. New activity couldn’t be loaded.", "Showing saved receipts while we check for updates.",
+  // "Some receipts couldn’t be updated."); a receipt with no date has none (it said "Date unavailable"), and a row's title
+  // no longer adds "Last refresh failed: …". data-receipts-update keeps where the read stands.
   const updateNote = items.length === 0 ? null
-    : view.state === 'unavailable' ? 'Showing saved receipts. New activity couldn’t be loaded.'
-      : updating ? 'Showing saved receipts while we check for updates.'
-        : Object.keys(view.refreshFailed).length > 0 ? 'Some receipts couldn’t be updated.' : null
+    : view.state === 'unavailable' || updating || Object.keys(view.refreshFailed).length > 0 ? view.state : null
   return <section className="dm-acct-exec" aria-label="Execution receipts" aria-busy={view.busy || view.reading || undefined} data-execution={view.state} data-execution-reason={view.reason ?? undefined}
     data-execution-rows={rows.length}>
     {limit === undefined && <>
@@ -347,7 +349,7 @@ export default function Execution({ limit, onShows }: { limit?: number; onShows?
     </div>
       : items.length === 0 ? <p className="dm-acct-quiet" role="status" title={view.reason ? `Receipts could not be read: ${words(view.reason)}` : undefined}>{view.state === 'ready' ? 'Nothing yet. Each time automation adds your fees back, its receipt shows here.' : view.state === 'checking' ? 'Checking wallet sign-in…' : view.state === 'loading' ? 'Loading receipts…' : 'Receipts are unavailable right now.'}</p>
       : <>
-        {updateNote && <p className="dm-rcpt-note" role="status" data-receipts-update={view.state}>{updateNote}</p>}
+        {updateNote && <span hidden data-receipts-update={view.state} />}
         <ol className="dm-rcpt-list">{rows.map(row => row[0].state === 'cancelled'
           ? <CancelledRow key="cancelled" items={row} />
           : <ExecutionReceiptRow key={row[0].intentId} item={row[0]} refreshFailed={view.refreshFailed[row[0].intentId]} tokens={tokens} />)}</ol>

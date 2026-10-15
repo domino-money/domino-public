@@ -54,7 +54,8 @@ const ADVANCED_TEXT = 'Rarely needed: take back something your automation holds 
 const PRIMARY_ORDER: readonly VaultDialogKind[] = ['return', 'rearm', 'withdraw', 'unsubscribe', 'revoke']
 
 export function statusWords(view: VaultView): string {
-  if (view.status === 'unknown' && view.rootClosed !== true && view.exit !== 'closed') return 'State unavailable'
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a vault whose state is not read yet is named by its kind, never "State unavailable".
+  if (view.status === 'unknown' && view.rootClosed !== true && view.exit !== 'closed') return 'Automation'
   if (view.exit) return EXIT_STATUS[view.exit]
   if (view.rootClosed === true) return 'Closed'
   switch (view.status) {
@@ -97,7 +98,8 @@ function AmountsWords({ list, tokens, name }: { list: readonly { token: string; 
 
 /** The vault's reserves in one of §5.6's two figures (`part`), or a dash with its reason when unread. */
 export function ReservesWords({ view, tokens, part = 'collected' }: { view: VaultView; tokens: readonly [TokenView, TokenView] | null; part?: 'collected' | 'idle' }) {
-  if (!view.reserves.known) return <span title={`Not read: ${view.reserves.reason.replaceAll('_', ' ')}`} data-reserves="unread">—</span>
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the dash has no title ("Not read: …"); the reason is data.
+  if (!view.reserves.known) return <span data-reserves="unread" data-reserves-reason={view.reserves.reason}>—</span>
   return <AmountsWords list={splitReserves(view.reserves.list)[part]} tokens={tokens} name={part} />
 }
 
@@ -124,7 +126,8 @@ const tickText = (tick: number): string => (tick < 0 ? `−${-tick}` : String(ti
  * price cannot be written (a token's decimals not read, or the reference not one of the pool's tokens), never guessed.
  */
 function RangeWords({ range, tokens, reference }: { range: VaultMemberView['range']; tokens: readonly [TokenView, TokenView] | null; reference: PriceOrientation | null }) {
-  if (!range) return <span title="Your automation's ledger was not read" data-member-range="unread">—</span>
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no title ("Your automation's ledger was not read").
+  if (!range) return <span data-member-range="unread">—</span>
   const other: PriceOrientation | null = reference === 'token1PerToken0' ? 'token0PerToken1' : reference === 'token0PerToken1' ? 'token1PerToken0' : null
   const first = tokens ? rangeWords(range.tickLower, range.tickUpper, tokens, reference) : null
   const second = tokens ? rangeWords(range.tickLower, range.tickUpper, tokens, other) : null
@@ -145,7 +148,8 @@ function RangeWords({ range, tokens, reference }: { range: VaultMemberView['rang
 
 /** A member's two lots per pool token: "Fees collected: … · fee already taken: …" (raw units when a token's decimals are unknown). */
 function LotsWords({ lots, tokens }: { lots: VaultMemberView['lots']; tokens: readonly [TokenView, TokenView] | null }) {
-  if (lots.length === 0) return <span title="Your automation's ledger was not read" data-member-lots="unread">Fees collected: —</span>
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no title ("Your automation's ledger was not read").
+  if (lots.length === 0) return <span data-member-lots="unread">Fees collected: —</span>
   const words = (amount: bigint, address: string) => {
     const token = tokens?.find((t) => t.address === address)
     return token ? amountWords(amount, token).text : `${amount} raw units of ${shortAddress(address)}`

@@ -62,6 +62,14 @@ const CAPABILITIES = { contractVersion: CONTRACT, dataMode: 'live_read_only', ch
  * page's clock forward by minutes accept it (a run across midnight UTC).
  */
 const AS_OF = /^as of (\d\d-\d\d )?\d\d:\d\d UTC$/;
+// Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a figure that is not current says no
+// time any more ("as of 13:05 UTC" under it, "Last complete valuation, from …" in its title). Each such figure carries
+// data-usd-dated; what used to be read as its time is now its figure's name (principal, fees), and AS_OF is checked
+// against what the page shows, which must never hold such words (noTime).
+const DATED = /^(principal|fees)$/;
+async function noTime(page) {
+  assert.doesNotMatch(await page.locator('main').innerText(), /\bas of (\d\d-\d\d )?\d\d:\d\d UTC|Last complete valuation/, 'no time is said of a figure');
+}
 
 /** A package fixture as the site's route would answer it about the person's own wallet: only the wallet swapped, then validated. */
 function about(route, body, wallet) {
@@ -291,7 +299,7 @@ test('the unified collection follows external closure on reconnect, retains it t
     // apart (src/lib/wake.ts WAKE_GAP_MS), so the second reconnect waits for a round of its own.
     await s.page.waitForTimeout(WAKE_GAP_MS);
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
-    await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor();
+    await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor({ state: 'attached' }); // changed on purpose 2026-10-15 (pack 7, owner: no status notices): a hidden marker
     assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 1'], 'failed refresh never resurrects a closed position');
     for (const width of [1024, 736, 390, 320]) {
       await s.page.setViewportSize({ width, height: 980 });
@@ -360,14 +368,16 @@ test('with no USD price the two token amounts are the figure, in view, with one 
     await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
     await s.page.waitForFunction(key => document.querySelector(`[data-v2-position-row="${key}"] [data-cell="fees"]`)?.getAttribute('title')?.includes('0.0028 USDG'), rowKey('7'));
     assert.equal(await cell.locator('[data-usd], .dm-own-dash').count(), 0, 'missing pricing neither hides fees nor retains the old USD total');
-    assert.match(await cell.getAttribute('title'), /^A reliable USD price isn’t available for every token held\. [\s\S]*0\.0028 USDG/, 'the reason in full, then every digit');
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the title is the amounts alone (it began "A reliable USD price isn’t available for every token held.").
+    assert.match(await cell.getAttribute('title'), /^0\.0028 USDG/, 'every digit, no reason');
     const amounts = cell.locator('.dm-own-amounts[data-token-amounts]');
     assert.equal(await amounts.isVisible(), true, 'the measured fees are the figure, in view');
     assert.match(await amounts.innerText(), /0\.0028\s+USDG/);
     assert.equal(await amounts.locator('.dm-acct-amount').count(), 2);
     assert.doesNotMatch(await row.innerText(), /USD unavailable/i, 'the bare words are gone');
-    assert.deepEqual(await row.locator('[data-usd-why]').allInnerTexts(), ['No reliable USD price'], 'one short reason for the row');
-    assert.equal(await row.locator('[data-cell="principal"] [data-usd-why]').count(), 1, 'under the first figure that has none');
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): no reason under the amounts ("No reliable USD price"); the cells keep it as data.
+    assert.equal(await row.locator('[data-usd-why]').count(), 0, 'no short reason in view');
+    assert.equal(await row.locator('[data-cell="principal"][data-usd-reason]').count(), 1);
     assert.match(await row.getAttribute('data-usd-reason'), /no_qualified_price_source/);
     for (const width of [1320, 1024, 736, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
@@ -408,11 +418,12 @@ test('a failed price read keeps the last complete valuation, said with its time,
     await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
     await row.locator('[data-usd="principal"][data-usd-snapshot]').waitFor();
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before, 'principal and fees remain the same complete observation');
-    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. /);
-    const asOf = await row.locator('[data-usd-as-of]').allInnerTexts();
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the title says no time.
+    assert.doesNotMatch(await row.locator('[data-cell="principal"]').getAttribute('title'), /Last complete valuation|UTC/);
+    const asOf = await row.locator('[data-usd-dated]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-usd')));
     assert.equal(asOf.length, 2, 'each of the two figures says its time');
-    for (const words of asOf) assert.match(words, AS_OF);
-    assert.equal(await row.locator('[data-usd-as-of="principal"]').isVisible(), true, 'in view, not only for a screen reader');
+    for (const words of asOf) assert.match(words, DATED); await noTime(s.page);
+    assert.equal(await row.locator('[data-usd="principal"][data-usd-dated]').isVisible(), true, 'in view, not only for a screen reader');
     assert.equal(await row.getAttribute('data-usd-reason'), 'price_read_failed');
     // The fees grew and the index read the position again; the prices still cannot be read. The same position: its last
     // complete valuation stays, with its time, and the title has the new token amounts.
@@ -421,14 +432,16 @@ test('a failed price read keeps the last complete valuation, said with its time,
     await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
     await s.page.waitForFunction(key => document.querySelector(`[data-v2-position-row="${key}"] [data-cell="fees"]`)?.getAttribute('title')?.includes('0.0088 USDG'), rowKey('7'));
     assert.deepEqual(await row.locator('[data-usd][data-usd-snapshot]').allTextContents(), before, 'still the last complete valuation, dated');
-    assert.equal(await row.locator('[data-usd-as-of]').count(), 2);
+    assert.equal(await row.locator('[data-usd-dated]').count(), 2);
     // A withdrawal changed its size: the figure from before would be of another position. Its tokens are the figure now.
     own.positions[0].state.liquidity = String(BigInt(own.positions[0].state.liquidity) / 2n);
     own.positions[0].state.snapshot.number += 10;
     await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
     await row.locator('[data-cell="principal"] .dm-own-amounts').waitFor();
-    assert.equal(await row.locator('[data-usd], [data-usd-snapshot], [data-usd-as-of]').count(), 0, 'a valuation of another size of position is never shown');
-    assert.deepEqual(await row.locator('[data-usd-why]').allInnerTexts(), ['USD price is updating']);
+    assert.equal(await row.locator('[data-usd], [data-usd-snapshot], [data-usd-dated]').count(), 0, 'a valuation of another size of position is never shown');
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): no "USD price is updating" under the amounts.
+    assert.equal(await row.locator('[data-usd-why]').count(), 0);
+    assert.match(await row.locator('[data-cell="principal"]').getAttribute('data-usd-reason'), /price_read_failed/);
     assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /USD unavailable/i);
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
@@ -457,7 +470,7 @@ test('the state route answering 429 never writes "USD unavailable": the row keep
     const owned = s.page.locator('[data-owned]');
     await row.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
     await row.locator('[data-usd="fees"]').waitFor();
-    assert.equal(await row.locator('[data-usd-snapshot], [data-usd-as-of]').count(), 0, 'a current figure says no time');
+    assert.equal(await row.locator('[data-usd-snapshot], [data-usd-dated]').count(), 0, 'a current figure says no time');
     const before = await row.locator('[data-usd]').allTextContents();
     assert.equal(before[1], '$2.00', '2 USDG of fees at the chain’s own reading');
     // Half a minute at a time: the portfolio is read on (new prices each time), the state route refuses every ask.
@@ -481,13 +494,13 @@ test('the state route answering 429 never writes "USD unavailable": the row keep
     assert.ok(refused > 0, 'the state route was asked, and refused');
     // Five minutes on: the last complete valuation, with its time, and why it is not current.
     await row.locator('[data-usd="principal"][data-usd-snapshot]').waitFor();
-    const said = await row.locator('[data-usd-as-of]').allInnerTexts();
+    const said = await row.locator('[data-usd-dated]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-usd')));
     assert.equal(said.length, 2);
-    for (const words of said) assert.match(words, AS_OF);
+    for (const words of said) assert.match(words, DATED); await noTime(s.page);
     assert.equal(await row.getAttribute('data-usd-reason'), 'stale_position_or_chain');
     // Rewritten on purpose 2026-10-14 (package V1, review): the title said only "Last complete valuation, from …", so
     // the estimate lost its basis line exactly while it was also old. It says both, and so does the screen reader's line.
-    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. Estimated from the pool price at block \d+, converted with USDG’s qualified USD price\. This is not a sale quote\. \d[\d.]* USDG \+ /);
+    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /^Estimated from the pool price at block \d+, converted with USDG’s qualified USD price\. This is not a sale quote\. \d[\d.]* USDG \+ /);
     assert.match(await row.locator('[data-cell="principal"] [data-usd-estimate]').textContent(), /^Estimated from the pool price at block \d+, converted with USDG’s qualified USD price\. This is not a sale quote\.$/);
     assert.equal(await row.locator('[data-cell="principal"] [data-usd="principal"]').getAttribute('data-usd-basis'), 'pool-price');
     // The route answers again, at a later block: the row is current, and says no time.
@@ -500,7 +513,7 @@ test('the state route answering 429 never writes "USD unavailable": the row keep
       s.chain.timestamp = start + ahead + 31;
       await step();
     }
-    assert.equal(await row.locator('[data-usd-snapshot], [data-usd-as-of]').count(), 0, 'current again at the next reading');
+    assert.equal(await row.locator('[data-usd-snapshot], [data-usd-dated]').count(), 0, 'current again at the next reading');
     assert.equal(await row.getAttribute('data-usd-reason'), null);
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
@@ -526,24 +539,24 @@ test('one failed portfolio read changes nothing; with every read failing the fig
     // Changed on purpose (2026-10-14, Q1 alone): Q1's wake rule reads a portfolio at `online` only once its answer is older
     // than its period, so the read that fails is the reader's own, a period later (as in the five cases Q1 rewrote above).
     await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
-    await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor();
+    await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor({ state: 'attached' }); // changed on purpose 2026-10-15 (pack 7, owner: no status notices): a hidden marker
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before);
-    assert.equal(await row.locator('[data-usd-as-of], [data-usd-snapshot]').count(), 0, 'a figure is current for about two minutes, whatever the newest attempt did');
+    assert.equal(await row.locator('[data-usd-dated], [data-usd-snapshot]').count(), 0, 'a figure is current for about two minutes, whatever the newest attempt did');
     await s.page.clock.fastForward(121_000);
-    await row.locator('[data-usd-as-of="principal"]').waitFor();
+    await row.locator('[data-usd="principal"][data-usd-dated]').waitFor();
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before, 'the last figures stay');
-    for (const words of await row.locator('[data-usd-as-of]').allInnerTexts()) assert.match(words, AS_OF);
-    assert.equal(await row.locator('[data-usd-as-of]').count(), 2);
+    for (const words of await row.locator('[data-usd-dated]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-usd')))) assert.match(words, DATED); await noTime(s.page);
+    assert.equal(await row.locator('[data-usd-dated]').count(), 2);
     assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /USD unavailable/i);
     // Added 2026-10-14 (package V1, review). The two minutes were counted from the mount of whichever screen drew the
     // answer, and the reader keeps the last good answer across screens: on every way back the list showed its old
     // figures with no time for two more minutes (and so did a position opened from it). An old answer is old at once.
-    const said = await row.locator('[data-usd-as-of]').allInnerTexts();
+    const said = await row.locator('[data-usd-dated]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-usd')));
     await s.page.evaluate(() => { location.hash = '#/docs'; });
     await row.waitFor({ state: 'detached' });
     await s.page.evaluate(() => { location.hash = '#/positions'; });
     await row.locator('[data-usd="principal"]').waitFor();
-    assert.deepEqual(await row.locator('[data-usd-as-of]').allInnerTexts(), said, 'the list on the way back says the time at once, with no two minutes to wait again');
+    assert.deepEqual(await row.locator('[data-usd-dated]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-usd'))), said, 'the list on the way back says the time at once, with no two minutes to wait again');
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before);
     // The next answer: current again, no time under the figures.
     failing = false;
@@ -551,7 +564,7 @@ test('one failed portfolio read changes nothing; with every read failing the fig
     // Past the wait a failed read named for the next one (./read.ts readAgainAfter: a minute at most).
     await s.page.clock.fastForward(61_000);
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
-    await row.locator('[data-usd-as-of]').first().waitFor({ state: 'detached' });
+    await row.locator('[data-usd-dated]').first().waitFor({ state: 'detached' });
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before);
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
@@ -578,7 +591,7 @@ test('a dollar row only the site’s inventory lists says its time once its own 
     const before = await row.locator('[data-usd]').allTextContents();
     assert.equal(before[1], '$2.00', '2 USDG of fees, with USDG at $1');
     assert.match(await cell.getAttribute('title'), /^Estimated from the pool price at block \d+, with USDG at \$1\. This is not a sale quote\. /);
-    assert.equal(await row.locator('[data-usd-as-of], [data-usd-snapshot]').count(), 0, 'a current figure says no time');
+    assert.equal(await row.locator('[data-usd-dated], [data-usd-snapshot]').count(), 0, 'a current figure says no time');
     // The state route refuses every ask from here on; the portfolio is read on, and still says nothing of this NFT.
     let refused = 0;
     await s.page.route('**/api/fees/v1/state', (route) => { refused += 1; return route.fulfill({ status: 429, headers: { 'Retry-After': '5' }, contentType: 'application/json', body: JSON.stringify({ error: 'rate_limited' }) }); });
@@ -589,7 +602,7 @@ test('a dollar row only the site’s inventory lists says its time once its own 
       await s.page.clock.fastForward(seconds * 1000);
       await settle();
       assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before);
-      assert.equal(await row.locator('[data-usd-as-of]').count(), 0, `current ${ahead} s after its reading: about two minutes, whatever the newest attempt did`);
+      assert.equal(await row.locator('[data-usd-dated]').count(), 0, `current ${ahead} s after its reading: about two minutes, whatever the newest attempt did`);
     }
     for (const seconds of [31, 31, 31, 31, 31, 31]) {
       ahead += seconds;
@@ -597,28 +610,28 @@ test('a dollar row only the site’s inventory lists says its time once its own 
       await settle();
     }
     // Five minutes with nothing newer: the same dollars, each with the time of the reading they are of, and the basis.
-    await row.locator('[data-usd-as-of="principal"]').waitFor();
+    await row.locator('[data-usd="principal"][data-usd-dated]').waitFor();
     assert.ok(refused > 0, 'the state route was asked, and refused');
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before, 'the last figures stay');
-    const said = await row.locator('[data-usd-as-of]').allInnerTexts();
+    const said = await row.locator('[data-usd-dated]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-usd')));
     assert.equal(said.length, 2, 'each of the two figures says its time (neither did until 2026-10-14)');
-    for (const words of said) assert.match(words, AS_OF);
-    assert.equal(await row.locator('[data-usd-as-of="principal"]').isVisible(), true);
-    assert.match(await cell.getAttribute('title'), /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. Estimated from the pool price at block \d+, with USDG at \$1\. This is not a sale quote\. /);
+    for (const words of said) assert.match(words, DATED); await noTime(s.page);
+    assert.equal(await row.locator('[data-usd="principal"][data-usd-dated]').isVisible(), true);
+    assert.match(await cell.getAttribute('title'), /^Estimated from the pool price at block \d+, with USDG at \$1\. This is not a sale quote\. /);
     assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /USD unavailable/i);
     // The route answers again, at a later block: the row is current, and says no time.
     await s.page.unroute('**/api/fees/v1/state');
     s.chain.head += 3_000;
     // The route's own handler keeps an answer five real seconds (functions/_lib/fees.ts LIVE_STATE_MS).
     await new Promise(done => setTimeout(done, 5_200));
-    for (let tries = 0; tries < 8 && await row.locator('[data-usd-as-of]').count() > 0; tries++) {
+    for (let tries = 0; tries < 8 && await row.locator('[data-usd-dated]').count() > 0; tries++) {
       ahead += 31;
       s.chain.timestamp = start + ahead;
       await s.page.clock.fastForward(31_000);
       await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
       await settle();
     }
-    assert.equal(await row.locator('[data-usd-as-of], [data-usd-snapshot]').count(), 0, 'current again at the next reading');
+    assert.equal(await row.locator('[data-usd-dated], [data-usd-snapshot]').count(), 0, 'current again at the next reading');
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
 });
@@ -647,7 +660,7 @@ test('with no portfolio answer coming, an inventory row follows the state route�
       await new Promise(done => setTimeout(done, 5_200));
       await s.page.clock.fastForward(31_000);
       await s.page.waitForFunction(([selector, block]) => Number(document.querySelector(selector)?.getAttribute('data-position-block')) >= block, [`[data-v2-position-row="${rowKey(V1_OPEN)}"]`, first + read * 300]);
-      assert.equal(await row.locator('[data-usd-as-of], [data-usd-snapshot]').count(), 0, `${read * 31} s on, with a reading of this half minute: current, no time`);
+      assert.equal(await row.locator('[data-usd-dated], [data-usd-snapshot]').count(), 0, `${read * 31} s on, with a reading of this half minute: current, no time`);
       assert.deepEqual(await row.locator('[data-usd]').allTextContents(), before);
     }
     assert.equal(s.asked.filter(entry => entry.route === 'portfolio').length, 1, 'read-v6’s refused answer was not asked again in these minutes');
@@ -688,7 +701,7 @@ test('a visitor’s position page shows the dollars of the owner’s row, from t
     assert.equal(await fees.textContent(), '$4.00', 'the owner’s row’s dollars (the page’s own USDG rule until 2026-10-14)');
     assert.deepEqual([await value.getAttribute('data-usd-basis'), await fees.getAttribute('data-usd-basis')], ['qualified-prices', 'qualified-prices']);
     assert.match(await value.getAttribute('title'), /^Qualified valuation at block \d+$/);
-    assert.equal(await detail.locator('[data-usd-as-of], [data-usd-why]').count(), 0, 'a current figure says no time');
+    assert.equal(await detail.locator('[data-usd-dated], [data-usd-why]').count(), 0, 'a current figure says no time');
     const shown = [await value.textContent(), await fees.textContent()];
     // One read of the owner's portfolio, the page's Activity's own; then one per half minute, never two.
     assert.equal(portfolios().length, 1);
@@ -701,13 +714,13 @@ test('a visitor’s position page shows the dollars of the owner’s row, from t
       assert.equal(portfolios().length, read, `${(read - 1) * 31} s on the page: ${read} reads of the owner’s portfolio, one per half minute, as before this part read it too`);
     }
     assert.deepEqual([await value.textContent(), await fees.textContent()], shown);
-    assert.equal(await detail.locator('[data-usd-as-of]').count(), 0, 'a healthy page says no time');
+    assert.equal(await detail.locator('[data-usd-dated]').count(), 0, 'a healthy page says no time');
     // read-v6 goes away: the same figures stay, and say their time once nothing newer has arrived for two minutes.
     failing = true;
     await s.page.clock.fastForward(125_000);
-    await detail.locator('[data-usd-as-of="principal"]').waitFor();
+    await detail.locator('[data-usd="principal"][data-usd-dated]').waitFor();
     assert.deepEqual([await value.textContent(), await fees.textContent()], shown, 'the last figures stay');
-    for (const words of await detail.locator('[data-position-stats] [data-usd-as-of]').allInnerTexts()) assert.match(words, AS_OF);
+    for (const words of await detail.locator('[data-position-stats] [data-usd-dated]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-usd')))) assert.match(words, DATED); await noTime(s.page);
     assert.doesNotMatch(await detail.locator('[data-position-stats]').innerText(), /USD unavailable/i);
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
@@ -748,11 +761,11 @@ test('an ETH / token position shows the same dollars on its own page as in its r
     await row.locator('[data-usd="principal"][data-usd-snapshot]').waitFor();
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), inRow, 'the same dollars');
     assert.equal(await row.getAttribute('data-usd-reason'), 'eth_usd_stale,pool_depth_below_floor');
-    const dated = await row.locator('[data-usd-as-of]').allInnerTexts();
+    const dated = await row.locator('[data-usd-dated]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-usd')));
     assert.equal(dated.length, 2, 'each figure says its time');
-    for (const words of dated) assert.match(words, AS_OF);
-    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. Estimated from the pool price at block \d+, converted with ETH’s qualified USD price\. This is not a sale quote\. /, 'the time and the basis, both');
-    assert.match(await row.locator('[data-cell="fees"]').getAttribute('title'), /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. 0\.001 ETH/, 'the fees were at ETH’s own price: no estimate to say');
+    for (const words of dated) assert.match(words, DATED); await noTime(s.page);
+    assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /^Estimated from the pool price at block \d+, converted with ETH’s qualified USD price\. This is not a sale quote\. /, 'the time and the basis, both');
+    assert.match(await row.locator('[data-cell="fees"]').getAttribute('title'), /^0\.001 ETH/, 'the fees were at ETH’s own price: no estimate to say');
     assert.doesNotMatch(await row.innerText(), /USD price is updating|USD unavailable/i);
     own.tokens[0] = { ...own.tokens[0], price: priced, priceReason: null };
     // Changed on purpose (2026-10-14, Q1 alone): Q1's wake rounds are at least 10 s apart (src/lib/wake.ts WAKE_GAP_MS), so
@@ -761,7 +774,7 @@ test('an ETH / token position shows the same dollars on its own page as in its r
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
     await row.locator('[data-usd="principal"]:not([data-usd-snapshot])').waitFor();
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), inRow);
-    assert.equal(await row.locator('[data-usd-as-of]').count(), 0, 'current again with the next priced answer');
+    assert.equal(await row.locator('[data-usd-dated]').count(), 0, 'current again with the next priced answer');
     await row.click();
     const detail = s.page.locator(`[data-position-detail][data-position-id="${V1_OPEN}"]`);
     const value = detail.locator('[data-cell="principal"] [data-usd="principal"]'), fees = detail.locator('[data-cell="fees"] [data-usd="fees"]');
@@ -773,7 +786,7 @@ test('an ETH / token position shows the same dollars on its own page as in its r
     assert.match(await value.getAttribute('title'), /^Estimated from the pool price at block \d+, converted with ETH’s qualified USD price\. This is not a sale quote\.$/, 'the estimate names the pool mark and its qualified anchor');
     assert.equal(await fees.getAttribute('data-usd-basis'), 'qualified-prices');
     assert.match(await fees.getAttribute('title'), /^Qualified valuation at block \d+$/);
-    assert.equal(await detail.locator('[data-usd-as-of], [data-usd-why]').count(), 0, 'a current figure says no time and needs no reason');
+    assert.equal(await detail.locator('[data-usd-dated], [data-usd-why]').count(), 0, 'a current figure says no time and needs no reason');
     assert.doesNotMatch(await detail.innerText(), /USD unavailable/i);
     const details = detail.locator('[data-position-details]');
     await details.locator('summary').click();
@@ -898,15 +911,16 @@ test('Base without qualified USD shows its token amounts as the figures, with a 
     assert.match(await fees.getAttribute('title'), /0\.005193 USDC \+ 0\.317608 BASECAT/);
     assert.match(await row.locator('[data-cell="principal"]').getAttribute('title'), /0\.412537 USDC \+ 22\.675 BASECAT/);
     assert.equal(await row.locator('[data-usd]').count(), 0);
-    assert.deepEqual(await row.locator('[data-usd-why]').allInnerTexts(), ['No reliable USD price']);
-    assert.doesNotMatch(await row.innerText(), /USD unavailable/i);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): no "No reliable USD price" under the amounts.
+    assert.equal(await row.locator('[data-usd-why]').count(), 0);
+    assert.doesNotMatch(await row.innerText(), /USD unavailable|No reliable USD price/i);
     assert.equal(await row.locator('[data-cell="apr"] .dm-own-dash').innerText(), '—');
     assert.ok(s.ledgerAsked.every(request => !request.tokenIds.includes('6238157')), 'a Base NFT never goes to the Robinhood ledger');
     for (const width of [1320, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
       assert.ok(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       assert.equal(await fees.locator('.dm-own-amounts').isVisible(), true);
-      assert.equal(await row.locator('.dm-own-amounts, [data-usd-why]').evaluateAll((nodes) => nodes.every((node) => { const cell = node.closest('.dm-own-cell').getBoundingClientRect(), box = node.getBoundingClientRect(); return box.left >= cell.left - 0.5 && box.right <= cell.right + 0.5; })), true, `the amounts and the reason stay inside their cells at ${width}px`);
+      assert.equal(await row.locator('.dm-own-amounts').evaluateAll((nodes) => nodes.every((node) => { const cell = node.closest('.dm-own-cell').getBoundingClientRect(), box = node.getBoundingClientRect(); return box.left >= cell.left - 0.5 && box.right <= cell.right + 0.5; })), true, `the amounts and the reason stay inside their cells at ${width}px`);
       assert.equal(await s.page.locator('.dm-acct-token-units').evaluateAll(nodes => nodes.every(node => node.getBoundingClientRect().height <= parseFloat(getComputedStyle(node).lineHeight) + 0.5)), true, 'even an extreme balance remains one line');
       if (width !== 320) await s.page.screenshot({ path: join(shots(), `positions-base-visible-fees-${width}.png`), fullPage: true });
     }
@@ -974,19 +988,19 @@ test('a Base estimate nothing newer has arrived for says its time and its basis,
     const row = s.page.locator(`[data-v2-position-row="8453:${manager}:${tokenId}"]`);
     await row.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
     assert.deepEqual(await row.locator('[data-usd]').allTextContents(), ['$5.00', '$0.75']);
-    assert.equal(await row.locator('[data-usd-as-of]').count(), 0);
+    assert.equal(await row.locator('[data-usd-dated]').count(), 0);
     // read-v6 goes away: every read fails from here on.
     failing = true;
     // Changed on purpose (2026-10-14, Q1 alone): Q1's wake rule reads a portfolio at `online` only once its answer is older
     // than its period, so the read that fails is the reader's own, a period later (as in the five cases Q1 rewrote above).
     await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
-    await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor();
+    await s.page.locator('[data-owned] [data-v2-own-note="failed"]').waitFor({ state: 'attached' }); // changed on purpose 2026-10-15 (pack 7, owner: no status notices): a hidden marker
     await s.page.clock.fastForward(121_000);
-    await row.locator('[data-usd-as-of="principal"]').waitFor();
-    const said = await row.locator('[data-usd-as-of]').allInnerTexts();
+    await row.locator('[data-usd="principal"][data-usd-dated]').waitFor();
+    const said = await row.locator('[data-usd-dated]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-usd')));
     assert.equal(said.length, 2);
-    for (const words of said) assert.match(words, AS_OF);
-    const both = /^Last complete valuation, from \d\d-\d\d \d\d:\d\d UTC\. Estimated from the pool price at block \d+, converted with USDC’s qualified USD price\. This is not a sale quote\./;
+    for (const words of said) assert.match(words, DATED); await noTime(s.page);
+    const both = /^Estimated from the pool price at block \d+, converted with USDC’s qualified USD price\. This is not a sale quote\./;
     for (const name of ['principal', 'fees']) {
       assert.match(await row.locator(`[data-cell="${name}"]`).getAttribute('title'), both, `${name}: the time and the basis, both`);
       assert.match(await row.locator(`[data-cell="${name}"] [data-usd-estimate]`).textContent(), /^Estimated from the pool price at block \d+, converted with USDC’s qualified USD price\. This is not a sale quote\.$/, 'and for a screen reader');
@@ -997,7 +1011,7 @@ test('a Base estimate nothing newer has arrived for says its time and its basis,
     await detail.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
     assert.equal(await s.page.locator('[data-position-v2]').count(), 1, 'the position page of a chain read-v6 alone reads');
     assert.deepEqual(await detail.locator('[data-position-stats] [data-usd]').allTextContents(), ['$5.00', '$0.75']);
-    assert.deepEqual(await detail.locator('[data-position-stats] [data-usd-as-of]').allInnerTexts(), said, 'no two minutes to wait again: an old answer is old at once');
+    assert.deepEqual(await detail.locator('[data-position-stats] [data-usd-dated]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-usd'))), said, 'no two minutes to wait again: an old answer is old at once');
     for (const name of ['principal', 'fees']) assert.match(await detail.locator(`[data-usd="${name}"]`).getAttribute('title'), new RegExp(`${both.source}$`));
     const details = detail.locator('[data-position-details]');
     await details.locator('summary').click();
@@ -1020,7 +1034,9 @@ test('a newly created Base position stays visible while indexing even when every
   try {
     const row = s.page.locator(`[data-v2-position-row="8453:${manager}:6238157"]`);
     await row.waitFor();
-    assert.match(await text(row), /Updating/);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): no "Updating" pill; the row's status is a hidden marker.
+    assert.doesNotMatch(await text(row), /Updating/);
+    assert.equal(await row.locator('[data-position-status="unread"][data-position-unread="updating"]').count(), 1);
     assert.equal(await row.locator('[data-usd]').count(), 0, 'the mint hint does not invent a balance');
     await s.page.getByRole('tab', { name: /^Closed/ }).click();
     await s.page.locator(`[data-v2-position-row="8453:${manager}:6238100"]`).waitFor();
@@ -1090,8 +1106,10 @@ test('preview reads the connected wallet from the site route and shows its parti
   const s = await scenario({ hooks: { originOpen: true }, readV6: routeOn(route => ({ status: 200, body: route === 'portfolio' ? own : about('activity', fixture('activity.json'), OWNER) })) });
   try {
     const note = s.page.locator('[data-owned] [data-v2-own-note="partial"]');
-    await note.waitFor({ timeout: 5_000 }).catch(async () => assert.fail(JSON.stringify({ requests: s.asked, content: await s.page.locator('[data-owned]').innerText() })));
-    assert.equal(await text(note), 'Showing Robinhood Chain. Base and Arbitrum One are unavailable right now.');
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the coverage and the row's age are hidden markers' data, never a line.
+    await note.waitFor({ state: 'attached', timeout: 5_000 }).catch(async () => assert.fail(JSON.stringify({ requests: s.asked, content: await s.page.locator('[data-owned]').innerText() })));
+    assert.equal(await text(note), '');
+    assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /unavailable right now|updated 15 min ago/);
     assert.equal(await s.page.locator(`a[data-v2-position-row="${rowKey('7')}"] [data-v2-stale]`).getAttribute('data-v2-stale'), 'updated 15 min ago');
     await v1RowAsItIs(s.page);
     assert.deepEqual(await tabs(s.page), ['Open 2', 'Closed 0']);
@@ -1125,9 +1143,12 @@ test('live: one collection merges both inventories and counts only positions wit
     assert.equal(await s.page.locator(`[data-v2-position-row="${rowKey(V1_OPEN)}"]`).count(), 1);
     await s.page.getByRole('tab', { name: /^Open 3/ }).waitFor();
     assert.deepEqual(await tabs(s.page), ['Open 3', 'Closed 0'], 'unknown positions remain visible without being counted as Open');
-    assert.match(await s.page.locator('[data-owned-status]').innerText(), /3 open and 0 closed positions.*2 positions still being checked/);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the count only; the 2 still being checked are data-owned-pending.
+    assert.equal(await s.page.locator('[data-owned-status]').innerText(), '3 open and 0 closed positions.');
+    assert.equal(await s.page.locator('[data-owned-status]').getAttribute('data-owned-pending'), '2');
     assert.equal(await rows.locator('[data-cell="apr"]').count(), 5, 'every row has the qualified APR projection');
-    assert.equal(await text(s.page.locator('[data-owned] [data-v2-own-note="partial"]')), 'Showing Robinhood Chain and Base. Arbitrum One is unavailable right now.');
+    assert.equal(await s.page.locator('[data-owned] [data-v2-own-note="partial"]').count(), 1);
+    assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /unavailable right now/);
     assert.equal(await s.page.locator('[data-v2-examples], [data-test-data]').count(), 0, 'no test data in a live list');
     const portfolio = s.asked.find((entry) => entry.route === 'portfolio');
     assert.deepEqual([portfolio.method, portfolio.contract, portfolio.body], ['POST', CONTRACT, { wallet: OWNER }]);
@@ -1172,7 +1193,8 @@ test('live, the site’s route not deployed: V1 remains available without an emp
     await loading.waitFor({ state: 'attached' });
     releaseCapabilities();
     await loading.waitFor({ state: 'detached' });
-    await s.page.locator('[data-automation-cards="integrated"] [data-activity-error]').waitFor();
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a hidden marker.
+    await s.page.locator('[data-automation-cards="integrated"] [data-activity-error]').waitFor({ state: 'attached' });
     await s.page.waitForFunction(() => document.querySelector('[data-owned-rows="open"] [data-v2-position-row]'));
     assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 0']);
     assert.equal(await s.page.locator('[data-v2-position-row]').count(), 1);
@@ -1220,7 +1242,8 @@ test('explicit sign-in adds private automation receipts alongside public receipt
     assert.match(await text(privateRow), /In progress Adding fees back/);
     const allIds = await s.page.locator('[data-v2-receipt]').evaluateAll(rows => rows.map(row => row.dataset.v2Receipt));
     assert.ok(publicIds.every(id => allIds.includes(id)), 'signing in and paging preserve every loaded public operation');
-    assert.match(await text(privateRow), /Date unavailable/);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): no "Date unavailable".
+    assert.doesNotMatch(await text(privateRow), /Date unavailable/);
     assert.equal(await s.page.locator('.dm-rcpt-session').count(), 0);
     if (process.env.DOMINO_RECEIPT_SHOTS) {
       mkdirSync(process.env.DOMINO_RECEIPT_SHOTS, { recursive: true });
@@ -1293,7 +1316,8 @@ test('See all continues after an older-page outage and wallet switches never ret
     await s.page.locator('[data-activity-rows="5"]').waitFor();
     const initial = await s.page.locator('[data-v2-receipt]').evaluateAll(rows => rows.map(row => row.dataset.v2Receipt));
     await s.page.locator('[data-unified-activity]').getByRole('button', { name: 'Show more', exact: true }).click();
-    await s.page.locator('[data-activity-error]').waitFor();
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a hidden marker.
+    await s.page.locator('[data-activity-error]').waitFor({ state: 'attached' });
     assert.deepEqual(await s.page.locator('[data-v2-receipt]').evaluateAll(rows => rows.map(row => row.dataset.v2Receipt)), initial);
     await s.page.waitForFunction(() => !document.querySelector('[data-activity-error]'), null, { timeout: 15_000 });
     assert.equal(tailReads, 2);
@@ -1449,9 +1473,11 @@ test('a public route disabled after loading keeps the unified rows visible with 
     const ids = await s.page.locator('[data-v2-receipt]').evaluateAll(rows => rows.map(row => row.dataset.v2Receipt));
     disabled = true;
     await s.page.clock.fastForward(60_001);
-    await s.page.locator('[data-unified-activity] [data-activity-error]').waitFor();
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the rows stay, with no line ("Showing loaded activity. …"); a hidden marker.
+    await s.page.locator('[data-unified-activity] [data-activity-error]').waitFor({ state: 'attached' });
     assert.deepEqual(await s.page.locator('[data-v2-receipt]').evaluateAll(rows => rows.map(row => row.dataset.v2Receipt)), ids);
-    assert.match(await text(s.page.locator('[data-activity-error]')), /Showing loaded activity/);
+    assert.equal(await text(s.page.locator('[data-activity-error]')), '');
+    assert.doesNotMatch(await s.page.locator('[data-unified-activity]').innerText(), /Showing loaded activity|try again automatically/);
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
 });
@@ -1624,7 +1650,8 @@ test('a local bulk-close confirmation is one receipt with aggregate amounts and 
     await row.waitFor();
     assert.equal(await s.page.locator('[data-activity-rows]').getAttribute('data-activity-rows'), '1');
     assert.match(await row.innerText(), /2 positions closed/);
-    assert.match(await row.innerText(), /Date unavailable/);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): no "Date unavailable": no time.
+    assert.doesNotMatch(await row.innerText(), /Date unavailable/);
     assert.equal(await row.locator('time').count(), 0);
     // Added 2026-10-14 (incident C1; the owner's decision D0): a close this browser checked in a block is confirmed at
     // once; it said "Confirming" until the finalized block passed it.

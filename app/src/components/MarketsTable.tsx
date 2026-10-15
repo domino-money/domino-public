@@ -13,7 +13,6 @@ import { useCatalogueFallback, useFallbackRows } from '../lib/read/useFallback'
 import { reasonText } from '../lib/read/describe'
 import { marketPoolPrice } from '../lib/read/marketPrice'
 import { isPageWide, type MarketsProvider } from '../lib/read/marketsProvider'
-import { COPY } from '../lib/read/screens/copy'
 import { PoolFiguresSlot, SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
 import type { TokenDisplay } from '../lib/read/types'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
@@ -70,6 +69,19 @@ function provenanceLine(p: MarketProvenance, age: number | null, stale: boolean)
   if (p.metrics === 'not_requested') return `${verified} · ${market}`
   const metrics = p.metrics ? `Domino history ${p.metrics.freshness}, ${p.metrics.ageSeconds} s` : 'Domino history unavailable'
   return `${verified} · ${market} · ${metrics}`
+}
+
+/**
+ * The same line as a person hovers it: the basis only.
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the name's title no longer carries the
+ * provenance line's times and states (", retrieved N s ago", " · stale", "Provider figures unavailable: <reason>",
+ * "Domino history fresh, N s", "Domino history unavailable"); `data-provenance` keeps the whole line, as data.
+ */
+function provenanceTitle(p: MarketProvenance) {
+  const parts = [`Pool verified on-chain at block ${p.block}`]
+  if (p.market.status === 'available' || p.market.status === 'stale') parts.push('Reported by a market data provider')
+  if (p.metrics !== 'not_requested' && p.metrics) parts.push('Domino history')
+  return parts.join(' · ')
 }
 
 /**
@@ -133,15 +145,18 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
   if (price.state === 'unavailable' && price.problem === 'decimals_unknown' && market.tokensPending) {
     return <PendingFigure label="Price" data={{ 'data-pool-price': 'loading' }} />
   }
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a price that cannot be written is the dash,
+  // with no title; it used to read "Unavailable", titled "The pool’s state was not in this read." or the range problem's
+  // words. A kept price is shown as the price, its title the basis only (no " Stale, not current."), and the sr-only
+  // "Last available price; see Details for its time." is gone.
   if (price.state === 'unavailable') {
-    const why = price.problem === 'not_read' ? 'The pool’s state was not in this read.' : COPY.range.problems[price.problem]
     return (
-      <span className="text-fg-subtle" data-pool-price="unavailable" title={why}>
-        Unavailable
+      <span className="text-fg-subtle" data-pool-price="unavailable">
+        —
       </span>
     )
   }
-  const title = `The pool’s own price on Robinhood Chain, at block ${price.block}.${price.stale ? ' Stale, not current.' : ''}`
+  const title = `The pool’s own price on Robinhood Chain, at block ${price.block}.`
   return (
     <span className="dm-mkt-price" data-pool-price={price.stale ? 'stale' : 'usable'} title={title}>
       <span className="dm-mkt-price-unit">
@@ -150,7 +165,6 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
       <span className="tnum font-medium text-fg">
         {price.text} <PoolTokenLabel token={price.quote} />
       </span>
-      {price.stale && <span className="sr-only" data-saved-data="price">Last available price; see Details for its time.</span>}
     </span>
   )
 }
@@ -159,7 +173,6 @@ function Row({ m: read, now, full, home, onFigures, poolToken, pinned }: { m: Ma
   const p = read.provenance
   const age = p ? retrievedAgeSeconds(p.market, now) : null
   const stale = p ? providerStale(p.market, now) : false
-  const retrieved = retrievedText(age)
   // The same projection the figures dialog is given, so the row and the dialog
   // it opens never disagree about whether a figure is still current.
   const m = agedMarket(read, now)
@@ -177,13 +190,6 @@ function Row({ m: read, now, full, home, onFigures, poolToken, pinned }: { m: Ma
   const tvlFigure = presentMetric(m.tvlUsd)
   const volumeFigure = presentMetric(m.volume24hUsd)
   const estimateFigure = presentAprEstimate(m.feeAprEstimate, now)
-  const savedFigures = [
-    tvlFigure.kind === 'value' && tvlFigure.stale ? 'TVL' : null,
-    volumeFigure.kind === 'value' && volumeFigure.stale ? '24h volume' : null,
-    qualified ? m.feeAprPercent.state === 'stale' ? 'APR' : null
-      : standIn ? standIn.basis === 'kept' || standIn.basis === 'selection' ? 'APR estimate' : null
-      : estimateFigure.text !== null && estimateFigure.state === 'stale' ? 'APR estimate' : null,
-  ].filter(Boolean)
   useLoadMilestone(['overview', 'markets'], 'tvl', tvlFigure.kind === 'value' ? tvlFigure.stale ? 'cached' : 'current' : null)
   useLoadMilestone(['overview', 'markets'], 'volume', volumeFigure.kind === 'value' ? volumeFigure.stale ? 'cached' : 'current' : null)
   useLoadMilestone(['overview', 'markets'], 'apr', qualified ? m.feeAprPercent.state === 'stale' ? 'cached' : 'current' : estimateFigure.text !== null ? estimateFigure.state === 'stale' ? 'cached' : 'estimated' : null)
@@ -206,7 +212,7 @@ function Row({ m: read, now, full, home, onFigures, poolToken, pinned }: { m: Ma
           </span>
           {/* Where the figures came from stays on the row, as its title and as data, never as a
               printed line under the name: one hover, or the figures dialog, away. */}
-          <div className="dm-mkt-ident" data-provenance={line} title={line}>
+          <div className="dm-mkt-ident" data-provenance={line} title={p ? provenanceTitle(p) : undefined}>
             <a href={href} className="dm-mkt-name">
               <span className="font-medium">{name}</span>
             </a>
@@ -216,7 +222,8 @@ function Row({ m: read, now, full, home, onFigures, poolToken, pinned }: { m: Ma
               {feeWords(feeLabel(m))}
             </Chip>
             {pinned && <PinnedChip />}
-            {savedFigures.length > 0 && <span className="sr-only" data-saved-data="figures">Last available {savedFigures.join(', ')}; sources and times in Details.</span>}
+            {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no sr-only "Last available <figures>;
+                sources and times in Details." beside kept figures any more: they read as the figures they are. */}
             {flags.map((flag) => (
               <Chip key={flag.key} className="dm-mkt-venue dm-mkt-flag" data-pool-flag={flag.key} title={flag.title}>
                 {flag.text}
@@ -230,11 +237,11 @@ function Row({ m: read, now, full, home, onFigures, poolToken, pinned }: { m: Ma
       </Td>
       <Td numeric className="dm-mkt-num">
         {home && <span className="dm-home-pool-label">TVL</span>}
-        {coming(m.tvlUsd) ? <PendingFigure label="TVL" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={m.tvlUsd} retrieved={retrieved} />}
+        {coming(m.tvlUsd) ? <PendingFigure label="TVL" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={m.tvlUsd} />}
       </Td>
       <Td numeric col="wide" className="dm-mkt-num dm-mkt-volume">
         {home && <span className="dm-home-pool-label">24h volume</span>}
-        {coming(m.volume24hUsd) ? <PendingFigure label="24h volume" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={m.volume24hUsd} retrieved={retrieved} />}
+        {coming(m.volume24hUsd) ? <PendingFigure label="24h volume" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={m.volume24hUsd} />}
       </Td>
       <Td numeric className="dm-mkt-num dm-mkt-apr">
         {home && <span className="dm-home-pool-label">APR</span>}
@@ -329,39 +336,39 @@ function CatalogueRow({ poolId, entry, full, home, loading, token, pinned, stand
   const href = poolHref(poolId, token)
   // While the first markets read is out, or briefly while the store is about to collect the pool for the first time
   // (2026-09-28), each figure rests as a bubble at its text line's size, so the row keeps its height and nothing reads
-  // as missing; once it has settled without a row, the dashes say what is unavailable. A figure this browser or DEX
-  // Screener has for the pool, or today's selection's, stands in for either, dated and attributed in its title.
+  // as missing; once it has settled without a row, each is a dash. A figure this browser or DEX Screener has for the
+  // pool, or today's selection's, stands in for either, attributed in its title.
   const bubble = (className: string) => <Skeleton className={cx('dm-mkt-bubble', className)} />
   const tvl = standIn?.tvl ?? null
   const volume = standIn?.volume ?? null
   const apr = standIn?.apr ?? null
-  // The name's title says figures are unavailable only when none stands in (fix round 1): beside stand-in figures it
-  // said the opposite of the row. Each stand-in names its source and time in its own title.
-  const standing = tvl !== null || volume !== null || apr !== null
-  const saved = [tvl, volume].some((metric) => metric?.state === 'stale' && metric.value !== null) || apr?.basis === 'kept' || apr?.basis === 'selection'
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the name's title is "Listed on Uniswap." alone;
+  // it used to go on "Its live figures are not in yet; each figure shown stands in, with its source and time." or "Pool
+  // figures are unavailable.", and kept stand-ins had an sr-only "Last available figures; sources and times in
+  // Details." The dashes below have no reason ("Price unavailable", "TVL unavailable", "24h volume unavailable", "Pool
+  // APR unavailable" used to be their title and name). Each stand-in still names its source in its own title.
   return (
     <tr className="dm-mkt-row" data-pool-catalogue={poolId} data-pool-row={full ? poolId : undefined} data-row-loading={loading ? '' : undefined} onClick={(event) => followRow(event, href)}>
       <Td>
-        <a href={href} className="dm-mkt-pool dm-mkt-name" title={standing ? 'Listed on Uniswap. Its live figures are not in yet; each figure shown stands in, with its source and time.' : 'Listed on Uniswap. Pool figures are unavailable.'}>
+        <a href={href} className="dm-mkt-pool dm-mkt-name" title="Listed on Uniswap.">
           <PoolCatalogueIdentity entry={entry} />
         </a>
         {pinned && <PinnedChip />}
-        {saved && <span className="sr-only" data-saved-data="figures">Last available figures; sources and times in Details.</span>}
       </Td>
       <Td numeric col="wide">
-        {loading ? <span className="dm-mkt-bubbles">{bubble('dm-mkt-bubble--price')}{bubble('dm-mkt-bubble--unit')}</span> : <FigureDash reason="Price unavailable" />}
+        {loading ? <span className="dm-mkt-bubbles">{bubble('dm-mkt-bubble--price')}{bubble('dm-mkt-bubble--unit')}</span> : <FigureDash />}
       </Td>
       <Td numeric>
         {home && <span className="dm-home-pool-label">TVL</span>}
-        {tvl ? <MetricCell metric={tvl} /> : loading ? bubble('dm-mkt-bubble--figure') : <FigureDash reason="TVL unavailable" />}
+        {tvl ? <MetricCell metric={tvl} /> : loading ? bubble('dm-mkt-bubble--figure') : <FigureDash />}
       </Td>
       <Td numeric col="wide" className="dm-mkt-volume">
         {home && <span className="dm-home-pool-label">24h volume</span>}
-        {volume ? <MetricCell metric={volume} /> : loading ? bubble('dm-mkt-bubble--figure') : <FigureDash reason="24h volume unavailable" />}
+        {volume ? <MetricCell metric={volume} /> : loading ? bubble('dm-mkt-bubble--figure') : <FigureDash />}
       </Td>
       <Td numeric>
         {home && <span className="dm-home-pool-label">APR</span>}
-        {apr ? <FallbackApr apr={apr} compact /> : loading ? bubble('dm-mkt-bubble--apr') : <FigureDash reason="Pool APR unavailable" />}
+        {apr ? <FallbackApr apr={apr} compact /> : loading ? bubble('dm-mkt-bubble--apr') : <FigureDash />}
       </Td>
       <Td numeric className="dm-mkt-end">
         <span className="dm-row-end">
@@ -592,12 +599,15 @@ export function MarketsTable({
         <tfoot>
           <tr>
             <td colSpan={6} className="text-center text-fg-subtle">
-              {state.phase === 'loading' ? (
+              {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): pools still being collected rest as
+                  the loading bubble ("Pool data is being collected." is gone), and a table with nothing read is the dash
+                  ("Pool data unavailable" is gone). "No pools selected yet." states a fact and stays. */}
+              {state.phase === 'loading' || (state.phase === 'ready' && state.problems.length === 0 && state.acquiring && !empty) ? (
                 <Skeleton className="mx-auto h-10 max-w-[30rem]" />
               ) : state.phase === 'ready' && state.problems.length === 0 ? (
-                empty ?? <span data-empty="no-pools">{state.acquiring ? 'Pool data is being collected.' : 'No pools selected yet.'}</span>
+                empty ?? <span data-empty="no-pools">No pools selected yet.</span>
               ) : (
-                'Pool data unavailable'
+                '—'
               )}
             </td>
           </tr>

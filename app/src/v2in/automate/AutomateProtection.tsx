@@ -26,6 +26,8 @@ export default function AutomateProtection() {
         Choose a position
         <IconChevronRight />
       </LinkButton> : <Button disabled>{pending ? 'Checking availability…' : 'Unavailable right now'}</Button>}
+      {/* Kept on purpose 2026-10-15 (pack 7): a gate that says why an action can't be taken stays (the coordinator's rule);
+          this disabled button's own words are that gate, on Automate, as its setup gates. */}
     </>
   )
 }

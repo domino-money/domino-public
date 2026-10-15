@@ -176,16 +176,19 @@ test('multichain sync: a restored creation is visible before indexing and reconc
   try {
     const page = s.page;
     await page.locator('[data-position-reason="awaiting_index"]').waitFor();
-    assert.match(await text(page.locator('[data-position-reason="awaiting_index"]')), /Updating position details/);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the page's title alone, no "Updating position details…".
+    assert.doesNotMatch(await text(page.locator('[data-position-reason="awaiting_index"]')), /Updating position details/);
     await page.evaluate(() => { location.hash = '#/positions'; });
     const link = page.locator('a[href="#/positions/base-v4-5100001"]');
     await link.waitFor();
     assert.match(await text(link), /ETH.*USDC/);
-    assert.match(await page.locator('[data-owned-status]').innerText(), /1 positions still being checked/);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the count only; the one still being checked is data-owned-pending.
+    assert.doesNotMatch(await page.locator('[data-owned-status]').innerText(), /still being checked/);
+    assert.equal(await page.locator('[data-owned-status]').getAttribute('data-owned-pending'), '1');
     const indexed = portfolioOf({ wallet: OWNER, tokens: TOKENS, positions: [live(5100001)] });
     // Changed on purpose 2026-10-14 (Q1): focus is no wake; back online is (src/lib/wake.ts).
     await page.evaluate(answer => { window.__dominoV2Test.read6.portfolio = () => answer; window.dispatchEvent(new Event('online')); }, indexed);
-    await page.waitForFunction(() => !document.querySelector('[data-owned-status]')?.textContent?.includes('still being checked'));
+    await page.waitForFunction(() => !document.querySelector('[data-owned-status]')?.hasAttribute('data-owned-pending'));
     assert.equal(await link.count(), 1, 'the pending hint becomes one live row, never a duplicate');
     assert.deepEqual(await page.evaluate(wallet => JSON.parse(sessionStorage.getItem(`domino:created-positions:v1:${wallet}`)), OWNER), []);
     await link.click();
@@ -877,7 +880,8 @@ test('V2 Auto-exit on Base, preview: current custody opens the range\'s exact ed
       const page = s.page;
       const detail = page.locator('[data-position-detail][data-position-v2="base-v4"]');
       if (stale) {
-        assert.match(await text(detail.locator('[data-automation-control]')), /State unavailable/);
+        // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the control names the automation alone; it said "· State unavailable".
+        assert.doesNotMatch(await text(detail.locator('[data-automation-control]')), /State unavailable|\bOff\b/);
         assert.equal(await detail.locator('[data-automation-setup]').count(), 0, 'stale custody cannot enable a new automation');
         assert.equal(chain.sends.length, 0);
         continue;
@@ -1011,7 +1015,9 @@ for (const variant of [
       await detail.locator('[data-usd-amounts="principal"]').waitFor();
       assert.match(await detail.locator('[data-usd-amounts="principal"]').innerText(), /2\s+USDC\s+3\s+TEST/, 'what it holds, in tokens, in view');
       assert.match(await detail.locator('[data-usd-amounts="fees"]').innerText(), /0\.25\s+USDC\s+0\.5\s+TEST/);
-      assert.deepEqual(await detail.locator('[data-usd-why]').allInnerTexts(), [variant.stale ? 'Waiting for a fresh reading' : 'No reliable USD price'], 'one short reason, under the first figure');
+      // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): no short reason under the amounts ("Waiting for a fresh reading", "No reliable USD price"); the tiles keep it as data.
+      assert.equal(await detail.locator('[data-usd-why]').count(), 0, 'no reason in view');
+      assert.match(await detail.locator('[data-cell="principal"]').getAttribute('data-usd-reason'), variant.stale ? /stale_position_or_chain/ : /pool_depth_below_floor/);
       assert.doesNotMatch(await detail.locator('[data-position-stats]').innerText(), /USD unavailable/i, 'the bare words are gone');
       assert.equal(await detail.locator('[data-usd], [data-usd-snapshot]').count(), 0, 'there is no unqualified estimate or remembered USD value');
       assert.equal(await detail.locator('[data-position-loading], [data-position-overview] [aria-busy="true"]').count(), 0, 'settled unavailable data is not an infinite loader');
@@ -1045,16 +1051,17 @@ test('a completed unqualified USD read shows the token amounts and explains the 
     assert.equal(await figures.count(), 2);
     assert.match(await detail.locator('[data-usd-amounts="principal"]').innerText(), /ETH[\s\S]*USDC/);
     assert.match(await detail.locator('[data-usd-amounts="fees"]').innerText(), /0\.001\s+ETH\s+2\.5\s+USDC/);
-    assert.deepEqual(await detail.locator('[data-usd-why]').allInnerTexts(), ['No reliable USD price']);
-    assert.doesNotMatch(await detail.locator('[data-position-stats]').innerText(), /USD unavailable/i);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): no short reason under the amounts, and none in their title or in Details.
+    assert.equal(await detail.locator('[data-usd-why]').count(), 0);
+    assert.doesNotMatch(await detail.locator('[data-position-stats]').innerText(), /USD unavailable|No reliable USD price/i);
     for (const figure of await figures.all()) {
-      assert.match(await figure.getAttribute('title'), /price source has not verified enough liquidity/);
+      assert.equal(await figure.getAttribute('title'), null);
       assert.equal(await figure.evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)', 'a completed read is not styled as a loading skeleton');
     }
     assert.equal(await detail.locator('[data-position-loading], [data-position-overview] [aria-busy="true"]').count(), 0);
     const details = detail.locator('[data-position-details]');
     await details.locator('summary').click();
-    assert.match(await details.innerText(), /price source has not verified enough liquidity for a USD estimate/);
+    assert.doesNotMatch(await details.innerText(), /price source has not verified enough liquidity for a USD estimate/);
     assert.match(await details.locator('[data-stat="principal"]').textContent(), /ETH.*USDC/);
     assert.match(await details.locator('[data-stat="fees"]').textContent(), /0\.001\s+ETH.*2\.5\s+USDC/);
     for (const width of [1280, 390, 320]) {

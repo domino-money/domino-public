@@ -106,19 +106,23 @@ test('a chain answer for other currencies, not built yet, with fewer than two ho
   assert.match(failed.title, /^Price chart unavailable: Unavailable\. No response\.$/)
 })
 
-test('a line is stale by its own snapshot age or a failed refresh, and says so in its title only; no token text reaches a title', () => {
+// Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a kept line is stale as data only; its title is the
+// basis alone, the same as a current line's (no " Stale, not current.", no " Some hours are not collected yet.").
+test('a line is stale by its own snapshot age or a failed refresh, as data only; no token text reaches a title', () => {
   const fresh = pick({ answer: chain() })
   assert.equal(fresh.stale, false)
   assert.doesNotMatch(fresh.title, /stale/i)
   const old = pick({ answer: chain(history({ snapshot: { number: 9, hash: `0x${'b'.repeat(64)}`, timestamp: END - 600 } })) })
   assert.equal(old.stale, true)
-  assert.match(old.title, /Stale, not current\./)
+  assert.equal(old.title, fresh.title, 'changed on purpose 2026-10-15 (pack 7, owner: no status notices): no stale words')
+  assert.doesNotMatch(old.title, /stale|not current/i)
   const kept = mergeAnswer(chain(), { ...chain(), data: null, failure: 'Unavailable. No response', code: 'offline' })
   assert.deepEqual(kept.data, history(), 'a failed refresh keeps the last good series')
   assert.equal(pick({ answer: kept }).stale, true)
   assert.equal(mergeAnswer(undefined, { ...chain(), data: null, failure: 'x', code: 'y' }).data, null)
   for (const series of [fresh, old]) assert.doesNotMatch(series.title, /AAA|BBB/, 'symbols are untrusted text: React text only, never an attribute')
-  assert.match(pick({ answer: chain(history({ status: 'partial', gaps: [{ startTimestamp: END - 86400, endTimestamp: END - 7200 }] })) }).title, /Some hours are not collected yet\./)
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): missing hours are not said in the title any more.
+  assert.doesNotMatch(pick({ answer: chain(history({ status: 'partial', gaps: [{ startTimestamp: END - 86400, endTimestamp: END - 7200 }] })) }).title, /not collected/)
 })
 
 test('provider bars keep the existing rules: bound to the side asked, dropped past the service’s limit, stale by age', () => {
@@ -128,7 +132,8 @@ test('provider bars keep the existing rules: bound to the side asked, dropped pa
   assert.deepEqual([late.kind, late.code], ['figure', 'expired'])
   const aging = pick({ answer: provider(available(), { receivedMonotonic: NOW.monotonic - 90_000 }) })
   assert.equal(aging.kind, 'bars'); assert.equal(aging.stale, true)
-  assert.match(aging.title, /Reported by a market data provider, retrieved 95 s ago\. Not reconciled by Domino\. Stale, not current\./)
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the basis only, no retrieval time and no stale words.
+  assert.equal(aging.title, 'Reported by a market data provider. Not reconciled by Domino.')
   // USDG/MARLIN: the provider repeats an hour and the service refuses the series. The card shows its figure, never a bare dash.
   const marlin = pick({ answer: provider(refused('provider_unavailable')) })
   assert.deepEqual([marlin.kind, marlin.code, marlin.metric], ['figure', 'unavailable', volume])
@@ -647,12 +652,16 @@ test('each series draws something in the plot: a line with its caption, the 24h 
   assert.match(figure, /data-chart-unavailable="not_built"/)
   assert.match(figure, /class="dm-mkt-plot-figure"[^>]*><span data-metric="provider">\$1234\.5<\/span>/, 'the row’s 24h volume, large, in the plot')
   assert.match(figure, /<span>24h volume<\/span>/)
-  assert.match(figure, /title="Price chart unavailable: this pool’s price history is still being collected\."/)
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): why there is no chart is data, never a hover title.
+  assert.equal(pickSeries({ market: market(), settled: true, answer: chain(history({ status: 'not_built', candles: [], snapshot: null })), expecting: false, now: NOW }).title, 'Price chart unavailable: this pool’s price history is still being collected.', 'kept as data')
+  assert.doesNotMatch(figure, /title="Price chart unavailable/)
+  assert.doesNotMatch(figure, /still being collected/)
   const waiting = draw({ kind: 'waiting' })
   assert.match(waiting, /class="dm-mkt-baseline"/)
   assert.match(waiting, /<p class="dm-mkt-card-caption"><\/p>/, 'no words while waiting')
   const rowless = draw(pickSeries({ market: undefined, settled: true, answer: undefined, expecting: false, now: NOW }), { poolId: POOL })
-  assert.match(rowless, /data-chart-unavailable="no-figures"[^>]*><span data-figure="none" title="24h volume unavailable">—<\/span>/)
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the dash has no "24h volume unavailable" title.
+  assert.match(rowless, /data-chart-unavailable="no-figures"><span data-figure="none">—<\/span>/)
   assert.doesNotMatch(rowless, /data-metric/, 'no figure before any answer')
   for (const markup of [line, figure, waiting, rowless]) assert.doesNotMatch(markup, /Reading|Retry|unavailable<\/|sample|practice/i)
 })

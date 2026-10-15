@@ -59,9 +59,12 @@ export default function Receipts({ limit, onShows }: { limit?: number; onShows?:
     <section className="dm-activity-history" aria-label="Activity history" aria-busy={loading || undefined} data-unified-activity="" data-execution={view.state}
       data-execution-rows={visible.filter((row) => row.kind === 'private').length} data-v2-own-receipts={history.answer ? 'ok' : history.error?.kind ?? 'loading'}>
       {history.answer && <ChainLines answer={history.answer} />}
-      {history.error && <p className="dm-rcpt-note" role="status" data-activity-error="">{history.answer ? 'Showing loaded activity. More activity will be checked again automatically.' : 'Activity is unavailable right now. We’ll try again automatically.'}</p>}
-      {view.state === 'unavailable' && <p className="dm-rcpt-note" role="status" data-receipts-update={view.state}>Additional signed-in history couldn’t be updated.</p>}
-      {history.catchingUp && history.loading && <p className="dm-rcpt-note" role="status">Loading new activity…</p>}
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): what is loaded stays, and what failed is asked
+          again quietly. Gone: "Showing loaded activity. More activity will be checked again automatically.", "Activity is
+          unavailable right now. We’ll try again automatically.", "Additional signed-in history couldn’t be updated." and
+          "Loading new activity…" (the markers keep where the reads stand). */}
+      {history.error && <span hidden data-activity-error="" />}
+      {view.state === 'unavailable' && <span hidden data-receipts-update={view.state} />}
       {visible.length + immediate.length > 0 && (
         <ol className={RECEIPT_LIST + ' dm-activity-list'} data-v2-receipts="own" data-v2-receipts-rows={visible.filter((row) => row.kind === 'public').length} data-activity-rows={visible.length + immediate.length}>
           {immediate.map(item => <SessionActivityRow key={`${item.proof.chainId}:${item.proof.hash}`} item={item} />)}
@@ -76,7 +79,8 @@ export default function Receipts({ limit, onShows }: { limit?: number; onShows?:
           </Fragment>)}
         </ol>
       )}
-      {visible.length + immediate.length === 0 && !history.error && <p className="dm-rcpt-note" role="status">{!history.answer ? 'Loading activity…' : history.more ? 'More history is available.' : 'No activity yet.'}</p>}
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): nothing while the first page is on its way (it said "Loading activity…"). */}
+      {visible.length + immediate.length === 0 && !history.error && history.answer && <p className="dm-rcpt-note" role="status">{history.more ? 'More history is available.' : 'No activity yet.'}</p>}
       {limit === undefined && more && <div className="dm-activity-footer"><Button variant="ghost" size="sm" disabled={loading && !hidden}
         onClick={() => {
           setPage({ wallet, shown: shown + PAGE_ROWS })

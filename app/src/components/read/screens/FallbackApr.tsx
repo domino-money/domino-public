@@ -23,7 +23,10 @@ export function FallbackApr({ apr, compact = false }: { apr: Fallback; compact?:
   if (text === null) return null
   return (
     <span data-apr-estimate="fallback" data-figure-source={apr.basis}>
-      <span className={cx('tnum whitespace-nowrap', compact ? 'font-medium text-money-in' : 'text-fg')} title={`${fallbackTitle(apr.basis, apr.asOf, 'estimate')} ${ESTIMATE_SCOPE}`}>
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): its title is its basis and scope only, no
+          longer when it was observed nor "Not current. Shown because the usual market data provider did not answer
+          this time." (MetricCell fallbackTitle). */}
+      <span className={cx('tnum whitespace-nowrap', compact ? 'font-medium text-money-in' : 'text-fg')} title={`${fallbackTitle(apr.basis, 'estimate')} ${ESTIMATE_SCOPE}`}>
         {`${text}% ${compact ? 'est.' : 'est. APR'}`}
       </span>
     </span>

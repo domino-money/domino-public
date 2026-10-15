@@ -309,7 +309,9 @@ test('a failed pool chart chunk preserves figures and does not reload an open po
     await control.click()
     const figures = page.locator('[data-pool-figures-dialog]')
     await figures.locator('[data-pool-history-placeholder]:not([data-pool-history-loading])').waitFor()
-    assert.match(await figures.innerText(), /Price history is temporarily unavailable\./)
+    // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the placeholder shows the dash, no sentence.
+    assert.doesNotMatch(await figures.innerText(), /temporarily unavailable/)
+    assert.equal(await figures.locator('[data-pool-history-placeholder] .dm-pool-plot-empty').innerText(), '—')
     assert.match(await figures.locator('[data-figures-summary]').innerText(), /APR[\s\S]*TVL[\s\S]*24h volume/)
     assert.equal(recoveryChecks, 0, 'a newer release is not checked until navigation makes recovery safe')
     assert.equal(await page.evaluate(() => window.__chartRecoveryDocument), 'kept', 'a missing module never reloads under an open dialog')
@@ -496,8 +498,9 @@ test('Markets on the deployable build: all six cards draw a real chart within se
     // Changed on purpose 2026-10-01 (audit I3): the artwork of a token with none bundled (cbBTC, U) is asked through our
     // own edge, one token a GET, never of DEX Screener by the visitor's browser; nothing else is asked.
     const gets = edge.filter(read => read.method === 'GET').map(read => read.path)
-    assert.deepEqual(gets.filter(path => !path.startsWith('/api/read/dex/')), ['/api/read/v3/capabilities'], 'the cards decided from the capabilities the page already held')
-    assert.ok(gets.filter(path => path.startsWith('/api/read/dex/')).every(path => /^\/api\/read\/dex\/token-pairs\/0x[0-9a-f]{40}$/.test(path)), 'only token-pairs, one token each')
+    // (2026-10-15, pack 7): on the edge's new path, /api/read/dex2/, never the old one.
+    assert.deepEqual(gets.filter(path => !/^\/api\/read\/dex2?\//.test(path)), ['/api/read/v3/capabilities'], 'the cards decided from the capabilities the page already held')
+    assert.ok(gets.filter(path => /^\/api\/read\/dex2?\//.test(path)).every(path => /^\/api\/read\/dex2\/token-pairs\/0x[0-9a-f]{40}$/.test(path)), 'only token-pairs, one token each')
     assert.doesNotMatch(await page.locator('#market-rail').innerText(), /Reading|Retry|unavailable|\bv4\b|not enabled|read-only/i, 'no status words on the cards')
     assert.deepEqual(errors, [])
   } finally {
@@ -668,10 +671,11 @@ test('Home, Markets and its cards show one set of figures for the six pools; poo
       if (!cell) return false
       const figure = cell.cloneNode(true)
       figure.querySelectorAll('.dm-home-pool-label').forEach(label => label.remove())
-      return figure.textContent.trim() === 'Unavailable'
+      // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the dash, never the word "Unavailable".
+      return figure.textContent.trim() === '—'
     }), behind, { timeout: 15000 })
     const failed = await rowsIn('#pools')
-    for (const poolId of behind) assert.deepEqual(failed[poolId], { tvl: 'Unavailable', volume: 'Unavailable', apr: '—', waiting: false }, `the failed pool ${poolId}`)
+    for (const poolId of behind) assert.deepEqual(failed[poolId], { tvl: '—', volume: '—', apr: '—', waiting: false }, `the failed pool ${poolId}`)
     for (const poolId of SELECTED.slice(0, 4)) assert.deepEqual(failed[poolId], home[poolId], `the other pools for ${poolId}`)
     await new Promise(resolve => setTimeout(resolve, 8000))
     assert.deepEqual(edge.slice(visit).filter(read => read.method === 'POST').map(read => read.path), ['/api/read/v5/featured-pools', '/api/read/v3/overview'], 'the list and one overview for the visit, no catch-up')
@@ -970,11 +974,13 @@ test('Markets cards and table choose the same fresh fallback after thirty minute
     page.on('pageerror', error => errors.push(error.message))
     await context.route('**/*', route => {
       const url = route.request().url()
-      if (url.startsWith(`${site.origin}/api/read/dex/`)) {
+      // (2026-10-15, pack 7): the page's token lookups ask the edge's new path, whose 200 says each token's own state.
+      if (url.startsWith(`${site.origin}/api/read/dex2/token-pairs/`)) {
         const pairs = provideFallback ? RECORDED.pools.map(entry => ({ chainId: 'robinhood', dexId: 'uniswap', labels: ['v4'],
           pairAddress: entry.poolId, baseToken: { address: entry.value.market.pool.currencies[0] },
           quoteToken: { address: entry.value.market.pool.currencies[1] }, liquidity: { usd: 400000 }, volume: { h24: 2000000 } })) : []
-        return route.fulfill({ contentType: 'application/json', body: JSON.stringify(pairs) })
+        const token = url.split('/').at(-1).toLowerCase()
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ v: 2, now: 1, tokens: { [token]: pairs.length ? { at: 1, pairs } : { at: 1, none: true } } }) })
       }
       return url.startsWith(site.origin) ? route.continue() : route.abort()
     })

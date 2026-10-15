@@ -97,6 +97,9 @@ function joined(a: V2Gate | null, b: V2Gate | null): Exclude<V2Gate, { mode: 'of
   return a.mode === 'preview' ? a : b
 }
 
+/** (2026-10-15, pack 7, the owner: no status notices): states the control never says beside the automation's name. */
+const QUIET_STANDING: ReadonlySet<string> = new Set(['Updating', 'Loading', 'State unavailable', 'Not available'])
+
 export default function PositionAutomation({ tokenId, position, holder, priceContext, chainId = 4663, dex = 4, indexed, toolbar, onChanged }: PositionAutomationProps) {
   const vaultGate = useGate('vault', chainId)
   const exitGate = useGate('autoExit', chainId)
@@ -293,8 +296,12 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   )
 
   if (!gateOpen(vaultGate) && !gateOpen(exitGate)) return null
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the control says the automation's name alone while its state is
+  // being read or could not be ("Updating", "Loading", "State unavailable", "Not available"); the panel no longer says
+  // "Automation data is unavailable. Refresh to check again." (its Refresh stays).
 
   const reading = connected !== null && body === null
+  const eligibilityNote = eligibility === 'subscribed' ? 'This position is linked to another service.' : eligibility === 'unsupported' ? 'Automation is not supported for this position.' : null
   const stateUnavailable = unread || (body !== null && chainState?.state !== 'current') || (eligibility === 'unavailable' && mine.length === 0 && current?.rootClosed !== true) || (body?.truncated.mandates === true && protection !== null && !exitOn)
   const label = proof?.name ?? (current ? automationMode(current) : mine.length > 0 ? 'Auto-exit' : 'Automation')
   const standing = proof ? proof.word ?? (proof.running ? 'On' : 'Updating') : reading && answer === null ? 'Loading' : stateUnavailable ? 'State unavailable' : current ? automationStanding(current) : mine.length > 0 ? 'On' : eligibility === 'closed' || (position && !liquid) ? 'Closed' : eligibility === 'subscribed' ? 'Managed elsewhere' : eligibility === 'unsupported' ? 'Not supported' : eligibility === 'eligible' ? 'Not available' : 'State unavailable'
@@ -311,7 +318,7 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
       {setupLink ? <LinkButton href={setupHref({ chainId, dex, tokenId: idOf(tokenId) })} variant="primary" data-automation-control="" data-automation-setup="" data-automate-entry={tokenId}>Set up automation</LinkButton>
         : setupExit ? <Button type="button" variant="primary" onClick={() => beginAction({ kind: 'mandate', target })} data-automation-control="" data-automation-setup="" data-v2in-open="mandate">Set up automation</Button>
           : <Button type="button" variant="outline" onClick={() => setExpanded(true)} aria-haspopup="dialog" aria-expanded={expanded && !open} aria-controls={controlId} data-automation-control="">
-            <ControlIcon size={18} /><span>{label} · {standing}</span>{fundsPending && <span className="dm-automation-funds-dot" aria-label="Funds available" />}
+            <ControlIcon size={18} /><span>{QUIET_STANDING.has(standing) ? label : `${label} · ${standing}`}</span>{fundsPending && <span className="dm-automation-funds-dot" aria-label="Funds available" />}
           </Button>}
       {(setupLink || setupExit) && fundsPending && <Button type="button" variant="outline" onClick={() => setExpanded(true)} aria-haspopup="dialog" aria-expanded={expanded && !open} aria-controls={controlId} data-automation-recovery-toggle="">Recover funds</Button>}
     </>
@@ -321,9 +328,11 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
       {/* The chain's status before any figure of it: behind or unavailable, and §5.3's halt banner (the owner's actions stay). */}
       {body && views.length > 0 && chainState && (chainState.state !== 'current' || chainState.halted === true) && <IndexStatus chains={body.chains} chainId={chainId} what="Your automation" />}
       {unread && answer && answer.reply.kind !== 'ok' && <IndexStatus failed={answer.reply} chainId={chainId} what="Your automation" />}
-      {body && (body.truncated.vaults || body.truncated.mandates) && <p role="status" className="dm-acct-note">Some automation records are not included in this read. Available balances and recovery remain below.</p>}
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the marker alone; it said "Some automation records are not included in this read. Available balances and recovery remain below." */}
+      {body && (body.truncated.vaults || body.truncated.mandates) && <span hidden data-automation-truncated="" />}
       {current && (!protection || !showExit) && <VaultCard view={current} tokens={tokensOfView(current)} nowSeconds={now} onAction={(kind, subject) => beginAction({ kind, vault: current, subject: subject ?? null })} />}
-      {!current && !plain && !reading && <p role="status" className="dm-acct-note" data-automation-eligibility={eligibility}>{eligibility === 'subscribed' ? 'This position is linked to another service.' : eligibility === 'unsupported' ? 'Automation is not supported for this position.' : stateUnavailable ? 'Automation data is unavailable. Refresh to check again.' : null}</p>}
+      {/* (2026-10-15, pack 7 review): the note only when it has words; no empty status paragraph. */}
+      {!current && !plain && !reading && eligibilityNote && <p role="status" className="dm-acct-note" data-automation-eligibility={eligibility}>{eligibilityNote}</p>}
       {stateUnavailable && <Button type="button" variant="outline" size="sm" onClick={() => changed()} data-automation-refresh="">Refresh</Button>}
       {exitContent}
       {recovery.length > 0 && <Details label="Previous setup balances" data-automation-recovery="">

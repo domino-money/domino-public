@@ -24,7 +24,6 @@ import { createPositionReadings, recordedPriceHistory, type PositionReading } fr
 let storage: Storage | null = null
 try { storage = typeof sessionStorage === 'undefined' ? null : sessionStorage } catch { /* Private browsing. */ }
 const readings = createPositionReadings(storage)
-const COVERAGE = 'Only snapshots recorded in this browser session. Earlier history isn’t available.'
 
 /** Base/Arbitrum observations use the existing portfolio read. They never masquerade as a lifetime fee ledger. */
 export default function RecordedInsights({ answer, position, card, price, book, fresh }: {
@@ -81,7 +80,7 @@ function RecordedFees({ rows, position, book, stale }: { rows: readonly Position
     <p className="dm-recorded-fees-value"><span className="dm-fig-lg" title={current === undefined ? undefined : exact(current.toString())}>{current === undefined ? '—' : formatUnitsText(current, usable ? decimals : null)}</span>{' '}<span>{usable ? label : `raw units of ${label}`}</span></p>
     {points.length > 0 ? <ChartFrame
       className="dm-recorded-fees-chart" height={positionPlotHeight(phone ? 160 : 176, phone, expanded)}
-      padding={{ top: 12, right: phone ? 10 : 76, bottom: 26, left: 8 }} label={`Recorded fees ready to collect in ${label}. ${COVERAGE}`}
+      padding={{ top: 12, right: phone ? 10 : 76, bottom: 26, left: 8 }} label={`Recorded fees ready to collect in ${label}.`}
       points={points.length} indexAt={(px, plot) => nearestIndex(xs, start + Math.max(0, Math.min(1, (px - plot.left) / Math.max(1, plot.right - plot.left))) * (end - start))}
       valueText={index => `${time(points[index].t)}, ${exact(points[index].raw)} ${label} ready to collect`}
       axes={plot => <><XAxis ticks={points.length === 1 ? [{ x: x(start, plot), label: shortTime(start) }] : [{ x: x(start, plot), label: shortTime(start) }, { x: x(end, plot), label: shortTime(end) }]} anchor={plot.bottom + 22} left={plot.left} right={plot.right} />
@@ -89,7 +88,9 @@ function RecordedFees({ rows, position, book, stale }: { rows: readonly Position
       series={plot => <g data-recorded-fee-points="">{points.map(point => <circle key={point.t} cx={x(point.t, plot)} cy={y(point.value, plot)} r={showPoints ? 4 : 3} className="dm-position-measured-point" data-tone="in" />)}</g>}
       inspect={(plot, index) => index === null ? null : <Crosshair x={x(points[index].t, plot)} top={plot.top} bottom={plot.bottom} left={plot.left} right={plot.right} />}
       overlay={(plot, index) => index === null ? null : <ChartTooltip x={x(points[index].t, plot)} plot={plot} head={time(points[index].t)}><ChartTooltipRow label="Ready to collect">{exact(points[index].raw)} {label}</ChartTooltipRow></ChartTooltip>}
-    /> : <PendingPlot label="Recorded fees" busy={false} note={stale ? 'Waiting for a current reading.' : 'Waiting for a timestamped reading.'} />}
-    <p className="dm-pvr-note" title={`${COVERAGE} These are collectable balances, not total fees earned.${position.dex === 3 ? ' They can include tokens withdrawn from liquidity outside Domino.' : ''}`}>{stale ? 'Last recorded readings' : 'Recorded this session'} · {rows.length ? time(rows.at(-1)!.snapshot.timestamp) : 'Waiting'}</p>
+    /> : <PendingPlot label="Recorded fees" busy={false} />}
+    {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "Waiting for a current reading." / "Waiting for a timestamped reading." over the empty plot, and no line
+        under it ("Last recorded readings" or "Recorded this session" · its time or "Waiting", with what this browser
+        session recorded, and that earlier history isn't available, in its title and in the chart's label). */}
   </section>
 }

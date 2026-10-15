@@ -102,19 +102,30 @@ test('estimates age on screen, expire after 300 seconds and ignore wall-clock ju
   assert.equal(presentAprEstimate(observe(fixture('snapshot-300').estimate), now(1)).text, null);
 });
 
-test('G14: an estimate’s title is its own limitations, then why it is stale or unavailable; with none, what it would be and why there is none', () => {
+// Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the title is the estimate's basis only; why it is
+// stale or unavailable stays as data (its reasons), never words in the title.
+test('G14: an estimate’s title is its own limitations, never why it is stale or unavailable; with none, what it would be', () => {
   const title = estimateTitle(observe(good.estimate), now(0));
   assert.deepEqual(good.estimate.limitations.map(limitationText).join(' '), title, 'every limitation the payload carries, in its order, and nothing else while it is current');
   assert.match(title, /^From a market data provider’s reported 24h volume and TVL, not reconciled\. .* Pool estimate, not position APR or APY\. Not a return forecast or a recommendation\.$/);
   assert.equal(estimateTitle({ ...observe({ ...good.estimate, limitations: ['no_full_day_coverage_proof'] }) }, now(0)), 'Full-day coverage is not proven.', 'the payload decides, not a caveat written in the app');
-  assert.match(estimateTitle(observe(good.estimate), now(60)), / Provider inputs are stale\. Stale, not current\.$/);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): a kept estimate's title is the same as a current
+  // one's (no " Provider inputs are stale. Stale, not current."), while its state stays stale.
+  assert.equal(estimateTitle(observe(good.estimate), now(60)), title);
+  assert.equal(presentAprEstimate(observe(good.estimate), now(60)).state, 'stale');
+  assert.doesNotMatch(estimateTitle(observe(good.estimate), now(60)), /stale|not current/i);
   assert.match(estimateTitle(observe(fixture('protocol-fee').estimate), now(0)), /The protocol fee’s effect is not reconciled\./);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): an estimate with no figure no longer says why in
+  // its title; the reason stays in presentAprEstimate's reasons, as data.
   const unavailable = estimateTitle(observe(fixture('invalid-protocol-fee').estimate), now(0));
-  assert.match(unavailable, / The protocol fee could not be validated\.$/);
+  assert.doesNotMatch(unavailable, /The protocol fee could not be validated\./);
+  assert.ok(presentAprEstimate(observe(fixture('invalid-protocol-fee').estimate), now(0)).reasons.includes('invalid_protocol_fee'), 'the reason is still data');
   for (const [reason, words] of [['estimate_not_enabled', 'Estimated APR is not enabled on this connection.'], ['estimate_transport_unavailable', 'Estimated APR is unavailable; market figures use the supported read connection.'], ['estimate_not_in_snapshot', 'Estimated APR is read with the pool’s own market figures, not with stored ones.']]) {
-    assert.equal(estimateTitle({ data: null, reason, receivedAt: 0 }, now(0)), `${ESTIMATE_SCOPE} ${words}`, reason);
+    // changed on purpose 2026-10-15 (pack 7, owner: no status notices): what it would be (ESTIMATE_SCOPE), not why there is none.
+    assert.equal(estimateTitle({ data: null, reason, receivedAt: 0 }, now(0)), ESTIMATE_SCOPE, reason);
+    assert.ok(!estimateTitle({ data: null, reason, receivedAt: 0 }, now(0)).includes(words), reason);
   }
-  assert.equal(estimateTitle(undefined, now(0)), `${ESTIMATE_SCOPE} Estimated APR is not enabled on this connection.`);
+  assert.equal(estimateTitle(undefined, now(0)), ESTIMATE_SCOPE);
   assert.equal(limitationText('a_future_limitation'), 'a future limitation.', 'a code this build does not know is plain words, never dropped');
 });
 

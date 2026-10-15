@@ -608,7 +608,7 @@ const question = { poolId: POOL, currency: ETH, windowSeconds: 86400, resolution
 const askHistory = (body = question, headers = {}) => ask({ url: `${ORIGIN}${HISTORY_PATH}`, body: JSON.stringify(body), headers: { 'X-Domino-Read-Contract': v3.CONTRACT_VERSION, ...headers } });
 const historySaid = (body, options = {}) => said(JSON.stringify(body), { version: v3.CONTRACT_VERSION, ...options });
 
-test('preview history cache is origin-scoped, fresh for 20 s, stale to 60 s, and never keeps incomplete or failed answers', async () => {
+test('preview history cache is origin-scoped, fresh for 20 s, stale to 60 s, keeps an incomplete answer 20 s only and never a failed one', async () => {
   const built = historyFor(question, { built: true });
   const cache = memoryCache();
   const time = clock();
@@ -634,7 +634,11 @@ test('preview history cache is origin-scoped, fresh for 20 s, stale to 60 s, and
   time.at.now += HISTORY_STALE_SECONDS * 1000;
   assert.equal((await answerHistory(request(), env, rt())).headers.get('X-Domino-Edge-Cache'), null);
   assert.equal(worker.calls.length, 4, 'past a minute the Worker answers');
-  for (const answer of [() => historySaid(historyFor(question, { built: false })), () => historySaid({ error: 'upstream_unavailable' }, { status: 503 })]) {
+  // Changed on purpose 2026-10-15 (pack 7): one not built yet is kept too, for 20 s only, under preview's own key.
+  const young = memoryCache();
+  await answerHistory(request(), { ...bridge(() => historySaid(historyFor(question, { built: false }))).env, PREVIEW_PUBLIC_READS: 'true' }, { ...rt(), cache: young });
+  assert.deepEqual(young.puts, [{ url: historyKey(v3.CONTRACT_VERSION, question, PREVIEW_ORIGIN), cacheControl: `max-age=${HISTORY_SECONDS}` }]);
+  for (const answer of [() => historySaid({ error: 'upstream_unavailable' }, { status: 503 })]) {
     const pending = memoryCache();
     const upstream = bridge(answer);
     await answerHistory(request(), { ...upstream.env, PREVIEW_PUBLIC_READS: 'true' }, { ...rt(), cache: pending });
@@ -642,7 +646,7 @@ test('preview history cache is origin-scoped, fresh for 20 s, stale to 60 s, and
   }
 });
 
-test('a built 24h history is kept 20 s for the identical question; one not built, another answer or another question is not', async () => {
+test('a built 24h history is kept 20 s for the identical question; one not built only 20 s; another answer or another question is not', async () => {
   const built = historyFor(question, { built: true });
   assert.equal(v3.validateResponse('history', built), true, 'the fixture passes read-v3’s own runtime');
   const cache = memoryCache();
@@ -677,12 +681,13 @@ test('a built 24h history is kept 20 s for the identical question; one not built
   await Promise.all(later.splice(0));
   assert.equal(calls.length, 4);
 
-  // Not built yet: passed on, never kept, so it shows the moment it is built.
+  // Changed on purpose 2026-10-15 (pack 7): not built yet is kept too, but for 20 s only (it was never kept), so it shows
+  // within 20 s of being built (the pack 7 test below).
   const notBuilt = historyFor(question, { built: false });
   const pending = memoryCache();
   const worker = bridge(() => historySaid(notBuilt));
   await answerHistory(askHistory(), worker.env, { contract: HISTORY_CONTRACT, cache: pending, now: time.now });
-  assert.equal(pending.puts.length, 0);
+  assert.deepEqual(pending.puts.map(({ cacheControl }) => cacheControl), [`max-age=${HISTORY_SECONDS}`]);
   // An answer about another pool, a refusal, another contract: passed on, never kept.
   for (const answer of [() => historySaid({ ...built, poolId: `0x${'cd'.repeat(32)}` }), () => historySaid({ error: 'upstream_unavailable' }, { status: 503 }), () => said(JSON.stringify(built), { version: '1.0.0-rc.1' })]) {
     const store = memoryCache();
@@ -695,5 +700,67 @@ test('a built 24h history is kept 20 s for the identical question; one not built
     const response = await answerHistory(variant, refusing.env, runtime());
     assert.equal(response.headers.get('X-Domino-Edge-Cache'), null);
     assert.equal(refusing.calls.length, 1);
+  }
+});
+
+// (2026-10-15, pack 7): every viewer of a young pool reached rugged97's gateway on every view: an answer not built yet,
+// partial, stale or unavailable was passed on and never kept. Such an answer is kept now too, served as it is for
+// HISTORY_SECONDS and no longer (never past it while it is read again behind), so a pool that becomes ready shows within
+// 20 s. A real error is still never kept.
+test('pack 7: a not-ready history answer is kept HISTORY_SECONDS only, so a young pool’s viewers reach the gateway once per 20 s; an error never', async () => {
+  const built = historyFor(question, { built: true });
+  const notBuilt = historyFor(question, { built: false });
+  const half = built.requestedWindow.startTimestamp + 12 * 3600;
+  const variants = {
+    not_built: notBuilt,
+    unavailable: { ...notBuilt, status: 'unavailable', reason: 'pool_not_in_catalogue' },
+    partial: { ...built, status: 'partial', reason: 'history_acquisition_pending', covered: [{ startTimestamp: half, endTimestamp: built.requestedWindow.endTimestamp }], gaps: [{ startTimestamp: built.requestedWindow.startTimestamp, endTimestamp: half }], candles: built.candles.slice(12) },
+    stale: { ...built, status: 'stale', reason: 'snapshot_stale' },
+  };
+  for (const [status, body] of Object.entries(variants)) {
+    assert.equal(v3.validateResponse('history', body), true, `${status}: the fixture passes read-v3’s own runtime`);
+    const cache = memoryCache();
+    const time = clock();
+    const later = [];
+    const { calls, env } = bridge(() => historySaid(body));
+    const runtime = () => ({ contract: HISTORY_CONTRACT, cache, now: time.now, refreshing: new Map(), inflight: new Map(), waitUntil: (work) => later.push(work) });
+    // Ten viewers within 20 s: one gateway call.
+    for (let viewer = 0; viewer < 10; viewer++) {
+      const response = await answerHistory(askHistory(), env, runtime());
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), body, `${status}: the answer as the gateway gave it`);
+      await Promise.all(later.splice(0));
+      time.at.now += 1_000;
+    }
+    assert.equal(calls.length, 1, `${status}: ten views within 20 s, one gateway call (it was ten)`);
+    assert.equal(cache.puts[0].cacheControl, `max-age=${HISTORY_SECONDS}`, `${status}: kept 20 s, not a minute`);
+    // Past 20 s it is never served stale: the gateway answers, so a pool that became ready shows at once.
+    time.at.now += HISTORY_SECONDS * 1000;
+    const next = await answerHistory(askHistory(), env, runtime());
+    assert.equal(next.headers.get('X-Domino-Edge-Age'), null, `${status}: not served from the edge past 20 s`);
+    await Promise.all(later.splice(0));
+    assert.equal(calls.length, 2, `${status}: past 20 s the gateway`);
+  }
+  // The pool becomes ready: its built history replaces the kept not-ready one within 20 s.
+  {
+    const cache = memoryCache();
+    const time = clock();
+    let ready = false;
+    const { calls, env } = bridge(() => historySaid(ready ? built : notBuilt));
+    const runtime = () => ({ contract: HISTORY_CONTRACT, cache, now: time.now, refreshing: new Map(), inflight: new Map() });
+    assert.equal((await (await answerHistory(askHistory(), env, runtime())).json()).status, 'not_built');
+    ready = true;
+    time.at.now += HISTORY_SECONDS * 1000;
+    assert.equal((await (await answerHistory(askHistory(), env, runtime())).json()).status, 'available');
+    assert.equal(calls.length, 2);
+  }
+  // A real error is never kept: every viewer still reaches the gateway.
+  for (const answer of [() => historySaid({ error: 'upstream_unavailable' }, { status: 503 }), () => historySaid({ error: 'rate_limited' }, { status: 429 }), () => historySaid({ ...notBuilt, poolId: `0x${'cd'.repeat(32)}` })]) {
+    const cache = memoryCache();
+    const time = clock();
+    const { calls, env } = bridge(answer);
+    for (let viewer = 0; viewer < 3; viewer++) await answerHistory(askHistory(), env, { contract: HISTORY_CONTRACT, cache, now: time.now, refreshing: new Map(), inflight: new Map() });
+    assert.equal(cache.puts.length, 0);
+    assert.equal(calls.length, 3);
   }
 });

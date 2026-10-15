@@ -16,7 +16,7 @@ import { Button, Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, 
 import { chainState, freshState, takeWarmState } from '../lib/fees/client'
 import { feesStore } from '../lib/fees/spawn'
 import { refreshFeeStates, useFeeHistory, useLedgerTraces } from '../lib/fees/useFeeHistory'
-import { ledgerClosedAt, ledgerOpenedAt, ledgerPriceObservations, type ActivityMint } from '../lib/chart/positionOpened'
+import { ledgerClosedAt, ledgerOpenedAt, ledgerOpenedBefore, ledgerPriceObservations, type ActivityMint } from '../lib/chart/positionOpened'
 import { readKept } from '../finance/privateCards'
 import { KEPT_MAX_AGE_MS } from '../lib/browserCopies'
 import { createdHere } from '../lib/create/createProgress'
@@ -196,6 +196,8 @@ export interface RangeLabSpec {
   /** As this page always does; false: as V2's page for a pool the read service keeps no history for. */
   history?: boolean
   openedAt?: number | null
+  /** (2026-10-15, pack 7) A bound on an undated mint (PositionRange's `openedBefore`). */
+  openedBefore?: number | null
   closedAt?: number | null
 }
 
@@ -215,7 +217,7 @@ export const RangeLab = __DOMINO_TEST_HOOKS__
             <h2 id="position-range-title" className="dm-title">
               Price range
             </h2>
-            <PositionRange card={card} price={price} variant="page" history={spec.history !== false} openedAt={spec.openedAt ?? null} closedAt={spec.closedAt ?? null} />
+            <PositionRange card={card} price={price} variant="page" history={spec.history !== false} openedAt={spec.openedAt ?? null} openedBefore={spec.openedBefore ?? null} closedAt={spec.closedAt ?? null} />
           </section>
         </div>
       )
@@ -349,6 +351,8 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
   }, [card.tokenId])
   const feeHistory = useFeeHistory(card.tokenId)
   const openedAt = ledgerOpenedAt(feeHistory) ?? (indexedMint?.tokenId === card.tokenId && indexedMint.block <= block ? indexedMint.timestamp : null)
+  // (2026-10-15, pack 7): minted before Domino's release, the ledger has no mint, only a bound on it (never an opening time).
+  const openedBefore = openedAt === null ? ledgerOpenedBefore(feeHistory) : null
   // The way on: Automate, or the docs on switching a sequence on. The owner's actions show it first, unless a
   // sequence's Turn on or Pause takes its place (2026-09-25), and it stands alone while their chunk loads.
   const entry = __DOMINO_V2__ ? null : <AutomateEntry tokenId={card.tokenId} open={automatable} variant="action" />
@@ -362,9 +366,8 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
               <PairName card={card} />
             </Display>
             {/* A copy kept by this browser (item A15): dated, and no action is offered on it. */}
-            {copy !== undefined && (
-              <span className="sr-only" data-position-copy="">Saved copy from {shortDate(Math.floor(copy / 1000))} {shortTime(Math.floor(copy / 1000))}</span>
-            )}
+            {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the marker alone; a screen reader heard "Saved copy from …". */}
+            {copy !== undefined && <span hidden data-position-copy="" />}
             <div className="dm-pos-chips">
               {/* "fee" after the pool's fee tier (2026-09-27): beside Your APR, a bare percentage would read as a yield.
                   Changed on purpose 2026-10-01 (audit E5): the NFT's number left the chip for Details, the tab's title
@@ -382,9 +385,11 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
             </div>
           </div>
         </div>
+        {/* (2026-10-15, pack 7 review): every action is hidden here, so the line saying why stays (a gate the person
+            meets); only its "We’ll keep trying automatically." half left with the status notices. */}
         {mine && (copy !== undefined || gateway) && (
           <p className="max-w-md text-body text-fg-muted" role="status" data-position-actions-waiting="">
-            Actions are temporarily unavailable while we refresh this position’s data. We’ll keep trying automatically.
+            Actions are temporarily unavailable while we refresh this position’s data.
           </p>
         )}
         {/* No action on a row from the read gateway (RPC-SPEC P2): the page's own read offers them once it answers. */}
@@ -458,7 +463,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
               no line of the pool's past prices, which came from the fees replay's reads of the pool's history. Changed on
               purpose 2026-10-03 (the owner's point 10: "it doesn't show the history"): the line is back, from the read
               service's stored price history of the pool (read-v3 `history`, the last 7 days), never from a node. */}
-          <PositionRange card={card} price={price} variant="page" history openedAt={openedAt} closedAt={ledgerClosedAt(feeHistory)} observations={ledgerPriceObservations(feeHistory)} />
+          <PositionRange card={card} price={price} variant="page" history openedAt={openedAt} openedBefore={openedBefore} closedAt={ledgerClosedAt(feeHistory)} observations={ledgerPriceObservations(feeHistory)} />
         </section>}
       />
       <div className="dm-pos-grid">
@@ -679,8 +684,9 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
   } else if (current.phase === 'failed') {
     body = (
       <>
-        <div className="dm-pos-empty" title="Its details could not be read from chain just now. They are asked again on their own." data-position-reason={current.reason}>
-          <EmptyState icon={<IconSearch />} title={`Position #${tokenId}`} body="Its details could not be read just now." plate data-empty="position-unread" />
+        {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): its title alone; it said "Its details could not be read just now.", and in its title "… They are asked again on their own." */}
+        <div className="dm-pos-empty" data-position-reason={current.reason}>
+          <EmptyState icon={<IconSearch />} title={`Position #${tokenId}`} plate data-empty="position-unread" />
         </div>
         {/* The fees card reads this NFT from public chain data on its own (§12.4). */}
         <FeesCard source={{ tokenId }} bandPresent={false} standalone />

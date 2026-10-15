@@ -536,7 +536,8 @@ test('Markets: a pools list that fails for good leaves one plain muted line, its
     assert.ok(lists()[1].at - lists()[0].at >= 3000, 'after the quiet wait (transient.ts): never sooner than 3 s');
     assert.equal(await line.innerText(), 'No pools to show for this token.');
     assert.equal(await line.getAttribute('data-pools-unavailable'), 'upstream_invalid_response');
-    assert.match(await line.getAttribute('title'), /Pool data unavailable\. The read service answered: upstream invalid response\./);
+    // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the line has no title with the failed read's words.
+    assert.equal(await line.getAttribute('title'), null);
     assert.match(await line.getAttribute('class'), /\btext-fg-muted\b/, 'one plain muted line');
     assert.equal(await picker.getByRole('button', { name: /Retry|again/i }).count(), 0, 'no retry control');
     assert.doesNotMatch(await visibleText(picker), /^—$|contract mismatch|invalid response|unavailable/i, 'no bare dash, and no reason printed');
@@ -549,7 +550,8 @@ test('Markets: a pools list that fails for good leaves one plain muted line, its
   }
 });
 
-test('the pool page never shows activity months behind the chain as the last 24 hours: every figure a dash, how far behind only in the title', { timeout: 60_000 }, async () => {
+// Changed on purpose 2026-10-15 (pack 7, owner: no status notices): how far behind is data only, never a title or the live region.
+test('the pool page never shows activity months behind the chain as the last 24 hours: every figure a dash, how far behind never said', { timeout: 60_000 }, async () => {
   // The dev lane's WETH/USDG answer (2026-09-15): a covered window of 116 swaps, 4,891,659 s behind the chain head.
   overrideReply = (read) => {
     if (read !== 'pool-activity') return null;
@@ -565,9 +567,8 @@ test('the pool page never shows activity months behind the chain as the last 24 
     const card = page.locator('[data-pool-activity]');
     await page.locator('[data-pool-activity="unavailable"]').waitFor({ timeout: 30_000 });
     assert.equal(await card.getAttribute('data-activity-reason'), 'activity_stale');
-    const why = 'Stale: indexed 56 days behind the chain head, at block 700, too far behind to show as the last 24 hours.';
-    assert.equal(await card.getAttribute('title'), why);
-    assert.equal(await card.locator('[role="status"]').textContent(), why, 'a screen reader hears why');
+    assert.equal(await card.getAttribute('title'), null);
+    assert.equal(await card.locator('[role="status"]').textContent(), '', 'the live region says nothing');
     const shown = await visibleText(card);
     assert.equal(shown.replace(/[^—]/g, '').length, 10, `every figure is a dash: ${shown}`);
     assert.doesNotMatch(shown, /Older than 24 h|24 h covered|observed|10 to 700|stale|behind|indexed chain events/i, 'no window, pool age, blocks or reason on the card');
@@ -936,7 +937,8 @@ const honestTotals = async (page) => {
   const frames = await page.evaluate(() => window.__walletFrames);
   for (const frame of frames.filter(frame => frame.total !== null && frame.withheld !== null)) {
     assert.equal(frame.snapshot, true, JSON.stringify(frame));
-    assert.equal(frame.updating, 'Previous complete valuation. Refreshing balances and prices.', JSON.stringify(frame));
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the kept total's marker is there, with no words ("Previous complete valuation. Refreshing balances and prices.").
+    assert.equal(frame.updating, '', JSON.stringify(frame));
   }
   return frames;
 };
@@ -1076,7 +1078,8 @@ test('a second visit draws the remembered list at once, then reads it again behi
       assert.equal(await list.getAttribute('data-wallet-source'), 'memory', 'drawn from memory');
       assert.equal(await list.getAttribute('data-wallet-pages'), '0', 'before the first page of the new read has landed');
       assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50');
-      assert.equal(await list.locator('[data-wallet-total-updating]').textContent(), 'Previous complete valuation. Refreshing balances and prices.');
+      // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a hidden marker, no words.
+      assert.equal(await list.locator('[data-wallet-total-updating]').textContent(), '');
       assert.equal(await list.locator('[data-wallet-row-old]').count(), 3, 'memory balances are visibly last known');
       assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]]);
       assert.equal(await list.locator('li[aria-hidden="true"]').count(), 0, 'no skeleton on a second visit');

@@ -3,13 +3,11 @@ import type { Candle } from 'api-contracts/read-v1/types'
 import type { Market } from '../../../lib/markets'
 import { candleDescription, chartMatches } from '../../../lib/read/chart'
 import { compare, formatUsdPrice, toFixed } from '../../../lib/read/decimal'
-import { reasonText } from '../../../lib/read/describe'
 import { areaGeometry, changeOverWindow, midpoint, volumeGeometry, windowCandles, type AreaGeometry, type BarGeometry } from '../../../lib/read/priceSeries'
 import { unreadToken } from '../../../lib/read/project'
 import { useNow } from '../../../lib/read/useNow'
 import { useLoadMilestone } from '../../../lib/useLoadMilestone'
 import { useRootScale } from '../../../lib/rootScale'
-import { failureText } from '../../../lib/read/screens/copy'
 import { utcTime } from '../../../lib/read/screens/figures'
 import { useReadSource } from '../../../lib/read/screens/readContext'
 import { askAgainLater, readWithin, type ScreenOutcome } from '../../../lib/read/screens/screenRead'
@@ -222,19 +220,16 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
   const expired = !!history?.cache && age !== null && age > history.cache.maxStaleSeconds
   const data = matches && !expired ? (history?.data ?? null) : null
   const stale = history?.status === 'stale' || (!!history?.cache && age !== null && age >= history.cache.freshForSeconds)
-  const failure = answer && answer.state !== 'ok' ? failureText(answer, 'pools') : null
-  const reason = failure
-    ? [failure.title, failure.detail].filter(Boolean).join('. ')
-    : expired
-      ? 'These hourly prices were retrieved more than five minutes ago.'
-      : history?.data && !matches
-        ? 'The chart currency changed during this read.'
-        : history
-          ? `Hourly prices ${history.status}: ${reasonText(history.reason)}`
-          : ''
-  // Where the shown candles came from and how old they are: the plot's title and data, never a line under it.
-  const provenanceTitle = data
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): why there is no plot (the failed read's words,
+  // "These hourly prices were retrieved more than five minutes ago.", "The chart currency changed during this read.",
+  // "Hourly prices <status>: <reason>") is no longer said, in a title, the live region or the plot ("Price history is
+  // unavailable." is now the dash). Where the shown candles came from is the plot's title, the basis only: no longer
+  // ", retrieved <HH:MM:SS UTC, date>, N s ago, stale". `data-chart-provenance` keeps the whole line, as data.
+  const provenanceData = data
     ? `Reported by a market data provider, retrieved ${utcTime(data.retrievedAt)}${age === null ? '' : `, ${age} s ago`}${stale ? ', stale' : ''}. ${data.coverage.returnedCandles} candles; ${data.coverage.closedCandles} closed; ${data.coverage.gapsDetected ? 'gaps detected' : 'no gaps reported'}. Reported USD prices for one token, not the pool’s pair price or liquidity distribution. Complete 24h coverage is not established.`
+    : undefined
+  const provenanceTitle = data
+    ? `Reported by a market data provider. ${data.coverage.returnedCandles} candles; ${data.coverage.closedCandles} closed; ${data.coverage.gapsDetected ? 'gaps detected' : 'no gaps reported'}. Reported USD prices for one token, not the pool’s pair price or liquidity distribution. Complete 24h coverage is not established.`
     : undefined
   const tokenFor = (address: string) => [market.tokens.base, market.tokens.quote].find((token) => token.origin === 'read' && token.address.toLowerCase() === address.toLowerCase()) ?? unreadToken(address)
 
@@ -277,7 +272,8 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
         </h2>
         {control}
       </div>
-      {!chartTokens && <p className="mt-4 text-body text-fg-muted">A verified provider currency pair is needed before requesting a chart.</p>}
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "A verified provider currency pair is
+          needed before requesting a chart." under the heading: without one the card has no chart, and says nothing. */}
 
       {data && current && (
         <div className="dm-pool-chart-figure animate-fade" data-candle-inspection="">
@@ -294,7 +290,8 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
             )}
           </div>
           <p className="dm-pool-chart-date">
-            {hourText(current.candle.startTimestamp)} · {inspecting ? 'close' : stale ? 'saved close' : 'latest close'}
+            {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): "latest close" whether or not it was kept; it used to say "saved close". */}
+            {hourText(current.candle.startTimestamp)} · {inspecting ? 'close' : 'latest close'}
             {current.candle.closed ? '' : ' · open hour'}
           </p>
         </div>
@@ -319,9 +316,9 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
         <div
           ref={box}
           className="dm-pool-plot dm-dots-chart mt-4"
-          title={provenanceTitle ?? (reason ? `${CANDLES_TITLE} ${reason}` : CANDLES_TITLE)}
+          title={provenanceTitle ?? CANDLES_TITLE}
           data-chart-provider={PROVIDER}
-          data-chart-provenance={provenanceTitle}
+          data-chart-provenance={provenanceData}
           data-chart-state={!active ? 'idle' : !answer || (reading && !data) ? 'reading' : answer.state !== 'ok' ? 'failed' : expired ? 'expired' : !data ? 'unavailable' : stale ? 'stale' : 'shown'}
         >
           {!active ? (
@@ -346,11 +343,8 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
             </div>
           ) : answer.state !== 'ok' || !data ? (
             <div className="dm-pool-plot-empty" data-chart-unavailable={answer.state !== 'ok' ? answer.state : (history?.reason ?? 'unavailable')}>
-              <p role="status" className="sr-only">
-                {reason}
-              </p>
-              <span className="text-[0.8125rem] leading-[1.125rem] text-fg-subtle" title={reason}>
-                Price history is unavailable.
+              <span className="text-[0.8125rem] leading-[1.125rem] text-fg-subtle">
+                —
               </span>
             </div>
           ) : candles.length === 0 ? (
@@ -364,7 +358,7 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
               height={plot.height * scale}
               viewBox={`0 0 ${plot.width} ${plot.height}`}
               role="slider"
-              aria-label={`Inspect reported hourly USD candles${stale ? ', stale retrieval' : ''}`}
+              aria-label="Inspect reported hourly USD candles"
               aria-valuemin={1}
               aria-valuemax={points.length}
               aria-valuenow={Math.max(1, index + 1)}
@@ -424,7 +418,8 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
               </text>
             </svg>
           ) : (
-            <div className="dm-pool-plot-empty">{width > 0 && <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted">These hourly prices couldn’t be drawn.</p>}</div>
+            // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the dash, no longer "These hourly prices couldn’t be drawn."
+            <div className="dm-pool-plot-empty">{width > 0 && <span className="text-[0.8125rem] leading-[1.125rem] text-fg-subtle">—</span>}</div>
           )}
         </div>
       )}

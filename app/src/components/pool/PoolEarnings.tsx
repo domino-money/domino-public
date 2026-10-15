@@ -81,7 +81,9 @@ export function PoolEarnings({ apr, tvl, loading, saved = false }: { apr: number
         <summary>How it’s estimated<span aria-hidden="true" className="dm-pool-details-chevron" /></summary>
         <div className="dm-pool-disclosure-body">
           {shown && <p className="tnum">{usdText(shown.year)} a year · {usdText(shown.day)} a day</p>}
-          <p>At the pool’s {saved ? 'saved' : 'recent'} rate, about {aboutPercent(apr)} a year{shared ? `, shared with the ${usdShort(tvl)} already in the pool` : ''}. Real earnings change with trading and your chosen range.</p>
+          {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): "recent rate" whether or not the rate was
+              kept from an earlier read; it used to say "At the pool’s saved rate". `saved` stays as data on the note. */}
+          <p>At the pool’s recent rate, about {aboutPercent(apr)} a year{shared ? `, shared with the ${usdShort(tvl)} already in the pool` : ''}. Real earnings change with trading and your chosen range.</p>
         </div>
       </details>}
     </section>

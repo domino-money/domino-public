@@ -179,3 +179,30 @@ export function timelineRows(receipts: readonly ReceiptView[], privateItems: rea
 export const contextLimited = (portfolio: PortfolioResponse | null): boolean => portfolio === null || portfolio.truncated.vaults || portfolio.truncated.positions || portfolio.truncated.mandates
 
 export function withItems(answer: ActivityResponse, items: ActivityItem[]): ActivityResponse { return { ...answer, items } }
+
+/**
+ * Added 2026-10-15 (pack 7): how long after an action of this browser's (in any of its tabs) a wallet's activity head keeps
+ * its minute (activity.tsx notes each one in this browser's storage). Longer than any catch-up after an action (five
+ * minutes) and than the hold a confirmed action puts on a wallet's rows (positionSync.ts WALLET_HOLD_MS).
+ */
+export const OWN_ACTION_QUIET_MS = 600_000
+
+/**
+ * Added 2026-10-15 (pack 7): whether nothing of this browser's own concerns `wallet`, so its activity head may take its idle
+ * period (activityHistory.ts IDLE_HEAD_DELAY): no operation this tab recorded for it (any phase), no created position still
+ * waiting for the index, no close kept on this device that the receipts held (`items`) do not prove yet, and no action of
+ * this browser in any tab within OWN_ACTION_QUIET_MS (`ownActionAt`, ms; a time ahead of `now` counts as recent). Pure.
+ */
+export function quietWallet(wallet: string, items: readonly ActivityItem[], facts: {
+  operations: readonly Pick<ConfirmedOperation, 'wallet'>[]
+  created: number
+  local: readonly LocalCloseReceipt[]
+  ownActionAt: number | null
+  now: number
+}): boolean {
+  const key = wallet.toLowerCase()
+  if (facts.operations.some((operation) => operation.wallet.toLowerCase() === key)) return false
+  if (facts.created > 0) return false
+  if (facts.local.some((close) => !publicCloseProves(close, items))) return false
+  return facts.ownActionAt === null || facts.now - facts.ownActionAt >= OWN_ACTION_QUIET_MS
+}

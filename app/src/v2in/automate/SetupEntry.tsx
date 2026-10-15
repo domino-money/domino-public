@@ -49,7 +49,10 @@ export default function SetupEntry({ owner, intent }: {
   const retry = <Button type="button" variant="outline" size="sm" onClick={() => OWN_PORTFOLIO.again(wallet)}>Try again</Button>
   if (pending || (gateOpen(gate) && answer === null) || updating) return (
     <div className="dm-card dm-acct-block dm-seq-loading" aria-busy="true" data-v2in-setup="reading" data-sequence-positions="loading">
-      {updating ? <p role="status" className="dm-acct-note">Updating your position…</p> : [0, 1, 2].map((row) => <Skeleton key={row} className="dm-seq-loading-row" />)}
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the loading rows also while the position is
+          read again after a transaction; it said "Updating your position…" (data-v2in-setup-updating marks it). */}
+      {updating && <span hidden data-v2in-setup-updating="" />}
+      {[0, 1, 2].map((row) => <Skeleton key={row} className="dm-seq-loading-row" />)}
     </div>
   )
   if (!gateOpen(gate)) return <p className="dm-acct-block text-body text-fg-muted" data-v2in-setup="unavailable">Automation isn’t available right now.</p>

@@ -56,6 +56,12 @@
  * (`retrievedAt`, on the page's clock), however long the edge kept it. The
  * artwork, hints and figures reads keep the old path until the page has one
  * client for all of them (package D2).
+ *
+ * Changed on purpose 2026-10-15 (pack 7: two red 502s on the old path on a
+ * Base or Arbitrum One position's page): the artwork, hints and figures reads
+ * ask the new path too (`retrieveDated`), the same tokens and the same 30 s
+ * reuse; a token it marks missing is not asked of the provider. Nothing of the
+ * page asks /api/read/dex/ any more.
  */
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 /** The provider's names for the chains a token here can be on (Robinhood Chain, Base, Arbitrum One). */
@@ -103,11 +109,16 @@ export function artworkFromPairs(body: unknown, address: string, chainId = 4663)
   return urls.size === 1 ? [...urls][0] : null
 }
 
-/** Our own edge's route for these GETs (functions/api/read/dex/[[path]].ts, audit I3). */
+/**
+ * Our own edge's first route for these GETs (functions/api/read/dex/[[path]].ts, audit I3). Since 2026-10-15 (pack 7)
+ * the page asks none of it: it is the deployable builds' sign that our edge is there (`tokenArtwork` below), and its
+ * route stays for the tabs opened before.
+ */
 export const DEX_EDGE = '/api/read/dex/'
 /**
  * Our edge's path that answers per token, as a 200 whatever the provider does (functions/api/read/dex2/[[path]].ts,
- * 2026-10-14): where the Wallet card's prices are asked, wherever the deployment has our edge.
+ * 2026-10-14): where the Wallet card's prices are asked, wherever the deployment has our edge, and since 2026-10-15
+ * (pack 7) every token's pairs (artwork, pool hints, figures).
  */
 export const DEX_EDGE_V2 = '/api/read/dex2/'
 /** After our edge gave no answer, the provider is asked directly for this long before the edge is tried again. */
@@ -186,7 +197,7 @@ export function createTokenArtworkResolver(options: Options = {}) {
   const now = options.now ?? (() => performance.now())
   const wall = options.wall ?? (() => Date.now())
   const edge = options.edge ?? null
-  /** Our edge's per-token path (2026-10-14), wherever the deployment has our edge. */
+  /** Our edge's per-token path (2026-10-14), wherever the deployment has our edge: every GET to our edge since 2026-10-15 (pack 7). */
   const edge2 = edge === null ? null : DEX_EDGE_V2
   /**
    * Until when (on `now`) the provider is asked directly for a chain's reads, by the provider's name for the chain: our
@@ -217,17 +228,32 @@ export function createTokenArtworkResolver(options: Options = {}) {
   const cooling = (own: boolean) => now() < (cooldown.get(own ? 'edge' : 'provider') ?? 0)
 
   /**
-   * One guarded GET of a provider body (`token-pairs/…` or `tokens/…` on Robinhood, `token-pairs/…` on Base or Arbitrum
-   * One), through our own edge first where the deployment has it (audit I3): the parsed JSON and when it was retrieved
-   * (wall ms), or null for anything else.
+   * One guarded GET of a provider body (`token-pairs/…` on Robinhood, Base or Arbitrum One), through our own edge first
+   * where the deployment has it (audit I3): the parsed JSON and when it was retrieved (wall ms), or null for anything
+   * else.
+   *
+   * Changed on purpose 2026-10-15 (pack 7: two red 502s on GET /api/read/dex/token-pairs/<chain>/<token> on a Base or
+   * Arbitrum One position's page, the old path's answer for a token it has no read for): asked on our edge's new path
+   * (`edge2`), whose 200 says the token's own state. Its pairs (none: an empty list) are the body, dated by the edge's own
+   * retrieval; a token it marks missing has no body yet, is not asked of the provider, and does not give our edge up
+   * (as the Wallet card's prices since package D1). Only when our edge gives no answer of its own (a refusal that is not
+   * a 429, a failure, a body that is no such answer) is the provider asked directly, as before. The old path stays at
+   * our edge for the tabs opened before this.
    */
   async function retrieveDated(path: string, remaining: number, signal?: AbortSignal): Promise<{ body: unknown; retrievedAt: number } | null> {
-    const slug = EDGE_PATH.exec(path)?.[2] ?? null
-    const viaEdge = edge !== null && slug !== null && edgeUp(slug) ? edgePathOf(path) : null
-    if (viaEdge !== null && edge !== null && slug !== null) {
+    const match = EDGE_PATH.exec(path)
+    const slug = match?.[2] ?? null
+    const token = match?.[1] === 'token-pairs' && !match[3].includes(',') ? match[3].toLowerCase() : null
+    const viaEdge = edge2 !== null && slug !== null && token !== null && edgeUp(slug) ? edgePathOf(path) : null
+    if (viaEdge !== null && edge2 !== null && slug !== null && token !== null) {
       const started = now()
-      const answered = await get(`${edge}${viaEdge}`, Math.min(remaining, EDGE_TIMEOUT), signal, true)
-      if (answered !== null || signal?.aborted) return answered
+      const answered = await get(`${edge2}${viaEdge}`, Math.min(remaining, EDGE_TIMEOUT), signal, true)
+      if (signal?.aborted) return null
+      const states = answered === null ? null : edgeTokenPairs(answered.body, [token], wall())
+      if (states !== null) {
+        const own = states.get(token)
+        return own ? { body: own.pairs, retrievedAt: own.retrievedAt } : null
+      }
       if (cooling(true)) return null
       edgeDownUntil.set(slug, now() + EDGE_RETRY_MS)
       remaining -= now() - started

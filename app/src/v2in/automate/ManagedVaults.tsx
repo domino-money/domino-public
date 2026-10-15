@@ -26,7 +26,8 @@ export default function ManagedVaults() {
       const held = vaults.some((view) => view.reserves.known && view.reserves.held)
       const children = new Set(vaults.flatMap((view) => view.successors.map(String))).size
       const href = current.chainId === 4663 && current.dex === 4 ? positionHref(String(current.rootTokenId)) : v2PositionHref({ chainId: current.chainId, dex: current.dex, tokenId: current.rootTokenId })
-      return <p key={key}><a href={href}>Position #{String(current.rootTokenId)}</a><span>{held ? 'Funds available in automation' : children ? `${children} ${children === 1 ? 'position' : 'positions'} held by automation` : 'Automation balance unavailable'} · Review in position</span></p>
+      // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a balance not read yet is not "Automation balance unavailable".
+      return <p key={key}><a href={href}>Position #{String(current.rootTokenId)}</a><span>{held ? 'Funds available in automation · ' : children ? `${children} ${children === 1 ? 'position' : 'positions'} held by automation · ` : ''}Review in position</span></p>
     })}
   </aside>
 }

@@ -90,7 +90,11 @@ function servedRead(transport: ReadV6Transport, probe: V2RouteProbe): ReadV6Tran
     async post(route, body) {
       const state = await probe.state('readV6')
       if (!routeServes(state, route)) throw new Error(offReason(state))
-      return transport.post(route, body)
+      const reply = await transport.post(route, body)
+      // (2026-10-15, pack 7): the route refused the read as not there (route_not_available, method_not_allowed): the
+      // probe keeps its "on" no longer than its minute (src/v2/routes.ts V2_READ_ROUTE_REUSE_MS, `shorten`).
+      if (reply.status === 404 || reply.status === 405) probe.shorten?.('readV6')
+      return reply
     },
   }
 }

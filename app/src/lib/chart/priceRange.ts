@@ -229,9 +229,12 @@ export function closedPriceLine(verdict: HistoryVerdict | null, closedAt: number
  * are exact decimal texts; only their places on the plot are floats. `nowSeconds` is the page's clock, for staleness and
  * for where the window ends when the snapshot is behind.
  */
-export function historyLine(data: HistoryResponse, ask: { base: string; quote: string }, range: { lower: number; upper: number }, nowSeconds: number, openedAt?: number | null): HistoryVerdict {
+export function historyLine(data: HistoryResponse, ask: { base: string; quote: string }, range: { lower: number; upper: number }, nowSeconds: number, openedAt?: number | null, openedBefore?: number | null): HistoryVerdict {
+  // (2026-10-15, pack 7) With no mint, a proven bound on it (positionOpened.ts ledgerOpenedBefore: minted at or before
+  // this time) at or before the window's start makes the whole window this NFT's own; it is never an opening time.
+  const before = openedAt === null && typeof openedBefore === 'number' && Number.isSafeInteger(openedBefore) && openedBefore > 0 && openedBefore <= data.requestedWindow.startTimestamp
   // The page must know when THIS NFT was minted before presenting the pool's prices as its history.
-  if (openedAt !== undefined && (openedAt === null || !Number.isSafeInteger(openedAt) || openedAt <= 0)) return { kind: 'none', reason: 'unknown_mint' }
+  if (openedAt !== undefined && !before && (openedAt === null || !Number.isSafeInteger(openedAt) || openedAt <= 0)) return { kind: 'none', reason: 'unknown_mint' }
   if (data.currency.toLowerCase() !== ask.base.toLowerCase() || (data.quoteCurrency !== null && data.quoteCurrency.toLowerCase() !== ask.quote.toLowerCase())) return { kind: 'none', reason: 'mismatch' }
   if (data.status === 'not_built') return { kind: 'none', reason: 'not_built' }
   if (data.status === 'unavailable') return { kind: 'none', reason: 'unavailable' }

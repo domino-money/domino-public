@@ -77,7 +77,9 @@ test('pool cards preserve real zero, unavailable APR and provider attribution in
   for (const compact of [true, false]) {
     const rendered = html(PoolRow, { option: { ...option, volume: { state: 'attributed', value: '$0.00', raw: '0', zero: true, provider: 'dexscreener', retrievedAt: 1000, cacheAgeSeconds: null } }, checked: true, onPick() {}, name: 'pool', compact })
     assert.match(rendered, /\$0\.00/)
-    assert.match(rendered, /Reported by a market data provider, retrieved/, 'the figure is attributed to a provider')
+    // changed on purpose 2026-10-15 (pack 7, owner: no status notices): attributed by its basis alone, no retrieval time.
+    assert.match(rendered, /Reported by a market data provider\. Provider-reported, not reconciled with chain data\./, 'the figure is attributed to a provider')
+    assert.doesNotMatch(rendered, /retrieved/)
     assert.doesNotMatch(rendered, /GeckoTerminal|DexScreener/, 'the provider is never named on a screen')
     assert.match(rendered, />TVL</)
     // Changed on purpose (2026-09-20): a pool that genuinely traded nothing earns
@@ -96,10 +98,14 @@ test('pool cards preserve real zero, unavailable APR and provider attribution in
   }
 })
 
+// Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a missing or rejected figure is the dash, never the
+// words "Not reported" or "Rejected, not shown"; its state stays in `data-provider-figure`.
 test('missing and rejected provider figures never become zeroes', () => {
   const rendered = html(PoolRow, { option: { ...option, liquidity: { state: 'not_reported', provider: 'dexscreener' }, volume: { state: 'rejected', provider: 'dexscreener', reason: 'provider_currency_mismatch' } }, checked: false, onPick() {}, name: 'pool', compact: true })
-  assert.match(rendered, /Not reported/)
-  assert.match(rendered, /Rejected, not shown/)
+  assert.match(rendered, /data-provider-figure="not_reported"/)
+  assert.match(rendered, /data-provider-figure="rejected"/)
+  assert.doesNotMatch(rendered, /Not reported|Rejected, not shown/)
+  assert.equal((rendered.match(/>—</g) ?? []).length >= 2, true, 'each is a dash')
   assert.doesNotMatch(rendered, /\$0\.00/)
 })
 
@@ -112,7 +118,8 @@ test('on Explore a pool row is a way in, not a choice: a button named by its own
   assert.match(rendered, /&lt;img src=x onerror=alert\(1\)&gt;/)
   assert.doesNotMatch(rendered, /<img src="x"/)
   assert.ok(rendered.includes(option.key))
-  assert.match(rendered, /Reported by a market data provider, retrieved/, 'the figure is attributed to a provider')
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): attributed by its basis alone, no retrieval time.
+  assert.match(rendered, /Reported by a market data provider\. Provider-reported, not reconciled with chain data\./, 'the figure is attributed to a provider')
   assert.doesNotMatch(rendered, /GeckoTerminal|DexScreener/, 'the provider is never named on a screen')
   // The row works the estimate out from the figures this read already returned: no read per row.
   assert.match(rendered, /data-row-apr="estimate"/)
@@ -220,10 +227,12 @@ test('New position’s pool row: TVL, 24h volume and APR on every row, a dash fo
     assert.doesNotMatch(rendered, /GeckoTerminal|DexScreener/, 'the provider is never named on a screen')
     assert.doesNotMatch(rendered, /money-wait|warning|yellow|amber/, 'no warning colour')
   }
-  // Missing figures: dashes, each with its reason in its title, and the refusal as data.
+  // Missing figures: dashes, and the refusal as data (changed on purpose 2026-10-15, pack 7, owner: no status notices: a
+  // provider figure's dash no longer has "Nothing usable was retrieved from a market data provider (…)" as its title).
   const empty = html(PoolRow, { option: cases[0], checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true })
   assert.equal((empty.match(/>—</g) ?? []).length, 3, 'three dashes')
-  assert.match(empty, /data-provider-figure="unavailable"[^>]*title="Nothing usable was retrieved from a market data provider/)
+  assert.match(empty, /data-provider-figure="unavailable" data-provider="[^"]*">/)
+  assert.doesNotMatch(empty, /Nothing usable was retrieved/)
   assert.match(empty, /data-row-apr="none" data-row-apr-reason="missing_reported_tvl"><span class="text-fg-muted">APR<\/span><span class="text-fg-subtle" title="No market data provider reports liquidity for this pool\.">—/)
   const answered = html(PoolRow, { option: cases[1], checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true })
   assert.match(answered, /data-provider-figure="not_reported"/)

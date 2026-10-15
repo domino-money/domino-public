@@ -1,7 +1,6 @@
 import { useEffect, useId, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react'
 import type { HistoryResponse } from 'api-contracts/read-v3/types'
 import type { Market } from '../../../lib/markets'
-import { reasonText } from '../../../lib/read/describe'
 import { watchPublicHistory, type HistoryEvent } from '../../../lib/read/historyRead'
 import { ratioCandleText, ratioGeometry, ratioText } from '../../../lib/read/ratioSeries'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
@@ -76,8 +75,8 @@ const place = (x: number, y: number): CSSProperties => ({ left: `${(x / PLOT.wid
  * 24-hour window shows, `onDay` hears its span, for the range guide and the activity summary. Coverage is said only
  * when something is missing, in plain words; the exact candles are in each point's accessible text.
  */
-export function PoolHistoryChart({ source, option, market, loading, failed, quote: quoteIndex = 1, onDay, compact = false }: {
-  source: ReadSource; option: PoolHistoryOption; market: Market | null; loading: boolean; failed?: string; quote?: 0 | 1; onDay?: (day: DaySpan) => void; compact?: boolean
+export function PoolHistoryChart({ source, option, market, loading, quote: quoteIndex = 1, onDay, compact = false }: {
+  source: ReadSource; option: PoolHistoryOption; market: Market | null; loading: boolean; quote?: 0 | 1; onDay?: (day: DaySpan) => void; compact?: boolean
 }) {
   const opening = quoteIndex === 1 ? 'zero' : 'one'
   const [side, setSide] = useState<'zero' | 'one'>(opening)
@@ -124,7 +123,8 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
       <h2 className="dm-title">USD price and volume</h2>
     </div>
     <div className="dm-pool-plot dm-dots-chart mt-4" title={CANDLES_TITLE} data-chart-provider="GeckoTerminal">
-      <div className="dm-pool-plot-empty">{loading ? <Skeleton className="dm-pool-plot-baseline" /> : <span className="text-fg-subtle" title={failed}>—</span>}</div>
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the dash no longer carries the failed read's words. */}
+      <div className="dm-pool-plot-empty">{loading ? <Skeleton className="dm-pool-plot-baseline" /> : <span className="text-fg-subtle">—</span>}</div>
     </div>
   </div>
   const plot = data ? ratioGeometry(data, PLOT.width, PLOT.height, PLOT.pad) : null
@@ -136,19 +136,13 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
   const stale = data?.status === 'stale' || aged || recentFailure
   useLoadMilestone('pool', 'chart', !disabled && !reading && plot && point ? stale ? 'cached' : data?.status === 'partial' ? 'partial' : 'current' : null)
   if (disabled) return <div data-history-mode="provider">{provider()}</div>
-  // The producer's `reason` defaults to a restatement of the status
-  // (backend/public_history.py: history_refresh_pending for stale,
-  // history_acquisition_pending for not_built and partial). Appending those
-  // says the same thing twice. Anything else is a real cause — a recorded
-  // last_error, or the DataError code behind an unavailable window — and is
-  // the only thing on this card that could tell a person why. history_partial (read-v3's own fixture) restates the
-  // missing hours the card already names.
-  const RESTATED = ['history_refresh_pending', 'history_acquisition_pending', 'history_partial']
-  const said = (code: string) => { const words = reasonText(code); return ` ${words.charAt(0).toUpperCase()}${words.slice(1)}.` }
-  const cause = data?.reason && !RESTATED.includes(data.reason) ? said(data.reason) : ''
   // Said only when something is missing, and in plain words; a whole window says nothing.
-  const coverage = data?.status === 'not_built' ? 'Price history for this pool is still being collected.' : data?.status === 'unavailable' ? 'Price history isn’t available for this pool yet.' :
-    data?.gaps.length ? 'Some hours are missing: they are shaded.' : ''
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): only the shading is explained ("Some hours are
+  // missing: they are shaded.", a legend for what the plot draws). Gone: "Price history for this pool is still being
+  // collected.", "Price history isn’t available for this pool yet." and the producer's cause after them (the words of a
+  // `reason` other than history_refresh_pending, history_acquisition_pending and history_partial), which stays as data in
+  // `data-history-reason`.
+  const coverage = data?.gaps.length ? 'Some hours are missing: they are shaded.' : ''
 
   // The change beside the header price: from the first close the line draws (its left end, the price a reader sees
   // the line start from) to the close shown (the latest, or the inspected hour), only when that first hour opens the
@@ -183,7 +177,9 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
     setInspected({ key, index: event.key === 'Home' ? 0 : event.key === 'End' ? plot.points.length - 1 : Math.max(0, Math.min(plot.points.length - 1, index + (event.key === 'ArrowLeft' ? -1 : 1))) })
   }
   const verified = data?.snapshot ? ` Verified through block ${data.snapshot.number}.` : ''
-  const staleWords = stale ? (recentFailure ? ' Showing the last stored prices.' : ' Stored prices, not the latest.') : ''
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the price's title no longer adds " Showing the
+  // last stored prices." / " Stored prices, not the latest.", and its date no longer has the title "Last available history;
+  // this is not a current price.". `data-ratio-stale` keeps the state, as data.
 
   return <div data-history-mode="chain" data-history-reason={data?.reason ?? undefined}>
     <section className={`dm-card dm-pool-chart${compact ? ' dm-pool-chart--compact' : ''}`} aria-labelledby={titleId} data-pool-ratio-chart="" data-ratio-status={data?.status ?? current?.state ?? 'reading'} data-ratio-stale={stale ? '' : undefined}>
@@ -194,7 +190,7 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
       </div>
       {point && <div className="dm-pool-chart-figure" aria-live="off">
         <div className="dm-pool-chart-price">
-          <p className="dm-fig-xl dm-pool-chart-close" title={`${point.candle.close}. Prices from swaps on Robinhood Chain.${verified}${staleWords}`}>{grouped(ratioText(point.candle.close))}</p>
+          <p className="dm-fig-xl dm-pool-chart-close" title={`${point.candle.close}. Prices from swaps on Robinhood Chain.${verified}`}>{grouped(ratioText(point.candle.close))}</p>
           <span className="dm-pool-chart-unit"><PoolTokenLabel token={quote} /> for 1 <PoolTokenLabel token={currency} /></span>
           {change && (
             <span className="dm-delta dm-delta--md" data-sign={change.sign} data-variant="text">
@@ -204,20 +200,23 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
             </span>
           )}
         </div>
-        <p className="dm-pool-chart-date" title={stale ? 'Last available history; this is not a current price.' : undefined}>{inspecting ? `${at(point.candle.startTimestamp)} · ${point.candle.swapCount} swaps` : at(point.candle.startTimestamp)}</p>
+        <p className="dm-pool-chart-date">{inspecting ? `${at(point.candle.startTimestamp)} · ${point.candle.swapCount} swaps` : at(point.candle.startTimestamp)}</p>
       </div>}
       {!point && reading && <div aria-hidden="true" className="dm-pool-skel-figure"><Skeleton className="dm-pool-skel-price" /><Skeleton className="dm-pool-skel-date" /></div>}
       <div className="dm-pool-chart-body" data-ratio-unit="quote_per_base">
         <div role="status" aria-live="polite" className="sr-only">
+          {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "Price history is temporarily
+              unavailable." here or on the plot (the plot shows the dash every empty value shows), and an empty window
+              states the fact alone. */}
           {reading ? 'Reading the pool’s price history…' :
-            !data ? 'Price history is temporarily unavailable.' :
-            !plot || !point ? (data.status === 'available' ? 'No swaps in this window.' : `No prices to draw for this window. ${coverage}`) : ''}
+            !data ? '' :
+            !plot || !point ? (data.status === 'available' ? 'No swaps in this window.' : 'No prices to draw for this window.') : ''}
         </div>
         {reading ? <>
             <div className="dm-pool-plot dm-pool-plot-empty"><Skeleton className="dm-pool-plot-baseline" /></div>
             <div aria-hidden="true" className="dm-pool-skel-axis"><Skeleton className="dm-pool-skel-tick" /><Skeleton className="dm-pool-skel-tick" /></div>
           </> :
-          !data ? <div className="dm-pool-plot dm-pool-plot-empty"><p className="text-body text-fg-muted">Price history is temporarily unavailable.</p></div> :
+          !data ? <div className="dm-pool-plot dm-pool-plot-empty"><span className="text-fg-subtle">—</span></div> :
           !plot || !point || !last ? <div className="dm-pool-plot dm-pool-plot-empty"><p className="text-body text-fg-muted">{data.status === 'available' ? 'No swaps in this window.' : coverage || 'No prices to draw for this window.'}</p></div> : <>
             <div className="dm-pool-canvas">
               <svg width="100%" height="15rem" viewBox={`0 0 ${plot.width} ${plot.height}`} preserveAspectRatio="none" role="slider"
@@ -271,7 +270,7 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
             so the way back is always there. */}
         {(reading || (plot && point) || side !== opening) && <Segmented size="sm" label="Price of" value={side} onChange={setSide}
           items={[{ key: 'zero', label: <PoolTokenLabel token={option.currencies[0]} /> }, { key: 'one', label: <PoolTokenLabel token={option.currencies[1]} /> }]} />}
-        {data && plot && point && (coverage || cause) && <p className="dm-pool-coverage">{coverage}{cause}</p>}
+        {data && plot && point && coverage && <p className="dm-pool-coverage">{coverage}</p>}
       </div>
     </section>
   </div>

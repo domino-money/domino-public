@@ -38,7 +38,8 @@ export const preloadPriceChart = () => {
 /** Where the chart's code could not load: the card's status and its box, and one plain line. */
 function PriceChartUnavailable() {
   const facts = useContext(RangeFactsContext)
-  return facts ? <RangeChartWaiting facts={facts} note="The chart couldn’t load. Reload the page to see it." /> : null
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): its box, with no line; it said "The chart couldn’t load. Reload the page to see it."
+  return facts ? <RangeChartWaiting facts={facts} failed /> : null
 }
 
 type PriceState =
@@ -113,8 +114,11 @@ export function rangeWords(card: LiveCard, price: CardPrice) {
  * page, and on V2's for such a position only), and the chart then draws its last 7 days (read-v3 `history`); the
  * `chart` and `missing` props it replaces had no caller since 2026-10-02. The range's ends are written as the key
  * figures write prices (readablePrice: "0.0₆7101"), the page's exact text in their title.
+ *
+ * (2026-10-15, pack 7) `openedBefore`: a bound on a mint the ledger could not date (a position minted before Domino's
+ * release), passed to the chart apart from `openedAt`, which it never stands for (PriceVsRange.tsx).
  */
-export function PositionRange({ card, price, variant = 'bar', history = false, openedAt = null, closedAt = null, observations = null, recorded }: { card: LiveCard; price: CardPrice; variant?: 'bar' | 'page'; history?: boolean; openedAt?: number | null; closedAt?: number | null; observations?: PoolPriceObservations | null; recorded?: PriceHistory | null }) {
+export function PositionRange({ card, price, variant = 'bar', history = false, openedAt = null, openedBefore = null, closedAt = null, observations = null, recorded }: { card: LiveCard; price: CardPrice; variant?: 'bar' | 'page'; history?: boolean; openedAt?: number | null; openedBefore?: number | null; closedAt?: number | null; observations?: PoolPriceObservations | null; recorded?: PriceHistory | null }) {
   const { state, scale } = price
   // The app's one way round (2026-09-28): the priced token, the one it is priced in, and the range's lowest and highest price.
   const { base, quote, low, high } = shownCardRange(card)
@@ -175,12 +179,13 @@ export function PositionRange({ card, price, variant = 'bar', history = false, o
           </div>
         )}
         {/* One place for the chart, with or without its line, so the line fills in where the chart already stands. */}
-        {page && !charted && <PendingPlot label="Position price range" busy={asking} note={asking ? 'Updating price…' : 'Price is temporarily unavailable. Retrying automatically.'} />}
+        {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the box alone while the price is read or asked again; it said "Updating price…", then "Price is temporarily unavailable. Retrying automatically." */}
+        {page && !charted && <PendingPlot label="Position price range" busy={asking} />}
         {charted && (
           <div className="dm-pos-chart">
             {/* While the chart's own code loads (a moment, the first time), its status and its box stand in its place. */}
             <Suspense fallback={<RangeChartWaiting facts={facts} />}>
-              <PriceVsRange history={history ? { poolId: card.poolId, base: base.address, quote: quote.address } : null} openedAt={openedAt} closedAt={closedAt} observations={observations} recorded={recorded} />
+              <PriceVsRange history={history ? { poolId: card.poolId, base: base.address, quote: quote.address } : null} openedAt={openedAt} openedBefore={openedBefore} closedAt={closedAt} observations={observations} recorded={recorded} />
             </Suspense>
           </div>
         )}

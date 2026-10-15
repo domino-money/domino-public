@@ -40,7 +40,9 @@ export function PoolRangeGuide({ guide, day, unit, saved = false }: { guide: Ran
       </h2>
       <p className="dm-pool-lead">Earn fees while the price stays between these limits.</p>
       <div className="dm-pool-guide-plot">
-        <div className="dm-pool-guide-bar" role="img" aria-label={`Starting range from ${guide.low} to ${guide.high}, with the ${saved ? 'saved' : 'pool'} price at ${values.now}.`}>
+        {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): "the pool price" whether or not it was kept
+            from an earlier read; it used to say "the saved price". */}
+        <div className="dm-pool-guide-bar" role="img" aria-label={`Starting range from ${guide.low} to ${guide.high}, with the pool price at ${values.now}.`} data-saved-data={saved ? 'price' : undefined}>
           <span className="dm-pool-guide-band" style={stretch(at(values.low), at(values.high))} />
           {moved && <span className="dm-pool-guide-day" style={stretch(at(moved.low), at(moved.high))} title={`Last day: ${day?.low} to ${day?.high}`} />}
           <span className="dm-pool-guide-now" style={{ left: `${at(values.now) * 100}%` }} />
@@ -63,7 +65,7 @@ export function PoolRangeGuide({ guide, day, unit, saved = false }: { guide: Ran
       <details className="dm-pool-disclosure" data-pool-range-basis="">
         <summary>About this range<span aria-hidden="true" className="dm-pool-details-chevron" /></summary>
         <div className="dm-pool-disclosure-body">
-          <p>You choose your own limits when you create a position. This starting range is {guide.below.replace('−', '')} below the {saved ? 'saved' : 'pool'} price to {guide.above.replace('+', '')} above it.</p>
+          <p>You choose your own limits when you create a position. This starting range is {guide.below.replace('−', '')} below the pool price to {guide.above.replace('+', '')} above it.</p>
           {moved && inside !== null && <p>{inside ? 'Over the last day the price stayed inside it.' : 'Over the last day the price went past it at times.'}</p>}
           <p>A tighter range concentrates your tokens but can stop earning sooner.</p>
         </div>

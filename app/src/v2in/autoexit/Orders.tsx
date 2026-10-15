@@ -274,11 +274,13 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
   const pill = state.kind === 'on' ? <Pill tone="in" dot data-exit-pill="on">On</Pill>
     : state.kind === 'paused' ? <Pill tone="wait" dot data-exit-pill="paused">Paused</Pill>
       : state.kind === 'closed' ? <Pill tone="neutral" data-exit-pill="closed">Completed</Pill>
-        : !stateAvailable ? <Pill tone="neutral" data-exit-pill="unknown">State unavailable</Pill> : <Pill tone="neutral" data-exit-pill="off">Off</Pill>
+        // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no pill while the state is not read ("State unavailable").
+        : !stateAvailable ? <span hidden data-exit-pill="unknown" /> : <Pill tone="neutral" data-exit-pill="off">Off</Pill>
   const line = state.kind === 'on' ? onLine(edges, target.tokens, orientation)
     : state.kind === 'paused' ? conditionWords(state.reasons[0], chain.name)
       : state.kind === 'closed' ? closedLine(credits.length > 0)
-        : !stateAvailable ? 'Auto-exit data is unavailable. Your recoverable funds remain below.'
+        // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no line ("Auto-exit data is unavailable. Your recoverable funds remain below.").
+        : !stateAvailable ? null
           : canTurnOn ? 'Auto-exit is off. Turn it on to close this position at the end of its range.' : 'Auto-exit is off for this position.'
 
   const content = (
@@ -305,9 +307,12 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
           </Button>
         )}
       </div>
-      <p className="text-body text-fg-muted dm-exit-card-line" data-v2in-exit-line={state.kind === 'off' ? (!stateAvailable ? 'unknown' : canTurnOn ? 'open' : 'off') : state.kind}>
-        {line}
-      </p>
+      {/* (2026-10-15, pack 7 review): only when there is a line; the state not read has none, so no empty paragraph. */}
+      {line && (
+        <p className="text-body text-fg-muted dm-exit-card-line" data-v2in-exit-line={state.kind === 'off' ? (!stateAvailable ? 'unknown' : canTurnOn ? 'open' : 'off') : state.kind}>
+          {line}
+        </p>
+      )}
       {waiting && <p className="dm-acct-note" data-order-waiting={waiting.code}>{waiting.text}</p>}
       {state.kind === 'paused' && state.moduleOff && vault && (
         <div className="dm-exit-card-actions" data-orders-module-off="">

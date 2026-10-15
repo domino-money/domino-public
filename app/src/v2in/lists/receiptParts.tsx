@@ -84,10 +84,14 @@ export function ReceiptRow({ view, effects = [view], showGas = true, children, p
   </li>
 }
 
-/** One coverage sentence. Per-network diagnostics do not compete with the actual activity rows. */
+/**
+ * One coverage marker. Per-network diagnostics do not compete with the actual activity rows. Changed on purpose
+ * 2026-10-15 (pack 7, the owner: no status notices): it is the marker's data only; it was a line ("Showing Robinhood
+ * Chain and Base. Arbitrum One is unavailable right now.", or "Recent activity is still updating." with each chain's
+ * age in its title).
+ */
 export function ChainLines({ answer }: { answer: Pick<ActivityResponse, 'chains' | 'servedAt'> }) {
   const partial = partialSentence(answer.chains)
   const stale = chainNotes(answer).filter((chain) => chain.state === 'stale' && chain.age)
-  const text = partial ?? (stale.length ? 'Recent activity is still updating.' : null)
-  return text ? <p className="dm-rcpt-note" data-v2-partial={partial ? '' : undefined} title={stale.map((chain) => `${chain.name}: ${chain.age}`).join(' · ') || undefined}>{text}</p> : null
+  return partial || stale.length ? <span hidden data-v2-partial={partial ? '' : undefined} data-v2-stale-chains={stale.map((chain) => chain.chainId).join(',') || undefined} /> : null
 }

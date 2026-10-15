@@ -6315,11 +6315,12 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     await apr.waitFor({ timeout: 15_000 });
     // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): this chain holds none of the position's events (not even its mint
     // above block 69,249,061), so its ledger cannot measure its fees earned, and says so.
-    assert.match(await apr.innerText(), /^Your APR\s+—\s+Not measured for this position$/, 'no fees history on this chain: a dash and why, never a guess');
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a dash, with nothing under it ("Not measured for this position").
+    assert.match(await apr.innerText(), /^Your APR\s+—$/, 'no fees history on this chain: a dash, never a guess');
     // 2026-09-27 (review): a pair without USDG stacks each tile in its own flow (the rows line up across the tiles only
     // for one-line USD figures), so the reason stands right under its dash, not at the foot of the tallest tile.
-    const under = await apr.evaluate((tile) => tile.querySelector('.dm-stat-sub').getBoundingClientRect().top - tile.querySelector('.dm-stat-value').getBoundingClientRect().bottom);
-    assert.ok(under >= 0 && under <= 16, `the reason ${under}px under its dash`);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): no reason under the dash any more.
+    assert.equal(await apr.locator('.dm-stat-sub').count(), 0, 'nothing under the dash');
     assert.doesNotMatch(stats, /≈|Principal|Unclaimed/i);
     assert.equal(await detail.getByRole('button', { name: 'Show current price' }).count(), 0);
     assert.equal(await detail.locator('[data-position-details]').getAttribute('open'), null, 'Details closed');
@@ -6471,7 +6472,8 @@ test('a read that fails is never “no positions”: the loading rows and one qu
     // Refused: the loading rows stay, with one quiet line; the reason is a data attribute only.
     const again = s.page.locator('[data-owned="retrying"]');
     await again.waitFor();
-    assert.equal(await again.locator('[data-owned-note]').innerText(), 'Reading your positions from the chain…');
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the line is a hidden marker ("Reading your positions from the chain…").
+    assert.equal(await again.locator('[data-owned-note="rereading"]').innerText(), '');
     assert.equal(await again.getAttribute('data-owned-reason'), 'chain_unavailable');
     assert.equal(await again.locator('[data-owned-loading]').count(), 1, 'the loading rows stay');
     assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'no Retry');
@@ -6501,7 +6503,9 @@ test('a read that fails is never “no positions”: the loading rows and one qu
     await s.wallet.switchAccount('a', 1);
     const unread = s.page.locator('[data-owned="unlisted"]');
     await unread.waitFor({ timeout: 30_000 });
-    assert.equal(await unread.locator('[data-owned-note]').innerText(), 'Your positions couldn’t be read right now.');
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a hidden marker, no line ("Your positions couldn’t be read right now.").
+    assert.equal(await unread.locator('[data-owned-note="unread"]').innerText(), '');
+    assert.doesNotMatch(await unread.innerText(), /couldn’t be read/);
     assert.equal(await unread.getAttribute('data-owned-reason'), 'chain_unavailable');
     const after = await listSeen(s.page);
     assert.ok(after.every((what) => /^(?:ready|loading|retrying:rereading|unlisted:unread)$/.test(what)), `never an empty state: ${after.join(' → ')}`);
@@ -7630,8 +7634,9 @@ test('Your positions: each open row’s Your APR is its own ledger’s, asked wi
     // page has no figure either, so it says so rather than "on its page" (2026-10-02, review of the rules, finding 11).
     const dash = s.page.locator(`[data-position-row="${OWNED_OPEN}"] [data-cell="apr"][data-apr="missing"]`);
     await dash.waitFor({ timeout: 10_000 });
-    assert.equal((await dash.innerText()).replace(/\s+/g, ' ').trim(), 'Your APR not measured');
-    assert.equal(await dash.getAttribute('title'), 'Not measured for this position');
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a dash in place of "not measured", and no title ("Not measured for this position").
+    assert.equal((await dash.innerText()).replace(/\s+/g, ' ').trim(), 'Your APR —');
+    assert.equal(await dash.getAttribute('title'), null);
     assert.equal(await dash.getAttribute('data-ledger-asks'), String(coldReads));
     assert.match(await dash.getAttribute('data-ledger-last'), /^(?!exact$)[a-z_]+$/, 'its ledger’s why');
     assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /\best\./, 'no estimate');
@@ -7653,7 +7658,8 @@ test('Your positions: each open row’s Your APR is its own ledger’s, asked wi
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
     const quiet = s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"][data-fees-reason="not_exact"]');
     await quiet.waitFor({ timeout: 15_000 });
-    assert.match(await quiet.innerText(), /Fees earned can’t be measured for this position\. Fees ready to collect is exact\./);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the card's flat plot says nothing ("Fees earned can’t be measured for this position. Fees ready to collect is exact.").
+    assert.doesNotMatch(await quiet.innerText(), /can’t be measured|is exact/);
     assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'no Retry');
     // Back: the row's figure is the page's.
     await s.page.evaluate(() => { location.hash = '#/positions'; });
@@ -7804,9 +7810,10 @@ test('Your positions draws this browser’s copy at once while the site’s rout
     assert.equal(await s.page.locator('[data-held-deposit], [data-position-automation]').count(), 0, 'no held deposit to refund, no automation read for the copy');
     await until(() => owned.asked.some((request) => request.refused), 'the list asked the route, refused');
     // The copy is never drawn as the chain's answer of now: the one quiet line the loading rows have stands over its rows.
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the copy's rows stand alone; the line is a hidden marker ("Reading your positions from the chain…").
     const note = s.page.locator('[data-owned="kept"] [data-owned-note="rereading"]');
-    await note.waitFor({ timeout: 20_000 });
-    assert.equal(await note.innerText(), 'Reading your positions from the chain…');
+    await note.waitFor({ state: 'attached', timeout: 20_000 });
+    assert.equal(await note.innerText(), '');
     assert.equal(await s.page.locator('[data-owned]').getAttribute('data-owned-reason'), 'chain_busy');
     assert.deepEqual(await ownedRows(s.page), fresh, 'the copy’s rows stay under it');
     assert.equal(await s.page.locator('[data-owned] [data-owned-loading], [data-owned] [data-empty]').count(), 0);
@@ -7924,11 +7931,12 @@ test('a copy kept over an hour ago shows no USD figure and no Total value until 
     assert.equal(await s.page.locator('[data-owned] a[data-position-row]').count(), 2);
 
     // The chain keeps failing: the quiet line over the copy while it is asked again, then the calm one; the copy stays.
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): hidden markers, no line ("Reading your positions from the chain…", then "Your positions couldn’t be read right now.").
     const note = card.locator('[data-owned-note]');
-    await card.locator('[data-owned-note="rereading"]').waitFor({ timeout: 5_000 });
-    assert.equal(await note.innerText(), 'Reading your positions from the chain…');
-    await card.locator('[data-owned-note="unread"]').waitFor({ timeout: 30_000 });
-    assert.equal(await note.innerText(), 'Your positions couldn’t be read right now.');
+    await card.locator('[data-owned-note="rereading"]').waitFor({ state: 'attached', timeout: 5_000 });
+    assert.equal(await note.innerText(), '');
+    await card.locator('[data-owned-note="unread"]').waitFor({ state: 'attached', timeout: 30_000 });
+    assert.doesNotMatch(await card.innerText(), /Reading your positions|couldn’t be read/);
     assert.deepEqual([await card.getAttribute('data-owned'), await card.getAttribute('data-owned-reason')], ['kept', 'chain_unavailable']);
     assert.equal(await card.locator('.dm-portfolio').count(), 0, 'the band leaves once the list could not be read');
     assert.equal(await s.page.locator('[data-owned] a[data-position-row]').count(), 2, 'the copy stays');
@@ -8119,8 +8127,9 @@ test('the site’s chain routes without their node, then with it: Your positions
     await connectWallet(s.page);
     // The list: its calm line at once (the route named a wait of minutes), over no row and never the empty state.
     const card = s.page.locator('[data-owned]');
-    await card.locator('[data-owned-note="unread"]').waitFor({ timeout: 20_000 });
-    assert.equal(await card.locator('[data-owned-note]').innerText(), 'Your positions couldn’t be read right now.');
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a hidden marker, no line ("Your positions couldn’t be read right now.").
+    await card.locator('[data-owned-note="unread"]').waitFor({ state: 'attached', timeout: 20_000 });
+    assert.doesNotMatch(await card.innerText(), /couldn’t be read/);
     assert.deepEqual([await card.getAttribute('data-owned'), await card.getAttribute('data-owned-reason')], ['unlisted', 'chain_unavailable']);
     assert.equal(await card.locator('[data-empty], a[data-position-row]').count(), 0, 'never “No positions”');
     assert.ok((await listSeen(s.page)).every((what) => !/owned-none/.test(what)), 'never the empty state');
@@ -8129,10 +8138,11 @@ test('the site’s chain routes without their node, then with it: Your positions
     // A position's page: its calm state, and the fees card's.
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
     await s.page.locator('[data-empty="position-unread"]').waitFor({ timeout: 30_000 });
-    assert.match(await s.page.locator('[data-empty="position-unread"]').innerText(), /Its details could not be read just now\./);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the title alone ("Its details could not be read just now." is gone), and the fees card's dash has no label ("Fees not available yet").
+    assert.doesNotMatch(await s.page.locator('[data-empty="position-unread"]').innerText(), /could not be read/);
     const feeFrame = s.page.locator('[data-fees-card]');
     await feeFrame.locator('[data-pending-plot]').waitFor();
-    assert.equal(await feeFrame.locator('[aria-label="Fees not available yet"]').innerText(), '—', 'a failed read is not zero earned');
+    assert.equal(await feeFrame.locator('.dm-fees-summary .dm-fig-hero').innerText(), '—', 'a failed read is not zero earned');
     assert.equal(await feeFrame.locator('.dm-chart-line, [data-fees-zero]').count(), 0, 'no invented fee series');
     assert.doesNotMatch(await s.page.locator('main').evaluate((root) => {
       const rest = root.cloneNode(true); rest.querySelectorAll('[data-fees-card]').forEach((card) => card.remove()); return rest.textContent;
@@ -8190,14 +8200,15 @@ test('a position’s page with the site’s chain routes without their node: the
     assert.equal((await detail.locator('[data-ticks]').textContent()).trim(), '-60 to 60');
     assert.equal(await detail.locator('[data-position-actions]').count(), 0, 'no action on the gateway’s row');
     assert.equal(await detail.getAttribute('data-position-read'), 'gateway');
+    // Changed on purpose 2026-10-15 (pack 7 review): every action is hidden, so the line saying why stays; only its
+    // "We’ll keep trying automatically." half left with the status notices.
     const waiting = detail.locator('[data-position-actions-waiting][role="status"]');
-    assert.equal(await waiting.isVisible(), true, 'the owner is told why the actions are unavailable');
-    assert.equal(await waiting.innerText(), 'Actions are temporarily unavailable while we refresh this position’s data. We’ll keep trying automatically.');
+    assert.equal(await waiting.innerText(), 'Actions are temporarily unavailable while we refresh this position’s data.');
     assert.deepEqual(nftReads(read), [[OWNED_OPEN]], 'the gateway asked once');
     // The existing owner notice and the neutral pending fee frame explain only the unavailable data.
     const feeFrame = detail.locator('[data-fees-card]');
     await feeFrame.locator('[data-pending-plot]').waitFor();
-    assert.equal(await feeFrame.locator('[aria-label="Fees not available yet"]').innerText(), '—');
+    assert.equal(await feeFrame.locator('.dm-fees-summary .dm-fig-hero').innerText(), '—');
     assert.equal(await feeFrame.locator('.dm-chart-line, [data-fees-zero]').count(), 0, 'the gateway row does not invent a fee history');
     assert.doesNotMatch(await s.page.locator('main').evaluate((root) => {
       const rest = root.cloneNode(true); rest.querySelectorAll('[data-fees-card], [data-position-actions-waiting]').forEach((item) => item.remove()); return rest.textContent;
@@ -8307,13 +8318,15 @@ test('the receipts page never blanks: reads merge in place, a hidden tab and a f
     await setVisibility(s.page, 'visible');
     await until(() => listReads() === 3, 'the list read again');
 
-    // The service fails: what is shown stays, with a short visible note that new activity could not be loaded.
+    // The service fails: what is shown stays.
     const refuse = route => route.fulfill({ status: 503, contentType: 'application/json; charset=utf-8', headers: { 'X-Domino-Execution-Contract': executionRuntime.CONTRACT_VERSION }, body: JSON.stringify({ error: 'execution_store_unavailable' }) });
     await s.context.route(LIST, refuse);
     await jump(s.page, '00:31');
     await s.page.locator('section[aria-label="Execution receipts"][data-execution="unavailable"][data-execution-reason="execution_store_unavailable"]').waitFor();
     assert.equal(await full.getAttribute('data-execution-rows'), '20', 'a failed read keeps every row');
-    assert.equal(await full.locator('[data-receipts-update]').innerText(), 'Showing saved receipts. New activity couldn’t be loaded.');
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): what is shown stays, with no line ("Showing saved receipts. New activity couldn’t be loaded."): a hidden marker.
+    assert.equal(await full.locator('[data-receipts-update="unavailable"]').count(), 1);
+    assert.equal(await full.locator('[data-receipts-update]').innerText(), '');
     await captureReceiptState(s.page, 'receipts-saved', full);
     // Back, with a new compound: the next ask, a minute on, finds it; it joins at the top, every other row where it was.
     await s.context.unroute(LIST, refuse);
@@ -8622,9 +8635,10 @@ const OTHER_HOLDER = `0x${'0b'.repeat(20)}`;
  * for the V1 release a deployable build ships for recovery (src/finance/pin.ts SEQUENCE_RECOVERY_RECORD), which a test
  * build has none of unless a test gives one.
  */
-async function reservesScenario({ seq, positions = () => [], vaults = () => ({}), batch = false, release = { status: 200, body: seq.release }, shipped = null }) {
+async function reservesScenario({ seq, positions = () => [], vaults = () => ({}), batch = false, release = { status: 200, body: seq.release }, shipped = null, clock = false }) {
   const chain = browserChain({ positions: positions(seq), tokens: TOKENS, vaults: vaults(seq) });
-  const s = await scenario({ chain });
+  // (2026-10-15, pack 7): `clock` installs the page's clock, so a test can step past the minute a read is kept.
+  const s = await scenario({ chain, clock });
   await routeChain(s, seq, [...CHAIN_METHODS, 'eth_getLogs', ...(batch ? BATCH_METHODS : [])]);
   const tokenReads = await answerTokenReads(s.context, RESERVE_TOKENS);
   await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
@@ -8936,7 +8950,8 @@ test('review finding 1: a withdrawal the wallet cancelled while the automation r
   } finally { await s.close(); }
 });
 
-test('review findings 2, 6 and 8: the fees in a vault older than the sixteen newest are found and offered, a quiet line says while it cannot be read, and its burned root’s page offers them too', async () => {
+// Retitled on purpose 2026-10-15 (pack 7, owner: no status notices): it said “a quiet line says while it cannot be read”.
+test('review findings 2, 6 and 8: the fees in a vault older than the sixteen newest are found and offered, asked again quietly while it cannot be read, and its burned root’s page offers them too', async () => {
   const roots = Array.from({ length: 17 }, (_, i) => BigInt(300 + i));
   const seq = fakeSequenceChain(OWNER, { roots, settled: true, rootPermissionValid: false, reserves: {
     0: [{ tokenId: 300n, source: 1, currency: 'quote', original: 3_000_000n }],
@@ -8950,15 +8965,14 @@ test('review findings 2, 6 and 8: the fees in a vault older than the sixteen new
     const card = s.page.locator('section[data-fee-reserves="positions"]');
     await card.locator(`[data-reserve-vault="${seq.vaults[16]}"]`).waitFor({ timeout: 60_000 });
     const line = card.locator('[data-reserves-checking]');
-    // While the oldest vault is still to be read, a page after the first: one quiet line. Once its read failed, another,
-    // and it is asked again on its own.
-    // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation").
-    await line.filter({ hasText: 'Your older automations are still being checked…' }).waitFor({ timeout: 30_000 });
-    await line.filter({ hasText: 'Some of your automations couldn’t be checked just now. This page asks again on its own.' }).waitFor({ timeout: 60_000 });
-    assert.equal(await line.count(), 1, 'one line at a time');
-    assert.equal(await card.getAttribute('data-fee-reserves-state'), 'checking');
+    // While the oldest vault is still to be read, and once its read failed, it is asked again on its own.
+    // Changed on purpose 2026-10-15 (pack 7), changed on purpose (owner: no status notices): no line says so any more
+    // ("Your older automations are still being checked…", then "Some of your automations couldn’t be checked just now.
+    // This page asks again on its own."); the section's state says "checking", and the card shows only its rows.
+    await s.page.locator('section[data-fee-reserves="positions"][data-fee-reserves-state="checking"]').waitFor({ timeout: 30_000 });
+    assert.equal(await line.count(), 0, 'no status line');
     await card.screenshot({ path: join(shots(), 'p2-fee-reserves-checking.png') });
-    assert.doesNotMatch(await card.innerText(), /Retry|Try again/);
+    assert.doesNotMatch(await card.innerText(), /Retry|Try again|still being checked|couldn’t be checked|asks again/);
     // Readable again: asked again on its own, and its row joins the newest one's.
     seq.failVaultReads(0, false);
     const oldest = card.locator(`[data-reserve-vault="${seq.vaults[0]}"]`);
@@ -8983,7 +8997,8 @@ test('review findings 2, 6 and 8: the fees in a vault older than the sixteen new
   } finally { await s.close(); }
 });
 
-test('review finding 8: a vault already on screen keeps its row when a later read of it fails, and one never read says so quietly until it can be', async () => {
+// Retitled on purpose 2026-10-15 (pack 7, owner: no status notices): it said “one never read says so quietly until it can be”.
+test('review finding 8: a vault already on screen keeps its row when a later read of it fails, and one never read is asked again, with nothing on screen, until it can be', async () => {
   const seq = fakeSequenceChain(OWNER, { roots: [100n, 200n], settled: true, rootPermissionValid: false, reserves: {
     0: [{ tokenId: 100n, source: 0, currency: 'base', original: 1_000_000_000_000_000_000n }],
     1: [{ tokenId: 200n, source: 0, currency: 'base', original: 2_000_000_000_000_000_000n }],
@@ -9009,7 +9024,10 @@ test('review finding 8: a vault already on screen keeps its row when a later rea
     assert.equal(await card.locator('[data-reserves-checking]').count(), 0, 'nothing unseen: no line');
   } finally { await s.close(); }
 
-  // A vault never read whose reads keep failing: a quiet card says so, and it is asked again on its own until it can be.
+  // A vault never read whose reads keep failing: it is asked again on its own until it can be, and its fees are shown then.
+  // Changed on purpose 2026-10-15 (pack 7), changed on purpose (owner: no status notices): a card with "Your automation
+  // couldn’t be checked for fees just now. This page asks again on its own." stood there meanwhile; nothing does now (the
+  // hidden marker counts the failed reads).
   const lone = fakeSequenceChain(OWNER, { roots: [100n], settled: true, rootPermissionValid: false, reserves: {
     0: [{ tokenId: 100n, source: 0, currency: 'base', original: 1_000_000_000_000_000_000n }],
   } });
@@ -9017,18 +9035,137 @@ test('review finding 8: a vault already on screen keeps its row when a later rea
   const { s: t } = await reservesScenario({ seq: lone, positions: () => [onChain('100', { burned: true })] });
   try {
     await goTo(t, '#/positions');
-    const trouble = t.page.locator('section[data-fee-reserves-trouble="positions"]');
-    await trouble.waitFor({ timeout: 60_000 });
-    // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation").
-    assert.equal(await trouble.getByRole('heading').innerText(), 'Fees waiting in your automation');
-    assert.equal(await trouble.locator('[role="status"]').innerText(), 'Your automation couldn’t be checked for fees just now. This page asks again on its own.');
-    assert.equal(await trouble.getByRole('button').count(), 0, 'no Retry');
-    await trouble.screenshot({ path: join(shots(), 'p2-fee-reserves-unchecked.png') });
+    await t.page.locator('[data-fee-reserves-read="positions"][data-fee-reserves-state="checking"][data-fee-reserves-misses="2"][hidden]').waitFor({ state: 'attached', timeout: 60_000 });
+    assert.equal(await t.page.locator('section.dm-reserves').count(), 0, 'nothing on screen while it cannot be read');
+    assert.doesNotMatch(await t.page.locator('body').innerText(), /couldn’t be checked|asks again/);
     lone.failVaultReads(0, false);
     const card = t.page.locator('section[data-fee-reserves="positions"]');
     await card.locator(`[data-reserve-vault="${lone.vaults[0]}"]`).waitFor({ timeout: 60_000 });
-    assert.equal(await trouble.count(), 0);
   } finally { await t.close(); }
+});
+
+/**
+ * (2026-10-15, pack 7): every time the card is on screen or off it, and the words it had, recorded in the page from now
+ * on (a MutationObserver), so a test sees a flash no screenshot would catch.
+ */
+const watchReservesCard = (page) => page.evaluate(() => {
+  const seen = (window.__reservesCardSeen = []);
+  const look = () => {
+    const card = document.querySelector('section.dm-reserves');
+    const on = card !== null;
+    if (seen.at(-1)?.on !== on) seen.push({ on, text: card?.textContent ?? '' });
+    else if (on && seen.at(-1).text !== card.textContent) seen.push({ on, text: card.textContent });
+  };
+  look();
+  new MutationObserver(look).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+});
+const reservesCardSeen = (page) => page.evaluate(() => window.__reservesCardSeen);
+/**
+ * Steps the page's clock past the card's waits (lib/automate/reserves.ts RESERVE_REASK_MS) `times` times, letting each read
+ * it starts answer in real time.
+ */
+async function stepReserveReads(page, times = 5) {
+  for (let i = 0; i < times; i++) {
+    await page.clock.fastForward(121_000);
+    await page.waitForTimeout(1_500);
+  }
+}
+
+test('pack 7 (2026-10-15, the owner: “Fees waiting in your automation” kept appearing and disappearing, saying it couldn’t be checked): with nothing waiting and every read failing nothing is ever shown; fees waiting stay on screen, unchanged, through a later visit whose reads fail', async () => {
+  // The owner's Positions: his automation holds no fees, and the wallet's reads of it fail (a node that has not seen the
+  // read's block yet answers "header not found"). The card used to come up after two failed reads with "Your automation
+  // couldn’t be checked for fees just now. This page asks again on its own." and go again once a read went through.
+  const empty = fakeSequenceChain(OWNER, { roots: [100n], settled: true, rootPermissionValid: false, reserves: {} });
+  empty.failVaultReads(0, true);
+  const { s } = await reservesScenario({ seq: empty, positions: () => [onChain('100', { burned: true })], clock: true });
+  try {
+    await watchReservesCard(s.page);
+    await goTo(s, '#/positions');
+    const marker = s.page.locator('[data-fee-reserves-read="positions"]');
+    await marker.waitFor({ state: 'attached', timeout: 30_000 });
+    await stepReserveReads(s.page);
+    assert.ok(empty.log.filter((method) => method === 'eth_call').length > 0, 'the automation was read');
+    assert.deepEqual(await reservesCardSeen(s.page), [{ on: false, text: '' }], 'never on screen while nothing waits, failing or not');
+    assert.doesNotMatch(await s.page.locator('body').innerText(), /couldn’t be checked|asks again|still being checked/);
+    // Readable again: still nothing to show, and nothing shown.
+    empty.failVaultReads(0, false);
+    for (let i = 0; i < 6 && (await s.page.locator('[data-fee-reserves-read="positions"][data-fee-reserves-state="ready"]').count()) === 0; i++) await stepReserveReads(s.page, 1);
+    await s.page.locator('[data-fee-reserves-read="positions"][data-fee-reserves-state="ready"][hidden]').waitFor({ state: 'attached', timeout: 30_000 });
+    assert.deepEqual(await reservesCardSeen(s.page), [{ on: false, text: '' }]);
+  } finally { await s.close(); }
+
+  // Fees waiting: the card shows them; the owner opens another page and comes back after the minute a read is kept, and
+  // every read fails meanwhile. The card used to go, then come back with the failure line; it stays as it was now.
+  const seq = fakeSequenceChain(OWNER, { roots: [100n], settled: true, rootPermissionValid: false, reserves: {
+    0: [{ tokenId: 100n, source: 0, currency: 'base', original: 1_000_000_000_000_000_000n }],
+  } });
+  const { s: t } = await reservesScenario({ seq, positions: () => [onChain('100', { burned: true })], clock: true });
+  try {
+    await goTo(t, '#/positions');
+    const card = t.page.locator('section[data-fee-reserves="positions"]');
+    const row = card.locator(`[data-reserve-vault="${seq.vaults[0]}"]`);
+    await row.locator(`[data-reserve-currency="${RESERVE_BASE}"]`).getByText('1 AAA', { exact: true }).waitFor({ timeout: 30_000 });
+    const before = await card.innerText();
+    seq.failVaultReads(0, true);
+    await goTo(t, '#/positions/receipts');
+    await card.waitFor({ state: 'detached', timeout: 30_000 });
+    await t.page.clock.fastForward(65_000);
+    await watchReservesCard(t.page);
+    await goTo(t, '#/positions');
+    // Back at once with the last figures, before any read answers.
+    await row.locator(`[data-reserve-currency="${RESERVE_BASE}"]`).getByText('1 AAA', { exact: true }).waitFor({ timeout: 5_000 });
+    await stepReserveReads(t.page);
+    assert.equal(await card.innerText(), before, 'the same card, word for word');
+    const seen = await reservesCardSeen(t.page);
+    assert.deepEqual(seen.slice(1).map((entry) => entry.on), seen.slice(1).map(() => true), 'never off screen once back');
+    assert.ok(seen.every((entry) => !/couldn’t be checked|asks again|still being checked/.test(entry.text)), 'never a failure line');
+  } finally { await t.close(); }
+});
+
+test('pack 7 review (2026-10-15): after a withdrawal, a re-read that fails never keeps the fees from before it for a later visit', async () => {
+  const seq = fakeSequenceChain(OWNER, { roots: [BigInt(OWNED_OPEN)], settled: true, reserves: { 0: [
+    { tokenId: BigInt(OWNED_OPEN), source: 0, currency: 'base', original: 1_250_000_000_000_000_000n },
+  ] } });
+  const { s } = await reservesScenario({ seq, positions: (q) => [onChain(OWNED_OPEN, { subscriber: q.vaults[0] })], vaults: ARMED, clock: true });
+  try {
+    await goTo(s, '#/positions');
+    const card = s.page.locator('section[data-fee-reserves="positions"]');
+    await card.locator(`[data-reserve-currency="${RESERVE_BASE}"]`).getByText('1.25 AAA', { exact: true }).waitFor({ timeout: 30_000 });
+    await card.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 30_000 });
+    const dialog = reservesDialog(s);
+    // The wallet replaces the withdrawal, the automation spends the reserve meanwhile, and from then on every read of the
+    // vault fails: the card's read after the withdrawal (reservesChanged) cannot see that nothing waits now.
+    seq.cancelNextInWallet('withdrawFeeReserves', () => {
+      seq.automationRun(0, [{ tokenId: OWNED_OPEN, source: 0, currency: 'base', original: 0n }]);
+      seq.failVaultReads(0, true);
+    });
+    const calls = () => seq.log.filter((method) => method === 'eth_call').length;
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    await dialog.locator('[data-reserves-notice="reserve_withdrawal_replaced"]').waitFor({ timeout: 60_000 });
+    // The card's re-read, and its first ask again (3 s later), each fail.
+    const since = calls();
+    await s.page.clock.fastForward(4_000);
+    await until(() => calls() >= since + 2, 'the card to read the vault again', 30_000);
+    await s.page.waitForTimeout(1_000);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    // Another page, back after the minute a read is kept: the fees from before the withdrawal are never painted from this
+    // visit's copy (before the fix, the failed re-read wrote them back into it).
+    await goTo(s, '#/positions/receipts');
+    await card.waitFor({ state: 'detached', timeout: 30_000 });
+    await s.page.clock.fastForward(65_000);
+    await watchReservesCard(s.page);
+    await goTo(s, '#/positions');
+    // The card's place (its hidden marker, or the card itself before the fix), then its reads, which still fail.
+    await s.page.locator('[data-fee-reserves-read="positions"], section[data-fee-reserves="positions"]').first().waitFor({ state: 'attached', timeout: 30_000 });
+    await stepReserveReads(s.page, 2);
+    assert.deepEqual(await reservesCardSeen(s.page), [{ on: false, text: '' }], 'never on screen with the fees already gone');
+    // Readable again: nothing waits, and nothing is shown.
+    seq.failVaultReads(0, false);
+    for (let i = 0; i < 6 && (await s.page.locator('[data-fee-reserves-read="positions"][data-fee-reserves-state="ready"]').count()) === 0; i++) await stepReserveReads(s.page, 1);
+    await s.page.locator('[data-fee-reserves-read="positions"][data-fee-reserves-state="ready"][hidden]').waitFor({ state: 'attached', timeout: 30_000 });
+    assert.deepEqual(await reservesCardSeen(s.page), [{ on: false, text: '' }]);
+  } finally { await s.close(); }
 });
 
 test('review finding 3: a vault whose chain of positions is longer than one read is read in pages, and the fees of a position far down it are withdrawn', async () => {

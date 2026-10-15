@@ -274,10 +274,14 @@ export interface MarketsResult {
   notice?: string
 }
 
-/** Compact money formatting for table cells. Never invents precision. */
+/**
+ * Compact money formatting for table cells. Never invents precision.
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a value it cannot write is the dash "—", never
+ * the word "Unavailable".
+ */
 export function compactUsd(metric: Metric): string {
-  if (metric.value === null) return 'Unavailable'
-  return formatUsdCompact(metric.value) ?? 'Unavailable'
+  if (metric.value === null) return '—'
+  return formatUsdCompact(metric.value) ?? '—'
 }
 
 /**
@@ -396,11 +400,15 @@ export function providerStale(market: MarketProvenance['market'], now: number | 
   return (retrievedAgeSeconds(market, now) ?? onScreenSeconds(market, now)) > market.freshForSeconds
 }
 
-/** A pool's APR as the ticker writes it, through the same state rule as every other figure. */
+/**
+ * A pool's APR as the ticker writes it, through the same state rule as every other figure.
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): "APR —" where the percent cannot be written,
+ * never "Unavailable".
+ */
 export const aprLabel = (metric: Metric): Presented =>
   presentMetric(metric, (m) => {
     const text = percentText(m)
-    return text === null ? 'Unavailable' : `${text}% APR`
+    return text === null ? 'APR —' : `${text}% APR`
   })
 
 /**

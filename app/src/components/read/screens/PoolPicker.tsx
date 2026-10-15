@@ -130,7 +130,9 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false,
             Tick spacing <span className="tnum">{option.tickSpacing}</span> ·{' '}
             {option.integration === 'hookless_fixed_fee' ? COPY.picker.hookless : <>{COPY.picker.needsAdapter} · {option.hooks === NATIVE_CURRENCY ? 'no hooks' : <>hooks <Address value={option.hooks} /></>}</>}
           </p>
-          {option.providerNote && <p data-provider-note="">{option.providerNote}</p>}
+          {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "Provider figures retrieved <HH:MM:SS
+              UTC, date>. Provider-reported, not reconciled with chain data." line (option.providerNote); each figure's
+              title already says it is provider-reported. */}
         </div>
       </details>
     </li>
@@ -517,6 +519,10 @@ export function PoolPicker({
 
   return (
     <div className="grid gap-3" data-picker="pool" data-picker-variant={variant} data-pools-state={result.kind === 'failed' ? result.code : result.kind} {...counts}>
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a failed list's words (failureText) are no
+          longer the hover title of its line, which states the fact alone ("No pools to show for this token.");
+          `data-pools-unavailable` keeps the code, as data. They stay in this visually hidden live region only: New
+          position's picker tells assistive technology why it has nothing to choose (e.g. "Wrong answer"). */}
       <p role="status" aria-live="polite" className="sr-only">{result.kind === 'loading' ? COPY.picker.poolsLoading : result.kind === 'failed' ? result.reason : ''}</p>
       {resting && options.length === 0 && (
         <div className="grid gap-3" aria-hidden="true">
@@ -556,7 +562,7 @@ export function PoolPicker({
         </div>
       )}
       {result.kind === 'failed' && result.final && options.length === 0 && (
-        <p className="px-1 py-4 text-center text-body text-fg-muted" title={result.reason} data-pools-unavailable={result.failure}>
+        <p className="px-1 py-4 text-center text-body text-fg-muted" data-pools-unavailable={result.failure}>
           {paired ? COPY.picker.poolsNonePair : COPY.picker.poolsNone}
         </p>
       )}

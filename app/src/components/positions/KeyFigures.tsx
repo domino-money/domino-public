@@ -72,25 +72,21 @@ function YourApr({ tokenId, compact = false }: { tokenId: string; compact?: bool
   const saved = fees.phase === 'cached' ? fees : null
   useLoadMilestone('position', 'apr', rates?.all.ok ? historyLoadQuality(fees) : null)
   let figure: ReactNode = <span className="text-fg-subtle">—</span>
-  // 2026-10-01 (item A13): a history the chain would not give says so, apart from one that cannot be measured.
-  const reason = fees.phase === 'unclaimed-only' || fees.phase === 'unavailable' ? fees.reason : null
-  let sub: ReactNode = reason === 'rpc_unavailable' ? 'Couldn’t load yet' : reason === 'not_exact' ? 'Not measured for this position' : 'Not measured yet'
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a dash with nothing under it while there is no
+  // rate; it said "Couldn’t load yet", "Not measured for this position", "Not measured yet" or lib/positionApr.ts
+  // APR_MISSING ("Waiting for the first reading", "No price to measure it", "Not measured a day ago"), except "Nothing in
+  // the position", which is the position's own state. A saved copy's rate said "Last available history" and "Through …
+  // · not current" to a screen reader, and its title that it was not a current rate.
+  let sub: ReactNode = null
   if (fees.phase === 'idle' || fees.phase === 'loading') {
     figure = <Skeleton className="dm-pos-skel-fig" />
-    sub = null
-  } else if (rates && !rates.all.ok) sub = APR_MISSING[rates.all.reason]
+  } else if (rates && !rates.all.ok) sub = rates.all.reason === 'empty' ? APR_MISSING.empty : null
   else if (rates?.all.ok) {
     const { all, day } = rates
-    figure = (
-      <>
-        {aprText(all.rate)}
-        {saved && <span className="sr-only"> · Last available history</span>}
-      </>
-    )
+    figure = aprText(all.rate)
     sub = (
       <span className="dm-pos-lines">
         <span title={`Measured from ${shortDate(all.from.t)} ${shortTime(all.from.t)}, block ${all.from.block}, over ${spanText(all.seconds)}`}>Since opened ({spanText(all.seconds)})</span>
-        {saved && <span className="sr-only">Through {shortDate(saved.state.timestamp)} {shortTime(saved.state.timestamp)} · not current</span>}
         {day.ok && (
           <span data-apr-day="" title={`Measured from ${shortDate(day.from.t)} ${shortTime(day.from.t)}, block ${day.from.block}, to now (${spanText(day.seconds)})`}>
             Last 24 hours: {aprText(day.rate)}
@@ -107,7 +103,6 @@ function YourApr({ tokenId, compact = false }: { tokenId: string; compact?: bool
       data-cell="apr"
       data-apr={rates ? (rates.all.ok ? 'ready' : rates.all.reason) : fees.phase}
       data-apr-source={saved ? 'saved-public-history' : undefined}
-      title={saved ? 'A copy this browser saved of this position’s public history. Historical, not a current rate.' : undefined}
       sub={compact && rates?.all.ok ? <details className="dm-position-figure-detail"><summary>Period details</summary>{sub}</details> : sub}
     >
       <span className="dm-fig-lg dm-pos-apr">{figure}</span>
@@ -134,7 +129,8 @@ function PriceNow({ price, card }: { price: CardPrice; card: LiveCard }) {
   }
   const code = state.phase === 'ready' ? state.price.state : state.phase === 'failed' ? state.code : state.phase
   return (
-    <span className="dm-fig-lg text-fg-subtle" title="The pool’s price could not be written with this position’s tokens." data-current-price={code}>
+    // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the dash has no title ("The pool’s price could not be written with this position’s tokens.").
+    <span className="dm-fig-lg text-fg-subtle" data-current-price={code}>
       —
     </span>
   )
@@ -155,10 +151,11 @@ function RangeLine({ price, card, cached = false }: { price: CardPrice; card: Li
   const live = !cached && card.hasLiquidity ? card.inRange : null
   return (
     <div className="dm-pos-span" data-stat="range" data-full-range={fullRange ? '' : undefined}>
-      <RangeBar lower={0.05} upper={0.95} current={at} inRange={live} label={`${cached ? 'Last known range. ' : ''}${rangeWords(card, price)}`} />
-      <span className="dm-pos-span-ends">
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a kept read is drawn as it is, never "Last known range". */}
+      <RangeBar lower={0.05} upper={0.95} current={at} inRange={live} label={rangeWords(card, price)} />
+      <span className="dm-pos-span-ends" data-range-kept={cached ? '' : undefined}>
         <span>{endText(low.end, low.tick)}</span>
-        <span className="dm-pos-span-word">{cached ? 'Last known range' : card.hasLiquidity ? 'Your range' : 'Closed range'}</span>
+        <span className="dm-pos-span-word">{card.hasLiquidity ? 'Your range' : 'Closed range'}</span>
         <span>{endText(high.end, high.tick)}</span>
       </span>
       {live !== null && (
@@ -219,8 +216,8 @@ export function KeyFigures({ card, state, price, block, cached = false, workspac
   const shares = basis && raw ? valueShares(basis, raw) : null
   const valueQuality = principal ? 'current' : visibleAmountQuality(card.principal)
   useLoadMilestone('position', 'value', valueQuality && cached ? 'cached' : valueQuality)
-  // One short reason, under the first of the two figures that has none.
-  const why = usd?.why ?? null
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no time under a figure that is not current ("as of
+  // 13:05 UTC") and no reason under amounts with no dollar figure; data-usd-snapshot still marks a kept figure.
   return (
     <StatStrip layout="tiles" className="dm-pos-stats" title={blockTitle(block)} data-position-stats="" data-position-overview={workspace ? '' : undefined} data-valued={principal ? '' : undefined}>
       <Stat
@@ -233,8 +230,6 @@ export function KeyFigures({ card, state, price, block, cached = false, workspac
         sub={
           principal ? (
             <>
-              {/* Changed on purpose 2026-10-14 (package V1, decision D4): a figure that is not current says its time. */}
-              {principal.dated && <span className="dm-pos-usd-note" data-usd-as-of="principal">{principal.dated}</span>}
               <FigureDetail active={workspace} label="Token amounts">
                 {/* Neutral inks: on this page Tangerine means the fees series, so the tokens' split never borrows it. A
                     position all in one token has nothing to split: no bar. */}
@@ -242,11 +237,11 @@ export function KeyFigures({ card, state, price, block, cached = false, workspac
                 <Amounts card={card} which="principal" />
               </FigureDetail>
             </>
-          ) : why && <span className="dm-pos-usd-note" data-usd-why="principal">{why}</span>
+          ) : null
         }
       >
         {principal ? (
-          <span className="dm-arrive" title={principal.title} data-usd={principal.one ? 'principal' : undefined} data-usd-basis={principal.basis} data-usd-snapshot={principal.saved ? '' : undefined}>
+          <span className="dm-arrive" title={principal.title} data-usd={principal.one ? 'principal' : undefined} data-usd-basis={principal.basis} data-usd-snapshot={principal.saved ? '' : undefined} data-usd-dated={principal.dated ? '' : undefined}>
             <LiveFigure value={principalText!} mode={longPrincipal ? 'whole' : 'digits'} dimCents className={cx('dm-fig-lg', longPrincipal && 'dm-position-long-figure')}>
               {longPrincipal && principalText!.split(/(?<=,)/).map((part, index) => <span className="dm-position-amount-group" key={index}>{part}</span>)}
             </LiveFigure>
@@ -262,14 +257,13 @@ export function KeyFigures({ card, state, price, block, cached = false, workspac
         data-cell="fees"
         sub={fees ? (
           <>
-            {fees.dated && <span className="dm-pos-usd-note" data-usd-as-of="fees">{fees.dated}</span>}
             {workspace ? <details className="dm-position-figure-detail"><summary>Token amounts</summary><Amounts card={card} which="unsettledFees" /></details> : <Amounts card={card} which="unsettledFees" />}
           </>
-        ) : principal && why && <span className="dm-pos-usd-note" data-usd-why="fees">{why}</span>}
+        ) : null}
       >
         {fees ? (
           fees.one ? (
-            <span title={fees.title} data-usd="fees" data-usd-basis={fees.basis} data-usd-snapshot={fees.saved ? '' : undefined}>
+            <span title={fees.title} data-usd="fees" data-usd-basis={fees.basis} data-usd-snapshot={fees.saved ? '' : undefined} data-usd-dated={fees.dated ? '' : undefined}>
               <UsdText value={fees.text} floor className={cx('dm-fig-lg dm-arrive', aboveZero(fees.text) && 'dm-fees-in')} />
             </span>
           ) : (
@@ -279,7 +273,8 @@ export function KeyFigures({ card, state, price, block, cached = false, workspac
       </Stat>
       <YourApr tokenId={card.tokenId} compact={workspace} />
       <Stat
-        label={cached ? 'Last known price' : 'Current price'}
+        // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): never "Last known price".
+        label="Current price"
         info="The position earns fees while this price is inside its range."
         className="dm-pos-stat"
         data-cell="price"

@@ -122,10 +122,11 @@ test('Markets keeps service failure distinct from no pools and never falls back 
   const s = await markets({ live: [8453, 42161], failed: true });
   try {
     await s.page.evaluate(token => { window.location.hash = `#/markets/network/8453/${token}`; }, TOKEN);
-    await s.page.locator('[data-network-token-view] [role="status"]').filter({ hasNotText: 'Loading token data' }).waitFor({ timeout: 30_000 });
+    // (2026-10-15, pack 7 review): the failure settled first (its Try again); the loading line's words are gone (no status
+    // notices), so filtering on them no longer waited for anything.
+    await s.page.getByRole('button', { name: 'Try again', exact: true }).waitFor({ timeout: 30_000 });
     assert.equal(await s.page.locator('[data-pools-empty]').count(), 0, 'an unavailable lookup is never an empty-pool result');
     assert.equal(await s.page.locator('[data-network-new-position]').count(), 0);
-    await s.page.getByRole('button', { name: 'Try again', exact: true }).waitFor();
     noWalletActions(s.chain);
   } finally { await s.close(); }
 });

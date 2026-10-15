@@ -1,6 +1,4 @@
 import type { ReactNode } from 'react'
-import { reasonText } from '../../../lib/read/describe'
-import { failureText } from '../../../lib/read/screens/copy'
 import { poolPositionsView, type PoolPositionRow } from '../../../lib/read/screens/figures'
 import { shortAddress } from '../../../lib/read/screens/identity'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
@@ -17,8 +15,6 @@ const Dash = ({ title }: { title?: string }) => (
   </span>
 )
 
-const sentence = (text: { title: string; detail: string }) => [text.title, text.detail].filter(Boolean).join('. ').replace(/\.\./g, '.')
-
 function Row({ row, block }: { row: PoolPositionRow; block: number }) {
   return (
     <tr data-pool-position={row.key} data-position-liquidity={row.hasLiquidity ? 'some' : 'none'}>
@@ -31,7 +27,8 @@ function Row({ row, block }: { row: PoolPositionRow; block: number }) {
             #{row.nft.tokenId.length > 12 ? `${row.nft.tokenId.slice(0, 6)}…${row.nft.tokenId.slice(-4)}` : row.nft.tokenId}
           </span>
         ) : (
-          <Dash title="No position NFT was resolved for this position" />
+          // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no title "No position NFT was resolved for this position".
+          <Dash />
         )}
       </td>
       <td>
@@ -41,7 +38,9 @@ function Row({ row, block }: { row: PoolPositionRow; block: number }) {
             <span className="sr-only">{row.nft.owner}</span>
           </span>
         ) : (
-          <Dash title={row.nft ? `The position was empty at block ${block}` : 'Owner not resolved'} />
+          // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): an owner that was not resolved is a dash with
+          // no title ("Owner not resolved" is gone); an empty position still says so, a fact at that block.
+          <Dash title={row.nft ? `The position was empty at block ${block}` : undefined} />
         )}
       </td>
     </tr>
@@ -70,18 +69,14 @@ function Rows({ rows, block }: { rows: PoolPositionRow[]; block: number }) {
 export function PoolPositionsCard({ read, option, embedded = false }: { read: ScreenOutcome<'pool-positions'> | null; option: PoolOption; embedded?: boolean }) {
   const view = read?.state === 'ok' ? poolPositionsView(read.data, option.currencies) : null
   const failure = read && read.state !== 'ok' && read.state !== 'aborted' ? read : null
-  const reason = failure
-    ? sentence(failureText(failure, 'pools'))
-    : view?.state === 'unavailable'
-      ? `Unavailable: ${reasonText(view.reason)}`
-      : view?.stale
-        ? `Stale at block ${view.block}.`
-        : undefined
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no reason on the section, its dashes or its live
+  // region any more (the failed read's words, "Unavailable: <reason>", "Stale at block <n>."); `data-pool-positions` and
+  // `data-positions-reason` keep the state, as data.
   const state = view ? (view.state === 'unavailable' ? 'unavailable' : view.stale ? 'stale' : 'ok') : failure ? 'unavailable' : 'loading'
   const counted = view?.state === 'reconciled' ? view : null
-  const cell = (node: ReactNode) => (counted ? node : state === 'loading' ? <Skeleton className="ml-auto h-4 w-12" /> : <Dash title={reason} />)
+  const cell = (node: ReactNode) => (counted ? node : state === 'loading' ? <Skeleton className="ml-auto h-4 w-12" /> : <Dash />)
   // The facts are tiles with their figures on the left: their resting bubbles sit there too.
-  const fact = (node: ReactNode) => (counted ? node : state === 'loading' ? <Skeleton className="dm-pool-fact-skel" /> : <Dash title={reason} />)
+  const fact = (node: ReactNode) => (counted ? node : state === 'loading' ? <Skeleton className="dm-pool-fact-skel" /> : <Dash />)
   const shown = counted ? counted.rows.slice(0, POSITION_ROWS) : []
   const folded = counted ? counted.rows.slice(POSITION_ROWS) : []
   const table = (rows: PoolPositionRow[]) => (
@@ -102,12 +97,12 @@ export function PoolPositionsCard({ read, option, embedded = false }: { read: Sc
   )
   const Heading = embedded ? 'h3' : 'h2'
   return (
-    <section className={embedded ? 'dm-pool-embedded' : 'dm-card dm-pool-card dm-pool-a-positions animate-rise [--delay:120ms]'} aria-labelledby="pool-positions-title" data-pool-positions={state} data-positions-reason={view?.state === 'unavailable' ? view.reason : failure?.state} title={reason}>
+    <section className={embedded ? 'dm-pool-embedded' : 'dm-card dm-pool-card dm-pool-a-positions animate-rise [--delay:120ms]'} aria-labelledby="pool-positions-title" data-pool-positions={state} data-positions-reason={view?.state === 'unavailable' ? view.reason : failure?.state}>
       {/* Inside the pool page's Details (round 6), under its own smaller heading. */}
       <Heading id="pool-positions-title" className={embedded ? 'dm-pool-embedded-title' : 'dm-title'} title="Every position on this pool at one block. Owners are public data at that block.">
         Positions in this pool
       </Heading>
-      <p role="status" className="sr-only">{state === 'loading' ? 'Reading positions…' : state === 'unavailable' ? reason : ''}</p>
+      <p role="status" className="sr-only">{state === 'loading' ? 'Reading positions…' : ''}</p>
       <dl className="dm-pool-facts">
         <div><dt>Positions</dt><dd>{fact(counted?.count.toLocaleString('en-US'))}</dd></div>
         <div><dt>With liquidity</dt><dd>{fact(counted?.withLiquidity.toLocaleString('en-US'))}</dd></div>

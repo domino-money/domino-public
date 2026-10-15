@@ -58,7 +58,9 @@ test('Wallet rechecks an omitted remembered UFG without discovery, retains it wh
     const card = page.locator('[data-portfolio-tokens]'), ufg = card.locator(`[data-wallet-row="${UFG}"]`);
     await card.locator('[data-wallet-value-unavailable]').waitFor();
     await page.waitForFunction(() => document.querySelector('[data-portfolio-tokens]')?.getAttribute('data-wallet-source') === 'read');
-    assert.match(await ufg.locator('[data-wallet-balance-earlier]').innerText(), /previous reading/);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the earlier balance is a hidden marker; a screen reader heard "Balance from the previous reading; refreshing.".
+    assert.equal(await ufg.locator('[data-wallet-balance-earlier]').count(), 1);
+    assert.doesNotMatch(await ufg.innerText(), /previous reading|refreshing|updating/i);
     assert.equal(await ufg.locator('[data-usd]').count(), 0);
     assert.ok(checks > 0, 'the existing exact-address API was used for the omitted holding');
     assert.equal(await card.locator('[data-wallet-total]').count(), 0, 'the remaining USDG is not misrepresented as the whole wallet');
@@ -142,7 +144,8 @@ test('returning to Positions retains one complete wallet valuation and stable ro
     await row.locator('[data-wallet-value-snapshot]').waitFor();
     assert.equal(await card.locator('[data-wallet-total] .dm-fig-xl').textContent(), total);
     assert.equal(await row.locator('[data-usd]').textContent(), price);
-    assert.match(await row.locator('[data-usd]').getAttribute('title'), /Previous complete valuation/);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the kept valuation's title is its own basis, never "Previous complete valuation. Checking the current balance.".
+    assert.doesNotMatch(await row.locator('[data-usd]').getAttribute('title'), /Previous complete valuation|Checking/);
     const updating = await geometry();
     const totalHeightDelta = Math.abs(updating.total.height - before.total.height);
     const rowHeightDelta = Math.abs(updating.row.height - before.row.height);
@@ -153,10 +156,11 @@ test('returning to Positions retains one complete wallet valuation and stable ro
       await s.page.setViewportSize({ width, height: 960 });
       const layout = await row.evaluate(node => {
         const units = node.querySelector('.dm-acct-token-units');
-        return { nowrap: getComputedStyle(units).whiteSpace, oldHidden: getComputedStyle(node.querySelector('[data-wallet-balance-earlier]')).clip !== 'auto', overflow: document.documentElement.scrollWidth > innerWidth, height: units.getBoundingClientRect().height, line: parseFloat(getComputedStyle(units).lineHeight) };
+        return { nowrap: getComputedStyle(units).whiteSpace, oldHidden: node.querySelector('[data-wallet-balance-earlier]').hidden, overflow: document.documentElement.scrollWidth > innerWidth, height: units.getBoundingClientRect().height, line: parseFloat(getComputedStyle(units).lineHeight) };
       });
       assert.equal(layout.nowrap, 'nowrap');
-      assert.equal(layout.oldHidden, true, 'read status remains accessible without a visible extra label');
+      // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the marker is hidden outright (it was an sr-only line).
+      assert.equal(layout.oldHidden, true, 'the read status is a hidden marker, with no visible extra label');
       assert.equal(layout.overflow, false, `the wallet fits ${width}px`);
       assert.ok(layout.height <= layout.line + 0.5, 'the token quantity occupies exactly one line');
       const directory = resolve(process.env.DOMINO_POSITION_SHOTS ?? 'app/.test-artifacts');

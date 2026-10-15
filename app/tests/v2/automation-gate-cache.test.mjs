@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 const require = createRequire(import.meta.url);
 const { createGateCache, GATE_RECHECK_MS } = require('../../.test-build/app/src/v2in/automate/gateCache.js');
-const { createV2RouteProbe, V2_ROUTE_SPECS } = require('../../.test-build/app/src/v2/routes.js');
+const { createV2RouteProbe, V2_ROUTE_SPECS, V2_READ_ROUTE_REUSE_MS } = require('../../.test-build/app/src/v2/routes.js');
 globalThis.__DOMINO_V2__ = true;
 const { v2Gate } = require('../../.test-build/app/src/v2/gate.js');
 delete globalThis.__DOMINO_V2__;
@@ -27,7 +27,13 @@ test('a 503 capability recovers to live on re-entry/focus, with the same manifes
   assert.equal(calls, 2);
   assert.equal(await cache('autoExit', 4663, true), first, 'unchanged focus refresh preserves the review identity');
   assert.equal(calls, 2, 'the underlying capability TTL still applies');
+  // Rewritten on purpose 2026-10-15 (pack 7): the probe keeps the read route's "on" five minutes (src/v2/routes.ts
+  // V2_READ_ROUTE_REUSE_MS), so the gate's own minute takes the kept answer, and the outage is met at the probe's five
+  // minutes (it was GATE_RECHECK_MS). Still never a page-lifetime live gate.
   now += GATE_RECHECK_MS + 1; status = 503;
+  assert.equal((await cache('autoExit', 4663)).mode, 'live', "the gate's minute: the probe's kept answer, no GET");
+  assert.equal(calls, 2);
+  now = V2_READ_ROUTE_REUSE_MS + 1;
   assert.equal((await cache('autoExit', 4663)).mode, 'preview', 'a later outage cannot leave a page-lifetime live gate');
   assert.equal(calls, 3);
 });

@@ -201,7 +201,8 @@ async function assertIsolatedBlockPrices(range, world) {
   assert.equal(await range.locator('path.dm-pvr-line').count(), 0, 'unknown hours are never joined into a price trajectory');
   assert.equal(await range.locator('.dm-pvr-lone[data-tone="in"]').count(), 2, 'only opening and current prices, clipped to the range');
   assert.equal(await range.locator('.dm-pvr-lone[data-tone="out"]').count(), 2, 'the same two observations outside the range');
-  assert.equal(await range.locator('.dm-pvr-note').innerText(), 'Since opened · Some hours are missing.');
+  // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the line's window and kind only; it said "Since opened · Some hours are missing.".
+  assert.equal(await range.locator('.dm-pvr-note').innerText(), 'Since opened · Measured prices');
   const chart = range.getByRole('slider');
   assert.equal(await chart.getAttribute('aria-valuemax'), '2', 'no synthetic hourly points');
   const stamp = (sec) => { const iso = new Date(sec * 1000).toISOString(); return `${iso.slice(5, 10)} ${iso.slice(11, 16)} UTC`; };
@@ -311,7 +312,8 @@ test('an automated position: the card says in two lines what Auto-compound put b
     assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(page), 'one price now on the screen');
     const [low, high] = [await endFigure(range, 'min'), await endFigure(range, 'max')];
     assert.match(await page.locator('[data-stat="range"]').innerText(), new RegExp(`^${low.replaceAll('.', '[.]')}\\s+Your range\\s+${high.replaceAll('.', '[.]')}\\s`));
-    assert.deepEqual(await range.locator('.dm-pvr-legend > *').allInnerTexts(), ['Your range', 'Price inside it', 'Since opened · Some hours are missing.']);
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): no "Some hours are missing.".
+    assert.deepEqual(await range.locator('.dm-pvr-legend > *').allInnerTexts(), ['Your range', 'Price inside it', 'Since opened · Measured prices']);
     assert.equal(await range.locator('.dm-pvr-unit').innerText(), 'USDG per UFG');
     assert.match(await page.locator('[data-stat="price"]').innerText(), /0\.00\d+\s+USDG per UFG/);
     await rangeCard(page).screenshot({ path: join(shots(), 'desktop-price-range-in.png') });
@@ -541,9 +543,14 @@ test('a position whose owner added liquidity by hand: Fees ready to collect stay
     const card = s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"]');
     await card.waitFor({ timeout: 60_000 });
     assert.equal(await card.getAttribute('data-fees-reason'), 'not_exact');
-    assert.match(await card.innerText(), /Ready to collect[\s\S]*\$[\d,]+\.\d\d[\s\S]*Fees earned can’t be measured for this position\. Fees ready to collect is exact\./);
-    const apr = s.page.locator('[data-cell="apr"]');
-    await apr.filter({ hasText: 'Not measured for this position' }).waitFor({ timeout: 10_000 });
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): Fees ready to collect stays exact and the plot
+    // says nothing ("Fees earned can’t be measured for this position. Fees ready to collect is exact."); Your APR is a dash
+    // with nothing under it ("Not measured for this position"). Why is data-fees-reason's and data-apr's.
+    assert.match(await card.innerText(), /Ready to collect[\s\S]*\$[\d,]+\.\d\d/);
+    assert.doesNotMatch(await card.innerText(), /can’t be measured|is exact/);
+    const apr = s.page.locator('[data-cell="apr"][data-apr="unclaimed-only"]');
+    await apr.waitFor({ timeout: 10_000 });
+    assert.doesNotMatch(await apr.innerText(), /Not measured/);
     assert.doesNotMatch(await s.page.locator('body').innerText(), /Retry|Try again/);
   } finally { await s.close(); }
 });
@@ -818,8 +825,20 @@ test('closed position workspace keeps its closed status and never substitutes a 
     await page.getByRole('tab', { name: 'Price range', exact: true }).click();
     const range = page.locator('[data-pvr-where="closed"]');
     await range.waitFor({ timeout: 30_000 });
-    assert.equal(await range.locator('.dm-pvr-now-line').count(), 0, 'a closed position never draws the current price as its history');
     assert.match(await range.locator('.dm-pvr-says').textContent(), /Closed/);
+    // (2026-10-15, pack 7): the owner's close is a withdrawal ('manual'), so this ledger is not exact; complete, it still
+    // dates the close from the NFT's own settlements, and the chart stops waiting on its closing history.
+    const closedAt = world.timeAt(HEAD - 50);
+    await page.locator(`[data-pvr-where="closed"][data-pvr-closed="${closedAt}"]`).waitFor({ timeout: 30_000 });
+    assert.doesNotMatch(await range.locator('.dm-pvr-note').textContent(), /closing history/);
+    // Changed on purpose 2026-10-15 (pack 7): it was "no price level at all", while the close could never be dated. Now a
+    // closed position may draw its own prices up to the close, and its marker is the last of them ("Last"): still never
+    // the current price, nor anything after the close.
+    assert.equal(await range.locator('[data-pvr-now]').count(), 0, 'a closed position never draws the current price as its history');
+    if (await range.getAttribute('data-pvr-line') !== null) {
+      assert.ok(Number(await range.getAttribute('data-pvr-end')) <= closedAt, 'nothing after the close');
+      assert.equal(await range.locator('[data-pvr-last]').count(), 1, 'the marker is the last price before the close');
+    } else assert.equal(await range.locator('.dm-pvr-now-line').count(), 0, 'no line: no price level either');
     await page.screenshot({ path: join(shots(), 'workspace-closed-390.png'), fullPage: true });
     await page.getByRole('tab', { name: 'Fees', exact: true }).click();
     assert.equal(await page.locator('[data-position-chart-panel="fees"]').isVisible(), true);
@@ -996,7 +1015,8 @@ test('a start that cannot be read: the period says so in one calm line, its tabs
     await card.waitFor({ timeout: 60_000 });
     const quiet = page.locator('[data-fees-card][data-fees-period="7d"][data-fees-period-state="unavailable"] [data-fees-quiet="period_unavailable"]');
     await quiet.waitFor({ timeout: 30_000 });
-    assert.equal((await quiet.innerText()).trim(), 'This period can’t be read right now. Fees earned above is exact.');
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the flat plot says nothing ("This period can’t be read right now. Fees earned above is exact.").
+    assert.equal((await quiet.innerText()).trim(), '');
     assert.equal(await card.locator('.dm-fees-delta').count(), 0);
     assert.deepEqual(await card.getByRole('radio').allInnerTexts(), ['24H', '7D', '30D', 'All'], 'the tabs stay');
     assert.match(await card.locator('.dm-fees-hero').innerText(), /\$[\d,]+\.\d\d/, 'the hero is exact');

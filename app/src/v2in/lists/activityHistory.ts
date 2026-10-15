@@ -20,6 +20,19 @@ interface Gap extends Walk { join: Set<string> }
 interface Pending extends Walk { targets: Set<string>; checked: Set<string> }
 type Job = { kind: 'head'; generation: number } | { kind: 'older' | 'gap' | 'pending'; walk: Walk }
 const PAGE = 20, HEAD_DELAY = 60_000, WORK_DELAY = 1_000, WORK_PAUSE = 5_000, FAST_DELAY = 2_000
+/**
+ * (2026-10-15, pack 7): the head's period while the tab is idle: two minutes, not HEAD_DELAY. Only after a good head answer
+ * in which every chain is current (no coverage or "still updating" line can be on screen) and every receipt is final, with
+ * no page of the history due, while the `idle` predicate the page hands in says the wallet is quiet, and never once a
+ * refresh came for this wallet (a change on the bus, a confirmed operation): from then on the head keeps HEAD_DELAY and every
+ * after-action pace exactly as before. Without the predicate (the default) nothing changes.
+ */
+export const IDLE_HEAD_DELAY = 120_000
+/**
+ * Whether nothing of this browser's own concerns the wallet (activityModel.ts quietWallet), given the receipts the head holds.
+ * (2026-10-15, pack 7)
+ */
+export type ActivityIdle = (wallet: string, items: readonly ActivityItem[]) => boolean
 const EMPTY: ActivityHistory = Object.freeze({ answer: null, error: null, loading: false, more: false, catchingUp: false })
 
 /** The backend's chronological key, with a stable tie-breaker; never sort by transaction hash or status. */
@@ -41,7 +54,7 @@ const sameBlock = (a: ActivityItem, b: ActivityItem) => a.chainId === b.chainId 
  * `heard` (added 2026-10-14, incident C2): every good answer, as it arrived, before any of it is merged. Each names its
  * chains' finalized block, which is how the confirmation queue learns finality with no request of its own (activity.tsx).
  */
-export function createActivityHistory(read: Read, timers: ReaderTimers, refresh = true, heard: (answer: ActivityResponse) => void = () => undefined) {
+export function createActivityHistory(read: Read, timers: ReaderTimers, refresh = true, heard: (answer: ActivityResponse) => void = () => undefined, idle?: ActivityIdle) {
   interface Entry {
     value: ActivityHistory; listeners: Set<() => void>; timer: unknown; waking: (() => void) | null; inFlight: boolean
     headAt: number | null; workAt: number | null; notBefore: number; retry: { job: Job; at: number } | null
@@ -51,6 +64,9 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
     checkedPending: Set<string>
     /** When the last good head answer came (2026-10-14, Q1: the wake rule); null before any. */
     goodAt: number | null
+    /** (2026-10-15, pack 7): a refresh came for this wallet (it is never idle again), and the head's period now. */
+    touched: boolean
+    period: number
   }
   const entries = new Map<string, Entry>()
   const now = () => timers.now?.() ?? Date.now()
@@ -59,7 +75,8 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
     if (!e) {
       e = { value: EMPTY, listeners: new Set(), timer: null, waking: null, inFlight: false, headAt: now(), workAt: null,
         notBefore: 0, retry: null, generation: 0, tail: null, gaps: [], pending: null, workCount: 0, preferPending: false,
-        restarted: false, restartNeeded: false, recoveryJoin: null, failures: 0, fastReads: 0, confirmations: new Map(), checkedPending: new Set(), goodAt: null }
+        restarted: false, restartNeeded: false, recoveryJoin: null, failures: 0, fastReads: 0, confirmations: new Map(), checkedPending: new Set(), goodAt: null,
+        touched: false, period: HEAD_DELAY }
       entries.set(wallet, e)
     }
     return e
@@ -83,6 +100,17 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
     const wait = Math.max(0, Math.max(e.notBefore, Math.min(...due)) - now())
     if (wait === 0) { void pump(wallet, e); return }
     e.timer = timers.set(() => { e.timer = null; void pump(wallet, e) }, wait)
+  }
+  /**
+   * (2026-10-15, pack 7 review): an idle head back on HEAD_DELAY, due no later than a minute after its last good answer,
+   * as main's would be; nothing is read for it here (schedule reads only what that minute already made due). True if it
+   * was idle.
+   */
+  const unidle = (e: Entry): boolean => {
+    if (e.period === HEAD_DELAY) return false
+    e.period = HEAD_DELAY
+    if (e.goodAt !== null && e.headAt !== null) e.headAt = Math.min(e.headAt, e.goodAt + HEAD_DELAY)
+    return true
   }
   const continueWork = (e: Entry) => {
     if (!e.gaps.length && !e.pending) { e.workAt = null; return }
@@ -189,6 +217,14 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
         if (targets.length) e.pending = { ...walk(reply.body.nextCursor, last), targets: new Set(targets.map((item) => item.id)), checked: new Set(targets.map((item) => item.id)) }
       }
       if ((e.gaps.length || e.pending) && e.workAt === null) e.workAt = now() + WORK_DELAY
+      // (2026-10-15, pack 7): an idle tab's head waits IDLE_HEAD_DELAY (see there); anything else keeps the line above.
+      e.period = HEAD_DELAY
+      if (refresh && idle && !e.touched && !e.confirmations.size && !e.gaps.length && !e.pending
+        && reply.body.chains.every((chain) => chain.status === 'current') && [...known.values()].every((item) => item.tx.finality === 'finalized')
+        && idle(wallet, [...known.values()])) {
+        e.period = IDLE_HEAD_DELAY
+        e.headAt = now() + IDLE_HEAD_DELAY
+      }
     } else {
       const cursor = job.walk.cursor
       job.walk.cursors.add(cursor)
@@ -245,6 +281,8 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
             e.fastReads = 6
           }
         }
+        // (2026-10-15, pack 7): anything that happened for this wallet ends its idle period for good.
+        e.touched = true
         e.generation++; e.headAt = now(); schedule(key, e)
       }
     },
@@ -257,9 +295,22 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
     wake() {
       const at = now()
       for (const [key, e] of entries) {
-        if (!e.listeners.size || e.inFlight || e.retry || e.notBefore > at || !wakeDue(e.goodAt, refresh ? HEAD_DELAY : null, at)) continue
+        // (2026-10-15, pack 7 review): an idle head asks its predicate again first: once the wallet is no longer quiet (an
+        // action in another tab of this browser, say), the wake goes by HEAD_DELAY, as main's.
+        if (e.period !== HEAD_DELAY && (!idle || !idle(key, e.value.answer?.items ?? [])) && unidle(e) && !e.inFlight) schedule(key, e)
+        // (2026-10-15, pack 7): the head's own period (IDLE_HEAD_DELAY while idle, else HEAD_DELAY).
+        if (!e.listeners.size || e.inFlight || e.retry || e.notBefore > at || !wakeDue(e.goodAt, refresh ? e.period : null, at)) continue
         e.generation++; e.headAt = at; schedule(key, e)
       }
+    },
+    /**
+     * (2026-10-15, pack 7 review): an action in another tab of this browser (activity.tsx hears its storage note): every
+     * idle head back on HEAD_DELAY, due a minute after its last good answer, as main's. It reads nothing by itself, no
+     * request beyond main's: a head that minute already made due is read as main's would have been, a hidden tab's waits
+     * for it to be shown. A head being read takes the predicate's word at its answer, which now says not quiet.
+     */
+    calm() {
+      for (const [key, e] of entries) if (unidle(e) && !e.inFlight) schedule(key, e)
     },
   }
 }

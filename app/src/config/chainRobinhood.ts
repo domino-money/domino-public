@@ -48,6 +48,14 @@ export const FIRST_TRANSFER_BLOCK = 9506
  * be older.
  */
 export const SETUP_DEPLOY_BLOCK = 69_249_061
+/**
+ * (2026-10-15, pack 7) A time (Unix seconds) at or after SETUP_DEPLOY_BLOCK's own: the timestamp of block 69,250,734,
+ * the release's `verifiedBlock` in docs/deployments/v1-robinhood-mainnet-2026-09-21/deployment.json (2026-09-22
+ * 01:07:22 UTC). That block is 1,673 blocks later, and a chain's block times never go back, so anything minted before
+ * SETUP_DEPLOY_BLOCK was minted at or before this. The block's own time is not recorded; only this bound is used
+ * (lib/chart/positionOpened.ts ledgerOpenedBefore), never as an opening time.
+ */
+export const SETUP_DEPLOYED_BY = 1_790_039_242
 
 /**
  * 2026-09-28 (the owner: from that morning, for everyone, a position's Fees earned chart and Your APR stopped showing):

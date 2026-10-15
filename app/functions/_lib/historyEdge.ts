@@ -6,6 +6,10 @@
  *
  * Kept: only an answer read-v3's runtime accepts, for the question asked, whose history is `available`. One not built
  * yet, partial or stale is passed on and never kept, so a pool whose history is being built shows it as soon as it is.
+ * Changed on purpose 2026-10-15 (pack 7: every viewer of a young pool reached rugged97's gateway on every view): one not
+ * built yet, partial, stale or unavailable is kept too, but briefly (publicEdge.ts `brief`): served as it is for
+ * HISTORY_SECONDS and never past it, so a pool that becomes ready shows within 20 s. A refusal, an error or an answer the
+ * runtime does not accept for the question is still never kept.
  * Served as it is for 20 seconds (HISTORY_SECONDS). Changed 2026-10-01 (audit A14, the owner's OK on more edge caching):
  * past that, and up to HISTORY_STALE_SECONDS (one minute in all), a kept answer is still served at once while the request
  * that found it refreshes it behind, and says how old it is (X-Domino-Edge-Age), so the chart dates it by when the edge
@@ -37,6 +41,19 @@ export const HISTORY_STALE_SECONDS = 60
 
 interface Asked { poolId: string; currency: string; windowSeconds?: number; resolutionSeconds?: number }
 
+/** The history statuses read-v3 answers (api-contracts/read-v3 history.response `status`): `available`, and the not-ready ones. */
+const STATUSES: ReadonlySet<unknown> = new Set(['available', 'not_built', 'partial', 'stale', 'unavailable'])
+
+/** A valid answer's status, when it is one of those; null otherwise (2026-10-15, pack 7). */
+function statusOf(text: string): string | null {
+  try {
+    const status = (JSON.parse(text) as { status?: unknown }).status
+    return STATUSES.has(status) ? (status as string) : null
+  } catch {
+    return null
+  }
+}
+
 /** The synthetic GET names the validated app origin, contract version and question, in one order. */
 export const historyKey = (version: string, asked: Asked, origin = APP_ORIGIN) =>
   `${origin}/api/read/v3/cache/${encodeURIComponent(version)}/history/${encodeURIComponent(JSON.stringify([asked.poolId.toLowerCase(), asked.currency.toLowerCase(), asked.windowSeconds ?? null, asked.resolutionSeconds ?? null]))}`
@@ -56,13 +73,8 @@ export function answerHistory(request: Request, env: BridgeEnv, rt: HistoryRunti
     version: contract.CONTRACT_VERSION,
     keyOf: (body, origin) => (contract.validateRequest('history', body) ? historyKey(contract.CONTRACT_VERSION, body as Asked, origin) : null),
     answers: (body, text) => answer(body, text) !== null,
-    keep: (text) => {
-      try {
-        return (JSON.parse(text) as { status?: unknown }).status === 'available'
-      } catch {
-        return false
-      }
-    },
+    keep: (text) => statusOf(text) !== null,
+    brief: (text) => statusOf(text) !== 'available',
     freshSeconds: HISTORY_SECONDS,
     staleSeconds: HISTORY_STALE_SECONDS,
   })

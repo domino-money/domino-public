@@ -73,7 +73,8 @@ test('the module builds no price line from a fees history: no hook of its own, a
   assert.equal(frame.props.points, 0, 'nothing to inspect without a line');
   assert.equal(chart.props['data-pvr-line'], undefined);
   const legend = nodes.find((node) => node.props.className === 'dm-pvr-legend');
-  assert.equal(text(legend), 'Your rangePrice nowPrice history isn’t available yet.');
+  // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the legend's note is empty with no line ("Price history isn’t available yet.").
+  assert.equal(text(legend), 'Your rangePrice now');
 });
 
 test('a history is drawn as it was stored: its last point is its own last close, never the page’s price now at its old time', () => {

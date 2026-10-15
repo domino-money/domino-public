@@ -1,5 +1,6 @@
 import type { ActivityResponse } from 'api-contracts/read-v6/types'
-import type { FeeHistoryView, LedgerMintHint, StateCurrency } from '../fees/types'
+import { SETUP_DEPLOYED_BY } from '../../config/chainRobinhood'
+import type { FeeEvent, FeeHistoryView, LedgerMintHint, LedgerWhy, StateCurrency } from '../fees/types'
 
 const timestamp = (value: number | undefined): number | null => value !== undefined && Number.isSafeInteger(value) && value > 0 ? value : null
 
@@ -11,19 +12,45 @@ export function ledgerOpenedAt(view: FeeHistoryView): number | null {
   return null
 }
 
+/**
+ * The ledger's reasons for an inexact view whose settlements are still complete: the scan reached the head and found the
+ * mint (functions/_lib/feesLedger.ts whyOf returns these only then), and only a settlement's fees are unknown. Every
+ * other reason ('liquidity', 'unseen', 'before_floor', 'too_many', 'reading') is a ledger whose settlements do not prove
+ * the NFT's liquidity, or a verdict with none.
+ */
+const COMPLETE_INEXACT: ReadonlySet<LedgerWhy> = new Set(['manual', 'native', 'shared'])
+
 /** A final zero-liquidity interval, proved by this NFT's settlements. Missing state is never a close. */
 export function ledgerClosedAt(view: FeeHistoryView): number | null {
-  if (view.phase !== 'verified' && view.phase !== 'cached') return null
+  let events: ReadonlyArray<FeeEvent>
+  if (view.phase === 'verified' || view.phase === 'cached') events = view.history.events
+  // (2026-10-15, pack 7): every close is an owner's withdrawal ('manual'), so a closed NFT's view was never exact and the
+  // chart waited on its closing history forever. A complete inexact ledger dates the close from the same settlements,
+  // which must hold the mint, never go negative and sum to the state's zero.
+  else if (view.phase === 'unclaimed-only' && view.reason === 'not_exact' && view.why !== undefined && COMPLETE_INEXACT.has(view.why) && view.events?.some((event) => event.kind === 'mint')) events = view.events
+  else return null
   if (view.state.liquidity !== 0n) return null
   let liquidity = 0n
   let closed: number | null = null
-  for (const event of view.history.events) {
+  for (const event of events) {
     liquidity += event.liquidityDelta
     if (liquidity < 0n) return null
     if (liquidity > 0n) closed = null
     else if (event.liquidityDelta < 0n) closed = timestamp(event.timestamp)
   }
   return liquidity === 0n ? closed : null
+}
+
+/**
+ * (2026-10-15, pack 7) A position minted before Domino's release: its ledger found no mint from SETUP_DEPLOY_BLOCK to the
+ * head ('before_floor', decided only once the scan reached the head), so the NFT was minted before that block, at or
+ * before SETUP_DEPLOYED_BY. A bound, never an opening time: it dates no "Opened" mark, and the chart draws the stored
+ * window only when the bound is at or before its start (priceRange.ts historyLine). Null for anything else.
+ */
+export function ledgerOpenedBefore(view: FeeHistoryView): number | null {
+  if (view.phase !== 'unclaimed-only' || view.reason !== 'not_exact' || view.why !== 'before_floor') return null
+  if (view.mintedAt || view.events?.some((event) => event.kind === 'mint')) return null
+  return SETUP_DEPLOYED_BY
 }
 
 export interface PoolPriceObservations {

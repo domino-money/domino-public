@@ -67,3 +67,51 @@ for (const hash of ['#/new', '#/markets']) test(`${hash}: token artwork is loade
     assert.equal(chain.sends.length, 0);
   } finally { await s.close(); }
 });
+
+// (2026-10-15, pack 7): a Base position's page showed two red 502s in the console, on GET /api/read/dex/token-pairs/base/
+// <token>, the old path, for a token our edge had no read for. The page's token lookups ask the new path now, whose
+// answer is a 200 that says the token is missing: no request leaves for /api/read/dex/, no error status, and the provider
+// is not asked around it. The page's DEX resolver is built as production builds it (our edge first), behind our edge's
+// real route code (tests/support/dex-edge-route.mjs) over a provider that refuses every read.
+test('Base position page: token lookups ask /api/read/dex2/ only, and a missing token gives no error status', async () => {
+  const { createDexEdgeRoute, createDexUpstream, edgeOnInTestBuild } = await import('../support/dex-edge-route.mjs');
+  const { openPositionPage } = await import('../support/position-v2-page.mjs');
+  const { activityOf, indexedToken, livePosition, portfolioOf } = await import('../support/s1-read6.mjs');
+  const OWNER = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8';
+  const USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+  const TEST = '0xb200000000000000000000000000000000000001';
+  const ZERO = '0x0000000000000000000000000000000000000000';
+  const manager = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1';
+  const pool = { dex: 3, currency0: USDC, currency1: TEST, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const now = Math.floor(Date.now() / 1000);
+  const position = livePosition({ chainId: 8453, dex: 3, manager, tokenId: '6238157', owner: OWNER, pool, tickLower: -60, tickUpper: 60, liquidity: '1000000000',
+    sqrtPriceX96: String(2n ** 96n), tick: 0, principal: ['2000000', '3000000'], feesOwed: ['250000', '500000'] });
+  const portfolio = portfolioOf({ wallet: OWNER, tokens: [indexedToken(8453, USDC, 'USDC', 6), indexedToken(8453, TEST, 'TEST', 6)], positions: [position] });
+  const chain = createV2Chain({ chainId: 8453, timestamp: now, positions: [{ dex: 3, tokenId: 6_238_157n, pool, tickLower: -60, tickUpper: 60, liquidity: 1_000_000_000n,
+    principal: [2_000_000n, 3_000_000n], fees: [250_000n, 500_000n] }], pools: [{ pool, sqrtPriceX96: 2n ** 96n, tick: 0, liquidity: 1_000_000_000n }] });
+  const upstream = createDexUpstream({ pairsOf: () => [], refuse: { status: 503 } });
+  const edge = createDexEdgeRoute(upstream);
+  let rewrites = null;
+  const consoleErrors = [];
+  const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v3-6238157', read6: { portfolio, activity: activityOf({ wallet: OWNER }) }, routes: [edge.handle],
+    prepare: async (context, origin) => {
+      rewrites = await edgeOnInTestBuild(context, origin);
+      context.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(`${message.text()} (${message.location()?.url ?? ''})`); });
+    } });
+  try {
+    await s.page.locator('[data-position-detail][data-position-id="6238157"]').waitFor({ timeout: 30_000 });
+    assert.equal(rewrites.count, 1, 'the page’s DEX resolver is built as production builds it (our edge first)');
+    const deadline = Date.now() + 20_000;
+    while (!edge.pairAsks().some((one) => one.tokens.includes(TEST)) && Date.now() < deadline) await s.page.waitForTimeout(100);
+    await s.page.waitForTimeout(1500);
+    await edge.settle();
+    const lookups = edge.pairAsks();
+    const report = JSON.stringify({ asked: edge.asked, direct: s.artwork, consoleErrors });
+    assert.ok(lookups.some((one) => one.tokens.includes(TEST)), `the TEST token is looked up: ${report}`);
+    assert.deepEqual(edge.asked.filter((one) => one.path === 'dex'), [], `no request leaves for /api/read/dex/: ${report}`);
+    assert.ok(edge.asked.every((one) => one.status === 200), `every answer a 200, the missing token's too: ${report}`);
+    assert.deepEqual(s.artwork.filter((url) => url.startsWith('https://api.dexscreener.com/')), [], `the provider is not asked around a missing token: ${report}`);
+    // The signed-out session's own 401 is the page's, as on every page; none of the DEX lookups', and no 5xx at all.
+    assert.deepEqual(consoleErrors.filter((text) => /\/api\/read\/dex|status of 5\d\d/.test(text)), [], `no red status line for a token lookup in the console: ${report}`);
+  } finally { await s.close(); }
+});

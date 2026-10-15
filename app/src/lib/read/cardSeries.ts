@@ -13,7 +13,7 @@
  */
 import type { Candle, PoolMarketResponse } from 'api-contracts/read-v1/types'
 import type { HistoryResponse } from 'api-contracts/read-v3/types'
-import { retrievedText, type CarriedHistory, type Instant, type Market, type Metric } from '../markets'
+import type { CarriedHistory, Instant, Market, Metric } from '../markets'
 import { chartMatches } from './chart'
 import { plainBase } from './marketPrice'
 import { reasonText } from './describe'
@@ -81,7 +81,11 @@ export type CardSeries =
   | { kind: 'line'; history: HistoryResponse; base: TokenDisplay; quote: TokenDisplay; stale: boolean; title: string }
   /** Hourly USD volume a market data provider reported. */
   | { kind: 'bars'; candles: readonly Candle[]; intervalSeconds: number; returned: number; stale: boolean; title: string }
-  /** The row's own 24h volume figure, or a dash without a row; `code` and `title` say why there is no chart. */
+  /**
+   * The row's own 24h volume figure, or a dash without a row; `code` and `title` say why there is no chart, as data.
+   * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the card no longer draws `title` as a hover
+   * title (MarketCard); it stays here for tests and diagnostics.
+   */
   | { kind: 'figure'; metric: Metric | null; code: string; title: string }
 
 const WAITING: CardSeries = { kind: 'waiting' }
@@ -165,8 +169,11 @@ function providerAge(reported: number | null, received: { receivedAt: number; re
   return reported === null ? { seconds: onScreen, known: false } : { seconds: reported + onScreen, known: true }
 }
 
-const providerTitle = (age: { seconds: number; known: boolean }, stale: boolean) =>
-  `Reported by a market data provider, ${retrievedText(age.known ? age.seconds : null)}. Not reconciled by Domino.${stale ? ' Stale, not current.' : ''}`
+/**
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the basis only. Dropped: the retrieval time
+ * (", retrieved N s ago" / ", retrieval time unknown") and " Stale, not current.". A series' `stale` stays as data.
+ */
+const PROVIDER_TITLE = 'Reported by a market data provider. Not reconciled by Domino.'
 
 function figure(market: Market | undefined, code: string, why: string): CardSeries {
   return { kind: 'figure', metric: market?.volume24hUsd ?? null, code, title: `Price chart unavailable: ${why}.` }
@@ -177,7 +184,7 @@ function carriedBars(history: CarriedHistory, now: Instant): CardSeries | null {
   if (age.seconds > history.maxStaleSeconds) return null
   if (!volumeGeometry(history.candles, history.intervalSeconds, CARD_PLOT.width, CARD_PLOT.height, { top: 0, right: 0, bottom: 0, left: 0 }, 0)) return null
   const stale = history.status === 'stale' || age.seconds >= history.freshForSeconds
-  return { kind: 'bars', candles: history.candles, intervalSeconds: history.intervalSeconds, returned: history.returned, stale, title: providerTitle(age, stale) }
+  return { kind: 'bars', candles: history.candles, intervalSeconds: history.intervalSeconds, returned: history.returned, stale, title: PROVIDER_TITLE }
 }
 
 function chainLine(market: Market, answer: Extract<CardAnswer, { source: 'chain' }>, now: Instant): CardSeries {
@@ -198,8 +205,9 @@ function chainLine(market: Market, answer: Extract<CardAnswer, { source: 'chain'
   const aged = data.snapshot !== null && now.wall / 1000 - data.snapshot.timestamp > CHAIN_STALE_SECONDS
   const stale = data.status === 'stale' || aged || answer.failure !== null
   const inOrder = ask.currency === market.tokens.base.address.toLowerCase()
-  const title = 'Pool price from Robinhood Chain swaps: hourly closes over the last 24 hours, in the pool’s quote token, not USD.' +
-    `${data.gaps.length > 0 ? ' Some hours are not collected yet.' : ''}${stale ? ' Stale, not current.' : ''}`
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the basis only; " Some hours are not collected
+  // yet." and " Stale, not current." are no longer added.
+  const title = 'Pool price from Robinhood Chain swaps: hourly closes over the last 24 hours, in the pool’s quote token, not USD.'
   return { kind: 'line', history: data, base: inOrder ? market.tokens.base : market.tokens.quote, quote: inOrder ? market.tokens.quote : market.tokens.base, stale, title }
 }
 
@@ -218,7 +226,7 @@ function providerBars(market: Market, answer: Extract<CardAnswer, { source: 'pro
     return figure(market, 'unavailable', 'the reported volumes could not be read')
   }
   const stale = history.status === 'stale' || age.seconds >= history.cache.freshForSeconds || answer.failure !== null
-  return { kind: 'bars', candles, intervalSeconds: history.data.intervalSeconds, returned: history.data.coverage.returnedCandles, stale, title: providerTitle(age, stale) }
+  return { kind: 'bars', candles, intervalSeconds: history.data.intervalSeconds, returned: history.data.coverage.returnedCandles, stale, title: PROVIDER_TITLE }
 }
 
 export interface CardInput {

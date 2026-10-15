@@ -28,7 +28,8 @@ export function LocalReceiptRow({ receipt, at, tokens, children }: { receipt: Lo
     <details className="dm-rcpt-row dm-rcpt-operation">
       <summary>
         <span className="dm-rcpt-what"><span className="dm-receipt-title"><span className="dm-receipt-check" role="img" aria-label={RECEIPT_WORDS.confirmed}><IconCheck size={14} /></span><span>{count === 1 ? 'Position closed' : `${count} positions closed`}</span></span>
-          <span className="dm-activity-time">{at === null ? 'Date unavailable' : <time dateTime={new Date(at * 1000).toISOString()}>{shortDate(at)} {shortTime(at)}</time>}</span>
+          {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no time yet is no time; it said "Date unavailable". */}
+          <span className="dm-activity-time">{at === null ? null : <time dateTime={new Date(at * 1000).toISOString()}>{shortDate(at)} {shortTime(at)}</time>}</span>
         </span><span className="dm-rcpt-amount" /><IconChevronDown size={16} className="dm-rcpt-chevron" />
       </summary>
       <div className="dm-rcpt-detail">

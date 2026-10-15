@@ -24,7 +24,8 @@ function HistoryPlaceholder({ compact, unavailable = false }: { compact?: boolea
     <div className="dm-pool-skel-figure" aria-hidden="true"><Bubble className="dm-pool-skel-price" /><Bubble className="dm-pool-skel-date" /></div>
     <div className="dm-pool-chart-body">
       <div className="dm-pool-plot dm-pool-plot-empty">
-        {unavailable ? <p className="text-body text-fg-muted">Price history is temporarily unavailable.</p>
+        {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the dash, no longer "Price history is temporarily unavailable." */}
+        {unavailable ? <span className="text-fg-subtle">—</span>
           : <><Skeleton className="dm-pool-plot-baseline" /><span role="status" className="sr-only">Loading price history…</span></>}
       </div>
       <div className="dm-pool-skel-axis" aria-hidden="true"><Bubble className="dm-pool-skel-tick" /><Bubble className="dm-pool-skel-tick" /></div>

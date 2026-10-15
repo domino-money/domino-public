@@ -126,8 +126,10 @@ test('the lab renders every fixture case behind the gate, under the CSP, without
   assert.match(await page.locator('[data-build-banner="fixture"]').innerText(), /not deployable/);
 });
 
+// Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a figure with no number is the dash (its state in
+// data-metric), and titles name the source only: no retrieval time, no "Stale, not current.", no reason on a dash.
 test('market rows: every observation reaches the table and the ticker as itself, and the APR is never a figure', async () => {
-  const unavailable = ['Unavailable', 'unavailable'];
+  const unavailable = ['—', 'unavailable'];
   // A row without an estimate shows the same dash as a catalogue row; its reason stays in the title.
   const noEstimate = ['—', 'unavailable'];
   // One label for a pool with no APR figure, read or not ("Est. APR —"); why is in its title.
@@ -138,12 +140,12 @@ test('market rows: every observation reaches the table and the ticker as itself,
   const price = ['1TOKEN=0.000000000001ETH', 'usable'];
   // The figure alone in its cell: who reported it is on the row's provenance line, checked below.
   const provider = [price, ['$12.3K', 'provider'], ['$0.00', 'provider'], noEstimate];
-  const rejected = [price, ['Unavailable', 'rejected'], ['Unavailable', 'rejected'], noEstimate];
+  const rejected = [price, ['—', 'rejected'], ['—', 'rejected'], noEstimate];
   const blank = [price, unavailable, unavailable, noEstimate];
   const expected = {
     provider,
     zero: [price, ['$0.00', 'provider'], ['$0.00', 'provider'], noEstimate],
-    missing: [price, ['Notreportedbytheprovider', 'absent'], ['Notreportedbytheprovider', 'absent'], noEstimate],
+    missing: [price, ['—', 'absent'], ['—', 'absent'], noEstimate],
     // A stale figure has no "· stale" beside it (the owner's decision on the redesign): its state and its title say so, below.
     stale: [price, ['$12.3K', 'stale'], ['$0.00', 'stale'], noEstimate],
     expired: blank,
@@ -162,12 +164,12 @@ test('market rows: every observation reaches the table and the ticker as itself,
     // A shown value says a provider reported it, and when it was retrieved, in its title; a ratio says Domino calculated it from the provider's figures.
     const titles = await section(`market-${id}`).locator('tbody [data-metric="provider"], tbody [data-metric="calculated"]').evaluateAll((els) => els.map((el) => [el.getAttribute('data-metric'), el.getAttribute('title')]));
     for (const [state, title] of titles) {
-      assert.match(title, state === 'calculated' ? /^Calculated by Domino from a market data provider’s reported 24h volume and TVL, retrieved \d+ s ago\. Those figures are not reconciled by Domino\.$/ : /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/, `${id}: ${state}`);
+      assert.equal(title, state === 'calculated' ? 'Calculated by Domino from a market data provider’s reported 24h volume and TVL. Those figures are not reconciled by Domino.' : 'Reported by a market data provider. Not reconciled by Domino.', `${id}: ${state}`);
     }
   }
   const staleTitles = await section('market-stale').locator('tbody [data-metric="stale"]').evaluateAll((els) => els.map((el) => el.getAttribute('title')));
   assert.equal(staleTitles.length, 2, 'both provider figures are stale');
-  for (const title of staleTitles) assert.match(title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\. Stale, not current\.$/, 'a stale figure says so in its title');
+  for (const title of staleTitles) assert.equal(title, 'Reported by a market data provider. Not reconciled by Domino.', 'a stale figure names its source, and nothing about its age');
   // Never-displayed values are absent from the whole case, not just from their cell.
   for (const id of ['expired', 'rejected-currencies', 'rejected-dex', 'timeout']) {
     assert.doesNotMatch(await section(`market-${id}`).innerText(), /\$12\.3K/, `${id} shows the provider figure`);
@@ -175,7 +177,8 @@ test('market rows: every observation reaches the table and the ticker as itself,
   // The APR says why it is unavailable; each row names the block its pool was verified at, and
   // dates the provider's figures only by when they were retrieved, never "as of" or "updated at".
   // With no estimate there are no limitations of its own to name: what it would be, then why there is none (G14).
-  assert.match(await section('market-provider').locator('tbody td').nth(4).locator('[data-apr-estimate] [title]').getAttribute('title'), /^Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\.$/);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the dash has no title; why stays in data-apr-reasons.
+  assert.equal(await section('market-provider').locator('tbody td').nth(4).locator('[data-apr-estimate] [title]').count(), 0);
   for (const id of ['provider', 'zero', 'missing', 'retry-recovers', 'untrusted-symbol']) assert.match(await provenance(`market-${id}`), reported, id);
   assert.match(await provenance('market-stale'), /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved (6\d|[7-9]\d|1[01]\d) s ago · stale$/);
   assert.equal(await provenance('market-expired'), 'Pool verified on-chain at block 700 · Provider figures unavailable: provider unavailable', 'no figure, so no age');
@@ -211,8 +214,8 @@ test('markets-snapshot listed: a current store is the row; a store that is not e
     assert.doesNotMatch(`${await root.locator('tbody').innerText()} ${await root.locator('.dm-marquee').innerText()}`, /snapshot|stored|store\b/i, `${id}: no word about where the row came from`);
     assert.doesNotMatch(await root.locator('tbody').innerHTML(), /money-wait/, id);
   }
-  // A stored row carries no estimate, and its title says why in the estimate's own words.
-  assert.match(await section('market-snapshot-current').locator('tbody td').nth(4).locator('[data-apr-estimate] [title]').getAttribute('title'), /^Pool estimate, not position APR, APY or a return forecast\. Estimated APR is read with the pool’s own market figures, not with stored ones\.$/);
+  // A stored row carries no estimate (changed on purpose 2026-10-15, pack 7, owner: no status notices: and its dash has no title).
+  assert.equal(await section('market-snapshot-current').locator('tbody td').nth(4).locator('[data-apr-estimate] [title]').count(), 0);
 });
 
 test('an HTML-like token symbol renders as literal text, and nothing runs', async () => {

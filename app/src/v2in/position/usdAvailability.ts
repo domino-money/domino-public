@@ -1,15 +1,8 @@
 import { shortDate, shortTime } from '../../lib/format/time'
 
-/** Completed reads can lack a qualified price; that is not an unfinished loading state. */
-export function usdUnavailableReason(reason?: string | null): string {
-  const reasons = reason?.split(',') ?? []
-  if (reasons.includes('pool_depth_below_floor')) return 'The price source has not verified enough liquidity for a USD estimate.'
-  if (reasons.includes('pool_depth_unmeasurable')) return 'The pricing pool’s liquidity could not be verified.'
-  if (reasons.includes('decimals_unknown')) return 'Token precision could not be verified.'
-  if (reasons.some(value => value === 'stale_position_or_chain' || value === 'awaiting_receipt_block')) return 'Waiting for a current position reading.'
-  if (reasons.some(value => ['eth_usd_stale', 'price_read_failed', 'pricing_limit_reached', 'sequencer_down'].includes(value))) return 'The USD price source is temporarily unavailable.'
-  return 'A reliable USD price isn’t available for every token held.'
-}
+// Removed on purpose 2026-10-15 (pack 7, the owner: no status notices): usdUnavailableReason, the long sentence a figure's
+// title and Details said for a missing dollar ("The USD price source is temporarily unavailable.", "Waiting for a current
+// position reading.", "A reliable USD price isn’t available for every token held."); no screen says why any more.
 
 /**
  * Added 2026-10-14 (the incident of 2026-10-13, package V1; the owner: "USD unavailable" must not appear on a position).
@@ -60,6 +53,9 @@ export const poolEstimateWords = (anchor: string, dollar: boolean, block: number
  * current figure at qualified prices. The time and the basis are both said, never one in place of the other.
  */
 export function usdTitleWords({ asOf, estimate, block }: { asOf: number | undefined; estimate: string | undefined; block: number | null }): string | undefined {
-  if (asOf !== undefined) return estimate ? `${keptWords(asOf)} ${estimate}` : keptWords(asOf)
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices, "as of 02:25 UTC" named among them): a figure that
+  // is not current no longer says its time ("Last complete valuation, from 10-14 13:05 UTC."); it names its basis when it
+  // is an estimate, and no block (that of a reading after it).
+  if (asOf !== undefined) return estimate
   return estimate ?? (block !== null ? `Qualified valuation at block ${block}` : undefined)
 }

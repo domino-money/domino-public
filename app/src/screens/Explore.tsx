@@ -277,7 +277,8 @@ function ExploreBody({ others = null, checkingNetworks = false }: { others?: Oth
       </div>
 
       {source && storedReads === 'enabled' && searchedKey && <StoredTokenExplorer key={searchedKey} source={source} token={searchedKey} />}
-      {source && storedReads === 'checking' && <p className="mt-6 text-body text-fg-muted" role="status">Loading token data…</p>}
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "Loading token data…" while the check
+          runs. The access failure below is kept on purpose: it blocks the page and says what to do. */}
       {source && storedReads === 'failed' && <p className="mt-6 text-body text-fg-muted" role="status">Token data is unavailable. Reload to reconnect.</p>}
       {source && storedReads === 'legacy' && (
         <div className="mt-6 animate-rise" style={rise(2)}>

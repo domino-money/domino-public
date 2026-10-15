@@ -1,6 +1,6 @@
 import { aprLabel, feeLabel, type FallbackApr as Fallback, type Instant, type Market, type Metric } from '../lib/markets'
 import { feeWords } from '../lib/format/fee'
-import { estimateTitle, presentAprEstimate, type AprEstimateObservation } from '../lib/read/aprEstimate'
+import { presentAprEstimate, type AprEstimateObservation } from '../lib/read/aprEstimate'
 import { describeFailure } from '../lib/read/describe'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { TokenMarkPair } from './TokenIcon'
@@ -29,9 +29,11 @@ function EstimateApr({ observation, now, pending = false, fallback }: { observat
   if (shown.text !== null) return <PoolAprEstimate observation={observation} now={now} />
   // An estimate standing in for the read service's when its provider did not answer (audit V1, lib/read/figureFallback.ts).
   if (fallback) return <FallbackApr apr={fallback} />
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): "Est. APR —" with no title; it used to be
+  // titled "Est. APR loading" or with why there is no estimate (estimateTitle's reasons).
   return (
     <span data-apr-estimate={pending ? 'pending' : shown.state}>
-      <span className="tnum whitespace-nowrap text-fg-subtle" title={pending ? 'Est. APR loading' : estimateTitle(observation, now)}>
+      <span className="tnum whitespace-nowrap text-fg-subtle">
         {NO_APR}
       </span>
     </span>
@@ -45,27 +47,18 @@ function EstimateApr({ observation, now, pending = false, fallback }: { observat
  */
 const historicalApr = (metric: Metric) => metric.value !== null && (metric.state === 'qualified' || metric.state === 'stale')
 
-/** The APR in the strip, under the same state rule as the table: never a retained value as current, never an invented one. */
+/**
+ * The APR in the strip, under the same state rule as the table: never a retained value as current, never an invented one.
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): an APR with no figure reads "APR —" (it used to
+ * read "APR unavailable", "APR not reported" or "APR not current"), and a kept one no longer has the title "Last observed
+ * value, not current". The state stays in `data-metric`.
+ */
 function Apr({ metric }: { metric: Metric }) {
   const shown = aprLabel(metric)
-  if (shown.kind === 'unavailable') {
+  if (shown.kind !== 'value') {
     return (
-      <span className="tnum text-fg-subtle" data-metric={shown.rejected ? 'rejected' : 'unavailable'}>
-        APR unavailable
-      </span>
-    )
-  }
-  if (shown.kind === 'absent') {
-    return (
-      <span className="tnum text-fg-subtle" data-metric="absent">
-        APR not reported
-      </span>
-    )
-  }
-  if (shown.kind === 'not_current') {
-    return (
-      <span className="tnum text-fg-subtle" data-metric="not-current">
-        APR not current
+      <span className="tnum text-fg-subtle" data-metric={shown.kind === 'unavailable' ? (shown.rejected ? 'rejected' : 'unavailable') : shown.kind === 'absent' ? 'absent' : 'not-current'}>
+        APR —
       </span>
     )
   }
@@ -74,7 +67,6 @@ function Apr({ metric }: { metric: Metric }) {
       className="tnum"
       style={{ color: shown.stale ? 'var(--fg)' : 'var(--money-in)' }}
       data-metric={shown.stale ? 'stale' : shown.source ? 'provider' : 'qualified'}
-      title={shown.stale ? 'Last observed value, not current' : undefined}
     >
       {shown.text}
     </span>
@@ -133,7 +125,8 @@ export function Ticker() {
     </a>
   ) : catalogue ? <a href={poolHref(poolId, token)} key={poolId} tabIndex={copy ? -1 : undefined} className="dm-ticker-item" data-pool-catalogue={poolId}>
     <PoolCatalogueIdentity entry={catalogue} compact />
-    <span className="tnum whitespace-nowrap text-fg-subtle" title="Pool figures are unavailable, so there is no estimated APR.">{NO_APR}</span>
+    {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no title "Pool figures are unavailable, so there is no estimated APR." */}
+    <span className="tnum whitespace-nowrap text-fg-subtle">{NO_APR}</span>
   </a> : null)
   const items = render(false)
 

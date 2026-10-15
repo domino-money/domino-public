@@ -84,6 +84,11 @@ export interface EdgePolicy {
   answers(body: unknown, text: string): boolean
   /** Whether a valid answer is kept. Absent: every one is. */
   keep?(text: string): boolean
+  /**
+   * (2026-10-15, pack 7) Whether a kept answer is served only while it is fresh: up to `freshSeconds`, never stale past
+   * it (history.ts: a history not ready yet, which may become ready at any moment). Absent: none is.
+   */
+  brief?(text: string): boolean
   freshSeconds: number
   /** Past `freshSeconds` and before this, served at once and refreshed in the background. Absent: `freshSeconds`. */
   staleSeconds?: number
@@ -111,6 +116,8 @@ const STORED_AT = 'X-Edge-Stored-At'
 const OLD_STORED_AT = 'X-Featured-Stored-At'
 /** The version the Worker answered a kept entry in (2026-09-28); an entry without it was kept in the route's `version`. */
 const STORED_CONTRACT = 'X-Edge-Contract'
+/** (2026-10-15, pack 7) How long a kept entry is served at all, in seconds, when the route kept it briefly; absent: the policy's. */
+const STORED_LIFE = 'X-Edge-Life'
 const JSON_TYPE = /^application\/json(?:\s*;\s*charset\s*=\s*(?:utf-8|"utf-8"))?$/i
 /** A background refresh of a key is not started again this soon, in one isolate. */
 export const REFRESH_GUARD_MS = 10_000
@@ -168,7 +175,8 @@ async function kept(rt: EdgeRuntime, key: string, body: unknown, policy: EdgePol
     if (!entry) return null
     const at = Number(entry.headers.get(STORED_AT) ?? entry.headers.get(OLD_STORED_AT))
     const age = rt.now() - at
-    if (!Number.isSafeInteger(at) || age < 0 || age >= (policy.staleSeconds ?? policy.freshSeconds) * 1000) return null
+    const life = Math.min(policy.staleSeconds ?? policy.freshSeconds, Number(entry.headers.get(STORED_LIFE) ?? Infinity))
+    if (!Number.isSafeInteger(at) || age < 0 || !(age < life * 1000)) return null
     const version = entry.headers.get(STORED_CONTRACT) ?? policy.version
     if (!accepted(policy).includes(version)) return null
     const text = await entry.text()
@@ -180,12 +188,14 @@ async function kept(rt: EdgeRuntime, key: string, body: unknown, policy: EdgePol
 
 function keep(rt: EdgeRuntime, key: string, answer: EdgeAnswer, policy: EdgePolicy): Promise<void> {
   if (!rt.cache) return Promise.resolve()
+  const brief = policy.brief?.(answer.text) === true
   const entry = new Response(answer.text, {
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': `max-age=${policy.staleSeconds ?? policy.freshSeconds}`,
+      'Cache-Control': `max-age=${brief ? policy.freshSeconds : (policy.staleSeconds ?? policy.freshSeconds)}`,
       [STORED_AT]: String(rt.now()),
       [STORED_CONTRACT]: answer.version,
+      ...(brief ? { [STORED_LIFE]: String(policy.freshSeconds) } : {}),
     },
   })
   return rt.cache.put(new Request(key), entry).catch(() => undefined)

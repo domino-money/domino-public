@@ -129,11 +129,16 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
   // is not "collecting": nothing is collecting, and saying so forever is a lie
   // a person cannot act on. Same words the history chart already uses.
   const atCapacity = pending === true && value?.data.acquisitionAccepted === false
-  const CAPACITY = 'Domino’s data service is busy, so only the pools already stored are shown.'
   const failure = outcome && outcome.state !== 'ok' && outcome.state !== 'aborted' ? failureText(outcome, 'pools').title : null
   const loading = !value && !failure && merged.length === 0
-  const collectingText = collecting > 0 ? `Collecting figures for ${collecting} ${collecting === 1 ? 'pool' : 'pools'}. The rest are below.` : 'Collecting data. Available figures are shown below.'
-  const said = failure && merged.length === 0 ? failure : atCapacity ? CAPACITY : pending ? collectingText : selected?.acquisition.status === 'rejected' ? 'This token could not be verified.' : loading ? 'Reading pools…' : ''
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the line under the token no longer says how the
+  // reads went: gone are the failed read's title (e.g. "Pool data unavailable"), "Domino’s data service is busy, so only
+  // the pools already stored are shown.", "Collecting figures for N pools. The rest are below." and "Collecting data.
+  // Available figures are shown below." A token that could not be verified still says so (a caution before adding
+  // money), and "Reading pools…" stays for assistive technology only, beside the loading bubble.
+  // (2026-10-15, pack 7 review): a failed read with no pool to show keeps main's line, its title (a gate to pass, or a read
+  // asked again on its own after a minute): the section is otherwise blank, with nothing the person could act on.
+  const said = failure && merged.length === 0 ? failure : selected?.acquisition.status === 'rejected' ? 'This token could not be verified.' : loading ? 'Reading pools…' : ''
 
   return (
     <section className="mt-6 grid gap-4" aria-labelledby="stored-token-title" data-stored-token={token} data-acquisition={atCapacity ? 'at_capacity' : pending ? 'pending' : 'settled'} data-pools-merged={merged.length} data-pools-discovered={discovered.length}>
@@ -144,7 +149,10 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
         {!value && !failure && <Skeleton className="mt-3 h-5 w-48" />}
         <p role="status" className={said && !loading ? 'mt-3 text-caption text-fg-muted' : 'sr-only'}>{said}</p>
       </Card>
-      {(value || merged.length > 0) && <MarketsContext.Provider value={provider}><MarketsTable variant="full" includeCatalogue={false} poolToken={token} empty={<p className="p-5 text-body text-fg-muted">{atCapacity ? 'Domino’s data service is busy, and no pools of this token are stored yet.' : pending ? 'Pool data is being collected.' : split.hidden.length > 0 ? 'Every pool of this token has a very high fee, or is one Domino can’t open positions in.' : 'No verified pools are stored for this token yet.'}</p>} /></MarketsContext.Provider>}
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): while the token's pools are still being
+          collected (or the producer is at capacity) the empty table rests as a loading bubble; it used to say "Domino’s
+          data service is busy, and no pools of this token are stored yet." or "Pool data is being collected." */}
+      {(value || merged.length > 0) && <MarketsContext.Provider value={provider}><MarketsTable variant="full" includeCatalogue={false} poolToken={token} empty={atCapacity || pending ? <div className="p-5"><Skeleton className="mx-auto h-10 max-w-[30rem]" /></div> : <p className="p-5 text-body text-fg-muted">{split.hidden.length > 0 ? 'Every pool of this token has a very high fee, or is one Domino can’t open positions in.' : 'No verified pools are stored for this token yet.'}</p>} /></MarketsContext.Provider>}
       <div className="flex flex-wrap items-center gap-3">
         {split.hidden.length > 0 && (
           <Button variant="ghost" onClick={() => setShowAll((all) => !all)} data-show-all-pools={showAll ? 'shown' : 'hidden'} title="Pools with a fee above 10% of every swap, and pools Domino can’t open positions in.">

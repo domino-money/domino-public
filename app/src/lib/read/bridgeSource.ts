@@ -61,6 +61,14 @@ export function edgeAgeOf(value: string | null): number | undefined {
 }
 /** Revalidate on the next read, with no polling timer or provider/RPC read. */
 export const CAPABILITIES_REUSE_MS = 60_000
+/**
+ * (2026-10-15, pack 7): how long a good answer that lists routes is kept: five minutes, was CAPABILITIES_REUSE_MS. A page
+ * that reads each minute (a position page's chart, Markets' table) asked the capabilities again with every read. An answer
+ * that lists nothing keeps CAPABILITIES_REUSE_MS, so a route switched on is seen as soon as before; a read of a listed
+ * route refused as not there (route_not_available) or as another contract brings the kept answer back to
+ * CAPABILITIES_REUSE_MS from when it came, so the next GET is never sooner than it was.
+ */
+export const CAPABILITIES_KEEP_MS = 300_000
 
 /** The only headers a read sends. Cookies are the browser's business, not ours. */
 export const READ_HEADERS: Readonly<Record<string, string>> = {
@@ -199,6 +207,8 @@ interface SharedCheck {
   expiresAt: number
   /** The answer, once settled: what a read past its minute may still use for a route it lists (A22). */
   value?: CapabilityCheck
+  /** When a good answer came (2026-10-15, pack 7): CAPABILITIES_REUSE_MS is counted from it when a read is refused. */
+  answeredAt?: number
 }
 
 /** A bridge source always answers the capabilities question. */
@@ -248,8 +258,10 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
     }).then((outcome): CapabilityCheck => {
       check.settled = true
       if (outcome.state === 'ok') {
-        check.expiresAt = clock.monotonic() + CAPABILITIES_REUSE_MS
         const reads = outcome.data.dataMode === 'live_read_only' ? outcome.data.enabledReads : []
+        // (2026-10-15, pack 7): five minutes for an answer that lists routes, the minute for one that lists none.
+        check.answeredAt = clock.monotonic()
+        check.expiresAt = check.answeredAt + (reads.length > 0 ? CAPABILITIES_KEEP_MS : CAPABILITIES_REUSE_MS)
         check.value = { ok: true, enabledReads: new Set(reads) }
         return check.value
       }
@@ -267,7 +279,12 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
    * forgotten, so the next read asks afresh instead of joining a cancelled one.
    */
   async function capabilitiesFor(signal: AbortSignal | undefined, deadlineAt: number, route?: ReadRoute): Promise<Settled<CapabilityCheck>> {
-    const stale = capabilities?.settled && clock.monotonic() >= capabilities.expiresAt ? capabilities : null
+    // (2026-10-15, pack 7): an answer is past its time at CAPABILITIES_KEEP_MS for a route it lists, but still at its minute
+    // (CAPABILITIES_REUSE_MS, as before) for a route it does not list, so a route switched on is seen as soon as before.
+    const at = clock.monotonic()
+    const unlisted = route === undefined || !(capabilities?.value?.ok && capabilities.value.enabledReads.has(route))
+    const minuteOld = capabilities?.answeredAt !== undefined && at >= capabilities.answeredAt + CAPABILITIES_REUSE_MS
+    const stale = capabilities?.settled && (at >= capabilities.expiresAt || (unlisted && minuteOld)) ? capabilities : null
     if (stale && route !== undefined && stale.value?.ok && stale.value.enabledReads.has(route)) {
       // Changed 2026-10-01 (audit A22): an answer past its minute that lists the route asked for is used at once while a
       // new check runs behind, instead of holding this read 100 to 200 ms for it; a route it lists that was switched off
@@ -333,7 +350,7 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
         if (!listed.reads.has(route)) return { route, provenance: stamp(deadlineAt), state: 'disabled', reason: 'route_not_enabled' }
       } else if (opts.signal?.aborted) return { route, provenance: stamp(deadlineAt), state: 'aborted' }
 
-      return runRead({
+      const outcome = await runRead({
         route,
         request: request as RequestOf<R>,
         transport: transport(`${prefix}${route}`, { method: 'POST', headers, body: JSON.stringify(request) }),
@@ -345,6 +362,13 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
         onAttempt: opts.onAttempt,
         label: { transport: 'bridge' },
       })
+      // (2026-10-15, pack 7): the bridge refused a route its kept capabilities list (route_not_available), or answered as
+      // another contract: that answer stands no longer than CAPABILITIES_REUSE_MS from when it came, as before.
+      if ((outcome.state === 'disabled' && outcome.reason === 'route_not_enabled') || outcome.state === 'incompatible') {
+        const kept = capabilities
+        if (kept?.settled && kept.answeredAt !== undefined) kept.expiresAt = Math.min(kept.expiresAt, kept.answeredAt + CAPABILITIES_REUSE_MS)
+      }
+      return outcome
     },
 
     /**

@@ -2180,7 +2180,12 @@ test('G2: a failed snapshot is never shown or said: the same load reads the pool
     let mark = wire().length;
     clock.advance(60_000);
     await settled(provider, () => provider.refresh());
-    assert.deepEqual(wire().slice(mark), ['GET capabilities', 'POST pool-market', 'POST pool-market'], `${label}: a minute on, availability is revalidated, but no snapshot or token is asked`);
+    // Changed on purpose 2026-10-15 (pack 7): an answer that lists the routes is kept five minutes for a route it lists
+    // (bridgeSource.ts CAPABILITIES_KEEP_MS), so the rows' reads take it at once, and the one GET of the minute comes for the
+    // route it does not list (pool-metrics), past its minute as before. A route refused as not there brings the answer back
+    // to its minute, so there the GET comes first, as before. One GET either way.
+    const offByServer = failure().status === 404;
+    assert.deepEqual(wire().slice(mark), offByServer ? ['GET capabilities', 'POST pool-market', 'POST pool-market'] : ['POST pool-market', 'POST pool-market', 'GET capabilities'], `${label}: a minute on, availability is revalidated, but no snapshot or token is asked`);
 
     mark = wire().length;
     clock.advance(SNAPSHOT_RETRY_MS);

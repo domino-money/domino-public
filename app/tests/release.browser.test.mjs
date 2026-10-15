@@ -233,13 +233,15 @@ let edge = [];
  * not the read service's forwarder), for artwork the build does not bundle. Not a read: kept apart from `reads` and
  * `edge`, and answered as an edge that has no pairs for the token, so no test here reaches the provider.
  */
-const DEX_PATH = '/api/read/dex/';
+const DEX_PATH = /^\/api\/read\/dex2?\//;
 let dex = [];
 
 async function api(request) {
   const url = new URL(request.url);
-  if (url.pathname.startsWith(DEX_PATH)) {
+  if (DEX_PATH.test(url.pathname)) {
     dex.push(`${request.method} ${url.pathname}`);
+    // (2026-10-15, pack 7): the page asks the edge's new path, whose 200 says each token's own state: none here.
+    if (url.pathname.startsWith('/api/read/dex2/')) return json(200, { v: 2, now: Date.now(), tokens: Object.fromEntries(url.pathname.split('/').at(-1).split(',').map((token) => [token.toLowerCase(), { at: Date.now(), none: true }])) });
     return json(200, []);
   }
   const body = request.method === 'POST' ? JSON.parse(await request.clone().text()) : null;
@@ -249,7 +251,7 @@ async function api(request) {
 
 function observe(request) {
   const path = new URL(request.url).pathname;
-  if (path.startsWith('/api/') && !path.startsWith(DEX_PATH)) edge.push({ method: request.method, path });
+  if (path.startsWith('/api/') && !DEX_PATH.test(path)) edge.push({ method: request.method, path });
 }
 
 const LAUNCHES = process.env.DOMINO_BROWSER_PATH
@@ -371,11 +373,12 @@ async function nothingInvented(page, label) {
     live: document.querySelectorAll('#pools tbody tr:not([data-pool-catalogue])').length,
     metrics: document.querySelectorAll('[data-metric], [data-apr-estimate]').length,
     dashes: Array.from(document.querySelectorAll('#pools tbody tr[data-pool-catalogue] [data-figure="none"]')).filter((figure) => figure.innerText.trim() === '—').length,
-    unavailable: Array.from(document.querySelectorAll('#pools tbody tr[data-pool-catalogue] [aria-label]')).map((el) => el.getAttribute('aria-label')).filter((text) => /^(Price|TVL|24h volume|Pool APR) unavailable$/.test(text)).length,
+    // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the dashes are no longer named "<figure> unavailable".
+    unavailable: Array.from(document.querySelectorAll('#pools tbody tr[data-pool-catalogue] [aria-label]')).map((el) => el.getAttribute('aria-label')).filter((text) => /unavailable/i.test(text)).length,
     dollars: /\$\s?\d/.test(document.querySelector('#pools').innerText),
     sample: /sample|practice/i.test(document.body.innerText),
   }));
-  assert.deepEqual(found, { rows: 6, catalogue: 6, live: 0, metrics: 0, dashes: 24, unavailable: 24, dollars: false, sample: false }, label);
+  assert.deepEqual(found, { rows: 6, catalogue: 6, live: 0, metrics: 0, dashes: 24, unavailable: 0, dollars: false, sample: false }, label);
 }
 
 /** Home presents pool figures in its table without repeating them in a ticker. */
@@ -395,7 +398,8 @@ test('(a) no bridge behind the forwarder: live data is not connected, one capabi
     assert.deepEqual(wire(), ['GET v3 capabilities', 'GET capabilities'], 'each namespace asked once, and never again on its own, not even when a busy service would have been');
     // Added 2026-10-01 (audit I3): artwork the build does not bundle is asked through our own edge, one token a GET,
     // each token once; nothing else of DEX Screener while live data is not connected.
-    assert.ok(dex.every((line) => /^GET \/api\/read\/dex\/token-pairs\/0x[0-9a-f]{40}$/.test(line)), dex.join(', '));
+    // (2026-10-15, pack 7): on the edge's new path, never the old one.
+    assert.ok(dex.every((line) => /^GET \/api\/read\/dex2\/token-pairs\/0x[0-9a-f]{40}$/.test(line)), dex.join(', '));
     assert.equal(new Set(dex).size, dex.length, 'each token asked once');
     assert.deepEqual(errors, []);
   } finally {
@@ -462,10 +466,11 @@ test('(d) reads enabled: one capabilities GET per namespace and the lean load in
       assert.equal(await price.locator('[data-metric], [data-apr-estimate]').count(), 0, 'the price carries no figure attribute');
       assert.doesNotMatch(await price.innerText(), /\$/, 'a ratio between two tokens, never dollars');
       const apr = row.locator('td').nth(4);
-      // Without an estimate the cell shows the same dash as a catalogue row; the reason stays in its title.
+      // Without an estimate the cell shows the same dash as a catalogue row (changed on purpose 2026-10-15, pack 7, owner:
+      // no status notices: with no title saying why; the reason stays in data-apr-reasons).
       assert.equal(await apr.locator('[data-apr-estimate]').innerText(), '—');
       assert.equal(await apr.locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable', 'no APR is provided, so none is shown');
-      assert.match(await apr.locator('[title]').getAttribute('title'), /Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\./, 'and says why');
+      assert.equal(await apr.locator('[title]').count(), 0, 'and no words about why');
     }
     // The stub reports each pool the provider's way round (base = currency1): the label is the app's own, the way the
     // row's price is written (E21, 2026-10-01), whatever the provider's order.
@@ -503,9 +508,12 @@ test('(d) reads enabled: one capabilities GET per namespace and the lean load in
   }
 });
 
-/** The provenance every value cell carries in its title, in the table's own words. */
+/**
+ * The provenance every value cell carries in its title, in the table's own words.
+ * Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the source only, no retrieval age.
+ */
 const expect = {
-  reportedByProvider: /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/,
+  reportedByProvider: /^Reported by a market data provider\. Not reconciled by Domino\.$/,
 };
 
 test('(e) the pool route switched off between the GET and the first POST: said so, and the second pool is never asked', async () => {
@@ -657,7 +665,8 @@ test('(i) #93 per row: provider figures dated only by retrieval; a rejected pool
     const rejected = await rowView(rows.nth(1));
     assert.equal(rejected.pair, 'TKY/TKZ', 'the verified pool row stays, labelled from its own token reads');
     assert.equal(rejected.provenance, 'Pool verified on-chain at block 700 · Provider figures rejected: provider data did not match this pool');
-    assert.deepEqual(rejected.cells.map((c) => [c.text, c.metric]), [['Unavailable', 'rejected'], ['Unavailable', 'rejected'], ['—', 'unavailable']]);
+    // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the dash, never "Unavailable"; the state stays data.
+    assert.deepEqual(rejected.cells.map((c) => [c.text, c.metric]), [['—', 'rejected'], ['—', 'rejected'], ['—', 'unavailable']]);
     assert.equal(rejected.price.state, 'usable', 'a rejected provider observation takes nothing from the chain’s own price');
 
     for (const index of [2, 3, 4, 5]) {
@@ -674,7 +683,9 @@ test('(i) #93 per row: provider figures dated only by retrieval; a rejected pool
   }
 });
 
-test('(j) #93 per row: a stale observation is marked stale in its state and its title, in the ink of a current figure with no word beside it, and a null figure is not reported, never $0', async () => {
+// Changed on purpose 2026-10-15 (pack 7, owner: no status notices): stale is the state alone (its title names the
+// source, nothing about its age), and a null figure is the dash, never "Not reported by the provider".
+test('(j) #93 per row: a stale observation is marked stale in its state, in the ink of a current figure with no word beside it or in its title, and a null figure is a dash, never $0', async () => {
   const missing = fixture('pool-market.missing').market.data;
   assert.deepEqual([missing.reportedLiquidityUsd, missing.volume24hUsd], [null, null], 'the package fixture reports both as null');
   const variant = { [SELECTED[0]]: 'stale', [SELECTED[1]]: 'missing' };
@@ -690,14 +701,14 @@ test('(j) #93 per row: a stale observation is marked stale in its state and its 
     // The owner's decision on the redesign: a stale figure is never yellow and has no "· stale" beside it. That it
     // is stale is its state, and its title in words.
     assert.equal(stale.cells[0].text, '$12.3K', 'no stale word beside the figure');
-    assert.match(stale.cells[0].title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\. Stale, not current\.$/);
+    assert.match(stale.cells[0].title, expect.reportedByProvider);
     assert.equal(stale.cells[1].text, '$0.00');
-    assert.match(stale.cells[1].title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\. Stale, not current\.$/);
+    assert.match(stale.cells[1].title, expect.reportedByProvider);
 
     const nulls = await rowView(rows.nth(1));
-    const notReported = ['Not reported by the provider', 'absent'];
-    assert.deepEqual(nulls.cells.map((c) => [c.text, c.metric]), [notReported, notReported, ['—', 'unavailable']], 'unavailable, said as the provider that reported null; no estimate is a dash');
-    assert.equal(nulls.cells[0].title, 'Unavailable: the market data provider reported no value');
+    const notReported = ['—', 'absent'];
+    assert.deepEqual(nulls.cells.map((c) => [c.text, c.metric]), [notReported, notReported, ['—', 'unavailable']], 'a dash, its state the provider’s null; no estimate is a dash');
+    assert.equal(nulls.cells[0].title, null);
     assert.doesNotMatch(await rows.nth(1).innerText(), /\$\s*0|\b0\.00\b/, 'null never renders as zero');
 
     const current = await rowView(rows.nth(2));
@@ -729,7 +740,8 @@ test('(k) #93 per row: a 504 on one pool drops only that pool, whose own row say
     assert.deepEqual(wire(), settledWire, 'nothing asked again on its own: a timeout is not a busy service');
     await nothingStandsIn(page, 5);
     // The failed pool's row is the catalogue's, which says so.
-    assert.equal(await catalogueRows(page).first().locator('a').first().getAttribute('title'), 'Listed on Uniswap. Pool figures are unavailable.');
+    // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the name's title no longer says its figures are unavailable.
+    assert.equal(await catalogueRows(page).first().locator('a').first().getAttribute('title'), 'Listed on Uniswap.');
   } finally {
     await closeContext(context);
   }
@@ -865,8 +877,9 @@ test('(o) markets-snapshot listed: one snapshot read puts all six rows on screen
       assert.equal(await rows.nth(index).getAttribute('data-row-source'), 'markets-snapshot');
       assert.match(view.provenance, /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/, 'the usual provenance, dated by the stored retrieval age');
       assert.deepEqual(view.cells.map((c) => [c.text, c.metric]), [['$12.3K', 'provider'], ['$0.00', 'provider'], ['—', 'unavailable']]);
-      // G14: an estimate's title comes from its own limitations; a stored row has none, so it says what the figure would be and why it is missing.
-      assert.equal(view.cells[2].title, 'Pool estimate, not position APR, APY or a return forecast. Estimated APR is read with the pool’s own market figures, not with stored ones.', 'the estimate cell says what it is and why a stored row has none');
+      // changed on purpose 2026-10-15 (pack 7, owner: no status notices): a stored row has no estimate, and its dash has no
+      // title saying why (the reason stays in data-apr-reasons).
+      assert.equal(view.cells[2].title, null, 'the estimate cell is a plain dash');
       assert.equal(view.price.state, 'usable');
     }
     assert.doesNotMatch(await page.locator('#pools').innerText(), /snapshot|stored/i, 'no word about where the rows came from');

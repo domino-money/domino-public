@@ -8,7 +8,7 @@ import type { RowApr } from '../../components/positions/listApr'
 import { usdAsOf, type AmountShown, type PositionRowView, type TokenName } from './model'
 import { markOf } from '../position/marks'
 import { positionBurn } from './positionSync'
-import { asOfWords, usdMissingShort, usdTitleWords, usdUnavailableReason } from '../position/usdAvailability'
+import { usdTitleWords } from '../position/usdAvailability'
 
 /*
  * The pieces the lists draw for read-v6's positions, in V1's own row markup and classes (components/positions/PositionRow.tsx,
@@ -92,13 +92,9 @@ export function StaleBadge({ age }: { age: string }) {
 
 /** A row's state, as V1's PositionStatus draws it, plus a position the index could not read. */
 function RowStatus({ row }: { row: PositionRowView }) {
-  if (row.state === 'unread') {
-    return (
-      <Pill data-position-status="unread" title={row.unread ?? undefined}>
-        {row.stale === 'Updating' ? 'Updating' : row.status === 'unavailable' ? 'Unavailable' : 'Not read yet'}
-      </Pill>
-    )
-  }
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a row not read (yet) has no pill; it said
+  // "Updating", "Unavailable" or "Not read yet", with why in its title. Where it stands is the marker's data.
+  if (row.state === 'unread') return <span hidden data-position-status="unread" data-position-unread={row.stale === 'Updating' ? 'updating' : row.status} />
   if (row.state === 'closed') {
     return (
       <Pill dot data-position-status="closed">
@@ -133,22 +129,26 @@ function RowStatus({ row }: { row: PositionRowView }) {
  * of the basis. An estimate at the pool's price that is not current says both, in its title and to a screen reader:
  * "Last complete valuation, from …. Estimated from the pool price …. This is not a sale quote." It said only the first,
  * exactly while the figure was also old.
+ *
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices, "as of 02:25 UTC" named among them): a figure
+ * that is not current is shown as it is, with no time under it or in its title (data-usd-snapshot still marks it); with
+ * no dollar figure, the two amounts carry no reason under them (data-usd-reason keeps it); a dash has no title.
  */
-function Amounts({ amounts, which, label, unread, usd, asOf, why, reason, basis, poolTitle }: { amounts: readonly [AmountShown, AmountShown] | null; which: 'principal' | 'fees'; label: string; unread: string | null; usd: string | null; asOf?: number; why?: string | null; reason?: string; basis?: 'qualified-prices' | 'pool-price'; poolTitle?: string }) {
+function Amounts({ amounts, which, label, usd, asOf, reason, basis, poolTitle }: { amounts: readonly [AmountShown, AmountShown] | null; which: 'principal' | 'fees'; label: string; usd: string | null; asOf?: number; reason?: string; basis?: 'qualified-prices' | 'pool-price'; poolTitle?: string }) {
   const detail = amounts?.map(amount => `${amount.exact ?? amount.text} ${amount.token.label}`).join(' + ')
   const estimate = basis === 'pool-price' ? poolTitle : undefined
-  // A current figure at qualified prices needs no line of its own here (no block is named in a row).
-  const said = usd === null ? (amounts ? usdUnavailableReason(reason) : undefined) : usdTitleWords({ asOf, estimate, block: null })
-  return <span className="dm-own-cell dm-own-usd-cell" data-cell={which} title={`${said ? `${said} ` : ''}${detail ?? unread ?? 'Not reported'}`}>
+  // A current figure at qualified prices needs no line of its own here (no block is named in a row). Changed on purpose
+  // 2026-10-15 (pack 7, the owner: no status notices): no time ("as of 13:05 UTC", "Last complete valuation, from …") and
+  // no reason a dollar is missing is said, in view or in the title; the basis of an estimate still is (decision D3).
+  const said = usd === null ? undefined : usdTitleWords({ asOf: undefined, estimate, block: null })
+  return <span className="dm-own-cell dm-own-usd-cell" data-cell={which} data-usd-reason={usd === null && amounts ? reason : undefined} title={said || detail ? `${said ? `${said} ` : ''}${detail ?? ''}`.trim() : undefined}>
     <span className="dm-own-label">{label}</span>
     {usd !== null ? <>
-      <span className="dm-own-fig" data-usd={which} data-usd-basis={basis} data-usd-snapshot={asOf !== undefined ? '' : undefined}>{formatUsdFloor(usd)}</span>
-      {asOf !== undefined && <span className="dm-own-est" data-usd-as-of={which}>{asOfWords(asOf)}</span>}
+      <span className="dm-own-fig" data-usd={which} data-usd-basis={basis} data-usd-snapshot={asOf !== undefined ? '' : undefined} data-usd-dated={asOf !== undefined ? '' : undefined}>{formatUsdFloor(usd)}</span>
       {estimate && <span className="sr-only" data-usd-estimate={which}>{estimate}</span>}
       {amounts && <span className="sr-only" data-token-amounts=""><AmountText amount={amounts[0]} /> + <AmountText amount={amounts[1]} /></span>}
     </> : amounts ? <>
       <span className="dm-own-amounts" data-token-amounts="" data-figure="amounts"><AmountText amount={amounts[0]} /><AmountText amount={amounts[1]} /></span>
-      {why && <span className="dm-own-est" data-usd-why={which}>{why}</span>}
     </> : <span className="dm-own-dash" data-figure="none">—</span>}
   </span>
 }
@@ -174,7 +174,8 @@ function VaultColumn({ row }: { row: PositionRowView }) {
       <span className="dm-collection-mode" data-running={vault.running ? '' : undefined}>
         {vault.name ?? 'Automation'}
       </span>
-      {vault.word && <span className="dm-own-badge-word">{vault.word}</span>}
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): "Updating" (a vault not read yet) is never shown. */}
+      {vault.word && vault.word !== 'Updating' && <span className="dm-own-badge-word">{vault.word}</span>}
     </span>
   )
 }
@@ -193,8 +194,6 @@ function VaultColumn({ row }: { row: PositionRowView }) {
 export function V2PositionRow({ row, apr = null, late = false }: { row: PositionRowView; apr?: RowApr | null; late?: boolean }) {
   const closed = row.state === 'closed'
   const valueAsOf = usdAsOf(row, 'value', late), feesAsOf = usdAsOf(row, 'fees', late)
-  // One short reason per row, under the first of its two figures that has none.
-  const why = row.usdReason ? usdMissingShort(row.usdReason) : null
   const emptyValue = closed && row.value?.every(amount => amount.kind === 'zero')
   const emptyFees = closed && row.fees?.every(amount => amount.kind === 'zero')
   const terminal = positionBurn(row)
@@ -230,20 +229,25 @@ export function V2PositionRow({ row, apr = null, late = false }: { row: Position
               <RowStatus row={row} />
               <VaultColumn row={row} />
               {closed && <span className="dm-collection-id" aria-hidden="true">#{row.tokenId}</span>}
-              {row.stale && <span className="sr-only" data-v2-stale={row.stale}>{row.stale}</span>}
+              {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): how old the row is ("Updating", "updated 6 min
+                  ago") is the marker's data only; a screen reader heard it. */}
+              {row.stale && <span hidden data-v2-stale={row.stale} />}
             </span>
-            {row.family && (row.family.successors > 0 || row.family.reserves !== null) && <span className="dm-collection-family">{[
+            {row.family && (row.family.successors > 0 || row.family.reserves === 'available') && <span className="dm-collection-family">{[
               row.family.successors > 0 ? `${row.family.successors} linked position${row.family.successors === 1 ? '' : 's'}` : '',
-              row.family.reserves === 'available' ? 'Funds available in automation' : row.family.reserves === 'unknown' ? 'Checking automation funds' : '',
+              // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): never "Checking automation funds".
+              row.family.reserves === 'available' ? 'Funds available in automation' : '',
             ].filter(Boolean).join(' · ')}</span>}
           </span>
         </span>
         <span className={closed && ((emptyValue && emptyFees) || burned) ? 'dm-own-figs dm-own-empty-figure' : 'dm-own-figs'}>
-          <span className={emptyValue || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.value} which="principal" label="Value" unread={row.unread} usd={row.valueUsd} asOf={valueAsOf} why={row.valueUsd === null ? why : null} reason={row.usdReason} basis={row.valueUsdBasis} poolTitle={row.usdPoolTitle} /></span>
-          <span className={emptyFees || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.fees} which="fees" label="Fees to collect" unread={row.unread} usd={row.feesUsd} asOf={feesAsOf} why={row.valueUsd !== null && row.feesUsd === null ? why : null} reason={row.usdReason} basis={row.feesUsdBasis} poolTitle={row.usdPoolTitle} /></span>
+          <span className={emptyValue || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.value} which="principal" label="Value" usd={row.valueUsd} asOf={valueAsOf} reason={row.usdReason} basis={row.valueUsdBasis} poolTitle={row.usdPoolTitle} /></span>
+          <span className={emptyFees || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.fees} which="fees" label="Fees to collect" usd={row.feesUsd} asOf={feesAsOf} reason={row.usdReason} basis={row.feesUsdBasis} poolTitle={row.usdPoolTitle} /></span>
           {!closed && <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : apr?.kind ?? 'none'}>
             <span className="dm-own-label">Your APR</span>
-            {apr?.kind === 'loading' ? <Skeleton className="dm-collection-apr-loading" /> : apr?.kind === 'rate' ? <span className="dm-own-fig" title={apr.saved ? 'Last verified position history. Updating automatically.' : 'Annualized fees earned by this position since it opened.'}>{apr.text}</span> : <span className="dm-own-dash" title={apr?.kind === 'missing' ? apr.words : 'The position’s verified fee history is not available yet.'}>—</span>}
+            {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a kept rate's title said "Last verified position
+                history. Updating automatically.", and the dash's why it is a dash ("… is not available yet"); a dash is a dash now. */}
+            {apr?.kind === 'loading' ? <Skeleton className="dm-collection-apr-loading" /> : apr?.kind === 'rate' ? <span className="dm-own-fig" title="Annualized fees earned by this position since it opened.">{apr.text}</span> : <span className="dm-own-dash">—</span>}
           </span>}
         </span>
         {closed && <span className="dm-own-closed-caption">View history</span>}

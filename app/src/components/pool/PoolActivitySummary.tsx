@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 import type { Instant } from '../../lib/markets'
-import { failureText } from '../../lib/read/screens/copy'
 import { activityAge, heldSeconds, poolActivityView, type AmountPair } from '../../lib/read/screens/figures'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { ScreenOutcome } from '../../lib/read/screens/screenRead'
@@ -43,10 +42,6 @@ export function PoolActivitySummary({ read, listed, option, now, day, usd, volum
   const answer = read?.state === 'ok' ? read : null
   const age = answer ? activityAge(answer.data.freshness, heldSeconds(answer.provenance, now)) : null
   const view = answer && age?.state !== 'too_old' ? poolActivityView(answer.data, option.currencies) : null
-  const failure = read && read.state !== 'ok' && read.state !== 'aborted' ? read : null
-  const words = failure ? failureText(failure, 'activity') : null
-  const reason = words ? [words.title, words.detail].filter(Boolean).join('. ') : age?.state === 'too_old' ? 'The pool’s activity has not been indexed recently.' : undefined
-
   const lines: ReactNode[] = []
   const worth = volume ? <>, worth about <b className="tnum">{volume}</b></> : null
   if (view) {
@@ -75,7 +70,10 @@ export function PoolActivitySummary({ read, listed, option, now, day, usd, volum
   const waiting = (listed && read === null) || (loading && !view)
   const state = waiting ? 'loading' : lines.length ? 'ready' : 'none'
   return (
-    <section className="dm-card dm-pool-card dm-pool-recent" aria-labelledby="pool-recent-title" data-pool-activity-summary={state} data-activity-source={view ? 'chain' : 'market'} title={view ? undefined : reason}>
+    // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no title with a failed read's words or "The
+    // pool’s activity has not been indexed recently.", and with nothing to say the card shows the dash every empty value
+    // shows; it used to say "Recent activity for this pool isn’t available right now."
+    <section className="dm-card dm-pool-card dm-pool-recent" aria-labelledby="pool-recent-title" data-pool-activity-summary={state} data-activity-source={view ? 'chain' : 'market'}>
       <details className="dm-pool-recent-disclosure">
       <summary><h2 id="pool-recent-title" className="dm-title">Recent activity</h2><span aria-hidden="true" className="dm-pool-details-chevron" /></summary>
       {state === 'ready' ? (
@@ -90,7 +88,7 @@ export function PoolActivitySummary({ read, listed, option, now, day, usd, volum
           <Skeleton className="dm-pool-recent-skel" />
         </div>
       ) : (
-        <p className="dm-pool-quiet-line">Recent activity for this pool isn’t available right now.</p>
+        <p className="dm-pool-quiet-line"><span className="text-fg-subtle">—</span></p>
       )}
       <p role="status" className="sr-only">
         {state === 'loading' ? 'Reading recent activity…' : ''}

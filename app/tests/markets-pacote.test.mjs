@@ -29,7 +29,7 @@ const search = built('lib/read/screens/tokenSearch');
 const featured = built('lib/read/featuredList');
 const { overviewRows } = built('lib/read/publicOverview');
 const { createPaintMemory, PAINT_MAX_AGE_MS, PREFETCH_MAX_AGE_MS } = built('lib/read/marketsPaint');
-const { createBridgeSource, edgeAgeOf } = built('lib/read/bridgeSource');
+const { createBridgeSource, edgeAgeOf, CAPABILITIES_KEEP_MS } = built('lib/read/bridgeSource');
 const { createTokenArtworkResolver, DEX_EDGE } = built('lib/tokenArtwork');
 const { realClock } = built('lib/read/pipeline');
 
@@ -451,7 +451,9 @@ test('A7 a: past 15 minutes the copy paints nothing, and for a day still names t
 // A22 and the edge's age: the client's side
 // ---------------------------------------------------------------------------
 
-test('A22: a capabilities answer past its minute is used at once for a route it lists, renewed behind; one that does not list the route is asked again first', async () => {
+// Rewritten on purpose 2026-10-15 (pack 7): an answer that lists routes is kept CAPABILITIES_KEEP_MS (five minutes; was a
+// minute) for a route it lists, so its renewal behind comes then; a route it does not list still asks again past its minute.
+test('A22: a capabilities answer past its time is used at once for a route it lists, renewed behind; one that does not list the route is asked again first, past its minute', async () => {
   let at = 0;
   let enabled = ['overview'];
   const gets = [];
@@ -467,6 +469,9 @@ test('A22: a capabilities answer past its minute is used at once for a route it 
   assert.equal((await source.routeEnabled('overview')).state, 'enabled');
   assert.equal(gets.length, 1);
   at = 60_000;
+  assert.equal((await source.routeEnabled('overview')).state, 'enabled');
+  assert.equal(gets.length, 1, 'a route it lists: kept past its minute, nothing asked');
+  at = CAPABILITIES_KEEP_MS;
   let resume;
   release = (go) => { resume = go; };
   // The renewal waits; the read does not.
@@ -477,7 +482,7 @@ test('A22: a capabilities answer past its minute is used at once for a route it 
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal((await source.routeEnabled('search')).state, 'enabled', 'the renewed answer, once in');
   // A route the kept answer does not list waits for the renewal, so a route switched on is used at once.
-  at = 120_000;
+  at = CAPABILITIES_KEEP_MS + 60_000;
   enabled = ['overview', 'search', 'history'];
   assert.equal((await source.routeEnabled('history')).state, 'enabled');
   assert.equal(gets.length, 3);
@@ -503,18 +508,19 @@ test('I3: the token-pairs body is asked of our own edge first, with the beta coo
     if (url.startsWith('/api/') && !edgeUp) return new Response('{"error":"upstream_unavailable"}', { status: 502, headers: { 'content-type': 'application/json' } });
     // Changed on purpose 2026-10-14 (incident of 2026-10-13, package D1): the Wallet card's prices are asked on our edge's
     // new path, whose answer says each token's own state.
-    if (url.startsWith('/api/read/dex2/')) return new Response(JSON.stringify({ v: 2, now: 9, tokens: Object.fromEntries(url.split('/').pop().split(',').map((token) => [token, { at: 9, pairs: [pair] }])) }), { headers: { 'content-type': 'application/json' } });
-    return new Response(JSON.stringify([pair]), { headers: { 'content-type': 'application/json', ...(url.startsWith('/api/') ? { 'X-Domino-Edge-Age': '4000' } : {}) } });
+    // Changed on purpose 2026-10-15 (pack 7): the token-pairs reads too, each token dated by the edge's own retrieval.
+    if (url.startsWith('/api/read/dex2/')) return new Response(JSON.stringify({ v: 2, now: 9_000, tokens: Object.fromEntries(url.split('/').pop().split(',').map((token) => [token, { at: 5_000, pairs: [pair] }])) }), { headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify([pair]), { headers: { 'content-type': 'application/json' } });
   } });
   const heard = [];
   resolver.onPairs((address, body, retrievedAt) => heard.push([address, retrievedAt]));
   assert.ok(await resolver.resolve(4663, UFG));
-  assert.deepEqual(asked, [[`/api/read/dex/token-pairs/${UFG}`, 'same-origin', 'no-referrer']]);
+  assert.deepEqual(asked, [[`/api/read/dex2/token-pairs/${UFG}`, 'same-origin', 'no-referrer']]);
   assert.deepEqual(heard, [[UFG, 1_000_000 - 4000]], 'dated by the edge’s own retrieval');
   edgeUp = false;
   at += 31_000;
   await resolver.pairs(4663, UFG_COPY);
-  assert.deepEqual(asked.slice(1), [[`/api/read/dex/token-pairs/${UFG_COPY}`, 'same-origin', 'no-referrer'], [`https://api.dexscreener.com/token-pairs/v1/robinhood/${UFG_COPY}`, 'omit', 'no-referrer']]);
+  assert.deepEqual(asked.slice(1), [[`/api/read/dex2/token-pairs/${UFG_COPY}`, 'same-origin', 'no-referrer'], [`https://api.dexscreener.com/token-pairs/v1/robinhood/${UFG_COPY}`, 'omit', 'no-referrer']]);
   await resolver.tokenPrices([UFG]);
   assert.deepEqual(asked.at(-1), [`https://api.dexscreener.com/token-pairs/v1/robinhood/${UFG}`, 'omit', 'no-referrer'], 'for five minutes the provider directly, with the same pair coverage');
   at += 300_001;

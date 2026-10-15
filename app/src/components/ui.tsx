@@ -514,10 +514,14 @@ export function Segmented<T extends string>({
  * start reading "— TVL unavailable" to everything that walks text rather than
  * the accessibility tree — including our own screen tests. `aria-label` says
  * the same thing to a screen reader and leaves the text alone.
+ *
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a dash
+ * with no reason has no accessible name any more; it used to be named
+ * "Unavailable". A caller that passes a reason keeps it as before.
  */
 export function FigureDash({ reason }: { reason?: string }) {
   return (
-    <span className="text-fg-subtle" title={reason} aria-label={reason ?? 'Unavailable'} data-figure="none">
+    <span className="text-fg-subtle" title={reason} aria-label={reason} data-figure="none">
       —
     </span>
   )

@@ -329,8 +329,10 @@ test('the basis of an estimate and the time of a figure that is not current are 
   assert.equal(usdTitleWords({ asOf: undefined, estimate: undefined, block: 9 }), 'Qualified valuation at block 9');
   assert.equal(usdTitleWords({ asOf: undefined, estimate: undefined, block: null }), undefined);
   assert.equal(usdTitleWords({ asOf: undefined, estimate: 'Estimated.', block: 9 }), 'Estimated.');
-  assert.equal(usdTitleWords({ asOf: at, estimate: undefined, block: 9 }), 'Last complete valuation, from 10-14 13:05 UTC.');
-  assert.equal(usdTitleWords({ asOf: at, estimate: 'Estimated.', block: 9 }), 'Last complete valuation, from 10-14 13:05 UTC. Estimated.');
+  // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a figure that is not current names its basis and no time
+  // (it began "Last complete valuation, from 10-14 13:05 UTC."), and no block (that of a reading after it).
+  assert.equal(usdTitleWords({ asOf: at, estimate: undefined, block: 9 }), undefined);
+  assert.equal(usdTitleWords({ asOf: at, estimate: 'Estimated.', block: 9 }), 'Estimated.');
 });
 
 // ---------------------------------------------------------------------------
@@ -367,7 +369,8 @@ test('an ETH / token position shows the same dollars on its own page as in its r
   const now = (body.servedAt + 200) * 1000;
   const late = robinhoodPageUsd(pageOf(read), body, { late: true }, memory, now);
   assert.deepEqual([late.principal, late.asOf], [page.principal, `as of ${shortTime(body.servedAt - 30)}`]);
-  const dated = `Last complete valuation, from ${asOfFull((body.servedAt - 30) * 1000)}. ${estimate}`;
+  // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the titles and Details name the basis alone, no time (they began "Last complete valuation, from …").
+  const dated = estimate;
   assert.deepEqual([late.principalTitle, late.feesTitle, late.detail], [dated, dated, dated], 'the time and the basis, on each figure and for Details');
   // Nor a newer reading of the NFT: the same.
   const still = robinhoodPageUsd(pageOf(read), body, { still: true }, memory, now);
@@ -443,7 +446,8 @@ test('after Collect fees with the prices unreadable the row says $0.00 of fees n
   offerPositionState(read);
   const page = robinhoodPageUsd(pageOf(read), after, {}, memory, after.servedAt * 1000);
   assert.deepEqual([page.principal, page.fees, page.saved, page.asOf, page.now], [row.valueUsd, '0.000000000000000000', true, `as of ${shortTime(body.servedAt)}`, { figure: 'fees', asOf: null }]);
-  assert.deepEqual([page.principalTitle, page.feesTitle], [`Last complete valuation, from ${asOfFull(body.servedAt * 1000)}.`, `Qualified valuation at block ${read.block}`]);
+  // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the kept figure has no title ("Last complete valuation, from …").
+  assert.deepEqual([page.principalTitle, page.feesTitle], [null, `Qualified valuation at block ${read.block}`]);
 });
 
 test('with no portfolio read (no wallet connected) the page keeps its own rule: a USDG pair at the pool’s price, any other pair in tokens, no words', () => {
@@ -460,7 +464,8 @@ test('with no portfolio read (no wallet connected) the page keeps its own rule: 
   // Its dollar is a constant: only its own reading can grow old, and then the figure says its time, and still its basis.
   const old = robinhoodPageUsd(reading, null, { still: true }, memory, (body.servedAt + 200) * 1000);
   assert.deepEqual([robinhoodPageUsd(reading, null, { late: true }, memory, (body.servedAt + 200) * 1000).asOf, old.asOf], [null, `as of ${shortTime(body.servedAt)}`]);
-  assert.equal(old.principalTitle, `Last complete valuation, from ${asOfFull(body.servedAt * 1000)}. Estimated from the pool price at block ${read.block}, with USDG at $1. This is not a sale quote.`);
+  // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the basis alone, no time.
+  assert.equal(old.principalTitle, `Estimated from the pool price at block ${read.block}, with USDG at $1. This is not a sale quote.`);
   assert.equal(old.detail, old.principalTitle);
   // read-v6 lists USDG and withholds its price: withheld here too, with its reason, never the constant over it.
   const withheld = structuredClone(body);

@@ -591,7 +591,9 @@ test('existing pools: fee, verification, provenance, attributed figures, no reco
   assert.match(optionText, /\$10\.00/);
   assert.match(optionText, /\$1\.2K/);
   assert.doesNotMatch(optionText, /\$10\.00 · Provider/, 'a provider is not a caption beside every number');
-  assert.match(optionText, /Provider figures retrieved 00:16:50 UTC, 1970-01-01\. Provider-reported, not reconciled with chain data\./, 'source and age beside the figures');
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): no "Provider figures retrieved <time>." line in the
+  // details; each figure's title already says it is provider-reported.
+  assert.doesNotMatch(optionText, /Provider figures retrieved/, 'no retrieval time beside the figures');
   assert.doesNotMatch(optionText, /GeckoTerminal|DexScreener/, 'the provider is never named on a screen');
   // Changed on purpose (2026-09-20): this line sat under EVERY row, always the
   // same words, contradicting the estimate printed a few lines above it. The row
@@ -931,19 +933,20 @@ test('provider figures carry their source and retrieval on the row; every cell w
   assert.deepEqual(cells.map((c) => c.state), ['provider', 'provider', 'unavailable']);
   // The figure alone in its cell; who reported it is on the row's provenance line and in the cell's own title.
   assert.equal(cells[0].text, '$12.3K');
-  assert.match(cells[0].title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
-  assert.match(cells[1].title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): titles name the source only, no retrieval age.
+  assert.equal(cells[0].title, 'Reported by a market data provider. Not reconciled by Domino.');
+  assert.equal(cells[1].title, 'Reported by a market data provider. Not reconciled by Domino.');
   assert.equal(await page.locator('tbody tr td').nth(1).locator('[data-pool-price]').count(), 1, 'the price is the pool’s own ratio, in its own cell');
-  // Every cell showing no number carries its reason.
-  for (const cell of cells.filter((c) => ['unavailable', 'absent', 'not-current', 'rejected'].includes(c.state))) assert.ok(cell.title, `${cell.text} carries a reason`);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): a cell showing no number is a dash with no reason.
+  for (const cell of cells.filter((c) => ['unavailable', 'absent', 'not-current', 'rejected'].includes(c.state))) assert.equal(cell.title, null, `${cell.text} carries no reason`);
   // F3's lean table never reads pool-metrics, and the fixture lab has no estimate namespace, so the APR
-  // is the estimate cell saying it is not enabled: never a figure, and never borrowed from the qualified field.
-  assert.equal(cells[2].text, '—', 'no estimate: the catalogue dash, reason in its title');
-  assert.match(cells[2].title, /Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\./, 'APR stays unavailable, and says why');
-  // The provenance is the row's title and its data, not a line printed under the name.
+  // is the estimate cell's dash: never a figure, and never borrowed from the qualified field.
+  assert.equal(cells[2].text, '—', 'no estimate: the catalogue dash');
+  // The provenance is the row's data; its hover title is the basis alone (changed on purpose 2026-10-15, pack 7, owner:
+  // no status notices: it was the whole line, retrieval age included).
   const provenance = await page.locator('tbody tr [data-provenance]').getAttribute('data-provenance');
-  assert.match(provenance, /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/, 'source and retrieval age on the row');
-  assert.equal(await page.locator('tbody tr [data-provenance]').getAttribute('title'), provenance, 'the same words on hover');
+  assert.match(provenance, /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/, 'source and retrieval age on the row, as data');
+  assert.equal(await page.locator('tbody tr [data-provenance]').getAttribute('title'), 'Pool verified on-chain at block 700 · Reported by a market data provider', 'the basis on hover');
   assert.doesNotMatch(`${provenance} ${cells[0].text}`, /\b(current|live|updated|qualified)\b/i);
   assert.doesNotMatch(provenance, /\$\d|as of|updated at/i, 'the provenance never repeats a figure, nor dates one it cannot date');
   // No caption under the table any more (the owner's decision on the redesign): the APR caveat is the cell's own title, above, and the dialog's, below.
@@ -960,9 +963,11 @@ test('provider figures carry their source and retrieval on the row; every cell w
   await dialog.locator('[data-figures-sources] > summary').click();
   const text = await dialog.innerText();
   assert.equal(await dialog.locator('[data-figures-qualified], [data-figures-provider], [data-figures-activity]').count(), 0, 'no duplicate figures or unrelated activity panels');
-  assert.match(await dialog.locator('[data-figures-summary] [data-metric="provider"]').first().getAttribute('title'), /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
-  // What the estimate is not: its own title, not a closing caption.
-  assert.match(await dialog.locator('[data-apr-estimate] [title]').getAttribute('title'), /^Pool estimate, not position APR, APY or a return forecast\./);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the source only, no retrieval age.
+  assert.equal(await dialog.locator('[data-figures-summary] [data-metric="provider"]').first().getAttribute('title'), 'Reported by a market data provider. Not reconciled by Domino.');
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): with no estimate the APR is a dash with no title,
+  // and there is still no closing caption.
+  assert.equal(await dialog.locator('[data-apr-estimate] [title]').count(), 0);
   assert.doesNotMatch(text, /Retrieval age isn’t proof of a complete 24h window|Pool APR describes a pool, not a position|Block \d+/, 'no captions about sources under the figures');
   assert.doesNotMatch(await dialog.innerHTML(), /money-wait/);
   assert.equal((await caseLog(page)).filter((r) => r.route === 'pool-activity').length, 0, 'the compact popup no longer reads unrelated pool activity');
@@ -983,23 +988,26 @@ test('stale, expired, missing and zero figures stay honest, without unrelated ac
   const stale = await openCase('figures.stale');
   await table(stale.page);
   assert.deepEqual(await cellsOf(stale.page), [['stale', '$12.3K'], ['stale', '$0.00']], 'a stale figure is still shown, marked stale');
-  assert.match(await stale.page.locator('tbody [data-metric]').first().getAttribute('title'), /Stale, not current\.$/);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): a kept figure's title names its source only.
+  assert.equal(await stale.page.locator('tbody [data-metric]').first().getAttribute('title'), 'Reported by a market data provider. Not reconciled by Domino.');
   const s = await openFigures(stale.page);
   await s.locator('[data-figures-sources] > summary').click();
   assert.match(await s.locator('[data-figures-summary]').innerText(), /TVL\s+\$12\.3K/);
-  assert.match(await s.locator('[data-figures-summary] [data-metric="stale"]').first().getAttribute('title'), /Stale, not current\.$/);
+  assert.equal(await s.locator('[data-figures-summary] [data-metric="stale"]').first().getAttribute('title'), 'Reported by a market data provider. Not reconciled by Domino.');
   await stale.page.close();
 
   const expired = await openCase('figures.expired');
   await table(expired.page);
-  assert.deepEqual(await cellsOf(expired.page), [['unavailable', 'Unavailable'], ['unavailable', 'Unavailable']]);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the dash, never "Unavailable".
+  assert.deepEqual(await cellsOf(expired.page), [['unavailable', '—'], ['unavailable', '—']]);
   assert.doesNotMatch(await expired.page.locator('#root').innerText(), /\$12\.3K/, 'an expired figure is never shown');
   await expired.page.close();
 
   const missing = await openCase('figures.missing');
   await table(missing.page);
-  assert.deepEqual(await cellsOf(missing.page), [['absent', 'Not reported by the provider'], ['absent', 'Not reported by the provider']]);
-  assert.equal(await missing.page.locator('tbody [data-metric]').first().getAttribute('title'), 'Unavailable: the market data provider reported no value');
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the dash with no title, never "Not reported by the provider".
+  assert.deepEqual(await cellsOf(missing.page), [['absent', '—'], ['absent', '—']]);
+  assert.equal(await missing.page.locator('tbody [data-metric]').first().getAttribute('title'), null);
   await missing.page.close();
 
   const zero = await openCase('figures.zero');
@@ -1077,7 +1085,8 @@ test('the figures dialog ages with the row behind it, and says stale when the ro
   // The provenance moved off the line into the figure's title with the rest of the
   // provider captions, and says when the observation was retrieved rather than how
   // long a cache had held it: the age is the retrieval, read against the clock.
-  assert.match(await dialog.locator('[data-figures-summary] [data-metric="provider"]').first().getAttribute('title'), /Reported by a market data provider, retrieved .*Not reconciled by Domino\./);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the source only, no retrieval time.
+  assert.equal(await dialog.locator('[data-figures-summary] [data-metric="provider"]').first().getAttribute('title'), 'Reported by a market data provider. Not reconciled by Domino.');
   // The dialog still offers the long provenance to assistive technology; what went
   // is the caption printed beside every number.
   assert.doesNotMatch(await dialog.locator('[data-figures-summary]').innerText(), /provider|cache 0 s/i, 'no provider caption on the figure line');
@@ -1089,10 +1098,11 @@ test('the figures dialog ages with the row behind it, and says stale when the ro
   const aged = await dialog.innerText();
   // The owner's rule: a stale figure reads as the figure, in the same ink; that it is stale is its state and its title.
   const staleFigure = dialog.locator('[data-figures-summary] [data-metric="stale"]').first();
-  assert.match(await staleFigure.getAttribute('title'), /Stale, not current\./, 'the open dialog says stale in the figure’s title');
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): stale is its state only; its title names the source.
+  assert.equal(await staleFigure.getAttribute('title'), 'Reported by a market data provider. Not reconciled by Domino.', 'the open dialog names the source, never the age');
   assert.equal(await staleFigure.innerText(), '$12.3K', 'the number stays, with no stale caption or duplicate provider figure');
   assert.doesNotMatch(await staleFigure.innerHTML(), /money-wait/);
-  assert.match(await staleFigure.getAttribute('title'), /Stale, not current\./, 'the age is never described as current');
+  assert.doesNotMatch(await staleFigure.getAttribute('title'), /current|stale/i, 'the age is never described at all');
   assert.doesNotMatch(aged, /A later refresh failed/i, 'aging alone does not imply a failed refresh');
   assert.deepEqual(await caseLog(page), readsBeforeAge, 'the display clock starts no new read');
   assert.deepEqual(await page.locator('tbody [data-metric="stale"]').count() > 0, true, 'the row behind it says the same');
@@ -1111,7 +1121,8 @@ test('with markets-snapshot listed, the table and popup reuse its current row wi
   assert.deepEqual((await caseLog(page))[0].request, { poolIds: ['0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941'] });
   const cells = await page.locator('tbody [data-metric]').evaluateAll((els) => els.map((el) => [el.innerText, el.getAttribute('data-metric'), el.getAttribute('title')]));
   assert.deepEqual(cells.map(([text, state]) => [text, state]), [['$12.3K', 'provider'], ['$0.00', 'provider']]);
-  for (const [, , title] of cells) assert.match(title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the source only, no retrieval time.
+  for (const [, , title] of cells) assert.equal(title, 'Reported by a market data provider. Not reconciled by Domino.');
   assert.doesNotMatch(await page.locator('tbody').innerText(), /snapshot|stored/i, 'where the row came from is data, never words');
   await openFigures(page);
   assert.equal((await caseLog(page)).filter((r) => r.route === 'pool-activity').length, 0, 'no unrelated activity read after opening');
@@ -1179,7 +1190,8 @@ test('the pool page reads its figures, Domino’s 24h history and its chain acti
   assert.match(await details.locator('[data-history-apr]').innerText(), /Pool APR, Domino history\s+158%/);
   assert.equal(await details.locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable');
   assert.equal(await details.locator('[data-apr-estimate] [data-apr-figure]').innerText(), '—', 'no estimate here: a neutral dash');
-  assert.match(await details.locator('[data-apr-estimate] [data-apr-figure]').getAttribute('title'), /^Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\.$/);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the dash has no title; why stays in data-apr-reasons.
+  assert.equal(await details.locator('[data-apr-estimate] [data-apr-figure]').getAttribute('title'), null);
 
   // Clean: nothing on the page says how a read went, and nothing offers to read again.
   const main = await page.locator('main').innerText();

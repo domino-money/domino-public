@@ -12,6 +12,7 @@ import { SymbolText } from './SymbolText'
 export function NetworkTokenExplorer({ location, others, checking, initial = null, navigation, actions }: {
   location: NetworkTokenLocation
   others: OtherChains | null
+  /** Whether the other networks are still being checked. Since 2026-10-15 (pack 7) nothing is said meanwhile ("Loading token data…" is gone). */
   checking: boolean
   initial?: NetworkToken | null
   navigation: ReactNode
@@ -65,9 +66,12 @@ export function NetworkTokenExplorer({ location, others, checking, initial = nul
         </div>
         {token && actions(token)}
       </header>
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "Loading token data…" while the token is
+          read (the status line stays, empty). Kept on purpose: a failure that blocks the page, with its Try again, and
+          "Pool discovery is unavailable on this network." on an origin where the network is closed (a feature gate). */}
       {!token && <div className="mt-6 grid justify-items-start gap-3">
         <p role="status" className="text-body text-fg-muted">
-          {checking || (others && network && result === null) ? 'Loading token data…' : result && !result.ok ? result.reason : 'Pool discovery is unavailable on this network.'}
+          {checking || (others && network && result === null) ? '' : result && !result.ok ? result.reason : 'Pool discovery is unavailable on this network.'}
         </p>
         {result && !result.ok && <Button variant="outline" size="sm" onClick={retry}>Try again</Button>}
       </div>}

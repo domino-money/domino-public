@@ -304,10 +304,12 @@ const ROW = {
   feeAprPercent: { value: null, state: 'unavailable', reason: 'fee_apr_not_provided' },
 };
 
-test('an unavailable metric says so instead of showing a number, and there is no sample to show instead', () => {
+// Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a value that cannot be written is the dash, never the
+// word "Unavailable"; the metric's state still says unavailable, as data.
+test('an unavailable metric is a dash instead of a number, and there is no sample to show instead', () => {
   const missing = { value: null, state: 'unavailable', reason: 'no_qualified_price' };
-  assert.equal(markets.compactUsd(missing), 'Unavailable');
-  assert.equal(markets.compactUsd({ value: 'not a number', state: 'provider' }), 'Unavailable');
+  assert.equal(markets.compactUsd(missing), '—');
+  assert.equal(markets.compactUsd({ value: 'not a number', state: 'provider' }), '—');
   assert.equal(markets.turnover({ ...ROW, tvlUsd: missing }).kind, 'unavailable');
   assert.equal(markets.turnover({ ...ROW, volume24hUsd: missing }).kind, 'unavailable');
   assert.equal('listMarkets' in markets, false, 'no sample rows exist to fall back on');

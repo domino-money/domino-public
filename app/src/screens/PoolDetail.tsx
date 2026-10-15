@@ -72,14 +72,22 @@ const catalogueMark = (entry: PoolCatalogueEntry, side: 0 | 1): TokenDisplay => 
  * chart beside the earnings estimate), so nothing jumps when it arrives. No
  * fee is stated before the pool is verified, in the chip or anywhere else.
  * While verifying, the figures and the chart are resting blocks; once
- * verification has no answer they are dashes, with the reason in their title
- * and in the live region, never a panel.
+ * verification has no answer they are dashes, never a panel.
+ *
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no
+ * words about the verification any more. Gone: the line beside the chip
+ * ("Collecting data for many pools right now. This page asks again on its
+ * own.", "Collecting this pool’s figures. This page asks again on its own.",
+ * "Checking this pool on Robinhood Chain…"), the live region and the titles
+ * that carried a failed verification's reason (e.g. "This pool’s figures are
+ * not collected yet. Open it again later."). `data-pool-verification` keeps
+ * the state, as data.
  */
-function Pending({ id, entry, verifying = true, reason, note }: { id: string; entry?: PoolCatalogueEntry; verifying?: boolean; reason?: { code: string; text: string }; note?: 'collecting' | 'capacity' }) {
+function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: PoolCatalogueEntry; verifying?: boolean; reason?: { code: string; text: string } }) {
   // A resting bubble while verifying; the same box, empty, once verification has no answer.
   const bubble = (name: string) => <span aria-hidden="true" className={verifying ? `dm-skel ${name}` : name} />
   return (
-    <div aria-busy={verifying || undefined} data-pool-verification={verifying ? 'verifying' : reason?.code} title={reason?.text} className="dm-pool-layout" data-pool-pending={id}>
+    <div aria-busy={verifying || undefined} data-pool-verification={verifying ? 'verifying' : reason?.code} className="dm-pool-layout" data-pool-pending={id}>
       <div className="dm-pool-head dm-pool-a-head animate-rise">
         <div className="dm-pool-title">
           <span className="dm-pool-marks">
@@ -92,12 +100,6 @@ function Pending({ id, entry, verifying = true, reason, note }: { id: string; en
             <div className="dm-pool-chips">
               {/* The fee is the verified pool's to state: until then the chip names the protocol only. */}
               <span className="dm-chip">Uniswap</span>
-              {verifying && (
-                <span role="status" className="dm-pool-verifying" data-pool-note={note}>
-                  {note === 'capacity' ? 'Collecting data for many pools right now. This page asks again on its own.' : note === 'collecting' ? 'Collecting this pool’s figures. This page asks again on its own.' : 'Checking this pool on Robinhood Chain…'}
-                </span>
-              )}
-              {!verifying && <span role="status" className="sr-only">{reason?.text}</span>}
             </div>
           </div>
         </div>
@@ -129,7 +131,7 @@ function Pending({ id, entry, verifying = true, reason, note }: { id: string; en
         </div>
         <div className="dm-pool-plot dm-dots-chart mt-4" title="Prices from swaps on Robinhood Chain.">
           <div className="dm-pool-plot-empty">
-            {verifying ? <Skeleton className="dm-pool-plot-baseline" /> : <span className="text-fg-subtle" title={reason?.text}>—</span>}
+            {verifying ? <Skeleton className="dm-pool-plot-baseline" /> : <span className="text-fg-subtle">—</span>}
           </div>
         </div>
         <div aria-hidden="true" className="dm-pool-skel-axis">
@@ -343,7 +345,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
       </div>
     )
   } else if (!source || !resolution || resolution.kind === 'verifying') {
-    body = <Pending id={id} entry={entry} note={resolution?.kind === 'verifying' ? resolution.note : undefined} />
+    body = <Pending id={id} entry={entry} />
   } else if (resolution.kind === 'failed') {
     body = <Pending id={id} entry={entry} verifying={false} reason={{ code: resolution.code, text: resolution.reason }} />
   } else if (resolution.kind === 'not_returned') {

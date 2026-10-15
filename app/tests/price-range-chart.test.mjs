@@ -13,7 +13,8 @@ import { CASES, OWNER, TOKENS, decimalText, historyFor, rangeCase } from './supp
 
 const require = createRequire(import.meta.url);
 const chart = require('../.test-build/app/src/lib/chart/priceRange.js');
-const { ledgerClosedAt, ledgerOpenedAt, activityOpenedAt, activityMint } = require('../.test-build/app/src/lib/chart/positionOpened.js');
+const { ledgerClosedAt, ledgerOpenedAt, ledgerOpenedBefore, activityOpenedAt, activityMint } = require('../.test-build/app/src/lib/chart/positionOpened.js');
+const { SETUP_DEPLOY_BLOCK, SETUP_DEPLOYED_BY } = require('../.test-build/app/src/config/chainRobinhood.js');
 const { spacedTimeTicks } = require('../.test-build/app/src/components/positions/visual/ticks.js');
 const { walletCard } = require('../.test-build/app/src/lib/walletCards.js');
 const { chainPoolPrice } = require('../.test-build/app/src/lib/read/screens/positions.js');
@@ -433,6 +434,63 @@ test('the V1 opening time is the ledger mint, including a ledger with inexact se
   assert.equal(ledgerOpenedAt({ phase: 'unclaimed-only', events: [{ kind: 'increase', timestamp: END + 1 }, { kind: 'mint', timestamp: END }] }), END);
   assert.equal(ledgerOpenedAt({ phase: 'unclaimed-only', state: { timestamp: END }, events: [{ kind: 'increase', timestamp: END }] }), null);
   for (const phase of ['idle', 'loading', 'unavailable']) assert.equal(ledgerOpenedAt({ phase, state: { timestamp: END } }), null);
+});
+
+// (2026-10-15, pack 7): every close is an owner's withdrawal ('manual'), so the ledger's view of a closed NFT is never
+// exact and the chart waited on its closing history forever. A complete inexact ledger ('manual', 'native', 'shared':
+// the scan reached the head and found the mint) still dates the close from the NFT's own settlements.
+test('a closed NFT whose ledger is complete but inexact (manual, native, shared) is dated by its own settlements; never one that cannot be', () => {
+  const events = [
+    { kind: 'mint', liquidityDelta: 10n, timestamp: 100, fees: [0n, 0n] },
+    { kind: 'collect', liquidityDelta: 0n, timestamp: 150, fees: [1n, 2n] },
+    { kind: 'decrease', liquidityDelta: -4n, timestamp: 200, fees: null },
+    { kind: 'close', liquidityDelta: -6n, timestamp: 300, fees: null },
+  ];
+  const view = (why, more = {}) => ({ phase: 'unclaimed-only', state: { liquidity: 0n }, reason: 'not_exact', why, events, ...more });
+  for (const why of ['manual', 'native', 'shared']) assert.equal(ledgerClosedAt(view(why)), 300, `${why}: the close's own block time`);
+  for (const why of ['liquidity', 'unseen', 'before_floor', 'too_many', 'reading', undefined]) assert.equal(ledgerClosedAt(view(why)), null, `${why}: never a close`);
+  assert.equal(ledgerClosedAt(view('manual', { state: { liquidity: 1n } })), null, 'liquidity left now is not closed');
+  assert.equal(ledgerClosedAt(view('manual', { events: events.slice(1) })), null, 'no mint in the events: no close');
+  assert.equal(ledgerClosedAt(view('manual', { events: events.slice(0, 3) })), null, 'the deltas must sum to the state’s zero');
+  assert.equal(ledgerClosedAt(view('manual', { events: [events[0], { ...events[3], liquidityDelta: -11n }, { kind: 'increase', liquidityDelta: 1n, timestamp: 400 }] })), null, 'never negative');
+  assert.equal(ledgerClosedAt(view('manual', { events: undefined })), null, 'no events: no close');
+  assert.equal(ledgerClosedAt({ phase: 'unclaimed-only', state: { liquidity: 0n }, reason: 'rpc_unavailable', events }), null, 'a read that failed is no ledger');
+  assert.equal(ledgerClosedAt(view('manual', { events: [...events, { kind: 'increase', liquidityDelta: 5n, timestamp: 400 }, { kind: 'close', liquidityDelta: -5n, timestamp: 500 }] })), 500, 'a reopened NFT uses its later close');
+});
+
+// (2026-10-15, pack 7): a position minted before Domino's release (the ledger's 'before_floor') has no mint to date, but
+// it was minted before SETUP_DEPLOY_BLOCK, so at or before SETUP_DEPLOYED_BY: once that is at or before the window's
+// start, the last 7 days are all this NFT's own, drawn with no opening mark.
+test('a position minted before the release gets the stored 7-day window from a proven bound, never an opening time', () => {
+  assert.equal(SETUP_DEPLOY_BLOCK, 69_249_061);
+  // docs/deployments/v1-robinhood-mainnet-2026-09-21/deployment.json: verifiedBlock 69,250,734 (a later block) at this time.
+  assert.equal(SETUP_DEPLOYED_BY, 1_790_039_242);
+  const before = { phase: 'unclaimed-only', state: { liquidity: 1n, timestamp: END }, reason: 'not_exact', why: 'before_floor', events: [{ kind: 'collect', liquidityDelta: 0n, timestamp: END - 10 }] };
+  assert.equal(ledgerOpenedBefore(before), SETUP_DEPLOYED_BY);
+  assert.equal(ledgerOpenedAt(before), null, 'never an opening time');
+  for (const why of ['manual', 'native', 'shared', 'liquidity', 'unseen', 'too_many', 'reading', undefined]) assert.equal(ledgerOpenedBefore({ ...before, why }), null, `${why}: no bound`);
+  assert.equal(ledgerOpenedBefore({ ...before, mintedAt: { block: 80_000_000, timestamp: END } }), null, 'a known mint is an opening time, not a bound');
+  assert.equal(ledgerOpenedBefore({ ...before, events: [{ kind: 'mint', liquidityDelta: 1n, timestamp: END }] }), null);
+  assert.equal(ledgerOpenedBefore({ ...before, reason: 'rpc_unavailable' }), null);
+  for (const phase of ['idle', 'loading', 'verified', 'cached', 'unavailable']) assert.equal(ledgerOpenedBefore({ ...before, phase }), null, phase);
+
+  const item = CASES.inside;
+  const { facts } = factsOf(item);
+  // A window that starts after the bound (today's), and one that does not (a window ending on END, before the release).
+  const late = END + 30 * 86_400;
+  const data = historyFor(item, BODY(item), { end: late });
+  const start = data.requestedWindow.startTimestamp;
+  assert.ok(start >= SETUP_DEPLOYED_BY);
+  const run = (mint, bound, answer = data, now = late) => historyLine(answer, { base: item.base.address, quote: item.quote.address }, range(facts), now, mint, bound);
+  const line = run(null, SETUP_DEPLOYED_BY);
+  assert.equal(line.kind, 'line', 'a bound at or before the window’s start draws');
+  assert.equal(line.history.start, start, 'the stored window, from its start');
+  assert.deepEqual(line, run(SETUP_DEPLOYED_BY - 86_400), 'the same line an older known mint draws');
+  assert.equal(run(null, start).kind, 'line', 'a bound at the start itself');
+  assert.deepEqual(run(null, start + 1), { kind: 'none', reason: 'unknown_mint' }, 'a bound inside the window proves nothing about it');
+  assert.deepEqual(run(null, SETUP_DEPLOYED_BY, historyFor(item, BODY(item), { end: END }), END), { kind: 'none', reason: 'unknown_mint' }, 'a window that starts before the release');
+  for (const bound of [null, undefined, 0, NaN, -1, 1.5]) assert.deepEqual(run(null, bound), { kind: 'none', reason: 'unknown_mint' });
+  assert.equal(run(late - 3600, SETUP_DEPLOYED_BY).history.start, late - 3600, 'a known mint wins over a bound');
 });
 
 test('only an identified V2 creation with a valid block and transaction supplies a ledger hint', () => {

@@ -1,21 +1,23 @@
-import { provenanceText, type AttributedFigure } from '../../../lib/read/screens/figures'
+import { PROVIDER_LONG, type AttributedFigure } from '../../../lib/read/screens/figures'
 import { cx } from '../../ui'
 
-const VALUE_TEXT = (figure: AttributedFigure) => {
-  switch (figure.state) {
-    case 'attributed':
-    case 'attributed_stale':
-      return figure.value
-    case 'not_reported':
-      return 'Not reported'
-    case 'unavailable':
-      return 'Unavailable'
-    case 'rejected':
-      return 'Rejected, not shown'
-    default:
-      return figure satisfies never
-  }
-}
+/**
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a figure with no value is the dash "—"; it used
+ * to read "Not reported", "Unavailable" or "Rejected, not shown". Its state stays in `data-provider-figure`.
+ */
+const VALUE_TEXT = (figure: AttributedFigure) => (figure.state === 'attributed' || figure.state === 'attributed_stale' ? figure.value : '—')
+
+/**
+ * Where a figure with a value comes from, in words: the basis only. Changed on purpose 2026-10-15 (pack 7, the owner: no
+ * status notices): this used to be provenanceText's long form, "Reported by a market data provider, retrieved
+ * <HH:MM:SS UTC, date>. [This observation is stale (<reason>).] Provider-reported, not reconciled with chain data.", and
+ * for a figure with no value why there is none ("Retrieved from a market data provider, which reported no value for this
+ * figure.", "Nothing usable was retrieved from a market data provider (<reason>).", "What was retrieved from a market
+ * data provider failed an identity check (<reason>) and is not shown."): a dash now has no words. provenanceText itself is
+ * unchanged, for the other networks' notes (lib/create/otherChains.ts).
+ */
+const basisText = (figure: AttributedFigure): string | undefined =>
+  figure.state === 'attributed' || figure.state === 'attributed_stale' ? `Reported by ${PROVIDER_LONG}. Provider-reported, not reconciled with chain data.` : undefined
 
 /**
  * One provider figure with who reported it, as a word beside it: the
@@ -36,9 +38,8 @@ const VALUE_TEXT = (figure: AttributedFigure) => {
  * `data-provider-reason`. Without `note` nothing changes.
  */
 export function ProviderFigure({ label, figure, full = false, dash = false, note }: { label: string; figure: AttributedFigure; full?: boolean; dash?: boolean; note?: string }) {
-  const provenance = provenanceText(figure)
   const valued = figure.state === 'attributed' || figure.state === 'attributed_stale'
-  const said = note ?? provenance.long
+  const said = note ?? basisText(figure)
   const reason = note !== undefined && (figure.state === 'unavailable' || figure.state === 'rejected') ? figure.reason : undefined
   return (
     <div className="grid min-w-0 gap-0.5" data-provider-figure={figure.state} data-provider={figure.provider} data-provider-reason={reason} title={said}>
@@ -48,7 +49,7 @@ export function ProviderFigure({ label, figure, full = false, dash = false, note
           {valued || !dash ? VALUE_TEXT(figure) : '—'}
         </span>
       </div>
-      {full && <p className="sr-only">{said}</p>}
+      {full && said && <p className="sr-only">{said}</p>}
     </div>
   )
 }

@@ -587,6 +587,10 @@
   .dm-pvr-key[data-key="now"][data-tone="in"] .dm-pvr-swatch { border-top-color: var(--money-in); }
   .dm-pvr-key[data-key="now"][data-tone="out"] .dm-pvr-swatch { border-top-color: var(--money-out); }
   .dm-pvr-note { margin-left: auto; color: var(--fg-subtle); }
+  /* (2026-10-15, pack 7, the owner: no status notices): with no line drawn the note says nothing; it said why ("Reading
+     this position’s price history…", "Price history isn’t available yet."), and that text kept its room in the legend. The
+     room stays, unseen, as wide as a drawn line's note, so the card never grows when the line arrives. */
+  .dm-pvr-note:empty::before { content: 'Since opened · Measured prices'; visibility: hidden; }
   @media (max-width: 479px) { .dm-pvr-note { flex: 1 1 100%; margin-left: 0; } }
 
   .dm-pos-empty { margin-top: 1.5rem; }

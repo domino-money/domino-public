@@ -7,7 +7,6 @@ import { positionHref } from '../explore/routes'
 import { TokenMarkPair } from '../TokenIcon'
 import { IconChevronRight } from '../icons'
 import { Skeleton } from '../ui'
-import { shortDate, shortTime } from '../../lib/format/time'
 import type { RowApr } from './listApr'
 import { useLoadMilestone } from '../../lib/useLoadMilestone'
 import type { LoadQuality } from '../../lib/loadTiming'
@@ -51,10 +50,10 @@ function Money({ card, state, which, label }: { card: LiveCard; state: PositionS
       <Amount amount={card[which][1]} />
     </>
   )
-  if (which === 'unsettledFees') return <span className="dm-own-cell" data-cell="fees" title={`${usd ? '' : 'USD estimate unavailable. '}${card[which].map(amount => `${amount.exact ?? amount.text} ${amount.token.symbol ?? amount.token.address}`).join(' + ')}`}>
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "USD estimate unavailable." in the title or for a screen reader.
+  if (which === 'unsettledFees') return <span className="dm-own-cell" data-cell="fees" title={card[which].map(amount => `${amount.exact ?? amount.text} ${amount.token.symbol ?? amount.token.address}`).join(' + ')}>
     <span className="dm-own-label">{label}</span>
     <span className={usd ? 'dm-own-fig' : 'dm-own-dash'}>{usd ? formatUsdFloor(unitsText(usd.units)) : '—'}</span>
-    {!usd && <span className="sr-only">USD estimate unavailable.</span>}
     <span className="sr-only">{amounts}</span>
   </span>
   return (
@@ -92,20 +91,17 @@ function Apr({ apr, quality, ledger }: { apr: RowApr | null; quality: LoadQualit
     figure = <Skeleton className="dm-own-skel-apr" />
     title = undefined
   } else if (apr?.kind === 'rate') {
+    // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a saved copy's rate is
+    // drawn as any other; its title said "A copy this browser saved, through …. Not current." and a screen reader heard
+    // "Last available history" (data-apr-source still marks it).
     title = 'Since the position opened'
-    // Changed on purpose 2026-10-01 (item D4): the page's UTC time, no block number.
-    if (apr.saved) title = `A copy this browser saved, through ${shortDate(apr.saved.timestamp)} ${shortTime(apr.saved.timestamp)}. Not current.`
-    figure = (
-      <>
-        <span className="dm-own-fig">{apr.text}</span>
-        {apr.saved && <span className="sr-only"> · Last available history</span>}
-      </>
-    )
+    figure = <span className="dm-own-fig">{apr.text}</span>
   } else if (apr?.kind === 'missing') {
-    title = apr.words
-    // 2026-10-02 (review of the rules, finding 11): its page has no figure either, so the row does not point to it. No dash:
-    // the column keeps the width its band gives it from the first paint, so nothing beside it moves.
-    if (apr.short) figure = <span className="dm-own-est">{apr.short}</span>
+    // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no reason in the title ("Not measured for this position",
+    // lib/positionApr.ts APR_MISSING) and, where its page has no figure either (finding 11), a dash in place of the word
+    // "not measured".
+    title = undefined
+    if (apr.short) figure = <span className="dm-own-dash">—</span>
   }
   return (
     <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : (apr?.kind ?? 'none')} data-apr-source={apr?.kind === 'rate' && apr.saved ? 'saved-public-history' : undefined} data-ledger-asks={ledger ? ledger.asks : undefined} data-ledger-last={ledger?.last ?? undefined} title={title}>

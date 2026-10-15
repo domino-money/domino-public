@@ -1105,7 +1105,9 @@ test('the 2026-10 package: one-sided ranges, the history read at chosen blocks, 
   assert.match(earned, /those paid out each time they were collected or compounded, read from its own records, and those ready to collect now\. Its chart shows measured moments, including about a day and a week ago\./);
   assert.match(readText(join(APP, 'src/lib/fees/periods.ts')), /'24h': \{ seconds: DAY,[\s\S]*'7d': \{ seconds: 7 \* DAY,/, 'a day and a week');
   assert.match(earned, /Some positions’ Fees earned can’t be measured, such as one whose liquidity changed after it opened; Fees ready to collect is always exact\./);
-  assert.ok(src('components/positions/visual/FeesCard.tsx').includes('Fees earned can’t be measured for this position. Fees ready to collect is exact.'));
+  // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the card no longer says it over its flat plot (the
+  // docs still explain it); data-fees-reason="not_exact" carries it.
+  assert.ok(!src('components/positions/visual/FeesCard.tsx').includes("'Fees earned can’t be measured for this position. Fees ready to collect is exact.'"));
   assert.doesNotMatch(textOf(page('earned-fees')), /chosen moments|replayed|est\./);
   const privacy = page('privacy');
   // Changed on purpose 2026-10-01 (fix round 1): your own Positions list reads them too, for its rows' APR
@@ -1205,11 +1207,14 @@ test('the docs say what the follow-ups ship: replaced wallet steps, one line for
 // Fix round 1 (2026-10-01): only a live row of Markets has the info button with its figures; a listed pool whose live row
 // has not arrived has none, so the docs promise it for a row that has one, and that row's name no longer says its figures
 // are unavailable while stand-in figures are shown beside it.
-test('Missing figures: the info button where a row has one; a listed pool’s name says unavailable only with no stand-in', () => {
+// Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a listed pool's name never says its figures are
+// unavailable or not in yet, with or without stand-ins: its title is "Listed on Uniswap." alone.
+test('Missing figures: the info button where a row has one; a listed pool’s name never says its figures are unavailable', () => {
   assert.match(sectionText(page('markets'), 'unavailable-figures'), /Its title says why; on a phone, so does the info button at the end of a row that has one\./);
   const table = readText(join(APP, 'src/components/MarketsTable.tsx'));
   const catalogue = table.slice(table.indexOf('function CatalogueRow('), table.indexOf('\n}\n', table.indexOf('function CatalogueRow(')));
-  assert.match(catalogue, /const standing = tvl !== null \|\| volume !== null \|\| apr !== null/);
-  assert.match(catalogue, /title=\{standing \? 'Listed on Uniswap\. Its live figures are not in yet; each figure shown stands in, with its source and time\.' : 'Listed on Uniswap\. Pool figures are unavailable\.'\}/);
+  // changed on purpose 2026-10-15 (pack 7, owner: no status notices)
+  assert.match(catalogue, /title="Listed on Uniswap\.">/);
+  assert.doesNotMatch(catalogue, /'Listed on Uniswap\. (Its live figures are not in yet|Pool figures are unavailable)/);
   assert.doesNotMatch(catalogue, /data-pool-figures/, 'no info button there, as the docs now say');
 });

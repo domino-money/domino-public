@@ -42,7 +42,7 @@ import { OWN_PORTFOLIO } from '../lists/source'
 import { positionRows, usdAsOf } from '../lists/model'
 import type { OpenGate } from './wallet'
 import RecordedInsights from './RecordedInsights'
-import { asOfWords, usdMissingShort, usdTitleWords, usdUnavailableReason } from './usdAvailability'
+import { usdTitleWords } from './usdAvailability'
 
 // 2026-10-03 (the owner's point 10): the Price range chart's own chunk, asked for as this page's code arrives (V1's page does the same).
 preloadPriceChart()
@@ -124,7 +124,6 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
   const created = useCreatedPositions(wallet)
   const history = useActivityHistory(wallet)
   const activity = useMemo<V6Read<ActivityResponse> | null>(() => history.answer ? { kind: 'ok', body: history.answer } : history.error, [history.answer, history.error])
-  const chain = v2Chain(target.chainId)
   const id = target.tokenId.toString()
   useRouteTitle(`Position #${id}`)
 
@@ -141,18 +140,22 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
   }, [awaited, reply, target.chainId, wallet])
 
   if (needsWallet) return <Empty title={`Position #${id}`} body={COPY.page.connect} reason="connect_wallet" />
-  if (creation && !(found && isLive(found))) return <Empty title={`Position #${id}`} body="Updating position details…" reason="awaiting_index" />
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a page with nothing read yet, or whose read
+  // failed (it is asked again), shows its title alone, its reason as data. It said "Updating position details…", "Your
+  // positions can’t be listed right now.", "{chain} can’t be read right now.", "This position can’t be read right now."
+  // or "Not read yet".
+  if (creation && !(found && isLive(found))) return <Empty title={`Position #${id}`} reason="awaiting_index" />
   if (reply === null) return <Waiting id={id} />
-  if (reply.kind === 'unavailable') return <Empty title={`Position #${id}`} body={COPY.page.listUnavailable} reason={reply.reason} />
+  if (reply.kind === 'unavailable') return <Empty title={`Position #${id}`} reason={reply.reason} />
   if (reply.kind === 'invalid') return <Empty title={`Position #${id}`} body={COPY.page.listInvalid} reason={reply.detail} />
   const answer = reply.body
   // §6.2: the chain's status before any of its values; an unavailable chain never shows zeros.
   const status = chainStatusOf(answer, target.chainId)
-  if (!status || status.status === 'unavailable') return <Empty title={`Position #${id}`} body={COPY.page.chainUnavailable(chain.name)} reason={status?.reason ?? 'chain_unavailable'} />
+  if (!status || status.status === 'unavailable') return <Empty title={`Position #${id}`} reason={status?.reason ?? 'chain_unavailable'} />
   if (!found || !isLive(found)) {
     if (awaited) return <Waiting id={id} />
     if (!found) return <Empty title={`Position #${id}`} body={COPY.page.notListed} reason="position_not_listed" />
-    return <Empty title={`Position #${id}`} body={found.status === 'unavailable' ? COPY.page.unreadable : COPY.page.notRead} reason={found.status} />
+    return <Empty title={`Position #${id}`} reason={found.status} />
   }
   return (
     <PageShell>
@@ -162,7 +165,9 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
         answer={answer}
         position={found}
         stale={status.status === 'stale' || found.freshness?.status === 'stale' || (latest !== null && latest.kind !== 'ok')}
-        coverage={latest !== null && latest.kind !== 'ok' ? 'Details couldn’t update. Showing the last available reading.' : coverageNote(answer.chains)}
+        // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the marker's data only; it was a line under
+        // the title ("Details couldn’t update. Showing the last available reading.", or a chain "unavailable right now").
+        coverage={latest !== null && latest.kind !== 'ok' ? 'kept' : coverageNote(answer.chains) ? 'partial' : null}
         wallet={wallet}
         walletOnChain={walletOnChain}
         activity={activity}
@@ -238,8 +243,11 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   // Details: the time of a figure that is not current (the kept one's first), then what an estimate is an estimate of.
   const datedAt = (holdsUsd !== null ? holdsAsOf : undefined) ?? (feesUsd !== null ? feesAsOf : undefined)
   const usdDetail = datedAt !== undefined || poolTitle ? usdTitleWords({ asOf: datedAt, estimate: poolTitle, block: null }) : undefined
-  const usdUnavailable = usdUnavailableReason(row?.usdReason)
-  const usdWhy = usdMissingShort(row?.usdReason)
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices, "as of 02:25 UTC" named among them): a figure that
+  // is not current is shown as it is: no time under it ("as of 13:05 UTC"), in its title or in Details ("Last complete
+  // valuation, from …": ./usdAvailability.ts usdTitleWords); with no dollar figure, the two amounts carry no reason under
+  // them or in their title, and Details no "USD valuation" line saying why. The basis of an estimate is still said
+  // (decision D3); data-usd-snapshot marks a kept figure, data-usd-reason why one is missing.
 
   return (
     <div data-position-detail="" data-position-workspace-page="" data-position-id={position.tokenId.toString()} data-position-v2={`${chain.slug}-v${position.dex}`} data-snapshot={position.snapshotBlock ?? undefined}>
@@ -265,7 +273,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
               </span>
               <PositionStatus card={card} />
             </div>
-            {coverage && <p className="dm-pos-copy" data-position-coverage="">{coverage}</p>}
+            {coverage && <span hidden data-position-coverage={coverage} />}
           </div>
         </div>
         {/* V1's row: one primary button and the "···" menu (./MoreActions.tsx), which says why an entry is disabled. A
@@ -297,14 +305,14 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
           className="dm-pos-stat"
           data-cell="principal"
           data-value-width={holdsText && holdsText.length > 11 ? 'wide' : holdsText && holdsText.length > 8 ? 'medium' : undefined}
-          sub={holdsUsd !== null ? holdsAsOf !== undefined && <span data-usd-as-of="principal">{asOfWords(holdsAsOf)}</span> : <span data-usd-why="principal" title={usdUnavailable}>{usdWhy}</span>}
+          data-usd-reason={holdsUsd === null ? row?.usdReason : undefined}
         >
           {holdsUsd !== null ? (
-            <span className="dm-arrive" title={holdsTitle} data-usd="principal" data-usd-basis={row?.valueUsdBasis} data-usd-snapshot={row?.usdSavedAt !== undefined && row.usdNow?.figure !== 'value' ? '' : undefined}>
+            <span className="dm-arrive" title={holdsTitle} data-usd="principal" data-usd-basis={row?.valueUsdBasis} data-usd-snapshot={row?.usdSavedAt !== undefined && row.usdNow?.figure !== 'value' ? '' : undefined} data-usd-dated={holdsAsOf !== undefined ? '' : undefined}>
               <LiveFigure value={holdsText!} mode="digits" dimCents className="dm-fig-lg" />
             </span>
           ) : (
-            <span className="dm-pos-amounts" data-usd-amounts="principal" title={usdUnavailable}><CardAmount amount={card.principal[0]} /><CardAmount amount={card.principal[1]} /></span>
+            <span className="dm-pos-amounts" data-usd-amounts="principal"><CardAmount amount={card.principal[0]} /><CardAmount amount={card.principal[1]} /></span>
           )}
         </Stat>
         <Stat
@@ -312,18 +320,19 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
           info={position.dex === 3 ? COPY.page.collectableInfo : COPY.page.feesInfo}
           className="dm-pos-stat"
           data-cell="fees"
-          sub={feesUsd !== null ? feesAsOf !== undefined && <span data-usd-as-of="fees">{asOfWords(feesAsOf)}</span> : holdsUsd !== null && <span data-usd-why="fees" title={usdUnavailable}>{usdWhy}</span>}
+          data-usd-reason={feesUsd === null ? row?.usdReason : undefined}
         >
           {feesUsd !== null ? (
-            <span data-usd="fees" title={feesTitle} data-usd-basis={row?.feesUsdBasis} data-usd-snapshot={row?.usdSavedAt !== undefined && row.usdNow?.figure !== 'fees' ? '' : undefined}>
+            <span data-usd="fees" title={feesTitle} data-usd-basis={row?.feesUsdBasis} data-usd-snapshot={row?.usdSavedAt !== undefined && row.usdNow?.figure !== 'fees' ? '' : undefined} data-usd-dated={feesAsOf !== undefined ? '' : undefined}>
               <UsdText value={feesUsd} block={feesAsOf !== undefined ? undefined : position.snapshotBlock ?? undefined} floor className="dm-fig-lg dm-arrive" />
             </span>
           ) : (
-            <span className="dm-pos-amounts" data-usd-amounts="fees" title={usdUnavailable}><CardAmount amount={card.unsettledFees[0]} /><CardAmount amount={card.unsettledFees[1]} /></span>
+            <span className="dm-pos-amounts" data-usd-amounts="fees"><CardAmount amount={card.unsettledFees[0]} /><CardAmount amount={card.unsettledFees[1]} /></span>
           )}
         </Stat>
-        <Stat label={COPY.page.apr} info={COPY.page.aprInfo} className="dm-pos-stat" data-cell="apr" data-apr="no_qualified_source" sub={COPY.page.aprMissing}>
-          <span className="dm-fig-lg"><FigureDash reason={COPY.page.aprMissing} /></span>
+        {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a dash, with no "Fee history unavailable" under it or as its title. */}
+        <Stat label={COPY.page.apr} info={COPY.page.aprInfo} className="dm-pos-stat" data-cell="apr" data-apr="no_qualified_source">
+          <span className="dm-fig-lg"><FigureDash /></span>
         </Stat>
         <Stat label={COPY.page.price} info={COPY.page.priceInfo} className="dm-pos-stat" data-cell="price" sub={<span className="dm-pos-span-state" data-in={String(card.inRange)}>{card.hasLiquidity ? (card.inRange ? COPY.page.inRangeEarning : COPY.page.outOfRangeIdle) : COPY.page.closed}</span>}>
           <span data-stat="price">
@@ -364,13 +373,13 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
             <KeyValue label="Tokens in this position"><span className="dm-pos-amounts" data-stat="principal"><CardAmount amount={card.principal[0]} /><CardAmount amount={card.principal[1]} /></span></KeyValue>
             <KeyValue label="Fees ready to collect"><span className="dm-pos-amounts" data-stat="fees"><CardAmount amount={card.unsettledFees[0]} /><CardAmount amount={card.unsettledFees[1]} /></span></KeyValue>
             {usdDetail && <KeyValue label="USD valuation"><span data-usd-detail="">{usdDetail}</span></KeyValue>}
-            {chainId !== 4663 && <KeyValue label="APR data"><span>Lifetime fee history isn’t available from this network’s current data source. Recorded balances do not establish APR.</span></KeyValue>}
-            {(holdsUsd === null || feesUsd === null) && <KeyValue label="USD valuation"><span>{usdUnavailable}</span></KeyValue>}
-            {chainId !== 4663 && pair.filter((_, index) => (position.principal?.[index] ?? 0n) > 0n || (position.feesOwed?.[index] ?? 0n) > 0n).map(address => {
+            {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): Details no longer says what isn't available
+                ("APR data: Lifetime fee history isn’t available from this network’s current data source…", "USD valuation: …",
+                a token's price "temporarily unavailable"); a pool-price estimate's basis is still named (decision D3). */}
+            {chainId !== 4663 && poolTitle && pair.filter((_, index) => (position.principal?.[index] ?? 0n) > 0n || (position.feesOwed?.[index] ?? 0n) > 0n).map(address => {
               const token = answer.tokens.find(item => item.chainId === chainId && item.address.toLowerCase() === address)
               if (token?.price || !token?.priceReason) return null
-              const reason = usdUnavailableReason(token.priceReason)
-              return <KeyValue key={address} label={`${labelOf(book, address)} independent price`}><span data-usd-price-reason={token.priceReason}>{poolTitle ? 'No independently qualified quote. The USD estimate above uses this position’s pool price.' : reason}</span></KeyValue>
+              return <KeyValue key={address} label={`${labelOf(book, address)} independent price`}><span data-usd-price-reason={token.priceReason}>No independently qualified quote. The USD estimate above uses this position’s pool price.</span></KeyValue>
             })}
             <KeyValue label={COPY.page.nftId}>
               <Address value={position.tokenId.toString()} />

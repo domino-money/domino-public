@@ -91,6 +91,14 @@ export const V2_ROUTE_MAX_BYTES = 4 * 1024
 export const V2_ROUTE_TIMEOUT_MS = 10_000
 /** A settled answer is kept this long by a probe (as lib/read/bridgeSource.ts keeps the read capabilities). */
 export const V2_ROUTE_REUSE_MS = 60_000
+/**
+ * (2026-10-15, pack 7): how long a probe keeps the read route's (`readV6`) answer that it is on: five minutes. Every
+ * portfolio and activity read older than a minute asked it again, so an idle list asked it each minute. Only this answer:
+ * a route that is off (so a route switched on is seen as soon as before) and the plan and crosschain routes, whose answers
+ * open or lock money screens, keep V2_ROUTE_REUSE_MS. A read of the route refused as not there (404, 405) brings it back
+ * to V2_ROUTE_REUSE_MS from its answer (`shorten`), so the probe never asks sooner than it did before.
+ */
+export const V2_READ_ROUTE_REUSE_MS = 300_000
 
 /** The beta gate's JSON refusal, byte for byte as functions/_middleware.ts sends it. */
 const GATE_REFUSAL = '{"error":"beta_access_required"}'
@@ -188,19 +196,29 @@ export async function askV2Route(route: V2Route, get: RawGet, signal?: AbortSign
 export const routeServes = (state: V2RouteState, name: string): boolean => state.on && state.routes.includes(name)
 
 export interface V2RouteProbe {
-  /** The route's state: a settled answer (on, `disabled`, `not_deployed`) kept for a minute, one question at a time. */
+  /**
+   * The route's state: a settled answer (on, `disabled`, `not_deployed`) kept for a minute (the read route said on: five,
+   * 2026-10-15, pack 7), one question at a time.
+   */
   state(route: V2Route): Promise<V2RouteState>
   /** Forget what was kept (a session or page change that may change the answer). */
   forget(): void
+  /**
+   * (2026-10-15, pack 7): a read of `route` was refused as not there (404, 405): its kept answer stands no longer than
+   * V2_ROUTE_REUSE_MS from when it came, as every answer did before. Asks nothing by itself.
+   */
+  shorten?(route: V2Route): void
 }
 
 /**
- * A probe for the page: each route asked at most once a minute while its answer is settled, and concurrent askers
+ * A probe for the page: each route asked at most once a minute while its answer is settled (the read route said on: once
+ * per V2_READ_ROUTE_REUSE_MS, 2026-10-15, pack 7), and concurrent askers
  * share one GET. Anything else (unavailable, gate_required, invalid, aborted) is not kept, so the next ask asks again;
  * nothing retries by itself.
  */
 export function createV2RouteProbe({ get, now }: { get: RawGet; now: () => number }): V2RouteProbe {
-  const kept = new Map<V2Route, { state: V2RouteState; until: number }>()
+  // `at`: when the answer came (2026-10-15, pack 7: `shorten` counts the minute from it).
+  const kept = new Map<V2Route, { state: V2RouteState; until: number; at: number }>()
   const asking = new Map<V2Route, Promise<V2RouteState>>()
   return {
     state(route) {
@@ -211,7 +229,8 @@ export function createV2RouteProbe({ get, now }: { get: RawGet; now: () => numbe
       const question = askV2Route(route, get).then((state) => {
         asking.delete(route)
         const settled = state.on || state.reason === 'disabled' || state.reason === 'not_deployed'
-        if (settled) kept.set(route, { state, until: now() + V2_ROUTE_REUSE_MS })
+        // (2026-10-15, pack 7): the read route said on is kept V2_READ_ROUTE_REUSE_MS; every other settled answer its minute.
+        if (settled) kept.set(route, { state, at: now(), until: now() + (route === 'readV6' && state.on ? V2_READ_ROUTE_REUSE_MS : V2_ROUTE_REUSE_MS) })
         else kept.delete(route)
         return state
       })
@@ -220,6 +239,10 @@ export function createV2RouteProbe({ get, now }: { get: RawGet; now: () => numbe
     },
     forget() {
       kept.clear()
+    },
+    shorten(route) {
+      const memo = kept.get(route)
+      if (memo) memo.until = Math.min(memo.until, memo.at + V2_ROUTE_REUSE_MS)
     },
   }
 }

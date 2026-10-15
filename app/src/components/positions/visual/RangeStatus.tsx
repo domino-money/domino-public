@@ -49,13 +49,14 @@ export function RangeHead({ facts }: { facts: RangeFacts }) {
 /**
  * The chart's place while its code loads (a moment, and only the first time: a position's page asks for it as soon as
  * it opens): the same status and unit, an empty box of the chart's own height and its legend's line, so nothing on the
- * page moves when the chart arrives. With `note`, the place of a chart whose code could not load, saying so.
+ * page moves when the chart arrives. `failed`: the place of a chart whose code could not load (2026-10-15, pack 7: it no
+ * longer says so).
  */
-export function RangeChartWaiting({ facts, note }: { facts: RangeFacts; note?: string }) {
+export function RangeChartWaiting({ facts, failed = false }: { facts: RangeFacts; failed?: boolean }) {
   const phone = useMediaQuery('(max-width: 767px)')
   const { expanded } = usePositionChartOptions()
   return (
-    <div className="dm-pvr-wrap" data-pvr-waiting={note ? undefined : ''} data-pvr-unavailable={note ? '' : undefined} aria-busy={note ? undefined : true}>
+    <div className="dm-pvr-wrap" data-pvr-waiting={failed ? undefined : ''} data-pvr-unavailable={failed ? '' : undefined} aria-busy={failed ? undefined : true}>
       <RangeHead facts={facts} />
       {/* In design px through rem, as ChartFrame sizes the chart that replaces it (lib/rootScale.ts), so nothing moves. */}
       <div className="dm-pvr" style={{ height: rem(PAD_TOP + positionPlotHeight(phone ? PLOT_HEIGHT_PHONE : PLOT_HEIGHT, phone, expanded) + PAD_BOTTOM) }} />
@@ -64,7 +65,8 @@ export function RangeChartWaiting({ facts, note }: { facts: RangeFacts; note?: s
           <span aria-hidden="true" className="dm-pvr-swatch" />
           Your range
         </span>
-        <span className="dm-pvr-note">{note ?? 'Reading this position’s price history…'}</span>
+        {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the legend's line stays, empty; it said "Reading this position’s price history…", or why the chart could not load. */}
+        <span className="dm-pvr-note" />
       </div>
     </div>
   )

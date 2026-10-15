@@ -116,7 +116,8 @@ export function watch(page, { ignore = () => false, console: withConsole = true,
     // While the test is tearing this view down, anything but the navigation
     // itself was started by the view that is going away.
     state.inFlight.set(request, state.leaving && !request.isNavigationRequest() ? state.view - 1 : state.view);
-    if (isApi(request) && pathOf(request.url()).startsWith('/api/read/dex/')) state.dex.push(`${request.method()} ${pathOf(request.url())}`);
+    // (2026-10-15, pack 7): the page's token lookups ask the edge's new path, /api/read/dex2/; both are DEX reads.
+    if (isApi(request) && /^\/api\/read\/dex2?\//.test(pathOf(request.url()))) state.dex.push(`${request.method()} ${pathOf(request.url())}`);
     else if (isApi(request)) {
       if (state.api.length === 0) state.api.push([]);
       state.api.at(-1).push(`${request.method()} ${pathOf(request.url())}`);

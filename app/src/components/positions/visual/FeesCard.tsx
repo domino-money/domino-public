@@ -154,38 +154,21 @@ function UnclaimedRow({ state, basis, large = false }: { state: PositionState; b
  * 2026-10-01 (item A13: an empty plot with no word read as broken, or as a position that earned nothing): one calm grey
  * line over it says why, in plain words. No button: the page asks again itself.
  */
-function QuietPlot({ note, why }: { note?: string; why?: string }) {
+function QuietPlot({ why }: { why?: string }) {
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the flat plot says nothing over it; its line said why there was no history ("Your fee history
+  // can’t be read right now. Fees ready to collect is exact.", quietNote, FEW_POINTS_NOTE, PERIOD_NOTE, "Updating fee
+  // history…"). Why is data-fees-quiet's (and the card's data-fees-reason).
   return (
     <div className="dm-fees-plot dm-fees-quiet" data-fees-quiet={why ?? ''}>
-      <PendingPlot label="Fee history awaiting measurements" note={note ?? 'Updating fee history…'} />
+      <PendingPlot label="Fee history awaiting measurements" />
     </div>
   )
 }
 
-/**
- * Why there is no history, in a person's words (item A13; the reason itself stays in data-fees-reason). Changed on purpose
- * 2026-10-02 (RPC-SPEC §11.4): a position whose fees earned cannot be told apart from its own deposits and withdrawals
- * says so; its Fees ready to collect is still exact.
- */
-export function quietNote(reason: string | undefined): string {
-  if (reason === 'rpc_unavailable') return 'Your fee history can’t be read right now. Fees ready to collect is exact.'
-  if (reason === 'not_exact') return 'Fees earned can’t be measured for this position. Fees ready to collect is exact.'
-  return 'Your fee history isn’t available here. Fees ready to collect is exact.'
-}
-
-/** The chart's place before its first measured point. */
-export const FEW_POINTS_NOTE = 'The chart fills in as this position’s fees are measured.'
-
-/**
- * A period whose start could not be read (2026-10-02, the periods back): the plot says so in one calm line, and the page
- * asks again by itself (lib/fees/pastReads.ts). All is always drawn.
- */
-export const PERIOD_NOTE = 'This period can’t be read right now. Fees earned above is exact.'
+// Removed on purpose 2026-10-15 (pack 7, the owner: no status notices): quietNote, FEW_POINTS_NOTE and PERIOD_NOTE, the
+// lines the flat plot said over itself.
 
 const INITIAL_PERIODS: readonly FeesPeriod[] = ['24h', '7d', 'all']
-
-/** A saved copy's time, as every date on the page is written (UTC, item D4). */
-const savedWhen = (timestamp: number) => `${shortDate(timestamp)} ${shortTime(timestamp)}`
 
 /**
  * Fees earned (DESIGN-V2 §13): a position's fees since its mint, exactly: every settlement's fees, from its own ledger
@@ -248,7 +231,9 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
 
   const saved = first.phase === 'cached' ? first : null
   // Changed on purpose 2026-10-01 (items A13 and D4): plain words and the page's UTC time; the block is in Details.
-  const savedTitle = saved ? `A copy this browser saved of this position’s public history, through ${savedWhen(saved.state.timestamp)}. The chain is read again for the current one.` : undefined
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a saved copy is drawn as it is, with no title or line saying so ("A copy this browser saved of
+  // this position’s public history, through …. The chain is read again for the current one."); data-fees-source marks it.
+  const savedTitle: string | undefined = undefined
   const reason = first.phase === 'unclaimed-only' || first.phase === 'unavailable' ? first.reason : undefined
   const why = first.phase === 'unclaimed-only' ? first.why : undefined
   const tabs = (
@@ -271,8 +256,10 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
       <>
         <Head titleId={titleId} state={state} tokens={tokens} standalone={standalone} tabs={tabs} />
         <div className="dm-fees-body">
-          <div className="dm-fees-summary">{state ? <UnclaimedRow state={state} basis={loadingBasis} /> : <span className="dm-fig-hero" aria-label="Fees not available yet">—</span>}</div>
-          <PendingPlot label="Fee history awaiting measurements" busy={first.phase !== 'unavailable'} note={first.phase === 'unavailable' ? first.reason === 'rpc_unavailable' ? 'Fee history is temporarily unavailable. Retrying automatically.' : 'Fee history isn’t available for this position.' : 'Updating fee history…'} />
+          {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the dash and the plot say nothing ("Fees not available yet", "Fee history is temporarily
+              unavailable. Retrying automatically.", "Fee history isn’t available for this position.", "Updating fee history…"). */}
+          <div className="dm-fees-summary">{state ? <UnclaimedRow state={state} basis={loadingBasis} /> : <span className="dm-fig-hero">—</span>}</div>
+          <PendingPlot label="Fee history awaiting measurements" busy={first.phase !== 'unavailable'} />
         </div>
       </>,
     )
@@ -288,14 +275,14 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
           <div className="dm-fees-summary">
             <UnclaimedRow state={first.state} basis={basisOf(first.state, quoteIndex)} large={!bandPresent} />
           </div>
-          <QuietPlot note={quietNote(reason)} />
+          <QuietPlot />
         </div>
       </>,
       bandPresent ? undefined : 'dm-fees--compact',
     )
   }
 
-  if (!view || !basis) return root('unavailable', <><Head titleId={titleId} state={state} tokens={tokens} tabs={tabs} /><PendingPlot label="Fee history awaiting valuation" note="Updating fee values…" /></>)
+  if (!view || !basis) return root('unavailable', <><Head titleId={titleId} state={state} tokens={tokens} tabs={tabs} /><PendingPlot label="Fee history awaiting valuation" /></>)
   const lead = view.sources[0].state
   const blockTitle = savedTitle ?? `Pool price at block ${basis.block}`
   const bucket = inspected === null || !pv ? null : (pv.buckets[inspected] ?? null)
@@ -321,11 +308,11 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
         </p>
       </div>
     )
-  } else if (pv) plot = <QuietPlot note={FEW_POINTS_NOTE} why="few_points" />
+  } else if (pv) plot = <QuietPlot why="few_points" />
   else if (periodState === 'reading') {
     // The period's start is being read: the plot keeps the drawn chart's box; the figures above are exact already.
-    plot = <PendingPlot label="Fee history for the selected period" note="Updating this period…" busy />
-  } else plot = <QuietPlot note={PERIOD_NOTE} why="period_unavailable" />
+    plot = <PendingPlot label="Fee history for the selected period" busy />
+  } else plot = <QuietPlot why="period_unavailable" />
 
   return root(
     saved ? 'cached' : 'verified',

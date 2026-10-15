@@ -17,7 +17,7 @@ import { CONTRACT_VERSION as XC_VERSION } from '../../../api-contracts/crosschai
 
 const require = createRequire(import.meta.url);
 const routes = require('../../.test-build/app/src/v2/routes.js');
-const { routeStateOf, askV2Route, routeServes, createV2RouteProbe, V2_ROUTE_SPECS, V2_ROUTE_MAX_BYTES, V2_ROUTE_TIMEOUT_MS, V2_ROUTE_REUSE_MS } = routes;
+const { routeStateOf, askV2Route, routeServes, createV2RouteProbe, V2_ROUTE_SPECS, V2_ROUTE_MAX_BYTES, V2_ROUTE_TIMEOUT_MS, V2_ROUTE_REUSE_MS, V2_READ_ROUTE_REUSE_MS } = routes;
 const { forward } = require('../../.test-build/app/functions/_lib/bridge.js');
 
 const ORIGIN = 'https://domino.money';
@@ -184,7 +184,9 @@ test('only an exact capabilities answer is on; every other reply has its one rea
   assert.equal(routeServes({ on: true, routes: ['status'] }, 'origins'), false);
 });
 
-test('the probe keeps a settled answer a minute, shares one question, and keeps no failure', async () => {
+// Rewritten on purpose 2026-10-15 (pack 7): the read route's "on" is kept V2_READ_ROUTE_REUSE_MS (five minutes; was
+// V2_ROUTE_REUSE_MS, a minute); every other settled answer keeps its minute, as the plan route's below.
+test('the probe keeps a settled answer a minute (the read route said on: five), shares one question, and keeps no failure', async () => {
   let clock = 1_000;
   const answers = { readV6: [v6(V6_ON)], plan: [{ kind: 'network' }, plan(PLAN_LIVE)] };
   const asked = [];
@@ -199,9 +201,9 @@ test('the probe keeps a settled answer a minute, shares one question, and keeps 
   assert.deepEqual(first, { on: true, routes: ['portfolio', 'activity'] });
   assert.equal(first, second);
   assert.deepEqual(asked, ['readV6']);
-  clock += V2_ROUTE_REUSE_MS - 1;
+  clock += V2_READ_ROUTE_REUSE_MS - 1;
   await probe.state('readV6');
-  assert.deepEqual(asked, ['readV6'], 'kept for its minute');
+  assert.deepEqual(asked, ['readV6'], 'kept for its five minutes');
   clock += 1;
   await probe.state('readV6');
   assert.deepEqual(asked, ['readV6', 'readV6'], 'asked again after it');
@@ -209,7 +211,13 @@ test('the probe keeps a settled answer a minute, shares one question, and keeps 
   assert.deepEqual(await probe.state('plan'), { on: false, reason: 'unavailable' });
   assert.deepEqual(await probe.state('plan'), { on: true, routes: ['plan'] });
   assert.deepEqual(asked, ['readV6', 'readV6', 'plan', 'plan']);
+  clock += V2_ROUTE_REUSE_MS - 1;
+  await probe.state('plan');
+  assert.equal(asked.length, 4, "the plan route's answer is kept for its minute");
+  clock += 1;
+  await probe.state('plan');
+  assert.equal(asked.length, 5, 'and asked again after it');
   probe.forget();
   await probe.state('plan');
-  assert.equal(asked.length, 5, 'forget() asks afresh');
+  assert.equal(asked.length, 6, 'forget() asks afresh');
 });

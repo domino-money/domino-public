@@ -98,15 +98,20 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
           <Tabs label="Positions by state" value={tab} onChange={setChosen} items={[{ key: 'open', label: 'Open', count: counts.open }, { key: 'closed', label: 'Closed', count: counts.closed }]} />
         </div>
       </div>
-      <p role="status" aria-live="polite" className="sr-only" data-owned-status="">{counts.open} open and {counts.closed} closed positions.{counts.pending ? ` ${counts.pending} positions still being checked.` : ''}</p>
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the count no longer adds "N positions still
+          being checked" (their number is data-owned-pending), and no line says "Some positions are still being checked.
+          Available positions are shown below." The rows read go on being shown, and the others join them as they are read. */}
+      <p role="status" aria-live="polite" className="sr-only" data-owned-status="" data-owned-pending={counts.pending || undefined}>{counts.open} open and {counts.closed} closed positions.</p>
       {note && <Note note={note} inGrid={false} />}
-      {!note && (partial || failed) && <p className="dm-own-note">Some positions are still being checked. Available positions are shown below.</p>}
       {shown.length ? <div className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
         <div className="dm-collection-head" data-collection-tab={tab} aria-hidden="true"><span>Pool</span>{tab === 'closed' ? <span>Position history</span> : <><span>Value</span><span>Fees to collect</span><span>Your APR</span></>}</div>
         {shown.map((row, index) => <V2PositionRow key={row.key} row={row} late={late[index]} apr={hasPositionApr(row) ? aprs.get(row.tokenId) ?? null : null} />)}
       </div> : empty ? <EmptyState title={readOnly ? 'No positions at this address' : 'No positions yet'} action={!readOnly ? <LinkButton href={newPositionHref()}>New position</LinkButton> : undefined} className="dm-own-none" data-empty="owned-none" />
         : rows.length ? <EmptyState title={tab === 'open' ? 'No open positions' : 'No closed positions'} data-empty={`owned-${tab}`} />
-          : !settled && !failed && !note ? <PendingRows loading /> : <p className="dm-own-note">Your positions couldn’t be read right now. We’ll keep checking.</p>}
+          // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a list not read yet keeps its loading rows,
+          // also while its read is asked again after a failure; it said "Your positions couldn’t be read right now. We’ll keep
+          // checking." (the section's data-owned says "unlisted").
+          : <PendingRows loading />}
       {more > 0 && <div className="dm-own-more"><Button variant="ghost" size="sm" onClick={() => setPages((before) => ({ ...before, [tab]: before[tab] + 1 }))}>Show {Math.min(more, PAGE_SIZE)} more</Button></div>}
     </section>
     {deposits && held.length > 0 && deposits({ owner, deposits: held, onBusy: setBusy, onChanged: (block) => { walletChanged(block); setVersion((value) => value + 1) } })}
@@ -151,12 +156,13 @@ function ownNote(reply: ReturnType<typeof useOwnRows>['reply']): { kind: 'failed
   return partial ? { kind: 'partial', text: partial, code: null } : null
 }
 
-function Note({ note, inGrid }: { note: NonNullable<ReturnType<typeof ownNote>>; inGrid: boolean }) {
-  return (
-    <p className={inGrid ? 'dm-own-note col-span-full' : 'dm-own-note'} data-v2-own-note={note.kind} data-v2-partial={note.kind === 'partial' ? '' : undefined} data-error-code={note.code ?? undefined}>
-      {note.text}
-    </p>
-  )
+/**
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): why some positions are not listed is a hidden
+ * marker's data only. It was a line ("Some of your positions can’t be read right now.", or "Showing Robinhood Chain and
+ * Base. Arbitrum One is unavailable right now."); `inGrid` is kept for its callers.
+ */
+function Note({ note }: { note: NonNullable<ReturnType<typeof ownNote>>; inGrid: boolean }) {
+  return <span hidden data-v2-own-note={note.kind} data-v2-partial={note.kind === 'partial' ? '' : undefined} data-error-code={note.code ?? undefined} />
 }
 
 export interface OwnedRowsProps {

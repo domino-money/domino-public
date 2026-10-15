@@ -1148,10 +1148,11 @@ test('the compact home range scene plays automatically without duplicating autom
 
 /**
  * With nothing read, the six reviewed pools are still listed, from the
- * catalogue's labels alone: every figure cell a dash that says it is
- * unavailable, no `data-metric` and no estimate anywhere, no USD text, and
- * each row's title saying its pool figures are unavailable. Nothing stands in
- * for a figure that was not read.
+ * catalogue's labels alone: every figure cell a dash, no `data-metric` and no
+ * estimate anywhere, no USD text. Nothing stands in for a figure that was not
+ * read. Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the
+ * dashes are no longer named "<figure> unavailable", and each row's title is
+ * "Listed on Uniswap." alone (it said "Pool figures are unavailable.").
  */
 async function catalogueOnly(page, label) {
   const rows = page.locator('#pools tbody tr');
@@ -1166,8 +1167,9 @@ async function catalogueOnly(page, label) {
       figure.querySelectorAll('.dm-home-pool-label').forEach((label) => label.remove());
       return [figure.textContent.trim(), td.querySelector('[aria-label]')?.getAttribute('aria-label') ?? null];
     }));
-    assert.deepEqual(cells, ['Price', 'TVL', '24h volume', 'Pool APR'].map((figure) => ['—', `${figure} unavailable`]), `${label}: every figure is a dash that says so`);
-    assert.equal(await row.locator('a').first().getAttribute('title'), 'Listed on Uniswap. Pool figures are unavailable.');
+    // changed on purpose 2026-10-15 (pack 7, owner: no status notices)
+    assert.deepEqual(cells, ['Price', 'TVL', '24h volume', 'Pool APR'].map(() => ['—', null]), `${label}: every figure is a dash, with no words`);
+    assert.equal(await row.locator('a').first().getAttribute('title'), 'Listed on Uniswap.');
   }
   assert.doesNotMatch(await page.locator('#pools').innerText(), /\$\s?\d/, `${label}: no dollar figure`);
   assert.equal(await page.locator('[data-metric], [data-apr-estimate]').count(), 0, `${label}: no figure anywhere on the landing`);
@@ -1242,7 +1244,8 @@ test('selected pools and New position read their public catalogue; disconnected 
   }
   // Added 2026-10-01 (audit I3): artwork for a token with none bundled is asked through our own edge, one token a GET,
   // and nothing else of it; never a figure while no read has answered.
-  assert.ok(dex.every((request) => /^GET \/api\/read\/dex\/token-pairs\/0x[0-9a-f]{40}$/.test(request)), dex.join(', '));
+  // Changed on purpose 2026-10-15, pack 7: token lookups on /api/read/dex2/ (the edge's per-token path).
+  assert.ok(dex.every((request) => /^GET \/api\/read\/dex2\/token-pairs\/0x[0-9a-f]{40}$/.test(request)), dex.join(', '));
   // Per document: the first load and the reload each ask the list once and once per namespace, and post nothing else.
   const once = CAPABILITIES;
   assert.deepEqual(seen, [

@@ -172,7 +172,8 @@ test('the finalized mark of a read-v6 answer reaches the page\'s own queue, from
   const source = readFileSync(new URL('../src/v2in/lists/source.ts', import.meta.url), 'utf8')
   assert.match(source, /await LISTS_SOURCE\.ownPortfolio\(wallet\)[\s\S]{0,600}?\n {2}if \(answer\.kind === 'ok'\) noteAnswerFinality\(answer\.body\.chains\)/, 'every good portfolio answer')
   const activity = readFileSync(new URL('../src/v2in/lists/activity.tsx', import.meta.url), 'utf8')
-  assert.match(activity, /createActivityHistory\([\s\S]*?\}, refresh, answer => noteAnswerFinality\(answer\.chains\)\)/, 'every good activity answer (tests/v2/activity-history.test.mjs holds the history to handing each on)')
+  // Changed on purpose 2026-10-15 (pack 7): the history takes a fifth argument after it, the idle predicate (activity.tsx idleWallet).
+  assert.match(activity, /createActivityHistory\([\s\S]*?\}, refresh, answer => noteAnswerFinality\(answer\.chains\)(, idleWallet)?\)/, 'every good activity answer (tests/v2/activity-history.test.mjs holds the history to handing each on)')
 })
 
 test('an operation recorded after the mark already passed its block is read once too, never at once', async () => {

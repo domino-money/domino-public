@@ -15,7 +15,7 @@ import { useMediaQuery } from '../../../lib/useMediaQuery'
 import { rem } from '../../../lib/rootScale'
 import { PAD_BOTTOM, PAD_TOP, PLOT_HEIGHT, PLOT_HEIGHT_PHONE, RangeFactsContext, RangeHead } from './RangeStatus'
 import { dateTicks, spacedTimeTicks } from './ticks'
-import { usePoolHistory, type PoolHistory, type PoolHistoryAsk } from './usePoolHistory'
+import { usePoolHistory, type PoolHistoryAsk } from './usePoolHistory'
 import { positionPlotHeight, usePositionChartOptions } from '../PositionChartOptions'
 
 /** The labels' room at the plot's right: wide enough for the widest figure it shows, within these. */
@@ -30,23 +30,18 @@ const CHIP_SIZE = 36
 /** The thinnest band drawn (px): a range far narrower than the price's moves stays a visible strip, centred on itself. */
 const BAND_MIN = 4
 
-/** What the line's words say, by the history's state (one short line, so the card never changes its height). */
-function historyNote(history: PoolHistory, verdict: HistoryVerdict | null, openedAt: number | null, enabled: boolean): string {
-  if (enabled && openedAt === null) return 'Opening time isn’t available yet. Showing the price now.'
-  if (verdict?.kind === 'line') {
-    const window = verdict.history.start === openedAt ? 'Since opened' : 'Last 7 days'
-    return verdict.history.missing ? `${window} · Some hours are missing.` : `${window} · ${verdict.history.observed ? 'Measured prices' : 'Hourly prices'}`
-  }
-  if (verdict?.kind === 'none') {
-    if (verdict.reason === 'not_built') return 'Price history is still being collected.'
-    if (verdict.reason === 'no_position_history' || verdict.reason === 'no_trades') return 'No price history since this position opened yet.'
-    return 'Price history isn’t available yet.'
-  }
-  if (history.phase === 'reading') return 'Reading this position’s price history…'
-  if (history.phase === 'failed') return 'Price history couldn’t load just now.'
-  // A pool the read service keeps no history for (another chain, Uniswap v3): none will come.
-  if (history.phase === 'off') return 'Price history isn’t available for this pool.'
-  return 'Price history isn’t available yet.'
+/**
+ * What the line's words say, by the history's state (one short line, so the card never changes its height). Changed on purpose 2026-10-15 (pack 7, the owner: no status notices):
+ * only what the drawn line covers ("Since opened · Measured prices"); with no line drawn, the line is empty. It said
+ * why there was none or that it was on its way ("Opening time isn’t available yet. Showing the price now.", "Price
+ * history is still being collected.", "No price history since this position opened yet.", "Price history isn’t
+ * available yet.", "Reading this position’s price history…", "Price history couldn’t load just now.", "Price history
+ * isn’t available for this pool."), and "Some hours are missing." of a line with gaps (data-pvr-* keep each state).
+ */
+function historyNote(verdict: HistoryVerdict | null, openedAt: number | null): string {
+  if (verdict?.kind !== 'line') return ''
+  const window = verdict.history.start === openedAt ? 'Since opened' : 'Last 7 days'
+  return `${window} · ${verdict.history.observed ? 'Measured prices' : 'Hourly prices'}`
 }
 
 /**
@@ -68,31 +63,39 @@ function historyNote(history: PoolHistory, verdict: HistoryVerdict | null, opene
  * This module is its own chunk, loaded on a position's page only (PositionRange.tsx); its status and its box are
  * RangeStatus.tsx's, which the page draws in its place for the moment it loads.
  */
-export function PriceVsRange({ history = null, openedAt = null, closedAt = null, observations = null, recorded }: { history?: PoolHistoryAsk | null; openedAt?: number | null; closedAt?: number | null; observations?: PoolPriceObservations | null; recorded?: PriceHistory | null }) {
+export function PriceVsRange({ history = null, openedAt = null, openedBefore = null, closedAt = null, observations = null, recorded }: { history?: PoolHistoryAsk | null; openedAt?: number | null; openedBefore?: number | null; closedAt?: number | null; observations?: PoolPriceObservations | null; recorded?: PriceHistory | null }) {
   const facts = useContext(RangeFactsContext)
-  return facts ? <PriceChart facts={facts} ask={history} openedAt={openedAt} closedAt={closedAt} observations={observations} recorded={recorded} /> : null
+  return facts ? <PriceChart facts={facts} ask={history} openedAt={openedAt} openedBefore={openedBefore} closedAt={closedAt} observations={observations} recorded={recorded} /> : null
 }
 
-function PriceChart({ facts, ask, openedAt, closedAt, observations, recorded }: { facts: RangeFacts; ask: PoolHistoryAsk | null; openedAt: number | null; closedAt: number | null; observations: PoolPriceObservations | null; recorded?: PriceHistory | null }) {
+/**
+ * (2026-10-15, pack 7) `openedBefore`: with no known mint, a proven bound on it (lib/chart/positionOpened.ts
+ * ledgerOpenedBefore, a position minted before Domino's release). The stored window is drawn when the bound is at or
+ * before its start, as for an older known mint, with no "Opened" mark: it is never an opening time.
+ */
+function PriceChart({ facts, ask, openedAt, openedBefore, closedAt, observations, recorded }: { facts: RangeFacts; ask: PoolHistoryAsk | null; openedAt: number | null; openedBefore: number | null; closedAt: number | null; observations: PoolPriceObservations | null; recorded?: PriceHistory | null }) {
   const { base, quote, lower, upper, lowerText, upperText, now, nowText, where } = facts
   const phone = useMediaQuery('(max-width: 767px)')
   // Match v3-position-detail.css: the desktop workspace keeps axis text readable at the denser root scale.
   const axisFontSize = useMediaQuery('(min-width: 768px) and (pointer: fine)') ? 16 : 12
   const { expanded, showPoints } = usePositionChartOptions()
   const knownMint = openedAt !== null && Number.isSafeInteger(openedAt) && openedAt > 0 ? openedAt : null
+  const bound = knownMint === null && openedBefore !== null && Number.isSafeInteger(openedBefore) && openedBefore > 0 ? openedBefore : null
   // Fetch independently of the mint/financial ledger. The line still requires verified lifecycle evidence below.
   const history = usePoolHistory(ask)
   const verdict = useMemo<HistoryVerdict | null>(
     () => {
       if (recorded !== undefined) return recorded ? { kind: 'line', history: recorded } : null
       const data = history.phase === 'answered' ? history.data : null
-      const stored = history.phase === 'answered' ? historyLine(history.data, { base: base.address, quote: quote.address }, { lower, upper }, history.at / 1000, knownMint) : null
+      const stored = history.phase === 'answered' ? historyLine(history.data, { base: base.address, quote: quote.address }, { lower, upper }, history.at / 1000, knownMint, bound) : null
       const observed = ask ? observedPriceLine(stored, data, ask, { lower, upper }, knownMint, observations) : stored
       // Without a confirmed close time no part of an empty NFT's pool history is labelled as its performance.
       return where === 'closed' ? closedAt === null ? null : closedPriceLine(observed, closedAt) : observed
     },
-    [history, ask, base.address, quote.address, lower, upper, knownMint, closedAt, where, observations, recorded],
+    [history, ask, base.address, quote.address, lower, upper, knownMint, bound, closedAt, where, observations, recorded],
   )
+  // The bound stands for the mint unless the answer's window starts before it (then the mint is as unknown as before).
+  const bounded = bound !== null && !(verdict?.kind === 'none' && verdict.reason === 'unknown_mint')
   const line = verdict?.kind === 'line' ? verdict.history : null
   const points = useMemo(() => line?.points ?? [], [line])
   const drawn = line !== null
@@ -285,7 +288,7 @@ function PriceChart({ facts, ask, openedAt, closedAt, observations, recorded }: 
 
   const words = `Your range ${lowerText ?? 'unknown'} to ${upperText ?? 'unknown'}; the price now ${nowText}, ${status.detail}`
   return (
-    <div className="dm-pvr-wrap" data-pvr-where={where} data-pvr-line={drawn ? '' : undefined} data-pvr-history={recorded !== undefined ? 'recorded' : ask && knownMint === null ? 'unknown_mint' : verdict?.kind === 'none' ? verdict.reason : history.phase} data-pvr-stale={line?.stale ? '' : undefined} data-pvr-opened={knownMint ?? undefined} data-pvr-closed={closedAt ?? undefined} data-pvr-start={line?.start} data-pvr-end={line?.end} data-pvr-first={points[0]?.t}>
+    <div className="dm-pvr-wrap" data-pvr-where={where} data-pvr-line={drawn ? '' : undefined} data-pvr-history={recorded !== undefined ? 'recorded' : ask && knownMint === null && !bounded ? 'unknown_mint' : verdict?.kind === 'none' ? verdict.reason : history.phase} data-pvr-stale={line?.stale ? '' : undefined} data-pvr-opened={knownMint ?? undefined} data-pvr-closed={closedAt ?? undefined} data-pvr-start={line?.start} data-pvr-end={line?.end} data-pvr-first={points[0]?.t}>
       <RangeHead facts={facts} />
       <ChartFrame
         className="dm-pvr"
@@ -331,7 +334,9 @@ function PriceChart({ facts, ask, openedAt, closedAt, observations, recorded }: 
             Price now
           </span>
         )}
-        <span className="dm-pvr-note" title={recorded !== undefined ? 'Only snapshots recorded in this browser session. Earlier price history isn’t available; gaps are not connected.' : line?.observed ? 'Pool price at the opening block and later measurements. Lines between measurements are guides.' : knownMint ? `Opened ${shortDate(knownMint)} ${shortTime(knownMint)}` : undefined}>{recorded !== undefined ? 'Recorded readings · This session' : closed ? closedAt === null ? 'Updating this position’s closing history…' : `Until closed · ${shortDate(closedAt)} ${shortTime(closedAt)}` : historyNote(history, verdict, knownMint, ask !== null)}</span>
+        {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "Recorded readings · This session" (and its title on what this browser session recorded), and no
+            "Updating this position’s closing history…". */}
+        <span className="dm-pvr-note" title={recorded !== undefined ? undefined : line?.observed ? 'Pool price at the opening block and later measurements. Lines between measurements are guides.' : knownMint ? `Opened ${shortDate(knownMint)} ${shortTime(knownMint)}` : undefined}>{recorded !== undefined ? '' : closed ? closedAt === null ? '' : `Until closed · ${shortDate(closedAt)} ${shortTime(closedAt)}` : historyNote(verdict, knownMint)}</span>
       </div>
     </div>
   )

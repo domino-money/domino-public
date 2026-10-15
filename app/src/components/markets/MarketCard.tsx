@@ -2,7 +2,7 @@ import { useState, type CSSProperties } from 'react'
 import type { Candle } from 'api-contracts/read-v1/types'
 import type { RatioCandle } from 'api-contracts/read-v3/types'
 import type { PoolCatalogueEntry, PoolListing } from '../../config/selectedPoolCatalogue'
-import { agedMarket, feeLabel, presentMetric, retrievedAgeSeconds, retrievedText, type Instant, type Market } from '../../lib/markets'
+import { agedMarket, feeLabel, presentMetric, type Instant, type Market } from '../../lib/markets'
 import type { CardSeries } from '../../lib/read/cardSeries'
 import { formatUsdCompact } from '../../lib/read/decimal'
 import { pricePair } from '../../lib/read/orientation'
@@ -91,7 +91,6 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   const [point, setPoint] = useState<RatioCandle | null>(null)
   const { poolId, market: read, catalogue, token } = listing
   const market = read ? agedMarket(read, now) : null
-  const retrieved = market?.provenance ? retrievedText(retrievedAgeSeconds(market.provenance.market, now)) : undefined
   const bars = series.kind === 'bars' ? series : null
   const line = series.kind === 'line' ? series : null
   const shownBar = bars && bar && bars.candles.some((candle) => candle.startTimestamp === bar.startTimestamp) ? bar : null
@@ -113,7 +112,8 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   } else if (bars && shownBar) {
     caption = (
       <span className="tnum">
-        {shortTime(shownBar.startTimestamp)} · {formatUsdCompact(shownBar.volumeUsd) ?? 'Unavailable'}
+        {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): an hour's volume it cannot write is "—", never "Unavailable". */}
+        {shortTime(shownBar.startTimestamp)} · {formatUsdCompact(shownBar.volumeUsd) ?? '—'}
         {!shownBar.closed && ' · open hour'}
       </span>
     )
@@ -153,9 +153,12 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
     const volume = market ? market.volume24hUsd : series.metric
     // A figure the store is about to collect rests as a bubble, as the TVL does, never a dash while it is coming.
     const coming = market?.figuresPending === true && (!volume || presentMetric(volume).kind === 'unavailable')
+    // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): why there is no chart ("Price chart
+    // unavailable: <why>.", lib/read/cardSeries.ts) is no longer this figure's title, and its dash no longer says "24h
+    // volume unavailable". The reason stays as data (`data-chart-unavailable`).
     plot = (
-      <span className="dm-mkt-plot-figure" data-chart-unavailable={series.code} title={series.title}>
-        {volume && presentMetric(volume).kind === 'value' ? <MetricCell metric={volume} retrieved={retrieved} /> : coming ? <span aria-hidden="true" className="dm-skel dm-mkt-skel-tvl" /> : <FigureDash reason="24h volume unavailable" />}
+      <span className="dm-mkt-plot-figure" data-chart-unavailable={series.code}>
+        {volume && presentMetric(volume).kind === 'value' ? <MetricCell metric={volume} /> : coming ? <span aria-hidden="true" className="dm-skel dm-mkt-skel-tvl" /> : <FigureDash />}
       </span>
     )
   }
@@ -198,17 +201,19 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
         {plot}
       </div>
       <div className="dm-mkt-card-foot">
-        <p className="dm-mkt-card-caption">{caption}{((line ?? bars)?.stale || (series.kind === 'figure' && (market?.volume24hUsd ?? series.metric)?.state === 'stale' && (market?.volume24hUsd ?? series.metric)?.value !== null)) && <span className="sr-only" data-saved-data="chart"> · Last available history</span>}</p>
+        {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no sr-only " · Last available history" after a kept chart. */}
+        <p className="dm-mkt-card-caption">{caption}</p>
         <span className="dm-mkt-card-tvl">
           <span className="dm-mkt-card-label" title="Total value held in the pool">TVL</span>
           <span className="dm-mkt-card-figure">
             {market && !(market.figuresPending && presentMetric(market.tvlUsd).kind === 'unavailable') ? (
-              <MetricCell metric={market.tvlUsd} retrieved={retrieved} />
+              <MetricCell metric={market.tvlUsd} />
             ) : market || series.kind === 'waiting' ? (
               // Waiting for the card's read, or for figures the store is about to collect (marketsProvider.ts, catch-up).
               <span aria-hidden="true" className="dm-skel dm-mkt-skel-tvl" />
             ) : (
-              <FigureDash reason="TVL unavailable" />
+              // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the dash no longer says "TVL unavailable".
+              <FigureDash />
             )}
           </span>
         </span>

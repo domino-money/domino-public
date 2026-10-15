@@ -63,7 +63,9 @@ export default function PositionHistory({ wallet, position, events = NO_EVENTS, 
   return <section className="dm-card dm-pos-card dm-pos-activity dm-activity-history" aria-labelledby="position-activity-title" data-position-activity="" data-position-activity-read={history.answer ? 'ok' : history.error?.kind ?? 'loading'}>
     <h2 className="dm-title" id="position-activity-title">Activity</h2>
     {live && history.answer && <ChainLines answer={history.answer} />}
-    {live && history.error && <p className="dm-rcpt-note" role="status" data-position-activity-reason={history.error.kind === 'unavailable' ? history.error.reason : history.error.detail}>More activity couldn’t be loaded. We’ll try again automatically.</p>}
+    {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a page that failed is asked again quietly; it said
+        "More activity couldn’t be loaded. We’ll try again automatically." */}
+    {live && history.error && <span hidden data-position-activity-reason={history.error.kind === 'unavailable' ? history.error.reason : history.error.detail} />}
     {visible.length + immediate.length > 0 && <ol className={`${RECEIPT_LIST} dm-activity-list`} data-position-history-rows={visible.length + immediate.length}>
       {immediate.map(item => <SessionActivityRow key={`${item.proof.chainId}:${item.proof.hash}`} item={item} />)}
       {visible.map((row) => row.operation?.kind === 'local' ? <LocalReceiptRow key={row.id} receipt={row.operation.item} at={row.at} tokens={portfolio?.tokens ?? history.answer?.tokens ?? []}>
@@ -73,9 +75,11 @@ export default function PositionHistory({ wallet, position, events = NO_EVENTS, 
         {row.settlements.length > 0 && <FeesActivity events={row.settlements} bare automatic={automatic ?? undefined} />}
       </ReceiptRow> : <li key={row.id} data-position-ledger-transaction={row.settlements[0].tx}><FeesActivity events={row.settlements} bare automatic={automatic ?? undefined} /></li>)}
     </ol>}
-    {visible.length + immediate.length === 0 && live && !history.error && <p className="dm-rcpt-note" role="status">{!history.answer || history.loading ? 'Loading activity…' : history.more ? 'No matching activity in the loaded pages.' : 'No activity found in the available history.'}</p>}
+    {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): nothing while a page is on its way (it said "Loading activity…"). */}
+    {visible.length + immediate.length === 0 && live && !history.error && history.answer && !history.loading && <p className="dm-rcpt-note" role="status">{history.more ? 'No matching activity in the loaded pages.' : 'No activity found in the available history.'}</p>}
     {(hidden || (live && history.more)) && <div className="dm-activity-footer"><Button variant="ghost" size="sm" disabled={history.loading && !hidden}
       onClick={() => { setPage({ scope, shown: shown + 10 }); if (total <= shown + 10) history.moreRows() }}>{history.loading && !hidden ? 'Loading more…' : 'Show more'}</Button></div>}
-    {live && history.answer && contextLimited(portfolio) && <p className="dm-rcpt-note" data-position-history-partial="">Some automation events may not yet be linked to this position.</p>}
+    {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): it said "Some automation events may not yet be linked to this position." */}
+    {live && history.answer && contextLimited(portfolio) && <span hidden data-position-history-partial="" />}
   </section>
 }

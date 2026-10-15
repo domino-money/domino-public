@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Instant } from '../../../lib/markets'
-import { reasonText } from '../../../lib/read/describe'
-import { COPY, failureText } from '../../../lib/read/screens/copy'
-import { ACTIVITY_TOO_OLD, activityAge, activityStaleText, heldSeconds, poolActivityView, type AmountPair, type TokenAmount } from '../../../lib/read/screens/figures'
+import { COPY } from '../../../lib/read/screens/copy'
+import { ACTIVITY_TOO_OLD, activityAge, heldSeconds, poolActivityView, type AmountPair, type TokenAmount } from '../../../lib/read/screens/figures'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import type { ScreenOutcome } from '../../../lib/read/screens/screenRead'
 import { Skeleton } from '../../ui'
@@ -20,10 +19,14 @@ const Dash = ({ title }: { title?: string }) => (
   </span>
 )
 
-/** One amount in its token's units, the exact amount in its title; a dash when the token's decimals were not read. */
+/**
+ * One amount in its token's units, the exact amount in its title; a dash when the token's decimals were not read.
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the dashes have no title; they used to say "Not
+ * reported" and "Raw amount <raw>: the token’s decimals were not read".
+ */
 export function Amount({ amount }: { amount: TokenAmount | null }) {
-  if (!amount) return <Dash title="Not reported" />
-  if (amount.text === null) return <Dash title={`Raw amount ${amount.raw}: the token’s decimals were not read`} />
+  if (!amount) return <Dash />
+  if (amount.text === null) return <Dash />
   return (
     <span className="tnum" title={amount.exact ?? undefined}>
       {amount.text}
@@ -31,14 +34,16 @@ export function Amount({ amount }: { amount: TokenAmount | null }) {
   )
 }
 
-/** Both amounts of a pair, or a dash in each cell with the reason there are none. */
+/**
+ * Both amounts of a pair, or a dash in each cell where there are none.
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the dashes no longer carry "Unavailable: <reason>".
+ */
 export function PairCells({ pair }: { pair: AmountPair }) {
   if (pair.state === 'unavailable') {
-    const why = `Unavailable: ${reasonText(pair.reason)}`
     return (
       <>
-        <td><Dash title={why} /></td>
-        <td><Dash title={why} /></td>
+        <td><Dash /></td>
+        <td><Dash /></td>
       </>
     )
   }
@@ -63,8 +68,6 @@ export function CurrencyHead({ option, first }: { option: PoolOption; first: Rea
   )
 }
 
-const sentence = (text: { title: string; detail: string }) => [text.title, text.detail].filter(Boolean).join('. ').replace(/\.\./g, '.')
-
 /**
  * The pool's own chain activity over the window up to its last indexed block —
  * 24 hours from the index, or the hours a live window reached back, which the
@@ -85,14 +88,16 @@ export function PoolActivityCard({ read, option, now, embedded = false }: { read
   // Pool age, the window and every amount come from the snapshot, so a snapshot too far behind gives none of them.
   const view = answer && !tooOld ? poolActivityView(answer.data, option.currencies) : null
   const failure = read && read.state !== 'ok' && read.state !== 'aborted' ? read : null
-  const stale = answer && age ? activityStaleText(age, answer.data.snapshot.number) : null
-  const reason = failure ? sentence(failureText(failure, 'activity')) : (stale ?? undefined)
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no reason on the card, its dashes or its live
+  // region any more: the failed read's words (failureText), "Stale: indexed <lag> behind the chain head, at block <n>."
+  // and "…, too far behind to show as the last 24 hours." are gone; `data-pool-activity` and `data-activity-reason` keep
+  // the state, as data.
   const blocked = failure !== null || tooOld
   const state = view ? (age?.state === 'stale' ? 'stale' : 'ok') : blocked ? 'unavailable' : 'loading'
   const code = failure ? (failure.state === 'unavailable' && failure.cause.kind === 'producer' ? failure.cause.code : failure.state) : tooOld ? ACTIVITY_TOO_OLD : undefined
-  const cell = (node: ReactNode) => (view ? node : blocked ? <Dash title={reason} /> : <Skeleton className="ml-auto h-4 w-16" />)
+  const cell = (node: ReactNode) => (view ? node : blocked ? <Dash /> : <Skeleton className="ml-auto h-4 w-16" />)
   // The facts are tiles with their figures on the left: their resting bubbles sit there too.
-  const fact = (node: ReactNode) => (view ? node : blocked ? <Dash title={reason} /> : <Skeleton className="dm-pool-fact-skel" />)
+  const fact = (node: ReactNode) => (view ? node : blocked ? <Dash /> : <Skeleton className="dm-pool-fact-skel" />)
   // The figures cover the span the read asked for. That is 24 h for a stored
   // window; a live window is bounded by a block count and blocks here are far
   // shorter than a second, so it reaches back hours. The card says which it is
@@ -108,10 +113,10 @@ export function PoolActivityCard({ read, option, now, embedded = false }: { read
     </>
   )
   return (
-    <section className={embedded ? 'dm-pool-embedded' : 'dm-card dm-pool-card dm-pool-a-activity animate-rise [--delay:80ms]'} aria-labelledby="pool-activity-title" data-pool-activity={state} data-activity-reason={code} title={reason}>
+    <section className={embedded ? 'dm-pool-embedded' : 'dm-card dm-pool-card dm-pool-a-activity animate-rise [--delay:80ms]'} aria-labelledby="pool-activity-title" data-pool-activity={state} data-activity-reason={code}>
       {/* Inside the pool page's Details (round 6) it is a part of that card, under its own smaller heading. */}
       <Heading id="pool-activity-title" className={embedded ? 'dm-pool-embedded-title' : 'dm-title'} title={COPY.figures.activityScope}>On-chain activity</Heading>
-      <p role="status" className="sr-only">{state === 'loading' ? 'Reading pool activity…' : blocked ? reason : ''}</p>
+      <p role="status" className="sr-only">{state === 'loading' ? 'Reading pool activity…' : ''}</p>
       {/* The four facts as tiles (pool.css); the dt/dd order is the reading order. */}
       <dl className="dm-pool-facts">
         <div><dt>Swaps ({span})</dt><dd>{fact(view && view.swaps.toLocaleString('en-US'))}</dd></div>
@@ -119,11 +124,10 @@ export function PoolActivityCard({ read, option, now, embedded = false }: { read
         <div><dt>Window</dt><dd>{fact(view && (view.window === 'covered' ? `${spanText} covered` : `${duration(view.observedSeconds)} observed`))}</dd></div>
         <div><dt>Blocks covered</dt><dd>{fact(view && `${view.coveredFromBlock} to ${view.block}`)}</dd></div>
       </dl>
-      {view?.live ? (
-        <p className="dm-note mt-3" data-activity-live="">
-          {COPY.figures.activityLiveWindow}
-        </p>
-      ) : null}
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the note under a live window ("This pool is
+          not in the activity index yet. … its positions are unavailable until indexing catches up.") is gone; the labels
+          already name the span, and `data-activity-live` stays as data. */}
+      {view?.live ? <span hidden data-activity-live="" /> : null}
       <div className="dm-pool-table-wrap">
         <table className="dm-pool-table" data-activity-amounts="">
           <CurrencyHead option={option} first={<span className="sr-only">Figure</span>} />

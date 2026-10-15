@@ -83,14 +83,14 @@ const REASONS: Record<string, string> = {
 export const aprReason = (reason: string) => REASONS[reason] ?? reason.replace(/_/g, ' ')
 
 /**
- * The estimate's title: its own limitations, then why it is unavailable or
- * stale. With no estimate at all, what the figure would have been, then why
- * there is none.
+ * The estimate's title: its own limitations. With no estimate at all, what the figure would have been.
+ *
+ * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the basis only. Why an estimate is unavailable
+ * or kept (its reasons, aprReason: "A refresh failed; this estimate is retained and is not current.", "Provider inputs
+ * are stale.", "Estimated APR is not enabled on this connection.", …) and "Stale, not current." are no longer added;
+ * the reasons stay as data (`data-apr-reasons`), and the title no longer depends on the time (`now` is gone).
  */
-export function estimateTitle(observation: AprEstimateObservation | undefined, now: Instant): string {
-  const shown = presentAprEstimate(observation, now)
+export function estimateTitle(observation: AprEstimateObservation | undefined): string {
   const limits = observation?.data ? observation.data.limitations.map(limitationText) : [ESTIMATE_SCOPE]
-  const words = [...limits, ...shown.reasons.map(aprReason)]
-  if (shown.state === 'stale') words.push('Stale, not current.')
-  return words.join(' ')
+  return limits.join(' ')
 }

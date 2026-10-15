@@ -34,6 +34,8 @@ type OwnedCollectionProps = { owner: string; readOnly?: boolean; deposits: Depos
 const V2Collection = __DOMINO_V2__ ? deferred<OwnedCollectionProps>(recovering(() => import('../../v2in/lists/OwnedRows').then((m) => ({ default: m.OwnedCollection })), () => ({ default: CollectionUnavailable }))) : null
 if (__DOMINO_V2__ && V2Collection) V2Collection.preload()
 function CollectionUnavailable() {
+  // (2026-10-15, pack 7 review): the chunk itself failed, so nothing reads again on its own: the line asking for a reload
+  // stays (main's), never loading rows forever.
   return <Frame><p className="dm-own-note">Your positions couldn’t be read right now. Please reload this page.</p></Frame>
 }
 
@@ -74,11 +76,7 @@ const openWallet = () => document.querySelector<HTMLButtonElement>('header [aria
  * (the owner's rule, 2026-09-25). The failure's code is in the card's data attribute only. 2026-09-28 (review): over
  * this browser's copy too, so the copy never reads as the chain's answer of now.
  */
-const REREADING = 'Reading your positions from the chain…'
-const UNREAD = 'Your positions couldn’t be read right now.'
-/** The same two lines for another address the page views (2026-10-01, audit V7). */
-const VIEWED_REREADING = 'Reading this address’s positions from the chain…'
-const VIEWED_UNREAD = 'This address’s positions couldn’t be read right now.'
+// Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): REREADING, UNREAD and their two lines for an address viewed are no longer said (the note is a hidden marker).
 
 /**
  * 2026-09-28 (the owner's phone: the card stayed on its loading rows while the RPC refused his address): this browser's
@@ -288,7 +286,8 @@ function YourPositions({ owner, deposits, onEmptyAction, readOnly = false }: Omi
     return () => onEmptyAction(false)
   }, [emptyAction, onEmptyAction])
   // A read that failed is never "no positions": its code is a data attribute, and the one line says it is read again or could not be.
-  const status = !tabs ? (unread ? (readOnly ? VIEWED_UNREAD : UNREAD) : readOnly ? 'Listing this address’s positions…' : 'Listing your positions…') : `${tabs.open.length} open and ${tabs.closed.length} closed positions.`
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a list that could not be read is still "Listing …" to a screen reader, never "couldn’t be read right now".
+  const status = !tabs ? (readOnly ? 'Listing this address’s positions…' : 'Listing your positions…') : `${tabs.open.length} open and ${tabs.closed.length} closed positions.`
 
   // The one line while a failed read is asked again, or once it could not be: over the loading rows, or over this
   // browser's copy (2026-09-28, review), never over the chain's own list. Changed on purpose 2026-10-01 (fees items A8 and
@@ -372,11 +371,8 @@ function YourPositions({ owner, deposits, onEmptyAction, readOnly = false }: Omi
         {/* The totals are the open positions': shown over their tab only, never over the closed rows. While the list is on
             its way, or this browser's copy is too old to value, the band keeps its place, so the rows never move when it fills. */}
         {tab === 'open' && (portfolio?.totals ? <PortfolioSummary {...portfolio.totals} /> : (!tabs || !priced) && !unread ? <PendingSummary /> : null)}
-        {note && (
-          <p className="dm-own-note" data-owned-note={note}>
-            {note === 'unread' ? (readOnly ? VIEWED_UNREAD : UNREAD) : readOnly ? VIEWED_REREADING : REREADING}
-          </p>
-        )}
+        {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the marker's data only; it was a line ("Reading your positions from the chain…", "Your positions couldn’t be read right now.", and the same for an address viewed). */}
+        {note && <span hidden data-owned-note={note} />}
         {body}
         {more > 0 && (
           <div className="dm-own-more">

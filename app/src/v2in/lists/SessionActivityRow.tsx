@@ -18,12 +18,14 @@ export function SessionActivityRow({ item }: { item: SessionActivity }) {
       <summary>
         <span className="dm-rcpt-what">
           <span className="dm-receipt-title"><span className="dm-receipt-check" role="img" aria-label={RECEIPT_WORDS.confirmed}><IconCheck size={14} /></span><span>Automation set up for position #{tokenId}</span></span>
-          <span className="dm-activity-time">{chain} · Updating history</span>
+          {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the network alone; it added "· Updating history". */}
+          <span className="dm-activity-time">{chain}</span>
         </span>
         <IconChevronDown size={16} className="dm-rcpt-chevron" />
       </summary>
       <div className="dm-rcpt-detail">
-        <p className="dm-rcpt-note">Your setup transaction is confirmed. The activity details will update automatically.</p>
+        {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the confirmation alone; it added "The activity details will update automatically." */}
+        <p className="dm-rcpt-note">Your setup transaction is confirmed.</p>
         <dl className="dm-rcpt-tech">
           <div><dt>Status</dt><dd>{receiptStatus({ confirmed: true, finalized })}</dd></div>
           <div><dt>Network</dt><dd>{chain}</dd></div>

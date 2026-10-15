@@ -6,7 +6,7 @@ import { tokenNamer } from '../lists/model'
 import { minimumPositionBlock, positionKey, positionObservation } from '../lists/positionSync'
 import { POSITION_VALUATIONS, type PositionUsd, type PositionValuations } from '../lists/valuation'
 import { chainDollar, rawAmounts } from '../usd'
-import { asOfWords, keptWords, poolEstimateWords, usdMissingShort, usdTitleWords } from './usdAvailability'
+import { asOfWords, poolEstimateWords, usdMissingShort, usdTitleWords } from './usdAvailability'
 
 /**
  * Added 2026-10-14 (the incident of 2026-10-13, package V1; the owner's decision D3: the pool-price dollar estimate on
@@ -144,7 +144,9 @@ export function robinhoodPageUsd(reading: PageReading, answer: Answer | null, ag
   const valueAsOf = usd.value === null ? undefined : asOfOf('value'), feesAsOf = usd.fees === null ? undefined : asOfOf('fees')
   // The time under the figures that are not of now: the kept valuation's, or a current one's grown old.
   const dated = usd.now ? (usd.now.figure === 'value' ? feesAsOf : valueAsOf) : valueAsOf ?? feesAsOf
-  const said = [dated !== undefined ? keptWords(dated) : null, estimate ?? null].filter((line): line is string => line !== null).join(' ')
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): Details names an estimate's basis, never the time of a
+  // figure that is not current ("Last complete valuation, from …"); `asOf` and `why` stay for the model's tests, unshown.
+  const said = estimate ?? ''
   return {
     principal: usd.value,
     fees: usd.fees,

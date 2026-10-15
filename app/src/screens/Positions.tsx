@@ -95,6 +95,7 @@ const heldDeposits: DepositsSlot | null = HeldDeposits
 function CouldNotLoad(props: object) {
   const onShows = (props as { onShows?: TellShows }).onShows
   useEffect(() => onShows?.({ kind: 'other' }), [onShows])
+  // (2026-10-15, pack 7 review): a section whose chunk failed never comes back on its own, so its line asking for a reload stays.
   return <p role="alert" className="dm-acct-quiet">This section couldn’t load. Reload to try again.</p>
 }
 

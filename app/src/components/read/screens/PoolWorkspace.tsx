@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { agedMarket, percentText, presentMetric, retrievedAgeSeconds, retrievedText, type Metric } from '../../../lib/markets'
+import { agedMarket, percentText, presentMetric, type Metric } from '../../../lib/markets'
 import { presentAprEstimate } from '../../../lib/read/aprEstimate'
-import { reasonText } from '../../../lib/read/describe'
 import { projectMarketRow } from '../../../lib/read/project'
 import { overviewPoolOption, storedPoolRead } from '../../../lib/read/publicOverview'
 import { whenVisibleAfter } from '../../../lib/read/screens/quietRead'
-import { COPY, failureText } from '../../../lib/read/screens/copy'
+import { COPY } from '../../../lib/read/screens/copy'
 import { protocolFee } from '../../../lib/read/screens/figures'
 import { NATIVE_CURRENCY } from '../../../lib/read/screens/identity'
 import { poolPrice, presetFor } from '../../../lib/read/screens/poolRange'
@@ -96,8 +95,6 @@ function asRead<R extends 'pool-metrics'>(outcome: ScreenOutcome<R>, source: Rea
   return { route: outcome.route, state: 'unavailable', cause: { kind: 'read_deadline', limit: 'read' }, retryable: true, provenance: { transport: source.transport, contract: null, receivedAt: 0, attempts: 0 } }
 }
 
-const sentence = (text: { title: string; detail: string }) => [text.title, text.detail].filter(Boolean).join('. ').replace(/\.\./g, '.')
-
 /**
  * One chain read of this pool, once the market figures have answered and only
  * where the route is listed; asked again on its own, quietly and a few times,
@@ -123,8 +120,10 @@ function useChainRead<R extends 'pool-metrics' | 'pool-activity' | 'pool-positio
 /** Where stand-in figures come from (audit V1), in a few words for Details; null for the read service's own. */
 function figuresFrom(metric: Metric): string | null {
   switch (metric.fallback) {
+    // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): figures kept from an earlier read are named by
+    // where they came from, as their title does (MetricCell fallbackTitle), no longer "Last figures this browser saw".
     case 'kept':
-      return 'Last figures this browser saw'
+      return 'Market data provider'
     case 'dexscreener':
     case 'discovered':
       return 'DEX Screener'
@@ -278,16 +277,17 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
   // Refused figures stood in for, as on Markets (audit V1, lib/read/figureFallback.ts): dated and attributed.
   const shown = useFallbackRow(row ? agedMarket(row, now) : null, now)
   const provenance = shown?.provenance
-  const retrieved = retrievedText(provenance ? retrievedAgeSeconds(provenance.market, now) : null)
-  // A refused acquisition with nothing stored is not loading: nothing is coming
-  // until the ceiling drains, and an endless skeleton says nothing at all.
-  const atCapacity = answered?.ok === null && answered.acquiring === true && answered.accepted === false
+  // A refused acquisition with nothing stored is not loading: nothing is coming until the ceiling drains, so its figures
+  // are dashes, not an endless skeleton.
   const loading = answered === null || (answered.ok === null && answered.acquiring === true && answered.accepted !== false)
   // A pool with no stored figures at all (still being collected, or the store refused them): this browser's last ones,
   // DEX Screener's, or today's selection's stand in, dated and attributed (audit V1), rather than resting bubbles.
   const standIns = usePoolStandIns(option, shown === null && answered !== null, now)
   const failure = answered && !answered.ok ? answered.failure : null
-  const failed = failure ? sentence(failureText(failure, 'pools')) : atCapacity ? 'Domino’s data service is busy, so no figures are stored for this pool yet. The page asks again by itself.' : undefined
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a figure with no answer is a dash with no
+  // reason. Gone from the dashes' titles, the live region and the chart: the failed read's words (failureText, e.g.
+  // "Pool data unavailable. The read service couldn’t be reached.") and "Domino’s data service is busy, so no figures are
+  // stored for this pool yet. The page asks again by itself."
   const [currency0, currency1] = option.currencies
   const price = poolPrice(option, now.wall)
   const fee = option.fee === 'Dynamic' ? 'Dynamic fee' : option.fee
@@ -299,14 +299,15 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
   const guide = usable && price.state === 'usable' ? rangeGuide(presetFor(price, 'standard'), price.tick, price.decimals, quoteIndex) : null
   const day = heard?.key === poolId && heard.span.base === base.address ? heard.span : null
   const unit = <><PoolTokenLabel token={quote} /> for 1 <PoolTokenLabel token={base} /></>
-  const status = provenance?.market.status
-  // Who reported the figures and when they were retrieved, in Details; the whole observation is its title.
+  // Who reported the figures, in Details. Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the basis
+  // only; the observation's state and reason, ", retrieved N s ago" (also printed after "Market data provider"), ",
+  // reported cache age N s" and "; counted current for N s." are no longer said.
   const observation = provenance
-    ? `Provider market observation${answered?.origin === 'stored' ? ', as the read service stored it' : ''}: ${provenance.market.status}${provenance.market.reason ? ` (${reasonText(provenance.market.reason)})` : ''}, ${retrieved}${provenance.market.cacheAgeSeconds === null ? '' : `, reported cache age ${provenance.market.cacheAgeSeconds} s`}; counted current for ${provenance.market.freshForSeconds} s.`
+    ? `Provider market observation${answered?.origin === 'stored' ? ', as the read service stored it' : ''}.`
     : undefined
   const fromHistory = (metric: Metric) => metric.source === undefined && metric.state !== 'unavailable' && metric.state !== 'rejected' && metric.state !== 'absent'
-  const figure = (node: ReactNode, standIn?: ReactNode) => (shown ? <span className="dm-arrive">{node}</span> : standIn ? <span className="dm-arrive">{standIn}</span> : loading ? <Skeleton className="dm-pool-fig-skel" /> : <FigureDash reason={failed} />)
-  const metricsFailed = metricsRead && metricsRead.state !== 'ok' && metricsRead.state !== 'aborted' ? sentence(failureText(metricsRead, 'pools')) : undefined
+  const figure = (node: ReactNode, standIn?: ReactNode) => (shown ? <span className="dm-arrive">{node}</span> : standIn ? <span className="dm-arrive">{standIn}</span> : loading ? <Skeleton className="dm-pool-fig-skel" /> : <FigureDash />)
+  const metricsFailed = !!metricsRead && metricsRead.state !== 'ok' && metricsRead.state !== 'aborted'
   const apr = shown?.feeAprPercent
   const aprFromHistory = !!apr && apr.value !== null && (apr.state === 'qualified' || apr.state === 'stale')
   // The pool's yearly rate as a number, for the sentence under the name and the earnings estimate: Domino's own where
@@ -323,15 +324,17 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
   // Fees in dollars only where the pool holds USDG, at the pool's own price with 1 USDG = $1 (lib/format/usd.ts).
   const usd = isUsdg(quote.address) && priceNow !== null ? { usdgIndex: quoteIndex, price: numberOf(priceNow) ?? 0 } : null
 
-  // Domino's own pool APR, where its 24h history qualifies; a dash with the reason otherwise.
+  // Domino's own pool APR, where its 24h history qualifies; a dash otherwise. Changed on purpose 2026-10-15 (pack 7, the
+  // owner: no status notices): the dashes have no reason ("Unavailable: <reason>", "Not current: <reason>", the failed
+  // read's words), and a kept figure no longer has the title "Stale, not current.".
   const historyApr = (() => {
-    if (!metricsListed) return <FigureDash reason={`Unavailable: ${reasonText(option.aprReason)}`} />
+    if (!metricsListed) return <FigureDash />
     if (!metricsRead) return <Skeleton className="ml-auto h-4 w-14" />
-    if (metricsFailed) return <FigureDash reason={metricsFailed} />
-    if (!apr) return <FigureDash reason={failed} />
+    if (metricsFailed) return <FigureDash />
+    if (!apr) return <FigureDash />
     const presented = presentMetric(apr, (m) => `${percentText(m) ?? '—'}%`)
-    if (presented.kind !== 'value') return <FigureDash reason={`${presented.kind === 'not_current' ? 'Not current' : 'Unavailable'}: ${reasonText(presented.reason)}`} />
-    return <span className="tnum" data-metric={presented.stale ? 'stale' : 'qualified'} title={presented.stale ? 'Stale, not current.' : undefined}>{presented.text}</span>
+    if (presented.kind !== 'value') return <FigureDash />
+    return <span className="tnum" data-metric={presented.stale ? 'stale' : 'qualified'}>{presented.text}</span>
   })()
 
   // The 24h volume as the key figure writes it, for the recent activity's sentence.
@@ -371,27 +374,31 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
         {aprFromHistory && apr
           ? <Stat label="APR" info="What the pool’s fees come to over a year, from Domino’s own history of its last day. It describes the pool, not your position, and is not a promise." className="dm-pool-stat">{figure(<MetricCell metric={apr} percent tone="in" />)}</Stat>
           : <Stat label="APR" info="What the pool’s fees come to over a year, estimated from its last day of trading. It describes the pool, not your position, and is not a promise." className="dm-pool-stat" sub={(shown || aprStandIn) && !usable && aprNumber === null ? 'Not estimated for this pool' : undefined}>{figure(shown && (aprStandIn ? <FallbackApr apr={aprStandIn} compact /> : <PoolAprEstimate observation={shown.feeAprEstimate} now={now} compact />), aprStandIn && <FallbackApr apr={aprStandIn} compact />)}</Stat>}
-        <Stat label="24h volume" info="How much people swapped through the pool over the last 24 hours." className="dm-pool-stat">{figure(shown && <MetricCell metric={shown.volume24hUsd} retrieved={retrieved} />, standIns?.volume && <MetricCell metric={standIns.volume} />)}</Stat>
-        <Stat label="TVL" info="Total value locked: the reported value of all tokens in the pool." className="dm-pool-stat">{figure(shown && <MetricCell metric={shown.tvlUsd} retrieved={retrieved} />, standIns?.tvl && <MetricCell metric={standIns.tvl} />)}</Stat>
+        <Stat label="24h volume" info="How much people swapped through the pool over the last 24 hours." className="dm-pool-stat">{figure(shown && <MetricCell metric={shown.volume24hUsd} />, standIns?.volume && <MetricCell metric={standIns.volume} />)}</Stat>
+        <Stat label="TVL" info="Total value locked: the reported value of all tokens in the pool." className="dm-pool-stat">{figure(shown && <MetricCell metric={shown.tvlUsd} />, standIns?.tvl && <MetricCell metric={standIns.tvl} />)}</Stat>
         {metricsListed && (
           <Stat label="24h fees" info="What the pool’s swaps paid to the people who provide its money over the last 24 hours, from Domino’s own history." className="dm-pool-stat">
-            {shown && !metricsRead ? <Skeleton className="dm-pool-fig-skel" /> : shown && metricsFailed ? <FigureDash reason={metricsFailed} /> : figure(shown && shown.lpFees24hUsd && <MetricCell metric={shown.lpFees24hUsd} />)}
+            {shown && !metricsRead ? <Skeleton className="dm-pool-fig-skel" /> : shown && metricsFailed ? <FigureDash /> : figure(shown && shown.lpFees24hUsd && <MetricCell metric={shown.lpFees24hUsd} />)}
           </Stat>
         )}
-        {/* The price as a person says it, "1 PONS = 0.6175 USDG": a ratio between the two tokens, read on chain. */}
-        <Stat label="Pool price" info="What one token costs in the other at the block read. It changes with every swap." className="dm-pool-stat" sub={priceNow ? <>for 1 <SymbolText token={base} /></> : price.state === 'usable' ? undefined : COPY.range.problems[price.problem]}>
+        {/* The price as a person says it, "1 PONS = 0.6175 USDG": a ratio between the two tokens, read on chain.
+            Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a price that cannot be written is a dash
+            with no line under it and no reason (the range problem's words, e.g. "A price needs both tokens’ decimals, and
+            at least one couldn’t be read.", or "The price can’t be written as a plain number."), and a kept price's title
+            no longer adds " Read more than 5 minutes ago on this page." */}
+        <Stat label="Pool price" info="What one token costs in the other at the block read. It changes with every swap." className="dm-pool-stat" sub={priceNow ? <>for 1 <SymbolText token={base} /></> : undefined}>
           {priceNow
-            ? <span className="dm-pool-price-now" data-pool-price-now="" title={`Pool price from on-chain state at block ${price.state === 'usable' ? price.block : ''}. A ratio between the two tokens.${price.state === 'usable' && price.stale ? ' Read more than 5 minutes ago on this page.' : ''}`}>{priceNow} <span className="dm-pool-price-side"><SymbolText token={quote} /></span></span>
-            : <FigureDash reason={price.state === 'usable' ? 'The price can’t be written as a plain number.' : COPY.range.problems[price.problem]} />}
+            ? <span className="dm-pool-price-now" data-pool-price-now="" title={`Pool price from on-chain state at block ${price.state === 'usable' ? price.block : ''}. A ratio between the two tokens.`}>{priceNow} <span className="dm-pool-price-side"><SymbolText token={quote} /></span></span>
+            : <FigureDash />}
         </Stat>
       </StatStrip>
       <p role="status" aria-live="polite" className="sr-only" data-pool-status={loading ? 'loading' : failure ? failure.state : 'none'}>
-        {loading ? 'Reading pool figures…' : failed && !shown ? failed : ''}
+        {loading ? 'Reading pool figures…' : ''}
       </p>
     </div>
 
     <div className="dm-pool-a-chart">
-      <PoolHistoryChart source={source} option={option} market={shown} loading={loading} failed={failed} quote={quoteIndex} onDay={onDay} />
+      <PoolHistoryChart source={source} option={option} market={shown} loading={loading} quote={quoteIndex} onDay={onDay} />
     </div>
 
     {usable && <div className="dm-pool-a-earn">
@@ -443,15 +450,15 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
           <dt>Pool price</dt>
           <dd>{price.state === 'usable'
             ? <span className="tnum" title={`${price.text}, read at block ${price.block}.`}>{price.text.replace(/^≈/, '')} <SymbolText token={price.quote} /> per <SymbolText token={price.base} /><span className="dm-provenance"> · block {price.block}</span>{price.partial && ' · symbol not read'}</span>
-            : COPY.range.problems[price.problem]}</dd>
+            : <FigureDash />}</dd>
         </div>
-        <div><dt>24h vol / TVL</dt><dd>{shown ? <TurnoverCell market={shown} retrieved={retrieved} /> : loading ? <Skeleton className="ml-auto h-4 w-12" /> : <FigureDash reason={failed} />}</dd></div>
+        <div><dt>24h vol / TVL</dt><dd>{shown ? <TurnoverCell market={shown} /> : loading ? <Skeleton className="ml-auto h-4 w-12" /> : <FigureDash />}</dd></div>
         <div>
           <dt>Figures from</dt>
           <dd>{shown
-            ? <span data-market-provenance="" title={observation}>{figuresFrom(shown.tvlUsd) ?? (fromHistory(shown.tvlUsd) ? 'Domino history' : 'Market data provider')}{!shown.tvlUsd.fallback && (status === 'available' || status === 'stale') && `, ${retrieved}`}</span>
+            ? <span data-market-provenance="" title={observation}>{figuresFrom(shown.tvlUsd) ?? (fromHistory(shown.tvlUsd) ? 'Domino history' : 'Market data provider')}</span>
             : standIns?.tvl ? <span data-market-provenance="">{figuresFrom(standIns.tvl)}</span>
-            : loading ? <Skeleton className="ml-auto h-4 w-24" /> : <FigureDash reason={failed} />}</dd>
+            : loading ? <Skeleton className="ml-auto h-4 w-24" /> : <FigureDash />}</dd>
         </div>
         <div>
           {/* Changed 2026-10-01 (audit I1): what was checked is the pool, never its tokens; "Verified" read as vetted tokens. */}
@@ -474,7 +481,7 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
             ) : (
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                 <span className="text-fg-muted">Estimated APR</span>
-                {loading ? <Skeleton className="h-4 w-14" /> : <FigureDash reason={failed} />}
+                {loading ? <Skeleton className="h-4 w-14" /> : <FigureDash />}
               </div>
             )}
           </div>

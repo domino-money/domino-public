@@ -3,10 +3,10 @@ import { WALLET_FALLBACK_TOKENS } from '../../config/selectedPoolCatalogue'
 import { formatUsd } from '../../lib/format/usd'
 import { scaledText } from '../../lib/format/decimal'
 import type { WalletRow, WalletView } from '../../lib/read/pagers'
-import { ADDRESS_PROBLEM, COPY, failureText } from '../../lib/read/screens/copy'
+import { ADDRESS_PROBLEM, COPY } from '../../lib/read/screens/copy'
 import { tokenAmount } from '../../lib/read/screens/figures'
 import { NATIVE_CURRENCY, parseAddressInput, shortAddress } from '../../lib/read/screens/identity'
-import { quietTitle, reaskDelayMs, whenVisibleAfter } from '../../lib/read/screens/quietRead'
+import { reaskDelayMs, whenVisibleAfter } from '../../lib/read/screens/quietRead'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import { WALLET_PAGE_CAP, createWalletSession, type WalletSession, type WalletSnapshot } from '../../lib/read/screens/walletSession'
 import type { ReadOutcome, ReadSource, TokenDisplay } from '../../lib/read/types'
@@ -45,8 +45,7 @@ const FIRST_PAINT_MS = 1500
 
 /** The pager's own closing sentence; the title says the same thing with the block number in it. */
 const PAGER_FOOTNOTE = 'Balances read from the chain at one block. Anyone can see them; they don’t prove who controls the wallet.'
-/** An empty card after a read that failed. */
-const NOTHING_TO_SHOW = 'Your tokens couldn’t be loaded right now.'
+// Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): NOTHING_TO_SHOW ("Your tokens couldn’t be loaded right now.") is no longer said.
 /** An empty card whose list answered: its block is the line's title. */
 const NONE_LISTED = 'No tokens listed.'
 
@@ -109,10 +108,12 @@ const CENT = 10n ** 16n
 const usdText = (units: bigint) => (units < CENT ? '<$0.01' : formatUsd(scaledText((units + CENT / 2n) / CENT, 2)))
 
 /** Where a holding's value comes from, for its title: USDG's fixed dollar, the provider's price and the pair it is from, or none. */
-function valueTitle(holding: Holding, unasked = false): string {
-  if (holding.row.old) return 'Last known balance. Waiting for a current balance before valuing it.'
+function valueTitle(holding: Holding, unasked = false): string | undefined {
+  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no title on an old balance ("Last known balance. Waiting for a current
+  // balance before valuing it."), and a price still on its way is not "No price at the moment.".
+  if (holding.row.old) return undefined
   const quote = holding.quote
-  if (!quote) return `${unasked ? 'Not priced in this view: Show all prices it.' : holding.due ? 'No price at the moment.' : 'No market price found for this token.'} Not counted in the total.`
+  if (!quote) return `${unasked ? 'Not priced in this view: Show all prices it. ' : holding.due ? '' : 'No market price found for this token. '}Not counted in the total.`
   if (quote.liquidityUsd === null) return 'USDG counted at $1.'
   return `At $${quote.usd} per token, reported by DEX Screener for a pair holding ${formatUsd(String(Math.floor(quote.liquidityUsd)))}. Indicative, not a quote.`
 }
@@ -137,9 +138,11 @@ function HoldingRow({ holding, due, unasked, cached }: { holding: Holding; due: 
         <TokenName token={row.token} />
         <span className="dm-acct-token-sub">
           <span className="dm-acct-token-units tnum" data-balance={row.amount.state} title={balance.title}>
-            {balance.text === null ? <span className="sr-only">Balance unavailable</span> : balance.text}
+            {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "Balance unavailable" for a screen reader. */}
+            {balance.text}
           </span>
-          {row.old && <span className="sr-only" data-wallet-balance-earlier="">Balance from the previous reading; refreshing.</span>}
+          {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the marker alone; a screen reader heard "Balance from the previous reading; refreshing." */}
+          {row.old && <span hidden data-wallet-balance-earlier="" />}
           {twin && (
             <span className="dm-acct-token-twin" translate="no" title={row.token.address}>
               {shortAddress(row.token.address)}
@@ -153,10 +156,11 @@ function HoldingRow({ holding, due, unasked, cached }: { holding: Holding; due: 
         </span>
       ) : value === null ? (
         <span className="dm-acct-token-usd dm-acct-token-none" data-no-price="" title={valueTitle(holding, unasked)}>
-          <span className="sr-only">{row.old ? 'Balance updating' : 'No price'}</span>
+          {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): never "Balance updating". */}
+          {!row.old && <span className="sr-only">No price</span>}
         </span>
       ) : (
-        <span className="dm-acct-token-usd tnum" data-usd="" data-wallet-value-snapshot={previous ? '' : undefined} title={previous ? 'Previous complete valuation. Checking the current balance.' : valueTitle(holding)}>
+        <span className="dm-acct-token-usd tnum" data-usd="" data-wallet-value-snapshot={previous ? '' : undefined} title={previous ? valueTitle(previous) : valueTitle(holding)}>
           {usdText(value)}
         </span>
       )}
@@ -712,35 +716,32 @@ export function PortfolioTokens({ address }: { address: string }) {
         {view && view.pages > 0 ? (
           <>
             <span className="tnum">{freshRows.length}</span> token{freshRows.length === 1 ? '' : 's'} listed
-            {unavailable.length > 0 && (
-              <>
-                , <span className="tnum">{unavailable.length}</span> unavailable
-              </>
-            )}
+            {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no ", N unavailable" (data-wallet-unavailable keeps the count) and no " · reading more" (data-wallet-more="reading" stays, empty). */}
             {' · '}page <span className="tnum">{view.pages}</span> of up to <span className="tnum">{WALLET_PAGE_CAP}</span>
-            {/* Whether the list is whole, in words (audit V7): more pages on their way, or a list longer than is read. */}
-            {loading && snap?.canLoadMore ? <span data-wallet-more="reading"> · reading more</span> : snap?.capped ? <span data-wallet-more="capped"> · more tokens not listed</span> : null}
+            {/* Whether the list is whole, in words (audit V7): a list longer than is read. */}
+            {loading && snap?.canLoadMore ? <span hidden data-wallet-more="reading" /> : snap?.capped ? <span data-wallet-more="capped"> · more tokens not listed</span> : null}
           </>
         ) : (
           ''
         )}
       </p>
       {/* What a screen reader hears about the reads; the eye gets resting rows, the rows themselves, or an empty line. */}
-      <p role="status" aria-live="polite" className="sr-only" data-wallet-said="">
-        {waiting ? 'Reading the token list…' : failure && holdings.all.length === 0 ? failureText(failure, 'wallet').title : ''}
-      </p>
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a screen reader no longer hears "Reading the token list…" or why a read failed. */}
+      <p role="status" aria-live="polite" className="sr-only" data-wallet-said="" />
 
       {/* The total of the priced holdings on the card, the ones behind "Show all" included, when the balances are whole, with one line under it when it leaves held tokens out; its skeleton holds the place while the list is first read. */}
       {displayedTotal !== null ? (
-        <p className="dm-acct-total" data-wallet-total="" data-wallet-total-snapshot={previousTotal !== null ? '' : undefined} title={previousTotal !== null ? 'Last complete valuation. Balances and prices are being checked again.' : `The sum of the tokens on this card${totalNote ? ' that have a price' : ''}, at provider-reported prices with USDG at $1. Indicative, not a quote.`}>
-          <span className="sr-only">{previousTotal !== null ? 'Last known total value ' : 'Total value '}</span>
+        // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the last complete total is shown as it is: its title said "Last complete valuation. Balances and prices are being checked again.", and a screen reader "Last known total value" and "Previous complete valuation. Refreshing balances and prices." (data-wallet-total-snapshot and data-wallet-total-updating still mark it).
+        <p className="dm-acct-total" data-wallet-total="" data-wallet-total-snapshot={previousTotal !== null ? '' : undefined} title={`The sum of the tokens on this card${totalNote ? ' that have a price' : ''}, at provider-reported prices with USDG at $1. Indicative, not a quote.`}>
+          <span className="sr-only">Total value </span>
           <LiveFigure value={usdText(displayedTotal)} mode="digits" dimCents className="dm-fig-xl" />
-          {previousTotal !== null && <span className="sr-only" data-wallet-total-updating="">Previous complete valuation. Refreshing balances and prices.</span>}
+          {previousTotal !== null && <span hidden data-wallet-total-updating="" />}
           {totalNote && <span className="dm-hint block" data-wallet-total-note="">{totalNote}</span>}
         </p>
       ) : (
-        <p className="dm-acct-total" data-wallet-value-unavailable={!holdPlace ? '' : undefined} title={!holdPlace ? 'The wallet total is unavailable until the balances can be verified.' : undefined}>
-          {holdPlace ? <Skeleton className="dm-acct-total-skel" /> : <span className="sr-only">{withheld === 'nothing_valued' ? 'No priced tokens.' : 'Wallet value unavailable.'}</span>}
+        // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no title ("The wallet total is unavailable until the balances can be verified.") and no "Wallet value unavailable." for a screen reader.
+        <p className="dm-acct-total" data-wallet-value-unavailable={!holdPlace ? '' : undefined}>
+          {holdPlace ? <Skeleton className="dm-acct-total-skel" /> : withheld === 'nothing_valued' ? <span className="sr-only">No priced tokens.</span> : null}
         </p>
       )}
 
@@ -773,8 +774,9 @@ export function PortfolioTokens({ address }: { address: string }) {
 
       {/* An empty list stays said while it is read again; a list asked for anew (tokens someone typed) waits for its answer. */}
       {!waiting && holdings.all.length === 0 && snap !== null && settledOnce && (
-        <p className="dm-acct-tokens-empty" data-wallet-empty={failure ? 'failed' : 'listed'} data-wallet-block={block ?? undefined} title={failure ? quietTitle(failure, 'wallet') : block ? `Balances at block ${block}.` : undefined}>
-          {failure ? NOTHING_TO_SHOW : NONE_LISTED}
+        // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a list that failed shows nothing, its reason as data; it said "Your tokens couldn’t be loaded right now.", with why in its title.
+        <p className="dm-acct-tokens-empty" data-wallet-empty={failure ? 'failed' : 'listed'} data-wallet-block={block ?? undefined} title={failure ? undefined : block ? `Balances at block ${block}.` : undefined}>
+          {failure ? null : NONE_LISTED}
         </p>
       )}
 
@@ -793,7 +795,7 @@ export function PortfolioTokens({ address }: { address: string }) {
               size="sm"
               aria-disabled={loading || !canAskMore ? true : undefined}
               onClick={more}
-              title={exhausted ? COPY.picker.walletExhausted : snap?.status === 'handle_expired' ? COPY.picker.walletExpired : failure ? quietTitle(failure, 'wallet') : undefined}
+              title={exhausted ? COPY.picker.walletExhausted : snap?.status === 'handle_expired' ? COPY.picker.walletExpired : undefined}
             >
               {loading ? 'Loading…' : COPY.picker.loadMore}
             </Button>

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { agedMarket, feeLabel, presentMetric, retrievedAgeSeconds, retrievedText, type Market, type Metric } from '../../../lib/markets'
+import { agedMarket, feeLabel, presentMetric, type Market, type Metric } from '../../../lib/markets'
 import { useFeatured } from '../../../lib/read/featuredSource'
 import { pricePair } from '../../../lib/read/orientation'
 import { poolAprPresentation } from '../../../lib/read/poolAprPresentation'
@@ -51,7 +51,6 @@ export function PoolFiguresDialog({ market: opened, onClose }: { market: Market;
   const option = figuresHistoryOption(market)
   const apr = poolAprPresentation(market, now)
   const coming = market.figuresPending === true
-  const retrieved = retrievedText(market.provenance ? retrievedAgeSeconds(market.provenance.market, now) : null)
   const sources = [...new Set([sourceName(market.tvlUsd), sourceName(market.volume24hUsd)].filter(Boolean))].join(', ')
   const loading = (label: string, data: Record<`data-${string}`, string>) => <span className="inline-flex" {...data}>
     <Skeleton className="h-4 w-16" /><span className="sr-only">{label} loading</span>
@@ -72,14 +71,16 @@ export function PoolFiguresDialog({ market: opened, onClose }: { market: Market;
         <div><dt>APR</dt><dd>{apr.qualified ? <MetricCell metric={market.feeAprPercent} percent tone="in" />
           : apr.pending ? loading('Estimated APR', { 'data-apr-summary': 'pending' })
             : apr.fallback ? <FallbackApr apr={apr.fallback} compact /> : <PoolAprEstimate observation={market.feeAprEstimate} now={now} compact />}</dd></div>
-        <div><dt>TVL</dt><dd>{coming && presentMetric(market.tvlUsd).kind === 'unavailable' ? loading('TVL', { 'data-figure-summary': 'pending' }) : <MetricCell metric={market.tvlUsd} retrieved={retrieved} />}</dd></div>
-        <div><dt>24h volume</dt><dd>{coming && presentMetric(market.volume24hUsd).kind === 'unavailable' ? loading('24h volume', { 'data-figure-summary': 'pending' }) : <MetricCell metric={market.volume24hUsd} retrieved={retrieved} />}</dd></div>
+        <div><dt>TVL</dt><dd>{coming && presentMetric(market.tvlUsd).kind === 'unavailable' ? loading('TVL', { 'data-figure-summary': 'pending' }) : <MetricCell metric={market.tvlUsd} />}</dd></div>
+        <div><dt>24h volume</dt><dd>{coming && presentMetric(market.volume24hUsd).kind === 'unavailable' ? loading('24h volume', { 'data-figure-summary': 'pending' }) : <MetricCell metric={market.volume24hUsd} />}</dd></div>
       </dl>
 
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the figures carry no retrieval time in their
+          titles any more, and a pool with no chart is a dash that no longer says "Price history is unavailable for this pool." */}
       {source && option ? <PoolHistoryChart source={source} option={option} market={market} loading={coming} compact />
         : <section className="dm-card dm-pool-chart dm-pool-chart--compact" aria-label="Price history" data-pool-chart-awaiting-source="">
           <h3 className="dm-pool-heading">Price history</h3>
-          <div className="dm-pool-plot-empty" role="status">{option ? <><Skeleton className="h-4 w-24" /><span className="sr-only">Price history loading</span></> : <FigureDash reason="Price history is unavailable for this pool." />}</div>
+          <div className="dm-pool-plot-empty" role="status">{option ? <><Skeleton className="h-4 w-24" /><span className="sr-only">Price history loading</span></> : <FigureDash />}</div>
         </section>}
 
       <details className="dm-details dm-pool-figures-details" data-figures-sources="">

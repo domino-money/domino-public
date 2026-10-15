@@ -225,9 +225,12 @@ test('the owner’s cases in words and figures: tiny prices with their zeros cou
 
 test('without a history: the band, its ends and the price now as a level across the plot, and one short line says why (not listed, still collected, or a pool the read service keeps none for)', { timeout: 300_000 }, async () => {
   for (const [label, answer, note, spec] of [
-    ['not-listed', null, 'Price history isn’t available yet.', {}],
-    ['not-built', (item, body) => notBuilt(item, body, { end: Math.floor(Date.now() / 1000) }), 'Price history is still being collected.', {}],
-    ['off', (item, body) => historyFor(item, body, { end: Math.floor(Date.now() / 1000) }), 'Price history isn’t available for this pool.', { history: false }],
+    // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): with no line the legend's line is empty; it said
+    // "Price history isn’t available yet.", "Price history is still being collected." or "Price history isn’t available for
+    // this pool." (data-pvr-history keeps which).
+    ['not-listed', null, '', {}],
+    ['not-built', (item, body) => notBuilt(item, body, { end: Math.floor(Date.now() / 1000) }), '', {}],
+    ['off', (item, body) => historyFor(item, body, { end: Math.floor(Date.now() / 1000) }), '', { history: false }],
   ]) {
     const site = await lab(answer);
     try {
@@ -262,7 +265,8 @@ test('a partial history breaks its line where hours were not collected, and says
       const card = await open(site, 'inside', device);
       try {
         checkCard(card, 'inside', device);
-        assert.equal(card.measured.note, 'Last 7 days · Some hours are missing.');
+        // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the window and kind only; it said "Last 7 days · Some hours are missing.".
+        assert.equal(card.measured.note, 'Last 7 days · Hourly prices');
         await card.page.locator('[data-range-lab] section').screenshot({ path: join(shots(), `price-range-inside-${device}-partial.png`) });
       } finally { await card.close(); }
     }
@@ -296,11 +300,34 @@ test('a newly opened position starts at its mint; unknown mint keeps only the cu
         checkCard(unknown, 'inside', device);
         assert.equal(await unknown.page.locator('[data-pvr-where]').getAttribute('data-pvr-history'), 'unknown_mint');
         assert.equal(unknown.measured.lines.length, 0);
-        assert.match(unknown.measured.note, /Opening time isn’t available/);
+        // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): no "Opening time isn’t available yet. Showing the price now.".
+        assert.equal(unknown.measured.note, '');
         assert.equal(site.asked.length, reads + 1, 'pool history loads independently; no line is attributed before the NFT mint is proven');
         await unknown.page.locator('[data-range-lab] section').screenshot({ path: join(shots(), `price-range-unknown-mint-${device}.png`) });
       } finally { await unknown.close(); }
     }
+  } finally { await site.close(); }
+});
+
+// (2026-10-15, pack 7): a position minted before Domino's release has no mint the ledger can date ('before_floor'), only a
+// bound: it was minted before the release's block, so at or before SETUP_DEPLOYED_BY (src/config/chainRobinhood.ts).
+// The stored 7 days start after it, so they are all its own: "Last 7 days", with no "Opened" mark or title.
+test('a position minted before the release draws the last 7 days with no opening mark', async () => {
+  const end = Math.floor(Date.now() / 1000);
+  const site = await lab((item, body) => historyFor(item, body, { end }));
+  try {
+    const old = await open(site, 'inside', 'phone', { spec: { openedAt: null, openedBefore: 1_790_039_242 } });
+    try {
+      checkCard(old, 'inside', 'phone');
+      const range = old.page.locator('[data-range-lab] [data-pvr-line]');
+      assert.equal(await range.getAttribute('data-pvr-opened'), null, 'no opening time is claimed');
+      assert.notEqual(await range.getAttribute('data-pvr-history'), 'unknown_mint');
+      const start = Number(await range.getAttribute('data-pvr-start'));
+      assert.ok(Math.abs(start - (end - 7 * 86_400)) <= 3600, `the stored window’s own start (${start})`);
+      assert.equal(old.measured.note, 'Last 7 days · Hourly prices');
+      assert.equal(await old.page.locator('[data-range-lab] .dm-pvr-note').getAttribute('title'), null, 'no "Opened" title');
+      assert.ok(old.measured.lines.length > 0);
+    } finally { await old.close(); }
   } finally { await site.close(); }
 });
 
@@ -332,7 +359,8 @@ test('closed positions show only proven prices before closing; unknown close nev
       assert.equal(unknown.measured.lines.length, 0);
       assert.equal(unknown.measured.dot, null);
       assert.equal(unknown.measured.chip, null);
-      assert.match(unknown.measured.note, /Updating this position’s closing history/);
+      // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): no "Updating this position’s closing history…".
+      assert.equal(unknown.measured.note, '');
     } finally { await unknown.close(); }
   } finally { await site.close(); }
 });
