@@ -5,7 +5,7 @@ import { describeError, type ErrorView } from './copy'
 import { IDLE, OfferedStepError, SentBatchError, SentStepError, resumeBatchStep, resumeStep, sendBatchStep, sendStep, type AutomationSession, type BatchClient, type IncludedReceipt, type StepPhase, type TxClient } from './session'
 import { positionChanged } from '../lists/positionSync'
 import { confirmedOperationState, recordConfirmedOperation, reorgConfirmedOperation, subscribeConfirmedOperations, type OperationScope } from '../../lib/confirmedOperations'
-import { RECEIPT_FOLLOW, type FollowedReceipt } from '../journey/receiptFollow'
+import type { FollowedReceipt } from '../journey/receiptFollow'
 import { reconcileAutomationReceipt } from './receipt'
 
 /**
@@ -110,17 +110,21 @@ export function useStepsRun({ session, steps, context, labels, affected, onStepD
   function observe(receipt: IncludedReceipt, step: WalletStep, set: (phase: StepPhase) => void, alive: () => boolean, phase: { hash?: `0x${string}`; batchId?: string }, read: () => Promise<FollowedReceipt>) {
     if (!session) return
     const scope = { ...affected, tokenIds: /approve/.test(step.key) ? [] : affected?.tokenIds ?? [] }
-    const operation = recordConfirmedOperation({ ...scope, chainId: session.chainId, wallet: session.owner, receipt, onFinalized: async () => (await read()).state === 'finalized' })
-    if (!operation) positionChanged({ ...scope, chainId: session.chainId, wallet: session.owner, block: receipt.blockNumber, blockHash: receipt.blockHash })
-    if (operation?.phase === 'included' && session.chainId !== 4663) {
-      // The original transaction client outlives this view. Finality updates the shared receipt, not only this step's label.
-      const active = session
-      RECEIPT_FOLLOW.follow(`${operation.chainId}:${operation.wallet}:${operation.hash}`, {
+    // Changed on purpose 2026-10-15 (pack 8, incident C5): both of the client's ways to finality go to the queue, and the
+    // chain's row in config/receiptSources.ts picks one; this view names no chain. Where the edge reads finality, the
+    // settlement (`onFinalized`, the client's own read) runs after the queue's proof, as before. Where the wallet reads
+    // it, the client's own read and the check it had in the shared follow (`follow`: ../journey/receiptFollow.ts, every
+    // 5 s, then 15 s, then 30 s, until final) are made once by the queue, when the mark or the chain's age says the block
+    // may be final. It outlives this view as the follow did; finality updates the shared receipt, not only this label.
+    const active = session
+    let operation: ReturnType<typeof recordConfirmedOperation> = null
+    operation = recordConfirmedOperation({ ...scope, chainId: session.chainId, wallet: session.owner, receipt, onFinalized: async () => (await read()).state === 'finalized',
+      follow: {
         read: () => active.serial(read), available: () => active.receiptAvailability?.() ?? 'ready',
-        accept: next => reconcileAutomationReceipt(operation, next, recordConfirmedOperation, reorgConfirmedOperation,
-          confirmedOperationState().find(item => item.chainId === operation.chainId && item.hash === operation.hash) ?? null),
-      })
-    }
+        accept: (next: FollowedReceipt) => !operation || reconcileAutomationReceipt(operation, next, recordConfirmedOperation, reorgConfirmedOperation,
+          confirmedOperationState().find(item => item.chainId === operation!.chainId && item.hash === operation!.hash) ?? null),
+      } })
+    if (!operation) positionChanged({ ...scope, chainId: session.chainId, wallet: session.owner, block: receipt.blockNumber, blockHash: receipt.blockHash })
     if (!operation || operation.phase !== 'included' || !alive()) return
     const stop = subscribeConfirmedOperations(next => {
       if (next.chainId !== operation.chainId || next.hash !== operation.hash || next.blockHash !== operation.blockHash) return

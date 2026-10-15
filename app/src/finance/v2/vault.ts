@@ -10,6 +10,7 @@ import { REGISTRY_ABI, V3_POSITION_MANAGER_ABI, V4_POSITION_MANAGER_ABI, VAULT_A
 import { admitV2Contracts, verifyV2Code } from './deployment'
 import { AUTO_EXIT_EVENTS_ABI, implementationErrorSelector, VAULT_EVENTS_ABI, VAULT_FACTORY_EVENTS_ABI } from './implementations'
 import { refuseUnlessLive } from './liveLock'
+import { edgeReadsReceipts, edgeSimulates } from '../../config/receiptSources'
 import { createTransactor, l1FeeCeiling, quantity, receiptRpc, refused, REVIEW_S, revertIn, SIGN_WINDOW_S, suggestV2Gas, V2Revert, WalletNotAsked, type PreparedV2, type Rpc, type Transactor, type V2GasBudget, type V2Log, type V2Receipt, type V2Wallet } from './transact'
 
 /**
@@ -322,7 +323,8 @@ export async function simulateV2Batch(rpc: Rpc, chain: V2Chain, owner: Address, 
   const gas = budget ?? (await suggestV2Gas(rpc, chain))
   checkBatchBudget(gas)
   // The site's fallback is exclusively the existing Robinhood node route. Never send another chain's calls to it.
-  const gasUsed = await simulateBatch((method, params) => rpc(method, params), owner, calls, chain.chainId === 4663 ? simulator : undefined)
+  // Changed on purpose 2026-10-15 (pack 8, C5): the chain's row in ../../config/receiptSources.ts, not its id (the same chain).
+  const gasUsed = await simulateBatch((method, params) => rpc(method, params), owner, calls, edgeSimulates(chain.chainId) ? simulator : undefined)
   // The wallet runs the calls in one transaction of its own (its delegate's execute, or a bundler's): room for that frame.
   const limit = ((gasUsed + BATCH_FRAME_GAS) * 120n + 99n) / 100n
   if (limit > gas.maxGas) fail('gas_budget_exceeded')
@@ -406,7 +408,8 @@ export interface KnownBatchConfirmation { transactionHash?: Hex }
 
 /** Once its wallet envelope names one hash, this authorized Robinhood batch can be followed without a live wallet. */
 export async function knownBatchState(t: Transactor, wallet: V2Wallet, chain: V2Chain, rpc: Rpc, id: string, known: KnownBatchConfirmation): Promise<Awaited<ReturnType<typeof batchCallsState>>> {
-  const fixed = chain.chainId === 4663 && wallet.confirmation !== undefined
+  // Changed on purpose 2026-10-15 (pack 8, C5): the chain's row in ../../config/receiptSources.ts, not its id (the same chain).
+  const fixed = edgeReadsReceipts(chain.chainId) && wallet.confirmation !== undefined
   if (fixed && known.transactionHash) return { status: 200, transactionHash: known.transactionHash }
   await t.identity(rpc)
   const calls = await batchCallsState((method, params) => rpc(method, params), id)
@@ -906,7 +909,7 @@ const handOverKey = (marker: string, step: VaultStep) => `${marker}|${step.kind}
  */
 export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Contracts, now: () => number = () => Date.now() / 1000, simulator?: BatchSimulator) {
   const contracts = v2ContractsFor(chain, supplied)
-  const batchSimulator = chain.chainId === 4663 ? simulator : undefined
+  const batchSimulator = edgeSimulates(chain.chainId) ? simulator : undefined
   // Changed on purpose (data) 2026-10-02 (Domino V2 integration): every step and batch of this client only with live
   // contracts (./liveLock.ts), refused before any wallet request.
   const t = createTransactor(wallet, chain, now, () => refuseUnlessLive(chain.chainId, contracts))

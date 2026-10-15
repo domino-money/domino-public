@@ -688,6 +688,57 @@ test('an owner’s collect after the vault’s last compound is seen, and the va
   assert.deepEqual(body.positions[0].entries.at(-1).fees, ['3', '4']);
 });
 
+// Added (2026-10-15, pack 8; study-charts.md fix 5): a position minted before Domino's release used to be scanned from the
+// floor in LEDGER_SCAN_BLOCKS steps after its mint discovery had already covered the floor to the head with no mint (about
+// twenty answers per cold data centre, each `reading`), only to end as `before_floor`. Discovery's own record now answers
+// it at once. No verdict is kept for it (a kept verdict stores `entries: []` and stops every later read), and its answer is
+// the one it came to before: `before_floor`, no mint, no entries.
+const postsOf = (result) => Number(/node;[^,]*desc="(\d+) posts"/.exec(result.headers.get('Server-Timing') ?? '')?.[1] ?? Number.NaN);
+test('a position minted before the floor: once discovery has covered the floor to the head, `before_floor` at once, with no scan from the floor and no verdict kept', async () => {
+  const head = FLOOR + 19_500_000;
+  const { chain } = ledgerWorld({ mint: { block: 60_000_000, liquidity: OWNER_MINT.liquidity }, steps: [], vault: null, head });
+  const e = edge(chain);
+  let answers = 0;
+  let posts = 0;
+  let result;
+  while (answers < 40) {
+    result = await e.askOnce({ tokenIds: [ID] });
+    answers++;
+    posts += postsOf(result);
+    assert.equal(result.status, 200);
+    if (result.body.positions[0].why !== 'reading') break;
+    e.clock.time += 2_000;
+  }
+  const [position] = result.body.positions;
+  assert.equal(position.why, 'before_floor');
+  assert.equal(position.exact, false);
+  assert.equal(position.mint, null);
+  assert.deepEqual(position.entries, []);
+  assert.equal(position.through, head);
+  assert.equal(folded(result.body).why, 'before_floor');
+  assert.equal(answers, 2, 'two discovery windows of MINT_DISCOVERY_BLOCKS cover the floor to the head: then the answer');
+  assert.ok(posts <= 8, `node POSTs until the answer: ${posts} (65 in 21 answers before)`);
+  assert.ok(logReads(chain).every((filter) => filter.address === owned.POSITION_MANAGER && filter.topics[1] === word(0n)), 'only the mint discovery: no ledger scan from the floor');
+  const saved = await e.stored.get(`${ORIGIN}/api/fees/v1/cache/c1/ledger2/${ID}/0`).clone().json();
+  assert.equal(saved.final, null, 'no verdict kept');
+  assert.equal(saved.mint, null);
+  assert.equal(saved.scanned, head);
+  // Later answers, the head moved on: `before_floor` at once, only the discovery's tail read again.
+  for (let later = 1; later <= 3; later++) {
+    e.clock.time += (ledger.LEDGER_SECONDS + 1) * 1000;
+    chain.head += 500;
+    const reads = logReads(chain).length;
+    const again = await e.askOnce({ tokenIds: [ID] });
+    assert.equal(again.status, 200);
+    assert.equal(again.body.positions[0].why, 'before_floor');
+    assert.equal(again.body.positions[0].through, chain.head);
+    assert.deepEqual(again.body.positions[0].entries, []);
+    const fresh = logReads(chain).slice(reads);
+    assert.ok(fresh.every((filter) => filter.address === owned.POSITION_MANAGER && filter.topics[1] === word(0n) && Number(filter.fromBlock) >= head - 18_000), 'only the discovery tail');
+    assert.ok(postsOf(again) <= 3, `node POSTs of a later answer: ${postsOf(again)}`);
+  }
+});
+
 test('a long ledger is read in steps: each read looks into at most LEDGER_STEP blocks, keeps how far it got and says `reading`, the next goes on', async () => {
   // The owner traded in the pool's tokens in 450 blocks: each a block to look into.
   const steps = Array.from({ length: 450 }, (_, i) => ({ block: 73_300_000 + 1_000 * i, kind: 'swap' }));
@@ -880,8 +931,12 @@ const keptKeys = (stored) => [...stored.keys()].filter((url) => /\/cache\/c1\/le
 test('the question’s byte budget running out is never a verdict: the NFTs it did not reach are `reading`, nothing kept for them, and answered the next time', async () => {
   // Three positions whose own round-one read is past ROUND_BYTES, and the owner's own position, last in the question.
   const heavyIds = [1_000_001n, 1_000_002n, 1_000_003n];
-  const heavyPositions = heavyIds.map((tokenId) => ({ tokenId, holder: HEAVY, minter: HEAVY, key: KEY, tickLower: OWNER_STATE.tickLower, tickUpper: OWNER_STATE.tickUpper, liquidity: 10n ** 15n, unclaimed: [0n, 0n], mintBlock: 73_300_000 }));
-  const world = ledgerWorld({ extraPositions: heavyPositions });
+  // Changed on purpose (2026-10-15, pack 8): each minted after the floor with its mint on the chain, before the owner's (it
+  // had no mint log, so it read as minted before the floor, which is now answered `before_floor` without a round read).
+  const heavyMint = (i) => ({ block: 70_000_000 + 1_000 * i, liquidity: 10n ** 15n });
+  const heavyLogs = heavyIds.flatMap((tokenId, i) => positionLogs({ tokenId, owner: HEAVY, key: KEY, poolId: ledgerWorld().poolId, tickLower: OWNER_STATE.tickLower, tickUpper: OWNER_STATE.tickUpper, vault: null, mint: heavyMint(i), steps: [] }).logs);
+  const heavyPositions = heavyIds.map((tokenId, i) => ({ tokenId, holder: HEAVY, minter: HEAVY, key: KEY, tickLower: OWNER_STATE.tickLower, tickUpper: OWNER_STATE.tickUpper, liquidity: 10n ** 15n, unclaimed: [0n, 0n], mintBlock: heavyMint(i).block }));
+  const world = ledgerWorld({ extraPositions: heavyPositions, extraLogs: heavyLogs });
   const big = 'f'.repeat(ledger.ROUND_BYTES + 1024);
   let heavyReads = 0;
   const node = {

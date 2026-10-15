@@ -118,6 +118,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
     inputs: inputs ?? [],
     label,
     exitLive,
+    book,
     request: (consent): S1PlanRequest => {
       const base = { chainId, consent, position: { dex: position.dex, tokenId: position.tokenId }, slippageBps: bps ?? POSITION_SLIPPAGE_DEFAULT_BPS }
       const liquidityToRemove = share === '100' ? ('all' as const) : removing
@@ -126,7 +127,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
       return { ...base, action: 'exit', liquidityToRemove, burn: share === '100' && EXIT_BURNS, receive: { convertTo } }
     },
   })
-  const direct = useDirectExit(gate, position, label)
+  const direct = useDirectExit(gate, position, label, book)
   const usesDirect = mode === 'collect' || (mode === 'exit' && way === 'both')
   // A direct action reads the position through the wallet, on the position's chain (the live path switches it there
   // first, §1.3). Under `preview` nothing is sent, so the wallet is never asked to switch for a read: off the position's

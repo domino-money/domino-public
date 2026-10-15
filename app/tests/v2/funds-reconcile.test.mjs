@@ -106,7 +106,10 @@ test('same-block contradictory balances or a different block hash are never trus
   }
 });
 
-test('balance normalization requires the right owner, chain and every requested token; unread is never zero', () => {
+test('balance normalization requires the right owner, chain and every requested token; unread is never zero', (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   assert.deepEqual(balanceSnapshot(answer(100, '0'), OWNER, 4663, [TOKEN]), { kind: 'ok', snapshot: snapshot(100) });
   assert.equal(balanceSnapshot(answer(), `0x${'bb'.repeat(20)}`, 4663, [TOKEN]).kind, 'unavailable');
   assert.equal(balanceSnapshot(answer(), OWNER, 8453, [TOKEN]).kind, 'unavailable');

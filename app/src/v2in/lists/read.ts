@@ -3,6 +3,7 @@ import { readActivity, readPortfolio, type ReadV6Reply } from '../../v2/read/v6'
 import { routeServes } from '../../v2/routes'
 import type { V2ReadTransports } from '../transports'
 import { pageWake, wakeDue } from '../../lib/wake'
+import { jittered } from '../../lib/jitter'
 
 /**
  * Where the Positions screen's lists read read-v6 from (spec F7 rev4 §6.2), through the integrated screens' one source
@@ -257,6 +258,7 @@ export function readAgainAfter<T>(reply: ListsReply<T>, failures: number): numbe
   if (reply.kind === 'ok') return 60_000
   // An answer that broke the contract is not asked again soon: the same answer would come back.
   if (reply.kind === 'invalid') return 300_000
-  const named = 'retryAfterSeconds' in reply && typeof reply.retryAfterSeconds === 'number' ? reply.retryAfterSeconds * 1000 : 0
+  // (2026-10-15, pack 8, Q3): the Retry-After plus 0 to 25% at random (../../lib/jitter.ts), never less than it named.
+  const named = 'retryAfterSeconds' in reply && typeof reply.retryAfterSeconds === 'number' ? jittered(reply.retryAfterSeconds * 1000) : 0
   return Math.max([5_000, 15_000, 45_000][failures - 1] ?? 60_000, named)
 }

@@ -9,6 +9,9 @@ import { positionChanged } from '../lists/positionSync'
 import { v2Chain } from '../../v2/chains'
 import { RECEIPT_STILL_WAITING_MS, receiptPause, receiptWalletAway } from '../receiptWait'
 import { RECEIPT_FOLLOW } from '../journey/receiptFollow'
+import type { V2Receipt } from '../../finance/v2/transact'
+import { SESSION_RECEIPTS, sessionReceiptOfDirect } from '../lists/sessionReceipts'
+import type { TokenBook } from './tokens'
 
 /**
  * The direct exits of a position (spec F7 §2.6.4 recommendation; finance/v2/direct.ts): both tokens, all or part, and
@@ -46,7 +49,7 @@ export interface DirectState {
 
 const IDLE: DirectState = { stage: 'idle', prepared: null, error: null, receipt: null, retry: false, ticked: false }
 
-export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (token: `0x${string}`) => string) {
+export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (token: `0x${string}`) => string, book?: TokenBook) {
   const [state, setState] = useState<DirectState>(IDLE)
   // Changed on purpose 2026-10-06 (the integration review, rugged-literal #1): on the root of Auto-exit's own automation,
   // its Auto-exit on or paused, a direct action keeps the position's approval, all its exit needs: the armed root's pause
@@ -122,7 +125,23 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
     setState((now) => ({ ...now, stage: 'sent', hash }))
     const chain = v2Chain(gate.chainId)
     /** The lists hear of the exit once, at its block. */
-    const announce = (block: bigint) => positionChanged({ chainId: gate.chainId, positionManager: position.dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager, tokenIds: [position.tokenId.toString()], wallet: connection.wallet.owner, block })
+    const announced = (block: bigint) => positionChanged({ chainId: gate.chainId, positionManager: position.dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager, tokenIds: [position.tokenId.toString()], wallet: connection.wallet.owner, block })
+    /**
+     * Added (2026-10-15, pack 8): its receipt, read from Uniswap's own logs, is a row of Receipts and of the position's
+     * Activity at once (../lists/sessionReceipts.ts): read-v6 lists no exit made straight at Uniswap, so the row stays for
+     * this session. Said once, at its block, wherever the exit is followed (this dialog or the shared follow).
+     */
+    let kept = false
+    const keep = (receipt: V2Receipt) => {
+      if (kept || (receipt.state !== 'included' && receipt.state !== 'finalized')) return
+      kept = true
+      try {
+        const read = readDirectReceipt({ chainId: gate.chainId, kind: ask.kind, dex: position.dex, tokenId: position.tokenId, owner: connection.wallet.owner, pool: prepared.state.pool, receipt })
+        const entry = sessionReceiptOfDirect({ wallet: connection.wallet.owner, chainId: gate.chainId, dex: position.dex, tokenId: position.tokenId, kind: ask.kind, hash, receipt, paid: read.paid, tokens: [...(book?.values() ?? [])] })
+        if (entry) SESSION_RECEIPTS.record(entry)
+      } catch { /* Its logs cannot be read exactly: no row is drawn from a guess (the sheet says so). */ }
+    }
+    const announce = (receipt: V2Receipt & { blockNumber: bigint }) => { announced(receipt.blockNumber); keep(receipt) }
     const wallet = connection.wallet
     waiting.current = () => RECEIPT_FOLLOW.follow(`direct:${gate.chainId}:${wallet.owner}:${hash}`, {
       read: () => connection.direct.receipt(hash),
@@ -134,7 +153,7 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
       // still ends at its hour.
       available: () => gate.chainId === 4663 ? 'ready' : wallet.current() && wallet.chainId() === gate.chainId ? 'ready' : 'paused',
       accept(next) {
-        if (next.state === 'included' || next.state === 'finalized') announce(next.blockNumber)
+        if (next.state === 'included' || next.state === 'finalized') announce(next)
         return next.state === 'included' || next.state === 'finalized' || next.state === 'reverted'
       },
     })
@@ -169,7 +188,7 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
         }
         if (receipt.state === 'included' || receipt.state === 'finalized') {
           waiting.current = null
-          announce(receipt.blockNumber)
+          announce(receipt)
           try {
             const read = readDirectReceipt({ chainId: gate.chainId, kind: ask.kind, dex: position.dex, tokenId: position.tokenId, owner: connection.wallet.owner, pool: prepared.state.pool, receipt })
             setState((now) => ({ ...now, stage: 'done', receipt: read, includedBlock: receipt.blockNumber }))

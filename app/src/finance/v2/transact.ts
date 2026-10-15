@@ -4,6 +4,7 @@ import type { V2ChainId } from '../../v2/types'
 import { definiteRefusal } from '../nonce'
 import { refuseUnlessLive } from './liveLock'
 import type { ConfirmationRead } from '../../lib/edge/confirmation'
+import { edgeReadsReceipts } from '../../config/receiptSources'
 
 /**
  * The one way a V2 money client offers a transaction to a wallet (spec F7 §1.3, §1.8, §2.4 check 11, §2.10), shared by
@@ -144,6 +145,11 @@ export type V2Receipt =
       /** Base's L1 data fee (the receipt's `l1Fee`); null on Nitro chains, where gasUsed already includes it, or when not reported. */
       l1Fee: bigint | null
       logs: readonly V2Log[]
+      /**
+       * (2026-10-15, pack 8): the block's time (Unix seconds) from the header this client already read to check the block;
+       * absent when that read named none. Only shown (a session receipt's time); nothing is decided on it.
+       */
+      blockTimestamp?: number
     }
 
 /** A simulation the contract refused, with its revert data when the wallet passed it on: for src/v2/errors.ts to say. */
@@ -163,6 +169,12 @@ const MAX_UINT128 = (1n << 128n) - 1n
 
 const ADDRESS = /^0x[0-9a-f]{40}$/
 const HASH = /^0x[0-9a-f]{64}$/
+/** (2026-10-15, pack 8): a header's `timestamp` as V2Receipt's `blockTimestamp`, or nothing when it is not a quantity. */
+export const headerTime = (value: unknown): { blockTimestamp?: number } => {
+  if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{1,12}$/.test(value)) return {}
+  const seconds = Number.parseInt(value.slice(2), 16)
+  return Number.isSafeInteger(seconds) && seconds > 0 ? { blockTimestamp: seconds } : {}
+}
 const fail = (code: string): never => { throw new Error(code) }
 export const asHex = (value: unknown): Hex => (typeof value === 'string' && /^0x(?:[0-9a-fA-F]{2})*$/.test(value) ? (value as Hex) : fail('invalid_wallet_reply'))
 export const quantity = (value: unknown): bigint =>
@@ -244,7 +256,8 @@ async function walletAnswer(rpc: Rpc, hash: Hex): Promise<{ transaction: unknown
  * never joined to a block hash another node gave, so a release that waits for finality rests on one node's own read.
  */
 export async function receiptRpc(wallet: V2Wallet, chain: V2Chain, hash: Hex, fallback: Rpc, second?: () => Promise<{ transaction: unknown; receipt: unknown; block: unknown }>): Promise<Rpc> {
-  if (!wallet.confirmation || chain.chainId !== 4663) return fallback
+  // Changed on purpose 2026-10-15 (pack 8, C5): the chain's row in ../../config/receiptSources.ts, not its id (the same chain).
+  if (!wallet.confirmation || !edgeReadsReceipts(chain.chainId)) return fallback
   let fromSecond = false
   const answer = await wallet.confirmation.read(hash, { foreground: true, second: second && (async () => { const value = await second(); fromSecond = true; return value }) })
   return async (method, params) => {
@@ -599,7 +612,7 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
         || !HASH.test(raw.blockHash.toLowerCase()) || !['0x0', '0x1'].includes(String(raw.status)) || !Array.isArray(raw.logs)) return fail('invalid_receipt')
       const blockNumber = quantity(raw.blockNumber)
       const blockHash = raw.blockHash.toLowerCase() as Hex
-      const block = (await read('eth_getBlockByNumber', [numberToHex(blockNumber), false])) as { hash?: string } | null
+      const block = (await read('eth_getBlockByNumber', [numberToHex(blockNumber), false])) as { hash?: string; timestamp?: unknown } | null
       if (!block) return { state: 'pending' }
       if (String(block.hash).toLowerCase() !== blockHash) return { state: 'reorged' }
       const logs = (raw.logs as unknown[]).map((entry): V2Log => {
@@ -620,6 +633,7 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
         effectiveGasPrice: quantity(raw.effectiveGasPrice),
         l1Fee: chain.l1FeeInReceipt && typeof raw.l1Fee === 'string' ? quantity(raw.l1Fee) : null,
         logs: Object.freeze(logs),
+        ...headerTime(block.timestamp),
       }
       if (raw.status === '0x0') return { state: 'reverted', ...costs }
       // A finality timeout cannot erase a successfully verified inclusion.
@@ -629,7 +643,8 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
     }
     // This hash/review already authorizes public confirmation. Changing or disconnecting the wallet cannot
     // cancel it. The fixed reader is bounded separately and cannot simulate, sign, send, or offer a nonce.
-    if (chain.chainId === 4663 && wallet.confirmation) return readReceipt(async () => fail('receipt_read_not_allowed'))
+    // Changed on purpose 2026-10-15 (pack 8, C5): the chain's row in ../../config/receiptSources.ts, not its id (the same chain).
+    if (edgeReadsReceipts(chain.chainId) && wallet.confirmation) return readReceipt(async () => fail('receipt_read_not_allowed'))
     // Changed on purpose 2026-10-14 (review of C3 on main): reads only, outside the one-operation lock (`reads`, above).
     return reads(async rpc => { await identity(rpc); return readReceipt(rpc) }, REVIEW_S)
   }

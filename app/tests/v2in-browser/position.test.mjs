@@ -384,6 +384,15 @@ test('(c) Add liquidity with a swap: the review shows the route, the fee and its
     assert.deepEqual([add.to, add.data.slice(0, 10), BigInt(add.value)], [ZAP_V4, '0x2e563c43', 50_000_000_000_000_000n], 'increase, with the ETH it pays');
     await dialog.locator('[data-position-back]').click();
     await dialog.waitFor({ state: 'detached' });
+    // Added (2026-10-15, pack 8, package R1): the add is a row of the position's Activity at once, in the indexed row's
+    // words, before read-v6 lists it; with the block's own time from the header the money client read.
+    const own = page.locator('[data-position-activity] [data-v2-receipt^="session:8453:"]');
+    await own.waitFor({ timeout: 10_000 });
+    assert.match(await text(own.locator('summary')), /^Added to position #5100005/);
+    assert.equal(await own.locator('summary .dm-receipt-check[aria-label="Confirmed"]').count(), 1);
+    await own.locator('summary').click();
+    assert.match(await text(own), /Paid in 0\.05 ETH/);
+    assert.match(await text(own), /Domino fee \(0\.65% of the amount swapped\)/);
   } finally { await s.close(); }
 });
 
@@ -806,6 +815,15 @@ test('(f) Withdraw to both tokens goes straight to Uniswap: no Domino fee, one t
     assert.equal(await dialog.locator('[data-position-receipt] [data-position-receipt-state][data-state="done"]').innerText(), 'Confirmed');
     assert.equal(chain.sends.length, 1);
     assert.equal(chain.sends[0].tx.to, V4_PM);
+    // Added (2026-10-15, pack 8, package R1): read-v6 lists no exit made straight at Uniswap; its checked receipt is a row
+    // of the position's Activity at once, in the indexed exit's words, with what Uniswap paid and "No Domino fee".
+    await dialog.locator('[data-position-back], [data-position-done]').first().click().catch(() => page.keyboard.press('Escape'));
+    const own = page.locator('[data-position-activity] [data-v2-receipt^="session:8453:"]');
+    await own.waitFor({ timeout: 10_000 });
+    assert.match(await text(own.locator('summary')), /^Withdrew from position #5100001/);
+    await own.locator('summary').click();
+    assert.match(await text(own), /Returned to your wallet/);
+    assert.match(await text(own), /Domino fee No Domino fee/);
   } finally { await s.close(); }
 });
 

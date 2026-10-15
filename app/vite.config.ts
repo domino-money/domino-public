@@ -249,7 +249,10 @@ function previewSiteBundleCheck(mode: string, active: boolean): Plugin {
 export const ROUTE_MODULES: Readonly<Record<string, readonly string[]>> = {
   markets: ['src/screens/Explore.tsx'],
   pool: ['src/screens/PoolDetail.tsx'],
-  positions: ['src/screens/Positions.tsx', 'src/components/positions/OwnedPositions.tsx'],
+  // Changed on purpose (2026-10-15, pack 8, the Positions page's first visit): the V2 collection's chunk too (the list
+  // every V2 build draws, which OwnedPositions asks for as it loads): fetched with the route's files, not after them,
+  // a chain of three round trips made one. A build without V2 carries no such module and passes it over.
+  positions: ['src/screens/Positions.tsx', 'src/components/positions/OwnedPositions.tsx', 'src/v2in/lists/OwnedRows.tsx'],
   position: ['src/screens/Positions.tsx', 'src/screens/PositionDetail.tsx'],
   new: ['src/screens/NewPosition.tsx'],
   automate: ['src/screens/Automate.tsx'],

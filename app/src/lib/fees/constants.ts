@@ -80,8 +80,15 @@ export const MAX_LEDGER_IDS = 8
  * twelve), twelve for an NFT whose facts cannot be learned (two POSTs a read, as on 918bbd62). This note said "12 where it
  * cost 24" before: that held only for reads that take no time. With Q1's 4 s window every poll was a read: twelve POSTs
  * for an ordinary NFT, 24 for the other kind. tests/fees-relay.test.mjs measures it with reads that take time.
+ * (2026-10-15, pack 8): the owner's decision D8, a page every 10 s (was 5 s). Six requests a minute where it sent twelve.
+ * The edge's window (functions/_lib/fees.ts LIVE_STATE_MS, 5 s) stays shorter than this period, so each poll of a lone
+ * viewer is a read and its figure is fresh (it was one poll old on every second 5 s poll): still six reads a minute for a
+ * lone viewer, six POSTs for an ordinary NFT. Tied to it: ./freshness.ts HISTORY_CURRENT_MS (two periods, now 20 s) and
+ * ../wake.ts WAKE_GAP_MS (10 s, now the page's own period). After the person's own action the page still reads at the
+ * receipt and AFTER_ACTION_MS (11 s) later (./store.ts), whatever this period is. The list's 30 s is unchanged (D4 not
+ * taken), so ../../v2in/usd.ts USD_CURRENT_SECONDS (120 s) stays at least two periods of the slower read.
  */
-export const STATE_REFRESH_MS = 5_000
+export const STATE_REFRESH_MS = 10_000
 export const LIST_STATE_REFRESH_MS = 30_000
 /** A ledger still being read (`reading`) is asked again this soon. */
 export const LEDGER_READING_MS = 2_000

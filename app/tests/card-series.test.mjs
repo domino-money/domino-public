@@ -140,7 +140,10 @@ test('provider bars keep the existing rules: bound to the side asked, dropped pa
   assert.equal(pick({ answer: provider({ status: 'not_requested', reason: null, data: null, cache: null }) }).code, 'not-requested')
 })
 
-test('a legacy card stops after two provider_unavailable answers and backs off capacity refusals, at most four times', () => {
+test('a legacy card stops after two provider_unavailable answers and backs off capacity refusals, at most four times', (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0)
   const ok = (priceHistory) => ({ state: 'ok', data: poolMarket(priceHistory) })
   let step = providerAgain(ok(refused('provider_unavailable')), FIRST_TALLY)
   assert.equal(step.delay, 60_000)

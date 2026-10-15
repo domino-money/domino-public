@@ -34,7 +34,7 @@
  * already in flight in the other lane joins it, as it did when both lanes were one.
  */
 import { ROBINHOOD_ID } from '../../config/chainIdentity'
-import { MAX_RETRY_MS, RATE_RETRY_MS, postRoute, type ConfirmationQuestion } from './chainRoutes'
+import { MAX_RETRY_MS, RATE_RETRY_MS, jittered, postRoute, type ConfirmationQuestion } from './chainRoutes'
 export interface ConfirmationAnswer3 { transaction: unknown; receipt: unknown; block: unknown }
 export interface ConfirmationAsk {
   /** A money client's own read of a transaction this page sent: the lane a background refusal cannot rest (C3). */
@@ -127,7 +127,8 @@ export function createConfirmationReads(): ConfirmationRead {
       try {
         const value = first && object(answer.value) ? asSecond(answer.value) : answer.value
         if (!object(value) || value.v !== 2) throw new Error('invalid_confirmation')
-        if (value.state === 'busy') throw rest(typeof value.retryAfterMs === 'number' && Number.isFinite(value.retryAfterMs) && value.retryAfterMs >= 0 ? Math.min(MAX_RETRY_MS, value.retryAfterMs) : RATE_RETRY_MS)
+        // (2026-10-15, pack 8, Q3): the edge's "busy" wait plus 0 to 25% at random, as a refusal's (./chainRoutes.ts retryAfter).
+        if (value.state === 'busy') throw rest(jittered(typeof value.retryAfterMs === 'number' && Number.isFinite(value.retryAfterMs) && value.retryAfterMs >= 0 ? Math.min(MAX_RETRY_MS, value.retryAfterMs) : RATE_RETRY_MS))
         if (value.state === 'not_served') throw new Error('confirmation_not_served')
         check(value)
         strikes.delete(restOf(key))

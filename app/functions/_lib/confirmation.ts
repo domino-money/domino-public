@@ -95,13 +95,14 @@ export interface ConfirmationEdge {
   cancelled?: () => boolean
 }
 
-type Block = { number: string; hash: string }
+/** `timestamp` (2026-10-15, pack 8): the header's own time when it names one, passed on as read (a session receipt's time). */
+type Block = { number: string; hash: string; timestamp?: string }
 type Finality = { finalized: Block | null }
 
 function blockOf(raw: unknown): Block | null {
   if (raw === null) return null
   if (!object(raw) || typeof raw.number !== 'string' || !QUANTITY.test(raw.number) || typeof raw.hash !== 'string' || !HASH.test(raw.hash)) throw new Error('invalid_confirmation')
-  return { number: raw.number, hash: raw.hash }
+  return { number: raw.number, hash: raw.hash, ...(typeof raw.timestamp === 'string' && QUANTITY.test(raw.timestamp) ? { timestamp: raw.timestamp } : {}) }
 }
 
 /** A kept finalized block, checked as the node's own is; null when it is not one. */

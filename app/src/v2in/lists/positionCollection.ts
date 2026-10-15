@@ -12,12 +12,25 @@ import type { Address } from '../../v2/types'
 import { v2Chain } from '../../v2/chains'
 import { createdPositionKey, type CreatedPosition } from './createdPositions'
 
-/** A known mint is visible immediately, but only indexed state can supply liquidity, balances or APR. */
-export function withCreatedPositions(rows: readonly PositionRowView[], creations: readonly CreatedPosition[]): PositionRowView[] {
+/**
+ * A known mint is visible immediately, but only indexed state can supply liquidity, balances or APR.
+ *
+ * Changed on purpose (2026-10-15, pack 8): a Robinhood Chain hint (kept since this pack) is drawn from the state reading
+ * the list already asks for every row it shows (`observationOf`, ./positionSync.ts), at or past the receipt's block and
+ * held by the hint's wallet, exactly as a row of the site's own inventory is (historicalPositionRows): nothing is taken
+ * from the receipt. Until that reading arrives it is the same placeholder row as on Base and Arbitrum One.
+ */
+export function withCreatedPositions(rows: readonly PositionRowView[], creations: readonly CreatedPosition[], observationOf: (identity: PositionIdentity) => PositionObservation | null = positionObservation): PositionRowView[] {
   const merged = new Map(rows.map(row => [row.key, row]))
   for (const item of creations) {
     const key = createdPositionKey(item), old = merged.get(key)
     if (old?.status === 'live') continue
+    const observed = item.chainId === 4663 && item.dex === 4 && item.positionManager.toLowerCase() === POSITION_MANAGER.toLowerCase()
+      ? observationOf({ chainId: 4663, positionManager: POSITION_MANAGER, tokenId: item.tokenId }) : null
+    if (observed && observed.block >= item.block && observed.position.owner.toLowerCase() === item.wallet.toLowerCase()) {
+      const [row] = historicalPositionRows({ owner: item.wallet.toLowerCase(), block: observed.block, positions: [positionOfState(observed.position)], deposits: [] }, true, null, observationOf)
+      if (row) { merged.set(key, { ...row, vault: old?.vault ?? null, family: old?.family ?? null }); continue }
+    }
     const chain = v2Chain(item.chainId)
     merged.set(key, { key, positionManager: item.positionManager, block: null, chainId: item.chainId, chain: chain.name,
       dex: item.dex, dexName: `Uniswap v${item.dex}`, tokenId: item.tokenId,

@@ -307,3 +307,23 @@ test('a wake asks the quiet predicate again: with no storage event heard, a visi
   const quiet = await sideBySide({ idle: () => true, events: [{ at: 70_000, run: (history) => history.wake() }], until: 100_000 });
   assert.deepEqual(seconds(quiet.calm), [0]);
 });
+
+// (2026-10-15, pack 8 review, bug c): a portfolio answer that shows automation on is one wallet's (activity.tsx
+// onPortfolioAnswer): only that wallet's idle head goes back to main's minute; another wallet's quiet head keeps its two.
+test('a portfolio answer with automation on calms its own wallet\'s head only', async () => {
+  const other = `0x${'7e'.repeat(20)}`;
+  const time = clock(), reads = { [wallet]: [], [other]: [] };
+  let automated = false;
+  const history = createActivityHistory(async (who) => { reads[who].push(time.now()); const answer = page(); answer.body.wallet = who; return answer; },
+    time.timers, true, () => undefined, (who) => who === wallet ? !automated : true);
+  const stops = [history.subscribe(wallet, () => {}), history.subscribe(other, () => {})];
+  await flush();
+  await time.to(30_000);
+  automated = true;
+  history.calm(wallet);
+  await flush();
+  await time.to(5 * MIN);
+  for (const stop of stops) stop();
+  assert.deepEqual(seconds(reads[wallet]), [0, 60, 120, 180, 240, 300], 'the automated wallet: main\'s minute at once');
+  assert.deepEqual(seconds(reads[other]), [0, 120, 240], 'the other wallet keeps its idle two minutes');
+});

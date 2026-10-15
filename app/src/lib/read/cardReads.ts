@@ -26,6 +26,7 @@
 import type { PoolMarketResponse } from 'api-contracts/read-v1/types'
 import type { HistoryResponse } from 'api-contracts/read-v3/types'
 import type { Instant } from '../markets'
+import { jittered } from '../jitter'
 import { CARD_CACHE, CARD_RESOLUTION_SECONDS, CARD_WINDOW_SECONDS, FAILURE_WAIT_MS, FIRST_TALLY, keptWaitMs, providerAgain, type CardAnswer, type CardAsk, type CardCache, type CardSource } from './cardSeries'
 import { followPublicHistory, pageShown } from './historyRead'
 import { realClock, type Clock } from './pipeline'
@@ -128,7 +129,8 @@ function answerOf(ask: CardAsk, outcome: Answered<'history'> | Answered<'pool-ma
   // A failure this visit does not ask again (an edge page during a redeploy, a runtime skew) is asked again then too.
   const asked = transientWaitSeconds(outcome) ?? 0
   const times = { key: ask.key, receivedAt: clock.now(), receivedMonotonic: clock.monotonic(), failure: `${said.title}. ${said.detail}`, code: said.code,
-    retryAfterMs: Math.max(asked * 1000, FAILURE_WAIT_MS) }
+    // (2026-10-15, pack 8, Q3): the wait asked for plus 0 to 25% at random (../jitter.ts), never less than it.
+    retryAfterMs: Math.max(jittered(asked * 1000), FAILURE_WAIT_MS) }
   return ask.source === 'chain' ? { ...times, source: 'chain', data: null } : { ...times, source: 'provider', side: ask.side, data: null }
 }
 

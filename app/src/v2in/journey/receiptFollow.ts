@@ -7,7 +7,14 @@ interface Follow {
   accept: (receipt: FollowedReceipt) => boolean
 }
 
-/** A checked action keeps its receipt reader across route changes. No wallet switch, send or public fallback. */
+/**
+ * A checked action keeps its receipt reader across route changes. No wallet switch, send or public fallback.
+ *
+ * Changed on purpose 2026-10-15 (pack 8, incident C5): for what waits on a block alone (a direct exit after its dialog
+ * closed, an action looking for its new block after one left the chain) and for a close held on Base or Arbitrum One
+ * until final (../lists/closeHold.ts, not moved in this package). Finality on Base and Arbitrum One is no longer followed here for New position and
+ * automation: their one read at finality is the confirmation queue's (lib/confirmedOperations.ts), as on Robinhood Chain.
+ */
 export function createReceiptFollow(clock: { now: () => number; visible: () => boolean; set: (run: () => void, ms: number) => unknown; clear: (timer: unknown) => void }) {
   const jobs = new Map<string, Follow & { until: number; next: number; attempts: number; failures: number }>()
   let timer: unknown = null, busy = false

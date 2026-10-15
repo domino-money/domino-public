@@ -125,20 +125,22 @@ test('a ledger refusal from before a receipt or newer state never settles the hi
   }
 });
 
-test('detail refreshes every five seconds while list-only state refreshes in shared thirty-second batches', async () => {
+// Changed on purpose (owner's D8, 2026-10-15): a position page's state every 10 s (was 5 s); its six ticks are a minute
+// now, so the list's 30 s batch comes twice in them (once in the six 5 s ticks before), never once per tick.
+test('detail refreshes every ten seconds while list-only state refreshes in shared thirty-second batches', async () => {
   const { store, svc, time } = storeWith();
   const detail = store.subscribeHistory([ID], 'page', () => {});
   const list = store.subscribeHistory(['999'], 'list', () => {});
   await until(() => svc.asked.length === 1, 'initial shared batch');
   svc.asked.length = 0;
-  assert.equal(STATE_REFRESH_MS, 5000);
+  assert.equal(STATE_REFRESH_MS, 10_000);
   assert.equal(LIST_STATE_REFRESH_MS, 30000);
   for (let i = 0; i < 6; i++) {
     assert.equal(time.fire('later', STATE_REFRESH_MS), 1);
     await settle();
   }
   assert.equal(svc.asked.filter((ids) => ids.includes(ID)).length, 6);
-  assert.equal(svc.asked.filter((ids) => ids.includes('999')).length, 1, 'list refresh is not multiplied by detail ticks');
+  assert.equal(svc.asked.filter((ids) => ids.includes('999')).length, 2, 'list refresh is not multiplied by detail ticks');
   detail(); list();
 });
 
@@ -805,12 +807,14 @@ function pageOf({ svc = service(), ids = [ID], scope = 'page' } = {}) {
 // Changed on purpose (2026-10-14, Q1 alone): at the periods before Q1, 5 s for a page and 30 s for a list (the owner's
 // decisions D8 and D4 not taken): twelve requests a minute on a page, every 5 s, and two a minute per eight rows on a list,
 // where Q1 alone counted six (every 10 s) and one (every 60 s).
-test('wake rule: a visible position page asks /state twelve times a minute; a visible list twice a minute per eight rows', async () => {
+// Changed on purpose (owner's D8, 2026-10-15): the page every 10 s, six requests a minute (was twelve); the list's 30 s is
+// unchanged (D4 not taken).
+test('wake rule: a visible position page asks /state six times a minute; a visible list twice a minute per eight rows', async () => {
   const page = pageOf();
   await until(() => page.requests.length === 1, 'the first read');
   await page.advance(60_000);
-  assert.equal(page.requests.length - 1, 12, 'twelve a minute (5 s; 10 s is the owner’s decision D8, not taken)');
-  assert.ok(page.requests.slice(1).every((request, i) => request.at - page.requests[i].at === STATE_REFRESH_MS), 'every 5 s');
+  assert.equal(page.requests.length - 1, 6, 'six a minute (10 s, the owner’s decision D8)');
+  assert.ok(page.requests.slice(1).every((request, i) => request.at - page.requests[i].at === 10_000), 'every 10 s');
   page.close();
   // Sixteen rows: two requests of eight, then two every 30 s.
   const svc = service();
@@ -830,6 +834,7 @@ test('wake rule: a visible position page asks /state twelve times a minute; a vi
 
 // Changed on purpose (2026-10-14, Q1 alone): the page's period is 5 s (was 10 s in Q1 alone), so "back while the figure is
 // young" is back after 3 s, and the page's own read follows at 5 s.
+// Changed on purpose (owner's D8, 2026-10-15): the page's period is 10 s, so its own read follows at 10 s.
 test('wake rule: twenty focus events ask nothing; hidden 3 s then visible asks nothing; hidden 90 s then visible asks once', async () => {
   const page = pageOf();
   await until(() => page.requests.length === 1, 'the first read');
@@ -842,9 +847,11 @@ test('wake rule: twenty focus events ask nothing; hidden 3 s then visible asks n
   await page.show(false);
   await page.advance(3_000);
   await page.show(true);
-  assert.equal(page.requests.length, 1, 'back after 3 s: the last answer is younger than the page’s 5 s');
-  await page.advance(1_000);
-  assert.equal(page.requests.length, 2, 'the page’s own 5 s read, on time');
+  assert.equal(page.requests.length, 1, 'back after 3 s: the last answer is younger than the page’s 10 s');
+  await page.advance(5_999);
+  assert.equal(page.requests.length, 1, 'nothing before the page’s 10 s');
+  await page.advance(1);
+  assert.equal(page.requests.length, 2, 'the page’s own 10 s read, on time');
   await page.show(false);
   await page.advance(90_000);
   assert.equal(page.requests.length, 2, 'nothing while hidden');
@@ -865,7 +872,7 @@ test('wake rule: online with a young figure asks nothing, a hidden page has no w
   await until(() => page.requests.length === 1, 'the first read');
   page.win.dispatchEvent(new Event('online'));
   await settle();
-  assert.equal(page.requests.length, 1, 'back online with an answer younger than 5 s: nothing');
+  assert.equal(page.requests.length, 1, 'back online with an answer younger than 10 s: nothing');
   await page.show(false);
   await page.advance(40_000);
   page.win.dispatchEvent(new Event('online'));
@@ -874,7 +881,7 @@ test('wake rule: online with a young figure asks nothing, a hidden page has no w
   await page.show(true);
   assert.equal(page.requests.length, 2, 'shown again 40 s later: one read');
   await page.advance(STATE_REFRESH_MS);
-  assert.equal(page.requests.length, 3, 'then every 5 s');
+  assert.equal(page.requests.length, 3, 'then every 10 s');
   page.svc.down = true;
   await page.advance(STATE_REFRESH_MS);
   assert.equal(page.requests.length, 4, 'a refresh that fails');

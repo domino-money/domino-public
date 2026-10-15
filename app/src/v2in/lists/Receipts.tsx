@@ -6,12 +6,13 @@ import { NOTHING_YET_BOTH, type CardShows } from '../../lib/automationCards'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import { privateTimes, timelineRows } from './activityModel'
 import { useActivityHistory } from './activity'
-import { anyIn, chainsIn, useKeyed, useListsGate } from './hooks'
-import { receiptViews } from './model'
+import { anyIn, chainsIn, useKeyed, useListsGate, useSessionReceipts } from './hooks'
+import { receiptViews, sessionReceiptView } from './model'
 import { ChainLines, ReceiptRow, RECEIPT_LIST } from './receiptParts'
 import { OWN_PORTFOLIO } from './source'
 import { LocalReceiptRow, useLocalReceipts } from './LocalReceiptRow'
-import { activityWindow, sessionActivity } from './sessionActivity'
+import { activityWindow, immediateRows, sessionActivity, sessionAutomation } from './sessionActivity'
+import { sessionReceipts } from './sessionReceipts'
 import { SessionActivityRow } from './SessionActivityRow'
 
 const PAGE_ROWS = 10
@@ -31,7 +32,17 @@ export default function Receipts({ limit, onShows }: { limit?: number; onShows?:
   const shown = page.wallet === wallet ? page.shown : PAGE_ROWS
   const publicViews = useMemo(() => history.answer ? receiptViews(history.answer, chainsIn(gate, 'live'), portfolio?.kind === 'ok' ? portfolio.body : null, history.receiptFinality) : [], [history.answer, history.receiptFinality, gate, portfolio])
   const rows = useMemo(() => timelineRows(publicViews, items, privateTimes(items, history.answer?.items ?? []), history.answer?.items ?? [], local), [publicViews, items, history.answer, local])
-  const { immediate, visible, total, hidden } = activityWindow(sessionActivity(wallet, history.proofs, history.answer?.items ?? []), rows, limit ?? shown)
+  // Changed on purpose (2026-10-15, pack 8): every own action of this browser is a row at once (a setup, any other
+  // automation step, and each position action's checked receipt), until read-v6 lists the same transaction; then its
+  // item takes the place in the same render (./sessionReceipts.ts). Only a setup was drawn before the index listed it.
+  const sessions = useSessionReceipts(wallet)
+  const pending = useMemo(() => {
+    const indexed = history.answer?.items ?? []
+    const named = [...(portfolio?.kind === 'ok' ? portfolio.body.tokens : []), ...(history.answer?.tokens ?? [])]
+    return immediateRows(sessionActivity(wallet, history.proofs, indexed), sessionAutomation(wallet, history.proofs, indexed, named),
+      sessionReceipts(wallet, sessions, indexed).map((entry) => ({ view: sessionReceiptView(entry, named, history.receiptFinality), observedAt: entry.observedAt })))
+  }, [wallet, history.proofs, history.answer, history.receiptFinality, portfolio, sessions])
+  const { immediate, visible, total, hidden } = activityWindow(pending, rows, limit ?? shown)
   const tokens = useTokenDetails(visible.flatMap((row) => (row.kind === 'private' ? [row.item] : row.kind === 'public' ? row.evidence : []).flatMap((item) => item.receipt?.sources.map((source) => source.currency) ?? [])))
   const cancelled = items.filter((item) => item.state === 'cancelled')
   const privateOut = signedOutLine(session.kind, 'history')
@@ -67,7 +78,7 @@ export default function Receipts({ limit, onShows }: { limit?: number; onShows?:
       {view.state === 'unavailable' && <span hidden data-receipts-update={view.state} />}
       {visible.length + immediate.length > 0 && (
         <ol className={RECEIPT_LIST + ' dm-activity-list'} data-v2-receipts="own" data-v2-receipts-rows={visible.filter((row) => row.kind === 'public').length} data-activity-rows={visible.length + immediate.length}>
-          {immediate.map(item => <SessionActivityRow key={`${item.proof.chainId}:${item.proof.hash}`} item={item} />)}
+          {immediate.map(item => item.setup ? <SessionActivityRow key={item.key} item={item.setup} /> : <ReceiptRow key={item.key} view={item.view} />)}
           {visible.map((row, index) => <Fragment key={row.id}>
             {limit === undefined && row.at === null && (index === 0 || visible[index - 1].at !== null) && <li className="dm-activity-divider">Records without a date</li>}
             {row.kind === 'public' ? <ReceiptRow view={row.receipt} effects={row.receipts} showGas={row.showGas} positionItem={row.events.find((item) => item.id === row.receipt.id)}>

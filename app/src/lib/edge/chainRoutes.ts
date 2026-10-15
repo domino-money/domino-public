@@ -14,6 +14,10 @@
 import type { AutomationAnswer } from '../automationState'
 import type { LedgerMintHint, RelayAnswer } from '../fees/types'
 import type { WalletAnswer } from '../walletPositions'
+import { jittered } from '../jitter'
+
+/** (2026-10-15, pack 8, Q3): for ./confirmation.ts, which takes its imports from this module. */
+export { jittered }
 
 export const ROUTES = Object.freeze({
   owned: '/api/owned/v2/positions',
@@ -100,10 +104,15 @@ export interface RouteOptions {
 type Failure = Extract<RelayAnswer<never>, { ok: false }>
 const fail = (failure: Failure['failure'], retryAfterMs = 0): Failure => ({ ok: false, failure, retryAfterMs })
 
-/** The wait an answer's Retry-After names, bounded; `fallback` when it names none. */
+/**
+ * The wait an answer's Retry-After names, bounded; `fallback` when it names none.
+ * (2026-10-15, pack 8, Q3): plus 0 to 25% at random (../jitter.ts), never less than the wait named, so the tabs one refusal
+ * reaches do not all ask again in the same second. Every caller's wait (the fees store's, the wallet's, the position
+ * page's, the confirmation reads') is derived from this one.
+ */
 function retryAfter(response: Response, fallback: number): number {
   const seconds = Number(response.headers.get('Retry-After') ?? Number.NaN)
-  return Number.isFinite(seconds) && seconds >= 0 ? Math.min(MAX_RETRY_MS, seconds * 1000) : fallback
+  return jittered(Number.isFinite(seconds) && seconds >= 0 ? Math.min(MAX_RETRY_MS, seconds * 1000) : fallback)
 }
 
 /** A body read no further than `limit` bytes: its text, or null past it (a WebView with no body stream reads it whole). */

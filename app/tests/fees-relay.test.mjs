@@ -404,10 +404,16 @@ test('two viewers of one NFT within 5 s cost one read, one node POST once known'
 // Q1's 4 s every poll missed: twelve reads, one POST each for an ordinary NFT (no saving on 918bbd62's twelve) and two for
 // one whose facts cannot be learned (a currency's symbol empty or holding a zero-width joiner: readState skips it), 24 a
 // minute, twice 918bbd62's load on the node. The fake fetch here advances the clock 30 to 400 ms a POST.
+// Changed on purpose (owner's D8, 2026-10-15): the page polls every 10 s (was 5 s). The edge's window (LIVE_STATE_MS, 5 s)
+// stays shorter than the period, so every poll of a lone viewer is a read and its figure is fresh (0 blocks old, where it
+// was one poll old on every second poll): still six reads a minute, six POSTs for an ordinary NFT and twelve for one
+// whose facts cannot be learned. The page's own requests halve (twelve a minute to six, tests/fees-store.test.mjs); the
+// node's POSTs for a lone viewer do not, since the edge already served every second 5 s poll from what it kept.
 test('a lone viewer at the page’s period, each node POST taking time: six reads a minute, never more POSTs than 918bbd62’s twelve, facts learned or not', async () => {
   const { STATE_REFRESH_MS } = require('../.test-build/app/src/lib/fees/constants.js');
-  // The window is measured against this period; the owner's decision D8 (a page every 10 s) must revisit LIVE_STATE_MS.
-  assert.equal(STATE_REFRESH_MS, 5_000);
+  // The window is measured against this period: it must stay shorter, so a lone viewer always gets a fresh figure.
+  assert.equal(STATE_REFRESH_MS, 10_000);
+  assert.ok(fees.LIVE_STATE_MS < STATE_REFRESH_MS, 'the edge’s window is shorter than the page’s period');
   const position = { tokenId: 11, holder: OWNER, key: KEY, tickLower: -600, tickUpper: 600, liquidity: 10n ** 12n, unclaimed: [5n, 7n] };
   const minute = async (symbol, postMs, lateMs) => {
     fees.resetRelayMemory();
@@ -419,14 +425,15 @@ test('a lone viewer at the page’s period, each node POST taking time: six read
     const learned = (await fees.kept(relay.rt, fees.cacheUrl(ORIGIN, 'facts', '11', 0))) !== null;
     const warm = relay.posts.length;
     let reads = 0;
-    for (let poll = 1; poll <= 12; poll++) {
+    // A minute of polls at the page's period.
+    for (let poll = 1; poll <= 60_000 / STATE_REFRESH_MS; poll++) {
       beat += STATE_REFRESH_MS + lateMs;
       relay.clock.time = Math.max(relay.clock.time, beat);
       chain.head += 49;
       const before = relay.posts.length;
       const answered = await relay.ask(question);
       assert.equal(answered.status, 200);
-      assert.ok(chain.head - answered.body.block <= 49, `poll ${poll}: one poll old at most`);
+      assert.equal(answered.body.block, chain.head, `poll ${poll}: a fresh figure, never one kept from the last poll`);
       if (relay.posts.length > before) reads++;
     }
     return { learned, reads, posts: relay.posts.length - warm };

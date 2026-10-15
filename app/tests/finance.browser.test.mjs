@@ -6188,7 +6188,10 @@ async function reconnect(page) {
 /** The rows of Your positions as they read, in order. */
 // Changed on purpose 2026-10-02 (review of the rules, finding 11): a row's Your APR is its ledger's ("not measured" for one
 // that cannot be measured), which a copy drawn before any read cannot know ("— on its page"): its words are left out.
-const ownedRows = (page) => page.locator('[data-owned] a[data-position-row]').evaluateAll((rows) => rows.map((row) => `${row.getAttribute('data-position-row')} ${row.innerText.replace(/\s+/g, ' ').trim().replace(/Your APR (?:— on its page|not measured)/, 'Your APR')}`));
+// Changed on purpose (2026-10-15, pack 8): a row's Your APR is no part of the wallet's copy (it is its ledger's, read for the
+// chain's list only), so its dash is left out as its words were; pack 7 made the words a bare dash, and pack 8 answers a
+// position minted before Domino's release at once, so the first drawing of such a row now already holds that dash.
+const ownedRows = (page) => page.locator('[data-owned] a[data-position-row]').evaluateAll((rows) => rows.map((row) => `${row.getAttribute('data-position-row')} ${row.innerText.replace(/\s+/g, ' ').trim().replace(/Your APR (?:— on its page|not measured|—)/, 'Your APR')}`));
 
 /** What the list card showed since recordList, once a wallet was connected (the no-wallet and waiting cards left out). */
 const listSeen = (page) => page.evaluate(() => window.__ownedSeen.filter((what) => !/^(?:no-wallet|waiting|other-network)\b/.test(what)));
@@ -7637,7 +7640,11 @@ test('Your positions: each open row’s Your APR is its own ledger’s, asked wi
     // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a dash in place of "not measured", and no title ("Not measured for this position").
     assert.equal((await dash.innerText()).replace(/\s+/g, ' ').trim(), 'Your APR —');
     assert.equal(await dash.getAttribute('title'), null);
-    assert.equal(await dash.getAttribute('data-ledger-asks'), String(coldReads));
+    // Changed on purpose (2026-10-15, pack 8; study-charts.md fix 5): minted before the floor (none of its events on the
+    // node), it is answered `before_floor` by the list's one request, where it took `coldReads` requests of a scan from the
+    // floor in LEDGER_SCAN_BLOCKS steps to come to the same answer.
+    assert.deepEqual([await dash.getAttribute('data-ledger-asks'), await dash.getAttribute('data-ledger-last')], ['1', 'before_floor']);
+    assert.ok(coldReads > 1);
     assert.match(await dash.getAttribute('data-ledger-last'), /^(?!exact$)[a-z_]+$/, 'its ledger’s why');
     assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /\best\./, 'no estimate');
     // Nothing moved: the figures stand where they were first drawn, now that the APR is in.
@@ -7720,7 +7727,11 @@ test('a row whose ledger answered `reading` as the owner opened another row is a
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
     await s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`).waitFor({ timeout: 15_000 });
     await s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"][data-fees-reason="not_exact"]').waitFor({ timeout: 15_000 });
-    assert.equal(asked(OWNED_OPEN), coldReads, 'its page resumes the bounded cursor saved by the list, without restarting discovery');
+    // Changed on purpose (2026-10-15, pack 8; study-charts.md fix 5): minted before the floor, its page's one request is
+    // answered `before_floor` at once from the discovery the list's request completed, where the page read on through
+    // `coldReads` requests of a scan from the floor.
+    assert.equal(asked(OWNED_OPEN), 2, 'its page asks once more and is answered at once, without restarting discovery');
+    assert.ok(coldReads > 2);
     // Back on the list: its row says why there is no figure, never a skeleton for the visit.
     await s.page.evaluate(() => { location.hash = '#/positions'; });
     await s.page.locator(`[data-position-row="${OWNED_OPEN}"] [data-cell="apr"][data-apr="missing"]`).waitFor({ timeout: 15_000 });
@@ -8152,7 +8163,9 @@ test('the site’s chain routes without their node, then with it: Your positions
     // The node is there: the page's next reads draw the position, its figures and its fees card, then the list.
     chain.edge = 'up';
     chain.outage = null;
-    await jump(s.page, '05:01', { pending: true });
+    // Changed on purpose (2026-10-15, pack 8, Q3): past 6:15, not 5:01: the routes' "no node" wait (Retry-After 300 s) now
+    // has 0 to 25% added at random in the page (src/lib/jitter.ts), so its next read comes 300 to 375 s on, never sooner.
+    await jump(s.page, '06:16', { pending: true });
     const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
     await detail.waitFor({ timeout: 30_000 });
     assert.match(await detail.locator('.dm-pos-name').innerText(), new RegExp(`#${OWNED_OPEN}`));
@@ -8217,7 +8230,9 @@ test('a position’s page with the site’s chain routes without their node: the
     // The node is there: the page's own read, at the head, in place of the row, and the owner's actions with it.
     chain.edge = 'up';
     chain.outage = null;
-    await jump(s.page, '05:01', { pending: true });
+    // Changed on purpose (2026-10-15, pack 8, Q3): past 6:15, not 5:01: the routes' "no node" wait (Retry-After 300 s) now
+    // has 0 to 25% added at random in the page (src/lib/jitter.ts), so its next read comes 300 to 375 s on, never sooner.
+    await jump(s.page, '06:16', { pending: true });
     await at(chain.head).waitFor({ timeout: 30_000 });
     await detail.locator('[data-position-actions]').waitFor({ timeout: 15_000 });
     await detail.locator('[data-position-action="collect"]').waitFor();

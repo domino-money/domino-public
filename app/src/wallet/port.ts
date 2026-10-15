@@ -172,12 +172,61 @@ export const LEGACY_ID = 'injected'
 /** How long the page waits for an EIP-6963 announcement before it offers window.ethereum as a browser wallet. */
 export const LEGACY_WAIT_MS = 300
 
-/** The order wallets are tried in after a reload: the one connected last first, never one disconnected here. */
+/**
+ * How long the first run waits for the remembered wallet to announce itself before it says no wallet is connected
+ * (2026-10-15, pack 8, X2): extensions announce themselves at once as a rule, a few a moment later.
+ */
+export const REMEMBERED_WAIT_MS = 600
+
+/** The wallet this browser connected last, unless the person disconnected it here since; null when none is remembered. */
+function remembered(): string | null {
+  const recent = memory.recent()
+  return recent !== null && !memory.disconnected(recent) ? recent : null
+}
+
+/**
+ * The wallets a reload may reconnect, in the order they are tried: never one disconnected here.
+ *
+ * Changed on purpose 2026-10-15 (pack 8, incident X2: reconnect the wallet used last, or none). With a wallet
+ * remembered as the one connected last, that wallet alone, by the id it announces: the other wallets were tried too, the
+ * remembered one first only among those announced in the same moment, so with two extensions installed the one that
+ * announced itself first and still authorized this site was reconnected (another address, another list, or Phantom's
+ * "not supported"), and the "Browser wallet" entry, whoever holds window.ethereum, could be reconnected too. A wallet
+ * the person did not use last is connected only when they pick it. With none remembered, as before.
+ */
 function candidates(list: readonly Connector[]): Connector[] {
   const recent = memory.recent()
+  const last = remembered()
+  // (2026-10-15, pack 8 review, L4): the "Browser wallet" entry remembered while a wallet now announces itself through
+  // EIP-6963: that entry is not offered any more (offerLegacy), so the wallet it stood for is found as main found it,
+  // among the announced ones that still authorize this site, in main's order. Still no prompt: only isAuthorized and
+  // wagmi's reconnect.
+  if (last === LEGACY_ID && announced(list)) return list.filter((connector) => connector.id !== LEGACY_ID && !memory.disconnected(connector.id) && connector.type !== 'walletConnect')
+  if (last !== null) return list.filter((connector) => connector.id === last)
   return list
     .filter((connector) => !memory.disconnected(connector.id) && (connector.type !== 'walletConnect' || recent === connector.id))
     .sort((a, b) => Number(b.id === recent) - Number(a.id === recent))
+}
+
+/**
+ * Resolves once the remembered wallet `id` is listed, or after REMEMBERED_WAIT_MS (2026-10-15, pack 8, X2): the first
+ * run waits for it instead of saying "disconnected" a moment before that wallet announces itself.
+ */
+function listed(id: string): Promise<void> {
+  // (2026-10-15, pack 8 review, L4): for the remembered "Browser wallet" entry, an announced wallet ends the wait too:
+  // the entry will not be offered beside it, and that wallet is the one main reconnected (candidates).
+  const there = (list: readonly Connector[]) => list.some((connector) => connector.id === id) || (id === LEGACY_ID && announced(list))
+  if (there(walletConfig.connectors)) return Promise.resolve()
+  return new Promise((done) => {
+    let stop = () => {}
+    const timer = setTimeout(() => { stop(); done() }, REMEMBERED_WAIT_MS)
+    stop = walletConfig._internal.connectors.subscribe((list: readonly Connector[]) => {
+      if (!there(list)) return
+      clearTimeout(timer)
+      stop()
+      done()
+    })
+  })
 }
 
 let reconnecting: Promise<void> = Promise.resolve()
@@ -197,8 +246,11 @@ function reconnectOne(list: readonly Connector[], startup = false): Promise<void
   const run = async () => {
     if (statusNow() === 'connected' || attempt) return
     if (startup) walletConfig.setState((state) => ({ ...state, status: 'connecting' }))
+    // X2 (2026-10-15, pack 8): the remembered wallet, given a moment to announce itself; then the list as it is.
+    const last = startup ? remembered() : null
+    if (last !== null) await listed(last)
     let found: Connector | null = null
-    for (const connector of candidates(list)) {
+    for (const connector of candidates(last !== null ? walletConfig.connectors : list)) {
       if (await connector.isAuthorized().catch(() => false)) {
         found = connector
         break

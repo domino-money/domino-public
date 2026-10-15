@@ -6,13 +6,14 @@ import { FeesActivity } from '../../components/positions/visual/FeesActivity'
 import type { FeesEvent } from '../../components/positions/visual/model'
 import { contextLimited, positionActivity, timelineRows, type ActivityPosition } from './activityModel'
 import { compareChronology } from './chronology'
-import { anyIn, chainsIn, useKeyed, useListsGate } from './hooks'
+import { anyIn, chainsIn, useKeyed, useListsGate, useSessionReceipts } from './hooks'
 import { useActivityHistory } from './activity'
-import { receiptViews } from './model'
+import { receiptViews, sessionReceiptView } from './model'
 import { ChainLines, RECEIPT_LIST, ReceiptRow } from './receiptParts'
 import { OWN_PORTFOLIO } from './source'
 import { LocalReceiptRow, useLocalReceipts } from './LocalReceiptRow'
-import { activityWindow, sessionActivity } from './sessionActivity'
+import { activityWindow, immediateRows, sessionActivity, sessionAutomation } from './sessionActivity'
+import { sessionReceipts } from './sessionReceipts'
 import { SessionActivityRow } from './SessionActivityRow'
 
 const NO_EVENTS: readonly FeesEvent[] = []
@@ -58,7 +59,17 @@ export default function PositionHistory({ wallet, position, events = NO_EVENTS, 
       ...[...loose].map(([tx, settlements]) => ({ id: `ledger:${tx}`, at: settlements[0].timestamp, operation: null, settlements })),
     ].sort(compareChronology)
   }, [events, receipts, matching, local, position])
-  const { immediate, visible, total, hidden } = activityWindow(live ? sessionActivity(wallet, history.proofs, answer?.items ?? [], position) : [], rows, shown)
+  // Changed on purpose (2026-10-15, pack 8): this position's own actions of this browser are rows at once, until read-v6
+  // lists the same transaction (as in ./Receipts.tsx); only a setup was drawn before.
+  const sessions = useSessionReceipts(live ? wallet : null)
+  const pending = useMemo(() => {
+    if (!live) return []
+    const indexed = answer?.items ?? []
+    const named = [...(portfolio?.tokens ?? []), ...(answer?.tokens ?? [])]
+    return immediateRows(sessionActivity(wallet, history.proofs, indexed, position), sessionAutomation(wallet, history.proofs, indexed, named, position),
+      sessionReceipts(wallet, sessions, indexed, position).map((entry) => ({ view: sessionReceiptView(entry, named, receiptFinality), observedAt: entry.observedAt })))
+  }, [live, wallet, history.proofs, answer, receiptFinality, portfolio, sessions, position])
+  const { immediate, visible, total, hidden } = activityWindow(pending, rows, shown)
   if (!live && events.length === 0) return null
   return <section className="dm-card dm-pos-card dm-pos-activity dm-activity-history" aria-labelledby="position-activity-title" data-position-activity="" data-position-activity-read={history.answer ? 'ok' : history.error?.kind ?? 'loading'}>
     <h2 className="dm-title" id="position-activity-title">Activity</h2>
@@ -67,7 +78,7 @@ export default function PositionHistory({ wallet, position, events = NO_EVENTS, 
         "More activity couldn’t be loaded. We’ll try again automatically." */}
     {live && history.error && <span hidden data-position-activity-reason={history.error.kind === 'unavailable' ? history.error.reason : history.error.detail} />}
     {visible.length + immediate.length > 0 && <ol className={`${RECEIPT_LIST} dm-activity-list`} data-position-history-rows={visible.length + immediate.length}>
-      {immediate.map(item => <SessionActivityRow key={`${item.proof.chainId}:${item.proof.hash}`} item={item} />)}
+      {immediate.map(item => item.setup ? <SessionActivityRow key={item.key} item={item.setup} /> : <ReceiptRow key={item.key} view={item.view} />)}
       {visible.map((row) => row.operation?.kind === 'local' ? <LocalReceiptRow key={row.id} receipt={row.operation.item} at={row.at} tokens={portfolio?.tokens ?? history.answer?.tokens ?? []}>
         {row.settlements.length > 0 && <FeesActivity events={row.settlements} bare automatic={automatic ?? undefined} />}
       </LocalReceiptRow>

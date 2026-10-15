@@ -598,6 +598,8 @@ export const FRESH_STATE_MS = 2_000
  * with 4 s every poll read, twelve a minute, one POST each for an ordinary NFT and two for one whose facts cannot be
  * learned (readState skips a currency with no usable symbol or decimals), 24 a minute, twice 918bbd62's load on the node.
  * Two viewers of one NFT within 5 s cost one read. Revisit it with the owner's decision D8 (a page every 10 s).
+ * (2026-10-15, pack 8): D8 taken, the page polls every 10 s; 5 s stays. Shorter than the page's period, so a lone viewer's
+ * every poll is a read and its figure fresh (none served a poll old); two viewers within 5 s still cost one read.
  */
 export const LIVE_STATE_MS = 5_000
 

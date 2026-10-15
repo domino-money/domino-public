@@ -23,6 +23,7 @@ import { transientWaitSeconds, type TransientCandidate } from './screens/transie
 import type { TokenDisplay } from './types'
 import { ROBINHOOD_ID } from '../../config/chainIdentity'
 import { chainKey, movedScoped } from '../chainStorage'
+import { jittered } from '../jitter'
 
 export type Side = 'base' | 'quote'
 /** Which series a card asks for: the chain's stored ratio, or a provider's USD candles. */
@@ -302,7 +303,8 @@ export function keptWaitMs(answer: CardAnswer, now: Instant): number | null {
 export function providerAgain(outcome: TransientCandidate & { data?: PoolMarketResponse }, tally: ProviderTally): { delay: number | null; tally: ProviderTally } {
   const stop = { delay: null, tally }
   if (tally.reasks >= PROVIDER_REASKS) return stop
-  const backoff = (floorMs = 0) => ({ delay: Math.max(floorMs, PROVIDER_WAIT_MS * 2 ** tally.waits), tally: { reasks: tally.reasks + 1, unavailable: 0, waits: tally.waits + 1 } })
+  // (2026-10-15, pack 8, Q3): a wait after a busy or refusing answer, plus 0 to 25% at random (../jitter.ts), never less.
+  const backoff = (floorMs = 0) => ({ delay: jittered(Math.max(floorMs, PROVIDER_WAIT_MS * 2 ** tally.waits)), tally: { reasks: tally.reasks + 1, unavailable: 0, waits: tally.waits + 1 } })
   if (outcome.state !== 'ok' || !outcome.data) {
     const wait = transientWaitSeconds(outcome)
     return wait === null ? stop : backoff(wait * 1000)

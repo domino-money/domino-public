@@ -27,7 +27,7 @@ import { ARTWORK } from '../support/new-position.mjs';
 import { historyFor } from '../support/price-range-cases.mjs';
 import { FIXTURE_TOKEN, createReadStub } from '../support/read-stub.mjs';
 import { launchBrowser } from '../support/s1-browser.mjs';
-import { activityOf, ethUsdPrice, indexedToken, livePosition, portfolioOf } from '../support/s1-read6.mjs';
+import { activityOf, ethUsdPrice, indexedToken, livePosition, portfolioOf, s1Action } from '../support/s1-read6.mjs';
 import { contractsFor } from '../support/v2-chain.mjs';
 import { WALLET_V2_DIST } from '../support/wallet-dist.mjs';
 import { createWalletServer } from '../support/wallet-server.mjs';
@@ -95,7 +95,7 @@ after(async () => {
  * Positions of wallet-test-v2, Test Wallet A connected on Robinhood Chain with one open V1 position. `hooks`: the page's
  * `window.__dominoV2Test`; `readV6(method, route, body)`: the site's read-v6 route ({ status, body, contract }), recorded.
  */
-async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positions', privateReceipts = null, localCloses = [], creations = [], sessionDisabled = false, refresh = false, chainOptions = {}, stored = undefined, ledgerReply = null, connect = true, artwork = null } = {}) {
+async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positions', privateReceipts = null, localCloses = [], creations = [], sessions = [], init = null, sessionDisabled = false, refresh = false, chainOptions = {}, stored = undefined, ledgerReply = null, connect = true, artwork = null } = {}) {
   const fake = createFakeSession();
   fake.controls.disabled = sessionDisabled;
   const chain = browserChain({ positions: [onChain(V1_OPEN)], tokens: TOKENS, ...chainOptions });
@@ -145,9 +145,25 @@ async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positio
     await route.fulfill({ status: reply.status, contentType: 'application/json', body: JSON.stringify(reply.body) });
   });
   const wallet = await installWallets(context);
+  // (2026-10-15, pack 8): the ids each state read asked, in order, with whether its answer was in when a test looks.
+  const stateReads = [];
+  context.on('request', (request) => {
+    if (!request.url().endsWith('/api/fees/v1/state')) return;
+    const entry = { ids: (() => { try { return request.postDataJSON()?.tokenIds ?? request.postDataJSON()?.ids ?? null; } catch { return null; } })(), raw: request.postData(), done: false };
+    stateReads.push(entry);
+    request.response().then(() => { entry.done = true; entry.doneAt = Date.now(); }, () => undefined);
+  });
+  if (init) await context.addInitScript(init.script, init.arg);
   if (creations.length) await context.addInitScript(rows => {
     for (const owner of new Set(rows.map(row => row.wallet.toLowerCase()))) sessionStorage.setItem(`domino:created-positions:v1:${owner}`, JSON.stringify(rows.filter(row => row.wallet.toLowerCase() === owner)));
   }, creations);
+  // (2026-10-15, pack 8): this tab's session receipts (src/v2in/lists/sessionReceipts.ts), written once: a reload keeps
+  // what the page itself left in them.
+  if (sessions.length) await context.addInitScript(rows => {
+    if (sessionStorage.getItem('pack8-seeded')) return;
+    sessionStorage.setItem('pack8-seeded', '1');
+    for (const owner of new Set(rows.map(row => row.wallet.toLowerCase()))) sessionStorage.setItem(`domino:session-receipts:v1:${owner}`, JSON.stringify(rows.filter(row => row.wallet.toLowerCase() === owner).map(row => ({ ...row, observedAt: Date.now() - 1000 }))));
+  }, sessions);
   if (localCloses.length) await context.addInitScript((rows) => {
     for (const owner of new Set(rows.map(row => row.wallet.toLowerCase()))) localStorage.setItem(`domino:confirmed-closes:v1:${owner}`, JSON.stringify(rows.filter(row => row.wallet.toLowerCase() === owner)));
   }, localCloses);
@@ -173,6 +189,7 @@ async function scenario({ hooks = null, readV6 = routeMissing, hash = '#/positio
     wallet,
     // The fake chain itself, for a test that moves its head and its time (2026-10-14, package V1).
     chain,
+    stateReads,
     async close() {
       await context.close();
       await server.closeAll();
@@ -447,6 +464,49 @@ test('a failed price read keeps the last complete valuation, said with its time,
   } finally { await s.close(); }
 });
 
+/**
+ * Added 2026-10-15 (pack 8, the CI failures of PR #425 and #426). The page's clock is this suite's, and a jump of it fires
+ * every timer that falls due in the jump, the deadline of a request still in flight among them: a capabilities GET's
+ * (src/v2/routes.ts V2_ROUTE_TIMEOUT_MS, 10 s) or a read's (src/v2/read/v6HttpTransport.ts READ_V6_TIMEOUT_MS, 22 s), both
+ * on the page's clock (lib/http/rawReply.ts fetchRaw). A jump of 31 s while a read-v6 exchange is on the wire turns it into
+ * a timeout, and the list's reader waits out a failure (src/v2in/lists/read.ts readAgainAfter: 5 s, 15 s, 45 s, real time
+ * here, since the page's clock runs on between jumps), which a wake never shortens (lib/wake.ts). The row's dollars come
+ * from V1's list and the state route, before read-v6 has answered, so on a slow runner the first jump came while the
+ * capabilities or the first portfolio read was still in flight, and later jumps while the previous step's read was.
+ * The same happens on main before pack 7 with read-v6 answering in 0 to 800 ms. A laptop closed for half a minute with a
+ * read in flight is the same failure, and the page reads again after its wait, which is right; what these cases assert is
+ * the reader's own period, so a jump waits for the page's reads to be answered first.
+ *
+ * `READS_IN_FLIGHT`: an init script that counts the page's same-origin read-v6 and state-route requests until each answer's
+ * body is in (a clone read alongside the page's own read of it) and one task more, in `window.__dominoReadsInFlight`.
+ * `readsAnswered(page)`: resolves once that count is 0.
+ */
+const READS_IN_FLIGHT = {
+  script: () => {
+    const counted = /^\/api\/(read\/v6\/|fees\/v1\/state$)/;
+    const send = window.fetch.bind(window);
+    window.__dominoReadsInFlight = 0;
+    window.fetch = (input, init) => {
+      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.href);
+      const answer = send(input, init);
+      if (url.origin !== location.origin || !counted.test(url.pathname)) return answer;
+      window.__dominoReadsInFlight += 1;
+      const done = () => {
+        // One task more (a MessageChannel's, which the page's fake clock does not hold): the page's own read of the
+        // body, and what it does with the answer, run in microtasks behind the clone's.
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => { window.__dominoReadsInFlight -= 1; channel.port1.close(); };
+        channel.port2.postMessage(null);
+      };
+      // Registered before the page's own await on `answer`, so the clone is taken before the page reads the body.
+      answer.then((response) => response.clone().arrayBuffer()).then(done, done);
+      return answer;
+    };
+  },
+  arg: undefined,
+};
+const readsAnswered = (page) => page.waitForFunction(() => window.__dominoReadsInFlight === 0);
+
 // Added 2026-10-14 (the incident of 2026-10-13, package V1). The owner's row said "USD unavailable" while the Wallet card
 // priced tokens: a Robinhood position that is in both inventories lost its dollars 60 s after its last state reading, and
 // the state route was being refused (429). Now the row is current for about two minutes, then keeps its last complete
@@ -464,6 +524,7 @@ test('the state route answering 429 never writes "USD unavailable": the row keep
   const own = portfolioOf({ wallet: OWNER, tokens: [stable, { ...indexedToken(4663, UFG, 'UFG', 18), priceReason: 'pool_depth_below_floor' }], positions: [position] }).body;
   const s = await scenario({ hooks: LIVE, refresh: true,
     chainOptions: { timestamp: start, positions: [{ tokenId: V1_OPEN, holder: OWNER, key, tickLower: -60, tickUpper: 60, liquidity: 10_000_000_000n, unclaimed: [2_000_000n, 0n] }], tokens: { [USDG]: { symbol: 'USDG', decimals: 6 }, [UFG]: { symbol: 'UFG', decimals: 18 } } },
+    init: READS_IN_FLIGHT,
     readV6: routeOn(route => ({ status: 200, body: route === 'portfolio' ? { ...own, servedAt: start + ahead } : activityOf({ wallet: OWNER }).body })) });
   try {
     const row = s.page.locator(`[data-v2-position-row="${rowKey(V1_OPEN)}"]`);
@@ -477,6 +538,13 @@ test('the state route answering 429 never writes "USD unavailable": the row keep
     let refused = 0;
     await s.page.route('**/api/fees/v1/state', (route) => { refused += 1; return route.fulfill({ status: 429, headers: { 'Retry-After': '5' }, contentType: 'application/json', body: JSON.stringify({ error: 'rate_limited' }) }); });
     const step = async () => {
+      // Changed on purpose 2026-10-15 (pack 8, the CI failures of PR #425 and #426; see READS_IN_FLIGHT): the page's clock
+      // jumps only once the portfolio has been read and every read-v6 and state-route request is answered, so the jump
+      // never times one out. The 15 s given to the read for those failures is 5 s again: the read is the reader's own, due
+      // at the jump.
+      for (let tries = 0; tries < 150 && !s.asked.some(entry => entry.route === 'portfolio'); tries++) await new Promise(done => setTimeout(done, 100));
+      assert.ok(s.asked.some(entry => entry.route === 'portfolio'), 'the portfolio was read before the page’s clock moves');
+      await readsAnswered(s.page);
       const asked = s.asked.filter(entry => entry.route === 'portfolio').length;
       ahead += 31;
       await s.page.clock.fastForward(31_000);
@@ -1665,6 +1733,78 @@ test('a local bulk-close confirmation is one receipt with aggregate amounts and 
     assert.equal(await row.locator('[data-local-close-token]').count(), 1);
     await s.wallet.switchAccount('a', 1);
     await row.waitFor({ state: 'detached' });
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+// ---------------------------------------------------------------------------
+// Added (2026-10-15, pack 8, package R1): rows at once after the person's own action
+// ---------------------------------------------------------------------------
+
+test("a position just created on Robinhood Chain is a row with its figures at the list's first state reading, and its receipt is in Receipts at once; read-v6's item then replaces it, never both", async () => {
+  const created = '9000001';
+  const hash = `0x${'5a'.repeat(32)}`, blockHash = `0x${'6b'.repeat(32)}`;
+  const manager = fixture('portfolio.json').positions[0].positionManager.toLowerCase();
+  // What New position's success left in this tab (src/v2in/journey/run.ts): the NFT's hint and its checked receipt.
+  const hint = { wallet: OWNER, chainId: 4663, positionManager: manager, dex: 4, tokenId: created, hash, block: 1, blockHash, observedAt: Date.now() - 1000, fee: 3000,
+    tokens: [{ address: zeroAddress, symbol: 'ETH', decimals: 18 }, { address: FIXTURE_TOKEN.toLowerCase(), symbol: 'TOKEN', decimals: 6 }] };
+  const receipt = { wallet: OWNER, chainId: 4663, positionManager: manager, dex: 4, hash, block: 1, blockHash, at: null, state: 'included', action: 'create', tokenId: created, previousTokenId: null,
+    lines: [{ kind: 'paid-in', token: zeroAddress, amount: '100000000000000000' }, { kind: 'added', tokenId: created, amounts: [{ token: zeroAddress, amount: '90000000000000000' }, { token: FIXTURE_TOKEN.toLowerCase(), amount: '250000000' }] }],
+    fee: null, gas: { sender: OWNER, gasUsed: '512345', effectiveGasPrice: '20000000', l1Fee: null }, tokens: hint.tokens };
+  const indexed = s1Action({ chainId: 4663, block: 73_399_000, wallet: OWNER, zap: fixture('activity.json').items.find((item) => item.kind === 's1_action').zap, tokenId: created, pool: { dex: 4, ...STUB_KEY }, finalized: false });
+  Object.assign(indexed.tx, { hash });
+  Object.assign(indexed.tx.snapshot, { hash: blockHash });
+  let listed = false;
+  const portfolio = about('portfolio', fixture('portfolio.json'), OWNER);
+  // Minted through the zap, not the site's setup contract: the site's own inventory does not list it, nor does read-v6 yet.
+  // When the row first shows its amounts, by the machine's clock (the state answers' times are taken by the same).
+  const init = { arg: rowKey(created), script: (key) => {
+    new MutationObserver(() => {
+      if (!window.__rowShownAt && /ETH/.test(document.querySelector(`a[data-v2-position-row="${key}"] [data-cell="principal"]`)?.textContent ?? '')) window.__rowShownAt = Date.now();
+    }).observe(document, { childList: true, subtree: true, characterData: true });
+  } };
+  const s = await scenario({ hooks: LIVE, init, creations: [hint], sessions: [receipt], chainOptions: { positions: [onChain(V1_OPEN), { ...onChain(created), minter: `0x${'d0'.repeat(20)}` }] },
+    readV6: routeOn((route) => ({ status: 200, body: route === 'portfolio' ? portfolio : activityOf({ wallet: OWNER, items: listed ? [indexed] : [] }).body })) });
+  try {
+    const row = s.page.locator(`[data-owned-rows="open"] a[data-v2-position-row="${rowKey(created)}"]`);
+    await row.waitFor();
+    // Its amounts from the list's own state reading of the NFT, as any other row of Robinhood Chain: no "Updating", never the receipt's figures.
+    await s.page.waitForFunction((key) => /ETH/.test(document.querySelector(`a[data-v2-position-row="${key}"] [data-cell="principal"]`)?.textContent ?? ''), rowKey(created), { timeout: 15_000 });
+    const shownAt = await s.page.evaluate(() => window.__rowShownAt);
+    const naming = s.stateReads.filter((read) => read.raw?.includes(created));
+    assert.ok(naming[0]?.doneAt && (naming.length < 2 || !naming[1].doneAt || shownAt <= naming[1].doneAt + 50), `drawn at the first state answer that names it: ${shownAt} ${JSON.stringify(s.stateReads)}`);
+    assert.match(await text(row), /Position #9000001|ETH \/ TOKEN/);
+    assert.doesNotMatch(await text(row), /Updating/);
+    assert.equal(await s.page.locator(`[data-v2-position-row="${rowKey(created)}"]`).count(), 1, 'one row for the NFT');
+    // Receipts: its row at once, in the indexed receipt's words, with the check; no time, since none was in the receipt.
+    await s.page.evaluate(() => { location.hash = '#/positions/receipts'; });
+    const own = s.page.locator(`[data-v2-receipt="session:4663:${hash}"]`);
+    await own.waitFor();
+    assert.match(await text(own.locator('summary')), /^Created position #9000001/);
+    assert.equal(await own.locator('summary .dm-receipt-check[aria-label="Confirmed"]').count(), 1);
+    assert.equal(await own.locator('time').count(), 0, "no time but the block's own");
+    await own.locator('summary').click();
+    assert.match(await text(own), /Paid in 0\.1 ETH/);
+    assert.match(await text(own), /Added to the position 0\.09 ETH \+ 250 TOKEN · position #9000001/);
+    assert.match(await text(own), /Domino fee No Domino fee/);
+    assert.equal(await s.page.locator('[data-activity-rows]').getAttribute('data-activity-rows'), '1');
+    // read-v6 lists the transaction: after a reload its item alone is the row, and this tab no longer keeps the session's.
+    listed = true;
+    await s.page.reload();
+    await s.page.waitForFunction(() => ['no_wallet', 'signed_out'].includes(window.__dominoSessionProbe?.view().status));
+    if (await s.page.evaluate(() => window.__dominoSessionProbe.view().status === 'no_wallet')) {
+      await s.page.locator('header [aria-haspopup="dialog"]').click();
+      await s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
+      await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+      await s.page.keyboard.press('Escape');
+    }
+    await s.page.locator(`[data-v2-receipt="${indexed.id}"]`).waitFor({ timeout: 10_000 }).catch(async (error) => {
+      const said = JSON.stringify({ main: await s.page.locator('main').innerText().catch(() => ''), url: s.page.url(), asked: s.asked.map((one) => one.route), section: await s.page.locator('[data-unified-activity]').evaluate((node) => node.outerHTML.slice(0, 2000)).catch(() => 'no section') });
+      throw new Error(`after the reload: ${said}`, { cause: error });
+    });
+    assert.equal(await s.page.locator(`[data-v2-receipt="session:4663:${hash}"]`).count(), 0, 'never both');
+    assert.equal(await s.page.locator('[data-activity-rows]').getAttribute('data-activity-rows'), '1');
+    await s.page.waitForFunction((key) => JSON.parse(sessionStorage.getItem(key) ?? '[]').length === 0, `domino:session-receipts:v1:${OWNER}`);
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
 });

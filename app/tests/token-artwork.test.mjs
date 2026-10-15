@@ -197,7 +197,10 @@ test('a queued lookup gets its six seconds from when its read starts, not from w
 // Changed on purpose 2026-09-28 (speed wave, review): each lookup is let finish before the fake clock moves (its entry
 // in flight goes one turn after its answer, and an ask in that turn joins it instead of reading what was kept), and
 // what is kept is read with peek one millisecond before and at each limit, so every one of the three limits is checked.
-test('a lookup that got no answer is kept 30 s, an answer with no image five minutes, found artwork an hour', { timeout: 8000 }, async () => {
+test('a lookup that got no answer is kept 30 s, an answer with no image five minutes, found artwork an hour', { timeout: 8000 }, async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   let now = 0;
   let calls = 0;
   let reply = () => new Response('{"error":"busy"}', { status: 429, headers: { 'content-type': 'application/json' } });
@@ -419,7 +422,10 @@ test('visible observers retry transient failures at most twice and stop all time
   assert.equal(calls, 4, 'leaving before a retry cancels it');
 });
 
-test('429 honours Retry-After across metadata and price calls without bypassing the edge', async () => {
+test('429 honours Retry-After across metadata and price calls without bypassing the edge', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   let at = 0;
   const asked = [];
   const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, now: () => at, fetch: async url => {
@@ -524,7 +530,10 @@ test('D1: our edge given up for the artwork reads does not send the Wallet cardâ
   assert.deepEqual(gone, [`${DEX_EDGE_V2}tokens/${address}`, direct], 'then asked again');
 });
 
-test('D1: a 429 from the new path is a request to wait: no price yet, and nothing asked around it', async () => {
+test('D1: a 429 from the new path is a request to wait: no price yet, and nothing asked around it', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   let at = 0;
   const asked = [];
   const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, now: () => at, fetch: async (url) => {

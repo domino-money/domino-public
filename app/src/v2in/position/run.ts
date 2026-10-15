@@ -13,6 +13,9 @@ import { SENT_CHECK_WALLET_COPY, STILL_PENDING_COPY, actionError, planFailure, t
 import { askLivePlan } from './source'
 import { connectPosition, onChain, type OpenGate, type PositionConnection } from './wallet'
 import { burnedPositionIds, positionChanged } from '../lists/positionSync'
+import { SESSION_RECEIPTS, sessionReceiptOfZap } from '../lists/sessionReceipts'
+import { CREATED_POSITIONS } from '../lists/createdPositions'
+import type { TokenBook } from './tokens'
 import { RECEIPT_STILL_WAITING_MS, receiptPause, receiptSettled, receiptWalletAway } from '../receiptWait'
 
 /**
@@ -116,6 +119,8 @@ export interface RunInput {
    * approval replaces it), all that exit needs, has its armed root's pause acknowledged without a tick.
    */
   exitLive?: boolean
+  /** (2026-10-15, pack 8): the page's token names, for the session receipt's words and a new range's position row. */
+  book?: TokenBook
 }
 
 class PlanFailure extends Error {
@@ -410,6 +415,25 @@ export function useActionRun(input: RunInput) {
         const tokenIds = [...new Set([intent.tokenId, read?.summary.tokenId, read?.summary.previousTokenId].filter((id): id is bigint => id !== undefined && id > 0n).map(String))]
         const positionManager = intent.pool.dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager
         positionChanged({ chainId: chain.chainId, positionManager, wallet: reviewed.review.owner, tokenIds, block: current.blockNumber, blockHash: current.blockHash, burnedTokenIds: burnedPositionIds(current.logs, positionManager) })
+        // Added (2026-10-15, pack 8): the receipt is a row of Receipts and of the position's Activity at once, and a new
+        // range's NFT a row of the Positions list, until read-v6 lists them (../lists/sessionReceipts.ts, createdPositions.ts).
+        // (2026-10-15, pack 8 review, L3): bookkeeping only: a throw here never keeps the sheet from its receipt (below).
+        try {
+          const tokens = [...(latest.current.book?.values() ?? [])]
+          if (read && hash) {
+            try {
+              const entry = sessionReceiptOfZap({ wallet: reviewed.review.owner, chainId: chain.chainId, dex: intent.pool.dex, hash, receipt: current, read, tokens })
+              if (entry) SESSION_RECEIPTS.record(entry)
+            } catch { /* No row at once: read-v6's item still comes. */ }
+            const made = read.summary.tokenId
+            if (read.summary.actionName === 'changeRange' && made > 0n && made !== read.summary.previousTokenId) {
+              const named = (address: string) => tokens.find((token) => token.address.toLowerCase() === address.toLowerCase())
+              CREATED_POSITIONS.record({ wallet: reviewed.review.owner, chainId: chain.chainId, positionManager, dex: intent.pool.dex, tokenId: made.toString(), hash,
+                block: Number(current.blockNumber), blockHash: current.blockHash, observedAt: Date.now(), fee: intent.pool.fee,
+                tokens: [intent.pool.currency0, intent.pool.currency1].map((address) => ({ address, symbol: named(address)?.symbol ?? null, decimals: named(address)?.decimals ?? null })) })
+            }
+          }
+        } catch { /* No hint: the list finds the new NFT when read-v6 lists it. */ }
       }
       live.current.receipt = { state: current.state === 'reverted' ? 'reverted' : current.state, read, unreadable, hash, includedBlock: current.blockNumber }
       bump()

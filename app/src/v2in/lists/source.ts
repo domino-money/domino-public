@@ -23,7 +23,8 @@ export type ListsGate = Readonly<Record<V2ChainId, ListsMode>>
 const readsOpen = () => v2OriginOpen(typeof location === 'undefined' ? '' : location.origin)
 
 /** Origin/build admission only. The read route checks its own capability on every request; write gates stay separate. */
-export const listsGate = async (): Promise<ListsGate> => Object.freeze(Object.fromEntries(V2_CHAINS.map((chain) => [chain.chainId, readsOpen() ? 'live' : 'off'])) as Record<V2ChainId, ListsMode>)
+export const listsGateNow = (): ListsGate => Object.freeze(Object.fromEntries(V2_CHAINS.map((chain) => [chain.chainId, readsOpen() ? 'live' : 'off'])) as Record<V2ChainId, ListsMode>)
+export const listsGate = async (): Promise<ListsGate> => listsGateNow()
 
 /** The transports of one open chain (read-v6 is one answer for the three chains). */
 async function listsTransports(): Promise<ListsTransports> {
@@ -43,6 +44,10 @@ const failed = <T>(reply: ListsReply<T>) => reply.kind !== 'ok'
 
 /** Receipts asked per page of the person's own activity (read-v6's default; 1 to 50). */
 export const ACTIVITY_PAGE = 20
+
+/** (2026-10-15, pack 8): told of each good portfolio answer as it arrives (./activity.tsx: a wallet with automation on). */
+const portfolioHeard = new Set<(body: PortfolioResponse) => void>()
+export const onPortfolioAnswer = (listener: (body: PortfolioResponse) => void): (() => void) => { portfolioHeard.add(listener); return () => { portfolioHeard.delete(listener) } }
 
 /** The person's own portfolio, from the site's route, by wallet (lowercase). */
 const catchup = createPortfolioCatchup()
@@ -68,13 +73,15 @@ const priceRecovery = createPriceRecovery({
 })
 export const OWN_PORTFOLIO = createKeyedReader<ListsReply<PortfolioResponse>>(async (wallet, active) => {
   // A reloaded page may know only the receipt's NFT identity. It speeds discovery, never supplies chain state.
-  for (const created of CREATED_POSITIONS.get(wallet)) catchup.note({ ...created, tokenIds: [created.tokenId] })
+  // (2026-10-15, pack 8): not for Robinhood Chain's hints, which main did not keep: its list has its own state reading.
+  for (const created of CREATED_POSITIONS.get(wallet)) if (created.chainId !== 4663) catchup.note({ ...created, tokenIds: [created.tokenId] })
   const answer = await LISTS_SOURCE.ownPortfolio(wallet)
   // Added 2026-10-14 (incident C2): each chain's finalized block as this answer names it goes to the confirmation queue.
   // It is the queue's hint for when an operation this browser sent may be final; it asks the node nothing until then.
   // The activity history hands its answers on the same way (activity.tsx).
   if (answer.kind === 'ok') noteAnswerFinality(answer.body.chains)
   if (answer.kind === 'ok') CREATED_POSITIONS.reconcile(answer.body)
+  if (answer.kind === 'ok') for (const listener of portfolioHeard) listener(answer.body)
   // Changed on purpose 2026-10-14 (package V1): no valuation is recorded here any more. The last complete valuation is
   // kept where a row or a page works one out (./valuation.ts), of the reading it shows, which may be newer than this answer's.
   if (answer.kind === 'ok' && active()) void priceRecovery.run(answer.body, active)

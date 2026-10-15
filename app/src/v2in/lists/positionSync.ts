@@ -6,6 +6,7 @@ import { isV2ChainId, v2Chain } from '../../v2/chains'
 import { notePositionConfirmation, subscribePositionEvidence, type PositionChange } from '../../lib/positionEvidence'
 import { confirmedOperationState, subscribeConfirmedOperations, type ConfirmedOperation } from '../../lib/confirmedOperations'
 import { CREATED_POSITIONS } from './createdPositions'
+import { SESSION_RECEIPTS } from './sessionReceipts'
 export type { PositionChange } from '../../lib/positionEvidence'
 
 export interface PositionIdentity { chainId: number; positionManager: string; tokenId: string }
@@ -51,6 +52,54 @@ const pageTimer = (run: () => void, ms: number): void => {
   if (typeof timer === 'object' && timer !== null && 'unref' in timer && typeof timer.unref === 'function') timer.unref()
 }
 
+/**
+ * Added (2026-10-15, pack 8; the owner: every compound must reach Receipts quickly). A compound is the backend keeper's
+ * transaction, so read-v6's activity is the only place its receipt comes from, and the page read it only at the head's
+ * next minute. The page's own state readings (the state route on Robinhood Chain, read-v6's portfolio everywhere) already
+ * show what a compound leaves on a vault's NFT, and the head is read at once when they do (./activity.tsx). Nothing here
+ * reads anything. `block`: the reading that showed it; the head's catch-up runs until the index has passed it.
+ */
+export interface CompoundSignal { wallet: string; chainId: number; block: number }
+/** A raw integer figure, or null: a reading without it (an older answer's shape) shows nothing, never a signal from a gap. */
+const raw = (value: unknown): bigint | null => typeof value === 'string' && /^\d{1,78}$/.test(value) ? BigInt(value) : null
+
+/**
+ * Between two state readings of one NFT, what a compound leaves: more liquidity, or its fee checkpoint moved (fees taken
+ * out and settled). Pure.
+ */
+export function stateCompounded(before: Pick<StatePositionOk, 'liquidity' | 'feeGrowthInside0LastX128' | 'feeGrowthInside1LastX128'>, after: Pick<StatePositionOk, 'liquidity' | 'feeGrowthInside0LastX128' | 'feeGrowthInside1LastX128'>): boolean {
+  const [was, now] = [raw(before.liquidity), raw(after.liquidity)]
+  const moved = (a: unknown, b: unknown) => raw(a) !== null && raw(b) !== null && raw(a) !== raw(b)
+  return (was !== null && now !== null && now > was) || moved(before.feeGrowthInside0LastX128, after.feeGrowthInside0LastX128) || moved(before.feeGrowthInside1LastX128, after.feeGrowthInside1LastX128)
+}
+
+/**
+ * Between two portfolio answers about one wallet, the compounds they show (pure): a vault's last execution that is new
+ * (read-v6's own word that the keeper ran), or a position its vault holds read at a later block with more liquidity or
+ * with fees owed that went down (taken out by the compound), where no action of this browser's (`minimum`, the block an
+ * own action holds the NFT to) explains it. The first answer about a wallet shows none.
+ */
+export function portfolioCompounds(before: Pick<PortfolioResponse, 'positions' | 'vaults'>, after: Pick<PortfolioResponse, 'positions' | 'vaults'>, minimum: (identity: PositionIdentity) => number = () => 0): { chainId: number; block: number }[] {
+  const out: { chainId: number; block: number }[] = []
+  for (const vault of after.vaults ?? []) {
+    const last = vault.lastExecution
+    if (!last) continue
+    const old = (before.vaults ?? []).find((one) => one.chainId === vault.chainId && one.address.toLowerCase() === vault.address.toLowerCase())
+    if (old && old.lastExecution?.tx.hash.toLowerCase() !== last.tx.hash.toLowerCase()) out.push({ chainId: vault.chainId, block: last.tx.snapshot.number })
+  }
+  for (const position of after.positions ?? []) {
+    if (!position.vault || position.state.status !== 'live') continue
+    const old = (before.positions ?? []).find((one) => positionKey(one) === positionKey(position))
+    if (old?.state.status !== 'live' || position.state.snapshot.number <= old.state.snapshot.number || minimum(position) > old.state.snapshot.number) continue
+    const [was, now] = [raw(old.state.liquidity), raw(position.state.liquidity)]
+    const more = was !== null && now !== null && now > was
+    const fees = position.state.feesOwed ?? []
+    const owed = (old.state.feesOwed ?? []).some((value, i) => { const before = raw(value), after = raw(fees[i]); return before !== null && after !== null && before > 0n && after < before })
+    if (more || owed) out.push({ chainId: position.chainId, block: position.state.snapshot.number })
+  }
+  return out
+}
+
 /** Exported factory keeps concurrency/identity tests isolated from the browser singleton. */
 export function createPositionSync(now: () => number = () => Date.now(), later: (run: () => void, ms: number) => void = pageTimer) {
   const observations = new Map<string, PositionObservation>()
@@ -64,6 +113,8 @@ export function createPositionSync(now: () => number = () => Date.now(), later: 
   const burns = new Map<string, { block: number; hash?: string }>()
   const portfolios = new Map<string, PortfolioResponse>()
   const listeners = new Set<(change: PositionChange) => void>()
+  const compoundListeners = new Set<(signal: CompoundSignal) => void>()
+  const compounded = (signal: CompoundSignal) => { for (const listener of compoundListeners) listener(signal) }
   const recent: PositionChange[] = []
   const trim = <T>(map: Map<string, T>, max: number) => { while (map.size > max) map.delete(map.keys().next().value as string) }
   const notify = (change: PositionChange) => { for (const listener of listeners) listener(change) }
@@ -109,6 +160,11 @@ export function createPositionSync(now: () => number = () => Date.now(), later: 
     observation,
     servedSeen,
     burn: (identity: PositionIdentity) => burns.get(positionKey(identity)) ?? null,
+    /** (2026-10-15, pack 8): told when a reading shows what only a compound of a vault's NFT produces (CompoundSignal). */
+    subscribeCompounds(listener: (signal: CompoundSignal) => void) {
+      compoundListeners.add(listener)
+      return () => { compoundListeners.delete(listener) }
+    },
     subscribe(listener: (change: PositionChange) => void, replay = false) {
       listeners.add(listener)
       if (replay) for (const change of recent) listener(change)
@@ -177,9 +233,20 @@ export function createPositionSync(now: () => number = () => Date.now(), later: 
         if (answer.block < minimum || answer.block <= (observations.get(key)?.block ?? 0)) continue
         // A later successful owner/state read proves the NFT exists after a reorg of its burn.
         if (answer.block >= (burns.get(key)?.block ?? Infinity)) burns.delete(key)
+        const before = observations.get(key)
         observations.delete(key)
         observations.set(key, { block: answer.block, timestamp: answer.timestamp, seen, position })
         ids.push(position.tokenId)
+        // (2026-10-15, pack 8): a vault's NFT changed as only a compound changes it, with no action of this browser's in
+        // between: the wallet's activity head is read now (./activity.tsx), not at its next minute.
+        if (before && minimum <= before.block && stateCompounded(before.position, position)) {
+          const owner = position.owner.toLowerCase()
+          for (const [wallet, body] of portfolios) {
+            const held = body.vaults.some((vault) => vault.chainId === 4663 && vault.address.toLowerCase() === owner)
+              || body.positions.some((one) => one.chainId === 4663 && positionKey(one) === key && one.vault !== null)
+            if (held) compounded({ wallet, chainId: 4663, block: answer.block })
+          }
+        }
       }
       trim(observations, MAX_POSITIONS)
       if (ids.length) notify({ kind: 'state', chainId: 4663, positionManager: POSITION_MANAGER, tokenIds: ids, block: answer.block })
@@ -225,6 +292,8 @@ export function createPositionSync(now: () => number = () => Date.now(), later: 
           found.set(key, old.state.status === 'live' ? { ...old, state: stale(old.state, body.servedAt) } : old)
         }
       }
+      // (2026-10-15, pack 8): what a compound leaves in this answer and was not in the one before (portfolioCompounds).
+      if (before) for (const signal of portfolioCompounds(before, body, minBlock)) compounded({ wallet, ...signal })
       const next = { ...body, positions: [...found.values()] }
       portfolios.delete(wallet)
       portfolios.set(wallet, next)
@@ -281,13 +350,32 @@ export function createPortfolioCatchup(now = Date.now) {
 }
 
 const shared = createPositionSync()
+/**
+ * (2026-10-15, pack 8 review, L2): the NFTs a state reading shows burned (the route finds none) or closed (no liquidity
+ * left), at its block. Pure; a reading that failed for another reason (the node away, a hooked pool) shows neither.
+ */
+export function stateEnded(answer: Pick<StateResponse, 'positions'>): string[] {
+  return answer.positions.filter((position) => position.ok ? position.liquidity === '0' : position.reason === 'not_found').map((position) => position.tokenId)
+}
 subscribePositionEvidence((evidence) => {
   if (evidence.kind === 'state') shared.offerState(evidence.value, evidence.at)
   else shared.changed(evidence.value)
+  // (2026-10-15, pack 8 review, L2): Robinhood Chain's created-position hints whose NFT a reading already held shows
+  // burned or closed at or past the hint's block (the state route, or this browser's own burn) are let go: no "Updating"
+  // row is left for them, and their NFT leaves the state route's batches. Bookkeeping only: it never stops the readings.
+  try {
+    if (evidence.kind === 'state') CREATED_POSITIONS.ended(4663, POSITION_MANAGER, stateEnded(evidence.value), evidence.value.block)
+    else if (evidence.value.chainId === 4663 && evidence.value.burnedTokenIds?.length && evidence.value.block !== undefined) {
+      CREATED_POSITIONS.ended(4663, evidence.value.positionManager ?? POSITION_MANAGER, evidence.value.burnedTokenIds, Number(evidence.value.block))
+    }
+  } catch { /* A hint left in place is drawn as before. */ }
 })
-for (const operation of confirmedOperationState()) if (operation.phase === 'reorged') { shared.rollback(operation); CREATED_POSITIONS.rollback(operation.chainId, operation.blockHash) }
-subscribeConfirmedOperations(operation => { if (operation.phase === 'reorged') { shared.rollback(operation); CREATED_POSITIONS.rollback(operation.chainId, operation.blockHash) } })
+// (2026-10-15, pack 8): a replaced block takes its session receipts with it, as it takes its created positions.
+const rolledBack = (operation: ConfirmedOperation) => { shared.rollback(operation); CREATED_POSITIONS.rollback(operation.chainId, operation.blockHash); SESSION_RECEIPTS.rollback(operation.chainId, operation.blockHash) }
+for (const operation of confirmedOperationState()) if (operation.phase === 'reorged') rolledBack(operation)
+subscribeConfirmedOperations(operation => { if (operation.phase === 'reorged') rolledBack(operation) })
 export const positionChanged = notePositionConfirmation
+export const subscribeCompounds = shared.subscribeCompounds
 export const subscribePositionChanges = shared.subscribe
 export const reconcilePortfolio = shared.reconcile
 export const offerPositionState = shared.offerState

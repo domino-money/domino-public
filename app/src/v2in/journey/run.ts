@@ -15,11 +15,13 @@ import { JOURNEY } from './copy'
 import { journeyError, planFailure, SENT_CHECK_WALLET, SENT_UNKNOWN_COPY, STILL_PENDING, type JourneyError } from './errors'
 import { mintedPositionIds, positionChanged } from '../lists/positionSync'
 import { CREATED_POSITIONS } from '../lists/createdPositions'
+import { SESSION_RECEIPTS, sessionReceiptOfZap } from '../lists/sessionReceipts'
 import { recordConfirmedOperation, reorgConfirmedOperation } from '../../lib/confirmedOperations'
 import type { JourneyToken } from './tokens'
 import { livePlanTransport, liveContext, planRuntime } from './source'
 import { connectJourney, onChain, type JourneyConnection } from './wallet'
-import { RECEIPT_FOLLOW } from './receiptFollow'
+import { RECEIPT_FOLLOW, type FollowedReceipt } from './receiptFollow'
+import { journeyOperation } from './model/receiptOperation'
 import { RECEIPT_STILL_WAITING_MS, receiptPause, receiptSettled, receiptWalletAway } from '../receiptWait'
 
 /**
@@ -403,12 +405,63 @@ export function useJourneyRun(input: RunInput) {
     }
   }
 
-  /** The action's receipt: read from its events, then followed until "Finalized". */
-  async function openReceipt(gen: number, hash: Hex | null, receipt: Extract<V2Receipt, { logs: unknown }>, again: () => Promise<V2Receipt | { state: 'not-included' } | { state: 'batch-reverted' }>): Promise<void> {
+  /**
+   * The action's receipt: read from its events, then, where the wallet reads finality, its one read at finality.
+   *
+   * Changed on purpose 2026-10-15 (pack 8, incident C5): no chain id here; the chain's row in config/receiptSources.ts says
+   * whether this page itself proves the action final through the wallet (Base, Arbitrum One) or not (Robinhood Chain:
+   * read-v6 lists it, and its view ends at inclusion, as below). On Base and Arbitrum One the view followed its receipt
+   * through the wallet until final (./receiptFollow.ts: every 5 s, then 15 s, then 30 s, about 50 reads before a block
+   * there is final, each read six wallet calls), only to say "Finalized" and to catch a block that left the chain. Its
+   * receipt now goes to the confirmation queue (lib/confirmedOperations.ts) with this view's own check (`accept`,
+   * unchanged), and the queue makes that read once, when read-v6's finalized mark or the chain's age says the block may
+   * be final. The check is the same at that read: a block that left the chain, a transaction found in another block, a
+   * batch that never ran. After a block that left the chain, its new block is looked for as before (the follow's
+   * reads, until the action is in a block again or known not to have run), and then that block's finality is the queue's.
+   */
+  async function openReceipt(gen: number, hash: Hex | null, receipt: Extract<V2Receipt, { logs: unknown }>, again: () => Promise<FollowedReceipt>): Promise<void> {
     const reviewed = live.current.reviewed
     if (!reviewed) return
     hash ??= receipt.transactionHash ?? null
     let announced = false
+    const chainId = reviewed.review.chainId
+    const owner = reviewed.review.owner
+    const available = () => !reviewed.connection.wallet.current() ? 'gone' as const : reviewed.connection.wallet.chainId() === chainId ? 'ready' as const : 'paused' as const
+    let current = receipt
+    let invalidated = false
+    /** The block left the chain and no other is known yet: its new block is looked for by the follow (until a block, or "did not run"). */
+    const seek = () => RECEIPT_FOLLOW.follow(`${chainId}:${reviewed.review.owner}:${reviewed.review.intentHash}`, { read: again, available, accept: (next) => accept(next) || !invalidated })
+    /** This view's check of every later answer of the money client's own read (unchanged since C3; it was the follow's). */
+    function accept(next: FollowedReceipt): boolean {
+      if (invalidated && (next.state === 'not-included' || next.state === 'batch-reverted')) {
+        if (gen === generation.current) {
+          live.current.receipt = { state: 'not-included', read: null, unreadable: null, hash }
+          bump()
+        }
+        return true
+      }
+      if (next.state === 'reorged') {
+        if (!invalidated) {
+          if (hash) reorgConfirmedOperation({ chainId, wallet: owner, hash, blockHash: current.blockHash })
+          invalidated = true
+          announced = false
+          if (gen === generation.current) {
+            live.current.receipt = { state: 'pending', read: null, unreadable: null, hash }
+            bump()
+          }
+          seek()
+        }
+      } else if (next.state === 'reverted' || next.state === 'included' || next.state === 'finalized') {
+        const replaced = invalidated || next.blockHash !== current.blockHash || !!next.transactionHash && next.transactionHash !== hash
+        if ((replaced || next.state === 'reverted') && !invalidated && hash) reorgConfirmedOperation({ chainId, wallet: owner, hash, blockHash: current.blockHash })
+        hash = next.transactionHash ?? hash
+        if (replaced || next.state !== 'included') show(next)
+        current = next
+        invalidated = false
+        return next.state !== 'included'
+      }
+      return false
+    }
     const show = (current: Extract<V2Receipt, { logs: unknown }>) => {
       let read: ZapReceipt | null = null
       let unreadable: string | null = null
@@ -417,76 +470,59 @@ export function useJourneyRun(input: RunInput) {
       } catch (error) {
         unreadable = error instanceof Error ? error.message : 'receipt_invalid'
       }
-      if (current.state !== 'reverted' && reviewed.review.chainId !== 4663 && read && read.summary.tokenId > 0n && hash) {
-        const chain = v2Chain(reviewed.review.chainId), pool = reviewed.review.plan.plan.intent.pool
-        const manager = chain.uniswap[pool.dex === 3 ? 'v3' : 'v4'].positionManager
-        const tokenId = read.summary.tokenId.toString()
-        CREATED_POSITIONS.record({ wallet: reviewed.review.owner, chainId: chain.chainId, positionManager: manager, dex: pool.dex,
-          tokenId, hash, block: Number(current.blockNumber), blockHash: current.blockHash, observedAt: Date.now(), fee: pool.fee,
-          tokens: [pool.currency0, pool.currency1].map(address => ({ address, symbol: reviewed.tokens.find(token => token.address.toLowerCase() === address.toLowerCase())?.symbol ?? null,
-            decimals: reviewed.tokens.find(token => token.address.toLowerCase() === address.toLowerCase())?.decimals ?? null })) })
-        // The financial client already checked this exact receipt. Share its inclusion/finality across navigation;
-        // the Robinhood-only public confirmation reader must never be used for another chain.
-        recordConfirmedOperation({ chainId: chain.chainId, wallet: reviewed.review.owner, positionManager: manager, tokenIds: [tokenId],
-          receipt: { transactionHash: hash, blockNumber: current.blockNumber, blockHash: current.blockHash, state: current.state } })
-        announced = true
+      // Changed on purpose (2026-10-15, pack 8): the position's hint is kept on Robinhood Chain too (it was Base and
+      // Arbitrum One only), so the Positions list has its row at once and draws it with the list's own state reading
+      // (../lists/positionCollection.ts withCreatedPositions); the confirmation queue is still told only off Robinhood
+      // Chain (there it would read the node). And the receipt is a row of Receipts at once (../lists/sessionReceipts.ts).
+      // (2026-10-15, pack 8 review, L3): the row at once and the hint are bookkeeping: a throw in either never keeps the
+      // queue, the lists or this view from hearing of the receipt (below).
+      if (current.state !== 'reverted' && read && hash) {
+        try {
+          const pool = reviewed.review.plan.plan.intent.pool
+          const entry = sessionReceiptOfZap({ wallet: reviewed.review.owner, chainId: reviewed.review.chainId, dex: pool.dex, hash, receipt: current, read, tokens: reviewed.tokens })
+          if (entry) SESSION_RECEIPTS.record(entry)
+        } catch { /* No row at once: read-v6's item still comes. */ }
+      }
+      const chain = v2Chain(reviewed.review.chainId), pool = reviewed.review.plan.plan.intent.pool
+      const manager = chain.uniswap[pool.dex === 3 ? 'v3' : 'v4'].positionManager
+      const tokenId = read && read.summary.tokenId > 0n ? read.summary.tokenId.toString() : null
+      if (current.state !== 'reverted' && tokenId && hash) {
+        try {
+          CREATED_POSITIONS.record({ wallet: reviewed.review.owner, chainId: chain.chainId, positionManager: manager, dex: pool.dex,
+            tokenId, hash, block: Number(current.blockNumber), blockHash: current.blockHash, observedAt: Date.now(), fee: pool.fee,
+            tokens: [pool.currency0, pool.currency1].map(address => ({ address, symbol: reviewed.tokens.find(token => token.address.toLowerCase() === address.toLowerCase())?.symbol ?? null,
+              decimals: reviewed.tokens.find(token => token.address.toLowerCase() === address.toLowerCase())?.decimals ?? null })) })
+        } catch { /* No hint: the list finds the NFT when read-v6 lists it. */ }
+      }
+      // The financial client already checked this exact receipt. Share its inclusion/finality across navigation;
+      // the Robinhood-only public confirmation reader must never be used for another chain.
+      // Changed on purpose 2026-10-15 (pack 8, C5): with this view's own read and check (`follow`), which the queue makes
+      // once at finality (lib/confirmedOperations.ts); it outlives this view, as the follow it replaces did.
+      // Changed on purpose (2026-10-15, pack 8 review, L1): every receipt in a block where the wallet reads finality, as
+      // main's follow took every one: also one whose reader could not decode it or that names no new NFT (then the NFT
+      // of the position manager's own mint log, or none), so its block leaving the chain is still caught at that read.
+      const minted = tokenId ? [tokenId] : current.state === 'reverted' ? [] : mintedPositionIds(current.logs, manager)
+      const operation = journeyOperation({ chainId: chain.chainId, owner: reviewed.review.owner, positionManager: manager, hash, receipt: current, tokenIds: minted, follow: { read: again, accept, available } })
+      if (operation) {
+        recordConfirmedOperation(operation)
+        // The queue's word names the NFT for the lists; with none named, the wallet-wide word below, as before.
+        if (minted.length) announced = true
       }
       if (current.state !== 'reverted' && !announced) {
         announced = true
-        const chain = v2Chain(reviewed.review.chainId)
-        const dex = reviewed.review.plan.plan.intent.pool.dex
-        const positionManager = dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager
         // Changed on purpose 2026-10-14 (the incident of 2026-10-13, package V1): the NFT is named whenever the receipt
         // has it, from its summary or else from the position manager's own mint log, so the hold that follows covers
         // that NFT alone. Naming none held every position of the wallet on the chain ("Updating", no dollars).
-        const minted = read && read.summary.tokenId > 0n ? [read.summary.tokenId.toString()] : mintedPositionIds(current.logs, positionManager)
-        positionChanged({ chainId: chain.chainId, positionManager, wallet: reviewed.review.owner, tokenIds: minted.length ? minted : undefined, block: current.blockNumber })
+        // (2026-10-15, pack 8 review): `chain`, `manager` and `minted` are worked out once, above.
+        positionChanged({ chainId: chain.chainId, positionManager: manager, wallet: reviewed.review.owner, tokenIds: minted.length ? minted : undefined, block: current.blockNumber })
       }
       if (gen === generation.current) {
         live.current.receipt = { state: current.state === 'reverted' ? 'reverted' : current.state, read, unreadable, hash }
         bump()
       }
     }
+    // Where the wallet reads finality, the receipt is now the queue's (`show` recorded it with its read and check above).
     show(receipt)
-    let current = receipt
-    let invalidated = false
-    if (reviewed.review.chainId !== 4663) {
-      if (receipt.state !== 'included') return
-      RECEIPT_FOLLOW.follow(`${reviewed.review.chainId}:${reviewed.review.owner}:${reviewed.review.intentHash}`, {
-        read: again,
-        available: () => !reviewed.connection.wallet.current() ? 'gone' : reviewed.connection.wallet.chainId() === reviewed.review.chainId ? 'ready' : 'paused',
-        accept(next) {
-          if (invalidated && (next.state === 'not-included' || next.state === 'batch-reverted')) {
-            if (gen === generation.current) {
-              live.current.receipt = { state: 'not-included', read: null, unreadable: null, hash }
-              bump()
-            }
-            return true
-          }
-          if (next.state === 'reorged') {
-            if (!invalidated) {
-              if (hash) reorgConfirmedOperation({ chainId: reviewed.review.chainId, wallet: reviewed.review.owner, hash, blockHash: current.blockHash })
-              invalidated = true
-              announced = false
-              if (gen === generation.current) {
-                live.current.receipt = { state: 'pending', read: null, unreadable: null, hash }
-                bump()
-              }
-            }
-          } else if (next.state === 'reverted' || next.state === 'included' || next.state === 'finalized') {
-            const replaced = invalidated || next.blockHash !== current.blockHash || !!next.transactionHash && next.transactionHash !== hash
-            if ((replaced || next.state === 'reverted') && !invalidated && hash) reorgConfirmedOperation({ chainId: reviewed.review.chainId, wallet: reviewed.review.owner, hash, blockHash: current.blockHash })
-            hash = next.transactionHash ?? hash
-            if (replaced || next.state !== 'included') show(next)
-            current = next
-            invalidated = false
-            return next.state !== 'included'
-          }
-          return false
-        },
-      })
-      return
-    }
     // Changed on purpose 2026-10-14 (incident C3: screens finish at inclusion): on Robinhood Chain the created view asked
     // the receipt again every 1.5 s until its block was final, about 16 minutes (some 50 questions a minute to the site's
     // node while the view stayed open), only to say "Finalized" where it now says "Confirmed" from inclusion. Nothing is

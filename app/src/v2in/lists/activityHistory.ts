@@ -2,6 +2,7 @@ import type { ActivityResponse, IndexedToken } from 'api-contracts/read-v6/types
 import { readAgainAfter, type ListsReply, type ReaderTimers } from './read'
 import { compareChronology, logIndexOf } from './chronology'
 import { wakeDue } from '../../lib/wake'
+import { jittered } from '../../lib/jitter'
 
 export type ActivityItem = ActivityResponse['items'][number]
 type Failure = Exclude<ListsReply<ActivityResponse>, { kind: 'ok' }>
@@ -148,7 +149,8 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
       if (expired && !e.restarted) {
         e.restarted = true; e.restartNeeded = true; e.retry = null; e.workAt = null
         e.recoveryJoin = e.gaps[0]?.join ?? e.recoveryJoin
-        const named = 'retryAfterSeconds' in reply && typeof reply.retryAfterSeconds === 'number' ? reply.retryAfterSeconds * 1_000 : 0
+        // (2026-10-15, pack 8, Q3): plus 0 to 25% at random (../../lib/jitter.ts), never less than the Retry-After.
+        const named = 'retryAfterSeconds' in reply && typeof reply.retryAfterSeconds === 'number' ? jittered(reply.retryAfterSeconds * 1_000) : 0
         e.notBefore = Math.max(e.notBefore, now() + named); e.headAt = now() + WORK_DELAY
       } else {
         const wait = readAgainAfter(reply, ++e.failures) ?? HEAD_DELAY
@@ -308,9 +310,12 @@ export function createActivityHistory(read: Read, timers: ReaderTimers, refresh 
      * idle head back on HEAD_DELAY, due a minute after its last good answer, as main's. It reads nothing by itself, no
      * request beyond main's: a head that minute already made due is read as main's would have been, a hidden tab's waits
      * for it to be shown. A head being read takes the predicate's word at its answer, which now says not quiet.
+     * (2026-10-15, pack 8 review): `wallet` names the one head to calm (a portfolio answer is one wallet's); none, every head
+     * (another tab's action is the whole browser's).
      */
-    calm() {
-      for (const [key, e] of entries) if (unidle(e) && !e.inFlight) schedule(key, e)
+    calm(wallet?: string) {
+      const only = wallet?.toLowerCase()
+      for (const [key, e] of entries) if ((only === undefined || key.toLowerCase() === only) && unidle(e) && !e.inFlight) schedule(key, e)
     },
   }
 }

@@ -622,7 +622,10 @@ test('a chain this edge has no node for is "not_served" at once: no node read, n
   assert.match(timing(refused), /, limit;desc="class"$/)
 })
 
-test('the consumer route rejects oversized or malformed confirmation replies and respects bounded Retry-After', async () => {
+test('the consumer route rejects oversized or malformed confirmation replies and respects bounded Retry-After', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0)
   const ask = response => edgeClient.postRoute('confirmation', { hash: HASH }, { fetch: async () => response })
   assert.equal((await ask(json({ v: 1, pad: 'x'.repeat(edgeClient.REPLY_BYTES.confirmation) }))).ok, false)
   assert.equal((await ask(json('{'))).ok, false)
@@ -750,7 +753,10 @@ test('finality backoff cannot erase inclusion or prevent a new receipt read, and
 // it); it is now that question's alone, and another hash asks on its own.
 // Rewritten on purpose again 2026-10-14 (C3 review): the background's wait is its whole lane's again, as before C3; the
 // money client's own read asks once on its own, then rests on its hash.
-test('a busy edge is a wait like a refusal’s: the adapter rests that lane for the wait it names and asks nothing of it meanwhile; a chain the edge does not read says so', async () => {
+test('a busy edge is a wait like a refusal’s: the adapter rests that lane for the wait it names and asks nothing of it meanwhile; a chain the edge does not read says so', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0)
   const busy = adapter(body => good({ v: 2, state: 'busy', retryAfterMs: body.finality ? 3000 : 8000 }))
   await assert.rejects(busy.reader.read(HASH), error => error.message === 'confirmation_unavailable' && error.retryAfterMs === 8000)
   await assert.rejects(busy.reader.read(OTHER), error => error.message === 'confirmation_unavailable' && error.retryAfterMs === 8000)

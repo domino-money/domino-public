@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { V2ChainId } from '../../v2/types'
 import type { KeyedReader } from './read'
-import { listsGate, type ListsGate, type ListsMode } from './source'
+import { listsGateNow, type ListsGate, type ListsMode } from './source'
 import { CREATED_POSITIONS, type CreatedPosition } from './createdPositions'
+import { SESSION_RECEIPTS, type SessionReceipt } from './sessionReceipts'
 import { USD_CURRENT_SECONDS } from '../usd'
 import { usdAged } from './valuation'
 
@@ -13,18 +14,23 @@ export function useCreatedPositions(wallet: string | null) {
   return useSyncExternalStore(subscribe, snapshot, () => NO_CREATIONS)
 }
 
-/** The lists' gate per chain (./source.ts listsGate), or null while it is worked out. */
+const NO_RECEIPTS: readonly SessionReceipt[] = Object.freeze([])
+/** (2026-10-15, pack 8): this tab's session receipts of the wallet (./sessionReceipts.ts), as they are recorded. */
+export function useSessionReceipts(wallet: string | null) {
+  const subscribe = useCallback((listener: () => void) => wallet ? SESSION_RECEIPTS.subscribe(wallet, listener) : () => undefined, [wallet])
+  const snapshot = useCallback(() => wallet ? SESSION_RECEIPTS.get(wallet) : NO_RECEIPTS, [wallet])
+  return useSyncExternalStore(subscribe, snapshot, () => NO_RECEIPTS)
+}
+
+/**
+ * The lists' gate per chain (./source.ts listsGate). Changed on purpose (2026-10-15, pack 8, the Positions page's first
+ * visit): worked out in the first render (it is the origin's admission, known at once), so the list's first reads are
+ * asked by the render that first draws it. It was null for that render and set by an effect a render later, which put
+ * the portfolio's read (and with it every row's dollars) one render behind the site's own inventory. The return type
+ * keeps its null for its callers.
+ */
 export function useListsGate(): ListsGate | null {
-  const [value, setValue] = useState<ListsGate | null>(null)
-  useEffect(() => {
-    let alive = true
-    void listsGate().then((next) => {
-      if (alive) setValue(next)
-    })
-    return () => {
-      alive = false
-    }
-  }, [])
+  const [value] = useState<ListsGate>(listsGateNow)
   return value
 }
 

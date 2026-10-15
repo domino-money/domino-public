@@ -7,7 +7,7 @@ import { anyIn, chainsIn, useCreatedPositions, useKeyed, useKeyedLatest, useList
 import { routeQuiet } from './read'
 import { OWN_PORTFOLIO } from './source'
 import { hasPositionApr, historicalPositionRows, mergePositionRows, positionCounts, withCreatedPositions } from './positionCollection'
-import { positionObservation, subscribePositionChanges, type PositionIdentity } from './positionSync'
+import { positionObservation, subscribePositionChanges, type PositionIdentity, type PositionObservation } from './positionSync'
 import { feesStore } from '../../lib/fees/spawn'
 import type { FeeHistoryView } from '../../lib/fees/types'
 import { rowAprs } from '../../components/positions/listApr'
@@ -38,7 +38,9 @@ function useCollectionAprs(ids: string, active: boolean) {
 export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyAction }: OwnedCollectionProps) {
   // Changed on purpose 2026-10-14 (the incident of 2026-10-13, package V1): read-v6's rows are not valued on their own
   // here; each NFT's row is joined with the site's inventory first, and the row that is shown is valued once (below).
-  const own = useOwnRows(owner, [], null)
+  // (2026-10-15, pack 8): moved up from below, so a created position's row is drawn from the newest state reading too.
+  const [observation, setObservation] = useState(() => positionObservation)
+  const own = useOwnRows(owner, [], null, observation)
   const latest = useKeyedLatest(OWN_PORTFOLIO, own.live ? owner : null)
   // Historical inventory discovers older valid NFTs. It does not poll or drive the newer inventory's loading state.
   const [version, setVersion] = useState(0)
@@ -57,7 +59,6 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
   // own inventory stayed on an older state reading than the browser held, and did not leave "Updating" when its hold
   // ended. Dated by that older reading, it would say "as of" on a page whose state route answers.
   // `observation`: where the rows look a state reading up, a new function with each such word (it is what changes).
-  const [observation, setObservation] = useState(() => positionObservation)
   useEffect(() => subscribePositionChanges((change) => {
     if (change.kind === 'state') setObservation(() => (identity: PositionIdentity) => positionObservation(identity))
     else if (!change.wallet || change.wallet === owner) setVersion((value) => value + 1)
@@ -137,14 +138,14 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
  * The person's own rows from the site's read-v6 route on the `live` chains, and the reply they come from. `valuations`
  * (2026-10-14, package V1): where each row's dollars are asked; null for the collection, which values the joined rows.
  */
-function useOwnRows(owner: string, v1Ids: readonly string[], valuations: PositionValuations | null = POSITION_VALUATIONS) {
+function useOwnRows(owner: string, v1Ids: readonly string[], valuations: PositionValuations | null = POSITION_VALUATIONS, observation: (identity: PositionIdentity) => PositionObservation | null = positionObservation) {
   const gate = useListsGate()
   const live = anyIn(gate, 'live')
   const reply = useKeyed(OWN_PORTFOLIO, live ? owner : null)
   const created = useCreatedPositions(live ? owner : null)
   const automation = useSyncExternalStore(subscribeAutomation, automationState, automationState)
   const ids = v1Ids.join(',')
-  const rows = useMemo(() => withCreatedPositions(reply?.kind === 'ok' ? positionRows(reply.body, chainsIn(gate, 'live'), ids === '' ? [] : ids.split(','), automation, valuations) : [], created.filter(item => chainsIn(gate, 'live')(item.chainId))), [reply, gate, ids, automation, created, valuations])
+  const rows = useMemo(() => withCreatedPositions(reply?.kind === 'ok' ? positionRows(reply.body, chainsIn(gate, 'live'), ids === '' ? [] : ids.split(','), automation, valuations) : [], created.filter(item => chainsIn(gate, 'live')(item.chainId)), observation), [reply, gate, ids, automation, created, valuations, observation])
   return { live, reply, rows }
 }
 

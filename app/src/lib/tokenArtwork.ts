@@ -277,7 +277,10 @@ export function createTokenArtworkResolver(options: Options = {}) {
       if (response.status === 429) {
         const header = response.headers.get('Retry-After')
         const delay = header !== null && /^\d+$/.test(header) ? Number(header) * 1000 : header === null ? FAILED_TTL : Date.parse(header) - wall()
-        cooldown.set(own ? 'edge' : 'provider', now() + Math.max(FAILED_TTL, Math.min(3600000, Number.isFinite(delay) ? delay : FAILED_TTL)))
+        // (2026-10-15, pack 8, Q3): the Retry-After plus 0 to 25% at random, never less than it named (./jitter.ts's rule,
+        // written out here: this module imports nothing, and node loads it as it is in tests/token-artwork.test.mjs).
+        const spread = Number.isFinite(delay) && delay > 0 ? delay + Math.floor(delay * 0.25 * Math.random()) : delay
+        cooldown.set(own ? 'edge' : 'provider', now() + Math.max(FAILED_TTL, Math.min(3600000, Number.isFinite(spread) ? spread : FAILED_TTL)))
       }
       if (!response.ok || response.redirected || !response.headers.get('content-type')?.startsWith('application/json') || !response.body) return null
       const declared = response.headers.get('content-length')

@@ -2,7 +2,11 @@ import type { PortfolioResponse } from 'api-contracts/read-v6/types'
 import { isV2ChainId, v2Chain } from '../../v2/chains'
 import type { V2ChainId } from '../../v2/types'
 
-/** A receipt-backed discovery hint, never a position balance or permission to transact. */
+/**
+ * A receipt-backed discovery hint, never a position balance or permission to transact. Changed on purpose (2026-10-15,
+ * pack 8): Robinhood Chain's too (it was Base and Arbitrum One only): its row is drawn from the list's own state reading
+ * of the NFT (./positionCollection.ts withCreatedPositions), never from the receipt.
+ */
 export interface CreatedPosition {
   wallet: string
   chainId: V2ChainId
@@ -23,7 +27,7 @@ export const createdPositionKey = (item: Pick<CreatedPosition, 'chainId' | 'posi
 
 function valid(item: CreatedPosition, wallet: string, now: number): boolean {
   return !!item && typeof item === 'object' && typeof item.wallet === 'string' && ADDRESS.test(item.wallet) && item.wallet.toLowerCase() === wallet
-    && isV2ChainId(item.chainId) && item.chainId !== 4663 && (item.dex === 3 || item.dex === 4)
+    && isV2ChainId(item.chainId) && (item.dex === 3 || item.dex === 4)
     && typeof item.positionManager === 'string' && item.positionManager.toLowerCase() === v2Chain(item.chainId).uniswap[item.dex === 3 ? 'v3' : 'v4'].positionManager
     && typeof item.tokenId === 'string' && /^[1-9][0-9]{0,77}$/.test(item.tokenId)
     && typeof item.hash === 'string' && HASH.test(item.hash) && typeof item.blockHash === 'string' && HASH.test(item.blockHash)
@@ -80,6 +84,19 @@ export function createCreatedPositionStore(storage: Pick<Storage, 'getItem' | 's
         if (rows.length !== old.length) save(wallet, rows)
       }
     },
+    /**
+     * (2026-10-15, pack 8 review, L2): a reading the page already holds shows these NFTs burned or closed at `block`, at
+     * or past a hint's own block: those hints go. A create then a burn before read-v6 listed the NFT left its hint for a
+     * day: an "Updating" row with nothing to read, and its NFT asked of the state route in every batch.
+     */
+    ended(chainId: number, positionManager: string, tokenIds: readonly string[], block: number) {
+      if (!tokenIds.length || !Number.isSafeInteger(block)) return
+      const manager = positionManager.toLowerCase()
+      for (const [wallet, old] of values) {
+        const rows = old.filter(item => !(item.chainId === chainId && item.positionManager.toLowerCase() === manager && tokenIds.includes(item.tokenId) && block >= item.block))
+        if (rows.length !== old.length) save(wallet, rows)
+      }
+    },
     subscribe(wallet: string, listener: () => void) {
       const key = wallet.toLowerCase(), found = listeners.get(key) ?? new Set<() => void>()
       found.add(listener); listeners.set(key, found)
@@ -90,3 +107,16 @@ export function createCreatedPositionStore(storage: Pick<Storage, 'getItem' | 's
 let storage: Storage | null = null
 try { storage = typeof sessionStorage === 'undefined' ? null : sessionStorage } catch { /* Private browsing. */ }
 export const CREATED_POSITIONS = createCreatedPositionStore(storage)
+
+/**
+ * (2026-10-15, pack 8 review, L2): the blocks a later reading shows replaced: read-v6 lists a transaction this tab kept
+ * (a hint's or a session receipt's: `kept`) in another block of the same chain. No read is made for it. Pure.
+ */
+export function replacedBlocks(kept: readonly { chainId: number; hash: string; blockHash: string }[], items: readonly { chainId: number; tx: { hash: string; snapshot: { hash: string } } }[]): { chainId: number; blockHash: string }[] {
+  const out = new Map<string, { chainId: number; blockHash: string }>()
+  for (const item of kept) {
+    const listed = items.find(one => one.chainId === item.chainId && one.tx.hash.toLowerCase() === item.hash.toLowerCase())
+    if (listed && listed.tx.snapshot.hash.toLowerCase() !== item.blockHash.toLowerCase()) out.set(`${item.chainId}:${item.blockHash.toLowerCase()}`, { chainId: item.chainId, blockHash: item.blockHash.toLowerCase() })
+  }
+  return [...out.values()]
+}

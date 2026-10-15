@@ -18,7 +18,8 @@ export function confirmationQueue(read) {
   const ts = require('typescript'), mod = { exports: {} };
   const code = ts.transpileModule(readFileSync(new URL('../../../src/lib/confirmedOperations.ts', import.meta.url), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  new Function('require', 'module', 'exports', code)(() => ({ confirmationReads: {}, notePositionConfirmation() {} }), mod, mod.exports);
+  // Changed on purpose 2026-10-15 (pack 8, incident C5): its third import, the chains' receipt sources, is the real one.
+  new Function('require', 'module', 'exports', code)((name) => (/receiptSources$/.test(name) ? require('../../../.test-build/app/src/config/receiptSources.js') : { confirmationReads: {}, notePositionConfirmation() {} }), mod, mod.exports);
   let now = 1_000;
   const timers = new Set(), calls = [];
   const counted = { read: async (hash) => { calls.push(hash); return read.read(hash); }, finalized: () => read.finalized() };

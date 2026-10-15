@@ -199,10 +199,26 @@ export function quietWallet(wallet: string, items: readonly ActivityItem[], fact
   local: readonly LocalCloseReceipt[]
   ownActionAt: number | null
   now: number
+  /** (2026-10-15, pack 8): any automation of the wallet is on (automationOn): its head keeps main's minute, never idle. */
+  automated?: boolean
 }): boolean {
   const key = wallet.toLowerCase()
+  if (facts.automated) return false
   if (facts.operations.some((operation) => operation.wallet.toLowerCase() === key)) return false
   if (facts.created > 0) return false
   if (facts.local.some((close) => !publicCloseProves(close, items))) return false
   return facts.ownActionAt === null || facts.now - facts.ownActionAt >= OWN_ACTION_QUIET_MS
+}
+
+/**
+ * Added (2026-10-15, pack 8; the owner: every compound must reach Receipts quickly): whether any automation of `wallet` is
+ * on in the portfolio answer the page already holds: a vault of its own that is armed (or not known disarmed) and not
+ * paused, or an Auto-exit order of its own. The backend's keeper acts for such a wallet with nothing sent from here, so
+ * its receipts come only from the activity head: its head keeps main's minute (quietWallet), never the idle two. Pure.
+ */
+export function automationOn(wallet: string, portfolio: Pick<PortfolioResponse, 'wallet' | 'vaults' | 'mandates'> | null): boolean {
+  const key = wallet.toLowerCase()
+  if (!portfolio || portfolio.wallet.toLowerCase() !== key) return false
+  return portfolio.vaults.some((vault) => vault.owner.toLowerCase() === key && vault.custody.armed !== false && vault.pausedBy === null && !(vault.state.status === 'read' && vault.state.paused))
+    || portfolio.mandates.some((mandate) => mandate.owner.toLowerCase() === key)
 }

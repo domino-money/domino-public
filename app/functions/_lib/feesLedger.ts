@@ -462,6 +462,13 @@ interface Work {
    * never kept: it is answered `reading` with what it has kept, and the page asks again.
    */
   unanswered: boolean
+  /**
+   * (2026-10-15, pack 8; study-charts.md fix 5): its mint discovery has covered the floor to the head and found no mint, so
+   * it was minted before the floor: answered `before_floor` at once, with no ledger scan from the floor (about twenty
+   * answers of LEDGER_SCAN_BLOCKS each, which could only come to the same answer). Never a verdict: nothing is kept final
+   * for it, so its kept ledger and Activity stay as a finished scan leaves them (no mint, no entries).
+   */
+  beforeFloor: boolean
 }
 
 /** Each vault's checkpoint of its NFT at `block` (one eth_call); a checkpoint that does not read is left out. */
@@ -1075,7 +1082,7 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
     if (hit && isKept(hit.value, one.poolId) && hit.value.final && !(hit.value.final === 'too_many' && hit.ageMs >= TOO_MANY_SECONDS * 1000)) return false
     return !hit || !isKept(hit.value, one.poolId) || !hit.value.mint
   }).map((one) => BigInt(one.tokenId))
-  const discovered = await discoverMintStarts(rt, budget, origin, head, cold)
+  const { found: discovered, beforeFloor } = await discoverMintStarts(rt, budget, origin, head, cold)
   for (const position of state.positions) {
     if (!position.ok) continue
     const id = BigInt(position.tokenId)
@@ -1103,6 +1110,8 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
     }
     const through = was ? Math.min(was.through, head) : 0
     const scanned = was ? Math.min(was.scanned, head) : 0
+    // (2026-10-15, pack 8): discovery covered the floor to the head with no mint, and nothing proves one: before the floor.
+    const floorProven = beforeFloor.has(position.tokenId) && !was?.mint && provenStart === null && !was?.final
     const start = was?.mint?.block ?? LEDGER_FLOOR
     // The logs from the last SAFE_DEPTH blocks they were read through (a reorganised tail is read again); the settlements
     // from the first block not worked out, the kept facts filling in between.
@@ -1132,9 +1141,10 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
       scanned: head,
       final: was?.final ?? null,
       unanswered: discovered.has(position.tokenId) && discovered.get(position.tokenId) === null,
+      beforeFloor: floorProven,
     })
   }
-  const live = () => works.filter((work) => !work.final && !work.unanswered)
+  const live = () => works.filter((work) => !work.final && !work.unanswered && !work.beforeFloor)
   // Group nearby cursors, instead of forcing a newly proven mint to wait for another NFT's old discovery scan.
   const groups: Array<{ works: Work[]; to: number }> = []
   for (const work of live().sort((a, b) => a.logsFrom - b.logsFrom)) {
@@ -1264,9 +1274,12 @@ type MintAnchor = { block: number; tx: string; hash: string; index: number }
 type MintDiscovery = { head: number; next: number; anchor?: MintAnchor }
 
 /** Discover only the indexed zero-address Transfer of these NFTs. No pool history, owner-wide transfer scan or
- * archive eth_call. Empty windows advance a bounded cursor; they never mean the position earned zero or is closed. */
-async function discoverMintStarts(rt: FeesRuntime, budget: Budget, origin: string, head: number, ids: readonly bigint[]): Promise<Map<string, MintAnchor | null>> {
+ * archive eth_call. Empty windows advance a bounded cursor; they never mean the position earned zero or is closed.
+ * (2026-10-15, pack 8): `beforeFloor`, the ids whose discovery has now covered the floor to the head (this read's windows
+ * and its re-read tail, or the kept cursor) and found no mint. */
+async function discoverMintStarts(rt: FeesRuntime, budget: Budget, origin: string, head: number, ids: readonly bigint[]): Promise<{ found: Map<string, MintAnchor | null>; beforeFloor: Set<string> }> {
   const found = new Map<string, MintAnchor | null>()
+  const beforeFloor = new Set<string>()
   const groups = new Map<number, { id: bigint; prior: MintDiscovery | null }[]>()
   for (const id of ids) {
     const key = cacheUrl(origin, 'mintDiscovery1', String(id), 0)
@@ -1317,10 +1330,12 @@ async function discoverMintStarts(rt: FeesRuntime, budget: Budget, origin: strin
       await keep(rt, cacheUrl(origin, 'mintDiscovery1', String(id), 0), { head, next: from - 1, ...(anchor ? { anchor } : {}) } satisfies MintDiscovery, KEPT_SECONDS)
       if (anchor) found.set(String(id), anchor)
       else if (from > LEDGER_FLOOR) found.set(String(id), null)
-      // Exhausted the indexed range without a mint: retain the existing conservative before-floor reader.
+      // Exhausted the indexed range without a mint: minted before the floor (2026-10-15, pack 8: answered at once, where
+      // the ledger used to scan from the floor in LEDGER_SCAN_BLOCKS steps to come to the same answer).
+      else beforeFloor.add(String(id))
     }
   }
-  return found
+  return { found, beforeFloor }
 }
 
 /** `work`'s ledger kept as `final`, its verdict: nothing more is read for it while it is kept (lifeOf). */

@@ -182,6 +182,9 @@ test('the page asks the site’s own route: one same-origin POST of the owner, t
 // The unreadable-reply-as-429 retry went with lib/chain/browser.ts (RPC-SPEC §3.5 and §7.2): the list reads no RPC.
 
 test('a failed read says why and is asked again: chain_busy while the route or the node rate-limits (with its wait), chain_unavailable otherwise (with the wait when the source is away), never an empty list', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   const NOW = 1_800_000_000_000;
   t.mock.method(Date, 'now', () => NOW);
   // The node refuses the scan's calls: the route's own waits, then 502 chain_busy, Retry-After 12.

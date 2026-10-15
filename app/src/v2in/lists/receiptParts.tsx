@@ -5,7 +5,7 @@ import { v2TxUrl } from '../../v2/explorers'
 import { IconCheck, IconChevronDown } from '../../components/icons'
 import { Pill } from '../../components/ui'
 import { shortDate, shortTime } from '../../lib/format/time'
-import { chainNotes, partialSentence, type ReceiptView } from './model'
+import { chainNotes, partialSentence, type ShownReceipt } from './model'
 import { RECEIPT_WORDS, receiptStatus } from './words'
 
 export const RECEIPT_LIST =
@@ -22,7 +22,7 @@ function Hash({ value, href }: { value: string; href: string | null }) {
 }
 
 /** Every effect remains inspectable. Amounts and tariffs are never summed across event kinds. */
-function Effect({ view, many }: { view: ReceiptView; many: boolean }) {
+function Effect({ view, many }: { view: ShownReceipt; many: boolean }) {
   return <div data-receipt-effect={view.id}>
     {(many || view.what.includes('raw units')) && <p className="dm-receipt-effect-title">{view.what}</p>}
     {(view.lines.some((line) => !line.tech) || view.fees.length > 0) && <dl className="dm-rcpt-facts">
@@ -42,7 +42,7 @@ function Effect({ view, many }: { view: ReceiptView; many: boolean }) {
  * deferred" is unchanged; finality is the Status line of the opened receipt (./words.ts). data-v2-finality keeps saying
  * the fact itself.
  */
-export function ReceiptRow({ view, effects = [view], showGas = true, children, positionItem }: { view: ReceiptView; effects?: readonly ReceiptView[]; showGas?: boolean; children?: ReactNode; positionItem?: ActivityResponse['items'][number] }) {
+export function ReceiptRow({ view, effects = [view], showGas = true, children, positionItem }: { view: ShownReceipt; effects?: readonly ShownReceipt[]; showGas?: boolean; children?: ReactNode; positionItem?: ActivityResponse['items'][number] }) {
   const href = v2TxUrl(view.chainId, view.hash)
   const finalized = effects.every((effect) => effect.finalized)
   const confirmed = effects.every((effect) => effect.confirmed)
@@ -59,7 +59,8 @@ export function ReceiptRow({ view, effects = [view], showGas = true, children, p
         <span className="dm-rcpt-what">
           <span className="dm-receipt-title">{confirmed && !claim && <span className="dm-receipt-check" role="img" aria-label={RECEIPT_WORDS.confirmed}><IconCheck size={14} /></span>}<span>{what}</span></span>
           {(!confirmed || claim) && <Pill tone={claim ? 'wait' : 'neutral'} dot className="dm-receipt-exception">{claim ? 'Delivery deferred' : RECEIPT_WORDS.confirming}</Pill>}
-          <span className="dm-activity-time"><time dateTime={new Date(view.at * 1000).toISOString()}>{timeWords(view.at)}</time>{view.chainId !== 4663 && <> · {view.chain}</>}</span>
+          {/* (2026-10-15, pack 8): a session receipt whose block time the money client's read did not name draws no time (never this page's clock); the network as the setup's session row says it. */}
+          <span className="dm-activity-time">{view.at === null ? view.chainId !== 4663 && view.chain : <><time dateTime={new Date(view.at * 1000).toISOString()}>{timeWords(view.at)}</time>{view.chainId !== 4663 && <> · {view.chain}</>}</>}</span>
         </span>
         <span className="dm-rcpt-amount tnum" data-v2-receipt-amount="" title={raw ? 'Token details are unavailable. Exact raw amounts are in the receipt.' : undefined}>{raw ? '—' : view.amount ?? ''}</span>
         <IconChevronDown size={16} className="dm-rcpt-chevron" />
@@ -68,7 +69,7 @@ export function ReceiptRow({ view, effects = [view], showGas = true, children, p
         {effects.map((effect) => <Effect key={effect.id} view={effect} many={effects.length > 1} />)}
         {children}
         <dl className="dm-rcpt-tech">
-          <div data-receipt-field="time"><dt>Time</dt><dd>{timeWords(view.at)}</dd></div>
+          {view.at !== null && <div data-receipt-field="time"><dt>Time</dt><dd>{timeWords(view.at)}</dd></div>}
           <div data-receipt-field="network"><dt>Network</dt><dd>{view.chain}</dd></div>
           <div data-receipt-field="state"><dt>Status</dt><dd>{receiptStatus({ confirmed, finalized })}</dd></div>
           {!showGas ? <div data-receipt-field="gas-shared"><dt>Transaction cost</dt><dd>Shared with the other actions in this transaction.</dd></div> : gas ? <>

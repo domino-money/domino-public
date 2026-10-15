@@ -11,7 +11,10 @@ const receipt = { state: 'included', transactionHash: HASH, blockHash: BLOCK, bl
 // Changed 2026-10-14 (incident C3): two pure modules the helpers now read are the real ones (the codes that end a wait
 // and its 20 s, ../../src/v2in/receiptWait.ts; a transaction's explorer page, ../../src/v2/explorers.ts); every other
 // import stays empty, as before. No assertion of the cases below changed.
-const PURE = { '../receiptWait': '../../.test-build/app/src/v2in/receiptWait.js', '../../v2/explorers': '../../.test-build/app/src/v2/explorers.js' };
+// Changed on purpose 2026-10-15 (pack 8, incident C5): and the chains' receipt sources (../../src/config/receiptSources.ts),
+// which say where a step's receipt is read in place of its chain id.
+const PURE = { '../receiptWait': '../../.test-build/app/src/v2in/receiptWait.js', '../../v2/explorers': '../../.test-build/app/src/v2/explorers.js',
+  '../../config/receiptSources': '../../.test-build/app/src/config/receiptSources.js' };
 function sessionFunctions() {
   const ts = require('typescript'), mod = { exports: {} }, delays = [];
   let time = 0;

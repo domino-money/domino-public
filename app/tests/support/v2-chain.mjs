@@ -286,7 +286,8 @@ export function createV2Chain({
   const rankOf = (token) => (rankOverrides.has(lower(token)) ? rankOverrides.get(lower(token)) : (profile.ranks.get(lower(token)) ?? 0));
   const now = () => BigInt(clock + 2 * sends.length);
   const latest = () => ({ number: numberToHex(0x1000 + sends.length), timestamp: numberToHex(now()), hash: keccak256(numberToHex(0x1000 + sends.length, { size: 32 })) });
-  const blockOf = (index) => ({ number: numberToHex(0x2000 + index), hash: keccak256(numberToHex(0x2000 + index, { size: 32 })) });
+  // (2026-10-15, pack 8): a header names its time, as every node's does (the session receipt's time comes from it).
+  const blockOf = (index) => ({ number: numberToHex(0x2000 + index), hash: keccak256(numberToHex(0x2000 + index, { size: 32 })), timestamp: numberToHex(now()) });
   const hashOf = (index) => numberToHex(0xc0ffee000000n + BigInt(index), { size: 32 });
   const zapDomain = (zap) => ({ name: 'Domino', version: '2', chainId: home, verifyingContract: zap });
   /** The zap's intentHash, computed here from eip712.json's types, apart from the app's typed data module. */

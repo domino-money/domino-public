@@ -1,5 +1,6 @@
 import type { ChainBalancesResponse } from 'api-contracts/read-v6/types'
 import type { ReadV6Reply } from '../../v2/read/v6'
+import { jittered } from '../../lib/jitter'
 
 /** The read service caches balances for ten seconds. Never treat its first post-fill reply as proof of a new read. */
 export const BALANCE_CACHE_WAIT_MS = 11_000
@@ -21,7 +22,8 @@ export type BalanceRead =
 export function balanceSnapshot(reply: ReadV6Reply<ChainBalancesResponse>, owner: string, chainId: number, tokens: readonly string[]): BalanceRead {
   if (reply.kind !== 'ok') {
     const retry = reply.kind === 'unavailable' ? reply.retryAfterSeconds : undefined
-    return retry === undefined ? { kind: 'unavailable' } : { kind: 'unavailable', retryAfterMs: retry * 1000 }
+    // (2026-10-15, pack 8, Q3): plus 0 to 25% at random (../../lib/jitter.ts), never less than the Retry-After.
+    return retry === undefined ? { kind: 'unavailable' } : { kind: 'unavailable', retryAfterMs: jittered(retry * 1000) }
   }
   if (reply.body.wallet.toLowerCase() !== owner.toLowerCase()) return { kind: 'unavailable' }
   const chain = reply.body.chains.find((entry) => entry.chainId === chainId)

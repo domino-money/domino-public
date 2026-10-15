@@ -2252,8 +2252,15 @@ test('multichain setup: an unreadable Base approval resumes its existing hash an
     }
     return answer;
   };
+  // Changed on purpose 2026-10-15 (pack 8, incident C5): the page's clock is installed, so the one read at finality can
+  // be reached (twenty minutes after inclusion on Base with no mark from read-v6, src/config/receiptSources.ts); and
+  // read-v6's finalized mark for Base agrees with this wallet's own finalized block (behind the steps' blocks): the
+  // mark is the queue's hint for that read on every chain now, and the fixtures' own mark said their blocks were final.
+  const portfolio = multichainSetupPortfolio(chain, 3, pool), activity = read6Answer('activity', 'activity-empty', [[READ6.wallet, OWNER]]);
+  for (const answer of [portfolio, activity]) for (const entry of answer.body.chains) if (entry.chainId === 8453 && entry.finalizedThrough) entry.finalizedThrough.number = 1;
   const s = await openLive(chain, { hash: '/sequence/compound/base-v3-' + ROOT,
-    read6: { portfolio: multichainSetupPortfolio(chain, 3, pool), activity: read6Answer('activity', 'activity-empty', [[READ6.wallet, OWNER]]) }, v1: rootOnV1({ liquidity: 10n ** 18n }) });
+    read6: { portfolio, activity }, v1: rootOnV1({ liquidity: 10n ** 18n }),
+    beforeOpen: async ({ page }) => { await page.clock.install(); } });
   try {
     const { page } = s, flow = page.locator('[data-v2in-setup="live"]');
     await flow.locator('[data-v2in-consent]').check();
@@ -2268,6 +2275,10 @@ test('multichain setup: an unreadable Base approval resumes its existing hash an
     await page.locator('[data-v2in-created]').waitFor({ timeout: 30_000 });
     assert.equal(chain.sends.length, 2, 'the existing approval was read; only the previously reviewed setup was sent next');
     assert.equal(chain.sends.filter(tx => tx.data.startsWith(SELECTOR.approve)).length, 1);
+    // Added 2026-10-15 (pack 8, incident C5): both steps are in a block; their receipts are read through the wallet once
+    // more each, at finality, and not before (the follow of ffbd80ab read each every 5 s, then 15 s, then 30 s).
+    const receiptReads = () => chain.log.filter(method => method === 'eth_getTransactionReceipt').length;
+    const included = receiptReads();
     await page.evaluate(() => { location.hash = '#/positions'; });
     await page.locator('[data-session-activity][data-v2-finality="included"]').waitFor({ timeout: 30_000 });
     await page.evaluate(id => { location.hash = '#/positions/base-v3-' + id; }, String(ROOT));
@@ -2287,8 +2298,15 @@ test('multichain setup: an unreadable Base approval resumes its existing hash an
     assert.equal(await activity.locator('.dm-activity-time').innerText(), 'Base', 'observation time is not a block timestamp');
     await activity.locator('summary').click();
     assert.match(await activity.innerText(), /Status\s+Confirmed\. Not final on Ethereum yet\./);
+    // Ten minutes after inclusion, every timer due in them fired once: nothing reads the receipts yet.
+    await page.clock.fastForward(10 * 60_000);
+    await page.waitForTimeout(1_500);
+    assert.equal(receiptReads(), included, 'no wallet read between inclusion and finality');
     finalized = true;
+    await page.clock.fastForward(21 * 60_000);
     await page.locator('[data-session-activity][data-v2-finality="finalized"]').waitFor({ timeout: 30_000 });
+    for (let n = 0; receiptReads() - included < 2 && n < 100; n++) await new Promise(done => setTimeout(done, 50));
+    assert.equal(receiptReads() - included, 2, 'one read at finality for each of the two steps');
     assert.match(await activity.innerText(), /Status\s+Final\./);
     assert.doesNotMatch(await activity.innerText(), /Confirming|Not final on Ethereum yet|Included, not final yet|Finalized/);
     assert.equal(await activity.locator('summary .dm-receipt-check[aria-label="Confirmed"]').count(), 1, 'the same check once final');

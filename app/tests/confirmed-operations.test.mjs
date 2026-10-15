@@ -13,13 +13,19 @@ import test from 'node:test'
 const require = createRequire(import.meta.url)
 const HASH = `0x${'ab'.repeat(32)}`, BLOCK_HASH = `0x${'cd'.repeat(32)}`, OTHER = `0x${'ef'.repeat(32)}`, WALLET = `0x${'01'.repeat(20)}`
 const MINUTE = 60_000
+/** The queue gives read-v6 its turn (INDEX_TURN_MS) before its own read at the mark. */
+const INDEX_WAIT = 75_000
 const flush = async () => { for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)) }
-/** The module as the page loads it, over `deps` in place of its two imports (the edge reader and the position evidence). */
+/**
+ * The module as the page loads it, over `deps` in place of its two imports (the edge reader and the position evidence).
+ * Changed on purpose 2026-10-15 (pack 8, incident C5): its third import, the chains' receipt sources
+ * (src/config/receiptSources.ts), is the real one, as the page's build compiles it.
+ */
 function load(deps = { confirmationReads: {}, notePositionConfirmation() {} }) {
   const ts = require('typescript'), mod = { exports: {} }
   const code = ts.transpileModule(readFileSync(new URL('../src/lib/confirmedOperations.ts', import.meta.url), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
-  new Function('require', 'module', 'exports', code)(() => deps, mod, mod.exports)
+  new Function('require', 'module', 'exports', code)(name => /receiptSources$/.test(name) ? require('../.test-build/app/src/config/receiptSources.js') : deps, mod, mod.exports)
   return mod.exports
 }
 const create = load().createConfirmedOperations
@@ -641,3 +647,357 @@ test('an in-flight settlement cannot remove a replacement callback for the same 
   assert.equal(replacements, 1, 'the old completion cannot consume newer settlement work')
   assert.equal(h.timers.size, 0)
 })
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Added 2026-10-15 (pack 8, incident C5: no chain literal on the receipt path). The C2 tables above, on Robinhood Chain,
+// Base and Arbitrum One. One table per chain (src/config/receiptSources.ts) says who makes the one read at finality: the
+// queue's own read at the site's edge on Robinhood Chain; on Base and Arbitrum One the money client's own read through
+// the person's wallet, judged by that client's own check. Base and Arbitrum One read their receipts through a follow of
+// their own until final (v2in/journey/receiptFollow.ts, every 5 s, then 15 s, then 30 s, up to 80 reads an hour); here
+// they read on the same rules as Robinhood Chain: nothing by the clock, one read when the mark (or, with none, the
+// chain's age) says the block may be final. On a wallet chain the read below is the REAL money client
+// (finance/v2/transact.ts receipt) over a fake wallet answering the same fixed answers, and the check is the REAL one
+// automation's steps hand in (v2in/automate/receipt.ts); `calls` counts its receipt reads, `asks` its finalized-block
+// reads, `wallet` every request the wallet saw.
+// ---------------------------------------------------------------------------------------------------------------------
+const { createTransactor } = require('../.test-build/app/src/finance/v2/transact.js')
+const { v2Chain } = require('../.test-build/app/src/v2/chains.js')
+const { reconcileAutomationReceipt } = require('../.test-build/app/src/v2in/automate/receipt.js')
+const CHAINS = [4663, 8453, 42161]
+const TO = `0x${'0d'.repeat(20)}`
+const hex = n => `0x${n.toString(16)}`
+const byWallet = chainId => chainId !== 4663
+function chainHarness(chainId, { answer = () => canonical(), finalized = async () => ({ number: '0x10' }) } = {}) {
+  const h = harness({ answer, finalized })
+  const wallet = [], state = { available: 'ready' }
+  let last = null
+  const fake = { owner: WALLET, current: () => true, chainId: () => chainId, signatures: {},
+    async request(method, params) {
+      wallet.push(method)
+      if (method === 'eth_accounts') return [WALLET]
+      if (method === 'eth_chainId') return hex(chainId)
+      if (method === 'eth_getTransactionByHash') {
+        h.calls.push(params[0])
+        last = await answer(params[0])
+        return last.transaction === null ? null : { hash: params[0], from: WALLET, to: TO, input: '0x', value: '0x0', nonce: '0x1' }
+      }
+      if (method === 'eth_getTransactionReceipt') return last.receipt && { gasUsed: '0x5208', effectiveGasPrice: '0x1', logs: [], ...last.receipt }
+      if (method === 'eth_getBlockByNumber' && params[0] === 'finalized') { h.asks.push(h.time()); return finalized() }
+      if (method === 'eth_getBlockByNumber') return last.block
+      throw new Error(`unexpected ${method}`)
+    } }
+  const client = createTransactor(fake, v2Chain(chainId), () => 1000)
+  /** An own operation, as its money client records it: on a wallet chain with its own read and check (`follow`). */
+  const own = (extra = {}) => {
+    const value = input({ chainId, ...extra })
+    if (!byWallet(chainId)) return h.store.record(value)
+    let op = null
+    op = h.store.record({ ...value, follow: {
+      read: () => client.receipt(value.receipt.transactionHash, { from: WALLET, to: TO, data: '0x', value: '0x0', nonce: '0x1', chainId: hex(chainId) }),
+      available: () => state.available,
+      accept: next => reconcileAutomationReceipt(op, next, h.store.record, h.store.reorg, h.store.get().find(item => item.chainId === op.chainId && item.hash === op.hash) ?? null),
+    } })
+    return op
+  }
+  return { ...h, chainId, wallet, state, own, client, mark: (block = 16) => h.store.noteChainFinality(chainId, block) }
+}
+
+for (const chainId of CHAINS) {
+  test(`[${chainId}] an own included operation makes zero reads until the finalized mark reaches its block, then one receipt read and one finality read`, async () => {
+    const h = chainHarness(chainId)
+    h.own()
+    await h.run(5 * MINUTE)
+    assert.equal(h.calls.length, 0, 'no read by the clock')
+    h.mark(15); h.store.noteChainFinality(chainId === 4663 ? 8453 : 4663, 1000); h.mark(Number.NaN); h.mark(-1)
+    await h.run(5 * MINUTE)
+    assert.equal(h.calls.length, 0, 'a mark below its block, another chain\'s mark and a malformed mark start nothing')
+    assert.equal(h.asks.length, 0)
+    h.mark(16)
+    assert.equal(h.store.get()[0].phase, 'included', 'the mark is a hint: it finalizes nothing by itself')
+    await h.run(5 * MINUTE)
+    assert.equal(h.store.get()[0].phase, 'finalized')
+    assert.equal(h.calls.length, 1, 'one receipt read, bound to the recorded block')
+    assert.equal(h.asks.length, 1, 'one finalized-block read')
+    h.mark(5000); h.store.wake(); await h.run(60 * MINUTE)
+    assert.equal(h.calls.length, 1); assert.equal(h.asks.length, 1)
+    assert.equal(h.timers.size, 0, 'a final operation leaves nothing scheduled')
+    if (byWallet(chainId)) assert.deepEqual(h.wallet, ['eth_accounts', 'eth_chainId', 'eth_getTransactionByHash', 'eth_getTransactionReceipt', 'eth_getBlockByNumber', 'eth_getBlockByNumber'], 'six wallet calls in all, at finality')
+  })
+
+  test(`[${chainId}] an operation recorded after the mark already passed its block is read once too, never at once`, async () => {
+    const h = chainHarness(chainId)
+    h.mark(4000)
+    h.own()
+    assert.equal(h.calls.length, 0)
+    assert.ok(h.due() - h.time() >= 5000, 'the index is given its turn first')
+    await h.run(10 * MINUTE)
+    assert.equal(h.store.get()[0].phase, 'finalized')
+    assert.equal(h.calls.length, 1); assert.equal(h.asks.length, 1)
+  })
+
+  test(`[${chainId}] an indexed finalized item of the same transaction and block finalizes an own operation with no queue read`, async () => {
+    const h = chainHarness(chainId)
+    const own = h.own()
+    await h.run(5 * MINUTE)
+    h.mark()
+    h.store.record({ ...indexed({ blockHash: OTHER, state: 'finalized' }), chainId })
+    assert.equal(h.store.get()[0].phase, 'included', 'another block\'s item proves nothing about this inclusion')
+    h.store.record({ ...indexed({ state: 'finalized' }), chainId })
+    assert.deepEqual(h.store.get()[0], { ...own, phase: 'finalized' })
+    await h.run(60 * MINUTE)
+    // Changed on purpose (2026-10-15, pack 8 review): on a wallet chain the money client's own read is also its release at
+    // finality, so it is made once after read-v6's item (the test below); on Robinhood Chain the queue reads nothing.
+    assert.equal(h.calls.length, byWallet(chainId) ? 1 : 0, "no queue read; on a wallet chain the client's one read")
+    assert.equal(h.asks.length, byWallet(chainId) ? 1 : 0)
+    if (!byWallet(chainId)) assert.equal(h.wallet.length, 0, 'nor asked the wallet anything')
+    assert.equal(h.timers.size, 0)
+  })
+
+  test(`[${chainId}] a different canonical block at the one read at finality is a reorganised operation, and nothing more is asked`, async () => {
+    const h = chainHarness(chainId, { answer: () => canonical({ block: { number: '0x10', hash: OTHER } }) })
+    const published = []
+    h.own()
+    h.store.subscribe(op => published.push(op.phase))
+    await h.run(5 * MINUTE)
+    assert.equal(h.calls.length, 0, 'not read before the mark')
+    h.mark(); await h.run(60 * MINUTE)
+    assert.equal(h.calls.length, 1)
+    assert.equal(h.store.get()[0].phase, 'reorged')
+    assert.deepEqual(published, ['reorged'])
+    assert.equal(h.asks.length, 0, 'a contradicted block needs no finality')
+    assert.equal(h.timers.size, 0)
+  })
+
+  test(`[${chainId}] a transaction found in another block at that read is not adopted: the operation is reorganised for its client to check again`, async () => {
+    const h = chainHarness(chainId, { answer: () => canonical({ receipt: { ...canonical().receipt, blockNumber: '0x11', blockHash: OTHER }, block: { number: '0x11', hash: OTHER } }) })
+    h.own(); h.mark(); await h.run(10 * MINUTE)
+    assert.equal(h.calls.length, 1)
+    assert.equal(h.store.get()[0].phase, 'reorged')
+    assert.equal(h.store.get()[0].blockHash, BLOCK_HASH, 'a watcher cannot adopt a new effect by itself')
+  })
+
+  test(`[${chainId}] missing or unavailable data keeps inclusion; finalized height alone proves nothing`, async () => {
+    for (const answer of [() => ({ transaction: null, receipt: null, block: null }), () => canonical({ receipt: null, block: null }), () => canonical({ block: null }), () => { throw new Error('node offline') }]) {
+      const h = chainHarness(chainId, { answer, finalized: async () => ({ number: '0x100' }) })
+      h.own(); h.mark(0x100); await h.next()
+      assert.equal(h.calls.length, 1)
+      assert.equal(h.store.get()[0].phase, 'included')
+      assert.equal(h.asks.length, 0)
+      assert.equal(h.published.length, 1, 'no false rollback or finality publication')
+    }
+  })
+
+  test(`[${chainId}] canonical inclusion is kept while finality is missing, behind or failed, and final only when both agree`, async () => {
+    for (const finalized of [async () => null, async () => ({ number: '0xf' }), async () => { throw new Error('finality unavailable') }]) {
+      const h = chainHarness(chainId, { finalized }); h.own(); h.mark(); await h.next()
+      assert.equal(h.store.get()[0].phase, 'included')
+    }
+    const h = chainHarness(chainId); h.own(); h.mark(); await h.next()
+    assert.equal(h.store.get()[0].phase, 'finalized')
+    assert.equal(h.store.finality(chainId, HASH, OTHER), null, 'finality belongs to this exact block hash')
+  })
+
+  test(`[${chainId}] a failed read backs off 5, 10, 20, 40, then 60 seconds, and at most ten more tries follow`, async () => {
+    for (const failure of [() => { throw Object.assign(new Error('confirmation_unavailable'), { retryAfterMs: 0 }) }, () => { throw new Error('node offline') }, () => ({ transaction: null, receipt: null, block: null })]) {
+      const at = []
+      const h = chainHarness(chainId, { answer: () => { at.push(h.time()); return failure() } })
+      h.own(); h.mark()
+      await h.run(60 * MINUTE)
+      assert.deepEqual(at.slice(1).map((time, i) => time - at[i]), [5000, 10_000, 20_000, 40_000, 60_000, 60_000, 60_000, 60_000, 60_000, 60_000])
+      assert.equal(h.store.get()[0].phase, 'included', 'an unread proof is never a rollback and never finality')
+      h.mark(9000); h.store.wake(); await h.run(24 * 60 * MINUTE)
+      assert.equal(at.length, 11, 'the first read and ten more: a later mark, a wake or its age do not start them again')
+      assert.equal(h.timers.size, 0, 'nothing is left scheduled')
+    }
+  })
+
+  test(`[${chainId}] twenty focus events make zero reads and bring no wait closer; a named wait is kept`, async () => {
+    const turn = chainHarness(chainId)
+    turn.own(); turn.mark()
+    const due = turn.due()
+    for (let i = 0; i < 20; i++) { turn.store.wake(); await turn.run(100) }
+    assert.equal(turn.calls.length, 0, 'the index\'s turn is not cut short')
+    assert.equal(turn.due(), due)
+    const refused = chainHarness(chainId, { answer: () => { throw Object.assign(new Error('confirmation_unavailable'), { retryAfterMs: 30_000 }) } })
+    refused.own(); refused.mark(); await refused.next()
+    assert.equal(refused.calls.length, 1)
+    const again = refused.due()
+    assert.equal(again - refused.time(), 30_000)
+    for (let i = 0; i < 20; i++) { refused.store.wake(); await refused.run(1000) }
+    assert.equal(refused.calls.length, 1, 'a wake does not clear the wait a refusal named')
+  })
+
+  test(`[${chainId}] the queue pauses hidden, serializes its reads and limits a pass to four`, async () => {
+    const h = chainHarness(chainId, { answer: hash => canonical({ receipt: { ...canonical().receipt, transactionHash: hash } }) })
+    for (let i = 0; i < 6; i++) h.own({ tokenIds: [String(i)], receipt: { ...input().receipt, transactionHash: `0x${i.toString(16).padStart(64, '0')}` } })
+    h.mark()
+    h.hide(); await h.next(); assert.equal(h.calls.length, 0)
+    h.show(); h.store.wake(); await h.next()
+    assert.equal(h.calls.length, 4)
+    assert.equal(h.store.get().filter(op => op.phase === 'included').length, 2)
+    await h.next(); assert.equal(h.calls.length, 6)
+    assert.equal(h.store.get().filter(op => op.phase === 'included').length, 0)
+    assert.equal(h.timers.size, 0)
+  })
+}
+
+// Added 2026-10-15 (pack 8, incident C5). read-v6 names no finalized mark for a chain it does not index (Base and
+// Arbitrum One today: `finalizedThrough` null), so on those chains the age is what says the block may be final: the
+// money client's own read is made once the operation is twenty minutes old; "not final yet" is read again a minute
+// later, then two, four, eight, then every fifteen, ten more times at most. The follow it replaces read about fifty
+// times in the same twenty minutes.
+for (const chainId of [8453, 42161]) {
+  test(`[${chainId}] with no mark, the money client's own read is made once the operation is twenty minutes old, then a minute apart at least, growing`, async () => {
+    let final = '0xf'
+    const h = chainHarness(chainId, { finalized: async () => ({ number: final }) })
+    const start = h.time()
+    h.own()
+    await h.run(20 * MINUTE - 1)
+    assert.equal(h.calls.length, 0, 'not before it is twenty minutes old')
+    await h.run(1)
+    assert.deepEqual(h.asks.map(at => at - start), [20 * MINUTE], 'one read at twenty minutes')
+    await h.run(7 * MINUTE)
+    assert.deepEqual(h.asks.map(at => at - start), [20, 21, 23, 27].map(m => m * MINUTE), 'then a minute, two, four, eight apart')
+    assert.equal(h.store.get()[0].phase, 'included')
+    for (let i = 0; i < 20; i++) { h.store.wake(); await h.run(100) }
+    assert.equal(h.calls.length, 4, 'a wake does not read sooner')
+    final = '0x10'
+    await h.run(60 * MINUTE)
+    assert.equal(h.store.get()[0].phase, 'finalized')
+    assert.equal(h.calls.length, 5)
+    assert.equal(h.timers.size, 0)
+    const stuck = chainHarness(chainId, { finalized: async () => ({ number: '0xf' }) })
+    stuck.own(); await stuck.run(3 * 24 * 60 * MINUTE)
+    assert.equal(stuck.calls.length, 11, 'never more than the first read and ten more')
+    assert.equal(stuck.timers.size, 0, 'and nothing is left scheduled')
+  })
+
+  test(`[${chainId}] a wallet on another account or network is not asked, spends no try, and is read once it is back`, async () => {
+    const h = chainHarness(chainId)
+    h.state.available = 'paused'
+    h.own(); h.mark()
+    await h.run(3 * 60 * MINUTE)
+    assert.equal(h.wallet.length, 0, 'nothing asked of a wallet elsewhere')
+    h.state.available = 'gone'
+    await h.run(MINUTE)
+    assert.equal(h.wallet.length, 0)
+    h.state.available = 'ready'
+    await h.run(MINUTE)
+    assert.equal(h.store.get()[0].phase, 'finalized')
+    assert.equal(h.calls.length, 1)
+    assert.equal(h.timers.size, 0)
+  })
+
+  test(`[${chainId}] an own operation recorded with no read of its own (no follow) starts nothing, as before`, async () => {
+    const h = chainHarness(chainId); let settled = 0
+    h.store.record(input({ chainId, onFinalized: async () => { settled++; return true } }))
+    h.mark(); await h.run(3 * 60 * MINUTE)
+    assert.equal(h.calls.length, 0); assert.equal(h.wallet.length, 0); assert.equal(settled, 0)
+    assert.equal(h.timers.size, 0)
+  })
+}
+
+// Added (2026-10-15, pack 8 review, M1): on Base and Arbitrum One the money client's own read at finality (`follow`) is
+// also its release (finance/v2/vault.ts and autoExit.ts `receipt`: a finalized step's hand-over released, a used nonce's
+// signature forgotten). When read-v6's item made the operation final first, that read was dropped with the follow and
+// the release never came. It is now made once, on the next pass, and judged by the client's own check.
+/** The client's read as vault.ts and autoExit.ts make it: a final answer releases the step. */
+function releasing(h, chainId = h.chainId) {
+  const state = { reads: 0, released: 0 }
+  let op = null
+  op = h.store.record({ ...input({ chainId }), follow: {
+    read: async () => { state.reads++; const next = await h.client.receipt(HASH, { from: WALLET, to: TO, data: '0x', value: '0x0', nonce: '0x1', chainId: hex(chainId) }); if (next.state === 'finalized') state.released++; return next },
+    available: () => h.state.available,
+    accept: next => reconcileAutomationReceipt(op, next, h.store.record, h.store.reorg, h.store.get().find(item => item.chainId === op.chainId && item.hash === op.hash) ?? null),
+  } })
+  return state
+}
+
+for (const chainId of [8453, 42161]) {
+  test(`[${chainId}] an own operation final by read-v6's item first still gets the money client's one read at finality, and its release`, async () => {
+    const h = chainHarness(chainId)
+    const client = releasing(h)
+    h.mark()
+    h.store.record({ ...indexed({ state: 'finalized' }), chainId })
+    assert.equal(h.store.get()[0].phase, 'finalized')
+    await h.run(60 * MINUTE)
+    assert.equal(client.reads, 1, "the money client's receipt read runs exactly once")
+    assert.equal(client.released, 1, 'and the release at finality happens')
+    assert.equal(h.store.get()[0].phase, 'finalized')
+    h.mark(5000); h.store.wake(); await h.run(24 * 60 * MINUTE)
+    assert.equal(client.reads, 1, 'never read again'); assert.equal(h.timers.size, 0)
+  })
+
+  test(`[${chainId}] that read waits for a wallet elsewhere, is dropped with a wallet gone, and is not made when the follow's own read already ended`, async () => {
+    const paused = chainHarness(chainId), waited = releasing(paused)
+    paused.state.available = 'paused'
+    paused.mark(); paused.store.record({ ...indexed({ state: 'finalized' }), chainId })
+    await paused.run(30 * MINUTE)
+    assert.equal(waited.reads, 0, 'a wallet on another account or network is not asked')
+    paused.state.available = 'ready'
+    await paused.run(MINUTE)
+    assert.equal(waited.reads, 1); assert.equal(waited.released, 1)
+    const gone = chainHarness(chainId), dropped = releasing(gone)
+    gone.state.available = 'gone'
+    gone.mark(); gone.store.record({ ...indexed({ state: 'finalized' }), chainId })
+    await gone.run(60 * MINUTE)
+    assert.equal(dropped.reads, 0); assert.equal(gone.timers.size, 0)
+    const ended = chainHarness(chainId), own = releasing(ended)
+    ended.mark(); await ended.run(10 * MINUTE)
+    assert.equal(own.reads, 1, "the follow's own read, at the mark")
+    ended.store.record({ ...indexed({ state: 'finalized' }), chainId })
+    await ended.run(60 * MINUTE)
+    assert.equal(own.reads, 1, 'the index after it adds no read'); assert.equal(own.released, 1)
+  })
+
+  test(`[${chainId}] the index finalizing an operation while its follow's read is in flight takes that answer: one read, one release`, async () => {
+    let release = null
+    const h = chainHarness(chainId, { answer: () => new Promise(resolve => { release = () => resolve(canonical()) }) })
+    const client = releasing(h)
+    h.mark(); await h.run(INDEX_WAIT)
+    assert.equal(client.reads, 1)
+    h.store.record({ ...indexed({ state: 'finalized' }), chainId })
+    release(); await flush()
+    await h.run(60 * MINUTE)
+    assert.equal(client.reads, 1); assert.equal(client.released, 1)
+    assert.equal(h.timers.size, 0)
+  })
+}
+
+// (2026-10-15, pack 8 review, M1 follow-up): the wallet's node may lag read-v6's mark. Its "not final yet" is read again
+// on the wallet chains' own steps (1, 2, 4, 8, then every 15 minutes, ten more times at most) until it says final; the
+// release then happens once, and nothing is read after it.
+for (const chainId of [8453, 42161]) {
+  test(`[${chainId}] a "not final yet" from the wallet after read-v6's item is read again on its steps, and the release happens once`, async () => {
+    let final = '0xf'
+    const h = chainHarness(chainId, { finalized: async () => ({ number: final }) })
+    const state = { reads: [], released: 0 }
+    let op = null
+    op = h.store.record({ ...input({ chainId }), follow: {
+      read: async () => { state.reads.push(h.time()); const next = await h.client.receipt(HASH, { from: WALLET, to: TO, data: '0x', value: '0x0', nonce: '0x1', chainId: hex(chainId) }); if (next.state === 'finalized') state.released++; return next },
+      available: () => h.state.available,
+      accept: next => reconcileAutomationReceipt(op, next, h.store.record, h.store.reorg, h.store.get().find(item => item.chainId === op.chainId && item.hash === op.hash) ?? null),
+    } })
+    h.mark()
+    h.store.record({ ...indexed({ state: 'finalized' }), chainId })
+    await h.run(MINUTE / 2)
+    assert.equal(state.reads.length, 1, 'the one read, on the next pass')
+    assert.equal(state.released, 0, 'the wallet says not final yet: nothing released')
+    await h.run(3 * MINUTE)
+    assert.deepEqual(state.reads.slice(1).map((at, i) => at - state.reads[i]), [MINUTE, 2 * MINUTE], 'again a minute later, then two')
+    h.state.available = 'paused'
+    await h.run(30 * MINUTE)
+    assert.equal(state.reads.length, 3, 'a wallet elsewhere is not asked, and spends no try')
+    h.state.available = 'ready'
+    final = '0x10'
+    await h.run(MINUTE)
+    assert.equal(state.reads.length, 4); assert.equal(state.released, 1, 'final: released once')
+    await h.run(24 * 60 * MINUTE)
+    assert.equal(state.reads.length, 4, 'no read after the final one'); assert.equal(h.timers.size, 0)
+    // Never final: the first read and ten more, then nothing; a wallet gone drops it at once.
+    const stuck = chainHarness(chainId, { finalized: async () => ({ number: '0xf' }) }), lagging = releasing(stuck)
+    stuck.mark(); stuck.store.record({ ...indexed({ state: 'finalized' }), chainId })
+    await stuck.run(3 * 24 * 60 * MINUTE)
+    assert.equal(lagging.reads, 11); assert.equal(lagging.released, 0); assert.equal(stuck.timers.size, 0)
+  })
+}

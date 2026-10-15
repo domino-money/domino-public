@@ -7,6 +7,7 @@ import type { Address, Hex, V2ChainId, V2Contracts } from '../../v2/types'
 import { switchToChain, v2SwitchNotice } from '../../wallet/port'
 import { simulateOnChain } from '../../lib/walletReads'
 import { v2TxUrl } from '../../v2/explorers'
+import { edgeReadsReceipts, edgeSimulates } from '../../config/receiptSources'
 import { RECEIPT_STILL_WAITING_MS, receiptSettled } from '../receiptWait'
 
 /**
@@ -58,7 +59,8 @@ export async function openAutomation(chainId: V2ChainId, contracts: V2Contracts)
   const known = sessions.get(key)
   if (known && known.current()) return known.session
   const chain = v2Chain(chainId)
-  const simulator = chainId === 4663 ? simulateOnChain : undefined
+  // Changed on purpose 2026-10-15 (pack 8, C5): the chain's row in config/receiptSources.ts, not its id (the same chain).
+  const simulator = edgeSimulates(chainId) ? simulateOnChain : undefined
   const vault = createVaultClient(wallet, chain, contracts, undefined, simulator)
   const autoExit = createAutoExitClient(wallet, chain, contracts, undefined, undefined, simulator)
   let tail: Promise<unknown> = Promise.resolve()
@@ -112,7 +114,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 /** How often a sent step's receipt is read: quickly at first, then every few seconds. */
 const beat = (attempt: number) => Math.min(800 + attempt * 400, 4000)
 // Robinhood already confirms through its independent first-party reader. Other chains use the original wallet port.
-const receiptAvailability = (session: AutomationSession) => session.chainId === 4663 ? 'ready' : session.receiptAvailability?.() ?? 'ready'
+// Changed on purpose 2026-10-15 (pack 8, C5): the chain's row in config/receiptSources.ts says which (the same chains).
+const receiptAvailability = (session: AutomationSession) => edgeReadsReceipts(session.chainId) ? 'ready' : session.receiptAvailability?.() ?? 'ready'
 
 /** A step that was offered: from here on a failure is an outcome the page could not read, never a step known to have failed. */
 export class SentStepError extends Error {

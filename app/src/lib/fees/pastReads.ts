@@ -37,6 +37,7 @@
  * Pure apart from its dependencies; no storage, clock or network of its own. Node-safe.
  */
 import { POSITION_MANAGER } from './constants'
+import { jittered } from '../jitter'
 import { PERIODS, periodStart, type FeesPeriod, type TimedPeriod } from './periods'
 import type { Reading } from './readings'
 import type { FeeDisplayState, FeeHistory, FeeHistoryView, FeePoint } from './types'
@@ -424,7 +425,8 @@ export function createPastReads(deps: PastReadsDeps): PastReads {
 
   function answered(job: Job, outcome: PastOutcome): void {
     const { nft } = job
-    const busy = outcome.state === 'busy' && typeof outcome.retryAfterSeconds === 'number' && Number.isFinite(outcome.retryAfterSeconds) ? Math.max(0, outcome.retryAfterSeconds) * 1_000 : 0
+    // (2026-10-15, pack 8, Q3): a busy answer's Retry-After plus 0 to 25% at random (../jitter.ts), never less than it named.
+    const busy = outcome.state === 'busy' && typeof outcome.retryAfterSeconds === 'number' && Number.isFinite(outcome.retryAfterSeconds) ? jittered(Math.max(0, outcome.retryAfterSeconds) * 1_000) : 0
     if (busy > 0) busyUntil = Math.max(busyUntil, deps.now() + busy)
     const view = verified(nft.id)
     const reading = view ? parsePastRead(outcome, nft.id, job.block, view.history, view.state) : null

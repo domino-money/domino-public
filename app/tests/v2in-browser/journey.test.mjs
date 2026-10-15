@@ -283,6 +283,24 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
     await zap.locator('li[data-step="pool"][data-state="current"]').waitFor({ timeout: 10_000 });
     assert.equal(await page.locator('[data-created-position], li[data-step-done]').count(), 0, 'no success, no step done');
     assert.equal(chain.sends.length, 2, 'nothing more was sent');
+    // Added (2026-10-15, pack 8, package R1): the create is a row at once. Robinhood Chain keeps the NFT's hint too (it was
+    // Base and Arbitrum One only), and the checked receipt is a row of Receipts before read-v6 lists it, in its words.
+    const receipts = await page.evaluate((owner) => JSON.parse(sessionStorage.getItem('domino:session-receipts:v1:' + owner) ?? '[]'), OWNER);
+    assert.equal(receipts.length, 1, 'one session receipt');
+    const [kept] = receipts;
+    assert.deepEqual([kept.chainId, kept.action, kept.dex, kept.wallet, kept.fee], [4663, 'create', 4, OWNER, { token: USDG_RH, amount: '3250000' }]);
+    assert.ok(Number.isSafeInteger(kept.at) && kept.at > 0, 'the block\'s time, from the header the money client read');
+    const hints = await page.evaluate((owner) => JSON.parse(sessionStorage.getItem('domino:created-positions:v1:' + owner) ?? '[]'), OWNER);
+    assert.deepEqual(hints.map((hint) => [hint.chainId, hint.tokenId, hint.hash]), [[4663, kept.tokenId, kept.hash]], 'Robinhood Chain\'s hint, of the same receipt');
+    await page.evaluate(() => { location.hash = '#/positions/receipts'; });
+    const row = page.locator(`[data-v2-receipt="session:4663:${kept.hash}"]`);
+    await row.waitFor({ timeout: 10_000 });
+    assert.match(await row.locator('summary').innerText(), new RegExp(`^Created position #${kept.tokenId}`));
+    assert.equal(await row.locator('summary .dm-receipt-check[aria-label="Confirmed"]').count(), 1);
+    assert.equal(await row.locator('summary time').count(), 1, 'its block\'s time');
+    await page.evaluate(() => { location.hash = '#/positions'; });
+    await page.locator(`a[data-v2-position-row="4663:${kept.positionManager}:${kept.tokenId}"]`).waitFor({ timeout: 10_000 });
+    assert.equal(chain.sends.length, 2, 'nothing more was sent');
   } finally { await s.close(); }
 });
 
@@ -546,6 +564,22 @@ function basePlanner(answers = [], { l1Unavailable = false } = {}) {
   };
 }
 
+/**
+ * Added 2026-10-15 (pack 8, incident C5): how far the clock leaps to reach the one read at finality of a Base action.
+ * read-v6 names no finalized mark past the block here (`finalizedThrough` one below it), so the chain's age says when
+ * (src/config/receiptSources.ts: twenty minutes on Base), and a read that found it not final yet is made again a minute
+ * later at least. On ffbd80ab the created view followed its receipt through the wallet every 5 s, then 15 s, then 30 s,
+ * and each step below was met within 30 s of real time; now nothing is read between inclusion and that read.
+ */
+const FINALITY_LEAP_MS = 21 * 60_000;
+const receiptReads = (chain) => chain.log.filter((method) => method === 'eth_getTransactionReceipt').length;
+/** Ten minutes after inclusion, with every timer due in them fired once: nothing reads the receipt yet (ffbd80ab's follow did). */
+async function quietTenMinutes(page, chain, included) {
+  await page.clock.fastForward(10 * 60_000);
+  await page.waitForTimeout(1_500);
+  assert.equal(receiptReads(chain), included, 'no wallet read between inclusion and finality');
+}
+
 for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigation', 'atomic-reorg', 'atomic-not-included', 'atomic-batch-reverted']) test(`(e) his journey on Base: search, create and verified ${outcome}`, async () => {
   const atomic = outcome.startsWith('atomic');
   const chain = createV2Chain({ chainId: 8453, timestamp: now(), ...(atomic ? { atomic: 'supported', simulateV1: true } : {}), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
@@ -559,8 +593,13 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
   const activityItems = [];
   const replacementHash = `0x${'cd'.repeat(32)}`;
   const served = [];
+  const baseMark = (reply) => {
+    const base = reply.body.chains.find(item => item.chainId === 8453);
+    if (base?.finalizedThrough) base.finalizedThrough.number = receiptStage === 'finalized' && inclusion ? inclusion.block : 1;
+    return reply;
+  };
   const s = await openJourney(browser, chain, {
-    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner(answers), refresh: true,
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner(answers), refresh: true, clock: true,
     intercept: async (method, params) => {
       if (method === 'eth_getBlockByNumber' && params[0] === 'finalized' && receiptStage !== 'finalized') return { result: { number: '0x1', hash: replacementHash } };
       if (atomic && receiptStage === 'reorged' && method === 'eth_getLogs') return { result: [] };
@@ -579,10 +618,12 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
       return undefined;
     },
     routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
-    read6: { portfolio: () => { served.push(made); return basePortfolio(made); }, activity: () => {
+    // Changed on purpose 2026-10-15 (pack 8, incident C5): read-v6's finalized mark for Base agrees with the wallet's own
+    // finalized block in every answer (below the action's block until the stage is 'finalized'): the mark is the queue's
+    // hint for its one read at finality on every chain now, and the fixtures' own mark (block 73,395,500) said final.
+    read6: { portfolio: () => { served.push(made); return baseMark(basePortfolio(made)); }, activity: () => {
       const reply = activityOf({ wallet: OWNER }); reply.body.items = activityItems;
-      if (inclusion) reply.body.chains.find(item => item.chainId === 8453).finalizedThrough.number = inclusion.block - 1;
-      return reply;
+      return baseMark(reply);
     } },
   });
   try {
@@ -680,6 +721,9 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
     assert.equal('state' in hint, false, 'a receipt hint cannot provide financial eligibility or invented live state');
     inclusion = hint;
     const sendCount = chain.sends.length, planCount = s.planned.length;
+    // Added 2026-10-15 (pack 8, incident C5): from here no receipt is read through the wallet until the one read at
+    // finality (the follow of ffbd80ab read it every 5 s, then 15 s, then 30 s, for the twenty minutes Base takes).
+    const included = receiptReads(chain);
     if (outcome.endsWith('navigation')) {
       const item = s1Action({ chainId: 8453, wallet: OWNER, zap: ZAP_V4, tokenId: createdId, block: hint.block, pool: POOL_BASE, finalized: false });
       item.tx.hash = hint.hash; item.tx.snapshot.hash = hint.blockHash; item.tx.snapshot.timestamp = now();
@@ -695,8 +739,11 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
       assert.equal(await row.getAttribute('data-v2-finality'), 'included', 'confirmed at inclusion, not final yet');
       assert.equal(await row.locator('text=Confirming').count(), 0, 'no pill for a receipt that is in a block');
       assert.equal(await page.locator('[data-create-journey]').count(), 0, 'the original receipt view is unmounted');
+      await quietTenMinutes(page, chain, included);
       receiptStage = 'finalized';
+      await page.clock.fastForward(FINALITY_LEAP_MS);
       await page.locator(`[data-position-activity-item="${item.id}"][data-v2-finality="finalized"]`).waitFor({ timeout: 30_000 });
+      assert.ok(receiptReads(chain) - included <= 1, 'one receipt read through the wallet, at finality');
       assert.equal(await row.locator('summary .dm-receipt-check[aria-label="Confirmed"]').count(), 1, 'the shared exact receipt proof settles Activity without returning to creation');
       assert.equal(await row.locator('text=Confirming').count(), 0);
       assert.equal(item.tx.finality, 'unfinalized', 'the lagging index did not supply this finality');
@@ -706,6 +753,10 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
     }
     reorganized = true;
     receiptStage = 'reorged';
+    // Changed on purpose 2026-10-15 (pack 8, incident C5): the block that left the chain is caught at the one read at
+    // finality (the follow of ffbd80ab caught it within 5 s, reading every 5 s until final).
+    await quietTenMinutes(page, chain, included);
+    await page.clock.fastForward(FINALITY_LEAP_MS);
     await page.locator('[data-zap-receipt="pending"]').waitFor({ timeout: 30_000 });
     assert.equal(await page.locator('a[data-created-next]').count(), 0, 'orphaned effects cannot offer position or automation actions');
     assert.deepEqual(await page.evaluate(owner => JSON.parse(sessionStorage.getItem('domino:created-positions:v1:' + owner) ?? '[]'), OWNER), [], 'explicit canonical contradiction removes the creation hint');
@@ -736,6 +787,9 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
     const restored = await page.evaluate(owner => JSON.parse(sessionStorage.getItem('domino:created-positions:v1:' + owner) ?? '[]'), OWNER);
     assert.deepEqual([restored[0].tokenId, restored[0].blockHash], [createdId, replacementHash], 'a checked reinclusion restores only the new block evidence');
     receiptStage = 'finalized';
+    // C5: the block found again is the queue's; its read at finality comes at once (the action is old enough), or a
+    // minute after one that found it not final yet.
+    await page.clock.fastForward(FINALITY_LEAP_MS);
     await page.locator('[data-zap-receipt="finalized"]').waitFor({ timeout: 30_000 });
     assert.equal(await page.locator('[data-fact="receipt-state"][data-receipt-state="finalized"] dd').innerText(), 'Confirmed');
     assert.equal(chain.sends.length, sendCount, 'reorg and finality checks never resend the action');

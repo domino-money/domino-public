@@ -82,7 +82,10 @@ test('a 200 JSON answer is handed on with its size; one that is not JSON, or lar
   assert.equal((await routes.postLedger(['1'], false, { fetch: async () => json(big) })).ok, true, 'within the ledger route’s larger one');
 });
 
-test('a rate refusal names its wait (bounded), five seconds when it names none; a busy chain is one too', async () => {
+test('a rate refusal names its wait (bounded), five seconds when it names none; a busy chain is one too', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   const ask = (reply) => routes.postAutomation(['1'], { fetch: async () => reply });
   assert.deepEqual(await ask(json({ error: 'rate_limited' }, 429, { 'Retry-After': '7' })), { ok: false, failure: 'rate_limited', retryAfterMs: 7_000 });
   assert.deepEqual(await ask(json({ error: 'rate_limited' }, 429)), { ok: false, failure: 'rate_limited', retryAfterMs: routes.RATE_RETRY_MS });
@@ -91,7 +94,10 @@ test('a rate refusal names its wait (bounded), five seconds when it names none; 
   assert.deepEqual(await ask(json({ error: 'chain_unavailable' }, 502, { 'Retry-After': '12' })), { ok: false, failure: 'unavailable', retryAfterMs: 12_000 });
 });
 
-test('the source away is unavailable with its wait, bounded to five minutes', async () => {
+test('the source away is unavailable with its wait, bounded to five minutes', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   const ask = (headers) => routes.postOwnedPositions(OWNER, false, { fetch: async () => json({ error: 'source_unavailable' }, 503, headers) });
   assert.deepEqual(await ask({ 'Retry-After': '300' }), { ok: false, failure: 'unavailable', retryAfterMs: 300_000 });
   assert.deepEqual(await ask({ 'Retry-After': '9999' }), { ok: false, failure: 'unavailable', retryAfterMs: routes.MAX_RETRY_MS });
@@ -133,7 +139,10 @@ test('a simulation: its result, or why there is none', async () => {
   assert.deepEqual(await ask(json('{"v":')), { ok: false, reason: 'unavailable' });
 });
 
-test('through the routes over a fake chain: the list’s envelope, a position’s feature and state, each as its parser takes it; with the source off, every route is a 503', async () => {
+test('through the routes over a fake chain: the list’s envelope, a position’s feature and state, each as its parser takes it; with the source off, every route is a 503', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   const VAULT = `0x${'5a'.repeat(20)}`;
   const KEY = { currency0: '0x5fc5360d0400a0fd4f2af552add042d716f1d168', currency1: '0xefab538cf3c29237a47c6afb145d50ddf204a0a3', fee: 3000, tickSpacing: 60, hooks: '0x0000000000000000000000000000000000000000' };
   const chain = browserChain({

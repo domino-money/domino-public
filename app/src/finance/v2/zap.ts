@@ -16,7 +16,8 @@ import { ERC20_ABI, PERMIT2_ABI, REGISTRY_ABI, V3_POSITION_MANAGER_ABI, V4_POSIT
 import { actionResultOf, actionResultProblems, basisProblems, checkPlan, relayedActionOf, reviewLegs, zapFor, type PlanBasis, type PlanContext, type PositionOnChain, type QuotedLeg } from './plan'
 import { admitV2Contracts, checkZapPositionManager, verifyV2Code } from './deployment'
 import { CONTRACTS_NOT_LIVE, refuseUnlessLive } from './liveLock'
-import { REVIEW_S, SIGN_WINDOW_S, WalletNotAsked, createTransactor, l1FeeCeiling, quantity, refused, revertIn, suggestV2Gas, type PreparedV2, type Rpc, type SignedNonce, type StepDraft, type V2GasBudget, type V2Log, type V2Receipt, type V2Wallet } from './transact'
+import { edgeReadsReceipts } from '../../config/receiptSources'
+import { REVIEW_S, SIGN_WINDOW_S, WalletNotAsked, createTransactor, headerTime, l1FeeCeiling, quantity, refused, revertIn, suggestV2Gas, type PreparedV2, type Rpc, type SignedNonce, type StepDraft, type V2GasBudget, type V2Log, type V2Receipt, type V2Wallet } from './transact'
 import { PERMIT2, intentHash, permit2WitnessTypedData, relayedActionTypedData, signV2TypedData, type SignedTypedData } from './typedData'
 import { browserUnsettledActions, type UnsettledAction, type UnsettledActions } from './zapUnsettled'
 
@@ -1493,8 +1494,10 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
       || !/^0x[0-9a-fA-F]{64}$/.test(raw.blockHash) || !['0x0', '0x1'].includes(String(raw.status)) || !Array.isArray(raw.logs)) return fail('invalid_receipt')
     const blockNumber = quantity(raw.blockNumber)
     const blockHash = raw.blockHash.toLowerCase() as Hex
-    const block = (await rpc('eth_getBlockByNumber', [numberToHex(blockNumber), false])) as { hash?: string } | null
-    if (chain.chainId !== 4663 && (!block || typeof block.hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(block.hash))) return { state: 'pending' }
+    const block = (await rpc('eth_getBlockByNumber', [numberToHex(blockNumber), false])) as { hash?: string; timestamp?: unknown } | null
+    // Changed on purpose 2026-10-15 (pack 8, C5): the chain's row in ../../config/receiptSources.ts, not its id (the same
+    // chains): where the wallet is the first reader of receipts, a block it does not return is a node behind.
+    if (!edgeReadsReceipts(chain.chainId) && (!block || typeof block.hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(block.hash))) return { state: 'pending' }
     if (!block || String(block.hash).toLowerCase() !== blockHash) return { state: 'reorged' }
     const logs = (raw.logs as unknown[]).map((entry): V2Log => {
       const log = obj(entry)
@@ -1505,6 +1508,8 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
     const costs = {
       transactionHash: hash, blockHash, blockNumber, gasUsed: quantity(raw.gasUsed), effectiveGasPrice: quantity(raw.effectiveGasPrice),
       l1Fee: chain.l1FeeInReceipt && typeof raw.l1Fee === 'string' ? quantity(raw.l1Fee) : null, logs: Object.freeze(logs),
+      // (2026-10-15, pack 8): the block's time from the header just read (shown on a session receipt only).
+      ...headerTime(block.timestamp),
     }
     if (raw.status === '0x0') return { state: 'reverted', ...costs }
     if (!holds(logs)) return fail('receipt_not_from_this_review')
@@ -1561,7 +1566,7 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
       }
       const topic0 = RECEIPT_TOPICS.PositionLiquidityChanged
       const receipt = await receiptAt(rpc, hash, (logs) => logs.some((log) => log.address === review.zap && log.topics[0] === topic0 && log.topics[1] === review.intentHash.toLowerCase()))
-      if (chain.chainId !== 4663 && (receipt.state === 'included' || receipt.state === 'finalized')) known.inclusion = { hash, blockNumber: receipt.blockNumber, blockHash: receipt.blockHash }
+      if (!edgeReadsReceipts(chain.chainId) && (receipt.state === 'included' || receipt.state === 'finalized')) known.inclusion = { hash, blockNumber: receipt.blockNumber, blockHash: receipt.blockHash }
       if (receipt.state === 'included' || receipt.state === 'finalized' || receipt.state === 'reverted') {
         await latchFor(review.chainId, owner).releaseBatch(batch.key, id)
         // F3: on chain, its outcome is final: the hold goes.

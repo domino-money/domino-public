@@ -117,7 +117,10 @@ function fakeTimers() {
   };
 }
 
-test('the keyed reader: one read per key for every view, kept, asked again by itself after a failure, never while hidden', async () => {
+test('the keyed reader: one read per key for every view, kept, asked again by itself after a failure, never while hidden', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   const clock = fakeTimers();
   const answers = [{ kind: 'unavailable', reason: 'network' }, { kind: 'ok', body: 1 }, { kind: 'ok', body: 2 }];
   const asked = [];
@@ -157,7 +160,10 @@ test('the keyed reader: one read per key for every view, kept, asked again by it
   assert.equal(read.readAgainAfter({ kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 30 }, 2), 30_000);
 });
 
-test('confirmation during a read is not lost and a failed refresh keeps the last good snapshot', async () => {
+test('confirmation during a read is not lost and a failed refresh keeps the last good snapshot', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   const clock = fakeTimers();
   const requests = [];
   const reader = read.createKeyedReader(() => new Promise((resolve) => requests.push(resolve)), { next: read.readAgainAfter, failed: (reply) => reply.kind !== 'ok' }, clock.timers);
@@ -218,7 +224,10 @@ test('shared wake refreshes an active key once, only past its period, and projec
 
 // Added 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): the page's one wake rule (src/lib/wake.ts) on the lists'
 // reader, with a window and a document of the test's own.
-test('the keyed reader on the page’s wake: focus asks nothing; back in view or online only past its period; one read, not two; rounds 10 s apart; a failure keeps its wait', async () => {
+test('the keyed reader on the page’s wake: focus asks nothing; back in view or online only past its period; one read, not two; rounds 10 s apart; a failure keeps its wait', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   const clock = fakeTimers();
   const win = new EventTarget();
   const doc = new EventTarget();

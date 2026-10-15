@@ -104,7 +104,10 @@ test('pagination survives navigation, deduplicates operation ids and retains met
   stopAgain();
 });
 
-test('a failed older page retains its cursor and retries after the named delay without losing loaded rows', async () => {
+test('a failed older page retains its cursor and retries after the named delay without losing loaded rows', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   const time = clock(), asks = [];
   const history = createActivityHistory(async (_, p) => { asks.push(p); return asks.length === 1 ? page(range(40, 21), 'older') : asks.length === 2 ? { kind: 'unavailable', reason: 'upstream_unavailable', retryAfterSeconds: 12 } : page(range(20, 1)); }, time.timers, false);
   const stop = history.subscribe(wallet, () => {}); await flush(); history.more(wallet); await flush();
@@ -134,7 +137,10 @@ test('refresh catches a gap larger than one page before joining the preserved ol
   stop();
 });
 
-test('an older-page retry never removes the unfinalized event exactly at its exclusive cursor boundary', async () => {
+test('an older-page retry never removes the unfinalized event exactly at its exclusive cursor boundary', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   const time = clock(); let tailReads = 0;
   const head = structuredClone(fixture.items.slice(0, 5));
   const older = structuredClone(fixture.items.slice(5));
@@ -234,7 +240,10 @@ test('a partial head without a next cursor cannot erase an already known older-p
   stop();
 });
 
-test('a confirmation head preempts a failing old page only after its Retry-After, then paging resumes', async () => {
+test('a confirmation head preempts a failing old page only after its Retry-After, then paging resumes', async (t) => {
+  // (2026-10-15, pack 8, Q3): the jitter's draw held at 0 here, so each wait named is read exactly; tests/jitter.test.mjs
+  // shows every such wait spread over a quarter more, never less.
+  t.mock.method(Math, 'random', () => 0);
   const time = clock(), asks = []; let top = 40, failed = false;
   const history = createActivityHistory(async (_, request) => {
     asks.push(request);

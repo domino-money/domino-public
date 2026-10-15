@@ -19,6 +19,7 @@
  * (2026-10-14, Q1 alone): 10 s though a position page's own period is 5 s again (lib/fees/constants.ts STATE_REFRESH_MS):
  * the gap only drops rounds, so no reader reads more often than before Q1, and a page shown again inside it still reads on
  * its own timer (lib/fees/spawn.ts `later`, whenVisibleAfter, runs a refresh that fell due while the page was hidden).
+ * (2026-10-15, pack 8): the page's own period is 10 s again (the owner's decision D8), the same as this gap.
  */
 export const WAKE_GAP_MS = 10_000
 

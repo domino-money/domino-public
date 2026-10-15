@@ -17,6 +17,7 @@ import { minimumPositionBlock, portfolioSeenAt, positionBurn, positionKey, posit
 import { automationState, confirmedPositionAutomation } from '../automate/store'
 import { POSITION_VALUATIONS, type PositionValuations } from './valuation'
 import { poolEstimateWords } from '../position/usdAvailability'
+import type { SessionReceipt } from './sessionReceipts'
 
 /**
  * What the Positions screen's two lists take from read-v6 (spec F7 rev4 §6.2, §6.3, §2.11; the integration brief's data
@@ -793,4 +794,85 @@ export function receiptViews(answer: Pick<ActivityResponse, 'items' | 'tokens' |
     if (view) out.push(view)
   }
   return out
+}
+
+/** (2026-10-15, pack 8): a receipt row's view whose block time may not be known (a session receipt): then none is drawn. */
+export type ShownReceipt = Omit<ReceiptView, 'at'> & { at: number | null }
+
+/**
+ * Added (2026-10-15, pack 8): a session receipt (./sessionReceipts.ts) in the indexed receipt's own words and lines
+ * (receiptOf's `s1_action` above: "Created position #N", "Paid in", "Swapped", "Added to the position", "Returned to your
+ * wallet", the Domino fee or "No Domino fee"), so the row that replaces it says the same. Collect fees straight at Uniswap,
+ * which read-v6 has no kind for, is titled by its own line, "Fees collected". `tokens`: read-v6's names first (the
+ * portfolio's and the activity's), then the ones the sending screen held. `at` is the block's own time or null.
+ */
+export function sessionReceiptView(entry: SessionReceipt, tokens: readonly IndexedToken[], finality?: ReceiptFinality): ShownReceipt {
+  const chainId = entry.chainId
+  const held = entry.tokens.map((token) => ({ chainId, address: token.address, status: 'available', decimals: token.decimals, symbol: token.symbol, price: null, priceReason: null }) as IndexedToken)
+  const name = tokenNamer([...tokens, ...held])
+  const token = (address: string) => name(chainId, address)
+  const lines: ReceiptLine[] = []
+  for (const line of entry.lines) {
+    if (line.kind === 'paid-in') lines.push({ label: 'Paid in', value: amountWords(line.amount, token(line.token)), data: 'paid-in' })
+    else if (line.kind === 'swapped') lines.push({ label: 'Swapped', value: `${amountWords(line.amountIn, token(line.tokenIn))} → ${amountWords(line.amountOut, token(line.tokenOut))}`, data: 'swapped' })
+    else if (line.kind === 'returned') {
+      if (line.amount !== null && BigInt(line.amount) === 0n) continue
+      lines.push({ label: 'Returned to your wallet', value: line.amount === null ? `${token(line.token).label}: amount not reported` : amountWords(line.amount, token(line.token)), data: 'returned' })
+    } else {
+      const words = line.amounts.filter((entry) => BigInt(entry.amount) !== 0n).map((entry) => amountWords(entry.amount, token(entry.token))).join(' + ') || '0'
+      const label = line.kind === 'added' ? 'Added to the position' : line.kind === 'removed' ? 'Taken out of the position' : 'Fees collected'
+      lines.push({ label, value: `${words} · position #${line.tokenId}`, data: line.kind })
+    }
+  }
+  if (entry.previousTokenId !== null) lines.push({ label: 'Previous position', value: `#${entry.previousTokenId}`, data: 'previous' })
+  const fees: ReceiptFee[] = entry.fee ? [{ label: feeLabel('assisted_swap', null), kind: 'assisted_swap', rate: null, value: amountWords(entry.fee.amount, token(entry.fee.token)), deferred: null }] : []
+  if (fees.length === 0) lines.push({ label: 'Domino fee', value: 'No Domino fee', data: 'no-fee' })
+  const out = entry.action === 'exit' || entry.action === 'collect'
+  const first = out
+    ? entry.lines.flatMap((line) => line.kind === 'returned' && line.amount !== null && BigInt(line.amount) > 0n ? [{ token: line.token, amount: line.amount }] : line.kind === 'collected' ? line.amounts.filter((one) => BigInt(one.amount) > 0n) : [])[0]
+    : entry.lines.flatMap((line) => line.kind === 'paid-in' ? [{ token: line.token, amount: line.amount }] : [])[0]
+  const gas = entry.gas
+  return {
+    id: `session:${chainId}:${entry.hash}`, chainId, chain: chainName(chainId), kind: 's1_action',
+    what: entry.action === 'collect' ? 'Fees collected' : S1_WHAT[entry.action](entry.tokenId),
+    amount: first ? amountWords(first.amount, token(first.token)) : null, lines, fees,
+    gas: gas ? { sender: gas.sender, gasUsed: groupDigits(gas.gasUsed), gasPrice: gweiWords(gas.effectiveGasPrice), l1Fee: gas.l1Fee === null ? null : weiWords(gas.l1Fee) } : null,
+    hash: entry.hash, block: entry.block, at: entry.at, confirmed: true,
+    finalized: entry.state === 'finalized' || finality?.(chainId, entry.hash, entry.blockHash) === 'finalized',
+  }
+}
+
+const DISARM_NAMES: Readonly<Record<number, string>> = Object.freeze({ 1: 'unsubscribed_or_transferred', 2: 'changed_outside_domino', 3: 'burned', 4: 'custody_lost', 5: 'v3_checkpoint_mismatch', 6: 'auto_exit', 7: 'exit_all' })
+const MODE_NAMES: Readonly<Record<string, string>> = Object.freeze({ 1: 'simple', 2: 'domino' })
+const text = (value: unknown): string => (typeof value === 'bigint' || typeof value === 'number' || typeof value === 'string' ? String(value) : '')
+
+/**
+ * Added (2026-10-15, pack 8): an automation or Auto-exit event this browser decoded from the receipt of its own step, in
+ * the indexed receipt's words (vaultEventWords and the `auto_exit_event` case above, so the row read-v6 lists later says
+ * the same); null for an event no receipt row says (an approval, the v3 checkpoint, one this list does not know). The
+ * person sent the step, so they are its sender.
+ */
+export function decodedEventWords(event: { eventName: string; args: Readonly<Record<string, unknown>> }, owner: string, token: (address: string) => TokenName): string | null {
+  const args = event.args
+  const nonce = text(args.stateNonce) || null
+  switch (event.eventName) {
+    case 'MandateRegistered': return `Auto-exit turned on${text(args.tokenId) ? ` for position #${text(args.tokenId)}` : ''}`
+    case 'MandateRevoked': return 'Auto-exit turned off'
+    case 'NonceCancelled': return 'Auto-exit signature cancelled'
+    case 'PolicyChanged': {
+      const mode = MODE_NAMES[text((args.policy as { mode?: unknown } | undefined)?.mode)]
+      return mode ? vaultEventWords({ event: 'PolicyChanged', stateNonce: nonce, policy: { mode } } as unknown as VaultEvent['events'][number], owner, owner, token) : null
+    }
+    case 'RootDisarmed': return vaultEventWords({ event: 'RootDisarmed', stateNonce: nonce, reason: DISARM_NAMES[Number(text(args.reason))] ?? 'unknown' } as unknown as VaultEvent['events'][number], owner, owner, token)
+    case 'AutomationPaused': return vaultEventWords({ event: 'AutomationPaused', stateNonce: nonce, actor: text(args.actor) } as VaultEvent['events'][number], owner, owner, token)
+    case 'ReservesWithdrawn': case 'TokenRecovered':
+      return /^0x[0-9a-fA-F]{40}$/.test(text(args.token)) && /^\d+$/.test(text(args.amount))
+        ? vaultEventWords({ event: event.eventName, stateNonce: nonce, token: text(args.token).toLowerCase(), amount: text(args.amount) } as VaultEvent['events'][number], owner, owner, token) : null
+    case 'ChildWithdrawn': case 'PositionRecovered':
+      return /^\d+$/.test(text(args.tokenId)) ? vaultEventWords({ event: event.eventName, stateNonce: nonce, tokenId: text(args.tokenId) } as VaultEvent['events'][number], owner, owner, token) : null
+    case 'ExitModuleSet': return typeof args.module === 'string' ? vaultEventWords({ event: 'ExitModuleSet', stateNonce: nonce, module: args.module } as VaultEvent['events'][number], owner, owner, token) : null
+    case 'LimitsChanged': case 'AutomationResumed': case 'RootRearmed':
+      return vaultEventWords({ event: event.eventName, stateNonce: nonce } as VaultEvent['events'][number], owner, owner, token)
+  }
+  return null
 }
