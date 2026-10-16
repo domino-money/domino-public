@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/types'
 import { positionsHref } from '../../components/explore/routes'
-import { IconChevronDown, IconChevronLeft, IconCoins, IconSearch } from '../../components/icons'
+import { IconChevronDown, IconChevronLeft, IconClose, IconCoins, IconSearch } from '../../components/icons'
 import { PositionRange, chainCardPrice, preloadPriceChart } from '../../components/positions/PositionRange'
 import { activityOpenedAt } from '../../lib/chart/positionOpened'
 import { readablePrice } from '../../lib/chart/priceFacts'
@@ -291,6 +291,13 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
               </>
             )}
             <span ref={setAutomationToolbar} className="dm-position-automation-slot" data-position-automation-slot="" />
+            {/* Added 2026-10-15 (the owner: always a Close position, as Robinhood's): V1's button (components/positions/
+                PositionActions.tsx), same place and look, last in the row; Withdraw of everything in both tokens. */}
+            {items.length > 0 && action.liquidity > 0n && (
+              <Button type="button" variant="danger" disabled={hooked} title={hooked ? HOOKED_COPY : undefined} aria-haspopup="dialog" aria-expanded={mode === 'close'} data-position-action="close" onClick={() => setMode('close')}>
+                <IconClose size={18} /><span>{COPY.title.close}</span>
+              </Button>
+            )}
           </div>
         )}
       </div>

@@ -23,6 +23,7 @@ export const COPY = {
     changeRange: 'Change range',
     exit: 'Withdraw',
     collect: 'Collect fees',
+    close: 'Close position',
   },
   lede: {
     increase: 'Add more to this position. Domino swaps for you when needed.',
@@ -30,6 +31,8 @@ export const COPY = {
     changeRange: 'Changing the range closes this position and opens a new one (new NFT).',
     exit: 'Take tokens out of this position, to your wallet: all of them or part, in both tokens or in one.',
     collect: 'The fees this position has earned go to your wallet. The position stays open.',
+    // V1's Close position, exactly (components/positions/PositionActions.tsx LEDE).
+    close: 'Your tokens and fees return to your wallet. The position, now empty, stays in your wallet.',
   },
   form: {
     amounts: 'Amounts',
@@ -161,6 +164,8 @@ export const COPY = {
     // The direct exits' one button, as V1's own dialogs word theirs ("Collect in wallet", "Close in wallet").
     collectInWallet: 'Collect in wallet',
     withdrawInWallet: 'Withdraw in wallet',
+    closeInWallet: 'Close in wallet',
+    tryAgain: 'Try again',
     youReceive: 'You receive',
     rearm: 'Turn automation back on',
   },

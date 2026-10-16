@@ -26,7 +26,12 @@ import { ActionDialog, ErrorLine, Locked, Mark, Note, Pair, PairName, Progress, 
 import { offerVault, type VaultHandoff } from './vaultHandoff'
 import type { OpenGate } from './wallet'
 
-export type PositionMode = 'increase' | 'changeRange' | 'exit' | 'collect'
+/**
+ * Added 2026-10-15 (the owner: "o certo seria sempre ter o botão close position", the same as Robinhood's): `close` is
+ * Withdraw of everything in both tokens (the same direct exit at Uniswap: tokens and fees to the wallet, the empty NFT
+ * kept), opened straight on its review as V1's Close position is, its slippage under Advanced.
+ */
+export type PositionMode = 'increase' | 'changeRange' | 'exit' | 'collect' | 'close'
 type ExitWay = 'both' | 'convert'
 
 /** What the last review drew, kept for the next quote of the same choices. */
@@ -95,7 +100,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
 }) {
   const chainId = gate.chainId
   const pool = position.pool
-  const [phase, setPhase] = useState<'form' | 'review'>(mode === 'collect' ? 'review' : 'form')
+  const [phase, setPhase] = useState<'form' | 'review'>(mode === 'collect' || mode === 'close' ? 'review' : 'form')
   const [amounts, setAmounts] = useState<AmountsValue>(() => initialAmounts(pool))
   const [range, setRange] = useState<RangeValue>(initialRange)
   const [slippage, setSlippage] = useState(String(POSITION_SLIPPAGE_DEFAULT_BPS))
@@ -109,7 +114,12 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   const ticks = mode === 'changeRange' && position.tick !== null ? ticksOf(range, pool, position.tick, book) : null
   const sameRange = ticks !== null && ticks.tickLower === position.tickLower && ticks.tickUpper === position.tickUpper
   const removing = shareOf(position.liquidity, share)
-  const action: ActionName = mode === 'collect' ? 'exit' : mode
+  // Changed on purpose 2026-10-15 (the review of Close position): a direct exit of everything (Close position, Withdraw
+  // of all in both tokens) takes what the chain holds when it is read, as V1's Close position and the zap's 'all' do,
+  // never read-v6's figure: an automation that re-added fees since would leave the rest in the NFT, and less on chain
+  // than read-v6 says would refuse the exit. Part of it is still read-v6's share.
+  const directPart = mode === 'close' || share === '100' ? undefined : removing
+  const action: ActionName = mode === 'collect' || mode === 'close' ? 'exit' : mode
   const label = (token: Address) => labelOf(book, token)
   const exitLive = position.vault?.exitLive === true
   const run = useActionRun({
@@ -128,7 +138,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
     },
   })
   const direct = useDirectExit(gate, position, label, book)
-  const usesDirect = mode === 'collect' || (mode === 'exit' && way === 'both')
+  const usesDirect = mode === 'collect' || mode === 'close' || (mode === 'exit' && way === 'both')
   // A direct action reads the position through the wallet, on the position's chain (the live path switches it there
   // first, §1.3). Under `preview` nothing is sent, so the wallet is never asked to switch for a read: off the position's
   // chain the review shows what was chosen, as the zap actions' preview does.
@@ -143,13 +153,36 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   // What a waiting Review button says is missing (Changed on purpose 2026-10-03: never a dead grey bar).
   const missing = bps === null ? COPY.form.checkSlippage : mode === 'increase' && inputs === null ? COPY.form.enterAmount : mode === 'changeRange' && ticks === null ? COPY.form.enterPrices : mode === 'changeRange' && sameRange ? COPY.form.differentRange : COPY.form.review
 
-  // A collect opens straight on its review, as V1's Collect fees does: the position read through the wallet.
+  // A collect opens straight on its review, as V1's Collect fees does: the position read through the wallet. A close
+  // too (V1's Close position), all of it, and again at a new slippage (Advanced, under its review).
   const opened = useRef(false)
   useEffect(() => {
     if (mode !== 'collect' || opened.current) return
     opened.current = true
     if (directReads) void direct.quote('collect', POSITION_SLIPPAGE_DEFAULT_BPS, 0n)
   }, [mode, direct, directReads])
+  // Read again at a new slippage once the person stops typing (never while the wallet has it or once it is sent).
+  const closeAsked = useRef<number | null>(null)
+  const directNow = useRef(direct)
+  useEffect(() => {
+    directNow.current = direct
+  })
+  useEffect(() => {
+    if (mode !== 'close' || !directReads || bps === null || closeAsked.current === bps) return
+    const stage = directNow.current.stage
+    if (stage === 'wallet' || stage === 'sent' || stage === 'done' || stage === 'unknown') return
+    const timer = setTimeout(() => {
+      closeAsked.current = bps
+      void directNow.current.quote('close', bps, undefined)
+    }, closeAsked.current === null ? 0 : 400)
+    return () => clearTimeout(timer)
+  }, [mode, directReads, bps])
+  /** V1's "Try again": a close whose read failed reads again. */
+  const readAgain = () => {
+    if (bps === null) return
+    closeAsked.current = bps
+    void direct.quote('close', bps, undefined)
+  }
 
   const zapDone = view.receipt !== null && (view.receipt.state === 'included' || view.receipt.state === 'finalized')
   const directDone = direct.stage === 'done'
@@ -171,7 +204,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   // The chain's own word once the review or the preparation read it (the zap client's and the direct client's root
   // probes, armed or not); before that, read-v6's.
   const rootVault = reviewed ? reviewed.review.vaultRoot : direct.prepared ? direct.prepared.vaultRoot : position.vault?.role === 'root' ? position.vault.address : null
-  const exitVault = mode === 'exit' ? rootVault : null
+  const exitVault = mode === 'exit' || mode === 'close' ? rootVault : null
   const leavesReserves = exitVault !== null
   const afterClose = useRef<VaultHandoff | null>(null)
   const closedByUser = useRef(false)
@@ -203,12 +236,12 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   // Decision #5: at the end of an armed root's add, withdrawal or collect, the page offers to turn automation back on (the
   // automation panel does it); not after a withdrawal of everything, which leaves the root empty (its reserves go first).
   const pausedVault = zapDone ? view.rearm ?? (ownTick ? position.vault?.address ?? null : null) : directDone ? direct.prepared?.pausesAutomation ?? null : null
-  const rearmVault = pausedVault !== null && !(mode === 'exit' && share === '100') && !quiet ? pausedVault : null
+  const rearmVault = pausedVault !== null && mode !== 'close' && !(mode === 'exit' && share === '100') && !quiet ? pausedVault : null
 
   const review = () => {
     setPhase('review')
     if (!usesDirect) run.start()
-    else if (directReads) void direct.quote(mode === 'collect' ? 'collect' : 'close', bps ?? POSITION_SLIPPAGE_DEFAULT_BPS, removing)
+    else if (directReads) void direct.quote(mode === 'collect' ? 'collect' : 'close', bps ?? POSITION_SLIPPAGE_DEFAULT_BPS, directPart)
   }
   const back = () => {
     run.reset()
@@ -252,19 +285,23 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
     )
   } else if (gate.mode === 'preview') {
     footer = <Locked copy={gate.lockedCopy} />
+  } else if (mode === 'close' && direct.stage === 'failed' && !direct.retry) {
+    footer = <Button type="button" variant="primary" size="lg" disabled={bps === null} onClick={readAgain} data-position-retry="">{COPY.wallet.tryAgain}</Button>
   } else if (usesDirect) {
-    const blocked = direct.prepared?.pausesAutomation != null && !direct.ticked && !quiet
+    // V1's Close position: no send at a slippage it does not accept.
+    const blocked = (direct.prepared?.pausesAutomation != null && !direct.ticked && !quiet) || (mode === 'close' && bps === null)
     const offer = direct.stage === 'ready' || (direct.stage === 'failed' && direct.retry)
     footer = (
       <Button type="button" variant="primary" size="lg" disabled={!offer || blocked} aria-busy={direct.stage === 'reading' || direct.stage === 'wallet' || direct.stage === 'sent' || undefined} onClick={() => void direct.send()} data-position-send={mode === 'collect' ? 'collect' : 'close'}>
-        {mode === 'collect' ? COPY.wallet.collectInWallet : COPY.wallet.withdrawInWallet}
+        {mode === 'collect' ? COPY.wallet.collectInWallet : mode === 'close' ? COPY.wallet.closeInWallet : COPY.wallet.withdrawInWallet}
       </Button>
     )
   } else {
     footer = <StepButton view={view} onConfirm={run.confirm} blocked={pauseTick && !pauseTicked} />
   }
-  // The review's way back to the form: a chevron left of the title (not on Collect fees, which has no form, nor once done).
-  const backTo = phase === 'review' && !done && mode !== 'collect' ? { onClick: back, disabled: view.busy || direct.stage === 'wallet' || direct.stage === 'sent', 'data-position-review-back': '' } : null
+  // The review's way back to the form: a chevron left of the title (not on Collect fees or Close position, which have no
+  // form, nor once done).
+  const backTo = phase === 'review' && !done && mode !== 'collect' && mode !== 'close' ? { onClick: back, disabled: view.busy || direct.stage === 'wallet' || direct.stage === 'sent', 'data-position-review-back': '' } : null
 
   return (
     <ActionDialog id={mode} title={COPY.title[mode]} lede={COPY.lede[mode]} back={backTo} onClose={closeDialog} footer={footer} data-position-dialog={`v2-${mode}`} data-position-gate={gate.mode}>
@@ -345,7 +382,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
                 )}
               </SheetCard>
               <SheetFacts>
-                {mode === 'exit' && (
+                {mode !== 'collect' && (
                   <SheetFact label={COPY.review.atLeast} data-position-at-least="">
                     {direct.prepared ? <Pair chainId={chainId} book={book} tokens={[pool.currency0, pool.currency1]} amounts={direct.prepared.atLeast} /> : <FigureDash reason={direct.error?.copy ?? COPY.page.notRead} />}
                   </SheetFact>
@@ -372,6 +409,12 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
           {direct.stage === 'sent' && direct.slow && direct.hash && v2TxUrl(chainId, direct.hash) && <a className="underline" href={v2TxUrl(chainId, direct.hash) ?? undefined} target="_blank" rel="noreferrer noopener" data-step-explorer="">{COPY.wallet.explorer}</a>}
           {direct.stage === 'unknown' && <Note data-position-direct-unknown="">{COPY.wallet.sentUnknown}</Note>}
           {direct.receipt && <DirectReceiptView chainId={chainId} receipt={direct.receipt} book={book} />}
+          {/* V1's Close position: its slippage under a closed Advanced at the foot of the review. */}
+          {mode === 'close' && !done && direct.stage !== 'wallet' && direct.stage !== 'sent' && direct.stage !== 'unknown' && (
+            <SheetMore label={COPY.form.advanced} value={bps === null ? undefined : `${COPY.form.slippage} ${bps / 100}%`} data-close-advanced="">
+              <Slippage id="position-v2-close-slippage" bps={slippage} onChange={setSlippage} />
+            </SheetMore>
+          )}
         </div>
       )}
     </ActionDialog>

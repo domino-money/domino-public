@@ -55,7 +55,9 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
   // its Auto-exit on or paused, a direct action keeps the position's approval, all its exit needs: the armed root's pause
   // is acknowledged without a tick (that automation never reinvests), and nothing is offered after (./PositionDialog.tsx).
   const quiet = position.vault?.exitLive === true
-  const asked = useRef<{ kind: DirectKind; bps: number; part: bigint } | null>(null)
+  // `part` undefined: everything the position holds when the chain is read (Close position, Withdraw of all), as V1's
+  // Close position takes it (finance/position.ts); a figure: that much of it (a partial withdrawal).
+  const asked = useRef<{ kind: DirectKind; bps: number; part: bigint | undefined } | null>(null)
   // Every prepared exit handed to the client's send: never handed again (a new press reviews afresh).
   const handed = useRef(new WeakSet<DirectPrepared>())
   const generation = useRef(0)
@@ -71,11 +73,11 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
   const said = (error: unknown) => actionError(error, gate.chainId, label)
   const failed = (error: unknown, retry = false) => setState((now) => ({ ...now, stage: 'failed', error: said(error), retry }))
 
-  async function prepareNow(connection: PositionConnection, kind: DirectKind, bps: number, part: bigint): Promise<DirectPrepared> {
+  async function prepareNow(connection: PositionConnection, kind: DirectKind, bps: number, part: bigint | undefined): Promise<DirectPrepared> {
     return kind === 'collect' ? connection.direct.prepareCollect(position.dex, position.tokenId) : connection.direct.prepareClose(position.dex, position.tokenId, bps, null, part)
   }
 
-  async function quote(kind: DirectKind, bps: number, part: bigint) {
+  async function quote(kind: DirectKind, bps: number, part: bigint | undefined) {
     const gen = ++generation.current
     handOn()
     asked.current = { kind, bps, part }

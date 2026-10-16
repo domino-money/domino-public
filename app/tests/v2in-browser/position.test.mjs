@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
-import { decodeFunctionData, encodeFunctionResult, parseAbi } from 'viem';
+import { decodeAbiParameters, decodeFunctionData, encodeFunctionResult, parseAbi } from 'viem';
 import * as runtime from '../../../api-contracts/position-plan-v1/runtime.mjs';
 import * as readV6 from '../../../api-contracts/read-v6/runtime.mjs';
 import { closeBrowser } from '../support/close-browser.mjs';
@@ -775,13 +775,16 @@ test('(e) under automation: the armed root blocks Change range (the menu says wh
     // Review #6, #13: one sentence in the row, no button and no menu.
     // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation").
     assert.equal(await text(successor.locator('[data-position-actions] [data-position-v2-blocked="successor"]')), "Your automation holds this position. Withdraw it from your automation on your main position's page first.");
-    assert.equal(await successor.locator('[data-position-v2-action], [data-position-v2-more]').count(), 0);
+    assert.equal(await successor.locator('[data-position-v2-action], [data-position-v2-more], [data-position-action="close"]').count(), 0);
     await page.evaluate(() => { location.hash = '#/positions/base-v4-5100004'; });
     const hooked = page.locator('[data-position-detail][data-position-id="5100004"]');
     await hooked.waitFor({ timeout: 30_000 });
     // Decision #6: Collect fees disabled with the reason as its title; every entry of the menu disabled, the reason its heading.
     assert.equal(await hooked.locator('[data-position-v2-action="collect"]').isDisabled(), true);
     assert.equal(await hooked.locator('[data-position-v2-action="collect"]').getAttribute('title'), "Pools with hooks aren't supported yet.");
+    // Added 2026-10-15: Close position too, as V1's (disabled, the reason its title).
+    assert.equal(await hooked.locator('[data-position-action="close"]').isDisabled(), true);
+    assert.equal(await hooked.locator('[data-position-action="close"]').getAttribute('title'), "Pools with hooks aren't supported yet.");
     const blocked = await openMenu(hooked);
     assert.deepEqual(blocked.entries.map(([key, , disabled]) => [key, disabled]), [['increase', true], ['changeRange', true], ['exit', true]]);
     assert.equal(await blocked.menu.locator('[data-position-action-reason]:visible').count(), 0);
@@ -824,6 +827,66 @@ test('(f) Withdraw to both tokens goes straight to Uniswap: no Domino fee, one t
     await own.locator('summary').click();
     assert.match(await text(own), /Returned to your wallet/);
     assert.match(await text(own), /Domino fee No Domino fee/);
+  } finally { await s.close(); }
+});
+
+test('(f0) Close position, as on Robinhood (the owner, 2026-10-15): last in the row, opens straight on its review, everything in both tokens straight to Uniswap, the same exit as Withdraw of all', async () => {
+  const sqrt = position.sqrtPriceAtTick(-199500);
+  // The chain holds twice what read-v6 last said (an automation re-added fees since): Close takes all of it, as V1's does.
+  const V4 = { tokenId: 5_100_001n, pool: { currency0: ZERO, currency1: USDC, fee: 500, tickSpacing: 10 }, ...RANGE, liquidity: BigInt(LIQUIDITY) * 2n,
+    sqrtPriceX96: sqrt, tick: -199500, growthLast: [5n << 128n, 7n << 128n], growthNow: [(5n << 128n) + (10n ** 12n << 128n) / 10n ** 15n + 1n, (7n << 128n) + (3_000_000n << 128n) / 10n ** 15n + 1n] };
+  const chain = createDirectChain({ chainId: 8453, v4: [V4], timestamp: now() });
+  const read6 = { portfolio: portfolioOf({ wallet: OWNER, tokens: TOKENS, positions: [live(5_100_001, { sqrtPriceX96: sqrt, tick: -199500 })] }) };
+  const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100001', read6, s1: { directCode: { 8453: chain.codeHashes } } });
+  try {
+    const page = s.page;
+    const detail = page.locator('[data-position-detail][data-position-id="5100001"]');
+    await detail.waitFor({ timeout: 30_000 });
+    const close = detail.locator('[data-position-actions] > [data-position-action="close"]');
+    assert.equal(await text(close), 'Close position');
+    assert.equal(await detail.locator('[data-position-actions] > :last-child').getAttribute('data-position-action'), 'close', 'last in the row, as on V1');
+    assert.equal(await close.isDisabled(), false);
+    await page.screenshot({ path: join(shots(), 'position-v2-close.png') });
+    await close.click();
+    const dialog = page.locator('[role="dialog"][data-position-dialog="v2-close"]');
+    assert.match(await text(dialog), /Your tokens and fees return to your wallet\. The position, now empty, stays in your wallet\./);
+    assert.equal(await dialog.locator('[data-position-continue], [data-position-review-back], .dm-pa-share').count(), 0, 'no form: straight on its review');
+    await dialog.locator('[data-position-direct="ready"]').waitFor({ timeout: 30_000 });
+    assert.match(await text(dialog.locator('[data-position-receive="close"]')), /^You receive .*ETH.*USDC At least .*ETH.*USDC Domino fee No Domino fee Network fee Up to [\d.]+ ETH$/);
+    assert.equal(await dialog.locator('[data-close-advanced]').count(), 1, 'its slippage under Advanced');
+    const send = dialog.locator('[data-position-send="close"]:not([disabled])');
+    assert.equal(await text(send), 'Close in wallet');
+    await send.click();
+    await dialog.locator('[data-position-direct="done"]').waitFor({ timeout: 30_000 });
+    assert.equal(chain.sends.length, 1);
+    assert.equal(chain.sends[0].tx.to, V4_PM);
+    const [unlock] = decodeFunctionData({ abi: parseAbi(['function modifyLiquidities(bytes unlockData, uint256 deadline)']), data: chain.sends[0].tx.data }).args;
+    const [, params] = decodeAbiParameters(position.unlockParameters, unlock);
+    assert.equal(decodeAbiParameters(position.decreaseParameters, params[0])[1], BigInt(LIQUIDITY) * 2n, 'everything the chain holds, not the read-v6 figure');
+    assert.equal(await dialog.locator('[data-position-rearm]').count(), 0, 'nothing to turn back on after everything left');
+  } finally { await s.close(); }
+});
+
+test('(f0b) Close position whose read fails: "Try again", as on V1, reads again, never a dead end', async () => {
+  const sqrt = position.sqrtPriceAtTick(-199500);
+  // Already empty on chain while read-v6 still lists its liquidity: the read refuses, then the chain is read again.
+  const V4 = { tokenId: 5_100_001n, pool: { currency0: ZERO, currency1: USDC, fee: 500, tickSpacing: 10 }, ...RANGE, liquidity: 0n,
+    sqrtPriceX96: sqrt, tick: -199500, growthLast: [5n << 128n, 7n << 128n], growthNow: [5n << 128n, 7n << 128n] };
+  const chain = createDirectChain({ chainId: 8453, v4: [V4], timestamp: now() });
+  const read6 = { portfolio: portfolioOf({ wallet: OWNER, tokens: TOKENS, positions: [live(5_100_001, { sqrtPriceX96: sqrt, tick: -199500 })] }) };
+  const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100001', read6, s1: { directCode: { 8453: chain.codeHashes } } });
+  try {
+    const page = s.page;
+    const detail = page.locator('[data-position-detail][data-position-id="5100001"]');
+    await detail.waitFor({ timeout: 30_000 });
+    await detail.locator('[data-position-actions] > [data-position-action="close"]').click();
+    const dialog = page.locator('[role="dialog"][data-position-dialog="v2-close"]');
+    await dialog.locator('[data-position-direct="failed"]').waitFor({ timeout: 30_000 });
+    const retry = dialog.locator('[data-position-retry]:not([disabled])');
+    assert.equal(await text(retry), 'Try again');
+    await retry.click();
+    await dialog.locator('[data-position-direct="failed"]').waitFor({ timeout: 30_000 });
+    assert.equal(chain.sends.length, 0, 'nothing sent');
   } finally { await s.close(); }
 });
 
