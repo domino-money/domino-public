@@ -1,18 +1,5 @@
 /* Shared presentation for the preview UI refresh. Data, states and interaction handlers stay in their components. */
 @layer components {
-  .dm-page-intro { max-width: 55ch; margin: 0.75rem 0 0; color: var(--fg-muted); font-size: 1rem; line-height: 1.6; text-wrap: pretty; }
-  .dm-section-intro { margin: 0.375rem 0 1.25rem; max-width: 60ch; font-size: 0.875rem; line-height: 1.5; color: var(--fg-muted); }
   .dm-guide-number { display: inline-grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--radius-sm); background: var(--wash-strong); color: var(--primary); font-size: 0.75rem; font-weight: 500; font-variant-numeric: tabular-nums; }
-  .dm-nav-indicator { background: color-mix(in srgb, var(--primary) 11%, var(--card)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 15%, transparent); }
-  .dm-nav-item[aria-current="page"] { color: var(--primary); --icon-2: var(--primary); }
-  .dm-nav:not([data-ready]) > .dm-nav-item[aria-current="page"] { background: color-mix(in srgb, var(--primary) 11%, var(--card)); }
-  .dm-nav > .dm-nav-item:is(:hover, :focus-visible) { color: var(--primary); --icon-2: var(--primary); background: color-mix(in srgb, var(--primary) 11%, var(--card)); box-shadow: inset 0 0 0 0.0625rem color-mix(in srgb, var(--primary) 15%, transparent); }
-  .dm-menu-item[aria-current="page"] { color: var(--primary); --icon-2: var(--primary); background: var(--primary-wash); }
   .dm-card { transition: box-shadow var(--dur-fade) var(--ease-std); }
-  @media (min-width: 768px) {
-    .dm-display-h1 { font-size: 2.7rem; line-height: 1.1; letter-spacing: -0.025em; }
-  }
-  @media (max-width: 767px) {
-    .dm-page-intro { font-size: 0.9375rem; }
-  }
 }

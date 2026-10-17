@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
+import { EmberLight } from './components/EmberLight'
 import { deferred } from './components/Deferred'
 import { ScreenBoundary, ScreenFailed } from './components/ScreenBoundary'
 import { Landing } from './screens/Landing'
@@ -227,6 +228,7 @@ export default function App() {
   return (
     <MarketsContext.Provider value={markets}>
     <div className="min-h-screen">
+      <EmberLight />
       {__DOMINO_LOCAL_LIVE__ ? <LocalDevelopmentBanner /> : !__DOMINO_DEPLOYABLE__ && <BuildBanner mode={__DOMINO_READ_MODE__} />}
       <Header page={page} />
       {/* 2026-10-14 (incident X1): a screen that throws as it draws no longer blanks the page; the header and the footer stay. */}

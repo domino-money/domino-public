@@ -43,7 +43,6 @@
   /* ---- Cards in the main column ----------------------------------------------------------------- */
   .dm-acct-card { min-width: 0; padding: 0.5rem; }
   .dm-acct-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; min-height: 3.5rem; padding: 0.75rem 1rem; }
-  .dm-acct-card-body { min-width: 0; padding: 0 1rem 1rem; }
   /* 2026-10-01 (audit D2): Managed positions and Receipts with nothing to show, for the same reason: one calm line for
      both across the pair, its button beside it (the two cards stay mounted, hidden). */
   .dm-acct-merged { grid-column: 1 / -1; }
@@ -112,7 +111,6 @@
   .dm-acct-token-name { font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-decoration: none; border-radius: 0.25rem; }
   .dm-acct-token-link { text-decoration-line: underline; text-decoration-color: transparent; text-underline-offset: 0.1875rem; transition: text-decoration-color var(--dur-hover) ease; }
   .dm-acct-token-link:hover { text-decoration-color: var(--fg-faint); }
-  .dm-acct-token-amount { min-width: 0; margin-left: auto; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-align: right; overflow-wrap: anywhere; font-variant-numeric: lining-nums tabular-nums; }
   .dm-acct-tokens-empty { padding: 0.75rem; font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-muted); }
   /* The main holdings by value (owner, 2026-09-25): the total under the head, then two-line rows of 56 (the symbol over
      its amount, small and muted; the USD value right-aligned as the row's figure), then "Show N more". */
@@ -133,7 +131,6 @@
   /* Changed on purpose 2026-10-14 (the incident of 2026-10-13, package V1): no slot says "USD unavailable" any more, so
      its two styles went. What is left to style is the one quiet line under a position tile's figure: the time of a
      figure that is not current ("as of 13:05 UTC"), or the short reason there is none. A list row's is .dm-own-est. */
-  .dm-pos-usd-note { display: block; color: var(--fg-subtle); font-size: .875rem; line-height: 1.25rem; font-weight: 400; white-space: normal; }
   .dm-acct-token-group { padding: 0.75rem 1rem 0.25rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.1px; color: var(--fg-subtle); }
   @media (min-width: 768px) {
     .dm-acct-token-list[data-expanded] { max-height: 29rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--surface-4) transparent; }
@@ -332,7 +329,7 @@
   .dm-acct-token { padding: 0 1rem; }
   .dm-acct-auto { padding: 1.5rem; }
   @media (max-width: 767px) {
-    .dm-own-head, .dm-acct-nft-head, .dm-auto-frame-head, .dm-acct-card-head { padding-left: 0.5rem; padding-right: 0.5rem; }
+    .dm-own-head, .dm-auto-frame-head, .dm-acct-card-head { padding-left: 0.5rem; padding-right: 0.5rem; }
     /* Open and Closed share the card's width on their own line under the title, as the fees card's periods do (and
        their bubble while the list loads takes the same line, so the head keeps its height). */
     .dm-own-head > :is(.dm-seg, .dm-own-skel-tabs) { flex: 1 1 100%; }
@@ -662,8 +659,6 @@
   .dm-fees-delta { align-self: center; }
   /* Time in range closes the summary, under a hairline, with its own 4px bar. */
   .dm-fees-tir { display: grid; gap: 0.5rem; margin-top: 1rem; padding-top: 1rem; box-shadow: inset 0 1px 0 var(--border); }
-  .dm-fees-tir-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: 1.25rem; }
-  .dm-fees-tir-label { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
   /* The split bar, then the legend rows that name its two colours, directly under it. */
   .dm-fees-split { margin-top: 1rem; }
   .dm-fees-legend { display: grid; margin-top: 0.375rem; }
@@ -697,8 +692,6 @@
      the gutter at the right on a desktop), with one flat line along its foot in the faintest ink. */
   .dm-fees-quiet { display: flex; align-items: flex-end; height: 17rem; padding: 0 0.5rem 2.5rem 0; }
   @media (min-width: 768px) { .dm-fees-quiet { height: 18rem; padding-right: 4.5rem; } }
-  .dm-fees-quiet-line { display: block; width: 100%; height: 2px; overflow: visible; }
-  .dm-fees-quiet-line .dm-fees-flat { stroke: var(--fg-faint); stroke-width: 1; opacity: 0.6; }
   /* 2026-10-01 (item A13): one calm grey line over the quiet plot says why there is no history. */
   .dm-fees-quiet { flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 0.75rem; }
   .dm-fees-quiet-note { margin: 0; max-width: 46ch; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-subtle); text-wrap: pretty; }
@@ -724,7 +717,6 @@
   .dm-fees-impact-slot[data-kind="domino"] { min-height: 7.375rem; }
   /* 2026-10-01 (item E22): the automation added nothing back yet: one quiet line, no empty room. */
   /* 2026-10-01 (item A15): the header drawn from this browser's copy of the list says so, dated, until the chain answers. */
-  .dm-pos-copy { margin: 0.25rem 0 0; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-fees-impact-none { margin: 0.5rem 0 0; padding-top: 0.75rem; box-shadow: inset 0 1px 0 var(--border); font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-subtle); }
   .dm-fees-impact { display: flex; align-items: flex-start; gap: 0.625rem; margin-top: 0.5rem; padding-top: 0.75rem; box-shadow: inset 0 1px 0 var(--border); }
   .dm-fees-auto-glyph { flex-shrink: 0; margin-top: 1px; overflow: visible; }
@@ -758,7 +750,6 @@
   .dm-fees-act-pip[data-auto]::after { content: none; }
   .dm-fees-act-pip[data-auto] > .dm-fees-auto-glyph { margin: 0; }
   .dm-fees-act[data-auto] .dm-fees-act-verb { color: var(--fg); }
-  .dm-fees-act-id { margin-left: 2px; padding: 1px 0.375rem; border-radius: 0.375rem; background: var(--surface-3); color: var(--fg-muted); }
   .dm-fees-act-when { display: grid; gap: 2px; min-width: 0; }
   .dm-fees-act-date { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
   .dm-fees-act-when > .dm-hex { max-width: min(100%, 15rem); color: var(--fg-subtle); }
@@ -891,14 +882,7 @@
 .dm-automation-summary > p { margin: 0; }
 .dm-automation-panel > .dm-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
 .dm-automation-panel > .dm-card[hidden] { display: none; }
-.dm-automation-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 0.625rem; }
-.dm-automation-choices > p { flex-basis: 100%; margin: 0; }
 .dm-automation-recovery { display: grid; gap: 0.625rem; padding-block: 0.75rem; border-top: 0.0625rem solid var(--border); }
-.dm-automated-row { padding: 0; }
-.dm-automated-link { display: grid; gap: 0.375rem; padding: 0.875rem 1rem; color: inherit; text-decoration: none; border-radius: inherit; }
-.dm-automated-link:hover { background: var(--surface-2); }
-.dm-automated-link:focus-visible { outline: 0.125rem solid var(--ring); outline-offset: 0.125rem; }
-.dm-automated-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: var(--fg-muted); }
 
 /* A position is one destination. Metadata stays quiet; known empty closed NFTs read as history, not a table of zeroes. */
 .dm-own-figure-slot { display: contents; }

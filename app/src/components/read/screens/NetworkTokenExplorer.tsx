@@ -58,7 +58,7 @@ export function NetworkTokenExplorer({ location, others, checking, initial = nul
             {token && <TokenMark token={token} size={36} />}
             <Display as="h1" className="dm-display-h1">{token ? <SymbolText token={token} /> : 'Token'}</Display>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          <div className="dm-mkt-tags mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
             <span className="dm-chip">Uniswap</span>
             <span className="dm-chip" data-chain-chip={chainId}>{network ?? (chainId === 8453 ? 'Base' : 'Arbitrum One')}</span>
             <span className="dm-pool-id"><Address value={address} short /></span>

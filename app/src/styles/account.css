@@ -10,6 +10,5 @@
   .dm-acct-quiet { padding: 2rem 1rem; text-align: center; font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-muted); }
   .dm-acct-slot { min-width: 0; }
   .dm-acct-status { flex-shrink: 0; white-space: nowrap; }
-  .dm-acct-slot-wait { min-height: 15rem; }
 
 }

@@ -713,7 +713,8 @@ async function openSimulator() {
   await page.route('https://api.dexscreener.com/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await page.goto(`${origin}/#/`, { waitUntil: 'networkidle' });
   await shown(page, '/');
-  await page.locator('#ranges > summary').click();
+  // Changed on purpose 2026-10-16 (V4 Home, the owner's D-H3): the range lesson starts open; nothing is pressed to see it.
+  assert.notEqual(await page.locator('#ranges').getAttribute('open'), null, 'the range lesson starts open');
   await page.locator('#sim-price').waitFor({ state: 'visible' });
   return page;
 }
@@ -1173,8 +1174,11 @@ async function catalogueOnly(page, label) {
   }
   assert.doesNotMatch(await page.locator('#pools').innerText(), /\$\s?\d/, `${label}: no dollar figure`);
   assert.equal(await page.locator('[data-metric], [data-apr-estimate]').count(), 0, `${label}: no figure anywhere on the landing`);
-  // Home displays the selection once. Ticker presentation remains covered in ReadLab without duplicating it here.
-  assert.equal(await page.locator('[data-ticker]').count(), 0, `${label}: no duplicate pool ticker on Home`);
+  // Changed on purpose 2026-10-16 (V4 Home, the owner's D-H1): Home's pool strip shows the table's pools that have an
+  // APR figure, and nothing at all while none has one (as the line above: no figure anywhere on the landing). The read
+  // lab's ticker is still never mounted on Home.
+  assert.equal(await page.locator('[data-home-marquee] a').count(), 0, `${label}: the pool strip shows nothing without a figure`);
+  assert.equal(await page.locator('[data-ticker]').count(), 0, `${label}: no read-lab ticker on Home`);
   // 2026-09-26 (featured pools v1 §11.2): with no list served, the embedded list in its order under today's title and
   // no Pinned chip; every link names the pool and USDG, the token to verify it with (§11.6). The method line is gone
   // for every list since 2026-09-28 (the owner).
@@ -1278,7 +1282,8 @@ test('a pool page that could not be verified states no fee tier, and its chart n
   await page.locator('[data-pool-verification]:not([data-pool-verification="verifying"])').waitFor();
   assert.deepEqual(await page.locator('main .dm-chip').allInnerTexts(), ['Uniswap'], 'no fee in the chip');
   const main = await page.locator('main').innerText();
-  for (const label of ['APR', '24H VOLUME', 'TVL', 'PRICE']) assert.match(main, new RegExp(`${label}\\s+—`), `the ${label} stat is a dash`);
+  // Changed on purpose 2026-10-16 (V4, the owner-approved prototype): a stat's label is in sentence case (24h volume, Price).
+  for (const label of ['APR', '24H VOLUME', 'TVL', 'PRICE']) assert.match(main, new RegExp(`${label}\\s+—`, 'i'), `the ${label} stat is a dash`);
   assert.doesNotMatch(main, /%|GeckoTerminal|Hourly candles/, 'no fee tier and no caption anywhere on the page');
   const plot = page.locator('main .dm-card', { hasText: 'Price history' }).locator('.dm-pool-plot');
   assert.deepEqual([await plot.getAttribute('title'), await plot.getAttribute('data-chart-provider')], ['Prices from swaps on Robinhood Chain.', null]);
@@ -1783,8 +1788,17 @@ test('Home funding examples preserve consent, show available networks and disclo
   const funding = page.locator('#funding');
   assert.equal(await funding.getByRole('link', { name: 'Find your funds', exact: true }).getAttribute('href'), '#/new');
   assert.equal(await funding.locator('details[open]').count(), 0, 'route conditions start folded');
-  assert.equal(await page.locator('#ranges').getAttribute('open'), null, 'the range lesson starts optional');
-  assert.equal(await page.getByRole('slider', { name: 'ETH price, against the start' }).isVisible(), false, 'the lesson does not expose a control before it is opened');
+  // Changed on purpose 2026-10-16 (V4 Home, the owner's D-H3): the range lesson starts open, with its one control; its
+  // title still folds it away (it was: starts folded, no control until opened).
+  const ranges = page.locator('#ranges');
+  const slider = page.getByRole('slider', { name: 'ETH price, against the start' });
+  assert.notEqual(await ranges.getAttribute('open'), null, 'the range lesson starts open');
+  assert.equal(await slider.isVisible(), true, 'its one control is there from the start');
+  await ranges.locator('> summary').click();
+  assert.equal(await ranges.getAttribute('open'), null, 'the lesson folds away from its title');
+  assert.equal(await slider.isVisible(), false, 'folded, it exposes no control');
+  await ranges.locator('> summary').click();
+  assert.notEqual(await ranges.getAttribute('open'), null, 'and opens again');
   const reads = structuredClone(apiOf(page));
   const across = funding.getByRole('button', { name: 'From another network', exact: true });
   const local = funding.getByRole('button', { name: 'On this network', exact: true });

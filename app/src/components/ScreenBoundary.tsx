@@ -1,10 +1,17 @@
 import { Component, type ReactNode } from 'react'
 
-/** A routed screen that couldn't load or draw: one quiet line in the screen's own page frame (App.tsx screenFailed). */
+/**
+ * A routed screen that couldn't load or draw: one line in the screen's own page frame (App.tsx screenFailed). V4
+ * (2026-10-16): its first sentence is drawn as the serif title with a Tangerine full stop (styles/v4-system.css
+ * .dm-fail), still one paragraph with the same words, so its innerText and what the alert says are unchanged.
+ */
 export const ScreenFailed = () => (
   <main className="dm-page">
-    <p role="alert" className="text-body text-fg-muted">
-      This page couldn’t load. Reload to try again.
+    <p role="alert" className="dm-fail">
+      <span>
+        This page couldn’t load<span>.</span>
+      </span>{' '}
+      Reload to try again.
     </p>
   </main>
 )

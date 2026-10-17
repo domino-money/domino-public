@@ -5,8 +5,7 @@ import { deferred } from '../components/Deferred'
 import { recovering } from '../lib/staleRelease'
 import PortfolioBody from '../components/portfolio/PortfolioBody'
 import { automateHref, marketsHref, newPositionHref } from '../components/explore/routes'
-import { IconTile } from '../components/figures'
-import { IconAutomate, IconChevronLeft, IconPositions, IconRange, IconWallet } from '../components/icons'
+import { IconChevronLeft, IconWallet } from '../components/icons'
 import type { DepositsSlot, OwnedPositionsProps } from '../components/positions/OwnedPositions'
 import { PendingRows, PendingSummary } from '../components/positions/PositionRow'
 import { AutomationFrame } from '../components/positions/visual/AutomationFrame'
@@ -191,7 +190,7 @@ function ReceiptsCard({ limit, title = 'Receipts', hidden, onShows }: { limit?: 
       title={title}
       titleId="receipts-title"
       art="receipt"
-      className="dm-acct-card"
+      className="dm-acct-card dm-lit"
       hidden={hidden}
       aside={
         limit !== undefined &&
@@ -271,14 +270,16 @@ function AutomationPair() {
 /** `#/positions/receipts`: every receipt read so far, newest first, with Show more for the next page. Positions stays lit in the header. */
 function ReceiptsPage() {
   return (
-    <PageShell>
-      <a href="#/positions" className="dm-pos-back">
-        <IconChevronLeft size={16} />
-        Positions
-      </a>
-      <Display as="h1" className="dm-display-h1 dm-rcpt-title">
-        Receipts
-      </Display>
+    <PageShell className="dm-receipts-page">
+      <div className="dm-rcpt-mast">
+        <a href="#/positions" className="dm-pos-back">
+          <IconChevronLeft size={16} />
+          Positions
+        </a>
+        <Display as="h1" className="dm-display-h1 dm-rcpt-title">
+          Receipts
+        </Display>
+      </div>
       <ReceiptsCard title="All receipts" />
     </PageShell>
   )
@@ -294,11 +295,11 @@ function AutomationCard() {
     <section className="dm-card dm-acct-rail dm-acct-auto dm-acct-o6" aria-labelledby="automation-title">
       <div className="dm-acct-auto-head">
         <h2 id="automation-title" className="dm-title">Automation</h2>
-        <LinkButton href={automateHref} variant="ghost" size="sm" aria-label="Open Automate">Explore <span aria-hidden="true">↗</span></LinkButton>
+        <LinkButton href={automateHref} variant="ghost" size="sm" aria-label="Open Automate">Explore</LinkButton>
       </div>
       <ul className="dm-acct-auto-list">
         <li>
-          <IconTile icon={<IconAutomate />} />
+          <span aria-hidden="true" className="dm-acct-auto-ic dm-acct-auto-ic--cmp" />
           <div className="min-w-0">
             <p className="dm-acct-auto-name">
               <span>Auto-compound</span>
@@ -307,7 +308,7 @@ function AutomationCard() {
           </div>
         </li>
         <li>
-          <IconTile icon={<IconPositions />} />
+          <span aria-hidden="true" className="dm-acct-auto-ic dm-acct-auto-ic--dom" />
           <div className="min-w-0">
             <p className="dm-acct-auto-name">
               <span>Domino-compound</span>
@@ -317,7 +318,7 @@ function AutomationCard() {
         </li>
         {__DOMINO_V2__ && (
           <li data-automation-feature="auto-exit">
-            <IconTile icon={<IconRange />} />
+            <span aria-hidden="true" className="dm-acct-auto-ic dm-acct-auto-ic--exit" />
             <div className="min-w-0">
               <p className="dm-acct-auto-name">
                 <span>{AUTO_EXIT_FEATURE.name}</span>
@@ -390,14 +391,17 @@ function PositionsList() {
         <div className="dm-acct-title-actions">
           {identity.kind === 'connected' && !viewing ? (
             <LinkButton href={receiptsHref} variant="outline" data-positions-receipts="">
+              <span aria-hidden="true" className="dm-v4-pl dm-v4-pl--receipt" />
               Receipts
             </LinkButton>
           ) : (
             <LinkButton href={marketsHref()} variant="ghost">
+              <span aria-hidden="true" className="dm-v4-pl dm-v4-pl--grid" />
               Markets
             </LinkButton>
           )}
           <LinkButton href={newPositionHref()} variant={quietNew ? 'secondary' : 'primary'}>
+            {quietNew && <span aria-hidden="true" className="dm-v4-pl dm-v4-pl--plus" />}
             New position
           </LinkButton>
         </div>

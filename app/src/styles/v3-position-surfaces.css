@@ -85,8 +85,7 @@
   [data-position-workspace-page] > .dm-pos-grid { margin-top: 2rem; gap: 2rem; }
   [data-position-workspace-page] .dm-pos-grid > .dm-pos-card,
   [data-position-workspace-page] .dm-pos-grid > .dm-card:not(.dm-pos-details) { padding: 1.75rem 2rem; }
-  [data-position-workspace-page] .dm-pos-grid > .dm-pos-card > .dm-title,
-  [data-position-workspace-page] .dm-pos-grid .dm-activity-head > .dm-title {
+  [data-position-workspace-page] .dm-pos-grid > .dm-pos-card > .dm-title {
     font: 400 1.833333rem/1.2 var(--font-display); letter-spacing: -.025em;
   }
   [data-position-workspace-page] .dm-pos-details { border: 1px solid var(--border); border-radius: 1rem; box-shadow: none; }
@@ -126,8 +125,7 @@
     [data-position-workspace-page] > .dm-pos-grid { margin-top: 1.5rem; gap: 1.5rem; }
     [data-position-workspace-page] .dm-pos-grid > .dm-pos-card,
     [data-position-workspace-page] .dm-pos-grid > .dm-card:not(.dm-pos-details) { padding: 1.25rem; }
-    [data-position-workspace-page] .dm-pos-grid > .dm-pos-card > .dm-title,
-    [data-position-workspace-page] .dm-pos-grid .dm-activity-head > .dm-title { font-size: 1.5rem; }
+    [data-position-workspace-page] .dm-pos-grid > .dm-pos-card > .dm-title { font-size: 1.5rem; }
     [data-position-workspace-page] .dm-pos-details-head { padding-inline: 1.25rem; }
     [data-position-workspace-page] .dm-pos-details > :not(summary) { margin-inline: 1.25rem; }
   }

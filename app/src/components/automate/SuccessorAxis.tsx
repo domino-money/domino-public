@@ -40,9 +40,8 @@ function Band({ kind, from, to, top, index, children }: { kind: 'root' | 'next' 
   return (
     <div className="dm-axis-band" data-kind={kind} style={{ '--i': index } as CSSProperties}>
       {kind !== 'zone' && <div className="dm-axis-line" style={clip(0)} />}
-      <div className="dm-axis-fill" style={clip(kind === 'zone' ? 0 : 1)}>
-        {children}
-      </div>
+      <div className="dm-axis-fill" style={clip(kind === 'zone' ? 0 : 1)} />
+      {children}
     </div>
   )
 }
@@ -101,8 +100,11 @@ export function SuccessorAxis({ root, inverse, form }: { root: AxisRoot; inverse
       <div className="dm-axis-plot" aria-hidden="true">
         <div className="dm-axis-base" style={{ top: rem(BASE) }} />
         <Band kind="root" from={x(Math.max(plan.floor, lo))} to={x(0)} top={BASE - BAND} index={0}>
-          <span className={cx('dm-axis-nft', cut && 'is-cut')} style={{ left: `calc(${x(Math.max(plan.floor, lo))}% + ${rem(10)})`, top: rem(BASE - BAND + 7) }}>
-            #{root.tokenId}
+          {/* The id sits in a box the band's size, outside its clip: it shows when the band can hold it (v4-automate.css). */}
+          <span className="dm-axis-nft-box" style={{ left: `${x(Math.max(plan.floor, lo))}%`, width: `${x(0) - x(Math.max(plan.floor, lo))}%`, top: rem(BASE - BAND), height: rem(BAND) }}>
+            <span className={cx('dm-axis-nft', cut && 'is-cut')} style={{ left: rem(10), top: rem(7) }}>
+              #{root.tokenId}
+            </span>
           </span>
         </Band>
         {steps.map((step, index) => (

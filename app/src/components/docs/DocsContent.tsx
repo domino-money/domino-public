@@ -231,22 +231,22 @@ export function DocsArticle({ page, tocInline, crumbs }: { page: DocPage; tocInl
           </ol>
         </nav>
       )}
-      <div className="dm-docs-head animate-rise">
+      <div className="dm-docs-head">
         <div className="dm-docs-title">
           <Display as="h1" className="dm-display-title">
             {page.title}
           </Display>
           {page.status && <RoadmapPill name={page.status} />}
         </div>
-        <p className="dm-docs-lead">{page.lead ?? page.summary}</p>
+        <p className="dm-docs-lead dm-k-up1">{page.lead ?? page.summary}</p>
       </div>
       {tocInline && entries.length > 0 && (
-        <details className="dm-details dm-docs-toc-menu">
+        <details className="dm-details dm-docs-toc-menu dm-k-up1">
           <summary>On this page</summary>
           <DocsToc slug={page.slug} entries={entries} />
         </details>
       )}
-      <div className="dm-docs-prose animate-fade">
+      <div className="dm-docs-prose dm-k-card">
         {page.sections.map((section) => (
           <SectionView key={section.id} section={section} />
         ))}

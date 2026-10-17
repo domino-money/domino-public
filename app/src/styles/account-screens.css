@@ -16,10 +16,8 @@
   .dm-acct-hash { font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.125rem; letter-spacing: 0; color: var(--fg-muted); overflow-wrap: anywhere; }
   /* Sentences that carry a hash or an address: words wrap as words, and only a long hex string breaks inside. */
   .dm-acct-wrap { overflow-wrap: anywhere; }
-  .dm-acct-signin { padding: 1.25rem; font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-muted); }
   .dm-acct-stack { display: grid; gap: 0.75rem; }
   .dm-acct-span { min-width: 0; }
-  .dm-acct-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin-left: -0.625rem; }
   .dm-acct-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 
   /* A label wrapped around its field: the label's words above, the field under them at body size. */

@@ -286,9 +286,12 @@ test('Automate leads with New position above three desktop choices, stacks on mo
       assert.ok(boxes.every((box) => box.right <= width && box.x >= 0));
       assert.ok(boxes[1].y > boxes[0].bottom, 'New position leads above the automation choices');
       if (width === 1320) {
-        assert.equal(boxes[1].y, boxes[2].y); assert.equal(boxes[2].y, boxes[3].y);
+        // Changed on purpose 2026-10-16 (V4, the owner's approved site/automate.html): the three functions are separated
+        // rows of one card, equal in width, beside one stage that shows their demonstrations; they were three columns.
+        for (let i = 2; i < boxes.length; i++) assert.ok(boxes[i].y > boxes[i - 1].bottom, 'three separated rows');
         assert.ok(Math.abs(boxes[1].width - boxes[2].width) < 1 && Math.abs(boxes[2].width - boxes[3].width) < 1);
-        assert.ok(boxes[2].x > boxes[1].right && boxes[3].x > boxes[2].right, 'three separated columns');
+        const stage = await s.page.locator('.dm-automation-choice-grid .dm-automation-choice-art').evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().x));
+        assert.ok(stage.length === 3 && stage.every((x) => x > boxes[1].right), 'the rows sit left of the stage');
       } else for (let i = 1; i < boxes.length; i++) assert.ok(boxes[i].y > boxes[i - 1].bottom, 'one separated column on mobile');
       await s.page.screenshot({ path: resolve(shots, `automate-compact-${width}.png`), fullPage: true });
     }

@@ -94,7 +94,16 @@ function ThreeWays({ alt }: { alt: string }) {
           <Way feature={key} />
           <p className="dm-docs-dg-name">{FEATURES[key].name}</p>
           <p className="dm-docs-dg-line">{FEATURES[key].line}</p>
-          <p className="dm-docs-dg-fee-line">{FEATURES[key].fee ? `${FEATURES[key].fee} of the fees it uses` : 'No Domino fee'}</p>
+          {/* The fee in full ink (V4, 2026-10-16): the same words, the share in a <b>. */}
+          <p className="dm-docs-dg-fee-line">
+            {FEATURES[key].fee ? (
+              <>
+                <b>{FEATURES[key].fee}</b> of the fees it uses
+              </>
+            ) : (
+              'No Domino fee'
+            )}
+          </p>
         </li>
       ))}
     </ol>

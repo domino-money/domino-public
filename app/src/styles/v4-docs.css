@@ -1,0 +1,14 @@
+/* V4 Docs (owner: docs-system). Loaded by screens.css, last. Scope: the docs containers; only rules that must beat the foundation's v4 rules (the rest is docs.css and v3-docs.css).
+   Every rule sits in @layer v4 (the last layer, impl/plan.md §1.1) and starts with this file's scope.
+
+   2026-10-16 (V4, site/docs.html, site/docs-article.html): the pages' titles at the prototype's sizes, the vw term of each
+   clamp() scaled with the root as the prototype's zoom scaled it (--vwk). Only size, measure and ink: the Tangerine stop,
+   the line rise and the sheen are the foundation's, drawn on every page title alike, never as text inside the h1. */
+@layer v4 {
+  .dm-docs-head .dm-display-title { margin: 0; font-size: clamp(3.25rem, calc(6.2vw * var(--vwk)), 5.5rem); line-height: 0.96; letter-spacing: -0.032em; color: var(--v4-display); text-wrap: balance; overflow-wrap: anywhere; }
+  .dm-docs-index .dm-docs-head .dm-display-title { font-size: clamp(3.5rem, calc(7.4vw * var(--vwk)), 6.75rem); line-height: 0.9; letter-spacing: -0.035em; }
+  @media (max-width: 767px), (max-width: 859px) and (pointer: coarse) {
+    .dm-docs-head .dm-display-title { font-size: 2.875rem; }
+    .dm-docs-index .dm-docs-head .dm-display-title { margin-top: 1.625rem; font-size: 4rem; }
+  }
+}

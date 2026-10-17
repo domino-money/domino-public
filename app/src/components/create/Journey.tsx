@@ -676,11 +676,11 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
   return (
     <PageShell width="flow" className="dm-np" data-create-journey="" data-create-step={current}>
       <PageHeader size="display" title={CREATE.page.title} className="dm-np-head dm-flow-rise" />
-      <div className="dm-card dm-flow-card dm-flow-rise" style={{ '--delay': '40ms' } as CSSProperties}>
+      <div className="dm-card dm-flow-card dm-flow-rise dm-lit" style={{ '--delay': '40ms' } as CSSProperties}>
         <StepList steps={steps} onOpen={reopen} locked={creating} />
       </div>
       <PositionPreview
-        className="dm-card dm-flow-preview dm-flow-rise"
+        className="dm-card dm-flow-preview dm-flow-rise dm-lit"
         style={{ '--delay': '80ms' } as CSSProperties}
         state={valued}
         preview={current === 'pool' && !state.pool ? preview : null}

@@ -18,6 +18,7 @@ import { useFeatured } from '../../../lib/read/featuredSource'
 import { MarketsContext } from '../../../lib/read/useMarkets'
 import { MarketsTable } from '../../MarketsTable'
 import { Button, Card, Skeleton } from '../../ui'
+import { TokenMark } from '../../TokenIcon'
 import { Address } from './Address'
 import { SymbolText } from './SymbolText'
 
@@ -143,6 +144,8 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
   return (
     <section className="mt-6 grid gap-4" aria-labelledby="stored-token-title" data-stored-token={token} data-acquisition={atCapacity ? 'at_capacity' : pending ? 'pending' : 'settled'} data-pools-merged={merged.length} data-pools-discovered={discovered.length}>
       <Card pad="md">
+        {/* V4 (D-M5): the token's mark beside its name, decoration only. */}
+        {candidate && <span aria-hidden="true" className="dm-mkt-token-mark"><TokenMark token={candidate.token} size={44} /></span>}
         <h2 id="stored-token-title" className="dm-title" title="Pools stored for this token, and the ones a market data provider lists for it, each checked on Robinhood Chain. The list does not imply complete chain history.">{candidate ? <SymbolText token={candidate.token} /> : 'Token data'}</h2>
         <p className="mt-2 text-caption text-fg-muted"><Address value={token} /></p>
         {warning && <p role="alert" className="dm-pool-warning mt-3" data-token-warning={warning.kind}>{warningText(warning, 'token')}</p>}

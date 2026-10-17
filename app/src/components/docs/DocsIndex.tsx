@@ -4,6 +4,7 @@ import type { DocPage } from '../../lib/docs/types'
 import { docsHref } from '../explore/routes'
 import { IconBook, IconChevronRight, IconRange, IconWallet, type IconProps } from '../icons'
 import { Display } from '../ui'
+import { DominoTile } from './DominoTile'
 
 /** The mark on each start card. Never a domino in a tile. */
 const START_ICONS: Readonly<Record<string, ComponentType<IconProps>>> = {
@@ -18,14 +19,18 @@ const START: ReadonlyArray<DocPage> = DOC_START.flatMap((slug) => findDocPage(sl
 export function DocsIndex() {
   return (
     <div className="dm-docs-index">
-      <div className="dm-docs-head animate-rise">
+      <div className="dm-docs-head">
         <Display as="h1" className="dm-display-title">
           {DOCS_HOME.title}
         </Display>
-        <p className="dm-docs-lead">{DOCS_HOME.summary}</p>
+        <p className="dm-docs-lead dm-k-up1">{DOCS_HOME.summary}</p>
+        {/* V4 (2026-10-16, site/docs.html): the brand's tile, small, beside the title; decoration only. */}
+        <div aria-hidden="true" className="dm-docs-istage">
+          <DominoTile />
+        </div>
       </div>
 
-      <section aria-labelledby="docs-start-title" className="dm-docs-start animate-fade">
+      <section aria-labelledby="docs-start-title" className="dm-docs-start dm-k-card">
         <h2 id="docs-start-title" className="dm-docs-label">
           Start here
         </h2>
@@ -50,7 +55,7 @@ export function DocsIndex() {
         </ul>
       </section>
 
-      <div className="dm-docs-groups animate-fade">
+      <div className="dm-docs-groups dm-k-c3">
         {DOC_GROUPS.map((group) => (
           <section key={group.key} aria-labelledby={`docs-index-${group.key}`} className="dm-docs-group">
             <h2 id={`docs-index-${group.key}`} className="dm-display-rail">

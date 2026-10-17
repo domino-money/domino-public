@@ -1,31 +1,88 @@
-/* The same quiet surfaces and readable scale as the product; full reference content stays available. */
+/* The docs index, #/docs (the frame and the article are docs.css).
+
+   Changed on purpose 2026-10-16 (V4, the owner approved the prototype: site/docs.html; impl/map-docs-system.md §1.4):
+   the title beside the brand's tile, standing small (decoration, hidden on a phone); "Start here" one card split in
+   three by the tile's groove, each a serif title with a quiet glyph that tips and turns Tangerine on hover; every page
+   by group under serif group titles, as rows with the row pip and the chevron in its circle. The cards' and rows'
+   own links, words, ids and order are unchanged. */
 @layer v3 {
-  .dm-docs { gap: 2.5rem; }
-  .dm-docs[data-docs-side] { grid-template-columns: 12rem minmax(0, 1fr); }
-  .dm-docs[data-docs-side][data-docs-rail] { grid-template-columns: 12rem minmax(0, 1fr) 10rem; }
-  .dm-docs-lead { max-width: 48ch; font-size: 0.9375rem; line-height: 1.6; }
-  .dm-docs-start { margin-top: 2rem; }
-  .dm-docs-start-card { background: var(--card); padding: 1.125rem; gap: 0.25rem; }
-  .dm-docs-start-icon { color: var(--primary); background: var(--primary-wash); box-shadow: none; border-radius: 0.75rem; }
-  .dm-docs-start-title { font-size: 0.9375rem; }
-  .dm-docs-start-summary { font-size: 0.8125rem; line-height: 1.6; color: var(--fg-subtle); }
-  .dm-docs-groups { margin-top: 2.5rem; gap: 2rem; }
-  .dm-docs-group { border-top: 1px solid var(--border-lip); padding-top: 1.25rem; }
-  .dm-docs-group .dm-display-rail { font-family: var(--font-sans); font-size: 0.9375rem; font-weight: 500; }
+  .dm-docs-index .dm-docs-head { display: grid; grid-template-columns: minmax(0, 1fr) 13.75rem; grid-template-rows: 1fr auto; align-items: end; gap: 0 1.5rem; padding-top: 2.125rem; }
+  .dm-docs-index .dm-docs-head > :not(.dm-docs-istage) { grid-column: 1; }
+  .dm-docs-menu + .dm-docs-index .dm-docs-head { padding-top: 1.25rem; }
+  .dm-docs-istage { position: relative; display: flex; align-items: center; justify-content: center; grid-column: 2; grid-row: 1 / span 2; height: 14.375rem; pointer-events: none; }
+  .dm-docs-istage > .dm-tile { flex: none; scale: 0.5; }
+  .dm-docs-istage > .dm-tile-shadow { left: 50%; bottom: 0.875rem; width: 8.125rem; height: 1.5rem; margin-left: -4.0625rem; }
+
+  /* Start here: one card, its title a section title, three cells split by the tile's groove. */
+  .dm-docs-start { position: relative; margin-top: 2.75rem; padding: 0.5rem 0.5rem 0.625rem; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); }
+  .dm-docs-start > .dm-docs-label { margin: 0; padding: 1.375rem 1.125rem 1.125rem 1.375rem; font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  .dm-docs-start-grid { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+  .dm-docs-start-grid > li { position: relative; }
+  .dm-docs-start-grid > li + li::before { content: ''; position: absolute; left: 0.875rem; right: 0.875rem; top: -1px; height: 2px; background: linear-gradient(180deg, rgb(0 0 0 / 0.5) 0 1px, rgb(255 236 220 / 0.075) 1px 2px); }
+  .dm-docs-start-card { position: relative; display: grid; grid-template-columns: 1.75rem minmax(0, 1fr); align-items: start; gap: 0.375rem 0.875rem; height: 100%; padding: 1rem 0.75rem 1rem 0.875rem; border-radius: 1.25rem; background: none; box-shadow: none; text-decoration: none; transition: background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  .dm-docs-start-card:hover { background: var(--v4-w04); box-shadow: none; }
+  .dm-docs-start-icon { display: block; grid-row: 1 / 3; width: auto; height: auto; margin-top: 2px; border-radius: 0; background: none; box-shadow: none; color: var(--subtle); --icon-2: currentColor; transition: color 0.2s var(--e-std), transform 0.35s var(--e-enter); }
+  .dm-docs-start-icon > svg { display: block; width: 1.625rem; height: 1.625rem; }
+  .dm-docs-start-card:hover .dm-docs-start-icon { color: var(--tan); transform: rotate(-8deg) translateY(-1px); }
+  .dm-docs-start-title { display: inline-flex; align-items: center; gap: 0.625rem; margin-top: 0; font-family: var(--font-display); font-size: 1.5625rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); transition: color 0.25s var(--e-std); }
+  .dm-docs-start-title > svg { flex: none; color: var(--faint); transition: color 0.18s var(--e-std), translate 0.25s var(--e-enter); }
+  .dm-docs-start-card:hover .dm-docs-start-title { color: var(--v4-lit); }
+  .dm-docs-start-card:hover .dm-docs-start-title > svg { color: var(--fg); translate: 2px 0; }
+  .dm-docs-start-summary { display: block; max-width: 34ch; margin-top: 0; font-size: 0.875rem; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+
+  /* Every page by group: serif group titles on a hairline, rows with the pip and the chevron in a circle. */
+  .dm-docs-groups { display: grid; align-items: start; gap: 2.5rem; margin-top: 2.5rem; }
+  .dm-docs-group { min-width: 0; padding-top: 0; border-top: 0; }
+  .dm-docs-group > .dm-display-rail { margin: 0; padding: 1.5rem 0 0.75rem 0.75rem; font-family: var(--font-display); font-size: 1.625rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); box-shadow: inset 0 1px 0 var(--line); }
+  .dm-docs-rows { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
   .dm-docs-rows > li { border-top: 0; }
-  .dm-docs-row { padding: 0.875rem 0.625rem; margin-inline: -0.625rem; border-radius: 0.75rem; }
-  .dm-docs-row:hover { background: var(--wash); }
-  .dm-docs-row-title { font-size: 0.875rem; }
-  .dm-docs-row-summary { max-width: 50ch; font-size: 0.75rem; line-height: 1.5; color: var(--fg-subtle); }
-  .dm-docs-h2 { font-size: 1.75rem; line-height: 1.2; }
-  .dm-docs-p, .dm-docs-list > li { font-size: 1rem; line-height: 1.75; }
-  .dm-docs-note { border-left: 2px solid var(--primary); background: var(--primary-wash); border-radius: 0 0.75rem 0.75rem 0; }
-  .dm-docs-side { padding-right: 0.75rem; border-right: 1px solid var(--border); }
-  .dm-docs-side a { border-radius: 0.5rem; }
-  .dm-docs-side a[aria-current="page"] { color: var(--primary); background: var(--primary-wash); }
-  @media (max-width: 767px) {
-    .dm-docs-start-card { padding: 1rem; }
-    .dm-docs-groups { gap: 1.5rem; }
-    .dm-docs-row { min-height: 3rem; }
+  .dm-docs-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 2.125rem; align-items: center; gap: 0.875rem; margin: 0; padding: 0.8125rem 0.25rem 0.8125rem 0.75rem; border-radius: 0.875rem; text-decoration: none; transition: background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  .dm-docs-row::before { content: ''; position: absolute; left: 0.5rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: 50%; background: var(--tan); opacity: 0; transform: scale(0.2); transition: opacity 0.2s var(--e-std), transform 0.35s var(--e-enter); }
+  .dm-docs-row:hover { background: var(--v4-w045); }
+  .dm-docs-row:hover::before { opacity: 1; transform: none; }
+  .dm-docs-row:active { scale: 0.997; }
+  .dm-docs-row-title { display: block; font-size: 0.96875rem; line-height: 1.35; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); text-decoration: none; }
+  .dm-docs-row-summary { display: block; max-width: none; margin-top: 0.3125rem; font-size: 0.84375rem; line-height: 1.5; letter-spacing: -0.01em; color: var(--subtle); text-wrap: pretty; }
+  .dm-docs-row > svg { box-sizing: border-box; width: 2.125rem; height: 2.125rem; padding: 0.625rem; border-radius: 50%; color: var(--faint); transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), translate 0.25s var(--e-enter); }
+  .dm-docs-row:hover > svg { color: var(--fg); background: var(--v4-w06); translate: 2px 0; }
+  @media (hover: none) { .dm-docs-row::before { display: none; } }
+
+  /* From 860px (and on a desktop pointer from 768px): the stage beside the title, three cells side by side with
+     upright grooves, two groups to a row. */
+  @media (min-width: 860px), (min-width: 768px) and (pointer: fine) {
+    .dm-docs-start { margin-top: 2.75rem; padding: 0.5rem 0.5rem 0.625rem; }
+    .dm-docs-start-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .dm-docs-start-grid > li + li::before { left: -1px; right: auto; top: 1.375rem; bottom: 1.375rem; width: 2px; height: auto; background: linear-gradient(90deg, rgb(0 0 0 / 0.5) 0 1px, rgb(255 236 220 / 0.075) 1px 2px); }
+    .dm-docs-start-card { display: flex; flex-direction: column; align-items: flex-start; padding: 1.375rem 1.5rem 1.625rem; }
+    .dm-docs-start-icon { margin-top: 0; }
+    .dm-docs-start-title { margin-top: 2.375rem; font-size: 2.125rem; }
+    .dm-docs-start-summary { margin-top: 0.875rem; font-size: 0.90625rem; }
+    .dm-docs-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3.5rem 2.5rem; margin-top: 4.5rem; }
+    .dm-docs-group > .dm-display-rail { padding-left: 1.375rem; font-size: 1.875rem; }
+    .dm-docs-row { padding: 0.875rem 0.625rem 0.875rem 1.375rem; }
   }
+  @media (max-width: 767px), (max-width: 859px) and (pointer: coarse) {
+    .dm-docs-index .dm-docs-head { grid-template-columns: minmax(0, 1fr); padding-top: 0; }
+    .dm-docs-menu + .dm-docs-index .dm-docs-head { padding-top: 0; }
+    .dm-docs-istage { display: none; }
+    .dm-docs-start { margin-top: 1.75rem; padding: 0.375rem; }
+    .dm-docs-start > .dm-docs-label { padding: 1rem 0.625rem 0.375rem 0.75rem; font-size: 1.75rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :is(.dm-docs-start-icon, .dm-docs-start-title > svg, .dm-docs-row::before, .dm-docs-row > svg) { transition-property: opacity, color, background-color, box-shadow !important; }
+  }
+}
+
+/* The index's load moment (site/docs.html, the inner page's timings): the tile lands, then its pips pop in turn; the
+   lead, the card and the groups carry the shared dm-k-* classes (JSX). First load only; reduced motion: none. */
+@layer utilities {
+  html:not(.dm-booted) .dm-docs-istage > .dm-tile { animation: dm-sys-tin 0.6s var(--ease-enter) 0.12s backwards; }
+  html:not(.dm-booted) .dm-docs-istage > .dm-tile-shadow { animation: dm-v4-fade 0.5s var(--ease-std) 0.22s backwards; }
+  html:not(.dm-booted) .dm-docs-istage i { animation: dm-v4-pip 0.3s var(--e-pop) 0.4s backwards; }
+  html:not(.dm-booted) .dm-docs-istage i:nth-of-type(2) { animation-delay: 0.44s; }
+  html:not(.dm-booted) .dm-docs-istage i:nth-of-type(3) { animation-delay: 0.48s; }
+  html:not(.dm-booted) .dm-docs-istage i:nth-of-type(4) { animation-delay: 0.52s; }
+  html:not(.dm-booted) .dm-docs-istage i:nth-of-type(5) { animation-delay: 0.56s; }
+  @media (prefers-reduced-motion: reduce) { .dm-docs-istage * { animation: none !important; } }
+  html.dm-still .dm-docs-istage * { animation: none !important; }
 }

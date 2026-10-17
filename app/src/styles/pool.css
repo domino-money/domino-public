@@ -72,7 +72,6 @@
   /* Each chip line keeps the id's copy-button height (24px), with or without the button, so the title row is one
      height while the pool is verified and after. */
   .dm-pool-id { display: inline-flex; align-items: center; gap: 2px; min-height: 1.5rem; font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: 0; color: var(--fg-subtle); }
-  .dm-pool-verifying { display: inline-flex; align-items: center; min-height: 1.5rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-pool-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 
   /* ---- Cards ------------------------------------------------------------------------------------------------- */
@@ -88,14 +87,12 @@
   .dm-pool-disclosure[open] > summary .dm-pool-details-chevron, .dm-pool-recent-disclosure[open] > summary .dm-pool-details-chevron { rotate: 225deg; translate: 0 0.125rem; }
   .dm-pool-disclosure-body { display: grid; gap: 0.625rem; margin-top: 0.875rem; color: var(--fg-muted); }
   .dm-pool-disclosure-body > p { margin: 0; }
-  .dm-pool-saved { margin: 0.625rem 0 0; color: var(--fg-muted); font-size: 0.75rem; line-height: 1.125rem; }
   .dm-pool-recent.dm-pool-card { padding-block: 1.125rem; }
 
   /* ---- The sentence under the name, and the key figures (round 6) --------------------------------------------- */
   /* One plain sentence: what the pool is and what it earns. */
   .dm-pool-intro { max-width: 72ch; margin: 0; font-size: 0.9375rem; line-height: 1.375rem; letter-spacing: -0.2px; color: var(--fg-muted); }
   .dm-pool-intro b { font-weight: 500; color: var(--fg); }
-  .dm-pool-intro .dm-pool-intro-apr { color: var(--money-in); }
   .dm-pool-skel-intro { display: block; width: min(45rem, 100%); height: 0.875rem; margin: 0.3125rem 0; }
   .dm-pool-skel-intro--short { width: min(20rem, 60%); }
   @media (min-width: 768px) { .dm-pool-intro { font-size: 1rem; line-height: 1.5rem; } }
@@ -219,7 +216,6 @@
   .dm-pool-details-head::-webkit-details-marker { display: none; }
   .dm-pool-details-head:hover { background: var(--wash); }
   .dm-pool-details-head:focus-visible { outline: 2px solid var(--ring); outline-offset: var(--focus-offset-inset); }
-  .dm-pool-details-hint { flex: 1; min-width: 0; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-subtle); }
   /* The chevron, drawn: a 7px corner turned down, up once open. */
   .dm-pool-details-chevron { flex-shrink: 0; width: 0.4375rem; height: 0.4375rem; margin: 0 0.25rem 0 auto; border-right: 1.5px solid var(--fg-subtle); border-bottom: 1.5px solid var(--fg-subtle); rotate: 45deg; translate: 0 -2px; transition: rotate var(--dur-fast) var(--ease-std), translate var(--dur-fast) var(--ease-std); }
   .dm-pool-details[open] .dm-pool-details-chevron { rotate: 225deg; translate: 0 2px; }
@@ -229,7 +225,6 @@
     .dm-pool-details-head { min-height: 4.5rem; padding: 0 1.5rem; }
     .dm-pool-details > :not(summary) { margin-inline: 1.5rem; }
   }
-  @media (max-width: 479px) { .dm-pool-details-hint { display: none; } }
   .dm-pool-kv dt { flex-shrink: 0; white-space: nowrap; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; }
   .dm-pool-kv-id { display: flex; align-items: center; gap: 0.25rem; min-width: 0; color: var(--fg-muted); }
   .dm-pool-kv-id > .dm-hex { min-width: 0; }
@@ -276,7 +271,6 @@
   .dm-pool-earn-lead { margin: 0; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
   .dm-pool-earn-month { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; margin: 2px 0 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-muted); }
   .dm-pool-earn-month > .dm-fig-lg { color: var(--money-in); }
-  .dm-pool-earn-more { margin: 2px 0 0; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
   .dm-pool-earn-quiet { margin: auto 0; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
   .dm-pool-earn-note { margin-top: 0.75rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-pool-earn-skel-lead { display: block; width: 8.25rem; height: 0.75rem; margin: 0.1875rem 0; }
@@ -301,9 +295,6 @@
   .dm-pool-guide-key > [data-key="band"]::before { width: 0.75rem; height: 0.5rem; border-radius: 2px; background: var(--band-fill); box-shadow: inset 2px 0 0 var(--primary-line), inset -2px 0 0 var(--primary-line); }
   .dm-pool-guide-key > [data-key="now"]::before { width: 2px; height: 0.75rem; border-radius: 1px; background: var(--fg); }
   .dm-pool-guide-key > [data-key="day"]::before { width: 0.75rem; height: 0.1875rem; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--fg) 45%, transparent); }
-  .dm-pool-guide-text { margin-top: 1rem; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; color: var(--fg-muted); }
-  .dm-pool-guide-text b { font-weight: 500; color: var(--fg); }
-  .dm-pool-guide-note { margin-top: 0.5rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-pool-quiet-line { margin-top: 1rem; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; color: var(--fg-muted); }
 
   /* ---- What you can do here (round 6): the three features, one row each -------------------------------------- */
@@ -327,7 +318,6 @@
   .dm-pool-recent-skel + .dm-pool-recent-skel { width: 70%; }
 
   /* ---- Plan a range: PoolRangeControls, in every context (§9.1) ------------------------------------------------ */
-  .dm-pool-range-body { margin-top: 1.25rem; }
   .dm-pool-price { display: grid; gap: 0.25rem; }
   .dm-pool-price-label { margin: 0; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 400; letter-spacing: -0.16px; color: var(--fg-subtle); }
   .dm-pool-price-row { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 2px 0.625rem; }

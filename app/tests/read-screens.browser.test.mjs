@@ -1170,7 +1170,8 @@ test('the pool page reads its figures, Domino’s 24h history and its chain acti
   // Changed on purpose (2026-09-27, round 6): what the pool earns first, then how busy and how big it is, then its
   // price; the fee is in the chip and the sentence under the name. Changed on purpose 2026-10-04 (the owner's UI round of
   // that day, components/explore: "Pool price", "Saved pool price" when stale): the label says whose price it is.
-  assert.deepEqual(stats.map(([label]) => label), ['APR', '24H VOLUME', 'TVL', '24H FEES', 'POOL PRICE'], 'Domino’s 24h fees beside the figures, and its APR where the estimate would be');
+  // Changed on purpose 2026-10-16 (V4, the owner-approved prototype): the labels read in sentence case, as written.
+  assert.deepEqual(stats.map(([label]) => label), ['APR', '24h volume', 'TVL', '24h fees', 'Pool price'], 'Domino’s 24h fees beside the figures, and its APR where the estimate would be');
   // Changed on purpose 2026-10-01 (integration pass 3, after audit E21): the APR as the one APR rule writes it, whole from 100%.
   assert.deepEqual(stats.slice(0, 4).map(([, value]) => value), ['158%', '$0.000029', '$0.000020', '<$0.000001'], 'the qualified figures take precedence over the provider’s');
   assert.match(await workspace.locator('[data-pool-details] [data-market-provenance]').innerText(), /^Domino history/, 'the figures source remains available in Pool details');

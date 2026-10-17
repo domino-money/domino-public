@@ -1276,7 +1276,33 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // entry, as App.tsx does; +88 B gzip alone (215,686 -> 215,774 B on a26a0a75), and with D2 merged the Windows gzip 9
     // initial entry measures 216,018 B against 216,000 B. Allow 500 B for this measured code; no dependency, and every
     // other ceiling stays unchanged.
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_500], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 389_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 657_000], ['V2 fixture data', fixtureData, 13_000]]) {
+    // Changed on purpose 2026-10-16 (V4 look, owner-approved prototype; impl/plan.md test C): the foundation's eager CSS
+    // (V4 tokens and aliases, the load-moment classes, the lit edge, the primitives, the dialog and wallet frame), with the
+    // rules it replaced removed in place, takes the Windows gzip 9 initial entry from 214,755 B to 217,598 B, 1,098 B over
+    // 216,500 B. Raise only the initial entry by that overshoot rounded up to 0.5 kB; no dependency, every other ceiling
+    // unchanged.
+    // Changed on purpose 2026-10-16 (V4 look, owner-approved prototype; impl/plan.md test C, foundation F4-F8): the header,
+    // footer, page title and ember (the V4 chrome, its menu glyphs, the title's stop, sheen and rise, the ember layer and
+    // its script), with the header, menu, footer and title rules they replaced removed in place, take the Windows gzip 9
+    // initial entry from 217,598 B to 218,886 B, 886 B over 218,000 B. Raise only the initial entry by that overshoot
+    // rounded up to 0.5 kB; no dependency, every other ceiling unchanged.
+    // Changed on purpose 2026-10-16 (V4 look, owner-approved prototype; impl/plan.md test C, docs-system): the eager system
+    // states (styles/v4-system.css: the brand tile drawn in CSS for Not found, which is part of the entry, the fallen-tile
+    // stage, the failed-screen title, the flagged loader's pips) take the Windows gzip 9 initial entry from 217,598 B to
+    // 219,169 B, 1,169 B over 218,000 B (nothing eager was replaced; the loader was compacted first). Raise only the
+    // initial entry by that overshoot rounded up to 0.5 kB; no dependency, every other ceiling unchanged.
+    // Changed on purpose 2026-10-16 (V4 Home, owner-approved prototype; impl/plan.md test C): Home's V4 stylesheet (the
+    // hero tile, the pool strip, the funding loop, the functions' stage, the range scene and the calm topics), with its
+    // three replaced v3 files emptied and the hero's SVG sculpture and its stylesheet removed, takes the Windows gzip 9
+    // initial entry from 217,598 B to 224,191 B, 6,191 B over 218,000 B. Raise only the initial entry by that overshoot
+    // rounded up to 0.5 kB; no dependency, every other ceiling unchanged.
+    // Changed on purpose 2026-10-16 (V4 integration, impl/plan.md test C, after the seven areas and the F-C cleanup of
+    // the rules nothing renders): the three measures above were taken on separate branches. Merged, the Windows gzip 9
+    // initial entry measures 224,453 B in dist (.wallet-test-dist 221,051 B, .wallet-test-v2-dist 221,738 B), 5,453 B
+    // over 219,000 B. Raise only the initial entry to 225,000 B: the overshoot rounded up to 0.5 kB leaves 47 B, so one
+    // more 0.5 kB keeps the plan's half-kilobyte headroom for platform gzip variation. No dependency, every other
+    // ceiling unchanged.
+    for (const [family, files, productionBudget] of [['initial entry', first, 225_000], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 389_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 657_000], ['V2 fixture data', fixtureData, 13_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir !== DIST && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

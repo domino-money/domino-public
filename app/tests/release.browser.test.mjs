@@ -381,9 +381,39 @@ async function nothingInvented(page, label) {
   assert.deepEqual(found, { rows: 6, catalogue: 6, live: 0, metrics: 0, dashes: 24, unavailable: 0, dollars: false, sample: false }, label);
 }
 
-/** Home presents pool figures in its table without repeating them in a ticker. */
-async function noHomeTicker(page, label) {
-  assert.equal(await page.locator('[data-ticker]').count(), 0, `${label}: no ticker mounted on Home`);
+/**
+ * Changed on purpose 2026-10-16 (V4 Home, the owner's D-H1): Home's pool strip repeats the table's pools that have an
+ * APR figure, with the table's own APR and the same pool links, and shows nothing while the table has no figure. (It
+ * was: no ticker on Home.) The read lab's ticker is still never mounted here.
+ */
+async function noHomeTicker(page, label, { expectStrip = false } = {}) {
+  assert.equal(await page.locator('[data-ticker]').count(), 0, `${label}: no read-lab ticker mounted on Home`);
+  // With figures in the table the strip must actually show them (it waits for the featured list to settle).
+  if (expectStrip) await page.locator('[data-home-marquee] .dm-mq-set:first-child > a:not(.dm-mq-copy)').first().waitFor({ timeout: 15_000 });
+  const strip = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#pools tbody tr.dm-mkt-row:not([data-pool-catalogue])')].map((row) => {
+      const apr = row.querySelector('td.dm-mkt-apr')?.cloneNode(true);
+      apr?.querySelectorAll('.dm-home-pool-label').forEach((name) => name.remove());
+      return { href: row.querySelector('a.dm-mkt-name')?.getAttribute('href'), apr: apr?.textContent.trim() ?? '' };
+    });
+    const items = [...document.querySelectorAll('[data-home-marquee] .dm-mq-set:first-child > a:not(.dm-mq-copy)')]
+      .map((a) => ({ href: a.getAttribute('href'), apr: a.querySelector('.dm-mq-apr')?.textContent.trim() ?? '' }));
+    return { rows, items };
+  });
+  for (const item of strip.items) {
+    const row = strip.rows.find((candidate) => candidate.href === item.href);
+    assert.ok(row, `${label}: the strip names only the table's pools (${item.href})`);
+    // The whole figure, not a tail of it: '58%' must not pass against '158%'.
+    const at = row.apr.indexOf(item.apr);
+    const whole = at >= 0 && !/[\d.,]/.test(at > 0 ? row.apr[at - 1] : '');
+    assert.ok(/\d/.test(item.apr) && whole, `${label}: the strip's APR (${item.apr}) is the table's (${row.apr})`);
+  }
+  if (strip.rows.every((row) => !/\d/.test(row.apr))) assert.equal(strip.items.length, 0, `${label}: no APR in the table, nothing in the strip`);
+  if (expectStrip) {
+    const figured = strip.rows.filter((row) => /\d/.test(row.apr));
+    assert.ok(strip.items.length > 0, `${label}: the table has APR figures, so the strip shows them`);
+    for (const row of figured) assert.ok(strip.items.some((item) => item.href === row.href), `${label}: the strip carries ${row.href}`);
+  }
 }
 
 test('(a) no bridge behind the forwarder: live data is not connected, one capabilities GET per attempted namespace, no POST, no Retry, and no ticker on Home', async () => {
@@ -820,7 +850,7 @@ test('(n) pool-metrics listed: the lean load, then one pool-metrics read a row; 
     const heads = await page.locator('#pools thead th').evaluateAll((ths) => ths.map((th) => th.innerText.replace(/\s+/g, ' ').trim()));
     assert.deepEqual(heads.slice(2, 4), ['TVL', '24h volume'], 'no provider named in the headers of figures that are not the provider’s');
 
-    await noHomeTicker(page, 'qualified figures');
+    await noHomeTicker(page, 'qualified figures', { expectStrip: true });
 
     // The compact popup preserves verified figures, with only their basis folded away.
     await rows.first().locator('[data-pool-figures]').click();

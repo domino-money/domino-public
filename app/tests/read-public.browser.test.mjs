@@ -62,14 +62,16 @@ test('Home compares pools in one responsive surface with visible figures, full i
         assert.equal(row.price, false)
         assert.equal(row.tvl, true)
         assert.equal(row.volume, true)
-        const expectedFont = (width >= 768 ? 1.166667 : 0.875) * state.root
+        // Changed on purpose 2026-10-16 (V4 Home, the approved prototype, D-H5): a 15.5px pool name and 70px rows on a
+        // laptop (they were 1.166667rem and 5.25-6rem); the phone tile keeps its 0.875rem name.
+        const expectedFont = (width >= 768 ? 0.96875 : 0.875) * state.root
         assert.ok(Math.abs(Number.parseFloat(row.font) - expectedFont) < 0.01, `${width}px identity follows the reader's root scale`)
         assert.equal(row.nameClipped, false, `${width}px pool identity is not clipped`)
         assert.ok(row.name.right <= row.apr.left + 1, `${width}px identity and APR do not overlap`)
         assert.ok(row.apr.right <= row.info.left + 1, `${width}px APR and Details do not overlap`)
         const target = width >= 768 ? 3.666667 * state.root : 44
         assert.ok(row.info.width >= target - 0.1 && row.info.height >= target - 0.1, `${width}px Details keeps its target; touch stays at 44px`)
-        if (width >= 768) assert.ok(row.row.height >= 5.25 * state.root - 1 && row.row.height <= 6 * state.root, 'desktop comparison rows keep the approved compact rhythm')
+        if (width >= 768) assert.ok(row.row.height >= 4.375 * state.root - 1 && row.row.height <= 5 * state.root, 'desktop comparison rows keep the approved compact rhythm')
       }
     }
     const control = table.locator('[data-pool-figures]').first()
@@ -79,7 +81,13 @@ test('Home compares pools in one responsive surface with visible figures, full i
     await dialog.getByRole('button', { name: 'Close', exact: true }).click()
     assert.equal(await control.evaluate(node => node === document.activeElement), true)
     await page.setViewportSize({ width: 1440, height: 900 })
-    await table.getByRole('button', { name: 'About TVL', exact: true }).focus()
+    // Changed on purpose 2026-10-16 (V4 Home, the approved prototype): the taller hero leaves the table's header above
+    // the view after the phone widths, and the tip closes on any scroll, so the header comes into view (and that scroll
+    // settles) before it is focused; keyboard focus still opens the tip.
+    const tvl = table.getByRole('button', { name: 'About TVL', exact: true })
+    await tvl.scrollIntoViewIfNeeded()
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await tvl.focus()
     assert.equal(await page.getByRole('tooltip').innerText(), 'Estimated value held in this pool.')
     await page.keyboard.press('Escape')
     assert.deepEqual(errors, [])

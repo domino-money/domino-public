@@ -20,8 +20,6 @@
   .dm-home .dm-v3-hero::before, .dm-home .dm-v3-hero::after { content: none; }
   .dm-home .dm-hero-body { align-items: flex-start; max-width: none; padding: 0; }
   .dm-home .dm-v3-hero .dm-hero-title { max-width: none; margin: 0; font-size: clamp(4.5rem, 5.9vw, 6.5rem); line-height: 0.98; letter-spacing: -0.045em; text-wrap: initial; }
-  .dm-home .dm-hero-opening { display: block; font-family: var(--font-sans); font-size: 0.86em; font-weight: 600; line-height: 1.12; letter-spacing: -0.065em; }
-  .dm-home .dm-hero-accent { display: block; margin-top: 0.0625em; font-style: italic; white-space: nowrap; }
   .dm-home .dm-hero-actions { justify-content: flex-start; flex-wrap: wrap; gap: 0.625rem; margin-top: 2rem; }
   .dm-home .dm-hero-actions > .dm-btn { flex: 0 1 auto; min-width: 0; min-height: 3.5rem; height: auto; padding: 0.875rem 1.5rem; font-size: 1.16667rem; white-space: normal; }
   .dm-home .dm-hero-actions > .dm-btn--ghost { color: var(--fg-muted); }
@@ -29,10 +27,6 @@
   .dm-home .dm-v3-hero .dm-hero-band { align-self: center; min-width: 0; width: 100%; height: 26rem; min-height: 0; max-height: none; aspect-ratio: auto; margin: 0; }
   .dm-home .dm-v3-hero .dm-hero-art { height: 100%; top: 0; mask-image: none; -webkit-mask-image: none; }
 
-  .dm-home .dm-home-section { margin-top: var(--home-space); }
-  .dm-home .dm-home-learning { border: 1px solid var(--border); border-radius: 1.33333rem; background: var(--surface-1); overflow: hidden; }
-  .dm-home .dm-home-learning-main { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 4rem; padding: 2.5rem 3rem 2rem; }
-  .dm-home .dm-home-range { min-width: 0; }
   .dm-home .dm-sim[data-sim-compact] { display: block; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
   .dm-home .dm-sim[data-sim-compact] .dm-sim-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem 1rem; padding: 0; }
   .dm-home .dm-sim[data-sim-compact] .dm-sim-title,
@@ -62,20 +56,11 @@
   .dm-home .dm-limit[open] > summary > .i-chev-r { rotate: 90deg; }
   .dm-home .dm-limit-body { margin: 0; padding: 0 1.75rem 1rem 2.5rem; font-size: 1.16667rem; line-height: 1.6; }
 
-  .dm-home .dm-home-learning-foot { padding: 1.25rem 3rem; border-top: 1px solid var(--border); background: var(--wash); }
-  .dm-home .dm-home-steprail { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; margin: 0; padding: 0; list-style: none; }
-  .dm-home .dm-home-steprail li { display: flex; align-items: center; gap: 0.75rem; min-width: 0; font-size: 1.16667rem; color: var(--fg-muted); }
-  .dm-home .dm-home-step-number { display: grid; place-items: center; flex-shrink: 0; width: 2rem; height: 2rem; border: 1px solid var(--border-strong); border-radius: 0.5rem; color: var(--fg-subtle); font-size: 1rem; }
-  .dm-home .dm-home-steprail li > .i-chev-r { margin-left: 1rem; color: var(--fg-faint); }
 
   @media (max-width: 1099px) {
     .dm-home .dm-v3-hero .dm-hero-title { font-size: clamp(4rem, 6.5vw, 5.75rem); }
     .dm-home .dm-v3-hero { min-height: 27rem; padding-inline: 2.5rem; }
     .dm-home .dm-v3-hero .dm-hero-band { height: 25rem; }
-    .dm-home .dm-home-learning-main { gap: 2.5rem; padding-inline: 2.5rem; }
-    .dm-home .dm-home-learning-foot { padding-inline: 2.5rem; }
-    .dm-home .dm-home-steprail { gap: 1rem; }
-    .dm-home .dm-home-steprail li > .i-chev-r { margin-left: 0; }
   }
   @media (max-width: 767px) {
     .dm-page.dm-home { --home-space: 2rem; padding-top: 1rem; }
@@ -84,8 +69,6 @@
     .dm-home .dm-hero-actions { margin-top: 1.25rem; gap: 0.25rem; }
     .dm-home .dm-hero-actions > .dm-btn { min-height: 2.875rem; padding: 0.75rem 1rem; font-size: 0.875rem; }
     .dm-home .dm-v3-hero .dm-hero-band { height: 16rem; margin-top: 0; }
-    .dm-home .dm-home-learning { border-radius: 1rem; }
-    .dm-home .dm-home-learning-main { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding: 1.5rem 1.25rem; }
     .dm-home .dm-sim[data-sim-compact] .dm-sim-title, .dm-home .dm-limits .dm-display-card { font-size: 1.875rem; }
     .dm-home .dm-sim[data-sim-compact] .dm-sim-heading > p { font-size: 0.8125rem; }
     .dm-home .dm-sim[data-sim-compact] .dm-sim-grid { margin-top: 1.25rem; }
@@ -104,22 +87,15 @@
     .dm-home .dm-limit .dm-icon-tile { width: 1.5rem; height: 1.5rem; }
     .dm-home .dm-limit .dm-subtitle { font-size: 0.875rem; }
     .dm-home .dm-limit-body { padding: 0 1.5rem 1rem 2rem; font-size: 0.875rem; }
-    .dm-home .dm-home-learning-foot { padding: 1rem 1.25rem; }
-    .dm-home .dm-home-steprail { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.875rem; }
-    .dm-home .dm-home-steprail li { align-items: flex-start; gap: 0.5rem; font-size: 0.8125rem; line-height: 1.4; }
-    .dm-home .dm-home-step-number { width: 1.5rem; height: 1.5rem; font-size: 0.75rem; }
-    .dm-home .dm-home-steprail li > .i-chev-r { display: none; }
   }
   @media (max-width: 379px) {
     .dm-home .dm-v3-hero { padding-inline: 1rem; }
     .dm-home .dm-v3-hero .dm-hero-title { font-size: 3.125rem; }
     .dm-home .dm-hero-actions > .dm-btn { padding-inline: 0.75rem; font-size: 0.8125rem; }
     .dm-home .dm-v3-hero .dm-hero-band { height: 14rem; }
-    .dm-home .dm-home-learning-main { padding-inline: 1rem; }
     .dm-home .dm-sim-chip { font-size: 0.75rem; }
     .dm-home .dm-sim-readout { gap: 0.25rem; }
     .dm-home .dm-sim-mix-label { display: none; }
-    .dm-home .dm-home-learning-foot { padding-inline: 1rem; }
   }
   @media (prefers-reduced-motion: reduce) {
     .dm-home .dm-art * { animation: none !important; transition: none !important; }

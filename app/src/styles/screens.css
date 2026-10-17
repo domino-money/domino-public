@@ -46,3 +46,13 @@
 @import './v3-position-surfaces.css';
 @import './v3-automate-surfaces.css';
 @import './v3-journey-surfaces.css';
+/* V4 (2026-10-16, impl/plan.md §1.2): every screen area's own V4 file, last, in @layer v4. The sheets' frame comes first
+   so the areas after it can tune their sheets' contents inside their own scopes. */
+@import './v4-sheets.css';
+@import './v4-markets.css';
+@import './v4-pool.css';
+@import './v4-positions.css';
+@import './v4-position.css';
+@import './v4-newposition.css';
+@import './v4-automate.css';
+@import './v4-docs.css';

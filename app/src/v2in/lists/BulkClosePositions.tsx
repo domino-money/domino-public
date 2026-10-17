@@ -18,6 +18,7 @@ import { amountWords, tokenNamer, weiWords, type PositionRowView, type TokenName
 import { positionChanged } from './positionSync'
 import { forgetLocalClose, recordLocalClose } from './localReceipts'
 import { closeProof, createCloseHold, type CloseProof } from './closeHold'
+import { Marks, TokenHalf } from './parts'
 import '../../styles/bulk-close.css'
 
 type Stage = 'selection' | 'reading' | 'review' | 'wallet' | 'sent' | 'waiting' | 'unknown' | 'done' | 'failed'
@@ -279,10 +280,16 @@ export function BulkClosePositions({ owner, rows }: { owner: string; rows: reado
       {state.stage === 'selection' ? <>
         <div className="dm-bulk-choices">{eligible.map((row) => <label key={row.key} className="dm-bulk-choice" aria-label={`Close ${pairName(row)}, position ${row.tokenId} on ${row.chain}`}>
           <input type="checkbox" checked={selected.has(row.key)} onChange={(event) => { const checked = event.currentTarget.checked; setSelected((before) => { const next = new Set(before); if (checked) next.add(row.key); else next.delete(row.key); return next }) }} />
+          <Marks tokens={row.tokens} size={28} />
           <span><bdi>{pairName(row)}</bdi><small>{row.chain} · #{row.tokenId}</small></span>
         </label>)}</div>
         <Note>Positions are grouped to use fewer wallet confirmations. Network fees apply to each group.</Note>
       </> : <>
+        {/* V4: the group stands as dominoes, one tile a position, its two tokens its halves; they lean as it is signed and
+            sent, and fall once it is closed (decoration only, from the stage and the group shown). */}
+        {['reading', 'wallet', 'sent', 'waiting', 'unknown', 'done'].includes(state.stage) && current.length > 0 && <div className="dm-bulk-dom" data-st={state.stage} aria-hidden="true">
+          {current.slice(0, 2).map((row) => <span key={row.key} className="dm-bulk-dt">{row.tokens && <><TokenHalf token={row.tokens[0]} size={14} /><TokenHalf token={row.tokens[1]} size={14} /></>}</span>)}
+        </div>}
         {state.completed > 0 && <Note>{state.completed} {state.completed === 1 ? 'position already closed' : 'positions already closed'}.</Note>}
         {state.stage === 'reading' && <SheetStatus>Checking your positions…</SheetStatus>}
         {prepared && state.stage === 'review' && <>

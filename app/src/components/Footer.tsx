@@ -54,24 +54,21 @@ const COLUMNS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: st
   },
 ]
 
-/** The page's only `<footer>`: the brand and two link columns, with no control in it. */
+/**
+ * The page's only `<footer>` (V4, site/_kit.md .ft): a hairline that catches the ember, a row with the X link and the two
+ * link columns, then the big wordmark at the bottom, which is not a link (only the header's wordmark points at Home) and
+ * holds no control.
+ */
 export function Footer() {
   return (
-    <footer className="dm-footer dm-footer--structured">
+    <footer className="dm-footer">
       <div className="dm-footer-inner">
-        <div className="dm-footer-body">
-          <div className="dm-footer-grid">
-            {/* Not a link: only the header's wordmark points at Home. */}
-            <div className="dm-footer-brand">
-              <span className="dm-display dm-footer-wordmark">
-                domino<span className="text-primary">.</span>
-              </span>
-              <a href={X_PROFILE} target="_blank" rel="noopener noreferrer" className="dm-footer-social" aria-label="Domino on X (opens in a new tab)">
-                <XMark />
-                <span>@dominomoney</span>
-              </a>
-            </div>
-
+        <div className="dm-footer-row">
+          <a href={X_PROFILE} target="_blank" rel="noopener noreferrer" className="dm-footer-social" aria-label="Domino on X (opens in a new tab)">
+            <XMark />
+            <span>@dominomoney</span>
+          </a>
+          <div className="dm-footer-cols">
             {COLUMNS.map((column) => (
               <nav key={column.heading} aria-label={column.heading}>
                 <h2 className="dm-footer-heading">{column.heading}</h2>
@@ -88,6 +85,9 @@ export function Footer() {
             ))}
           </div>
         </div>
+        <span className="dm-display dm-footer-wordmark">
+          domino<span className="dm-footer-dot">.</span>
+        </span>
       </div>
     </footer>
   )

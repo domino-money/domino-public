@@ -12,7 +12,8 @@ import { REFRESH_MS, parseWalletAnswer, useWalletAnswer, walletChanged, type Wal
 import { useLoadMilestone } from '../../lib/useLoadMilestone'
 import type { WalletIdentityView } from '../../lib/walletIdentity'
 import { newPositionHref } from '../explore/routes'
-import { IconSearch, IconWallet } from '../icons'
+import { IconWallet, IconWalletLine } from '../icons'
+import { EmptyDomino } from './visual/EmptyDomino'
 import { Button, EmptyState, LinkButton, Skeleton, Tabs } from '../ui'
 import { AutomateEntry } from './AutomateEntry'
 import { automatable } from '../../lib/automate/picker'
@@ -102,7 +103,7 @@ const PRICED_MS = 3_600_000
  */
 function Frame({ children, tabs, data, viewed }: { children: ReactNode; tabs?: ReactNode; data?: Record<string, string | undefined>; viewed?: string }) {
   return (
-    <section className="dm-card dm-acct-nft-card dm-own-card" aria-labelledby="own-title" {...data}>
+    <section className="dm-card dm-lit dm-acct-nft-card dm-own-card" aria-labelledby="own-title" {...data}>
       <div className="dm-own-head">
         <h2 id="own-title" className="dm-title">
           {viewed ? (
@@ -171,10 +172,11 @@ export default function OwnedPositions({ identity, deposits, onEmptyAction, view
     return (
       <Frame data={{ 'data-owned': 'no-wallet' }}>
         <EmptyState
-          icon={<IconWallet />}
+          icon={<EmptyDomino />}
           title="Connect a wallet to see your positions"
           action={
             <Button type="button" onClick={openWallet}>
+              <IconWalletLine size={16} className="dm-own-wl" />
               Connect wallet
             </Button>
           }
@@ -300,11 +302,11 @@ function YourPositions({ owner, deposits, onEmptyAction, readOnly = false }: Omi
   } else if (total === 0 && readOnly) {
     // Another address with none: said plainly, with nothing to press (audit V7). Changed on purpose 2026-10-01 (integration
     // pass 3, the copy review): one line says what the list counts, as the docs do (positions made elsewhere are not listed).
-    body = <EmptyState icon={<IconSearch />} title="No positions at this address" body="Only positions opened with Domino are listed." plate className="dm-own-none" data-empty="viewed-none" />
+    body = <EmptyState icon={<EmptyDomino dark />} title="No positions at this address" body="Only positions opened with Domino are listed." plate className="dm-own-none" data-empty="viewed-none" />
   } else if (total === 0) {
     body = (
       <EmptyState
-        icon={<IconSearch />}
+        icon={<EmptyDomino />}
         title="No positions yet"
         // With a deposit waiting for its refund, Refund to wallet is the screen's one filled button: this steps back to soft.
         action={

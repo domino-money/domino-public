@@ -262,6 +262,16 @@ export function IconWallet({ size, className }: IconProps) {
   )
 }
 
+/** V4's wallet glyph (the header's wallet control, study/20-v4-language.md §3.1): a card with its clasp. */
+export function IconWalletLine({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <rect x="1.75" y="3.25" width="12.5" height="9.5" rx="2.25" strokeWidth={1.4} />
+      <path d="M10.5 8h1.5" strokeWidth={1.6} />
+    </Svg>
+  )
+}
+
 export function IconRange({ size, className }: IconProps) {
   return (
     <Svg size={size} className={className}>

@@ -98,7 +98,7 @@ function MarketsList({ onToken, others, onNetwork }: { onToken: (candidate: Toke
       <section className="dm-v3-market-featured animate-rise" style={rise(1)} aria-label="Featured pool charts">
         <MarketCarousel heading={null} />
       </section>
-      <section className="dm-mkt-pools animate-rise" style={rise(2)} aria-labelledby="markets-pools-title">
+      <section className="dm-mkt-pools dm-lit animate-rise" style={rise(2)} aria-labelledby="markets-pools-title">
         <div className="dm-mkt-pools-toolbar">
           <SectionHead
             id="markets-pools-title"
@@ -268,7 +268,7 @@ function ExploreBody({ others = null, checkingNetworks = false }: { others?: Oth
       <div className="dm-mkt-titlebar mt-4 animate-rise" style={rise(1)}>
         <div className="min-w-0">
           <Display as="h1" className="dm-display-h1">Token</Display>
-          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          <div className="dm-mkt-tags mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
             <span className="dm-chip">Uniswap</span>
             <span className="dm-chip">Robinhood Chain</span>
             <span className="dm-pool-id"><Address value={searchedKey ?? wire} short /></span>

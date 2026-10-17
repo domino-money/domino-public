@@ -4,6 +4,7 @@ import { deferred } from './Deferred'
 import { recovering } from '../lib/staleRelease'
 import { Button } from './ui'
 import { BrandMark } from './BrandMark'
+import { IconWalletLine } from './icons'
 import { WalletBoundary } from './wallet/WalletBoundary'
 import { HeaderMenu, PRIMARY_NAV } from './HeaderMenu'
 
@@ -22,16 +23,17 @@ const LocalWallet = __DOMINO_LOCAL_LIVE__ ? lazy(() => import('./wallet/LocalWal
 function DisabledConnect({ title }: { title: string }) {
   return (
     <Button disabled title={title}>
+      <IconWalletLine className="dm-wallet-glyph" />
       Connect wallet
     </Button>
   )
 }
 
-/** The mark stands upright with nothing behind it, and never moves. */
+/** The mark stands upright with nothing behind it; it tips toward the pointer only while hovered (V4). */
 function Wordmark({ home }: { home: boolean }) {
   return (
     <a href="#/" className="dm-wordmark" aria-label="Domino, home" aria-current={home ? 'page' : undefined}>
-      <BrandMark width={16} height={28} />
+      <BrandMark width={17} height={29} />
       <span className="dm-wordmark-text">
         domino<span className="dm-wordmark-dot">.</span>
       </span>
@@ -39,7 +41,7 @@ function Wordmark({ home }: { home: boolean }) {
   )
 }
 
-/** Whether anything has scrolled under the header, for its hairline. */
+/** Whether anything has scrolled under the header, for its wash. */
 function useScrolled() {
   const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
@@ -52,10 +54,10 @@ function useScrolled() {
 }
 
 /**
- * The centred nav pill. One indicator sits behind the lit item and slides to
- * the next one on a route change; it fades out where nothing is lit. It is
- * placed from the items' own boxes, again whenever they resize (a web font
- * arriving changes their widths).
+ * The centred nav. One indicator spans the lit item and carries its Tangerine
+ * dot (V4), travelling to the next one on a route change; it fades out where
+ * nothing is lit. It is placed from the items' own boxes, again whenever they
+ * resize (a web font arriving changes their widths).
  */
 function NavPill({ page }: { page: Page }) {
   const nav = useRef<HTMLElement>(null)
@@ -109,7 +111,8 @@ function NavPill({ page }: { page: Page }) {
 export function Header({ page }: { page: Page }) {
   const scrolled = useScrolled()
   return (
-    <header className="dm-header" data-scrolled={scrolled ? '' : undefined}>
+    // dm-k-top: the header fades in once, on the page's first load (V4 load moment, tokens.css), never on navigation.
+    <header className="dm-header dm-k-top" data-scrolled={scrolled ? '' : undefined}>
       <div className="dm-header-row">
         <Wordmark home={page === 'overview'} />
 

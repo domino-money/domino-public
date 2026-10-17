@@ -357,7 +357,7 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
         {/* Named as its price is written, "TOKEN/USDG" beside "1 TOKEN = X USDG" (audit E21). */}
         <span className="dm-pool-marks"><TokenMarkPair base={base} quote={quote} size={44} ring="var(--bg)" /></span>
         <div className="min-w-0">
-          <h1 className="dm-display dm-display-h1"><PoolTokenLabel token={base} /> / <PoolTokenLabel token={quote} /></h1>
+          <h1 className="dm-display dm-display-h1"><PoolTokenLabel token={base} /> <span className="dm-pool-slash">/</span> <PoolTokenLabel token={quote} /></h1>
           <div className="dm-pool-chips">
             {/* The fee as every chip writes it (lib/format/fee.ts, audit E21). */}
             <span className="dm-chip">{feeChipText(fee)}</span>
@@ -369,7 +369,7 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
 
     {notice && <div className="dm-pool-a-lead grid gap-3">{notice}</div>}
 
-    <div className="dm-pool-figures dm-pool-a-figs" data-pool-figures="" data-market-read={shown ? (answered?.origin ?? 'read') : loading ? 'loading' : 'none'} data-market-reason={failure?.state}>
+    <div className="dm-pool-figures dm-pool-a-figs dm-lit" data-pool-figures="" data-market-read={shown ? (answered?.origin ?? 'read') : loading ? 'loading' : 'none'} data-market-reason={failure?.state}>
       <StatStrip cols={metricsListed ? 5 : 4} layout="tiles" className="dm-pool-stats">
         {aprFromHistory && apr
           ? <Stat label="APR" info="What the pool’s fees come to over a year, from Domino’s own history of its last day. It describes the pool, not your position, and is not a promise." className="dm-pool-stat">{figure(<MetricCell metric={apr} percent tone="in" />)}</Stat>
@@ -397,11 +397,11 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
       </p>
     </div>
 
-    <div className="dm-pool-a-chart">
+    <div className="dm-pool-a-chart dm-lit">
       <PoolHistoryChart source={source} option={option} market={shown} loading={loading} quote={quoteIndex} onDay={onDay} />
     </div>
 
-    {usable && <div className="dm-pool-a-earn">
+    {usable && <div className="dm-pool-a-earn dm-lit">
       <PoolEarnings apr={aprNumber} tvl={tvl} loading={loading || (metricsListed && !metricsRead && !!shown)} saved={aprNumber !== null && (savedApr || (tvl !== null && tvl > 0 && tvlMetric?.state === 'stale'))} />
     </div>}
 

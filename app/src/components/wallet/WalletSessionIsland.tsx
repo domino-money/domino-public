@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { WagmiProvider } from 'wagmi'
 import { publishWalletIdentity } from '../../lib/walletIdentity'
 import { forgetPrivate } from '../../finance/privateCards'
@@ -8,8 +8,7 @@ import { privateQueryClient } from '../../session/privateQuery'
 import { walletConfig } from '../../wallet/config'
 import { useSession } from '../../wallet/session'
 import { Button } from '../ui'
-import { IconChevronDown } from '../icons'
-import { tokenHue } from '../../lib/format/tokenHue'
+import { IconChevronDown, IconWalletLine } from '../icons'
 import { announcement, shortAddress } from './copy'
 import { PrivateReadProbe } from './PrivateReadProbe'
 import { WalletSessionDialog } from './WalletSessionDialog'
@@ -73,11 +72,12 @@ function WalletControl() {
     }
   }, [identity.kind, view.status])
 
-  let label = <>Connect wallet</>
+  let label = <><IconWalletLine className="dm-wallet-glyph" />Connect wallet</>
   if (identity.kind === 'connected') {
     label = (
       <>
-        <span aria-hidden="true" className="dm-wallet-disc" style={{ '--mark-h': 200 + (tokenHue(identity.address) % 120) } as CSSProperties} />
+        {/* Changed on purpose 2026-10-16 (V4, the owner-approved prototype): the wallet glyph, as before the address's disc. */}
+        <IconWalletLine className="dm-wallet-glyph" />
         {/* Changed on purpose 2026-10-06: a session held on another network (session.away) is signed in there too. */}
         <span className="sr-only">{view.status === 'signed_in' || session.away ? 'Signed in as ' : 'Connected wallet '}</span>
         <span className="tnum font-mono text-[0.8125rem] tracking-normal">{shortAddress(identity.address)}</span>

@@ -203,7 +203,6 @@
   .dm-mkt-catalogue[open] > summary::before { rotate: 225deg; translate: 0 2px; }
   .dm-mkt-catalogue-icon { flex-shrink: 0; color: var(--fg-subtle); }
   .dm-mkt-catalogue > :not(summary) { padding: 0.5rem 1.25rem 1.25rem; }
-  .dm-mkt-catalogue-search { max-width: 32.5rem; }
 
   /* ---- Token view ---- */
   .dm-mkt-crumbs { font-size: 0.8125rem; line-height: 1rem; letter-spacing: -0.16px; }

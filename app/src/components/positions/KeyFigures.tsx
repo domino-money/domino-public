@@ -150,7 +150,7 @@ function RangeLine({ price, card, cached = false }: { price: CardPrice; card: Li
   const at = share === null ? null : share < 0 ? 0.015 : share > 1 ? 0.985 : 0.05 + 0.9 * share
   const live = !cached && card.hasLiquidity ? card.inRange : null
   return (
-    <div className="dm-pos-span" data-stat="range" data-full-range={fullRange ? '' : undefined}>
+    <div className="dm-pos-span" data-stat="range" data-full-range={fullRange ? '' : undefined} data-ember-rest="">
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a kept read is drawn as it is, never "Last known range". */}
       <RangeBar lower={0.05} upper={0.95} current={at} inRange={live} label={rangeWords(card, price)} />
       <span className="dm-pos-span-ends" data-range-kept={cached ? '' : undefined}>

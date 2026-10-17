@@ -1,7 +1,7 @@
 import { formatUsdFloor } from '../../lib/format/usd'
 import type { ReactNode } from 'react'
 import { Figure } from '../../components/positions/Figure'
-import { TokenMarkPair } from '../../components/TokenIcon'
+import { TokenMark, TokenMarkPair } from '../../components/TokenIcon'
 import { IconChevronRight } from '../../components/icons'
 import { Badge, Pill, Skeleton } from '../../components/ui'
 import type { RowApr } from '../../components/positions/listApr'
@@ -153,24 +153,33 @@ function Amounts({ amounts, which, label, usd, asOf, reason, basis, poolTitle }:
   </span>
 }
 
-/** Same bounded chain/address artwork as the position detail, including its shared cache. */
-function Marks({ tokens }: { tokens: readonly [TokenName, TokenName] | null }) {
-  const mark = (token: TokenName) => markOf(token.chainId, { address: token.address, symbol: token.symbol ? token.label : null, decimals: token.decimals })
-  if (tokens) return <TokenMarkPair base={mark(tokens[0])} quote={mark(tokens[1])} size={28} />
+const markFor = (token: TokenName) => markOf(token.chainId, { address: token.address, symbol: token.symbol ? token.label : null, decimals: token.decimals })
+
+/** Same bounded chain/address artwork as the position detail, including its shared cache. Its size (V4): 32 in the list, 28 in Close positions. */
+export function Marks({ tokens, size = 32 }: { tokens: readonly [TokenName, TokenName] | null; size?: number }) {
+  if (tokens) return <TokenMarkPair base={markFor(tokens[0])} quote={markFor(tokens[1])} size={size} />
   return (
     <span className="inline-flex shrink-0 items-center" aria-hidden="true">
-      <span className="inline-block size-7 rounded-full border-2 border-[var(--card)] bg-surface-3" />
-      <span className="-ml-[0.525rem] inline-block size-7 rounded-full border-2 border-[var(--card)] bg-surface-3" />
+      <span className="inline-block size-8 rounded-full border-2 border-[var(--card)] bg-surface-3" />
+      <span className="-ml-[0.6rem] inline-block size-8 rounded-full border-2 border-[var(--card)] bg-surface-3" />
     </span>
   )
+}
+
+/** One token's mark alone (V4: a half of a Close positions progress tile). Decoration only. */
+export function TokenHalf({ token, size }: { token: TokenName; size: number }) {
+  return <TokenMark token={markFor(token)} size={size} />
 }
 
 /** The vault's automation over the row's Automation column, as V1's badge (AutomateEntry.tsx `.dm-own-badge`). */
 function VaultColumn({ row }: { row: PositionRowView }) {
   const vault = row.vault
   if (!vault) return null
+  // V4: the function's own glyph before its name (decoration only; the name and its marker are unchanged).
+  const glyph = vault.name === 'Auto-exit' ? 'exit' : vault.name === 'Domino-compound' ? 'dom' : vault.name === 'Auto-compound' ? 'cmp' : null
   return (
     <span className="dm-collection-auto" data-v2-vault-role={vault.role}>
+      {glyph && <span aria-hidden="true" className={`dm-own-ag dm-own-ag--${glyph}`} />}
       <span className="dm-collection-mode" data-running={vault.running ? '' : undefined}>
         {vault.name ?? 'Automation'}
       </span>

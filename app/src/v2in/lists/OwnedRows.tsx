@@ -17,6 +17,7 @@ import { POSITION_VALUATIONS, type PositionValuations } from './valuation'
 import type { DepositsSlot } from '../../components/positions/OwnedPositions'
 import { shortAddress } from '../../lib/read/screens/identity'
 import { newPositionHref } from '../../components/explore/routes'
+import { EmptyDomino } from '../../components/positions/visual/EmptyDomino'
 import '../../styles/position-collection.css'
 import { BulkClosePositions } from './BulkClosePositions'
 import { automationState, subscribeAutomation } from '../automate/store'
@@ -91,10 +92,10 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
   const more = matches.length - shown.length
   const held = historical.phase === 'ready' ? historical.answer.deposits : []
   return <>
-    <section className="dm-card dm-acct-nft-card dm-own-card dm-own-collection" aria-labelledby="own-title" data-owned={own.reply?.kind === 'ok' || retained ? 'ready' : failed ? 'unlisted' : 'loading'} data-owned-viewed={readOnly ? owner : undefined}>
+    <section className="dm-card dm-lit dm-acct-nft-card dm-own-card dm-own-collection" aria-labelledby="own-title" data-owned={own.reply?.kind === 'ok' || retained ? 'ready' : failed ? 'unlisted' : 'loading'} data-owned-viewed={readOnly ? owner : undefined}>
       <div className="dm-own-head">
         <h2 id="own-title" className="dm-title">{readOnly ? <>Positions of <span title={owner}>{shortAddress(owner)}</span></> : 'Your positions'}</h2>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+        <div className="dm-own-tools flex items-center gap-2 flex-wrap justify-end">
           {!readOnly && <BulkClosePositions key={owner} owner={owner} rows={rows} />}
           <Tabs label="Positions by state" value={tab} onChange={setChosen} items={[{ key: 'open', label: 'Open', count: counts.open }, { key: 'closed', label: 'Closed', count: counts.closed }]} />
         </div>
@@ -107,7 +108,7 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
       {shown.length ? <div className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
         <div className="dm-collection-head" data-collection-tab={tab} aria-hidden="true"><span>Pool</span>{tab === 'closed' ? <span>Position history</span> : <><span>Value</span><span>Fees to collect</span><span>Your APR</span></>}</div>
         {shown.map((row, index) => <V2PositionRow key={row.key} row={row} late={late[index]} apr={hasPositionApr(row) ? aprs.get(row.tokenId) ?? null : null} />)}
-      </div> : empty ? <EmptyState title={readOnly ? 'No positions at this address' : 'No positions yet'} action={!readOnly ? <LinkButton href={newPositionHref()}>New position</LinkButton> : undefined} className="dm-own-none" data-empty="owned-none" />
+      </div> : empty ? <EmptyState icon={<EmptyDomino dark={readOnly} />} title={readOnly ? 'No positions at this address' : 'No positions yet'} action={!readOnly ? <LinkButton href={newPositionHref()}>New position</LinkButton> : undefined} className="dm-own-none" data-empty="owned-none" />
         : rows.length ? <EmptyState title={tab === 'open' ? 'No open positions' : 'No closed positions'} data-empty={`owned-${tab}`} />
           // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a list not read yet keeps its loading rows,
           // also while its read is asked again after a failure; it said "Your positions couldn’t be read right now. We’ll keep

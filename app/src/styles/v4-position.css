@@ -1,0 +1,656 @@
+/* V4 position page and its sheets' contents (owner: position). Loaded by screens.css. Scope: [data-position-detail], [data-position-v2], [data-position-dialog], [data-v2in-dialog="mandate"], .dm-pos-activity, [data-fee-reserves="position"].
+   Every rule sits in @layer v4 (the last layer, impl/plan.md §1.1) and starts with this file's scope.
+
+   The approved V4 position page (site/position.html, position-base.html; sheets states/ActionForms.html, ActionFlow.html,
+   Automation.html; phone states/Phone.html), on the real components: the back pill; the pair in serif with its slash
+   quiet and a drawn Tangerine stop; the fee and network as tag segments and the state as a word; Collect fees the one
+   solid Tangerine button, the other actions outlined, Close position a ghost with its ring; four tiles of card material
+   with serif figures and round-plus expanders, the price tile's green rail; the charts in one card with dot tabs; the
+   activity as quiet rows; Details as a ring card; then each position sheet's own content on top of v4-sheets.css. Every
+   word, hook, size the tests pin (chart heights, axis text, the 2×2 tiles below 1024px) and money path stays. The
+   page's moment (title rise, then the actions, tiles and cards fading up) runs on a first load only and never under
+   reduced motion; nothing moves when data refreshes. */
+@layer v4 {
+  /* ==== The page ================================================================================================= */
+  main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back { display: inline-flex; align-items: center; gap: 0.375rem; height: 2.125rem; min-height: 0; margin: 1.375rem 0 0 -0.5rem; padding: 0 0.75rem 0 0.5rem; border-radius: 999px; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-muted); transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std); }
+  main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back > svg { color: currentColor; transition: translate 0.25s var(--ease-enter); }
+  main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back:hover { background: var(--v4-w04); color: var(--fg); }
+  main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back:hover > svg { translate: -2px 0; }
+  main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back:active { background: rgb(255 236 220 / 0.075); color: var(--fg); }
+
+  /* ---- The title: the marks bottom-aligned beside the pair, the tags and the state word under it -------------------- */
+  :is([data-position-detail], [data-position-loading]) .dm-pos-title { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0; margin-top: 0.875rem; padding: 0; border: 0; }
+  :is([data-position-detail], [data-position-loading]) .dm-pos-name { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; column-gap: 1.375rem; row-gap: 0.875rem; flex: 1 1 100%; min-width: 0; max-width: 100%; }
+  [data-position-detail] .dm-pos-name > .min-w-0 { display: contents; }
+  :is([data-position-detail], [data-position-loading]) .dm-pos-name > :first-child { grid-column: 1; grid-row: 1; align-self: end; margin-bottom: 1.375rem; }
+  [data-position-detail] .dm-pos-name > [aria-hidden="true"]:first-child > * { transition: translate 0.3s var(--ease-enter), scale 0.3s var(--ease-enter); }
+  [data-position-detail] .dm-pos-name:hover > [aria-hidden="true"]:first-child > :first-child { scale: 1.04; }
+  [data-position-detail] .dm-pos-name:hover > [aria-hidden="true"]:first-child > :last-child { translate: 0.25rem 0; scale: 1.04; }
+  [data-position-detail] .dm-pos-pair { grid-column: 2; grid-row: 1; min-width: 0; margin: 0 0 -0.14em; padding: 0.05em 0.1em 0.14em 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: clamp(3.5rem, calc(7.4vw * var(--vwk)), 6.75rem); line-height: 0.9; font-weight: 400; letter-spacing: -0.035em; color: var(--fg-subtle); }
+  [data-position-detail] .dm-pos-pair > * { color: var(--v4-display); }
+  [data-position-detail] .dm-pos-pair > bdi { max-width: 14ch; padding-bottom: 0.08em; vertical-align: bottom; }
+  /* The full stop: drawn, so neither the heading's name nor its text changes ("ETH / TOKEN"). */
+  [data-position-detail] .dm-pos-pair::after { content: ''; display: inline-block; width: 0.15em; height: 0.15em; margin-left: 0.05em; border-radius: 999px; background: var(--primary); vertical-align: baseline; }
+  [data-position-detail] .dm-pos-chips { grid-column: 2; grid-row: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.875rem; margin: 0; }
+  [data-position-detail] .dm-pos-chips > .dm-chip { min-height: 0; padding: 2px 0.4375rem; border-radius: 0.375rem; background: var(--v4-w055); box-shadow: none; font-size: 0.75rem; line-height: 1rem; font-weight: 400; color: var(--fg-subtle); white-space: nowrap; }
+  [data-position-detail] .dm-pos-chips > .dm-chip + .dm-chip::before { content: none; }
+  [data-position-detail] .dm-pos-chips [data-position-network] { display: inline-flex; align-items: center; gap: 0.375rem; }
+  [data-position-detail] .dm-pos-chips [data-position-network]::before { content: ''; flex: none; width: 0.8125rem; height: 0.8125rem; border-radius: 999px; background: var(--v4-w08) center / 100% 100% no-repeat; }
+  [data-position-detail] .dm-pos-chips [data-position-network="base"]::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%230052ff'/%3E%3Ccircle cx='10' cy='10' r='5.6' fill='%23fff'/%3E%3Crect x='3.6' y='9.2' width='7.4' height='1.6' fill='%230052ff'/%3E%3C/svg%3E"); }
+  [data-position-detail] .dm-pos-chips [data-position-network="arbitrum"]::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%23213147'/%3E%3Cpath d='M6.4 14.6 10 5.4l3.6 9.2' stroke='%2328a0f0' stroke-width='1.7' fill='none' stroke-linejoin='round'/%3E%3Cpath d='M8.2 12.2h3.6' stroke='%23fff' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E"); }
+  [data-position-detail] .dm-pos-chips [data-position-network="robinhood"]::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%23ccff00'/%3E%3Cpath d='M6.6 14.8c.9-4.2 3.1-7.4 7-8.9-.7 3.4-2.7 6.2-5.8 7.4' fill='%231b2a0e'/%3E%3C/svg%3E"); }
+  /* The state: a word with its dot and halo (In range green, Out of range red, Closed quiet). */
+  [data-position-detail] .dm-pos-chips > .dm-pill { gap: 0.375rem; min-height: 0; padding: 0; background: none; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; white-space: nowrap; }
+  [data-position-detail] .dm-pos-chips > .dm-pill[data-position-status="closed"] { color: var(--fg-muted); }
+  [data-position-detail] .dm-pos-chips > .dm-pill > .dm-pill-dot { width: 0.375rem; height: 0.375rem; flex: none; }
+  [data-position-detail] .dm-pos-title > [data-position-actions-waiting] { flex: 1 1 100%; max-width: 40rem; margin: 1.875rem 0 0; font-size: 0.84375rem; line-height: 1.25rem; color: var(--fg-muted); }
+
+  /* ---- The actions: one row, 8px apart; Collect fees the one Tangerine button; Close position on the right --------- */
+  [data-position-detail] .dm-pos-actions { display: flex; flex-wrap: wrap; flex: 1 1 100%; align-items: center; gap: 0.5rem; width: 100%; margin-top: 2.125rem; padding: 0; border: 0; background: none; }
+  [data-position-detail] .dm-pos-actions .dm-btn { display: inline-flex; flex-direction: row; justify-content: center; gap: 0.5625rem; height: 2.5rem; min-height: 0; min-width: 0; padding: 0 1rem 0 0.875rem; border: 0; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; white-space: nowrap; text-align: center; transition: background-color 0.2s var(--ease-std), box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std), scale 0.1s var(--ease-fast); }
+  [data-position-detail] .dm-pos-actions .dm-btn > svg { width: 1rem; height: 1rem; flex: none; color: var(--fg-subtle); transition: color 0.2s var(--ease-std), rotate 0.3s var(--ease-enter), translate 0.3s var(--ease-enter); }
+  [data-position-detail] .dm-pos-actions .dm-btn:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--primary-hover); }
+  [data-position-detail] .dm-pos-actions .dm-btn:hover:not(:disabled):not([aria-disabled="true"]) > svg { color: var(--primary); }
+  [data-position-detail] .dm-pos-actions .dm-btn:active:not(:disabled):not([aria-disabled="true"]) { background: var(--v4-tan-12); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.6); color: var(--primary-hover); scale: 0.98; }
+  [data-position-detail] .dm-pos-actions .dm-btn[aria-expanded="true"]:not(:disabled):not([aria-disabled="true"]) { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--primary-hover); }
+  [data-position-detail] .dm-pos-actions [data-position-v2-action="increase"]:hover:not([aria-disabled="true"]) > svg { rotate: 90deg; }
+  [data-position-detail] .dm-pos-actions [data-position-v2-action="changeRange"]:hover:not([aria-disabled="true"]) > svg { translate: 1px 0; }
+  [data-position-detail] .dm-pos-actions [data-position-v2-action="exit"]:hover:not([aria-disabled="true"]) > svg { translate: 0 2px; }
+  [data-position-detail] .dm-pos-actions [data-automation-control]:hover:not(:disabled):not([aria-disabled="true"]) > svg { rotate: -8deg; }
+  /* Unavailable (a hooked pool, an armed root): no fill, the quiet ring, the reason on hover, focus or tap. */
+  [data-position-detail] .dm-pos-actions .dm-btn[aria-disabled="true"], [data-position-detail] .dm-pos-actions .dm-btn:disabled { background: transparent; box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-subtle); cursor: not-allowed; }
+  [data-position-detail] .dm-pos-actions .dm-btn[aria-disabled="true"] > svg, [data-position-detail] .dm-pos-actions .dm-btn:disabled > svg { color: var(--fg-faint); }
+  /* Collect fees: the page's one solid Tangerine button, its coins tilting on hover; unavailable, a neutral slot. */
+  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary { padding: 0 1.0625rem 0 0.875rem; background: var(--primary); color: var(--primary-fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.5), inset 0 -1px 0 rgb(120 50 15 / 0.25), 0 0.625rem 1.75rem -0.875rem rgb(255 157 98 / 0.55); }
+  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary > svg { color: currentColor; }
+  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary:hover:not(:disabled) { background: var(--primary-hover); color: var(--primary-fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.6), inset 0 -1px 0 rgb(120 50 15 / 0.2), 0 0.875rem 2.125rem -0.75rem rgb(255 157 98 / 0.7); }
+  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary:hover:not(:disabled) > svg { color: currentColor; translate: 0 -1px; rotate: -8deg; }
+  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary:active:not(:disabled) { background: var(--primary-press); color: var(--primary-fg); }
+  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary[aria-expanded="true"]:not(:disabled) { background: var(--primary-hover); color: var(--primary-fg); }
+  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary:disabled { background: var(--v4-w06); color: var(--fg-subtle); box-shadow: inset 0 0 0 1px var(--border); }
+  [data-position-detail] .dm-pos-actions [data-position-action="collect"].dm-btn--primary[aria-busy="true"]:disabled { background: var(--primary); color: var(--primary-fg); cursor: progress; }
+  /* Set up automation sits in the row as an outline: one Tangerine button per screen. */
+  [data-position-detail] .dm-pos-actions .dm-btn--primary[data-automation-setup] { background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
+  [data-position-detail] .dm-pos-actions .dm-automation-funds-dot { width: 0.375rem; height: 0.375rem; flex: none; border-radius: 999px; background: var(--money-in); box-shadow: 0 0 0 0.1875rem rgb(95 208 154 / 0.16); }
+  /* Close position: a ghost; its × in a ring turns and takes the Tangerine ring on hover (never red). */
+  [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"] { margin-left: auto; padding: 0 0.9375rem 0 0.5rem; background: transparent; box-shadow: none; color: var(--fg-muted); }
+  [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"] > svg { box-sizing: content-box; width: 0.75rem; height: 0.75rem; padding: 0.375rem; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--fg-muted); transition: rotate 0.35s var(--ease-enter), box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std); }
+  [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"]:hover:not(:disabled) { background: var(--v4-w05); box-shadow: none; color: var(--fg); }
+  [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"]:hover:not(:disabled) > svg { rotate: 90deg; box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--primary); }
+  [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"]:active:not(:disabled) { background: var(--v4-w08); box-shadow: none; color: var(--fg); }
+  [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"]:active:not(:disabled) > svg { box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.75); color: var(--primary-hover); }
+  [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"][aria-expanded="true"]:not(:disabled) { background: var(--v4-w05); box-shadow: none; color: var(--fg); }
+  [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"]:disabled { background: transparent; box-shadow: none; }
+  /* The reason under an unavailable action: a small bubble, quicker than the tiles' tips. */
+  [data-position-detail] .dm-position-action-tooltip:not([hidden]) { top: calc(100% + 0.5rem); max-width: min(18.125rem, 70vw); padding: 0.625rem 0.75rem 0.6875rem; border-radius: 0.75rem; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border-lip), inset 0 1px 0 var(--v4-w06), 0 1.5rem 3.125rem -1.375rem rgb(0 0 0 / 0.9); font-size: 0.78125rem; line-height: 1.5; color: var(--fg-muted); animation: dm-v4p-tip 0.18s var(--ease-enter) backwards; }
+  /* A row with nothing to show (no action rendered for this position): no band where it would sit. The chunk's
+     placeholder ([data-position-actions-pending]) keeps its room on purpose, so the figures never move. */
+  [data-position-detail] .dm-pos-actions:not(:has(.dm-btn, [data-position-v2-blocked], [data-position-actions-pending], [data-position-actions-waiting])) { margin-top: 0; }
+  [data-position-detail] [data-position-v2-blocked="successor"] { flex: 1 1 100%; font-size: 0.84375rem; line-height: 1.25rem; color: var(--fg-muted); }
+
+  /* ==== The four tiles: card material, serif figures; 3 + 1.62 across from 1024px, 2 × 2 below ==================== */
+  :is([data-position-detail], [data-position-loading]) .dm-pos-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.62fr); gap: 0.625rem; margin: 1.875rem 0 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; overflow: visible; }
+  :is([data-position-detail], [data-position-loading]) .dm-pos-stats > .dm-pos-stat { position: relative; grid-column: auto; min-width: 0; padding: 1.125rem 1.25rem 1.25rem; border: 0; border-radius: 1.25rem; background: linear-gradient(180deg, rgb(255 236 220 / 0.03), rgb(255 236 220 / 0) 5rem), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06); }
+  [data-position-detail] .dm-pos-stats > .dm-pos-stat:is(:hover, :focus-within) { z-index: 3; }
+  /* The price tile holds the light at rest (the halo round the price now): it never reaches past the tile. */
+  [data-position-detail] .dm-pos-stats > .dm-pos-stat[data-cell="price"] { overflow: clip; }
+  [data-position-detail] .dm-pos-stat > dt { display: flex; align-items: center; gap: 2px; min-height: 1.25rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; text-transform: none; color: var(--fg-subtle); }
+  [data-position-detail] .dm-pos-stat > .dm-stat-value { margin-top: 0.875rem; }
+  [data-position-detail] .dm-pos-stat > .dm-stat-sub { margin-top: 0.625rem; gap: 0.625rem; font-size: 0.78125rem; line-height: 1.125rem; color: var(--fg-subtle); }
+  [data-position-detail] [data-position-overview] .dm-fig-lg { font-family: var(--font-display); font-size: 2.75rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  [data-position-detail] [data-position-overview] .dm-fig-lg.dm-fees-in { color: var(--money-in); }
+  [data-position-detail] [data-position-overview] [data-cell="principal"][data-long-value] .dm-fig-lg { font-size: 2rem; letter-spacing: -0.015em; }
+  [data-position-detail] [data-position-overview] .dm-fig-lg.text-fg-subtle { color: var(--fg-subtle); }
+  /* Token amounts in place of a dollar figure: serif, one line each, the symbol in Geist. */
+  [data-position-detail] [data-position-overview] .dm-stat-value .dm-pos-amounts { gap: 0.25rem; }
+  [data-position-detail] [data-position-overview] .dm-stat-value .dm-pos-amounts .dm-acct-amount { font-family: var(--font-display); font-size: 1.875rem; line-height: 1.05; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); overflow-wrap: anywhere; }
+  [data-position-detail] [data-position-overview] .dm-stat-value .dm-pos-amounts .dm-acct-amount-symbol { margin-left: 2px; font-family: var(--font-sans); font-size: 0.8125rem; letter-spacing: -0.01em; color: var(--fg-subtle); }
+  [data-position-detail] [data-position-overview] [data-cell="fees"] .dm-stat-value .dm-acct-amount[data-amount="units"] { color: var(--money-in); }
+  /* Under the figure, the amounts and the lines step back; the principal's split bar in two warm whites. */
+  [data-position-detail] [data-position-overview] .dm-stat-sub .dm-acct-amount { font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
+  [data-position-detail] [data-position-overview] .dm-stat-sub .dm-acct-amount-symbol { font-weight: 400; color: var(--fg-muted); }
+  [data-position-detail] [data-position-overview] .dm-pos-split { gap: 2px; height: 0.25rem; margin-bottom: 2px; background: none; }
+  [data-position-detail] [data-position-overview] .dm-pos-split > * { border-radius: 2px; }
+  [data-position-detail] [data-position-overview] .dm-pos-split > :first-child { background: rgb(255 236 220 / 0.32); }
+  [data-position-detail] [data-position-overview] .dm-pos-split > :last-child { background: rgb(255 236 220 / 0.14); }
+  [data-position-detail] [data-position-overview] :is(.dm-pos-lines, [data-cell="apr"] .dm-stat-sub) { font-size: 0.8125rem; line-height: 1.125rem; color: var(--fg-muted); }
+  [data-position-detail] [data-position-overview] .dm-pos-apr > .dm-skel { width: 5.5rem; height: 2.125rem; border-radius: 0.5rem; }
+  /* The expanders ("Token amounts", "Period details", "Breakdown"): a ghost text button and its round plus, turning 45° open. */
+  [data-position-detail] .dm-position-figure-detail { font-size: 0.8125rem; line-height: 1.125rem; color: var(--fg-muted); }
+  [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary { display: inline-flex; align-items: center; gap: 0.5rem; width: fit-content; min-height: 1.875rem; margin-left: -0.5rem; padding: 0 0.375rem 0 0.5rem; border-radius: 0.625rem; list-style: none; cursor: pointer; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-muted); transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
+  [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::-webkit-details-marker { display: none; }
+  [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::after { content: ''; flex: none; width: 1.375rem; height: 1.375rem; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--fg-muted); background: linear-gradient(currentColor, currentColor) center / 0.5625rem 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 0.5625rem no-repeat; transition: rotate 0.35s var(--ease-enter), box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std); }
+  [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary:hover { background: var(--v4-w04); color: var(--fg); }
+  [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary:hover::after { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--primary); }
+  [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary:active { scale: 0.97; }
+  [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown)[open] > summary { color: var(--fg); }
+  [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown)[open] > summary::after { rotate: 45deg; }
+  [data-position-detail] .dm-position-figure-detail > :not(summary) { margin-top: 0.625rem; }
+  /* At the compact desktop root (67.5%) the round plus is drawn larger, so its turned × stays a clear mark. */
+  @media (min-width: 768px) and (pointer: fine) {
+    [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::after { width: 1.75rem; height: 1.75rem; background-size: 0.8125rem 1.5px, 1.5px 0.8125rem; }
+  }
+  /* The price: its figure in serif, its unit under it. */
+  [data-position-detail] [data-position-overview] .dm-pos-price { display: grid; justify-items: start; gap: 0.625rem; }
+  [data-position-detail] [data-position-overview] .dm-pos-price .dm-fig-lg { white-space: nowrap; }
+  [data-position-detail] [data-position-overview] .dm-pos-price-side { font-size: 0.78125rem; line-height: 1.125rem; font-weight: 400; color: var(--fg-subtle); overflow-wrap: anywhere; white-space: normal; }
+  /* The range rail: a green track with its ends, the price now a white line and dot in a Tangerine halo. */
+  [data-position-detail] [data-position-overview] .dm-pos-span { display: grid; gap: 0.875rem; margin-top: 1.875rem; padding-top: 0; }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-bar { height: 0.375rem; border-radius: 0.1875rem; background: none; }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band { border-radius: 0.1875rem; }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band[data-in] { background: rgb(95 208 154 / 0.28); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.32); }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band[data-in="false"] { background: var(--v4-w08); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band.dm-range-unknown { background: repeating-linear-gradient(135deg, rgb(255 236 220 / 0.16) 0 1.5px, rgb(255 236 220 / 0) 1.5px 0.3125rem); box-shadow: inset 1px 0 0 rgb(255 236 220 / 0.32), inset -1px 0 0 rgb(255 236 220 / 0.32); }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band::before, [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band::after { content: ''; position: absolute; top: -0.25rem; width: 1px; height: 0.875rem; background: rgb(95 208 154 / 0.55); transition: scale 0.3s var(--ease-enter), background-color 0.2s var(--ease-std); }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band::before { left: 0; }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band::after { right: 0; }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band:is([data-in="false"], .dm-range-unknown)::before, [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band:is([data-in="false"], .dm-range-unknown)::after { background: var(--border-strong); }
+  [data-position-detail] [data-position-overview] .dm-pos-span:hover .dm-range-band[data-in="true"]::before, [data-position-detail] [data-position-overview] .dm-pos-span:hover .dm-range-band[data-in="true"]::after { scale: 1 1.45; background: rgb(95 208 154 / 0.85); }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-now { width: 0.625rem; height: 0.625rem; border-radius: 999px; background: var(--fg); box-shadow: 0 0 0 0.1875rem rgb(22 20 17 / 0.9), 0 0 0 0.25rem rgb(247 241 234 / 0.25); }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-now::before { content: ''; position: absolute; left: 50%; top: 50%; z-index: -1; width: 5.75rem; height: 5.75rem; margin: -2.875rem 0 0 -2.875rem; border-radius: 999px; background: radial-gradient(closest-side, rgb(255 196 156 / 0.55), rgb(255 157 98 / 0.2) 45%, rgb(255 157 98 / 0)); pointer-events: none; }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-now::after { content: ''; position: absolute; left: 50%; top: 50%; width: 2px; height: 1.375rem; margin: -0.6875rem 0 0 -1px; border-radius: 1px; background: var(--fg); }
+  [data-position-detail] [data-position-overview] .dm-pos-span-ends { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: baseline; gap: 0.625rem; padding: 0; font-size: 0.84375rem; line-height: 1.125rem; font-weight: 500; color: var(--fg-muted); }
+  [data-position-detail] [data-position-overview] .dm-pos-span-ends > :not(.dm-pos-span-word) { white-space: nowrap; transition: color 0.18s var(--ease-std); }
+  [data-position-detail] [data-position-overview] .dm-pos-span-ends > :last-child { text-align: right; }
+  [data-position-detail] [data-position-overview] .dm-pos-span-word { grid-column: auto; grid-row: auto; font-size: 0.78125rem; font-weight: 400; color: var(--fg-subtle); text-align: center; }
+  [data-position-detail] [data-position-overview] .dm-pos-span:hover .dm-pos-span-ends > :not(.dm-pos-span-word) { color: var(--fg); }
+  /* A narrow price tile (two by two on a phone): the bounds never break mid-number; they stack as Low and High rows
+     (the 320px pattern of v3-position-detail.css) whenever the two would not fit side by side. */
+  [data-position-detail] [data-position-overview] .dm-pos-stat[data-cell="price"] { container: dm-pos-price / inline-size; }
+  @container dm-pos-price (max-width: 12rem) {
+    [data-position-detail] [data-position-overview] .dm-pos-span-ends { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
+    [data-position-detail] [data-position-overview] .dm-pos-span-word { grid-column: 1; grid-row: 1; text-align: left; }
+    [data-position-detail] [data-position-overview] .dm-pos-span-ends > :not(.dm-pos-span-word) { display: flex; align-items: baseline; justify-content: space-between; gap: 0.25rem; min-width: 0; white-space: nowrap; text-align: right; }
+    [data-position-detail] [data-position-overview] .dm-pos-span-ends > :first-child::before { content: 'Low'; font-weight: 400; color: var(--fg-subtle); }
+    [data-position-detail] [data-position-overview] .dm-pos-span-ends > :last-child::before { content: 'High'; font-weight: 400; color: var(--fg-subtle); }
+  }
+  /* The V2 page's price tile: the state as a word under the price. */
+  [data-position-detail] [data-position-overview] .dm-pos-span-state { gap: 0.375rem; margin-top: 0.375rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; color: var(--money-in); }
+  [data-position-detail] [data-position-overview] .dm-pos-span-state[data-in="false"] { color: var(--money-out); }
+  [data-position-detail] [data-position-overview] .dm-pos-span-state::before { width: 0.375rem; height: 0.375rem; background: currentColor; box-shadow: 0 0 0 0.1875rem rgb(95 208 154 / 0.16); }
+  [data-position-detail] [data-position-overview] .dm-pos-span-state[data-in="false"]::before { box-shadow: 0 0 0 0.1875rem rgb(244 96 122 / 0.16); }
+
+  /* ==== Fees waiting in your automation (V1): the card's own rows, its Withdraw outlined ========================== */
+  [data-fee-reserves="position"] { margin-top: 0.875rem; border-radius: 1.625rem; }
+  [data-fee-reserves="position"] .dm-acct-card-head > .dm-title { min-width: 0; margin: 0; font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  [data-fee-reserves="position"] .dm-reserves-row { position: relative; border-radius: 0.875rem; transition: background-color 0.18s var(--ease-std); }
+  [data-fee-reserves="position"] .dm-reserves-row:hover { background: var(--v4-w045); }
+  [data-fee-reserves="position"] .dm-reserves-row::before { content: ''; position: absolute; left: 0.5rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: 999px; background: var(--primary); opacity: 0; scale: 0.2; transition: opacity 0.2s var(--ease-std), scale 0.35s var(--ease-enter); pointer-events: none; }
+  [data-fee-reserves="position"] .dm-reserves-row:hover::before { opacity: 1; scale: 1; }
+  [data-fee-reserves="position"] .dm-btn--primary[data-reserve-withdraw] { background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
+  [data-fee-reserves="position"] .dm-btn--primary[data-reserve-withdraw]:hover:not(:disabled) { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--primary-hover); }
+
+  /* ==== The charts: one card, its tabs with the Tangerine dot, the tools, a hairline ============================== */
+  [data-position-detail] .dm-position-workspace { min-width: 0; margin: 0.875rem 0 0; }
+  [data-position-detail] .dm-position-analysis { min-width: 0; padding: 0.5rem 0.625rem 0.875rem; border: 0; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); overflow: hidden; }
+  [data-position-detail] .dm-position-chart-head { gap: 1rem; padding: 0.5rem 0.375rem 0.625rem 0.5rem; border: 0; background: linear-gradient(var(--border), var(--border)) center bottom / 100% 1px no-repeat; }
+  [data-position-detail] .dm-position-analysis .dm-position-chart-head .dm-position-chart-tabs { display: flex; gap: 0.25rem; min-width: 0; padding: 0; border: 0; }
+  [data-position-detail] .dm-position-chart-tabs > button { position: relative; display: inline-flex; align-items: center; min-height: 0; height: 2.375rem; padding: 0 1rem; border: 0; border-radius: 999px; background: transparent; font-size: 0.90625rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-muted); cursor: pointer; transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
+  [data-position-detail] .dm-position-chart-tabs > button:hover { background: var(--v4-w04); color: var(--fg); }
+  [data-position-detail] .dm-position-chart-tabs > button:active { scale: 0.97; }
+  [data-position-detail] .dm-position-chart-tabs > button[aria-selected="true"] { color: var(--fg); }
+  [data-position-detail] .dm-position-chart-tabs > button::after { content: ''; position: absolute; inset: auto auto 0.1875rem 50%; width: 0.25rem; height: 0.25rem; margin-left: -2px; border-radius: 999px; background: var(--primary); opacity: 0; translate: 0 0.1875rem; scale: 0.3; transition: opacity 0.2s var(--ease-std), translate 0.3s var(--ease-enter), scale 0.3s var(--ease-enter); }
+  [data-position-detail] .dm-position-chart-tabs > button[aria-selected="true"]::after { opacity: 1; translate: 0 0; scale: 1; }
+  [data-position-detail] .dm-position-chart-tabs > button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: 999px; }
+  [data-position-detail] .dm-position-chart-tools { gap: 0.25rem; padding: 0; }
+  [data-position-detail] .dm-position-chart-tools > button { width: 2.125rem; height: 2.125rem; padding: 0; border-radius: 0.625rem; background: transparent; color: var(--fg-subtle); transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std), box-shadow 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
+  [data-position-detail] .dm-position-chart-tools svg { width: 1rem; height: 1rem; transition: translate 0.3s var(--ease-enter), scale 0.3s var(--ease-enter); }
+  [data-position-detail] .dm-position-chart-tools > button:hover { background: var(--v4-w06); color: var(--fg); }
+  [data-position-detail] .dm-position-chart-tools > button:first-child:hover svg { translate: 0 -1px; }
+  [data-position-detail] .dm-position-chart-tools > button:last-child:hover svg { scale: 1.12; }
+  [data-position-detail] .dm-position-chart-tools > button:last-child[aria-expanded="true"]:hover svg { scale: 0.9; }
+  [data-position-detail] .dm-position-chart-tools > button:active { scale: 0.94; }
+  [data-position-detail] .dm-position-chart-tools > button:is([aria-pressed="true"], [aria-expanded="true"]) { background: var(--v4-w05); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg); }
+  [data-position-detail] .dm-position-chart-tools svg circle { fill: var(--card); }
+  /* A panel arrives with a short fade (the hidden one stays hidden). */
+  [data-position-detail] [data-position-chart-panel]:not([hidden]) { animation: dm-v4p-fade 0.25s var(--ease-std) backwards; }
+
+  /* ---- Fees earned inside the card ------------------------------------------------------------------------------ */
+  [data-position-detail] [data-position-chart-panel] > .dm-fees { gap: 0.75rem; margin: 0; padding: 1.125rem 0.75rem 0.25rem 0.875rem; border: 0; border-radius: 0; background: none; box-shadow: none; }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-head { min-height: 2.375rem; }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-title > h2 { font-family: var(--font-sans); font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-subtle); }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-tabs > .dm-seg { height: auto; padding: 0.1875rem; border-radius: 0.8125rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--border); }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-tabs .dm-seg-item { min-height: 0; min-width: 0; height: 2rem; padding: 0 0.875rem; border-radius: 0.625rem; font-size: 0.84375rem; line-height: 1.125rem; color: var(--fg-muted); }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-tabs .dm-seg-item[aria-checked="true"] { color: var(--fg); }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-tabs .dm-seg-thumb, [data-position-detail] [data-position-chart-panel] .dm-fees-tabs .dm-seg:not([data-thumb]) > .dm-seg-item[aria-checked="true"] { border-radius: 0.625rem; background: var(--v4-w08); box-shadow: inset 0 0 0 1px var(--border-lip); }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-body { gap: 0.75rem; }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-summary { align-items: center; gap: 0.75rem 1rem; }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-hero { gap: 0.25rem 0.75rem; min-height: 0; }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-hero .dm-fig-hero { font-family: var(--font-display); font-size: 3.125rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-hero-sym { font-size: 0.875rem; color: var(--fg-subtle); }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-delta { font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; color: var(--money-in); }
+  [data-position-detail] .dm-position-fee-breakdown { min-width: 0; font-size: 0.8125rem; color: var(--fg-muted); }
+  [data-position-detail] .dm-position-fee-breakdown > div { padding: 0.75rem 0 2px; }
+  /* Breakdown: Collected and Ready to collect side by side, a hairline between them. */
+  [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend { display: flex; flex-wrap: wrap; gap: 0.875rem 0; margin: 0; }
+  [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend-row { flex-direction: column; align-items: flex-start; gap: 0.375rem; min-width: 0; min-height: 0; padding: 0 1.75rem 0 0; box-shadow: none; }
+  [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend-row + .dm-fees-legend-row { padding-left: 1.75rem; box-shadow: inset 1px 0 0 var(--border); }
+  [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend--zero > .dm-fees-legend-row { flex-direction: row; flex-wrap: wrap; gap: 0.25rem 1.75rem; padding: 0; }
+  [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend-label { font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; color: var(--fg-subtle); }
+  [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend-value { justify-items: start; text-align: left; }
+  [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend-value > .dm-fig-xs { font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; color: var(--fg); }
+  [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend-value > .dm-fig-xs.dm-fees-in { color: var(--money-in); }
+  [data-position-detail] .dm-position-fee-breakdown .dm-fees-amounts { justify-items: start; gap: 2px; font-size: 0.8125rem; line-height: 1.125rem; color: var(--fg-muted); }
+  [data-position-detail] .dm-position-fee-breakdown .dm-fees-split { flex-basis: 100%; margin: 0 0 0.875rem; }
+  /* Each legend's token lines start under their label, like the figure above them (in the card and in Breakdown). */
+  [data-position-detail] .dm-fees-legend-value .dm-fees-amounts { justify-items: start; text-align: left; }
+  [data-position-detail] .dm-position-fee-breakdown :is(.dm-fees-impact-none, .dm-fees-impact-slot) { font-size: 0.84375rem; line-height: 1.25rem; color: var(--fg-muted); }
+  [data-position-detail] [data-position-chart-panel] .dm-fees-window { font-size: 0.78125rem; line-height: 1.125rem; letter-spacing: -0.01em; color: var(--fg-subtle); }
+  /* The chart's skin (its sizes, paddings and axis text stay the chart's own). */
+  [data-position-detail] .dm-position-analysis .dm-series-line:not([data-tone]) { stroke-width: 1.75; }
+  [data-position-detail] .dm-position-analysis .dm-position-chart-guide { stroke: rgb(255 236 220 / 0.07); stroke-dasharray: none; }
+  [data-position-detail] .dm-position-analysis :is(.dm-baseline, .dm-chart-baseline) { stroke: rgb(255 236 220 / 0.07); }
+  [data-position-detail] .dm-position-analysis .dm-crosshair { stroke: var(--border-strong); }
+  [data-position-detail] .dm-position-analysis .dm-end-dot { stroke: rgb(255 157 98 / 0.18); stroke-width: 5px; paint-order: stroke; }
+  [data-position-detail] .dm-position-analysis .dm-last-chip { padding: 0 0.5rem; border-radius: 0.375rem; background: var(--v4-w08); color: var(--fg); font-size: 0.78125rem; font-weight: 500; }
+  [data-position-detail] .dm-position-analysis .dm-chart-tooltip { padding: 0.4375rem 0.625rem 0.5rem; border-radius: 0.625rem; background: var(--surface-2); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--border-lip), 0 1.5rem 3.125rem -1.375rem rgb(0 0 0 / 0.9); font-size: 0.78125rem; }
+  [data-position-detail] .dm-position-analysis .dm-position-measured-point { fill: var(--card); stroke: var(--primary-line); stroke-width: 1.5px; }
+  [data-position-detail] .dm-position-analysis .dm-position-measured-point[data-tone="in"] { stroke: var(--money-in); }
+  [data-position-detail] .dm-position-analysis .dm-position-measured-point[data-tone="out"] { stroke: var(--money-out); }
+  [data-position-detail] .dm-position-analysis .dm-position-measured-point[data-tone="closed"] { stroke: var(--fg-subtle); }
+  [data-position-detail] .dm-position-analysis :is(.dm-pending-plot, .dm-fees-quiet) path { stroke: rgb(255 236 220 / 0.07); }
+  /* Recorded fees (Base, Arbitrum): the same head, a token switch, a serif value. */
+  [data-position-detail] .dm-position-analysis .dm-position-range-panel { padding: 1.125rem 0.75rem 0.25rem 0.875rem; border: 0; border-radius: 0; background: none; box-shadow: none; }
+  [data-position-detail] .dm-recorded-fees-head { gap: 0.75rem 1rem; min-height: 2.375rem; }
+  [data-position-detail] .dm-recorded-fees-head .dm-title { font-family: var(--font-sans); font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-subtle); }
+  [data-position-detail] .dm-recorded-fees-head .dm-seg { height: auto; padding: 0.1875rem; border-radius: 0.8125rem; }
+  [data-position-detail] .dm-recorded-fees-head .dm-seg-item { height: 2rem; max-width: 12rem; padding: 0 0.875rem; border-radius: 0.625rem; font-size: 0.84375rem; }
+  [data-position-detail] .dm-recorded-fees-head .dm-seg-item[aria-pressed="true"] { background: var(--v4-w08); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
+  [data-position-detail] .dm-recorded-fees-value { align-items: baseline; gap: 0.5rem; margin: 0.75rem 0 0.875rem; font-size: 0.875rem; color: var(--fg-subtle); }
+  [data-position-detail] .dm-recorded-fees-value .dm-fig-lg { font-family: var(--font-display); font-size: 3.125rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+
+  /* ---- Price range: the state as a word, the band green with its edges, the labels in sentence case -------------- */
+  [data-position-detail] .dm-pvr-head { align-items: center; padding: 0; }
+  [data-position-detail] .dm-pvr-says { gap: 0.5rem; font-size: 0.84375rem; line-height: 1.25rem; color: var(--fg-muted); }
+  [data-position-detail] .dm-pvr-says strong { font-weight: 500; }
+  [data-position-detail] .dm-pvr-head .dm-pvr-status-dot { width: 0.375rem; height: 0.375rem; margin-top: 0.4375rem; }
+  [data-position-detail] .dm-pvr-status[data-tone="in"] .dm-pvr-status-dot { box-shadow: 0 0 0 0.1875rem rgb(95 208 154 / 0.16); }
+  [data-position-detail] .dm-pvr-status[data-tone="out"] .dm-pvr-status-dot { box-shadow: 0 0 0 0.1875rem rgb(244 96 122 / 0.16); }
+  [data-position-detail] .dm-pvr-move { padding-left: 0.875rem; font-size: 0.8125rem; line-height: 1.1875rem; color: var(--fg-muted); }
+  [data-position-detail] .dm-pvr-unit { font-size: 0.78125rem; line-height: 1.125rem; color: var(--fg-subtle); }
+  [data-position-detail] .dm-pvr-band { fill: rgb(95 208 154); fill-opacity: 0.08; }
+  [data-position-detail] .dm-pvr-edge { stroke: rgb(95 208 154); stroke-opacity: 0.5; }
+  [data-position-detail] .dm-pvr-leader:not([data-tone]) { stroke: rgb(95 208 154); stroke-opacity: 0.5; }
+  [data-position-detail] :is(.dm-pvr-label-word, .dm-pvr-chip-word) { font-size: 0.6875rem; line-height: 0.8125rem; font-weight: 400; letter-spacing: -0.01em; text-transform: none; }
+  [data-position-detail] .dm-pvr-label-word { color: var(--fg-subtle); }
+  [data-position-detail] .dm-pvr-chip:not([data-tone]) { background: var(--v4-w08); }
+  [data-position-detail] .dm-pvr-legend { gap: 0.375rem 1.125rem; font-size: 0.78125rem; line-height: 1.125rem; color: var(--fg-subtle); }
+  [data-position-detail] .dm-pvr-key { gap: 0.5rem; }
+  [data-position-detail] .dm-pvr-key:not([data-key="in"], [data-key="out"], [data-key="price"], [data-key="now"]) .dm-pvr-swatch { background: rgb(95 208 154 / 0.12); box-shadow: inset 0 1px 0 rgb(95 208 154 / 0.6), inset 0 -1px 0 rgb(95 208 154 / 0.6); }
+  /* Every PriceVsRange (its own classes, so outside the page scope): an open end's "∞" at the figures' visual size, not
+     a dash that reads as "unavailable"; the box stays 1rem tall, so the JS label placement is unchanged. */
+  .dm-pvr-label[data-pvr-end="max"][data-pvr-open] .dm-pvr-label-fig { font-size: 1.15rem; line-height: 1rem; font-weight: 400; }
+  /* On a phone the tooltip stays over the plot (its right edge never past the plot's, the labels' column being at most
+     104px, so Max, Min and Now stay clear), its value wrapping under its label, at the same left edge, when the row is too narrow. */
+  @media (max-width: 29.9375rem) {
+    .dm-pvr .dm-chart-tooltip { width: max-content; min-width: 0; max-width: calc(100% - 6.5rem); }
+    .dm-pvr .dm-chart-tooltip-row { flex-wrap: wrap; column-gap: 0.75rem; row-gap: 0; }
+    .dm-pvr .dm-chart-tooltip-row > :last-child { text-align: left; }
+  }
+  /* The Robinhood v3 card on the V2 page, and the fallback range without a price. */
+  [data-position-detail] .dm-pos-grid > section.dm-pos-card:has([data-range]) > .dm-title { font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; }
+  [data-position-detail] .dm-pos-end-fig { font-family: var(--font-display); font-size: 1.75rem; line-height: 1.1; font-weight: 400; letter-spacing: -0.02em; }
+
+  /* ==== Activity and Details: quiet rows in the card, the details a ring card closed until asked ================== */
+  [data-position-detail] .dm-pos-grid { gap: 0.875rem; margin-top: 0.875rem; }
+  [data-position-detail] .dm-pos-grid > .dm-pos-card, [data-position-detail] .dm-pos-grid > .dm-card:not(.dm-pos-details) { padding: 0.5rem 0.625rem 0.75rem; border: 0; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); }
+  [data-position-detail] .dm-pos-grid > .dm-pos-card > .dm-title, [data-position-detail] .dm-pos-grid .dm-activity-head > .dm-title { padding: 0.875rem 0.5rem 0.25rem 0.75rem; font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  .dm-pos-activity { gap: 0.5rem; }
+  .dm-pos-activity .dm-activity-list { display: grid; gap: 2px; }
+  .dm-pos-activity .dm-activity-list .dm-rcpt-operation { border-radius: 0.875rem; transition: background-color 0.18s var(--ease-std); }
+  .dm-pos-activity .dm-activity-list .dm-rcpt-operation[open] { background: var(--v4-w045); }
+  .dm-pos-activity .dm-activity-list .dm-rcpt-operation > summary { position: relative; min-height: max(calc(4.125rem * var(--activity-legibility-scale)), 4.125rem); padding: 0.75rem 0.75rem 0.75rem 1.375rem; border-radius: 0.875rem; box-shadow: none; transition: background-color 0.18s var(--ease-std); }
+  .dm-pos-activity .dm-activity-list .dm-rcpt-operation > summary:hover { background: var(--v4-w045); }
+  .dm-pos-activity .dm-activity-list .dm-rcpt-operation > summary::before { content: ''; position: absolute; left: 0.5rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: 999px; background: var(--primary); opacity: 0; scale: 0.2; transition: opacity 0.2s var(--ease-std), scale 0.35s var(--ease-enter); pointer-events: none; }
+  .dm-pos-activity .dm-activity-list .dm-rcpt-operation > summary:hover::before { opacity: 1; scale: 1; }
+  .dm-pos-activity .dm-activity-list > :is(li, details) + :is(li, details) { box-shadow: none; }
+  .dm-pos-activity :is(.dm-rcpt-what, .dm-fees-act-verb) { font-size: max(calc(0.875rem * var(--activity-legibility-scale)), 0.9375rem); line-height: 1.35; font-weight: 500; color: var(--fg); }
+  .dm-pos-activity .dm-rcpt-amount { font-size: max(calc(0.875rem * var(--activity-legibility-scale)), 0.9375rem); line-height: 1.35; font-weight: 500; color: var(--fg); transition: translate 0.25s var(--ease-enter); }
+  .dm-pos-activity :is(.dm-activity-time, .dm-fees-act-date) { font-size: max(calc(0.75rem * var(--activity-legibility-scale)), 0.78125rem); line-height: 1.45; color: var(--fg-subtle); }
+  /* The step glyph grows with its tile (activity.css draws the tile through the legibility scale; the 20 tile's glyph stayed 0.75rem). */
+  .dm-pos-activity .dm-fees-act-verb > .dm-icon-tile > svg { width: max(calc(0.75rem * var(--activity-legibility-scale)), 0.75rem); height: max(calc(0.75rem * var(--activity-legibility-scale)), 0.75rem); }
+  .dm-pos-activity .dm-receipt-check { display: inline-grid; place-items: center; flex: none; border-radius: 999px; background: rgb(95 208 154 / 0.12); color: var(--money-in); transition: scale 0.3s var(--ease-enter); }
+  .dm-pos-activity .dm-rcpt-operation > summary:hover .dm-receipt-check { scale: 1.06; }
+  .dm-pos-activity .dm-rcpt-operation > summary:hover .dm-rcpt-amount { translate: 0 -1px; }
+  .dm-pos-activity .dm-rcpt-chevron { color: var(--fg-faint); transition: rotate 0.35s var(--ease-enter), color 0.18s var(--ease-std); }
+  .dm-pos-activity .dm-rcpt-operation > summary:hover .dm-rcpt-chevron { color: var(--fg); }
+  .dm-pos-activity .dm-rcpt-operation[open] > summary .dm-rcpt-chevron { rotate: 180deg; color: var(--fg); }
+  /* A receipt opens to its facts in an inset box. */
+  .dm-pos-activity .dm-rcpt-detail { padding: 0.25rem 0.75rem 1rem 1.375rem; }
+  .dm-pos-activity .dm-rcpt-detail > :is(.dm-rcpt-facts, .dm-rcpt-tech) { padding: 0.875rem 1rem 1rem; border-radius: 0.875rem; background: rgb(255 236 220 / 0.025); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-pos-activity :is(.dm-rcpt-facts, .dm-rcpt-tech) dt { color: var(--fg-subtle); }
+  .dm-pos-activity :is(.dm-rcpt-facts, .dm-rcpt-tech) dd { font-weight: 500; color: var(--fg); }
+  .dm-pos-activity > .dm-rcpt-note { padding: 0.25rem 0.75rem; color: var(--fg-subtle); }
+  /* Show more: the link pill, centred under the list. */
+  .dm-pos-activity .dm-activity-footer { display: flex; justify-content: center; padding: 0.75rem 0 0.25rem; }
+  .dm-pos-activity .dm-activity-footer > .dm-btn { height: 2.375rem; padding: 0 0.875rem; border-radius: 0.8125rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-muted); }
+  .dm-pos-activity .dm-activity-footer > .dm-btn:hover:not(:disabled) { background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
+  .dm-pos-activity .dm-activity-footer > .dm-btn:active:not(:disabled) { box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-pos-activity .dm-activity-footer > .dm-btn:disabled { background: transparent; }
+
+  /* Details: a quiet ring card, a 60px head, single rows label left and value right. */
+  [data-position-detail] .dm-pos-details { margin-bottom: 10rem; border: 0; border-radius: 1.25rem; background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
+  [data-position-detail] .dm-pos-details-head { gap: 0.875rem; min-height: 3.75rem; padding: 0 0.75rem 0 1.375rem; border-radius: 1.25rem; transition: background-color 0.18s var(--ease-std); }
+  [data-position-detail] .dm-pos-details-head:hover { background: rgb(255 236 220 / 0.035); }
+  [data-position-detail] .dm-pos-details-head > .dm-title { font-family: var(--font-sans); font-size: 0.96875rem; line-height: 1.375rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
+  [data-position-detail] .dm-pos-details-head > svg { box-sizing: content-box; width: 1rem; height: 1rem; padding: 0.5625rem; border-radius: 999px; color: var(--fg-subtle); transition: rotate 0.35s var(--ease-enter), color 0.18s var(--ease-std), background-color 0.18s var(--ease-std); }
+  [data-position-detail] .dm-pos-details-head:hover > svg { color: var(--fg); background: var(--v4-w06); }
+  [data-position-detail] .dm-pos-details[open] > .dm-pos-details-head > svg { rotate: 180deg; }
+  [data-position-detail] .dm-pos-details > :not(summary) { margin-inline: 0.625rem; }
+  [data-position-detail] .dm-pos-facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 0 0 0.25rem; }
+  [data-position-detail] .dm-pos-facts > div { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 2.75rem; padding: 0 0.375rem 0 0.75rem; border-radius: 0.75rem; background: none; box-shadow: none; transition: background-color 0.18s var(--ease-std); }
+  [data-position-detail] .dm-pos-facts > div:hover { background: rgb(255 236 220 / 0.03); }
+  [data-position-detail] .dm-pos-facts dt { flex: none; max-width: 48%; font-size: 0.84375rem; line-height: 1.25rem; color: var(--fg-subtle); }
+  [data-position-detail] .dm-pos-facts dd { min-width: 0; font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; color: var(--fg); text-align: right; overflow-wrap: anywhere; }
+  /* Label and value share a baseline (a two-line value starts on its label's line); single rows keep their 44px. */
+  [data-position-detail] .dm-pos-facts > div { align-items: baseline; padding-block: 0.75rem; }
+  /* Token amounts read at the facts' size, each amount with its unit on one line. */
+  [data-position-detail] .dm-pos-facts > div:has(> dd .dm-pos-amounts) { flex-wrap: wrap; row-gap: 0.25rem; }
+  [data-position-detail] .dm-pos-facts > div:has(> dd .dm-pos-amounts) > dd { margin-left: auto; }
+  [data-position-detail] .dm-pos-facts dd .dm-pos-amounts { justify-items: end; gap: 0.25rem; }
+  [data-position-detail] .dm-pos-facts dd .dm-pos-amounts .dm-acct-amount { font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; white-space: nowrap; }
+  [data-position-detail] .dm-pos-facts dd .dm-pos-amounts .dm-acct-amount-symbol { font-weight: 400; color: var(--fg-muted); }
+  /* A sentence as a value (custody, fees history, Domino's permission) reads in the regular weight. */
+  [data-position-detail] .dm-pos-facts :is(dd > [data-position-custody], dd > [data-history-source], [data-position-zap-approval] > dd) { font-weight: 400; text-wrap: pretty; }
+  [data-position-detail] .dm-pos-details > .dm-pos-links { gap: 0.5rem; margin: 0.625rem 0.75rem 0.875rem; padding: 0.75rem 2px 0; box-shadow: inset 0 1px 0 var(--border); }
+  [data-position-detail] .dm-pos-links .dm-btn > svg { color: var(--fg-subtle); transition: translate 0.3s var(--ease-enter), color 0.2s var(--ease-std); }
+  [data-position-detail] .dm-pos-links .dm-btn:hover > svg { translate: 0 -1px; color: var(--primary); }
+  [data-position-detail] .dm-pos-links .dm-btn:active { background: var(--v4-tan-12); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.6); color: var(--primary-hover); }
+
+  /* ==== Loading, empty, gone: the skeleton takes the tiles' and cards' shapes ====================================== */
+  [data-position-loading] .dm-pos-skel-mark { width: 2.875rem; height: 2.875rem; }
+  [data-position-loading] .dm-pos-skel-h1 { width: 20rem; max-width: 70vw; height: 4.5rem; border-radius: 0.875rem; }
+  [data-position-loading] .dm-pos-skel-hero { width: 8.75rem; max-width: 100%; height: 2.5rem; border-radius: 0.625rem; }
+  [data-position-loading] > .dm-fees, [data-position-loading] .dm-pos-grid > .dm-card, .dm-pos-empty ~ .dm-fees { margin-top: 0.875rem; padding: 1.375rem; border: 0; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); }
+  [data-position-loading] .dm-pos-grid { margin-top: 0.875rem; }
+  main.dm-page .dm-pos-empty { margin-top: 1.875rem; }
+  main.dm-page .dm-pos-empty .dm-empty--plate, main.dm-page .dm-pos-empty.dm-empty--plate { border-radius: 1.625rem; }
+
+  /* ==== The sheets' contents (v4-sheets.css is the frame and the shared parts) ===================================== */
+  /* Add liquidity: the amount panel, a serif figure that steps down as it grows, the token chip, the + medallion. */
+  .dm-pa[data-position-dialog] .dm-flow-pair { display: grid; gap: 0.375rem; }
+  .dm-pa[data-position-dialog] .dm-flow-amount { position: relative; padding: 0.875rem 0.75rem 0.875rem 1.125rem; border-radius: 1.125rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); transition: box-shadow 0.2s var(--ease-std), background-color 0.2s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-flow-amount:hover { box-shadow: inset 0 0 0 1px var(--border-lip); }
+  .dm-pa[data-position-dialog] .dm-flow-amount:focus-within { background: rgb(255 157 98 / 0.03); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
+  .dm-pa[data-position-dialog] .dm-flow-amount-row { min-height: 3.25rem; gap: 0.75rem; }
+  .dm-pa[data-position-dialog] .dm-flow-amount-input { height: 3.25rem; padding: 0; background: transparent; box-shadow: none; font-family: var(--font-display); font-size: 2.75rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-flow-amount-input[data-len="m"] { font-size: 2.25rem; }
+  .dm-pa[data-position-dialog] .dm-flow-amount-input[data-len="l"] { font-size: 1.875rem; }
+  .dm-pa[data-position-dialog] .dm-flow-amount-input[data-len="xl"] { font-size: 1.625rem; }
+  .dm-pa[data-position-dialog] .dm-flow-amount-input::placeholder { color: var(--fg-faint); }
+  .dm-pa[data-position-dialog] .dm-flow-amount-input:focus-visible { outline: 0; }
+  .dm-pa[data-position-dialog] .dm-flow-amount-unit { gap: 0.5rem; height: 2.375rem; padding: 0 0.75rem 0 0.375rem; background: none; box-shadow: none; font-size: 0.875rem; font-weight: 500; color: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-pa-chip > .dm-select-trigger { height: 2.375rem; gap: 0.5rem; padding: 0 0.625rem 0 0.375rem; border-radius: 999px; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--border); font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); transition: background-color 0.18s var(--ease-std), box-shadow 0.2s var(--ease-std), scale 0.1s var(--ease-fast); }
+  .dm-pa[data-position-dialog] .dm-pa-chip > .dm-select-trigger:hover { background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--border-lip); }
+  .dm-pa[data-position-dialog] .dm-pa-chip > .dm-select-trigger:active { scale: 0.97; }
+  .dm-pa[data-position-dialog] .dm-pa-chip > .dm-select-trigger[aria-expanded="true"] { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); }
+  .dm-pa[data-position-dialog] .dm-pa-chip > .dm-select-trigger > svg:last-child { color: var(--fg-subtle); transition: rotate 0.3s var(--ease-enter), color 0.18s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-pa-chip > .dm-select-trigger[aria-expanded="true"] > svg:last-child { rotate: 180deg; color: var(--primary); }
+  /* Pay with: a small cousin of the ··· menu (it still opens where there is room). */
+  .dm-pa[data-position-dialog] .dm-pa-chip > .dm-listbox { min-width: 14.75rem; padding: 0.375rem; border-radius: 1.125rem; background: var(--surface-1); box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 var(--v4-w06), 0 1.5rem 3.75rem -1.5rem rgb(0 0 0 / 0.9); }
+  .dm-pa[data-position-dialog] .dm-pa-chip .dm-option { position: relative; height: 2.75rem; gap: 0.75rem; padding: 0 0.75rem 0 1.375rem; border-radius: 0.75rem; font-size: 0.90625rem; font-weight: 500; color: var(--fg-muted); }
+  .dm-pa[data-position-dialog] .dm-pa-chip .dm-option::before { content: ''; position: absolute; left: 0.5625rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: 999px; background: var(--primary); opacity: 0; scale: 0.2; transition: opacity 0.2s var(--ease-std), scale 0.35s var(--ease-enter); }
+  .dm-pa[data-position-dialog] .dm-pa-chip .dm-option:is(:hover, [data-active]) { background: var(--v4-w045); color: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-pa-chip .dm-option:is(:hover, [data-active])::before { opacity: 1; scale: 1; }
+  .dm-pa[data-position-dialog] .dm-pa-chip .dm-option[aria-selected="true"] { color: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-flow-link { position: relative; z-index: 2; display: inline-flex; align-items: center; justify-content: center; justify-self: center; width: 1.875rem; height: 1.875rem; margin: -1.125rem auto; border-radius: 999px; background: var(--card); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg-muted); animation: dm-v4p-pop 0.45s var(--e-pop) 0.12s backwards; }
+  .dm-pa[data-position-dialog] .dm-pa-mode { height: 2.125rem; border-radius: 0.6875rem; }
+  .dm-pa[data-position-dialog] .dm-pa-mode .dm-seg-item { height: 1.75rem; padding: 0 0.6875rem; border-radius: 0.5rem; font-size: 0.8125rem; }
+  .dm-pa[data-position-dialog] .dm-pa-mode .dm-seg-thumb { border-radius: 0.5rem; }
+
+  /* Change range: today's price, four widths in one track, two ends on a hairline, the comparison well. */
+  .dm-pa[data-position-dialog] .dm-range-edit { gap: 0.875rem; }
+  .dm-pa[data-position-dialog] .dm-range-reference { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; padding: 2px 2px 1rem; border: 0; box-shadow: inset 0 -1px 0 var(--border); }
+  .dm-pa[data-position-dialog] .dm-range-reference p { margin: 0; font-size: 0.90625rem; line-height: 1.25rem; font-weight: 500; color: var(--fg-muted); }
+  .dm-pa[data-position-dialog] .dm-range-reference strong { font-size: 0.90625rem; line-height: 1.25rem; font-weight: 500; color: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-range-width { gap: 0.625rem; }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-choices--compact { gap: 0.1875rem; padding: 0.1875rem; border-radius: 1.0625rem; }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-choices--compact > .dm-pa-choice { min-height: 4.75rem; border-radius: 0.875rem; font-size: 0.84375rem; }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bounds { position: relative; gap: 0; margin: 0 -0.375rem; }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound { position: relative; gap: 0; padding: 0.875rem 1rem; border-radius: 1.125rem; background: transparent; box-shadow: none; transition: box-shadow 0.2s var(--ease-std), background-color 0.2s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound + .dm-pa-bound::before { content: ''; position: absolute; left: 0; top: 0.875rem; bottom: 0.875rem; width: 1px; background: var(--border); transition: opacity 0.2s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound:not([data-editing]):hover { background: var(--v4-w045); box-shadow: inset 0 0 0 1px var(--border-lip); }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bounds:hover > .dm-pa-bound + .dm-pa-bound::before { opacity: 0; }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bounds:has([data-editing]) { gap: 0.5rem; margin: 0; }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound[data-editing] { background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); cursor: text; }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound[data-editing]:hover { box-shadow: inset 0 0 0 1px var(--border-lip); }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound[data-editing]:focus-within { background: rgb(255 157 98 / 0.03); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound[data-editing]::before { display: none; }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound-head { align-items: center; gap: 0.25rem 0.625rem; }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound-head > .dm-pa-label { font-size: 0.78125rem; }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound-away { padding: 2px 0.4375rem; border-radius: 0.375rem; background: var(--v4-w055); font-size: 0.75rem; line-height: 1rem; font-weight: 500; color: var(--fg-muted); transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound:hover .dm-pa-bound-away { background: var(--v4-w08); color: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-range-edit :is(.dm-pa-bound-price, .dm-pa-bound-input) { height: auto; min-height: 2rem; margin-top: 0.75rem; font-family: var(--font-display); font-size: 2rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); transition: color 0.2s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound:not([data-editing]):hover .dm-pa-bound-price { color: var(--v4-lit); }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound-input { box-shadow: none; }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound-input::placeholder { color: var(--fg-subtle); }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound-unit { margin-top: 0.5rem; font-size: 0.78125rem; line-height: 1.125rem; color: var(--fg-subtle); }
+  .dm-pa[data-position-dialog] .dm-range-comparison { padding: 0.875rem 1rem 1rem; border: 0; border-radius: 1.125rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-pa[data-position-dialog] .dm-range-track-head { min-height: 1.125rem; font-size: 0.78125rem; line-height: 1.125rem; color: var(--fg-subtle); }
+  .dm-pa[data-position-dialog] .dm-range-track-head [data-key="new"] { color: var(--fg-muted); }
+  .dm-pa[data-position-dialog] .dm-range-track { height: 1.375rem; margin-bottom: 0.375rem; border-radius: 0; background: linear-gradient(var(--border-lip), var(--border-lip)) center / 100% 1px no-repeat; }
+  .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-was { top: 0.25rem; bottom: 0.25rem; border-radius: 2px; background: repeating-linear-gradient(135deg, rgb(255 236 220 / 0.16) 0 1.5px, rgb(255 236 220 / 0) 1.5px 0.3125rem); box-shadow: inset 1px 0 0 rgb(255 236 220 / 0.32), inset -1px 0 0 rgb(255 236 220 / 0.32); }
+  .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band { top: 0.1875rem; bottom: 0.1875rem; border-radius: 0; background: linear-gradient(180deg, rgb(95 208 154 / 0.12), rgb(95 208 154 / 0.32)); box-shadow: none; }
+  /* The new range's two ends: little dominoes standing on the track (a groove across each). */
+  .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band::before, .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band::after { content: ''; position: absolute; top: 50%; width: 0.625rem; height: 1.125rem; margin-top: -0.5625rem; border-radius: 0.1875rem; background: linear-gradient(var(--card), var(--card)) center / 0.25rem 1px no-repeat, rgb(255 157 98 / 0.6); box-shadow: 0 0 0 1px var(--card); transition: background-color 0.2s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band::before { left: -0.3125rem; }
+  .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band::after { right: -0.3125rem; }
+  .dm-pa[data-position-dialog] .dm-range-comparison:hover .dm-range-track .dm-pa-range-band::before, .dm-pa[data-position-dialog] .dm-range-comparison:hover .dm-range-track .dm-pa-range-band::after { background-color: var(--primary); }
+  .dm-pa[data-position-dialog] .dm-range-tracks[data-in="false"] .dm-range-track .dm-pa-range-band { background: linear-gradient(180deg, rgb(255 236 220 / 0.04), rgb(255 236 220 / 0.12)); }
+  .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-axis { display: none; }
+  .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-now::before { left: -0.5px; width: 1px; border-radius: 0; background: linear-gradient(var(--fg-muted) 50%, transparent 0) 0 0 / 1px 0.3125rem repeat-y; opacity: 0.8; }
+  .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-now::after { width: 0.375rem; height: 0.375rem; left: -0.1875rem; background: var(--fg); box-shadow: 0 0 0 0.1875rem rgb(247 241 234 / 0.14); }
+  .dm-pa[data-position-dialog] .dm-range-result { display: flex; gap: 0.625rem; margin: 0.625rem 0 0; padding: 0 2px; font-size: 0.84375rem; line-height: 1.5; color: var(--fg-muted); }
+  .dm-pa[data-position-dialog] .dm-range-result::before { content: ''; flex: none; width: 0.375rem; height: 0.375rem; margin-top: 0.4375rem; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--fg-subtle); }
+  .dm-pa[data-position-dialog] .dm-range-result[data-position-range-result="inside"]::before { background: var(--money-in); box-shadow: 0 0 0 0.1875rem rgb(95 208 154 / 0.16); }
+  .dm-pa[data-position-dialog] .dm-range-result[data-position-range-result="outside"] { color: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-range-result[data-position-range-result="outside"]::before { box-shadow: inset 0 0 0 1.5px var(--fg); }
+  .dm-pa[data-position-dialog] .dm-range-detail { font-size: 0.84375rem; line-height: 1.5; color: var(--fg-muted); }
+  .dm-pa[data-position-dialog] .dm-range-detail > summary { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.375rem; margin-left: -0.375rem; padding: 0 0.75rem 0 0.5rem; border-radius: 0.625rem; list-style: none; font-weight: 500; color: var(--fg-muted); transition: background-color 0.18s var(--ease-std), color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
+  .dm-pa[data-position-dialog] .dm-range-detail > summary::-webkit-details-marker { display: none; }
+  .dm-pa[data-position-dialog] .dm-range-detail > summary::before { content: ''; flex: none; width: 0.875rem; height: 0.875rem; background: var(--fg-subtle); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='m5 3 4 4-4 4' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.875rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='m5 3 4 4-4 4' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.875rem no-repeat; transition: rotate 0.3s var(--ease-enter), translate 0.3s var(--ease-enter), background-color 0.18s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-range-detail > summary:hover { background: var(--v4-w04); color: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-range-detail > summary:hover::before { translate: 2px 0; background: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-range-detail > summary:active { scale: 0.98; }
+  .dm-pa[data-position-dialog] .dm-range-detail[open] > summary::before { rotate: 90deg; translate: 0 0; }
+  .dm-pa[data-position-dialog] .dm-range-detail dl { gap: 2px; margin: 0.25rem 0 2px; }
+  .dm-pa[data-position-dialog] .dm-range-detail dl > div { display: grid; gap: 0.3125rem; padding: 0.5625rem 2px; }
+  .dm-pa[data-position-dialog] .dm-range-detail dt { font-size: 0.78125rem; color: var(--fg-subtle); }
+  .dm-pa[data-position-dialog] .dm-range-detail dd { margin: 0; font-size: 0.875rem; font-weight: 500; color: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-pa-field > .dm-error { position: relative; padding-left: 1.125rem; font-size: 0.84375rem; line-height: 1.5; color: var(--money-out); }
+  .dm-pa[data-position-dialog] .dm-pa-field > .dm-error::before { content: ''; position: absolute; left: 2px; top: 0.4375rem; width: 0.375rem; height: 0.375rem; border-radius: 999px; background: var(--money-out); }
+
+  /* Withdraw: "You receive" as rows (a radio ring, the marks, the name), the chosen one ringed in Tangerine. */
+  .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; padding: 0; border-radius: 0; background: none; box-shadow: none; }
+  .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice { position: relative; display: grid; grid-template-columns: 1.25rem 2.875rem minmax(0, 1fr); justify-items: start; align-items: center; align-content: center; gap: 0.875rem; min-height: 3.625rem; padding: 0 1rem; border-radius: 0.875rem; background: transparent; box-shadow: none; color: var(--fg); font-size: 0.9375rem; text-align: left; }
+  .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice::before { content: ''; grid-column: 1; grid-row: 1; width: 1.25rem; height: 1.25rem; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--border-strong); background: radial-gradient(circle, var(--primary) 0 0.25rem, transparent 0.28125rem) center / 0 0 no-repeat; transition: box-shadow 0.2s var(--ease-std), background-size 0.35s var(--ease-enter); }
+  .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice > .dm-pa-choice-icon { grid-column: 2; grid-row: 1; justify-content: flex-start; }
+  .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice > .dm-pa-choice-title { grid-column: 3; grid-row: 1; font-size: 0.9375rem; line-height: 1.25rem; }
+  .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice:hover:not(:disabled) { background: var(--v4-w045); }
+  .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice:hover:not(:disabled)::before { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); background-size: 75% 75%; }
+  .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice[aria-checked="true"] { background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.5); color: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice[aria-checked="true"]::before { box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.6); background-size: 100% 100%; }
+
+  /* The converted-exit offer: a well with its two small buttons. */
+  .dm-pa[data-position-dialog] [data-position-converted] { padding: 0.875rem; border-radius: 1rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-pa[data-position-dialog] [data-position-converted] .dm-btn--sm { height: 2.25rem; border-radius: 0.6875rem; }
+
+  /* The wallet's steps: a well; each step's marker a small upright domino that leans in the wallet, leans further when
+     sent and lies down green when done (colour only under reduced motion). */
+  .dm-pa[data-position-dialog] .dm-flow-wsteps { margin: 0; padding: 0.375rem 0; border-radius: 1.125rem; background: rgb(255 236 220 / 0.025); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li { gap: 0.875rem; min-height: 0; padding: 0.5625rem 0.75rem; background: none; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li:not(:last-child)::before { top: 2.625rem; bottom: -0.6875rem; left: 1.625rem; width: 1px; border-radius: 0; background: var(--border); }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"]:not(:last-child)::before { background: rgb(255 157 98 / 0.45); }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps .dm-step-marker { width: 1.125rem; height: 1.875rem; margin: 2px 0.375rem 0; align-items: start; padding-top: 2px; border-radius: 0.3125rem; background: linear-gradient(var(--border-strong), var(--border-strong)) center / 0.625rem 1px no-repeat, var(--card); box-shadow: inset 0 0 0 1.25px var(--border-strong); color: var(--fg-subtle); font-size: 0.5625rem; line-height: 0.75rem; transform-origin: 50% 80%; transition: rotate 0.45s var(--ease-enter), translate 0.45s var(--ease-enter), background-color 0.2s var(--ease-std), box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps .dm-step-marker[data-state="current"] { background: linear-gradient(rgb(255 157 98 / 0.5), rgb(255 157 98 / 0.5)) center / 0.625rem 1px no-repeat, rgb(255 157 98 / 0.08); box-shadow: inset 0 0 0 1.25px rgb(255 157 98 / 0.7), 0 0 0 0.25rem rgb(255 157 98 / 0.1); color: var(--primary); }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps .dm-step-marker[data-state="current"]::after { border-radius: 0.5625rem; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="wallet"] .dm-step-marker { rotate: 8deg; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="chain"] .dm-step-marker { rotate: 22deg; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker { place-items: center; padding: 0; background: rgb(95 208 154 / 0.12); box-shadow: inset 0 0 0 1.25px rgb(95 208 154 / 0.55); color: var(--money-in); rotate: 90deg; translate: -2px 0.25rem; animation: none; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker > svg { width: 0.75rem; height: 0.75rem; rotate: -90deg; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="failed"] .dm-step-marker { background: var(--v4-w06); color: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-flow-wstep-body { gap: 0.1875rem; padding-top: 0.375rem; }
+  .dm-pa[data-position-dialog] .dm-flow-wstep-title { font-size: 0.9375rem; line-height: 1.35; font-weight: 500; color: var(--fg-muted); transition: color 0.2s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state] .dm-flow-wstep-title { color: var(--fg); }
+  .dm-pa[data-position-dialog] .dm-flow-wstep-note { font-size: 0.8125rem; line-height: 1.45; color: var(--fg-subtle); animation: dm-v4p-fade 0.3s var(--ease-std) backwards; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"] .dm-flow-wstep-note { color: var(--money-in); }
+
+  /* The receipt: the green row "Confirmed". */
+  .dm-pa[data-position-dialog] :is([data-position-receipt], [data-position-direct]) .dm-pa-status[data-state="done"] { display: flex; justify-self: stretch; min-height: 3.75rem; padding: 0 1rem; border-radius: 1rem; background: rgb(95 208 154 / 0.06); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.18); font-size: 0.96875rem; color: var(--money-in); }
+  .dm-pa[data-position-dialog] [data-position-new-nft] { height: 2.25rem; border-radius: 0.6875rem; }
+  /* A step with the Back chevron: the head starts nearer the edge for the chevron; its description stays on the body column. */
+  .dm-flow-dialog.dm-pa[data-position-dialog] > .dm-pa-head--back > .dm-pa-lede { margin-left: 0.375rem; }
+  /* Each sheet's stage arrives with a short rise of the part that changed. */
+  .dm-pa[data-position-dialog] :is([data-position-review-stage], [data-position-direct], [data-position-receipt]) { animation: dm-v4p-up 0.5s var(--ease-enter) backwards; }
+
+  /* ==== Auto-exit: the edges it closes at, round direction badges, serif prices ==================================== */
+  [data-v2in-dialog="mandate"] .dm-exit-edge-list { gap: 0.25rem; }
+  [data-v2in-dialog="mandate"] .dm-exit-edge { gap: 0.875rem; min-height: 3.25rem; }
+  [data-v2in-dialog="mandate"] .dm-exit-direction { width: 1.75rem; height: 1.75rem; border: 0; box-shadow: inset 0 0 0 1px var(--border-strong); font-size: 0.8125rem; color: var(--fg-muted); }
+  [data-v2in-dialog="mandate"] .dm-exit-edge-move { font-size: 0.84375rem; color: var(--fg-muted); }
+  [data-v2in-dialog="mandate"] .dm-exit-edge-price { font-family: var(--font-display); font-size: 1.75rem; line-height: 1.1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  [data-v2in-dialog="mandate"] .dm-exit-edge-unit { margin-left: 0.25rem; font-family: var(--font-sans); font-size: 0.8125rem; letter-spacing: -0.01em; color: var(--fg-subtle); }
+  [data-v2in-dialog="mandate"] [data-mandate-consent] { color: var(--fg); }
+  [data-v2in-dialog="mandate"] .dm-exit-warnings { gap: 0.5rem; font-size: 0.8125rem; line-height: 1.5; color: var(--fg-muted); }
+  /* The pinned note at the foot: on the body's column, clear of the sheet's bottom edge (safe-area aware). */
+  .dm-flow-dialog.dm-pa[data-v2in-dialog="mandate"] > .dm-pa-foot:has(> .dm-pa-locked) { padding: 0.75rem 1.5rem max(1.25rem, calc(env(safe-area-inset-bottom) + 0.5rem)); background-size: calc(100% - 3rem) 1px; }
+  /* The Auto-exit card in the automation sheet: flat, its state a word, its buttons small. */
+  [data-v2in-exit] [data-exit-pill] { gap: 0.4375rem; min-height: 0; padding: 0; background: none; font-size: 0.8125rem; font-weight: 500; }
+  [data-v2in-exit] .dm-exit-card-line { font-size: 0.84375rem; line-height: 1.5; color: var(--fg-muted); }
+  [data-v2in-exit] .dm-exit-card-actions { gap: 0.5rem; }
+  [data-v2in-exit] .dm-exit-card-actions .dm-btn { height: 2.125rem; padding: 0 0.8125rem; border-radius: 0.625rem; font-size: 0.8125rem; }
+
+  /* ==== The page's moment: a first load only; never when data refreshes ============================================ */
+  html:not(.dm-booted) main.dm-page:has(> [data-position-detail]) > .dm-pos-back { animation: dm-v4-up 0.5s var(--ease-enter) 0.06s backwards; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-name { animation: dm-v4-up 0.6s var(--ease-enter) 0.04s backwards; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-pair::after { animation: dm-v4-stop 0.4s var(--e-pop) 0.42s backwards; }
+  html:not(.dm-booted) [data-position-detail] :is(.dm-pos-actions, .dm-pos-stats > .dm-pos-stat, .dm-position-workspace, .dm-pos-grid > *) { animation: dm-v4p-fade 0.5s var(--ease-std) 0.24s backwards; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-stats > .dm-pos-stat:nth-child(2) { animation-delay: 0.28s; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-stats > .dm-pos-stat:nth-child(3) { animation-delay: 0.32s; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-stats > .dm-pos-stat:nth-child(4) { animation-delay: 0.35s; }
+  html:not(.dm-booted) [data-position-detail] :is(.dm-position-workspace, .dm-pos-grid > :first-child) { animation-delay: 0.34s; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-grid > :nth-child(n + 2) { animation-delay: 0.4s; }
+
+  /* ==== Narrower: the tiles two by two below 1024px; the phone layout below 768px ================================== */
+  @media (max-width: 1023px) {
+    :is([data-position-detail], [data-position-loading]) .dm-pos-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 767px) {
+    main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back { position: relative; margin-top: 1rem; }
+    :is([data-position-detail], [data-position-loading]) .dm-pos-name { column-gap: 0.875rem; row-gap: 0.75rem; }
+    :is([data-position-detail], [data-position-loading]) .dm-pos-name > :first-child { margin-bottom: 0.75rem; }
+    [data-position-detail] .dm-pos-pair { white-space: normal; text-wrap: balance; overflow-wrap: anywhere; font-size: clamp(2.75rem, 13vw, 4.5rem); }
+    [data-position-detail] .dm-pos-chips { grid-column: 1 / -1; }
+    [data-position-detail] .dm-pos-title > [data-position-actions-waiting] { margin-top: 1.5rem; }
+    /* The actions (approved phone): Collect fees across, the outlines two by two, Close position on the right; 44px. */
+    [data-position-detail] .dm-pos-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; margin-top: 1.5rem; }
+    [data-position-detail] .dm-pos-actions .dm-btn { justify-content: flex-start; height: 2.75rem; overflow: hidden; white-space: nowrap; text-align: left; }
+    [data-position-detail] .dm-pos-actions .dm-btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    [data-position-detail] .dm-position-action-help > .dm-btn { width: 100%; }
+    [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]) { grid-column: 1 / -1; justify-content: center; height: 3rem; }
+    [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"] { grid-column: 1 / -1; justify-self: end; justify-content: center; margin-left: 0; height: 2.75rem; }
+    /* Set up automation is a bare label: a drawn glyph (decoration only) puts it on the others' alignment. */
+    [data-position-detail] .dm-pos-actions .dm-btn[data-automation-control]:not(:has(> svg))::before { content: ''; flex: none; width: 1rem; height: 1rem; background: var(--fg-subtle); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M13 6.5A5.2 5.2 0 0 0 3.4 4.6M3 9.5a5.2 5.2 0 0 0 9.6 1.9'/%3E%3Cpath d='M3.2 2.2v2.6h2.6M12.8 13.8v-2.6h-2.6'/%3E%3C/svg%3E") center / 1rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M13 6.5A5.2 5.2 0 0 0 3.4 4.6M3 9.5a5.2 5.2 0 0 0 9.6 1.9'/%3E%3Cpath d='M3.2 2.2v2.6h2.6M12.8 13.8v-2.6h-2.6'/%3E%3C/svg%3E") center / 1rem no-repeat; transition: background-color 0.2s var(--ease-std); }
+    [data-position-detail] .dm-pos-actions .dm-btn[data-automation-control]:not(:has(> svg)):hover:not(:disabled):not([aria-disabled="true"])::before { background: var(--primary); }
+    [data-position-detail] .dm-position-action-tooltip:not([hidden]) { max-width: calc((100vw - 3rem) / 2); }
+    :is([data-position-detail], [data-position-loading]) .dm-pos-stats { margin-top: 1.5rem; }
+    :is([data-position-detail], [data-position-loading]) .dm-pos-stats > .dm-pos-stat { padding: 1rem; }
+    [data-position-detail] [data-position-overview] .dm-fig-lg { font-size: clamp(1.5rem, 7.5vw, 2.125rem); }
+    [data-position-detail] [data-position-overview] [data-cell="principal"][data-long-value] .dm-fig-lg { font-size: 1.25rem; }
+    [data-position-detail] [data-position-overview] .dm-pos-price .dm-fig-lg { font-size: 1.5rem; }
+    [data-position-detail] [data-position-overview] .dm-stat-value .dm-pos-amounts .dm-acct-amount { font-size: 1.25rem; }
+    [data-position-detail] [data-position-overview] .dm-pos-span { margin-top: 1.5rem; }
+    [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-now::before { width: 3.75rem; height: 3.75rem; margin: -1.875rem 0 0 -1.875rem; }
+    [data-position-detail] [data-position-overview] .dm-pos-span-ends { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.25rem 0.5rem; font-size: 0.75rem; }
+    [data-position-detail] [data-position-overview] .dm-pos-span-word { grid-column: 1 / -1; grid-row: 2; }
+    [data-position-detail] [data-position-overview] .dm-pos-span-ends > :not(.dm-pos-span-word) { white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+    [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary { position: relative; margin-left: -0.375rem; padding: 0 0.25rem 0 0.375rem; font-size: 0.78125rem; white-space: nowrap; }
+    [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::after { width: 1.25rem; height: 1.25rem; }
+    [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2.75rem; margin-top: -1.375rem; }
+    [data-position-detail] :is(.dm-position-workspace, .dm-pos-grid) { margin-top: 1rem; }
+    [data-position-detail] .dm-pos-grid { gap: 1rem; }
+    [data-position-detail] [data-position-chart-panel] .dm-fees-hero .dm-fig-hero { font-size: 2.375rem; }
+    [data-position-detail] .dm-recorded-fees-value .dm-fig-lg { font-size: 2.375rem; }
+    [data-position-detail] .dm-position-chart-tabs > button { padding: 0 0.75rem; }
+    [data-position-detail] .dm-position-chart-tools > button { position: relative; }
+    [data-position-detail] .dm-position-chart-tools > button::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2.75rem; margin-top: -1.375rem; }
+    [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend { flex-direction: column; }
+    [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend-row { padding-right: 0; }
+    [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend-row + .dm-fees-legend-row { padding: 0.875rem 0 0; box-shadow: inset 0 1px 0 var(--border); }
+    [data-position-detail] .dm-pos-grid > .dm-pos-card > .dm-title, [data-position-detail] .dm-pos-grid .dm-activity-head > .dm-title { padding: 0.625rem 0.375rem 0.25rem 0.5rem; font-size: 1.75rem; text-wrap: balance; }
+    [data-fee-reserves="position"] .dm-acct-card-head > .dm-title { font-size: 1.75rem; text-wrap: balance; }
+    .dm-pos-activity .dm-activity-list .dm-rcpt-operation > summary { padding: 0.75rem 0.5rem 0.75rem 0.75rem; }
+    .dm-pos-activity .dm-rcpt-detail { padding: 0.25rem 0.375rem 0.875rem 0.75rem; }
+    .dm-pos-activity .dm-rcpt-detail > :is(.dm-rcpt-facts, .dm-rcpt-tech) { padding: 0.75rem 0.875rem 0.875rem; }
+    [data-position-detail] .dm-pos-details { margin-bottom: 6rem; }
+    [data-position-detail] .dm-pos-details-head { padding: 0 0.5rem 0 1rem; }
+    [data-position-detail] .dm-pos-details > :not(summary) { margin-inline: 0.375rem; }
+    [data-position-detail] .dm-pos-facts > div { padding: 0.75rem 2px 0.75rem 0.625rem; }
+    [data-position-detail] .dm-pos-facts dt { white-space: nowrap; }
+    [data-position-detail] .dm-pos-links .dm-btn { height: 2.75rem; }
+    [data-position-loading] .dm-pos-skel-h1 { height: 3rem; }
+  }
+  @media (max-width: 420px) {
+    [data-position-detail] .dm-pos-pair { font-size: clamp(2.375rem, 11.2vw, 2.875rem); }
+  }
+  /* A receipt row on a phone (activity.css moves the amount under the title below 480px): the amount joins the text
+     column, under the date, and the chevron stays on the title's line. */
+  @media (max-width: 479px) {
+    .dm-pos-activity .dm-activity-list .dm-rcpt-operation > summary { row-gap: 0.375rem; }
+    .dm-pos-activity .dm-activity-list .dm-rcpt-operation > summary:has(.dm-receipt-check) > .dm-rcpt-amount { padding-left: calc(max(1.5rem * var(--activity-legibility-scale), 1.75rem) + max(0.625rem * var(--activity-legibility-scale), 0.75rem)); }
+    .dm-pos-activity .dm-activity-list .dm-rcpt-operation > summary > .dm-rcpt-chevron { align-self: start; margin-top: 0.375rem; }
+  }
+  @media (max-width: 639px) {
+    .dm-flow-dialog.dm-pa[data-v2in-dialog="mandate"] > .dm-pa-foot:has(> .dm-pa-locked) { padding-inline: 1.25rem; background-size: calc(100% - 2.5rem) 1px; }
+    .dm-pa[data-position-dialog] .dm-flow-amount { padding: 0.75rem 0.75rem 0.75rem 0.875rem; }
+    .dm-pa[data-position-dialog] .dm-flow-amount-input { font-size: 2.25rem; }
+    .dm-pa[data-position-dialog] .dm-flow-amount-input[data-len="m"] { font-size: 1.875rem; }
+    .dm-pa[data-position-dialog] .dm-flow-amount-input[data-len="l"] { font-size: 1.625rem; }
+    .dm-pa[data-position-dialog] .dm-flow-amount-input[data-len="xl"] { font-size: 1.375rem; }
+    .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-choices--compact > .dm-pa-choice { min-height: 4rem; }
+    .dm-pa[data-position-dialog] .dm-range-edit :is(.dm-pa-bound-price, .dm-pa-bound-input) { font-size: 1.625rem; }
+    .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound { padding: 0.75rem; }
+  }
+  @media (max-width: 359px) {
+    /* The outlines two by two at 320px: tighter, and a long label wraps to a second line instead of losing its state word. */
+    [data-position-detail] .dm-pos-actions .dm-btn:not([data-position-action="close"]):not(:is([data-position-action="collect"], [data-position-v2-action="collect"])) { gap: 0.375rem; padding: 0 0.625rem; font-size: 0.8125rem; line-height: 1.0625rem; white-space: normal; }
+    [data-position-detail] .dm-pos-actions .dm-btn:not([data-position-action="close"]):not(:is([data-position-action="collect"], [data-position-v2-action="collect"])) > span { overflow: visible; text-overflow: clip; overflow-wrap: normal; }    /* Details at 320px: the label above its value, both from the left, the value across the row. */
+    [data-position-detail] .dm-pos-facts > div { flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; gap: 0.25rem; padding-block: 0.625rem; }
+    [data-position-detail] .dm-pos-facts dt { max-width: none; white-space: normal; }
+    [data-position-detail] .dm-pos-facts dd, [data-position-detail] .dm-pos-facts > div:has(> dd .dm-pos-amounts) > dd { margin-left: 0; text-align: left; }
+    [data-position-detail] .dm-pos-facts dd .dm-pos-amounts { justify-items: start; }
+    [data-position-detail] [data-position-overview] [data-cell="principal"][data-value-width="medium"] .dm-fig-lg { font-size: 1.25rem; }
+    [data-position-detail] [data-position-overview] [data-cell="principal"][data-value-width="wide"] .dm-fig-lg { font-size: 1rem; }
+    [data-position-detail] [data-position-overview] .dm-pos-price .dm-fig-lg { font-size: 1.25rem; }
+    [data-position-detail] [data-position-overview] .dm-pos-span-ends { grid-template-columns: minmax(0, 1fr); }
+    [data-position-detail] [data-position-overview] .dm-pos-span-word { grid-row: 1; text-align: left; }
+  }
+  /* Auto-exit's edges stacked (mandate.css below 25rem): room between one big price and the next edge's label. */
+  @media (max-width: 25rem) {
+    [data-v2in-dialog="mandate"] .dm-exit-edge-list { gap: 0.625rem; }
+  }
+  /* A finger keeps 44px targets (audit E23). */
+  @media (pointer: coarse) {
+    [data-position-detail] .dm-pos-actions .dm-btn { min-height: 2.75rem; }
+    [data-position-detail] .dm-position-chart-tools > button { width: 2.75rem; height: 2.75rem; }
+    [data-position-detail] .dm-position-chart-tabs > button { height: 2.75rem; }
+  }
+  @media (hover: none) {
+    [data-fee-reserves="position"] .dm-reserves-row::before, .dm-pos-activity .dm-activity-list .dm-rcpt-operation > summary::before, .dm-pa[data-position-dialog] .dm-pa-chip .dm-option::before { display: none; }
+  }
+
+  /* ==== Reduced motion: colour, rings and opacity stay; nothing travels, turns or scales ========================= */
+  @media (prefers-reduced-motion: reduce) {
+    main.dm-page > .dm-pos-back, [data-position-detail] :is(.dm-pos-name, .dm-pos-actions, .dm-pos-stat, .dm-position-workspace, .dm-pos-grid > *, [data-position-chart-panel], .dm-position-action-tooltip), [data-position-detail] .dm-pos-pair::after, .dm-pa[data-position-dialog] :is(.dm-flow-link, .dm-flow-wstep-note, [data-position-review-stage], [data-position-direct], [data-position-receipt]) { animation: none !important; }
+    main.dm-page > .dm-pos-back > svg, [data-position-detail] :is(.dm-pos-actions .dm-btn, .dm-pos-actions .dm-btn > svg, .dm-pos-name > [aria-hidden="true"]:first-child > *, .dm-position-chart-tabs > button, .dm-position-chart-tools > button, .dm-position-chart-tools svg, .dm-pos-details-head > svg, .dm-pos-links .dm-btn > svg, .dm-position-figure-detail > summary, .dm-position-fee-breakdown > summary), [data-position-detail] .dm-position-chart-tabs > button::after, [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::after, [data-position-detail] .dm-pos-span .dm-range-band::before, [data-position-detail] .dm-pos-span .dm-range-band::after, .dm-pos-activity :is(.dm-receipt-check, .dm-rcpt-amount, .dm-rcpt-chevron), [data-fee-reserves="position"] .dm-reserves-row::before, .dm-pos-activity .dm-rcpt-operation > summary::before, .dm-pa[data-position-dialog] :is(.dm-pa-chip > .dm-select-trigger, .dm-pa-chip > .dm-select-trigger > svg:last-child, .dm-range-detail > summary, .dm-flow-wsteps .dm-step-marker), .dm-pa[data-position-dialog] .dm-pa-chip .dm-option::before, .dm-pa[data-position-dialog] .dm-range-detail > summary::before { transition-property: opacity, color, background-color, box-shadow !important; }
+    [data-position-detail] .dm-pos-actions .dm-btn:active, [data-position-detail] .dm-position-chart-tabs > button:active, [data-position-detail] .dm-position-chart-tools > button:active, [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary:active, .dm-pa[data-position-dialog] :is(.dm-pa-chip > .dm-select-trigger, .dm-range-detail > summary):active { scale: none; }
+    .dm-pa[data-position-dialog] .dm-flow-wsteps > li .dm-step-marker { rotate: none !important; translate: none !important; }
+    .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker > svg { rotate: none; }
+  }
+  html.dm-still :is(main.dm-page > .dm-pos-back, [data-position-detail] :is(.dm-pos-name, .dm-pos-actions, .dm-pos-stat, .dm-position-workspace, .dm-pos-grid > *, [data-position-chart-panel])), html.dm-still [data-position-detail] .dm-pos-pair::after { animation: none !important; }
+}
+
+@keyframes dm-v4p-fade { from { opacity: 0.01; filter: blur(0.25rem); } to { opacity: 1; filter: none; } }
+@keyframes dm-v4p-up { from { opacity: 0.01; transform: translateY(0.375rem); } to { opacity: 1; transform: none; } }
+@keyframes dm-v4p-tip { from { opacity: 0.01; transform: translateY(-0.25rem) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes dm-v4p-pop { from { opacity: 0.01; transform: scale(0.5) rotate(-90deg); } to { opacity: 1; transform: none; } }

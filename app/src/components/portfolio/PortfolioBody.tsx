@@ -131,7 +131,7 @@ export default function PortfolioBody({ identity, onLinked }: { identity: Wallet
   const formId = 'portfolio-other-address'
 
   return (
-    <section className="dm-card dm-acct-rail dm-acct-wallet" aria-labelledby="wallet-card-title" data-portfolio-address={subject?.key}>
+    <section className="dm-card dm-lit dm-acct-rail dm-acct-wallet" aria-labelledby="wallet-card-title" data-portfolio-address={subject?.key}>
       <div className="dm-acct-rail-head">
         <h2 id="wallet-card-title" className="dm-title">
           Wallet

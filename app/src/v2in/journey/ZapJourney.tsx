@@ -297,10 +297,10 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
   return (
     <PageShell width="flow" className="dm-np" data-create-journey="" data-create-step={current} data-zap-journey={chainId} data-zap-gate={gate.mode}>
       <PageHeader size="display" title={CREATE.page.title} description={CREATE.page.description} className="dm-np-head dm-flow-rise" />
-      <div className="dm-card dm-flow-card dm-flow-rise" style={{ '--delay': '40ms' } as CSSProperties}>
+      <div className="dm-card dm-flow-card dm-flow-rise dm-lit" style={{ '--delay': '40ms' } as CSSProperties}>
         <StepList steps={steps} onOpen={reopen} locked={locked} />
       </div>
-      <PreviewPanel className="dm-card dm-flow-preview dm-flow-rise" style={{ '--delay': '80ms' } as CSSProperties} state={state} price={price} step={current} />
+      <PreviewPanel className="dm-card dm-flow-preview dm-flow-rise dm-lit" style={{ '--delay': '80ms' } as CSSProperties} state={state} price={price} step={current} />
     </PageShell>
   )
 }

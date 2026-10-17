@@ -18,7 +18,7 @@ export function PositionInsights({ fees, range }: { fees: ReactNode; range: Reac
     tabs.current[next]?.focus()
   }
   return <PositionChartOptions.Provider value={options}><div className="dm-position-workspace" data-position-insights="" data-insight={active} data-chart-expanded={expanded ? '' : undefined}>
-    <section className="dm-position-analysis" aria-label="Position charts">
+    <section className="dm-position-analysis dm-lit" aria-label="Position charts">
       <div className="dm-position-chart-head">
         <div className="dm-position-chart-tabs" role="tablist" aria-label="Position chart">
           {choices.map((choice, index) => <button key={choice.key} ref={node => { tabs.current[index] = node }} type="button" role="tab"

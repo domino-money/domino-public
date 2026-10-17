@@ -300,16 +300,16 @@ export function WalletSessionDialog({
         aria-labelledby="wallet-dialog-title"
         aria-describedby={status ? 'wallet-dialog-status' : undefined}
         ref={dialog}
-        className="dm-dialog"
+        className="dm-dialog dm-wd"
       >
-        <div className="relative grid gap-y-1 pr-10">
+        <div className="dm-wd-head relative grid gap-y-1 pr-10">
           <h2 id="wallet-dialog-title" tabIndex={-1} className="dm-dialog-title outline-none">
             {choosing ? 'Connect' : 'Wallet'}
           </h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="dm-icon-btn dm-icon-btn--ghost dm-icon-btn--sm dm-press-icon absolute -top-1.5 -right-1.5">
+          <button type="button" onClick={onClose} aria-label="Close" className="dm-wd-close dm-icon-btn dm-icon-btn--ghost dm-icon-btn--sm dm-press-icon absolute -top-1.5 -right-1.5">
             <IconClose />
           </button>
-          {status && <p id="wallet-dialog-status" role={progress.phase === 'error' ? 'alert' : 'status'} className="text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-status={waiting ? 'connecting' : view.status}>
+          {status && <p id="wallet-dialog-status" role={progress.phase === 'error' ? 'alert' : 'status'} className="dm-wd-status text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-status={waiting ? 'connecting' : view.status}>
             {status}
           </p>}
         </div>
@@ -368,9 +368,9 @@ export function WalletSessionDialog({
           {(view.status === 'signed_in' || away || view.status === 'signed_out' || (view.status === 'wrong_network' && !away)) && (
             // Changed on purpose 2026-10-01 (audit E5): one plain sentence for what the session does; the docs' Sessions
             // and signing out says the rest.
-            <p className="text-caption text-fg-subtle">Stays signed in while Domino is open, for up to 12 hours. You may need to sign in again after closing the site or losing your connection.</p>
+            <p className="dm-wd-cap text-caption text-fg-subtle">Stays signed in while Domino is open, for up to 12 hours. You may need to sign in again after closing the site or losing your connection.</p>
           )}
-          {(view.status === 'signed_out' || (view.status === 'wrong_network' && !away) || signing) && <p className="text-caption text-fg-subtle">Sign a message to continue. No transaction or network fee.</p>}
+          {(view.status === 'signed_out' || (view.status === 'wrong_network' && !away) || signing) && <p className="dm-wd-cap text-caption text-fg-subtle">Sign a message to continue. No transaction or network fee.</p>}
 
           {view.status === 'signed_in' && view.notice === 'refresh_unavailable' && (
             <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-testid="refresh-notice">
@@ -379,14 +379,14 @@ export function WalletSessionDialog({
           )}
 
           {shown && (
-            <p role="alert" className="text-[0.8125rem] leading-[1.125rem]" style={{ color: 'var(--money-out)' }}>
+            <p role="alert" className="dm-wd-alert text-[0.8125rem] leading-[1.125rem]" style={{ color: 'var(--money-out)' }}>
               {shown}
             </p>
           )}
 
         </div>
 
-        {actions && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-3">
+        {actions && <div className="dm-wd-foot flex flex-wrap items-center justify-end gap-2 border-t border-line pt-3">
           {actions}
         </div>}
       </Card>

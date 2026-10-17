@@ -1,13 +1,86 @@
-.dm-bulk-choices { display: grid; gap: .5rem; }
-.dm-bulk-choice { display: flex; align-items: center; gap: .875rem; padding: .875rem 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); cursor: pointer; }
-.dm-bulk-choice:has(input:checked) { border-color: var(--primary); }
-.dm-bulk-choice input { width: 1rem; height: 1rem; flex: 0 0 auto; accent-color: var(--primary); }
-.dm-bulk-choice span { min-width: 0; }
-.dm-bulk-choice bdi { font-size: .875rem; overflow-wrap: anywhere; }
-.dm-bulk-choice small, .dm-bulk-names { display: block; color: var(--fg-muted); font-size: .75rem; margin-top: .25rem; }
-.dm-bulk-total { font-size: 1.25rem; line-height: 1.5; overflow-wrap: anywhere; }
-.dm-bulk-details { font-size: .75rem; color: var(--fg-muted); border-top: 1px solid var(--border); padding-top: .875rem; }
-.dm-bulk-details summary { cursor: pointer; padding-block: .25rem; }
-.dm-bulk-details > p { margin-top: .75rem; }
-.dm-bulk-details label { display: block; margin: .75rem 0 .375rem; }
-.dm-bulk-details input { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); padding: .625rem; color: var(--fg); background: var(--surface-2); }
+/* Close positions (owner: positions; v2in/lists/BulkClosePositions.tsx, the OwnedRows chunk). V4 (2026-10-16): the approved
+   sheet (positions.html .bk-dlg, PositionsMore frame 6) on the foundation's action sheet (v4-sheets.css). It was unlayered,
+   so it beat every layer; it now sits in @layer v4 like the rest of the area, every rule scoped .dm-pa[data-bulk-close].
+   Look only: the checkboxes stay native, visible and focusable, the tick gates Close in code, the hash field keeps its label
+   and its id, every line and button is the component's. */
+@layer v4 {
+  .dm-dialog.dm-pa[data-bulk-close] {
+    --v4p-check-tan: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23ffb07f' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.6 6.3 5 8.6l4.4-5'/%3E%3C/svg%3E");
+  }
+  /* A step with a back arrow: its description starts on the body's column, not under the arrow's padding (the head is
+     inset 0.375rem less than the body there, at every width: v4-sheets.css). */
+  .dm-dialog.dm-pa[data-bulk-close] > .dm-pa-head--back > .dm-pa-lede { margin-left: 0.375rem; }
+  /* Selection: each position a checkable row, a small cousin of the pool row; the box draws its check when chosen. */
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choices { display: flex; flex-direction: column; gap: 0.375rem; margin: 0.25rem 0 0; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choice { display: grid; grid-template-columns: 1.25rem auto minmax(0, 1fr); align-items: center; gap: 0.875rem; min-height: 4.125rem; padding: 0.5rem 1rem; border: 0; border-radius: 0.9375rem; background: rgb(255 236 220 / 0.02); box-shadow: inset 0 0 0 1px var(--line); cursor: pointer; transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), scale 0.1s var(--e-press); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choice:hover { background: var(--v4-w045); box-shadow: inset 0 0 0 1px var(--lip); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choice:active { scale: 0.995; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choice:has(input:checked) { background: rgb(255 157 98 / 0.035); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.42); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choice:has(input:checked):hover { box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.6); }
+  .dm-dialog.dm-pa[data-bulk-close] :is(.dm-bulk-choice, .dm-pa-tick) input[type="checkbox"] { -webkit-appearance: none; appearance: none; flex: none; width: 1.25rem; height: 1.25rem; margin: 0; border: 0; border-radius: 0.375rem; background: transparent center / 0.75rem no-repeat; box-shadow: inset 0 0 0 1px var(--strong); cursor: pointer; transition: background-color 0.2s var(--e-std), box-shadow 0.2s var(--e-std); }
+  .dm-dialog.dm-pa[data-bulk-close] :is(.dm-bulk-choice, .dm-pa-tick):hover input[type="checkbox"] { box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.3); }
+  .dm-dialog.dm-pa[data-bulk-close] :is(.dm-bulk-choice, .dm-pa-tick) input[type="checkbox"]:checked { background-color: rgb(255 157 98 / 0.16); background-image: var(--v4p-check-tan); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.6); }
+  .dm-dialog.dm-pa[data-bulk-close] :is(.dm-bulk-choice, .dm-pa-tick):hover input[type="checkbox"]:checked { box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.75); }
+  .dm-dialog.dm-pa[data-bulk-close] :is(.dm-bulk-choice, .dm-pa-tick) input[type="checkbox"]:focus-visible { outline: 2px solid var(--tan); outline-offset: 2px; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choice > :nth-child(2) > * { transition: scale 0.3s var(--e-enter), translate 0.3s var(--e-enter); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choice:hover > :nth-child(2) > :first-child { scale: 1.06; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choice:hover > :nth-child(2) > :nth-child(2) { translate: 0.1875rem 0; scale: 1.06; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choice > span:last-child { min-width: 0; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choice bdi { display: block; font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); overflow-wrap: anywhere; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choice small { display: block; margin-top: 0.25rem; font-size: 0.78125rem; line-height: 1rem; color: var(--subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-pa-note { font-size: 0.84375rem; line-height: 1.5; color: var(--subtle); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-pa-note::before { content: none; }
+  /* Review: the total in the sheet's serif voice (one string, as the code joins it), the pairs under it. */
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-total { margin: 0.5rem 0 0; font-family: var(--font-display); font-size: 1.875rem; line-height: 1.05; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); overflow-wrap: anywhere; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-names { display: block; margin: 0.375rem 0 0; font-size: 0.8125rem; line-height: 1.4; color: var(--subtle); }
+  /* Details and the hash disclosure: the accordion row with its plus turning 45° open, the body rising in. */
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details { min-width: 0; padding: 0; border: 0; font-size: 0.84375rem; line-height: 1.5; color: var(--subtle); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: 2.75rem; margin: 0 -0.625rem 0 -0.875rem; padding: 0 0.625rem 0 0.875rem; border-radius: 0.875rem; list-style: none; font-size: 0.90625rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); cursor: pointer; transition: background-color 0.18s var(--e-std); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details > summary::-webkit-details-marker { display: none; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details > summary::after { content: ''; flex: none; width: 1.625rem; height: 1.625rem; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--strong); color: var(--muted); background: linear-gradient(currentColor, currentColor) center / 0.625rem 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 0.625rem no-repeat; transition: rotate 0.35s var(--e-enter), box-shadow 0.2s var(--e-std), color 0.2s var(--e-std); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details > summary:hover { background: var(--v4-w045); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details > summary:hover::after { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--tan); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details[open] > summary::after { rotate: 45deg; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details[open] > :not(summary) { animation: dm-v4p-bulk-in 0.45s var(--e-enter) backwards; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details > p { margin: 0.5rem 0 0; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details label { display: block; margin: 0.75rem 0 0.375rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; color: var(--subtle); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details input { box-sizing: border-box; width: 100%; min-width: 0; height: 2.875rem; padding: 0 0.875rem; border: 0; border-radius: 0.8125rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); font-family: var(--font-mono); font-size: 0.8125rem; letter-spacing: 0; color: var(--fg); transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details input::placeholder { color: var(--subtle); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details input:hover { box-shadow: inset 0 0 0 1px var(--strong); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details input:focus { background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); outline: none; }
+  /* The tick that gates Close: a plain row whose words come to full ink once ticked. */
+  .dm-dialog.dm-pa[data-bulk-close] .dm-pa-tick { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr); align-items: start; gap: 0.75rem; padding: 0.75rem 0.875rem; border-radius: 0.875rem; background: transparent; box-shadow: none; color: var(--muted); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-pa-tick:hover { background: var(--v4-w04); box-shadow: none; color: var(--fg); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-pa-tick:has(input:checked) { color: var(--fg); }
+  /* Progress: the status as a line with its dot (green once confirmed); the failure with the red dot. */
+  .dm-dialog.dm-pa[data-bulk-close] .dm-pa-status { display: flex; align-items: flex-start; gap: 0.5625rem; min-height: 0; padding: 0; border-radius: 0; background: none; box-shadow: none; font-size: 0.96875rem; line-height: 1.4; font-weight: 500; color: var(--fg); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-pa-status::before { width: 0.375rem; height: 0.375rem; margin-top: 0.5rem; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 0.1875rem rgb(255 236 220 / 0.08); -webkit-mask: none; mask: none; animation: none; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-pa-status[data-state="done"] { background: none; box-shadow: none; color: var(--in); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-pa-status[data-state="done"]::before { background: var(--in); box-shadow: 0 0 0 0.1875rem rgb(95 208 154 / 0.16); -webkit-mask: none; mask: none; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-pa-alert { padding: 0 0.25rem; gap: 0.5625rem; border-radius: 0; background: none; box-shadow: none; font-size: 0.84375rem; color: var(--muted); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-pa-alert::before { width: 0.375rem; height: 0.375rem; margin-top: 0.4375rem; border-radius: 50%; background: var(--out); box-shadow: 0 0 0 0.1875rem rgb(244 96 122 / 0.16); -webkit-mask: none; mask: none; }
+  /* The group as dominoes: two dark tiles, their tokens as their halves; leaning while signed and sent, falling once closed. */
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dom { position: relative; display: flex; align-items: flex-end; gap: 1.25rem; width: 9.5rem; height: 5.375rem; margin: 0.25rem 0 0; padding: 0 0 0.75rem 0.875rem; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dom::after { content: ''; position: absolute; left: 0.25rem; right: 0; bottom: 0.6875rem; height: 1px; background: linear-gradient(90deg, rgb(255 236 220 / 0), rgb(255 236 220 / 0.14) 18%, rgb(255 236 220 / 0.14) 82%, rgb(255 236 220 / 0)); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dt { position: relative; display: flex; flex: none; flex-direction: column; align-items: center; justify-content: space-between; width: 1.875rem; height: 3.375rem; padding: 0.375rem 0; border-radius: 0.5rem; background: linear-gradient(162deg, #2f2a24, #211e19 70%); box-shadow: inset 0 0 0 1px var(--strong), inset 0 1px 0 rgb(255 236 220 / 0.1); transform-origin: 100% 100%; transition: rotate 0.6s var(--e-enter), box-shadow 0.25s var(--e-std), opacity 0.3s var(--e-std); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dt::before { content: ''; position: absolute; left: 0.3125rem; right: 0.3125rem; top: 50%; height: 1px; background: rgb(0 0 0 / 0.6); box-shadow: 0 1px 0 rgb(255 236 220 / 0.09); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dom[data-st="reading"] .dm-bulk-dt { opacity: 0.55; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dom[data-st="wallet"] .dm-bulk-dt:first-child { rotate: 7deg; box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.55), inset 0 1px 0 rgb(255 236 220 / 0.1); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dom:is([data-st="sent"], [data-st="waiting"], [data-st="unknown"]) .dm-bulk-dt:first-child { rotate: 21deg; box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.4), inset 0 1px 0 rgb(255 236 220 / 0.1); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dom[data-st="done"] .dm-bulk-dt { box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.45), inset 0 1px 0 rgb(255 236 220 / 0.1); transition: rotate 0.46s cubic-bezier(0.55, 0, 0.8, 0.3), box-shadow 0.3s var(--e-std) 0.35s, opacity 0.3s var(--e-std); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dom[data-st="done"] .dm-bulk-dt:first-child { rotate: 56deg; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dom[data-st="done"] .dm-bulk-dt:nth-child(2) { rotate: 88deg; transition-delay: 0.09s, 0.45s, 0s; }
+  @keyframes dm-v4p-bulk-in { from { opacity: 0.01; transform: translateY(0.375rem); filter: blur(0.1875rem); } to { opacity: 1; transform: none; filter: none; } }
+  @media (max-width: 639px) {
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details input { font-size: 1rem; }
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dom { width: 7.5rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dom[data-st] .dm-bulk-dt:nth-child(n) { rotate: none; transition: opacity 0.2s var(--e-std), box-shadow 0.2s var(--e-std); }
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-dom[data-st="done"] .dm-bulk-dt:nth-child(n) { opacity: 0.5; }
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details[open] > :not(summary) { animation: none; }
+    .dm-dialog.dm-pa[data-bulk-close] :is(.dm-bulk-choice, .dm-bulk-choice > :nth-child(2) > *) { transition-property: opacity, color, background-color, box-shadow; }
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details > summary::after { transition-property: color, box-shadow; }
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-choice:active { scale: none; }
+  }
+}

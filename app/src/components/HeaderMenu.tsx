@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react'
 import type { Page } from '../App'
 import { Menu, type MenuEntry } from './ui'
-import { IconAutomate, IconBook, IconClose, IconCoins, IconInfo, IconMarkets, IconMenu, IconMore, IconPlus, IconPositions, IconRange, IconShield, type IconProps } from './icons'
+import { IconAutomate, IconBook, IconCoins, IconInfo, IconMarkets, IconPlus, IconPositions, IconRange, IconShield, type IconProps } from './icons'
 import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref } from './explore/routes'
 import { ELYSIUM_KEY, ELYSIUM_NAME, ELYSIUM_STATUS } from '../config/chainIdentity'
 import { sectionLinked } from '../chains/elysium/mode'
@@ -58,13 +58,12 @@ export function HeaderMenu({ page }: { page: Page }) {
     { kind: 'link', href: '#/#ranges', label: 'Ranges explained', icon: <IconRange /> },
     { kind: 'link', href: '#/#limits', label: 'What Domino does not do', icon: <IconShield /> },
   ]
-  // Two resting glyphs, both rendered and switched by CSS: three dots from 768px (the nav pill carries the places),
-  // the hamburger below. Both are aria-hidden; the button's name is Menu.
+  // Two drawn glyphs (V4), both rendered and switched by CSS: three dots from 768px (the nav carries the places), which
+  // spread while open, and three bars below, which turn into a cross while open. Decorative; the button's name is Menu.
   const trigger = (
-    <span className="dm-menu-glyph">
-      <IconMore className="dm-menu-glyph-more" />
-      <IconMenu className="dm-menu-glyph-open" />
-      <IconClose className="dm-menu-glyph-close" />
+    <span className="dm-menu-glyph" aria-hidden="true">
+      <span className="dm-menu-dots"><i /><i /><i /></span>
+      <span className="dm-menu-bars"><i /><i /><i /></span>
     </span>
   )
   return <Menu id="site-menu" label="Menu" items={items} trigger={trigger} />

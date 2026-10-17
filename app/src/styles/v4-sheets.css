@@ -1,0 +1,158 @@
+/* V4 action sheets (owner: foundation). Loaded by screens.css, first of the V4 block. Scope: .dm-dialog.dm-pa and the .dm-pa-* parts, the phone bottom sheet.
+   Every rule sits in @layer v4 (the last layer, impl/plan.md §1.1) and starts with this file's scope.
+
+   The frame and the parts of components/positions/ActionSheet.tsx in the approved V4 sheets (site/_sheets.md, the kit's
+   .ch-sheet): the warm card with its lift, ring, lip and deep drop; the serif title, its lede and the round Close; the
+   tile's groove as a seam under the head; blocks that sit on the sheet (no wells); the token amounts in serif; quiet
+   facts in 44px rows; notes with a dot; the status as a pill; the locked slot pressed into the sheet; the choices in one
+   track; the foot's one Tangerine button 54px tall across. Every hook, word and decision stays the caller's. The areas
+   after this file (position, positions, automate, newposition) tune their sheets' contents inside their own scopes. */
+@layer v4 {
+  /* ---- The frame ------------------------------------------------------------------------------------------------- */
+  .dm-pa { --pa-well: var(--v4-w03); --pa-ring: var(--border); --flow-well: var(--v4-w03); --flow-well-ring: var(--border); }
+  .dm-dialog.dm-pa { gap: 0; padding: 0; border: 0; background: linear-gradient(180deg, rgb(255 236 220 / 0.04), rgb(255 236 220 / 0) 7.5rem), var(--card); }
+  @media (min-width: 640px) {
+    .dm-dialog.dm-pa { width: min(30rem, 100vw - 2rem); max-height: min(54rem, 100dvh - 2rem); border-radius: 1.625rem; box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 rgb(255 236 220 / 0.07), 0 2.5rem 5.625rem -1.875rem rgb(0 0 0 / 0.95); }
+    .dm-dialog.dm-pa[data-v2in-dialog="mandate"] { width: min(31.25rem, 100vw - 2rem); }
+  }
+  .dm-flow-dialog.dm-pa > .dm-pa-head { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 0 0.5rem; padding: 1.625rem 3.875rem 0 1.5rem; }
+  .dm-flow-dialog.dm-pa > .dm-pa-head--back { grid-template-columns: auto minmax(0, 1fr); padding-left: 1.125rem; }
+  /* The seam: the tile's groove, a dark line over a warm lip, across the sheet under the head. */
+  .dm-flow-dialog.dm-pa > .dm-pa-head::after { content: ''; grid-column: 1 / -1; height: 2px; margin: 1rem -2.375rem 0 0; background: linear-gradient(rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.5)) 0 0 / 100% 1px no-repeat, linear-gradient(rgb(255 236 220 / 0.075), rgb(255 236 220 / 0.075)) 0 1px / 100% 1px no-repeat; }
+  .dm-flow-dialog.dm-pa > .dm-pa-head--back::after { margin-left: 0.375rem; }
+  .dm-dialog.dm-pa .dm-pa-title { min-width: 0; margin: 0.375rem 0 0; padding: 0; font-family: var(--font-display); font-size: 2rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  .dm-dialog.dm-pa .dm-pa-lede { grid-column: 1 / -1; max-width: none; margin: 0.625rem -2.375rem 0 0; font-size: 0.875rem; line-height: 1.5; letter-spacing: -0.01em; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-flow-dialog.dm-pa .dm-dialog-close { top: 1.625rem; right: 1.125rem; }
+  .dm-dialog.dm-pa .dm-pa-back { width: 2.5rem; height: 2.5rem; margin: 0.375rem 0 0; }
+  .dm-dialog.dm-pa .dm-pa-back > svg { transition: translate 0.25s var(--ease-enter); }
+  .dm-dialog.dm-pa .dm-pa-back:hover:not(:disabled) > svg { translate: -2px 0; }
+  .dm-flow-dialog.dm-pa > .dm-pa-body { display: grid; align-content: start; gap: 1rem; padding: 1.125rem 1.5rem 1.25rem; }
+  .dm-pa-body > * { min-width: 0; max-width: 100%; }
+  /* The scroll edge: what scrolls under the foot fades out over the body's last 1.25rem (its bottom padding), so a row
+     is never sliced at the hairline; at rest the last row sits clear of the fade. The body still scrolls itself. */
+  .dm-flow-dialog.dm-pa > .dm-pa-body { -webkit-mask-image: linear-gradient(#000 calc(100% - 1.25rem), transparent); mask-image: linear-gradient(#000 calc(100% - 1.25rem), transparent); }
+  /* The foot: a hairline, then the action's one button across the sheet (54px), secondary ones outlined. */
+  .dm-flow-dialog.dm-pa > .dm-pa-foot { display: grid; justify-content: normal; align-items: stretch; gap: 0.5rem; padding: 0.75rem 0.875rem; border: 0; background: linear-gradient(var(--border), var(--border)) 50% 0 / calc(100% - 3rem) 1px no-repeat; box-shadow: none; }
+  .dm-flow-dialog.dm-pa > .dm-pa-foot:empty { display: none; }
+  .dm-dialog.dm-pa .dm-pa-foot > .dm-btn { width: 100%; height: 3.375rem; min-height: 0; padding: 0 1.75rem; border-radius: 0.875rem; font-size: 0.96875rem; line-height: 1.25rem; }
+
+  /* ---- What moves: a caption, then the tokens, their amounts in serif ------------------------------------------- */
+  .dm-dialog.dm-pa .dm-pa-card { display: grid; gap: 0.375rem; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+  .dm-pa-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.75rem; min-width: 0; }
+  .dm-pa-caption { min-width: 0; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-subtle); }
+  .dm-pa-card-aside { flex-shrink: 0; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-muted); }
+  .dm-dialog.dm-pa .dm-pa-hero { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.625rem; min-width: 0; margin: 0.25rem 0 0; font-family: var(--font-display); font-size: 1.8125rem; line-height: 1.05; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); overflow-wrap: anywhere; }
+  .dm-dialog.dm-pa .dm-pa-hero--md { font-family: var(--font-sans); font-size: 1.0625rem; line-height: 1.5rem; font-weight: 500; letter-spacing: -0.01em; }
+  .dm-dialog.dm-pa .dm-pa-tokens { display: grid; gap: 0; min-width: 0; margin: 0; padding: 0; list-style: none; }
+  .dm-dialog.dm-pa .dm-pa-token { display: flex; align-items: center; gap: 0.75rem; min-width: 0; min-height: 3.75rem; }
+  .dm-pa-token > :first-child { flex-shrink: 0; }
+  .dm-dialog.dm-pa .dm-pa-token-amount { min-width: 0; font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); overflow-wrap: anywhere; }
+  .dm-dialog.dm-pa .dm-pa-token-symbol { margin-left: 0.125rem; font-family: var(--font-sans); font-size: 0.84375rem; font-weight: 400; letter-spacing: -0.01em; color: var(--fg-subtle); }
+  .dm-pa-token-blank { display: inline-block; width: 1.875rem; height: 1.875rem; border-radius: var(--radius-pill); background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-pa-token > .dm-skel { width: 8.25rem; height: 1.75rem; margin: 0; }
+  .dm-dialog.dm-pa .dm-pa-tokens--sm { gap: 0.375rem; justify-items: end; }
+  .dm-dialog.dm-pa .dm-pa-tokens--sm .dm-pa-token { gap: 0.4375rem; min-height: 0; }
+  .dm-pa-tokens--sm .dm-pa-token > .dm-skel { width: 6rem; height: 0.875rem; }
+  .dm-dialog.dm-pa .dm-pa-tokens--sm .dm-pa-token-amount { font-family: var(--font-sans); font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; }
+  .dm-dialog.dm-pa .dm-pa-tokens--sm .dm-pa-token-symbol { font-size: 0.84375rem; font-weight: 500; color: var(--fg); }
+  .dm-pa-tokens--sm .dm-pa-token-blank { width: 1rem; height: 1rem; }
+  .dm-dialog.dm-pa .dm-pa-card .dm-reserves-amount { min-width: 0; font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); text-align: left; }
+  .dm-dialog.dm-pa .dm-pa-card .dm-reserves-amount > bdi { font-family: var(--font-sans); font-size: 0.84375rem; letter-spacing: -0.01em; color: var(--fg-subtle); }
+
+  /* ---- Facts (the kit's .as-sum): 44px rows 2px apart, the label quiet, the value in full ink; groups on a hairline */
+  .dm-dialog.dm-pa .dm-pa-facts { display: grid; gap: 2px; min-width: 0; margin: 0; padding: 0; box-shadow: none; }
+  .dm-dialog.dm-pa .dm-pa-facts > div { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-width: 0; min-height: 2.75rem; padding: 0.5rem 0; box-shadow: none; }
+  .dm-dialog.dm-pa .dm-pa-facts dt { flex-shrink: 0; max-width: 48%; font-size: 0.84375rem; line-height: 1.25rem; letter-spacing: -0.01em; color: var(--fg-subtle); }
+  .dm-dialog.dm-pa .dm-pa-facts dd { display: grid; justify-items: end; gap: 2px; margin: 0; min-width: 0; font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); text-align: right; font-variant-numeric: lining-nums tabular-nums; overflow-wrap: anywhere; }
+  .dm-pa-facts dd > .dm-pa-tokens--sm { align-self: start; }
+  .dm-dialog.dm-pa .dm-pa-sub { font-size: 0.78125rem; line-height: 1rem; font-weight: 400; letter-spacing: -0.01em; color: var(--fg-subtle); text-wrap: pretty; }
+  .dm-dialog.dm-pa .dm-pa-card > .dm-pa-facts { margin-top: 0.5rem; padding-top: 0.25rem; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-pa-pair-name { display: inline-flex; align-items: center; gap: 0.5rem; min-width: 0; }
+  .dm-pa-inline { display: inline-flex; align-items: center; gap: 0.375rem; vertical-align: middle; }
+
+  /* What goes in, what comes out: a medallion on the hairline between them (the kit's .as-mid / .as-med). */
+  .dm-pa-pair { display: grid; gap: 0; min-width: 0; }
+  .dm-dialog.dm-pa .dm-pa-link { position: relative; z-index: 1; display: grid; place-items: center; width: 100%; height: 1.875rem; margin: 0.625rem 0; border-radius: 0; color: var(--fg-muted); box-shadow: none; background: radial-gradient(circle, var(--card) 0 calc(0.9375rem - 1px), var(--border-strong) calc(0.9375rem - 1px) 0.9375rem, transparent 0.9375rem) center / 1.875rem 1.875rem no-repeat, linear-gradient(90deg, var(--border) calc(50% - 1.25rem), transparent 0 calc(50% + 1.25rem), var(--border) 0) center / 100% 1px no-repeat; }
+
+  /* ---- Notes, the step in progress, a failure, the gate's locked slot ------------------------------------------- */
+  .dm-dialog.dm-pa .dm-pa-note { display: flex; align-items: flex-start; gap: 0.75rem; margin: 0; font-size: 0.84375rem; line-height: 1.5; letter-spacing: -0.01em; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-pa-note::before { content: ''; flex-shrink: 0; width: 0.375rem; height: 0.375rem; margin-top: 0.4375rem; border-radius: var(--radius-pill); background: var(--fg-faint); }
+  .dm-dialog.dm-pa .dm-pa-note[data-tone="warn"] { color: var(--fg); }
+  .dm-pa-note[data-tone="warn"]::before { background: var(--money-out); box-shadow: 0 0 0 0.1875rem rgb(244 96 122 / 0.14); }
+  .dm-pa-notes { display: grid; gap: 0.5625rem; min-width: 0; }
+  .dm-dialog.dm-pa .dm-pa-status { display: inline-flex; justify-self: start; align-items: center; gap: 0.625rem; min-height: 2.25rem; margin: 0; padding: 0.375rem 0.875rem 0.375rem 0.625rem; border-radius: var(--radius-pill); background: var(--v4-w05); box-shadow: inset 0 0 0 1px var(--border); font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
+  .dm-pa-status::before { content: ''; flex-shrink: 0; width: 1rem; height: 1rem; border-radius: var(--radius-pill); background: conic-gradient(from var(--dm-spin), var(--primary-line) 0 25%, color-mix(in srgb, var(--fg) 14%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); animation: dm-spin 1s linear infinite; }
+  .dm-dialog.dm-pa .dm-pa-status[data-state="done"] { background: rgb(95 208 154 / 0.1); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.3); color: var(--money-in); }
+  .dm-pa-status[data-state="done"]::before { border-radius: 0; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8.5 3 3 6-7' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 1rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8.5 3 3 6-7' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 1rem no-repeat; animation: dm-flow-stamp 240ms var(--e-pop) backwards; }
+  .dm-dialog.dm-pa .dm-pa-alert { display: flex; align-items: flex-start; gap: 0.625rem; margin: 0; padding: 0.75rem 0.875rem; border-radius: 0.875rem; background: rgb(244 96 122 / 0.06); box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.2); font-size: 0.84375rem; line-height: 1.5; letter-spacing: -0.01em; color: var(--fg); text-wrap: pretty; }
+  .dm-pa-alert::before { content: ''; flex-shrink: 0; width: 1rem; height: 1rem; margin-top: 0.125rem; background: var(--money-out); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6.25'/%3E%3Cpath d='M8 4.75v3.75'/%3E%3Ccircle cx='8' cy='11' r='.6' fill='%23000'/%3E%3C/svg%3E") center / 1rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6.25'/%3E%3Cpath d='M8 4.75v3.75'/%3E%3Ccircle cx='8' cy='11' r='.6' fill='%23000'/%3E%3C/svg%3E") center / 1rem no-repeat; }
+  .dm-pa-alert + .dm-btn { justify-self: start; }
+  /* Before the deploy the action's place holds the gate's sentence: a slot pressed into the sheet, the lock on a disc. */
+  .dm-dialog.dm-pa .dm-pa-locked { display: flex; align-items: center; gap: 0.75rem; min-height: 3.375rem; margin: 0; padding: 0.75rem 1rem 0.75rem 0.75rem; border-radius: 0.875rem; background: rgb(0 0 0 / 0.2); box-shadow: inset 0 1px 0.25rem rgb(0 0 0 / 0.35), inset 0 0 0 1px var(--border), 0 1px 0 var(--v4-w04); font-size: 0.84375rem; line-height: 1.4; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-pa-locked > svg { box-sizing: content-box; flex-shrink: 0; padding: 0.5rem; border-radius: var(--radius-pill); background: var(--card); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg-subtle); }
+
+  /* The box ticked before the wallet may be asked (the kit's .as-tick): a tinted card, the Tangerine check. */
+  .dm-dialog.dm-pa .dm-pa-tick { display: flex; align-items: flex-start; gap: 0.75rem; min-width: 0; padding: 0.875rem 0.875rem 0.875rem 0.75rem; border-radius: 0.875rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); font-size: 0.84375rem; line-height: 1.5; letter-spacing: -0.01em; color: var(--fg); cursor: pointer; transition: background-color 0.18s var(--ease-std), box-shadow 0.18s var(--ease-std); }
+  .dm-dialog.dm-pa .dm-pa-tick:hover { background: var(--v4-w045); box-shadow: inset 0 0 0 1px var(--border-lip); }
+  .dm-pa-tick > input { flex-shrink: 0; margin: 1px 0 0; cursor: pointer; }
+
+  /* ---- The settings: a quiet row, its current value and the round plus at its end, closed until asked for ------- */
+  .dm-dialog.dm-pa .dm-pa-more { min-width: 0; padding: 0; box-shadow: none; }
+  .dm-dialog.dm-pa .dm-pa-more > summary { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: 2.75rem; margin: 0 -0.625rem 0 -0.875rem; padding: 0 0.625rem 0 0.875rem; border-radius: 0.875rem; cursor: pointer; list-style: none; font-size: 0.90625rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); transition: background-color 0.18s var(--ease-std); }
+  .dm-pa-more > summary::-webkit-details-marker { display: none; }
+  .dm-dialog.dm-pa .dm-pa-more > summary:hover { background: var(--v4-w045); }
+  .dm-pa-more-value { margin-left: auto; font-size: 0.8125rem; font-weight: 400; color: var(--fg-subtle); }
+  .dm-pa-more-chevron { display: none; }
+  .dm-pa-more > summary::after { content: ''; flex: none; width: 1.625rem; height: 1.625rem; border-radius: var(--radius-pill); box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--fg-muted); background: linear-gradient(currentColor, currentColor) center / 0.625rem 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 0.625rem no-repeat; transition: rotate 0.35s var(--ease-enter), box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std); }
+  .dm-pa-more > summary:hover::after { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--primary); }
+  .dm-pa-more[open] > summary::after { rotate: 45deg; }
+  .dm-dialog.dm-pa .dm-pa-more-body { display: grid; gap: 0.75rem; min-width: 0; padding: 0.5rem 0 0.25rem; }
+  /* The slippage limit inside: the presets and the exact figure on one line, the label above them. */
+  .dm-pa .dm-slip-choice { grid-template-columns: minmax(0, 1fr) 6.5rem; align-items: end; gap: 0.5rem 0.625rem; }
+  .dm-pa .dm-slip-choice > .dm-label:first-child { grid-column: 1 / -1; margin: 0; }
+  .dm-pa .dm-slip-choice > .dm-seg { display: flex; width: 100%; height: 2.5rem; }
+  .dm-pa .dm-slip-choice > .dm-seg > .dm-seg-item { flex: 1 1 0; min-width: 0; height: 2.125rem; }
+  .dm-pa .dm-slip-choice > .dm-seg > .dm-seg-item[aria-pressed="true"] { background: var(--v4-w08); box-shadow: inset 0 0 0 1px var(--border-lip); }
+  .dm-pa .dm-slip-choice > label { position: relative; gap: 0.25rem; margin: 0; font-size: 0.6875rem; line-height: 0.875rem; font-weight: 500; color: var(--fg-subtle); }
+  .dm-pa .dm-slip-choice > label > .dm-field { height: 2.5rem; padding-right: 1.625rem; font-family: var(--font-sans); font-size: 0.875rem; font-variant-numeric: lining-nums tabular-nums; text-align: right; }
+  .dm-pa .dm-slip-choice > label::after { content: '%'; position: absolute; right: 0.75rem; bottom: 0.625rem; font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-subtle); pointer-events: none; }
+  .dm-pa .dm-slip-choice > :is(.dm-error, .dm-hint) { grid-column: 1 / -1; margin: 0; }
+
+  /* ---- Choices in one track (Withdraw's "You receive", Change range's widths) ----------------------------------- */
+  .dm-pa-field { display: grid; gap: 0.625rem; min-width: 0; }
+  .dm-pa-field-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-width: 0; min-height: 1.5rem; }
+  .dm-pa-label { font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-subtle); }
+  .dm-dialog.dm-pa .dm-pa-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; min-width: 0; padding: 0.1875rem; border-radius: 1.0625rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-dialog.dm-pa .dm-pa-choices[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dm-dialog.dm-pa .dm-pa-choices[data-count="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .dm-dialog.dm-pa .dm-pa-choice { display: grid; justify-items: center; align-content: center; gap: 0.375rem; min-width: 0; min-height: 4.75rem; padding: 0.75rem 0.375rem; border-radius: 0.875rem; background: transparent; box-shadow: none; color: var(--fg-muted); text-align: center; cursor: pointer; transition: background-color 0.18s var(--ease-std), box-shadow 0.18s var(--ease-std), color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
+  .dm-dialog.dm-pa .dm-pa-choice:hover:not(:disabled) { background: var(--v4-w04); color: var(--fg); box-shadow: none; }
+  .dm-dialog.dm-pa .dm-pa-choice[aria-checked="true"] { background: var(--v4-w08); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
+  .dm-pa-choice:disabled { opacity: 0.5; cursor: not-allowed; }
+  .dm-pa-choice-icon { display: inline-flex; align-items: center; justify-content: center; min-height: 1.5rem; }
+  .dm-pa-choice-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; }
+  .dm-pa-choice-sub { font-size: 0.75rem; line-height: 1rem; letter-spacing: -0.01em; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-pa-choice[aria-checked="true"] .dm-pa-choice-sub { color: var(--fg-muted); }
+  .dm-dialog.dm-pa .dm-pa-choices--compact > .dm-pa-choice { min-height: 3.5rem; gap: 2px; padding: 0.5rem 0.25rem; }
+  /* A share (All, 50%, 25%): the segmented track across the sheet, 40px pills. */
+  .dm-pa .dm-pa-share { display: flex; width: 100%; height: 2.875rem; border-radius: 0.9375rem; }
+  .dm-pa .dm-pa-share > .dm-seg-thumb { border-radius: 0.75rem; }
+  .dm-pa .dm-pa-share > .dm-seg-item { flex: 1 1 0; min-width: 0; height: 2.5rem; border-radius: 0.75rem; font-size: 0.875rem; line-height: 1.25rem; }
+
+  /* ---- Phone: the bottom sheet with the domino handle (shell.css), its clearances ----------------------------- */
+  @media (max-width: 639px) {
+    .dm-dialog.dm-pa { width: 100%; max-height: calc(100dvh - 1.5rem); border-radius: 1.625rem 1.625rem 0 0; box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 rgb(255 236 220 / 0.08), 0 -1.875rem 5rem -1.875rem rgb(0 0 0 / 0.95); }
+    .dm-flow-dialog.dm-pa > .dm-pa-head { padding: 1.875rem 3.375rem 0 1.25rem; }
+    .dm-flow-dialog.dm-pa > .dm-pa-head--back { padding-left: 0.875rem; }
+    .dm-flow-dialog.dm-pa > .dm-pa-head::after { margin-right: -2.125rem; }
+    .dm-flow-dialog.dm-pa .dm-dialog-close { top: 1.75rem; right: 0.75rem; }
+    .dm-dialog.dm-pa .dm-pa-title { font-size: 1.75rem; }
+    .dm-dialog.dm-pa .dm-pa-lede { margin-right: -2.125rem; }
+    .dm-flow-dialog.dm-pa > .dm-pa-body { gap: 0.875rem; padding: 1rem 1.25rem 1.25rem; }
+    .dm-flow-dialog.dm-pa > .dm-pa-foot { padding: 0.75rem 0.75rem max(1.125rem, env(safe-area-inset-bottom)); background-size: calc(100% - 2.5rem) 1px; }
+    .dm-dialog.dm-pa .dm-pa-foot > .dm-btn { height: 3.125rem; }
+    .dm-dialog.dm-pa .dm-pa-token-amount { font-size: 2rem; }
+    .dm-dialog.dm-pa .dm-pa-choice { min-height: 4.25rem; padding: 0.625rem 0.25rem; }
+    .dm-dialog.dm-pa .dm-pa-choice-title { font-size: 0.8125rem; line-height: 1.125rem; }
+  }
+}

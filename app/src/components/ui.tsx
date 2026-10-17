@@ -299,7 +299,7 @@ export function PageHeader({
 }) {
   const center = align === 'center'
   return (
-    <div className={cx('flex flex-wrap gap-x-8 gap-y-4', center ? 'flex-col items-center text-center' : 'items-end justify-between', className)}>
+    <div className={cx('flex flex-wrap gap-x-8 gap-y-4', center ? 'flex-col items-center text-center' : 'dm-page-head items-end justify-between', className)}>
       <div className={cx('min-w-0', center && 'flex flex-col items-center')}>
         {eyebrow && (
           <div className="mb-3">
@@ -309,7 +309,7 @@ export function PageHeader({
         <Display as="h1" className="dm-display-h1">
           {title}
         </Display>
-        {description && <p className={cx('mt-2 max-w-[60ch] text-body text-fg-muted', center && 'mx-auto')}>{description}</p>}
+        {description && <p className={cx('dm-page-sub mt-2 max-w-[60ch] text-body text-fg-muted', center && 'mx-auto')}>{description}</p>}
       </div>
       {actions && <div className={cx('flex shrink-0 flex-wrap items-center gap-2', center && 'justify-center')}>{actions}</div>}
     </div>
@@ -602,16 +602,18 @@ export function RangeBar({
 
 /**
  * The words for a list with nothing in it, and the one thing to do next. With
- * an icon, it sits in a small tile inside ripple rings. The icon is never a
+ * an icon, it sits in a small tile inside ripple rings; the icon is never a
  * domino (no IconPositions): use IconSearch, IconReceipt, IconWallet, IconInfo
- * or IconRange. `plate` puts the whole state on a dotted plate (200px high, or
- * `plateHeight` 120 where two sit side by side).
+ * or IconRange. `mark="domino"` draws V4's double-blank domino instead (the
+ * approved empty-state mark, decoration only). `plate` puts the whole state on
+ * a dotted plate (200px high, or `plateHeight` 120 where two sit side by side).
  */
 export function EmptyState({
   title,
   body,
   action,
   icon,
+  mark,
   plate = false,
   plateHeight = 200,
   className,
@@ -621,13 +623,20 @@ export function EmptyState({
   body?: ReactNode
   action?: ReactNode
   icon?: ReactNode
+  mark?: 'domino'
   plate?: boolean
   plateHeight?: 120 | 200
   className?: string
 } & Omit<HTMLAttributes<HTMLDivElement>, 'title' | 'children' | 'className'>) {
   return (
     <div className={cx('dm-empty', plate && 'dm-empty--plate dm-dots-plate', className)} data-plate-height={plate ? plateHeight : undefined} {...rest}>
-      {icon && (
+      {mark === 'domino' ? (
+        <svg aria-hidden="true" focusable="false" className="dm-empty-mark" viewBox="0 0 46 80" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <rect x=".75" y=".75" width="44.5" height="78.5" rx="11" />
+          <path d="M9 40h28" strokeLinecap="round" />
+          <circle className="dm-empty-pip" cx="14.5" cy="12.5" r="4" fill="var(--primary)" stroke="none" />
+        </svg>
+      ) : icon && (
         <div aria-hidden="true" className="dm-empty-art">
           <span className="dm-empty-ring dm-empty-ring--3" />
           <span className="dm-empty-ring dm-empty-ring--2" />

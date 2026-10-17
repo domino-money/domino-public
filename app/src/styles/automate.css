@@ -91,36 +91,13 @@
   }
 
   /* ---- Automate (§14.1) ----------------------------------------------------------------------- */
-  .dm-acct-auto-grid { display: grid; gap: 1rem; margin-top: 2rem; }
-  @media (min-width: 900px) { .dm-acct-auto-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 1.5rem; margin-top: 2.5rem; } }
-  .dm-acct-auto-card { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 0.5rem; transition: box-shadow var(--dur-hover) var(--ease-std); }
-  .dm-acct-auto-card:hover { box-shadow: var(--elev-card-hover); }
   /* Domino's own mode: a Tangerine light along the top edge, fading at both ends. */
-  .dm-acct-auto-card[data-automation-card="domino"]::before { content: ''; position: absolute; top: 0; left: 2rem; right: 2rem; height: 1px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--primary-line), transparent); opacity: 0.85; }
-  .dm-acct-auto-plate { display: flex; align-items: flex-end; justify-content: center; height: 18.75rem; flex-shrink: 0; border-radius: calc(var(--radius-card) - 0.375rem); }
-  .dm-acct-auto-plate.dm-dots-plate { background-image: radial-gradient(60% 55% at 50% 100%, var(--wash), transparent 70%), radial-gradient(circle at center, var(--dot-plate) 0.9px, transparent 1.4px); background-size: 100% 100%, 0.875rem 1.53125rem; background-position: 0 0, 0.4375rem 0.765625rem; background-repeat: no-repeat, repeat; }
-  [data-automation-card="domino"] .dm-acct-auto-plate.dm-dots-plate { background-image: radial-gradient(60% 55% at 50% 100%, var(--primary-glow), transparent 70%), radial-gradient(circle at center, var(--dot-plate) 0.9px, transparent 1.4px); }
   /* The art arrives 200 ms after its card, on the first load only (M3). */
-  .dm-acct-auto-art { animation: dm-ma-in var(--dur-art) var(--ease-enter) backwards; animation-delay: calc(var(--delay, 0ms) + 200ms); }
-  .dm-booted .dm-acct-auto-art { animation: none; }
-  .dm-acct-auto-body { display: flex; flex: 1; flex-direction: column; padding: 1rem 1rem 1.25rem; }
   .dm-acct-auto-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
   /* The roadmap pill is the site's one neutral chip (the same filled wash as on Home and Positions): no Automate variant. */
-  .dm-acct-auto-points { display: grid; gap: 0.5rem; margin: 0.75rem 0 0; padding: 0; list-style: none; }
-  .dm-acct-auto-points > li { position: relative; padding-left: 1.125rem; font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.2px; color: var(--fg-muted); }
   /* A pip centred on the first line (§0.4: the pip is the UI's one mark; the tile shape stays in the drawings). */
-  .dm-acct-auto-points > li::before { content: ''; position: absolute; left: 0.1875rem; top: 0.4375rem; width: 0.375rem; height: 0.375rem; border-radius: 9999px; background: var(--fg-subtle); }
-  .dm-acct-auto-fee { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1.5rem; margin: 1.25rem 0 0; padding-top: 1rem; border-top: 1px solid var(--border); }
-  .dm-acct-auto-fee dt { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-acct-auto-fee dd { margin: 0; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
-  .dm-acct-auto-entry { display: flex; margin-top: auto; padding-top: 1.25rem; }
-  .dm-acct-auto-entry > .dm-btn { flex: 1; }
   .dm-acct-auto-off { display: flex; align-items: center; gap: 0.625rem; min-height: 3rem; margin-top: auto; padding: 0 1rem; border-radius: var(--radius); background: var(--surface-1); font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; color: var(--fg-muted); }
   .dm-acct-auto-off > svg { width: 1rem; height: 1rem; flex-shrink: 0; color: var(--fg-subtle); }
-  @media (max-width: 767px) {
-    .dm-acct-auto-plate { height: 12.5rem; }
-    .dm-acct-auto-body { padding: 1rem 0.75rem 0.75rem; }
-  }
 
   /* FeeMeter (§14.1): everything a position earns as one 6 px bar, and at its end, after a 2 px cut, the service's sliver
      (2% or 4% of the length). One continuous bar reads as a share of a whole, never as page dots or progress. Neutral on
@@ -261,8 +238,6 @@
   .dm-seq-mode > .dm-mode-art { width: 100%; height: 6.75rem; padding: 0.75rem 0.625rem 0; border-radius: calc(var(--radius-lg) - 0.375rem); background-color: var(--surface-1); background-image: radial-gradient(circle at center, var(--dot-plate) 0.9px, transparent 1.4px); background-size: 0.875rem 1.53125rem; background-position: 0.4375rem 0.765625rem; }
   .dm-seq-mode > span { padding: 0 0.5rem; }
   .dm-seq-mode[aria-checked="true"]::after { content: ''; position: absolute; top: 1rem; right: 1rem; width: 1.25rem; height: 1.25rem; border-radius: 9999px; background: var(--primary-line); mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='6' fill='white'/%3E%3Cpath d='M3.3 6.2l1.8 1.8 3.6-3.9' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 1.25rem no-repeat luminance; animation: dm-pop 200ms var(--ease-pop) backwards; }
-  .dm-seq-chosen { display: flex; gap: 0.625rem; color: var(--fg-muted); font-size: 0.8125rem; line-height: 1.125rem; }
-  .dm-seq-chosen::before { content: ''; width: 0.875rem; height: 0.875rem; flex-shrink: 0; margin-top: 2px; background: var(--fg-subtle); mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.25' fill='none' stroke='black' stroke-width='1.3'/%3E%3Cpath d='M8 7.2v3.6' stroke='black' stroke-width='1.4' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='5.1' r='.85' fill='black'/%3E%3C/svg%3E") center / 0.875rem no-repeat; }
 
   /* ④ Limits: the labelled field stays the control; a slider, stepper, presets and tiles sit under it for a pointer. */
   .dm-seq-limit { display: grid; gap: 0.625rem; align-content: start; min-width: 0; }
@@ -329,7 +304,6 @@
   .dm-seq-stage.dm-dots-plate[data-mode="domino"] { background-image: radial-gradient(60% 60% at 50% 100%, var(--primary-glow), transparent 70%), radial-gradient(circle at center, var(--dot-plate) 0.9px, transparent 1.4px); }
   /* Sized by the plate's height (the drawing meets its box), so its tallest part keeps 16 px of plate above it. */
   .dm-seq-stage > .dm-mode-art { width: 100%; max-width: 18.75rem; height: 100%; }
-  .dm-seq-settle { margin-top: 0.25rem; }
   /* Auto-compound's read position (CompoundPreview): the band spans the plate; the fee meter 12 px under it. */
   .dm-seq-cpv { display: grid; gap: 0.75rem; min-width: 0; }
   .dm-seq-cpv > .dm-seq-stage > .dm-mode-art { max-width: none; }
@@ -374,7 +348,6 @@
 }
 
 /* ---- ModeArt keyframes ---------------------------------------------------------------------- */
-@keyframes dm-ma-in { from { opacity: 0; translate: 0 0.625rem; } }
 @keyframes dm-ma-grow { from { scale: 0 1; } }
 
 /* Auto-compound, 6 s. Fees leave the stack at 0.40 / 0.90 / 1.40 s and land 1.0 s later (23.33 / 31.67 / 40%);
@@ -538,22 +511,6 @@
 
 /* Beginner-facing automation: the same controls and financial states, with a clear visual explanation. */
 @layer components {
-  .dm-auto-eyebrow { display: block; color: var(--fg-subtle); font-size: 0.8125rem; line-height: 1.25rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-  [data-automate] .dm-auto-plain { margin-top: 1.25rem; }
-  [data-automate] .dm-acct-auto-grid { gap: 1.5rem; margin-top: 1.5rem; }
-  .dm-acct-auto-card { overflow: hidden; padding: 0.5rem; }
-  .dm-acct-auto-card .dm-acct-auto-plate { position: relative; height: 17rem; padding: 2.25rem 1rem 3rem; overflow: hidden; }
-  .dm-acct-auto-card .dm-acct-auto-art { max-width: 21rem; }
-  .dm-auto-art-label { position: absolute; top: 1rem; left: 1.25rem; color: var(--fg-muted); font-size: 0.8125rem; line-height: 1.25rem; font-weight: 500; }
-  .dm-acct-auto-plate > .dm-auto-journey { position: absolute; right: 1.25rem; bottom: 1rem; left: 1.25rem; }
-  .dm-acct-auto-card .dm-acct-auto-body { padding: 1.5rem; }
-  .dm-acct-auto-card .dm-acct-auto-points { gap: 0.625rem; min-height: 4rem; margin-top: 1rem; }
-  .dm-acct-auto-card .dm-acct-auto-points > li { font-size: 1rem; line-height: 1.5rem; }
-  .dm-acct-auto-card .dm-acct-auto-points > li::before { top: 0.5625rem; background: var(--primary-line); opacity: 0.8; }
-  .dm-acct-auto-card .dm-acct-auto-fee { margin-top: 1.5rem; }
-  .dm-acct-auto-card .dm-acct-auto-fee dt { color: var(--fg-muted); font-size: 0.9375rem; line-height: 1.375rem; }
-  .dm-acct-auto-card .dm-acct-auto-fee dd { font-size: 0.9375rem; line-height: 1.375rem; }
-  .dm-auto-fee-note { margin: 0.625rem 0 0; color: var(--fg-muted); font-size: 0.875rem; line-height: 1.375rem; }
   .dm-auto-journey { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.5rem 0.75rem; margin: 0; color: var(--fg-muted); font-size: 0.875rem; line-height: 1.25rem; }
   .dm-auto-journey > span:not(.dm-auto-journey-arrow) { display: inline-flex; align-items: center; gap: 0.4375rem; }
   .dm-auto-journey i { width: 0.4375rem; height: 0.4375rem; border: 1px solid var(--primary-line); border-radius: 50%; }
@@ -605,9 +562,6 @@
     .dm-seq-create .dm-seq-aside .dm-seq-stage { background-color: var(--card); }
   }
   @media (max-width: 639px) {
-    .dm-acct-auto-card .dm-acct-auto-plate { height: 14rem; }
-    .dm-acct-auto-card .dm-acct-auto-body { padding: 1.125rem 0.875rem; }
-    .dm-acct-auto-card .dm-acct-auto-points { min-height: 0; }
     .dm-seq-mode.dm-btn { grid-template-columns: 3.5rem minmax(0, 1fr); gap: 0.75rem; padding-left: 0.625rem; }
     .dm-seq-mode.dm-btn > .dm-mode-art { width: 3.5rem; height: 4rem; padding: 0.25rem; }
     .dm-seq-create .dm-acct-fields--3 { grid-template-columns: minmax(0, 1fr); }

@@ -1,0 +1,59 @@
+/* V4 foundation (owner: foundation). Loaded by tokens.css. Holds only what must beat the per-screen v3 rules: the ember layer, the lit edge utility (.dm-lit, [data-ember]), the drawn title stop and its sheen, header and footer rules, the generic dialog frame.
+   Every rule sits in @layer v4 (the last layer, impl/plan.md §1.1) and starts with this file's scope. */
+@layer v4 {
+  /* The ember (V4 §4.2 .light): one decorative layer under the whole page, the App root's first child (EmberLight.tsx). A
+     1120px Tangerine disc trails the pointer (.9s drift), a 13px dot grid shows only inside a 680px light that follows
+     it, a still grain warms the top. The root isolates its stacking so the layer paints over the body's ground and under
+     every element of the page; the layer clips itself, so the root never needs overflow:hidden (the sticky header). The
+     script writes --lx/--ly (the light, layer px) on the layer alone; at rest the light parks top right, or at the element
+     a screen marks [data-ember-rest]. */
+  #root > :has(> .dm-ember) { position: relative; isolation: isolate; }
+  .dm-ember { position: absolute; inset: 0; z-index: -1; contain: strict; pointer-events: none; }
+  .dm-ember > * { position: absolute; top: 0; left: 0; }
+  .dm-ember-glow { width: 70rem; height: 70rem; border-radius: 50%; background: radial-gradient(closest-side, rgb(255 157 98 / 0.19), rgb(255 157 98 / 0.085) 38%, rgb(255 157 98 / 0.025) 68%, rgb(255 157 98 / 0)); transform: translate3d(calc(var(--lx, -200rem) - 35rem), calc(var(--ly, -200rem) - 35rem), 0); will-change: transform; transition: transform 0.9s var(--e-drift); }
+  .dm-ember-dots { right: 0; height: 50rem; background-image: radial-gradient(circle, rgb(255 214 186 / 0.34) 0 1px, transparent 1.5px); background-size: 0.8125rem 0.8125rem; -webkit-mask: radial-gradient(closest-side, #000, rgb(0 0 0 / 0.45) 48%, transparent) calc(var(--lx, -200rem) - 21.25rem) calc(var(--ly, -200rem) - 21.25rem) / 42.5rem 42.5rem no-repeat; mask: radial-gradient(closest-side, #000, rgb(0 0 0 / 0.45) 48%, transparent) calc(var(--lx, -200rem) - 21.25rem) calc(var(--ly, -200rem) - 21.25rem) / 42.5rem 42.5rem no-repeat; transition: -webkit-mask-position 0.9s var(--e-drift), mask-position 0.9s var(--e-drift); }
+  .dm-ember-grain { right: 0; height: 51.25rem; opacity: 0.025; background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .92 0 0 0 0 .84 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23n%29'/%3E%3C/svg%3E"); -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+  @media (max-width: 767px) {
+    .dm-ember-glow { width: 47.5rem; height: 47.5rem; transform: translate3d(calc(var(--lx, -200rem) - 23.75rem), calc(var(--ly, -200rem) - 23.75rem), 0); }
+  }
+  @media (forced-colors: active) { .dm-ember { display: none; } }
+
+  /* The lit edge (V4 §4.4 .edge and .cwash): a card the ember passes catches it on its 1px rim and in a broad inner wash,
+     as the prototype's do (they too paint over the card's content, the wash at 7% at most). An area adds .dm-lit to its
+     main cards (three at most per screen); the ember writes --ex/--ey (the pointer, viewport px) and --ember-on (0 or 1)
+     on them, so nothing here needs per-card script; until it does, nothing is drawn. .dm-lit positions the card (it
+     becomes its descendants' containing block) and sets no z-index; it takes no pointer and no room. */
+  @media (hover: hover) and (pointer: fine) {
+    .dm-lit { position: relative; }
+    .dm-lit::before, .dm-lit::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background-repeat: no-repeat; background-attachment: fixed; opacity: var(--ember-on, 0); transition: opacity 0.45s var(--ease-std), background-position 0.5s var(--e-drift); }
+    .dm-lit::before { padding: 1px; background-image: radial-gradient(closest-side, rgb(255 190 146), rgb(255 157 98 / 0.45) 40%, rgb(255 157 98 / 0.12) 70%, rgb(255 157 98 / 0)); background-size: 47.5rem 47.5rem; background-position: calc(var(--ex, -100rem) - 23.75rem) calc(var(--ey, -100rem) - 23.75rem); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+    .dm-lit::after { background-image: radial-gradient(closest-side, rgb(255 157 98 / 0.07), rgb(255 157 98 / 0.025) 50%, rgb(255 157 98 / 0)); background-size: 65rem 65rem; background-position: calc(var(--ex, -100rem) - 32.5rem) calc(var(--ey, -100rem) - 32.5rem); transition-duration: 0.45s, 0.7s; }
+  }
+  @media (forced-colors: active) { .dm-lit::before, .dm-lit::after { content: none; } }
+
+  /* The page title's Tangerine full stop (V4 §2.3): a period drawn by CSS after the words. Its alternative text is empty,
+     so the heading's accessible name and its text stay the words alone (innerText never holds generated content). A
+     screen opts out in its own v4 file with a scoped ::after { content: none }. */
+  h1:is(.dm-display-h1, .dm-display-title)::after { content: '.' / ''; color: var(--primary); }
+  /* Its sheen (V4 §4.2 .sheen): under the ember the letters warm to #ffc69f and the stop to #ffd7ba, a 600px light
+     clipped to the letters of the one text node (no copy of the words), on a fine pointer only; a title that holds
+     elements of its own (a pair's tokens) keeps their inks and no sheen. The ember writes --ex/--ey on the title. */
+  @media (hover: hover) and (pointer: fine) and (forced-colors: none) {
+    @supports ((background-clip: text) or (-webkit-background-clip: text)) {
+      h1:is(.dm-display-h1, .dm-display-title):not(:has(*)), h1:is(.dm-display-h1, .dm-display-title):not(:has(*))::after { -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; transition: background-position 0.9s var(--e-drift); }
+      h1:is(.dm-display-h1, .dm-display-title):not(:has(*)) { background: radial-gradient(closest-side, var(--v4-lit), rgb(255 198 159 / 0.55) 42%, rgb(255 198 159 / 0)) calc(var(--ex, -100rem) - 18.75rem) calc(var(--ey, -100rem) - 18.75rem) / 37.5rem 37.5rem no-repeat fixed, linear-gradient(var(--v4-display), var(--v4-display));  -webkit-background-clip: text; background-clip: text; }
+      h1:is(.dm-display-h1, .dm-display-title):not(:has(*))::after { background: radial-gradient(closest-side, var(--v4-lit-stop), rgb(255 215 186 / 0.55) 42%, rgb(255 215 186 / 0)) calc(var(--ex, -100rem) - 18.75rem) calc(var(--ey, -100rem) - 18.75rem) / 37.5rem 37.5rem no-repeat fixed, linear-gradient(var(--primary), var(--primary));  -webkit-background-clip: text; background-clip: text; }
+      h1:is(.dm-display-h1, .dm-display-title):not(:has(*))::selection { -webkit-text-fill-color: var(--fg); }
+    }
+  }
+  /* Its first rise (V4 §6.1 k-l1, k-s1): on the page's first load only, the words rise through their own line, which
+     stays put as a mask (a clip that moves against the rise), and the stop drops in after them. Nothing is left on the
+     title once it ends; navigation and reduced motion show it as it is. */
+  html:not(.dm-booted) h1:is(.dm-display-h1, .dm-display-title) { animation: dm-v4-title 0.7s var(--ease-enter) 0.04s backwards; }
+  html:not(.dm-booted) h1:is(.dm-display-h1, .dm-display-title)::after { position: relative; animation: dm-v4-stop-in 0.4s var(--e-pop) 0.42s backwards; }
+}
+@keyframes dm-v4-title {
+  from { transform: translateY(142%); clip-path: inset(-142% -0.5em 142% -0.25em); }
+  to { transform: none; clip-path: inset(-0.25em -0.5em -0.25em -0.25em); }
+}
+@keyframes dm-v4-stop-in { from { visibility: hidden; opacity: 0.01; top: -0.32em; } }

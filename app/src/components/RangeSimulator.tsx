@@ -10,6 +10,8 @@ import '../styles/range-simulator.css'
 const RANGE_LOW = simAt(SIM.lower)
 const RANGE_HIGH = simAt(SIM.upper)
 const across = (x: number) => ({ '--x': x }) as CSSProperties
+/** V4: the light rising inside the range while the price is in it (decoration only: left %, delay s). */
+const GLINTS = [[8, 0], [22, 1.1], [37, 2.3], [51, 0.6], [64, 1.7], [78, 2.9], [90, 0.3]] as const
 const STATE = {
   inside: { pill: 'Inside range', text: 'Trades can earn fees.' },
   above: { pill: 'Above range', text: 'No trading fees here.' },
@@ -98,8 +100,10 @@ export function RangeSimulator({ title = 'Your price range' }: { title?: string 
               onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
               onChange={(event) => setNotch(Number(event.target.value))} aria-valuetext={spoken} />
             <div aria-hidden="true" className="dm-sim-art">
-              <span className="dm-sim-dots" />
+              {/* V4: the dotted field is lit around the price (the same position as the knob's, drawn only). */}
+              <span className="dm-sim-dots" style={across(simAt(price))} />
               <span className="dm-sim-band" style={{ '--a': RANGE_LOW, '--b': RANGE_HIGH } as CSSProperties}>
+                {GLINTS.map(([left, delay]) => <span key={left} className="dm-sim-glint" style={{ left: `${left}%`, animationDelay: `${delay}s` }} />)}
                 <span className="dm-sim-band-label">Your price range</span>
               </span>
               <span className="sr-only dm-sim-zone" data-here={p.status === 'below' ? '' : undefined}>Only ETH</span>
